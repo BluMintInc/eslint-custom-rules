@@ -436,6 +436,53 @@ ruleTesterJsx.run('consistent-callback-naming', rule, {
         export const used = [click, rest];
       `,
     },
+    // Bug #1944 control: the rule keys on the `handle` prefix, not on the
+    // abstract/implements spelling. An `on`-prefixed contract is silent at BOTH
+    // ends — the declaration this rule newly visits and the implementation whose
+    // fix it now withholds — so neither addition reports on a compliant name.
+    {
+      code: `
+        abstract class BaseForm {
+          abstract onSubmit(data: string): string;
+        }
+        export class SubmitForm extends BaseForm {
+          onSubmit(data: string): string {
+            return data;
+          }
+        }
+      `,
+    },
+    {
+      code: `
+        interface Submittable {
+          onSubmit(data: string): string;
+        }
+        export class SubmitForm implements Submittable {
+          onSubmit(data: string): string {
+            return data;
+          }
+        }
+      `,
+    },
+    // Bug #1944: a member of an `interface`/type literal is a PROP declaration,
+    // which this rule governs through `callbackPropPrefix` — whose remedy is the
+    // opposite one (`onSubmit`, not `submit`). Reporting `callbackFunctionPrefix`
+    // on the same declaration would hand the author contradictory instructions,
+    // so type members are deliberately not a subject of the implementation half.
+    {
+      code: `
+        export interface FormContract {
+          handleSubmit(data: string): string;
+        }
+      `,
+    },
+    {
+      code: `
+        export type FormContract = {
+          handleSubmit: (data: string) => string;
+        };
+      `,
+    },
   ],
   invalid: [
     // Bug #1522: the prop rename spans the JSX usage AND the props type
@@ -1099,6 +1146,122 @@ ruleTesterJsx.run('consistent-callback-naming', rule, {
       errors: [{ messageId: 'callbackFunctionPrefix' }],
       output: null,
     },
+    // Bug #1944: renaming the implementation of an abstract member on its own
+    // leaves the declaration behind and the subclass stops satisfying it —
+    // measured `TS2515: Non-abstract class 'SubmitForm' does not implement
+    // inherited abstract member 'handleSubmit'` on input that compiled clean.
+    // Both ends are reported (the declaration by the abstract-member visitor,
+    // the implementation as before) and NEITHER is rewritten, so the author
+    // renames both deliberately. `output: null` is the assertion that matters:
+    // an omitted `output` would assert nothing about the fixer.
+    {
+      code: `
+        abstract class BaseForm {
+          abstract handleSubmit(data: string): string;
+        }
+        export class SubmitForm extends BaseForm {
+          handleSubmit(data: string): string {
+            return data;
+          }
+        }
+      `,
+      errors: [
+        { messageId: 'callbackFunctionPrefix' },
+        { messageId: 'callbackFunctionPrefix' },
+      ],
+      output: null,
+    },
+    // Bug #1944: the `implements` half of the same contract — measured
+    // `TS2420: Class 'SubmitForm' incorrectly implements interface
+    // 'Submittable'`. The interface member itself is not a subject (its remedy
+    // belongs to the prop half of this rule), so only the implementation
+    // reports — with the rename withheld.
+    {
+      code: `
+        interface Submittable {
+          handleSubmit(data: string): string;
+        }
+        export class SubmitForm implements Submittable {
+          handleSubmit(data: string): string {
+            return data;
+          }
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1944: a type literal declares the same contract and breaks the same
+    // way (TS2420).
+    {
+      code: `
+        type Submittable = {
+          handleSubmit(data: string): string;
+        };
+        export class SubmitForm implements Submittable {
+          handleSubmit(data: string): string {
+            return data;
+          }
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1944 fourth shape: an abstract PROPERTY is a "class property" in the
+    // docs' own subject list, so it is a subject like any other member and
+    // silence on it is a gap. Report-only: every implementor of the declaration
+    // must move with it, and implementors live in other files.
+    {
+      code: `
+        export abstract class BaseForm {
+          abstract handleSubmit: (data: string) => string;
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    {
+      code: `
+        export abstract class BaseForm {
+          abstract handleSubmit(data: string): string;
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1944: the heritage clause alone withholds the rename, because the
+    // base is routinely imported and the declaration need not be in this file.
+    // The cost of that conservatism is exactly this case — a member that may
+    // override nothing keeps its report but loses its autofix.
+    {
+      code: `
+        import { Base } from './base';
+        export class Widget extends Base {
+          handleClick() {}
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1944 regression guard: the withholding must not become a blanket
+    // disable of the fixer. A class with NO heritage cannot be satisfying any
+    // declaration, so its `handle` member is still reported AND still renamed.
+    {
+      code: `
+        export class SubmitForm {
+          handleSubmit(data: string): string {
+            return data;
+          }
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: `
+        export class SubmitForm {
+          submit(data: string): string {
+            return data;
+          }
+        }
+      `,
+    },
   ],
 });
 
@@ -1192,6 +1355,32 @@ describe('consistent-callback-naming --fix output parses (Bug #1719)', () => {
     const output = fix(`class C {\n  handleClick() {}\n}\n`);
 
     expect(output).toBe(`class C {\n  click() {}\n}\n`);
+    expect(parses(output)).toBe(true);
+  });
+
+  /**
+   * Bug #1944. Parsing is not the failure mode here — the broken output parsed
+   * perfectly and failed to TYPE-check (TS2515 / TS2420), which this harness
+   * cannot see. What it can pin is that the whole-file fixer leaves the file
+   * byte-identical, which is what makes the type error impossible.
+   */
+  it.each([
+    [
+      'abstract member',
+      `abstract class F {\n  abstract handleSubmit(d: string): string;\n}\nclass G extends F {\n  handleSubmit(d: string): string { return d; }\n}\n`,
+    ],
+    [
+      'interface member',
+      `interface F {\n  handleSubmit(d: string): string;\n}\nclass G implements F {\n  handleSubmit(d: string): string { return d; }\n}\n`,
+    ],
+    [
+      'type literal member',
+      `type F = {\n  handleSubmit(d: string): string;\n};\nclass G implements F {\n  handleSubmit(d: string): string { return d; }\n}\n`,
+    ],
+  ])('leaves a %s contract implementation unrenamed', (_label, code) => {
+    const output = fix(code);
+
+    expect(output).toBe(code);
     expect(parses(output)).toBe(true);
   });
 });
