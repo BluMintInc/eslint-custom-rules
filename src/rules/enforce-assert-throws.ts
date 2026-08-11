@@ -38,6 +38,51 @@ function isTypeLikeNode(node: TSESTree.Node): boolean {
   return node.type.startsWith('TS') || node.type.endsWith('TypeAnnotation');
 }
 
+/**
+ * A class member's name plus the privacy spelling it was written with.
+ *
+ * `PrivateIdentifier.name` is the bare word without the `#` sigil, so `#assertFoo`
+ * and a sibling `assertFoo` share a name yet are distinct members: the sigil has to
+ * be carried alongside the name rather than folded into it. `private #foo` is
+ * illegal TypeScript (TS18010), so the two privacy spellings are mutually exclusive
+ * and an author on the `#` spelling cannot opt into coverage by adding `private`.
+ */
+type MemberName = {
+  readonly name: string;
+  readonly isEcmaPrivate: boolean;
+};
+
+/**
+ * Resolves the name a key contributes to the assert- convention, or null when the
+ * key carries no static name (computed or literal keys). Returning null rather than
+ * an empty string keeps "this key has no name" distinguishable from a real name:
+ * an empty string reads as "not an assert helper AND not a caller", silently
+ * disabling both checks.
+ */
+function resolveMemberName(key: TSESTree.Node): MemberName | null {
+  if (key.type === AST_NODE_TYPES.Identifier) {
+    return { name: key.name, isEcmaPrivate: false };
+  }
+  if (key.type === AST_NODE_TYPES.PrivateIdentifier) {
+    return { name: key.name, isEcmaPrivate: true };
+  }
+  return null;
+}
+
+function memberDisplayName(member: MemberName): string {
+  return member.isEcmaPrivate ? `#${member.name}` : member.name;
+}
+
+/**
+ * Whether a member expression's property names an assert helper. The `#` sigil is a
+ * privacy marker rather than part of the identifier the naming convention governs,
+ * so `this.#assertFoo()` is an assert call exactly as `this.assertFoo()` is.
+ */
+function isAssertMemberProperty(property: TSESTree.Node): boolean {
+  const member = resolveMemberName(property);
+  return !!member && member.name.toLowerCase().startsWith('assert');
+}
+
 type MessageIds = 'assertShouldThrow' | 'shouldBeAssertPrefixed';
 
 export const enforceAssertThrows = createRule<[], MessageIds>({
@@ -75,12 +120,9 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
             }
           }
           if (callee.type === AST_NODE_TYPES.MemberExpression) {
-            const property = callee.property;
-            if (property.type === AST_NODE_TYPES.Identifier) {
-              if (property.name.toLowerCase().startsWith('assert')) {
-                hasAssertCall = true;
-                return;
-              }
+            if (isAssertMemberProperty(callee.property)) {
+              hasAssertCall = true;
+              return;
             }
           }
         }
@@ -224,10 +266,7 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
             return callee.name.toLowerCase().startsWith('assert');
           }
           if (callee.type === AST_NODE_TYPES.MemberExpression) {
-            const property = callee.property;
-            if (property.type === AST_NODE_TYPES.Identifier) {
-              return property.name.toLowerCase().startsWith('assert');
-            }
+            return isAssertMemberProperty(callee.property);
           }
         }
       }
@@ -292,9 +331,9 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
       if (expression.type === AST_NODE_TYPES.CallExpression) {
         const callee = expression.callee;
         if (callee.type === AST_NODE_TYPES.MemberExpression) {
-          const property = callee.property;
-          if (property.type === AST_NODE_TYPES.Identifier) {
-            return property.name.toLowerCase().startsWith('assert');
+          const member = resolveMemberName(callee.property);
+          if (member) {
+            return member.name.toLowerCase().startsWith('assert');
           }
         } else if (callee.type === AST_NODE_TYPES.Identifier) {
           // Check if it's a direct assert function call
@@ -311,6 +350,11 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
         }
 
         // Handle chained calls: this.assertA().then(() => this.assertB())
+        // Only a computed property reaches here (the branch above returns for every
+        // statically named one), and a computed property fails the test below, so
+        // hasPromiseChainWithAssertMethods is what actually resolves such chains.
+        // The `then`/`catch`/`finally` names stay Identifier-only regardless: they
+        // are Promise API members, which can never carry the `#` privacy sigil.
         if (
           callee.type === AST_NODE_TYPES.MemberExpression &&
           callee.property.type === AST_NODE_TYPES.Identifier
@@ -409,8 +453,7 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
 
           if (
             callee.type === AST_NODE_TYPES.MemberExpression &&
-            callee.property.type === AST_NODE_TYPES.Identifier &&
-            callee.property.name.toLowerCase().startsWith('assert')
+            isAssertMemberProperty(callee.property)
           ) {
             return true;
           }
@@ -467,13 +510,8 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
             declarator.id.name === variableName &&
             declarator.init
           ) {
-            if (
-              declarator.init.type === AST_NODE_TYPES.MemberExpression &&
-              declarator.init.property.type === AST_NODE_TYPES.Identifier
-            ) {
-              return declarator.init.property.name
-                .toLowerCase()
-                .startsWith('assert');
+            if (declarator.init.type === AST_NODE_TYPES.MemberExpression) {
+              return isAssertMemberProperty(declarator.init.property);
             }
           }
         }
@@ -709,13 +747,12 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
         | TSESTree.ArrowFunctionExpression
         | TSESTree.MethodDefinition,
     ): void {
-      let functionName = '';
+      let member: MemberName | null = null;
 
       if (node.type === AST_NODE_TYPES.MethodDefinition) {
-        functionName =
-          node.key.type === AST_NODE_TYPES.Identifier ? node.key.name : '';
+        member = resolveMemberName(node.key);
       } else if (node.type === AST_NODE_TYPES.FunctionDeclaration && node.id) {
-        functionName = node.id.name;
+        member = { name: node.id.name, isEcmaPrivate: false };
       } else if (
         node.type === AST_NODE_TYPES.FunctionExpression ||
         node.type === AST_NODE_TYPES.ArrowFunctionExpression
@@ -726,11 +763,14 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
           parent.type === AST_NODE_TYPES.VariableDeclarator &&
           parent.id.type === AST_NODE_TYPES.Identifier
         ) {
-          functionName = parent.id.name;
+          member = { name: parent.id.name, isEcmaPrivate: false };
         }
       }
 
-      const displayName = functionName || 'this function';
+      // The bare name drives the assert- convention; the report quotes the name as
+      // written so a `#assertFoo` finding is not read as its public namesake.
+      const functionName = member ? member.name : '';
+      const displayName = member ? memberDisplayName(member) : 'this function';
 
       currentFunction = node;
       const functionBody =
