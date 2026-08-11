@@ -3037,3 +3037,1196 @@ export class Widget { public get view() { return <div />; } }
     expect(refixed.output.match(/@Memoize\(\)/g)).toHaveLength(2);
   });
 });
+
+// Issue #1955: under `experimentalDecorators` — the mode this plugin's
+// `@Memoize()` is written for — TypeScript rejects a decorator on a member with
+// a PRIVATE NAME: `TS1206: Decorators are not valid here.`, measured against the
+// repo's tsc 5.0.3, for a `get #view()` accessor exactly as for a `#view()`
+// method, and for the inline spelling exactly as for the own-line one. The rule
+// reported such a member and `--fix` wrote the decorator in, turning a clean
+// build into a broken one. Report and fix are both withheld, the way
+// `enforce-memoize-getters` withholds them (#1945) and `enforce-memoize-async`
+// since #1954: the message's only remedy, "Add @Memoize() to …", is unwritable
+// there, and a report naming an edit its reader cannot make is worse than
+// silence. Nothing is lost by it — a `#private` member is unnameable outside its
+// class, so an author who wants the cache can reach it through the `private`
+// modifier.
+//
+// The restriction is on the private NAME and not on privacy: `private get
+// view()` is a legal decorator position and keeps both report and fix, as does a
+// string-literal key that merely contains a `#`. That contrast is what the
+// invalid rows pin.
+//
+// Declared under `ruleTesterJsx` because every fixture is JSX: the shared TS
+// tester enables JSX only through a `.tsx` filename, and a JSX fixture that
+// fails to parse reports nothing — silence indistinguishable from the carve-out
+// under test. Each case carries the filename too, since the rule itself is
+// gated on a `.ts`/`.tsx` path.
+ruleTesterJsx.run(
+  'require-memoize-jsx-returners (private-named members, issue #1955)',
+  requireMemoizeJsxReturners,
+  {
+    valid: [
+      {
+        name: 'a private-named method stays silent',
+        filename: 'file.tsx',
+        code: `export class Widget {
+  #view() {
+    return <div />;
+  }
+}`,
+      },
+      {
+        // The rule governs a `get` accessor as well as a method, and the
+        // compiler rejects a decorator on both spellings alike.
+        name: 'a private-named getter stays silent',
+        filename: 'file.tsx',
+        code: `export class Widget {
+  get #view() {
+    return <div />;
+  }
+}`,
+      },
+      {
+        name: 'a private-named method on a single-line class body stays silent',
+        filename: 'file.tsx',
+        code: `export class Widget { #view() { return <div />; } }`,
+      },
+      {
+        name: 'a private-named getter on a single-line class body stays silent',
+        filename: 'file.tsx',
+        code: `export class Widget { get #view() { return <div />; } }`,
+      },
+      {
+        // Static members are out of scope before the name is read, so these
+        // rows pin the silence rather than the carve-out — a later change that
+        // narrowed the static skip must not make a TS1206 shape reportable.
+        name: 'a static private-named method stays silent',
+        filename: 'file.tsx',
+        code: `export class Widget { static #view() { return <div />; } }`,
+      },
+      {
+        name: 'a static private-named getter stays silent',
+        filename: 'file.tsx',
+        code: `export class Widget { static get #view() { return <div />; } }`,
+      },
+      {
+        name: 'a private-named method returning a JSX factory stays silent',
+        filename: 'file.tsx',
+        code: `export class Widget {
+  #Component() {
+    return () => <div />;
+  }
+}`,
+      },
+      {
+        name: 'a private-named getter returning a JSX factory stays silent',
+        filename: 'file.tsx',
+        code: `export class Widget {
+  get #Component() {
+    return () => <div />;
+  }
+}`,
+      },
+      {
+        name: 'a private-named method returning a fragment stays silent',
+        filename: 'file.tsx',
+        code: `export class Widget {
+  #view() {
+    return <></>;
+  }
+}`,
+      },
+      {
+        name: 'a private-named method returning a createElement call stays silent',
+        filename: 'file.tsx',
+        code: `import React from 'react';
+
+export class Widget {
+  #view() {
+    return React.createElement('div');
+  }
+}`,
+      },
+      {
+        // The #1951 anchor shape: a member sharing its line takes the decorator
+        // inline, which is TS1206 here just as the own-line spelling is, so the
+        // placement branch must never be reached.
+        name: 'a private-named method following a property on one line stays silent',
+        filename: 'file.tsx',
+        code: `export class Widget {
+  private locked = 1; #view() { return <div />; }
+}`,
+      },
+      {
+        name: 'a private-named method sharing the class opening line stays silent',
+        filename: 'file.tsx',
+        code: `export class Widget { #view() { return <div />; }
+}`,
+      },
+      {
+        name: 'a private-named method in a default-exported class stays silent',
+        filename: 'file.tsx',
+        code: `export default class {
+  #view() {
+    return <div />;
+  }
+}`,
+      },
+      {
+        name: 'a private-named method in an abstract class stays silent',
+        filename: 'file.tsx',
+        code: `export abstract class Widget {
+  #view() {
+    return <div />;
+  }
+}`,
+      },
+      {
+        name: 'a private-named method in a class nested in a function stays silent',
+        filename: 'file.tsx',
+        code: `export function build() {
+  class Widget {
+    #view() {
+      return <div />;
+    }
+  }
+  return Widget;
+}`,
+      },
+      {
+        name: 'a private-named method in a class extending a base stays silent',
+        filename: 'file.tsx',
+        code: `import { Base } from './Base';
+
+export class Widget extends Base {
+  #view() {
+    return <div />;
+  }
+}`,
+      },
+      {
+        // Both carve-outs at once — a private name inside a class expression
+        // (#1950) — and neither may leak a report.
+        name: 'a private-named method in a class expression stays silent under both carve-outs',
+        filename: 'file.tsx',
+        code: `export const Widget = class Inner {
+  #view() {
+    return <div />;
+  }
+};`,
+      },
+      {
+        // The #1950 nesting row in its private-named spelling: the inner class
+        // DECLARATION takes decorators normally, so only the member's NAME can
+        // account for the silence.
+        name: 'a private-named method of a class declared inside a class expression stays silent',
+        filename: 'file.tsx',
+        code: `export const Outer = class {
+  build() {
+    class Widget {
+      #view() {
+        return <div />;
+      }
+    }
+    return Widget;
+  }
+};`,
+      },
+      {
+        // A decorator the author already wrote is itself TS1206 on this member,
+        // so its presence changes nothing: there is still no writable remedy.
+        name: 'a private-named method already carrying another decorator stays silent',
+        filename: 'file.tsx',
+        code: `function Log(): MethodDecorator {
+  return () => {};
+}
+
+export class Widget {
+  @Log()
+  #view() {
+    return <div />;
+  }
+}`,
+      },
+      {
+        name: 'a private-named method already carrying @Memoize() stays silent',
+        filename: 'file.tsx',
+        code: `import { Memoize } from '@blumintinc/typescript-memoize';
+
+export class Widget {
+  @Memoize()
+  #view() {
+    return <div />;
+  }
+}`,
+      },
+      {
+        // The import is already there, so a leaked report would emit a decorator
+        // with nothing else to give it away.
+        name: 'a private-named method in a file that already imports Memoize stays silent',
+        filename: 'file.tsx',
+        code: `import { Memoize } from '@blumintinc/typescript-memoize';
+
+export class Widget {
+  #view() {
+    return <div />;
+  }
+}`,
+      },
+      {
+        // The exemptions that precede the report are unaffected: staying silent
+        // must not turn a non-violation into one.
+        name: 'a private-named method returning no JSX stays silent',
+        filename: 'file.tsx',
+        code: `export class Widget {
+  #total() {
+    return 1 + 2;
+  }
+}`,
+      },
+      {
+        name: 'a private-named async method stays silent',
+        filename: 'file.tsx',
+        code: `export class Widget {
+  async #view() {
+    return <div />;
+  }
+}`,
+      },
+      {
+        // The import carrier: a file whose only violations are unreportable must
+        // stay completely silent, and must not gain an orphan import.
+        name: 'a file whose only violations are private-named members stays silent',
+        filename: 'file.tsx',
+        code: `export class Widget {
+  #view() {
+    return <div />;
+  }
+
+  get #other() {
+    return <span />;
+  }
+}`,
+      },
+      {
+        name: 'a private-named member beside an already-decorated public getter stays silent',
+        filename: 'file.tsx',
+        code: `import { Memoize } from '@blumintinc/typescript-memoize';
+
+export class Widget {
+  #view() {
+    return <div />;
+  }
+
+  @Memoize()
+  get other() {
+    return <span />;
+  }
+}`,
+      },
+      {
+        // No violation survives to carry an import, so the directive prologue
+        // must be left exactly as written.
+        name: "a private-named member under a 'use client' directive stays silent",
+        filename: 'file.tsx',
+        code: `'use client';
+export class Widget { #view() { return <div />; } }`,
+      },
+      {
+        // A private-named FIELD beside a private-named method: the field is a
+        // `PropertyDefinition` the visitor never sees, and the method is carved
+        // out by its own name.
+        name: 'a private-named method reading a private-named field stays silent',
+        filename: 'file.tsx',
+        code: `export class Widget {
+  #cache = 1;
+
+  #view() {
+    return <div>{this.#cache}</div>;
+  }
+}`,
+      },
+    ],
+    invalid: [
+      // ------------------------------------------------------------------
+      // The contrast the carve-out is about: privacy expressed as a MODIFIER is
+      // a legal decorator position, so every one of these keeps reporting and
+      // fixing.
+      // ------------------------------------------------------------------
+      {
+        name: 'a private-modifier getter still reports and fixes',
+        filename: 'file.tsx',
+        code: `export class Widget {
+  private get view() {
+    return <div />;
+  }
+}`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' as const }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Widget {
+  @Memoize()
+  private get view() {
+    return <div />;
+  }
+}`,
+      },
+      {
+        name: 'a private-modifier method still reports and fixes',
+        filename: 'file.tsx',
+        code: `export class Widget {
+  private render() {
+    return <div />;
+  }
+}`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' as const }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Widget {
+  @Memoize()
+  private render() {
+    return <div />;
+  }
+}`,
+      },
+      {
+        name: 'a protected getter still reports and fixes',
+        filename: 'file.tsx',
+        code: `export class Widget {
+  protected get view() {
+    return <div />;
+  }
+}`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' as const }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Widget {
+  @Memoize()
+  protected get view() {
+    return <div />;
+  }
+}`,
+      },
+      {
+        name: 'a public getter still reports and fixes',
+        filename: 'file.tsx',
+        code: `export class Widget {
+  public get view() {
+    return <div />;
+  }
+}`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' as const }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Widget {
+  @Memoize()
+  public get view() {
+    return <div />;
+  }
+}`,
+      },
+      {
+        name: 'a getter with no accessibility modifier still reports and fixes',
+        filename: 'file.tsx',
+        code: `export class Widget {
+  get view() {
+    return <div />;
+  }
+}`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' as const }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Widget {
+  @Memoize()
+  get view() {
+    return <div />;
+  }
+}`,
+      },
+      {
+        // The #1951 spelling of the same contrast: the modifier form takes the
+        // decorator inline on a shared line, where the private-named form is
+        // silent.
+        name: 'a single-line private-modifier getter still fixes inline',
+        filename: 'file.tsx',
+        code: `export class Widget { private get view() { return <div />; } }`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' as const }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Widget { @Memoize() private get view() { return <div />; } }`,
+      },
+      {
+        // The carve-out reads the key's NODE TYPE, not a `#` in its text: a
+        // string-literal key spelled `'#view'` is an ordinary member name and a
+        // legal decorator position (measured clean against tsc 5.0.3).
+        name: 'a string-literal key spelled like a private name still fixes',
+        filename: 'file.tsx',
+        code: `export class Widget {
+  '#view'() {
+    return <div />;
+  }
+}`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' as const }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Widget {
+  @Memoize()
+  '#view'() {
+    return <div />;
+  }
+}`,
+      },
+      {
+        name: 'a string-literal getter key spelled like a private name still fixes inline',
+        filename: 'file.tsx',
+        code: `export class Widget { get '#view'() { return <div />; } }`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' as const }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Widget { @Memoize() get '#view'() { return <div />; } }`,
+      },
+      {
+        // A private-named FIELD is a `PropertyDefinition`, which the visitor
+        // never sees; it must not exempt the member beside it.
+        name: 'a private-named field does not exempt the public getter beside it',
+        filename: 'file.tsx',
+        code: `export class Widget {
+  #cache = 1;
+
+  public get view() {
+    return <div>{this.#cache}</div>;
+  }
+}`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' as const }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Widget {
+  #cache = 1;
+
+  @Memoize()
+  public get view() {
+    return <div>{this.#cache}</div>;
+  }
+}`,
+      },
+      // ------------------------------------------------------------------
+      // The import carrier: a private-named member never reports, so it can
+      // never claim the file's single `import { Memoize }`. Both orders, since
+      // the carrier is claimed by whichever violation the traversal reaches
+      // first.
+      // ------------------------------------------------------------------
+      {
+        name: 'a private-named member before a public one passes the import carrier on',
+        filename: 'file.tsx',
+        code: `export class Widget {
+  #view() {
+    return <div />;
+  }
+
+  public get other() {
+    return <span />;
+  }
+}`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' as const }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Widget {
+  #view() {
+    return <div />;
+  }
+
+  @Memoize()
+  public get other() {
+    return <span />;
+  }
+}`,
+      },
+      {
+        name: 'a private-named member after a public one leaves the carrier alone',
+        filename: 'file.tsx',
+        code: `export class Widget {
+  public get other() {
+    return <span />;
+  }
+
+  #view() {
+    return <div />;
+  }
+}`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' as const }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Widget {
+  @Memoize()
+  public get other() {
+    return <span />;
+  }
+
+  #view() {
+    return <div />;
+  }
+}`,
+      },
+      {
+        name: 'two private-named members leave a single import to the one public member',
+        filename: 'file.tsx',
+        code: `export class Widget {
+  #view() {
+    return <div />;
+  }
+
+  get #other() {
+    return <span />;
+  }
+
+  public render() {
+    return <section />;
+  }
+}`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' as const }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Widget {
+  #view() {
+    return <div />;
+  }
+
+  get #other() {
+    return <span />;
+  }
+
+  @Memoize()
+  public render() {
+    return <section />;
+  }
+}`,
+      },
+      {
+        name: 'a private-named member in one class leaves the import to another class',
+        filename: 'file.tsx',
+        code: `export class Widget {
+  #view() {
+    return <div />;
+  }
+}
+
+export class Panel {
+  public get view() {
+    return <span />;
+  }
+}`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' as const }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Widget {
+  #view() {
+    return <div />;
+  }
+}
+
+export class Panel {
+  @Memoize()
+  public get view() {
+    return <span />;
+  }
+}`,
+      },
+      {
+        // A private-named member sharing a line with a reportable one: only the
+        // reportable member's own anchor is used, so the silent neighbour's text
+        // is untouched.
+        name: 'a public member sharing a line with a private-named one is decorated in place',
+        filename: 'file.tsx',
+        code: `export class Widget { #view() { return <div />; } render() { return <span />; } }`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' as const }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Widget { #view() { return <div />; } @Memoize() render() { return <span />; } }`,
+      },
+      {
+        // The mirror of the #1950 nesting row: a private-named method in the
+        // outer class stays silent while the inner declaration's public member
+        // reports.
+        name: 'a class declared inside a private-named method still fixes',
+        filename: 'file.tsx',
+        code: `export class Outer {
+  #build() {
+    class Widget {
+      public get view() {
+        return <div />;
+      }
+    }
+    return Widget;
+  }
+}`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' as const }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Outer {
+  #build() {
+    class Widget {
+      @Memoize()
+      public get view() {
+        return <div />;
+      }
+    }
+    return Widget;
+  }
+}`,
+      },
+    ],
+  },
+);
+
+// Issue #1955: `RuleTester` applies a single fix pass and never shows the file
+// `eslint --fix` writes. These cases run the real multi-pass fixer and assert
+// the invariants the bug violated: a private-named member survives every pass
+// undecorated, and the file it sits in gains an `import { Memoize }` only when
+// some other violation actually takes the decorator.
+describe('require-memoize-jsx-returners: private-named members under --fix (issue #1955)', () => {
+  const RULE_ID = '@blumintinc/blumint/require-memoize-jsx-returners';
+  const FILENAME = 'Widget.tsx';
+
+  const createLinter = () => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      RULE_ID,
+      requireMemoizeJsxReturners as unknown as Rule.RuleModule,
+    );
+    return linter;
+  };
+
+  const LINT_CONFIG = {
+    parser: '@typescript-eslint/parser',
+    parserOptions: {
+      ecmaVersion: 2022 as const,
+      sourceType: 'module' as const,
+      ecmaFeatures: { jsx: true },
+    },
+    rules: { [RULE_ID]: 'error' as const },
+  };
+
+  const lint = (code: string) =>
+    createLinter().verifyAndFix(code, LINT_CONFIG, FILENAME).output;
+
+  const lintMessages = (code: string) =>
+    createLinter().verify(code, LINT_CONFIG, FILENAME);
+
+  const PRIVATE_REPRO = `export class Widget {
+  #view() {
+    return <div />;
+  }
+}
+`;
+
+  const MODIFIER_CONTROL = `export class Widget {
+  private get view() {
+    return <div />;
+  }
+}
+`;
+
+  const importCount = (output: string) =>
+    output.match(
+      /import \{ Memoize \} from '@blumintinc\/typescript-memoize';/g,
+    )?.length ?? 0;
+
+  it('leaves a private-named method untouched across every pass', () => {
+    const output = lint(PRIVATE_REPRO);
+
+    expect(output).toBe(PRIVATE_REPRO);
+    expect(output).not.toContain('Memoize');
+  });
+
+  it('leaves a private-named getter untouched across every pass', () => {
+    const code = `export class Widget {
+  get #view() {
+    return <div />;
+  }
+}
+`;
+
+    expect(lint(code)).toBe(code);
+    expect(lint(code)).not.toContain('Memoize');
+  });
+
+  it('withholds the report as well as the fix', () => {
+    expect(lintMessages(PRIVATE_REPRO)).toHaveLength(0);
+
+    // The control proves the silence is the carve-out and not a dead fixture:
+    // the same member behind the `private` MODIFIER reports, with a fix
+    // attached, and that spelling compiles.
+    const declared = lintMessages(MODIFIER_CONTROL);
+    expect(declared).toHaveLength(1);
+    expect(declared[0].ruleId).toBe(RULE_ID);
+    expect(declared[0].fix).toBeDefined();
+  });
+
+  it('adds no import when every violation is private-named', () => {
+    const output = lint(`export class Widget {
+  #view() {
+    return <div />;
+  }
+
+  get #other() {
+    return <span />;
+  }
+}
+`);
+
+    expect(output).not.toContain('@blumintinc/typescript-memoize');
+    expect(output).not.toContain('@Memoize');
+  });
+
+  it('hands the import carrier to the public member when the private-named one comes first', () => {
+    const output = lint(`export class Widget {
+  #view() {
+    return <div />;
+  }
+
+  public get other() {
+    return <span />;
+  }
+}
+`);
+
+    expect(importCount(output)).toBe(1);
+    expect(output.match(/@Memoize\(\)/g)).toHaveLength(1);
+    expect(output).toContain(`  @Memoize()
+  public get other() {`);
+    // The decorator landed on the public member, never on the private-named
+    // one.
+    expect(output).toContain(`  #view() {
+    return <div />;
+  }`);
+  });
+
+  it('hands the import carrier to the public member when the public one comes first', () => {
+    const output = lint(`export class Widget {
+  public get other() {
+    return <span />;
+  }
+
+  #view() {
+    return <div />;
+  }
+}
+`);
+
+    expect(importCount(output)).toBe(1);
+    expect(output.match(/@Memoize\(\)/g)).toHaveLength(1);
+    expect(output).toContain(`  #view() {
+    return <div />;
+  }`);
+  });
+
+  it('emits exactly one import with two private-named members and one public member', () => {
+    const output = lint(`export class Widget {
+  #view() {
+    return <div />;
+  }
+
+  get #other() {
+    return <span />;
+  }
+
+  public render() {
+    return <section />;
+  }
+}
+`);
+
+    expect(importCount(output)).toBe(1);
+    expect(output.match(/@Memoize\(\)/g)).toHaveLength(1);
+    expect(output).toContain(`  @Memoize()
+  public render() {`);
+  });
+
+  it('never emits a decorator without its import', () => {
+    const output = lint(`export class Widget {
+  #view() {
+    return <div />;
+  }
+
+  public get other() {
+    return <span />;
+  }
+}
+`);
+
+    if (/@Memoize\(\)/.test(output)) {
+      expect(output).toContain(
+        "import { Memoize } from '@blumintinc/typescript-memoize';",
+      );
+    }
+  });
+
+  it('converges on a mixed file, leaving the private-named member bare', () => {
+    const code = `export class Widget {
+  #view() {
+    return <div />;
+  }
+
+  public get other() {
+    return <span />;
+  }
+}
+`;
+    const first = createLinter().verifyAndFix(code, LINT_CONFIG, FILENAME);
+
+    expect(first.fixed).toBe(true);
+    // Re-fixing the output is the convergence detector: comparing strings would
+    // call an even-length cycle converged.
+    expect(
+      createLinter().verifyAndFix(first.output, LINT_CONFIG, FILENAME).fixed,
+    ).toBe(false);
+    expect(lintMessages(first.output)).toHaveLength(0);
+    expect(first.output.match(/@Memoize\(\)/g)).toHaveLength(1);
+  });
+
+  it('converges on a single-line mixed class, leaving the private-named member bare', () => {
+    // The #1951 shape: the surviving member takes the decorator inline, and the
+    // private-named neighbour sharing its line keeps its text byte for byte.
+    const code = `export class Widget { #view() { return <div />; } render() { return <span />; } }
+`;
+    const first = createLinter().verifyAndFix(code, LINT_CONFIG, FILENAME);
+
+    expect(first.fixed).toBe(true);
+    expect(first.output).toBe(
+      `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Widget { #view() { return <div />; } @Memoize() render() { return <span />; } }
+`,
+    );
+    expect(
+      createLinter().verifyAndFix(first.output, LINT_CONFIG, FILENAME).fixed,
+    ).toBe(false);
+  });
+
+  it('would have caught the bug: the pre-fix output decorates the private-named member', () => {
+    // Exactly what the rule wrote before the carve-out. It is a fixpoint — the
+    // rule reports nothing on it now — so only a text assertion catches it,
+    // which is what makes the silence assertions above non-vacuous. The compile
+    // guard below is what proves this text does not build.
+    const preFixOutput = `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Widget {
+  @Memoize()
+  #view() {
+    return <div />;
+  }
+}
+`;
+
+    expect(lint(PRIVATE_REPRO)).not.toBe(preFixOutput);
+    expect(lint(PRIVATE_REPRO)).not.toContain('@Memoize()');
+  });
+});
+
+// Issue #1955: the private-name carve-out is a claim about the COMPILER, and no
+// ESLint-level assertion can check it. `RuleTester` never type-checks, and the
+// private-named cases above are `valid`, so they produce no fix pair for
+// `fixer-type-safety` to compile — the whole suite would stay green with the
+// carve-out removed and `--fix` emitting TS1206 again. These cases compile each
+// shape under a real `ts.Program` with `experimentalDecorators: true` and assert
+// differentially: the fixed text must carry no diagnostic its input did not
+// already carry. An absolute count would only measure how many identifiers a JSX
+// fragment leaves undefined.
+describe('require-memoize-jsx-returners: `--fix` leaves every member name compiling (issue #1955)', () => {
+  const RULE_ID = '@blumintinc/blumint/require-memoize-jsx-returners';
+  const FILENAME = '/memoize/Widget.tsx';
+  const MEMOIZE_STUB = '/memoize/typescript-memoize.d.ts';
+  const MEMOIZE_STUB_TEXT =
+    'export declare function Memoize(...args: unknown[]): MethodDecorator;\n';
+
+  const createLinter = () => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      RULE_ID,
+      requireMemoizeJsxReturners as unknown as Rule.RuleModule,
+    );
+    return linter;
+  };
+
+  const LINT_CONFIG = {
+    parser: '@typescript-eslint/parser',
+    parserOptions: {
+      ecmaVersion: 2022 as const,
+      sourceType: 'module' as const,
+      ecmaFeatures: { jsx: true },
+    },
+    rules: { [RULE_ID]: 'error' as const },
+  };
+
+  const fix = (code: string) =>
+    createLinter().verifyAndFix(code, LINT_CONFIG, FILENAME);
+
+  /**
+   * `noLib` keeps each program to two source files, which is what makes a
+   * per-shape compile affordable here; the lib and React types are absent from
+   * the input and the output alike, so the diagnostics they cost (TS2304 for the
+   * JSX factory, TS7026 for the intrinsic element) cancel in the differential.
+   * The memoize package resolves to an in-memory stub so that the import the
+   * fixer injects cannot manufacture a TS2307 the input lacked and mask the
+   * diagnostic actually under test.
+   */
+  const compilerOptions: ts.CompilerOptions = {
+    experimentalDecorators: true,
+    strict: true,
+    target: ts.ScriptTarget.ES2022,
+    jsx: ts.JsxEmit.React,
+    noEmit: true,
+    noLib: true,
+    types: [],
+  };
+
+  const diagnosticsOf = (source: string): string[] => {
+    const files = new Map<string, string>([
+      [FILENAME, source],
+      [MEMOIZE_STUB, MEMOIZE_STUB_TEXT],
+    ]);
+    const sourceFiles = new Map(
+      [...files].map(([name, text]) => [
+        name,
+        ts.createSourceFile(
+          name,
+          text,
+          ts.ScriptTarget.ES2022,
+          true,
+          // A `.tsx` source parsed as `.ts` makes every fixture a syntax error,
+          // which would read as "no new diagnostic" on both sides.
+          name.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+        ),
+      ]),
+    );
+    const host: ts.CompilerHost = {
+      getSourceFile: (name) => sourceFiles.get(name),
+      getDefaultLibFileName: () => 'lib.d.ts',
+      writeFile: () => undefined,
+      getCurrentDirectory: () => '/memoize',
+      getCanonicalFileName: (name) => name,
+      useCaseSensitiveFileNames: () => true,
+      getNewLine: () => '\n',
+      fileExists: (name) => files.has(name),
+      readFile: (name) => files.get(name),
+      resolveModuleNames: (moduleNames) =>
+        moduleNames.map((name) =>
+          name === '@blumintinc/typescript-memoize' ||
+          name === 'typescript-memoize'
+            ? {
+                resolvedFileName: MEMOIZE_STUB,
+                extension: ts.Extension.Dts,
+                isExternalLibraryImport: true,
+              }
+            : undefined,
+        ),
+    };
+    const program = ts.createProgram([FILENAME], compilerOptions, host);
+    const file = program.getSourceFile(FILENAME);
+    if (!file) {
+      throw new Error('the source under test is missing from the program');
+    }
+    // TS1206 is a grammar check the CHECKER runs, so it reaches neither
+    // `getSyntacticDiagnostics` nor a `transpileModule` round trip; reading both
+    // buckets is what makes it visible.
+    return [
+      ...program.getSyntacticDiagnostics(file),
+      ...program.getSemanticDiagnostics(file),
+    ].map((diagnostic) => `TS${diagnostic.code}`);
+  };
+
+  const introducedBy = (before: string, after: string): string[] => {
+    const carried = diagnosticsOf(before);
+    return diagnosticsOf(after).filter((code, index, all) => {
+      const seenBefore = carried.filter((entry) => entry === code).length;
+      const seenHere = all.slice(0, index + 1).filter((e) => e === code).length;
+      return seenHere > seenBefore;
+    });
+  };
+
+  it('proves the premise: a decorator on a private-named member is TS1206', () => {
+    // The harness itself needs a control, or a compile step that silently saw
+    // nothing would certify every shape below as clean. Written by hand, the
+    // very edit the fixer used to make is rejected — while the same decorator on
+    // the same member behind the `private` MODIFIER is accepted, which is the
+    // whole distinction the carve-out draws.
+    expect(
+      diagnosticsOf(`import { Memoize } from '@blumintinc/typescript-memoize';
+export class Widget {
+  @Memoize()
+  #view() { return <div />; }
+}
+`),
+    ).toContain('TS1206');
+
+    expect(
+      diagnosticsOf(`import { Memoize } from '@blumintinc/typescript-memoize';
+export class Widget {
+  @Memoize()
+  private get view() { return <div />; }
+}
+`),
+    ).not.toContain('TS1206');
+
+    // The accessor spelling this rule also governs is rejected too.
+    expect(
+      diagnosticsOf(`import { Memoize } from '@blumintinc/typescript-memoize';
+export class Widget {
+  @Memoize()
+  get #view() { return <div />; }
+}
+`),
+    ).toContain('TS1206');
+
+    // The inline spelling is rejected too, so no placement of the decorator
+    // could have made the report writable.
+    expect(
+      diagnosticsOf(`import { Memoize } from '@blumintinc/typescript-memoize';
+export class Widget { @Memoize() #view() { return <div />; } }
+`),
+    ).toContain('TS1206');
+
+    // A key that merely CONTAINS a `#` is an ordinary member name, which is why
+    // the carve-out reads the key's node type rather than its text.
+    expect(
+      diagnosticsOf(`import { Memoize } from '@blumintinc/typescript-memoize';
+export class Widget {
+  @Memoize()
+  '#view'() { return <div />; }
+}
+`),
+    ).not.toContain('TS1206');
+  });
+
+  // Spelled out rather than composed from a shared body: a mismatched brace
+  // would make the fixture a parse error, and an unparseable fixture reports
+  // nothing — which is indistinguishable from the silence under test. The
+  // `verify` assertion below counts the parse error too, so this cannot pass
+  // vacuously.
+  const PRIVATE_NAMES: [string, string][] = [
+    [
+      'a method on its own line',
+      'export class Widget {\n  #view() {\n    return <div />;\n  }\n}\n',
+    ],
+    [
+      'a getter on its own line',
+      'export class Widget {\n  get #view() {\n    return <div />;\n  }\n}\n',
+    ],
+    [
+      'a method on a single line',
+      'export class Widget { #view() { return <div />; } }\n',
+    ],
+    [
+      'a getter on a single line',
+      'export class Widget { get #view() { return <div />; } }\n',
+    ],
+    [
+      'a method following a property on one line',
+      'export class Widget {\n  private locked = 1; #view() { return <div />; }\n}\n',
+    ],
+    [
+      'a method returning a JSX factory',
+      'export class Widget {\n  #Component() {\n    return () => <div />;\n  }\n}\n',
+    ],
+    [
+      'a getter returning a JSX factory',
+      'export class Widget {\n  get #Component() {\n    return () => <div />;\n  }\n}\n',
+    ],
+    [
+      'a method beside a private-named field',
+      'export class Widget {\n  #cache = 1;\n  #view() {\n    return <div>{this.#cache}</div>;\n  }\n}\n',
+    ],
+    [
+      'a method in a default-exported class',
+      'export default class {\n  #view() {\n    return <div />;\n  }\n}\n',
+    ],
+    [
+      'a method in a class nested in a function',
+      'export function build() {\n  class Widget {\n    #view() {\n      return <div />;\n    }\n  }\n  return Widget;\n}\n',
+    ],
+    [
+      'a method in an abstract class',
+      'export abstract class Widget {\n  #view() {\n    return <div />;\n  }\n}\n',
+    ],
+  ];
+
+  it.each(PRIVATE_NAMES)(
+    'a private-named member — %s — is silent and left byte-for-byte alone',
+    (_name, code) => {
+      expect(createLinter().verify(code, LINT_CONFIG, FILENAME)).toHaveLength(
+        0,
+      );
+
+      const first = fix(code);
+
+      expect(first.fixed).toBe(false);
+      expect(first.output).toBe(code);
+      expect(introducedBy(code, first.output)).toEqual([]);
+    },
+  );
+
+  const DECORATABLE_NAMES: [string, string][] = [
+    [
+      'a private-modifier getter',
+      'export class Widget {\n  private get view() {\n    return <div />;\n  }\n}\n',
+    ],
+    [
+      'a protected getter',
+      'export class Widget {\n  protected get view() {\n    return <div />;\n  }\n}\n',
+    ],
+    [
+      'a public getter',
+      'export class Widget {\n  public get view() {\n    return <div />;\n  }\n}\n',
+    ],
+    [
+      'a private-modifier method',
+      'export class Widget {\n  private render() {\n    return <div />;\n  }\n}\n',
+    ],
+    [
+      'a single-line private-modifier getter',
+      'export class Widget { private get view() { return <div />; } }\n',
+    ],
+    [
+      'a string-literal key spelled like a private name',
+      "export class Widget {\n  '#view'() {\n    return <div />;\n  }\n}\n",
+    ],
+    [
+      'a public member beside a private-named one',
+      'export class Widget {\n  #view() {\n    return <div />;\n  }\n  public get other() {\n    return <span />;\n  }\n}\n',
+    ],
+    [
+      'a public member sharing a line with a private-named one',
+      'export class Widget { #view() { return <div />; } render() { return <span />; } }\n',
+    ],
+  ];
+
+  it.each(DECORATABLE_NAMES)(
+    '%s is still decorated, converges, and still compiles',
+    (_name, code) => {
+      const first = fix(code);
+
+      expect(first.fixed).toBe(true);
+      expect(first.output).toContain('@Memoize()');
+      // Re-running the fixer on its own output is the convergence detector:
+      // comparing the two strings would call an even-length cycle converged.
+      expect(fix(first.output).fixed).toBe(false);
+      expect(introducedBy(code, first.output)).toEqual([]);
+    },
+  );
+
+  it('would have caught the bug: the pre-fix edit introduces TS1206', () => {
+    // The mutation this guard exists to detect, applied by hand: had the rule
+    // kept decorating a private-named member, `introducedBy` would have returned
+    // exactly this, so the assertions above are not vacuous.
+    const before = `export class Widget {
+  #view() {
+    return <div />;
+  }
+}
+`;
+    const after = `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Widget {
+  @Memoize()
+  #view() {
+    return <div />;
+  }
+}
+`;
+
+    expect(introducedBy(before, after)).toEqual(['TS1206']);
+  });
+});
