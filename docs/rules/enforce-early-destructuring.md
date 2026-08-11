@@ -127,6 +127,30 @@ useEffect(() => {
 }, [first, second]);
 ```
 
+### Where the hoisted declaration is written
+
+The declaration is placed immediately ahead of the **hook call itself**, not at
+the start of the line the call happens to sit on. The two coincide whenever the
+call opens its own line, and there it is written on a line of its own at the
+call's indentation. When the call shares its line — a component body collapsed
+onto one line, or a statement declared ahead of it — the declaration is written
+inline beside it, which keeps it inside the function whose parameters it reads:
+
+```typescript
+const MyComponent = ({ value }) => {
+  const { current } = value ?? {};
+  useLayoutEffect(() => {
+    doSomething(current);
+  }, [current]);
+};
+
+const Compact = ({ value }) => { const { current } = value ?? {}; useLayoutEffect(() => { doSomething(current); }, [current]); };
+```
+
+Anchoring to the line instead would hoist the declaration past the enclosing
+function on the collapsed spelling, leaving it referencing a parameter that is
+not in scope there.
+
 ### When to disable
 
 - Destructuring relies on a type-narrowed branch and cannot be safely hoisted.
