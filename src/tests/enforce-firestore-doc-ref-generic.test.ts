@@ -1992,6 +1992,220 @@ ruleTesterTs.run(
         }
       `,
       },
+      /**
+       * A member declared with the ECMA `#` spelling holds the same schema
+       * evidence as the `private` spelling of the same declaration, and the two
+       * are mutually exclusive: `private #foo` is TS18010, so an author on the
+       * `#` side cannot opt back into resolution by adding the modifier. Each
+       * case below is the `private` fixture above respelled, and must stay
+       * silent for the same reason (#1936).
+       */
+      {
+        code: `
+        interface User {
+          name: string;
+        }
+        class UserService {
+          #userRef: DocumentReference<User>;
+          constructor(id: string) {
+            this.#userRef = db.collection('users').doc(id);
+          }
+        }
+      `,
+      },
+      // Isolation control: renaming the member while keeping `private` leaves
+      // the verdict unchanged, so the delta above belongs to the key node type
+      // rather than to the member's name.
+      {
+        code: `
+        interface User {
+          name: string;
+        }
+        class UserService {
+          private zzzRef: DocumentReference<User>;
+          constructor(id: string) {
+            this.zzzRef = db.collection('users').doc(id);
+          }
+        }
+      `,
+      },
+      {
+        code: `
+        interface User {
+          name: string;
+        }
+        class UserService {
+          #users: CollectionReference<User> = db.collection<User>('users');
+          getUser(id: string) {
+            return this.#users.doc(id);
+          }
+        }
+      `,
+      },
+      // The rule's own documented "Correct" example, respelled with `#`.
+      {
+        code: `
+        interface Settings {
+          theme: string;
+        }
+        class ConfigService {
+          #getSettingsCollection() {
+            return db.collection<Settings>('settings');
+          }
+          getSettingsDoc(id: string) {
+            return this.#getSettingsCollection().doc(id);
+          }
+        }
+      `,
+      },
+      {
+        code: `
+        interface Settings {
+          theme: string;
+        }
+        class ConfigService {
+          #getSettingsCollection(): CollectionReference<Settings> {
+            return db.collection<Settings>('settings');
+          }
+          getSettingsDoc(id: string) {
+            return this.#getSettingsCollection().doc(id);
+          }
+        }
+      `,
+      },
+      {
+        code: `
+        interface Settings {
+          theme: string;
+        }
+        class ConfigService {
+          get #settings() {
+            return db.collection<Settings>('settings');
+          }
+          getSettingsDoc(id: string) {
+            return this.#settings.doc(id);
+          }
+        }
+      `,
+      },
+      {
+        code: `
+        interface Settings {
+          theme: string;
+        }
+        class ConfigService {
+          #settings = () => db.collection<Settings>('settings');
+          getSettingsDoc(id: string) {
+            return this.#settings().doc(id);
+          }
+        }
+      `,
+      },
+      {
+        code: `
+        interface Settings {
+          theme: string;
+        }
+        class ConfigService {
+          static #settings() {
+            return db.collection<Settings>('settings');
+          }
+          static getSettingsDoc(id: string) {
+            return this.#settings().doc(id);
+          }
+        }
+      `,
+      },
+      {
+        code: `
+        interface Task {
+          id: string;
+        }
+        class TaskService {
+          #collections: { tasks: CollectionReference<Task> } = {
+            tasks: db.collection<Task>('tasks'),
+          };
+          getTask(id: string) {
+            return this.#collections.tasks.doc(id);
+          }
+        }
+      `,
+      },
+      {
+        code: `
+        interface Doc {
+          value: string;
+        }
+        class DocService {
+          #getInner() {
+            return db.collection<Doc>('things');
+          }
+          #getOuter() {
+            return this.#getInner();
+          }
+          getDoc(id: string) {
+            return this.#getOuter().doc(id);
+          }
+        }
+      `,
+      },
+      /**
+       * `#settings` and a sibling public `settings` are two distinct members,
+       * so resolution has to agree on the spelling as well as the bare word.
+       * Matching on the name alone would answer for the private member using
+       * the public member's evidence — here the public sibling carries none,
+       * and a name-only lookup finds it first and reports.
+       */
+      {
+        code: `
+        interface Settings {
+          theme: string;
+        }
+        class ConfigService {
+          settings;
+          #settings: CollectionReference<Settings> = db.collection<Settings>('settings');
+          getSettingsDoc(id: string) {
+            return this.#settings.doc(id);
+          }
+        }
+      `,
+      },
+      {
+        code: `
+        interface Settings {
+          theme: string;
+        }
+        class ConfigService {
+          getCollection() {
+            return externalCollection;
+          }
+          #getCollection() {
+            return db.collection<Settings>('settings');
+          }
+          getSettingsDoc(id: string) {
+            return this.#getCollection().doc(id);
+          }
+        }
+      `,
+      },
+      {
+        code: `
+        interface Settings {
+          theme: string;
+        }
+        class ConfigService {
+          get collection() {
+            return externalCollection;
+          }
+          get #collection() {
+            return db.collection<Settings>('settings');
+          }
+          getSettingsDoc(id: string) {
+            return this.#collection.doc(id);
+          }
+        }
+      `,
+      },
     ],
     invalid: [
       /**
@@ -3283,6 +3497,172 @@ ruleTesterTs.run(
         const userDoc = usersCollection.doc('123');
       `,
         errors: [invalidGenericError('CollectionReference')],
+      },
+      /**
+       * Resolving the ECMA `#` spelling (#1936) widens which declarations are
+       * read, not which references are excused: a `#` member that states no
+       * schema keeps reporting exactly as its `private` counterpart does.
+       */
+      {
+        code: `
+        class UserService {
+          #userRef;
+          constructor(id: string) {
+            this.#userRef = db.collection('users').doc(id);
+          }
+        }
+      `,
+        errors: [missingGenericError('DocumentReference')],
+      },
+      {
+        code: `
+        class UserService {
+          #users: CollectionReference = db.collection('users');
+          getUser(id: string) {
+            return this.#users.doc(id);
+          }
+        }
+      `,
+        errors: [
+          missingGenericError('CollectionReference'),
+          missingGenericError('DocumentReference'),
+        ],
+      },
+      {
+        code: `
+        class ConfigService {
+          #getSettingsCollection() {
+            return db.collection('settings');
+          }
+          getSettingsDoc(id: string) {
+            return this.#getSettingsCollection().doc(id);
+          }
+        }
+      `,
+        errors: [
+          missingGenericError('CollectionReference'),
+          missingGenericError('DocumentReference'),
+        ],
+      },
+      {
+        code: `
+        class ConfigService {
+          get #settings() {
+            return db.collection('settings');
+          }
+          getSettingsDoc(id: string) {
+            return this.#settings.doc(id);
+          }
+        }
+      `,
+        errors: [
+          missingGenericError('CollectionReference'),
+          missingGenericError('DocumentReference'),
+        ],
+      },
+      /**
+       * An annotation stating `any` is reported once, on the annotation that
+       * states it. Reading the `#` declaration is what keeps the derived
+       * document reference from drawing a second, contradictory report saying
+       * the same generic is missing.
+       */
+      {
+        code: `
+        class Service {
+          #ref: DocumentReference<any>;
+          constructor(id: string) {
+            this.#ref = db.collection('users').doc(id);
+          }
+        }
+      `,
+        errors: [invalidGenericError('DocumentReference')],
+      },
+      /**
+       * The mirror of the sibling-spelling cases in `valid`: a typed public
+       * member is not evidence about the `#` member reached at the call site,
+       * so the document reference still reports. A name-only lookup would find
+       * the public sibling and silence the second error here.
+       */
+      {
+        code: `
+        interface Settings {
+          theme: string;
+        }
+        class ConfigService {
+          settings: CollectionReference<Settings> = db.collection<Settings>('settings');
+          #settings = db.collection('settings');
+          getSettingsDoc(id: string) {
+            return this.#settings.doc(id);
+          }
+        }
+      `,
+        errors: [
+          missingGenericError('CollectionReference'),
+          missingGenericError('DocumentReference'),
+        ],
+      },
+      {
+        code: `
+        interface Settings {
+          theme: string;
+        }
+        class ConfigService {
+          getCollection() {
+            return db.collection<Settings>('settings');
+          }
+          #getCollection() {
+            return db.collection('settings');
+          }
+          getSettingsDoc(id: string) {
+            return this.#getCollection().doc(id);
+          }
+        }
+      `,
+        errors: [
+          missingGenericError('CollectionReference'),
+          missingGenericError('DocumentReference'),
+        ],
+      },
+      {
+        code: `
+        interface Settings {
+          theme: string;
+        }
+        class ConfigService {
+          get collection() {
+            return db.collection<Settings>('settings');
+          }
+          get #collection() {
+            return db.collection('settings');
+          }
+          getSettingsDoc(id: string) {
+            return this.#collection.doc(id);
+          }
+        }
+      `,
+        errors: [
+          missingGenericError('CollectionReference'),
+          missingGenericError('DocumentReference'),
+        ],
+      },
+      {
+        code: `
+        class DocService {
+          #getInner() {
+            return db.collection('things');
+          }
+          #getOuter() {
+            return this.#getInner();
+          }
+          getDoc(id: string) {
+            return this.#getOuter().doc(id);
+          }
+        }
+      `,
+        errors: [
+          missingGenericError('CollectionReference'),
+          missingGenericError('DocumentReference'),
+        ],
       },
     ],
   },

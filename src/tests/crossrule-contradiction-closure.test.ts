@@ -229,13 +229,13 @@ const KNOWN_DIVERGENT: Record<string, Exemption> = {
   },
   'enforce-firestore-doc-ref-generic::no-explicit-return-type': {
     reason:
-      'INCIDENTAL: the fixtures annotate `DocumentReference<T>` returns to display the generic under test; the annotation is inferable, and deleting it leaves the generic check unchanged. 6 -> 25 with the #1909 fixtures, which pin the SAME annotated shapes in the spellings the rule used to miss — arrow (block, concise, optional-chained and awaited), function expression, class method, getter, class arrow property, object-literal method and property, an IIFE, and a nested-`return` pair. Every one is a respelling of an already-exempted declaration, so the sibling objects to the same inferable annotation it always did.',
-    cases: { noExplicitReturnTypeInferable: 25 },
+      'INCIDENTAL: the fixtures annotate `DocumentReference<T>` returns to display the generic under test; the annotation is inferable, and deleting it leaves the generic check unchanged. 6 -> 25 with the #1909 fixtures, which pin the SAME annotated shapes in the spellings the rule used to miss — arrow (block, concise, optional-chained and awaited), function expression, class method, getter, class arrow property, object-literal method and property, an IIFE, and a nested-`return` pair. 25 -> 26 with #1936, which adds one ECMA-private method annotated `#getSettingsCollection(): CollectionReference<Settings>`; the composed `--fix` strips that annotation and the call-site `db.collection<Settings>(...)` it wraps keeps the owner silent (measured). Every one is a respelling of an already-exempted declaration, so the sibling objects to the same inferable annotation it always did.',
+    cases: { noExplicitReturnTypeInferable: 26 },
   },
   'enforce-firestore-doc-ref-generic::prefer-type-over-interface': {
     reason:
-      'PIPELINE: the fixtures declare their models with `interface`; `--fix` converts all 96 to `type`, which the generic check reads identically. 77 -> 96 with the #1909 fixtures, whose models are the same plain `interface User { name: string }` declarations the existing 77 use.',
-    cases: { preferType: 96 },
+      'PIPELINE: the fixtures declare their models with `interface`; `--fix` converts all 109 to `type`, which the generic check reads identically. 77 -> 96 with the #1909 fixtures, whose models are the same plain `interface User { name: string }` declarations the existing 77 use. 96 -> 109 with the #1936 fixtures, which respell the member holding the schema as `#member` and leave the model declaration untouched — the same plain `interface`, converted and still silent under the owner on all 13 (measured).',
+    cases: { preferType: 109 },
   },
   'enforce-global-constants::react-memoize-literals': {
     reason:

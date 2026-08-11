@@ -13,6 +13,7 @@ This rule requires every Firestore `DocumentReference`, `CollectionReference`, a
 - An optional link anywhere in the receiver (`db?.collection<T>('x')`) is looked through. It changes the reference's nullability, not its schema: the type is `CollectionReference<T> | undefined`, still carrying `T`, so the derived `doc(...)` inherits a shape and needs no generic. The inverse holds too — `db?.collection('x')` supplies nothing and is reported exactly as `db.collection('x')` is.
 - Resolving a stored collection is deliberately shallow: only a `const` whose initializer is a `collection<T>(...)` call, whose annotation is `CollectionReference<T>`, or which asserts that type is followed, and only one hop. An alias of an alias, a `let`, a parameter, or an import cannot be proven typed, so `doc(...)` on those still requires its own generic.
 - A class member reached as `this.member` or `this.member()` is resolved through its return type annotation when it has one, and otherwise through the expression it returns. See [Where the schema evidence must live](#where-the-schema-evidence-must-live).
+- Both privacy spellings are resolved the same way. `this.#member` reads the schema its `#member` declaration states exactly as `this.member` reads `private member`'s, for a property, a method and a getter alike. The spelling still identifies the member, though: `#settings` and a sibling public `settings` are two different members that may hold different schemas, so each is answered from its own declaration.
 - A return type annotation states the schema whichever function spelling carries it — a declaration, a function expression, an arrow with a block body or with a concise one, a class method, a getter, or an object-literal member — and on every return path, not only a `return` written directly in the function body. What it does not cover is a reference the function never hands back: a reference built and stored inside an annotated function is described by nothing and is still reported.
 - Generics that use `any` or `{}` erase the schema and disable compile-time checks; nested `any`/`{}` are flagged when the rule can see them inline or via same-file types. See [How a named generic is resolved](#how-a-named-generic-is-resolved).
 - Receivers that trace back to `@firebase/rules-unit-testing` are exempt. See [Compat Firestore from `@firebase/rules-unit-testing`](#compat-firestore-from-firebaserules-unit-testing).
@@ -80,6 +81,37 @@ class ConfigService {
 
   getSettingsDoc(id: string) {
     return this.getSettingsCollection().doc(id);
+  }
+}
+```
+
+Which privacy spelling declares the member makes no difference to any of this. `#member` and `private member` express the same privacy and are mutually exclusive — `private #member` is a TypeScript error (TS18010) — so an author on the `#` side could not opt into resolution by adding the modifier even if that were the intent:
+
+```ts
+class ConfigService {
+  // Correct: read exactly as the `private getSettingsCollection()` above.
+  #getSettingsCollection() {
+    return db.collection<Settings>('settings');
+  }
+
+  getSettingsDoc(id: string) {
+    return this.#getSettingsCollection().doc(id);
+  }
+}
+```
+
+The spelling does identify the member, so a `#member` and a public `member` of the same name are never read for one another:
+
+```ts
+class ConfigService {
+  settings: CollectionReference<Settings> = db.collection<Settings>('settings');
+
+  // Reported: the typed public `settings` above says nothing about `#settings`,
+  // which states no schema of its own.
+  #settings = db.collection('settings');
+
+  getSettingsDoc(id: string) {
+    return this.#settings.doc(id);
   }
 }
 ```
@@ -248,6 +280,17 @@ const userWithBaseDoc: DocumentReference<UserWithBase> = db.doc('users/123');
 // A return annotation counts on an arrow exactly as it does on a declaration
 const getUserDoc = (id: string): DocumentReference<UserData> =>
   db.collection('users').doc(id);
+
+// An ECMA-private member states the schema exactly as a `private` one does
+class UserService {
+  #usersCollection() {
+    return db.collection<UserData>('users');
+  }
+
+  getUserDoc(id: string) {
+    return this.#usersCollection().doc(id);
+  }
+}
 ```
 
 ## When Not To Use It
