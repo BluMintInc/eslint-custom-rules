@@ -1,4 +1,5 @@
 import { Linter, Rule } from 'eslint';
+import * as ts from 'typescript';
 import { ruleTesterTs } from '../utils/ruleTester';
 import { enforceMemoizeAsync } from '../rules/enforce-memoize-async';
 import { noExplicitReturnType } from '../rules/no-explicit-return-type';
@@ -3417,6 +3418,22 @@ export class Loader { @memoize.Memoize() public async load() { return 1; } }`,
         code: `export const Loader = class Inner { public async load() { return 1; } };`,
       },
       {
+        // Withheld from this suite while it was written, because the rule still
+        // reported here and moving the anchor was not the remedy: the decorator
+        // is `TS1206: Decorators are not valid here.` on a private-named member
+        // wherever it is placed. #1954 supplies the remedy — silence — so the
+        // row belongs with the placement fixtures as a boundary the anchor must
+        // never reach, alongside the class-expression rows above.
+        name: 'a single-line private-named method stays silent',
+        code: `export class Loader { async #load() { return 1; } }`,
+      },
+      {
+        name: 'a private-named method sharing its line with a property stays silent',
+        code: `export class Loader {
+  private locked = 1; async #load() { return 1; }
+}`,
+      },
+      {
         // A static method is out of scope for the rule entirely, so no anchor
         // is ever computed for it.
         name: 'a single-line static method is not reported',
@@ -3480,20 +3497,15 @@ export class Loader { @Memoize() protected async load() { return 1; } }`,
         output: `import { Memoize } from '@blumintinc/typescript-memoize';
 export class Loader extends Base { @Memoize() override async load() { return 1; } }`,
       },
-      // A `#private`-keyed method is absent deliberately. Under
-      // `experimentalDecorators` — the decorator mode this plugin's `@Memoize()`
-      // is written for — TypeScript rejects a decorator on a private-named
-      // member with `TS1206: Decorators are not valid here.` (measured against
-      // the repo's tsc 5.0.3), and it does so for the own-line spelling exactly
-      // as for the inline one. So it is not the anchor that is wrong there but
-      // the report: the rule names a remedy the author cannot write on that
-      // member at all, the way it once did inside a class expression (#1952).
-      // That is a separate defect with a separate remedy — silence, a
-      // fix-less report, or a rename suggestion, decided across all three
-      // `@Memoize()`-emitting rules — and asserting it here would make this
-      // placement fix carry it. The string-literal and computed-key rows below
-      // cover what this issue is about, that the anchor is the member's first
-      // token rather than its key.
+      // A `#private`-keyed method has no row here because it is not decorated
+      // at all: #1954 withholds report and fix on a private-named member, whose
+      // decorator is `TS1206: Decorators are not valid here.` under
+      // `experimentalDecorators` in every placement. It sits in this suite's
+      // `valid` list, as the boundary the anchor must never reach. The
+      // string-literal and computed-key rows below carry what this issue is
+      // about — that the anchor is the member's first token rather than its key
+      // — and the string-literal one doubles as the proof that the carve-out
+      // reads the key's node type rather than a `#` in its text.
       {
         name: 'a string-literal key on one line is decorated ahead of its modifier',
         code: `export class Loader { public async 'load'() { return 1; } }`,
@@ -4274,5 +4286,1024 @@ export class Loader { public async load() { return 1; } }
     const refixed = fix(preFixOutput);
     expect(refixed.fixed).toBe(true);
     expect(refixed.output.match(/@Memoize\(\)/g)).toHaveLength(2);
+  });
+});
+
+// Issue #1954: under `experimentalDecorators` — the mode this plugin's
+// `@Memoize()` is written for — TypeScript rejects a decorator on a member with
+// a PRIVATE NAME: `TS1206: Decorators are not valid here.`, measured against the
+// repo's tsc 5.0.3, for the own-line spelling exactly as for the inline one. The
+// rule reported such a method and `--fix` wrote the decorator in, turning a
+// clean build into a broken one. Report and fix are both withheld, the way
+// `enforce-memoize-getters` withholds them (#1945): the message's only remedy,
+// "add @Memoize() above the method", is unwritable there, and a report naming an
+// edit its reader cannot make is worse than silence. Nothing is lost by it — a
+// `#private` member is unnameable outside its class, so an author who wants the
+// cache can reach it through the `private` modifier.
+//
+// The restriction is on the private NAME and not on privacy: `private async
+// load()` is a legal decorator position and keeps both report and fix. That
+// contrast is what the invalid rows pin.
+ruleTesterTs.run(
+  'enforce-memoize-async: private-named methods (issue #1954)',
+  enforceMemoizeAsync,
+  {
+    valid: [
+      {
+        name: 'a private-named method stays silent',
+        code: `
+export class Loader {
+  async #load() {
+    return 1;
+  }
+}
+`,
+      },
+      {
+        // Static members are out of scope before the name is read, so this row
+        // pins the silence rather than the carve-out — a later change that
+        // narrowed the static skip must not make a TS1206 shape reportable.
+        name: 'a static private-named method stays silent',
+        code: `
+export class Loader {
+  static async #load() {
+    return 1;
+  }
+}
+`,
+      },
+      {
+        name: 'a private-named method taking one parameter stays silent',
+        code: `
+export class Loader {
+  async #load(id: string) {
+    return id;
+  }
+}
+`,
+      },
+      {
+        name: 'a private-named method with two parameters stays silent',
+        code: `
+export class Loader {
+  async #load(collection: string, id: string) {
+    return [collection, id];
+  }
+}
+`,
+      },
+      {
+        name: 'a private-named method on a single-line class body stays silent',
+        code: `export class Loader { async #load() { return 1; } }`,
+      },
+      {
+        // The #1953 anchor shape: a member that shares its line takes the
+        // decorator inline, which is TS1206 here just as the own-line spelling
+        // is, so the placement branch must never be reached.
+        name: 'a private-named method following a property on one line stays silent',
+        code: `export class Loader {
+  private locked = 1; async #load() { return 1; }
+}`,
+      },
+      {
+        name: 'a private-named method sharing the class opening line stays silent',
+        code: `export class Loader { async #load() { return 1; }
+}`,
+      },
+      {
+        name: 'a private-named method in a default-exported class stays silent',
+        code: `
+export default class {
+  async #load() {
+    return 1;
+  }
+}
+`,
+      },
+      {
+        name: 'a private-named method in an abstract class stays silent',
+        code: `
+export abstract class Loader {
+  async #load() {
+    return 1;
+  }
+}
+`,
+      },
+      {
+        name: 'a private-named method in a class nested in a function stays silent',
+        code: `
+export function build() {
+  class Loader {
+    async #load() {
+      return 1;
+    }
+  }
+  return Loader;
+}
+`,
+      },
+      {
+        name: 'a private-named method in a class extending a base stays silent',
+        code: `
+export class Loader extends Base {
+  async #load() {
+    return 1;
+  }
+}
+`,
+      },
+      {
+        // Both carve-outs at once — private name inside a class expression —
+        // and neither may leak a report.
+        name: 'a private-named method in a class expression stays silent under both carve-outs',
+        code: `
+export const Loader = class Inner {
+  async #load() {
+    return 1;
+  }
+};
+`,
+      },
+      {
+        name: 'a private-named method inside a jest.mock factory stays silent',
+        filename: 'Service.test.ts',
+        code: `
+jest.mock('../Fetcher', () => {
+  class Mock {
+    async #fetch() {
+      return [];
+    }
+  }
+  return { Fetcher: Mock };
+});
+`,
+      },
+      {
+        // A decorator the author already wrote is itself TS1206 on this member,
+        // so its presence changes nothing: there is still no writable remedy.
+        name: 'a private-named method already carrying another decorator stays silent',
+        code: `
+declare const Log: () => MethodDecorator;
+export class Loader {
+  @Log()
+  async #load() {
+    return 1;
+  }
+}
+`,
+      },
+      {
+        name: 'a private-named method already carrying @Memoize() stays silent',
+        code: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+export class Loader {
+  @Memoize()
+  async #load() {
+    return 1;
+  }
+}
+`,
+      },
+      {
+        // The import is already there, so a leaked report would emit a
+        // decorator with nothing else to give it away.
+        name: 'a private-named method in a file that already imports Memoize stays silent',
+        code: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+
+export class Loader {
+  async #load() {
+    return 1;
+  }
+}
+`,
+      },
+      {
+        // The exemptions that precede the report are unaffected: staying silent
+        // must not turn a non-violation into one.
+        name: 'a private-named method declared to produce no value stays silent',
+        code: `
+export class Loader {
+  async #load(): Promise<void> {
+    return;
+  }
+}
+`,
+      },
+      {
+        name: 'a private-named method keyed by a callback stays silent',
+        code: `
+export class Loader {
+  async #load(onDone: () => void) {
+    onDone();
+    return 1;
+  }
+}
+`,
+      },
+      {
+        name: 'a private-named async generator stays silent',
+        code: `
+export class Loader {
+  async *#load() {
+    yield 1;
+  }
+}
+`,
+      },
+      {
+        // The import carrier: a file whose only violations are unreportable
+        // must stay completely silent, and must not gain an orphan import.
+        name: 'a file whose only violations are private-named methods stays silent',
+        code: `
+export class Loader {
+  async #load() {
+    return 1;
+  }
+
+  async #fetch() {
+    return 2;
+  }
+}
+`,
+      },
+      {
+        name: 'a private-named method beside an already-decorated public method stays silent',
+        code: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+
+export class Loader {
+  async #load() {
+    return 1;
+  }
+
+  @Memoize()
+  public async fetch() {
+    return 2;
+  }
+}
+`,
+      },
+      {
+        // No violation survives to carry an import, so the directive prologue
+        // must be left exactly as written.
+        name: "a private-named method under a 'use client' directive stays silent",
+        code: `'use client';
+export class Loader { async #load() { return 1; } }`,
+      },
+      {
+        name: 'a private-named method beside a private-named property stays silent',
+        code: `
+export class Loader {
+  #cache = 1;
+
+  async #load() {
+    return this.#cache;
+  }
+}
+`,
+      },
+    ],
+    invalid: [
+      // ------------------------------------------------------------------
+      // The contrast the carve-out is about: privacy expressed as a MODIFIER
+      // is a legal decorator position, so every one of these keeps reporting
+      // and fixing.
+      // ------------------------------------------------------------------
+      {
+        name: 'a private-modifier method still reports and fixes',
+        code: `
+export class Loader {
+  private async load() {
+    return 1;
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+export class Loader {
+  @Memoize()
+  private async load() {
+    return 1;
+  }
+}
+`,
+      },
+      {
+        name: 'a protected method still reports and fixes',
+        code: `
+export class Loader {
+  protected async load() {
+    return 1;
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+export class Loader {
+  @Memoize()
+  protected async load() {
+    return 1;
+  }
+}
+`,
+      },
+      {
+        name: 'a public method still reports and fixes',
+        code: `
+export class Loader {
+  public async load() {
+    return 1;
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+export class Loader {
+  @Memoize()
+  public async load() {
+    return 1;
+  }
+}
+`,
+      },
+      {
+        name: 'a method with no accessibility modifier still reports and fixes',
+        code: `
+export class Loader {
+  async load() {
+    return 1;
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+export class Loader {
+  @Memoize()
+  async load() {
+    return 1;
+  }
+}
+`,
+      },
+      {
+        // The #1953 spelling of the same contrast: the modifier form takes the
+        // decorator inline on a shared line, where the private-named form is
+        // silent.
+        name: 'a single-line private-modifier method still fixes inline',
+        code: `export class Loader { private async load() { return 1; } }`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Loader { @Memoize() private async load() { return 1; } }`,
+      },
+      {
+        // The carve-out reads the key's NODE TYPE, not a `#` in its text: a
+        // string-literal key spelled `'#load'` is an ordinary member name and a
+        // legal decorator position (measured clean against tsc 5.0.3).
+        name: 'a string-literal key spelled like a private name still fixes',
+        code: `export class Loader {
+  async '#load'() { return 1; }
+}`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Loader {
+  @Memoize()
+  async '#load'() { return 1; }
+}`,
+      },
+      {
+        // A private-named FIELD is a `PropertyDefinition`, which the visitor
+        // never sees; it must not exempt the method beside it.
+        name: 'a private-named property does not exempt the public method beside it',
+        code: `
+export class Loader {
+  #cache = 1;
+
+  public async load() {
+    return this.#cache;
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+export class Loader {
+  #cache = 1;
+
+  @Memoize()
+  public async load() {
+    return this.#cache;
+  }
+}
+`,
+      },
+      // ------------------------------------------------------------------
+      // The import carrier: a private-named method never reports, so it can
+      // never claim the file's single `import { Memoize }`. Both orders, since
+      // the carrier is claimed by whichever violation the traversal reaches
+      // first.
+      // ------------------------------------------------------------------
+      {
+        name: 'a private-named method before a public one passes the import carrier on',
+        code: `
+export class Loader {
+  async #load() {
+    return 1;
+  }
+
+  public async fetch() {
+    return 2;
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+export class Loader {
+  async #load() {
+    return 1;
+  }
+
+  @Memoize()
+  public async fetch() {
+    return 2;
+  }
+}
+`,
+      },
+      {
+        name: 'a private-named method after a public one leaves the carrier alone',
+        code: `
+export class Loader {
+  public async fetch() {
+    return 2;
+  }
+
+  async #load() {
+    return 1;
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+export class Loader {
+  @Memoize()
+  public async fetch() {
+    return 2;
+  }
+
+  async #load() {
+    return 1;
+  }
+}
+`,
+      },
+      {
+        name: 'two private-named methods leave a single import to the one public method',
+        code: `
+export class Loader {
+  async #load() {
+    return 1;
+  }
+
+  async #warm() {
+    return 2;
+  }
+
+  public async fetch() {
+    return 3;
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+export class Loader {
+  async #load() {
+    return 1;
+  }
+
+  async #warm() {
+    return 2;
+  }
+
+  @Memoize()
+  public async fetch() {
+    return 3;
+  }
+}
+`,
+      },
+      {
+        name: 'a private-named method in one class leaves the import to another class',
+        code: `
+export class Loader {
+  async #load() {
+    return 1;
+  }
+}
+
+export class Fetcher {
+  public async fetch() {
+    return 2;
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+export class Loader {
+  async #load() {
+    return 1;
+  }
+}
+
+export class Fetcher {
+  @Memoize()
+  public async fetch() {
+    return 2;
+  }
+}
+`,
+      },
+      {
+        // A private-named method sharing a line with a reportable one: only the
+        // reportable member's own anchor is used, so the silent neighbour's
+        // text is untouched.
+        name: 'a public method sharing a line with a private-named one is decorated in place',
+        code: `export class Loader { async #load() { return 1; } async fetch() { return 2; } }`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Loader { async #load() { return 1; } @Memoize() async fetch() { return 2; } }`,
+      },
+      {
+        // The mirror of the #1952 nesting row: a private-named method in the
+        // outer class stays silent while the inner declaration's public method
+        // reports.
+        name: 'a class nested inside a private-named method still fixes',
+        code: `
+export class Outer {
+  async #build() {
+    class Inner {
+      public async load() {
+        return 1;
+      }
+    }
+    return Inner;
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+export class Outer {
+  async #build() {
+    class Inner {
+      @Memoize()
+      public async load() {
+        return 1;
+      }
+    }
+    return Inner;
+  }
+}
+`,
+      },
+    ],
+  },
+);
+
+// Issue #1954: `RuleTester` applies a single fix pass and never shows the file
+// `eslint --fix` writes. These cases run the real multi-pass fixer and assert
+// the invariants the bug violated: a private-named method survives every pass
+// undecorated, and the file it sits in gains an `import { Memoize }` only when
+// some other violation actually takes the decorator.
+describe('enforce-memoize-async: private-named methods under --fix (issue #1954)', () => {
+  const PRIVATE_REPRO = `export class Loader {
+  async #load() {
+    return 1;
+  }
+}
+`;
+
+  const MODIFIER_CONTROL = `export class Loader {
+  private async load() {
+    return 1;
+  }
+}
+`;
+
+  const importCount = (output: string) =>
+    output.match(
+      /import \{ Memoize \} from '@blumintinc\/typescript-memoize';/g,
+    )?.length ?? 0;
+
+  it('leaves a private-named method untouched across every pass', () => {
+    const output = lint(PRIVATE_REPRO);
+
+    expect(output).toBe(PRIVATE_REPRO);
+    expect(output).not.toContain('Memoize');
+  });
+
+  it('withholds the report as well as the fix', () => {
+    expect(lintMessages(PRIVATE_REPRO)).toHaveLength(0);
+
+    // The control proves the silence is the carve-out and not a dead fixture:
+    // the same method behind the `private` MODIFIER reports, with a fix
+    // attached, and that spelling compiles.
+    const declared = lintMessages(MODIFIER_CONTROL);
+    expect(declared).toHaveLength(1);
+    expect(declared[0].ruleId).toBe(RULE_ID);
+    expect(declared[0].fix).toBeDefined();
+  });
+
+  it('adds no import when every violation is private-named', () => {
+    const output = lint(`export class Loader {
+  async #load() {
+    return 1;
+  }
+
+  async #fetch() {
+    return 2;
+  }
+}
+`);
+
+    expect(output).not.toContain('@blumintinc/typescript-memoize');
+    expect(output).not.toContain('@Memoize');
+  });
+
+  it('hands the import carrier to the public method when the private-named one comes first', () => {
+    const output = lint(`export class Loader {
+  async #load() {
+    return 1;
+  }
+
+  public async fetch() {
+    return 2;
+  }
+}
+`);
+
+    expect(importCount(output)).toBe(1);
+    expect(output.match(/@Memoize\(\)/g)).toHaveLength(1);
+    expect(output).toContain(`  @Memoize()
+  public async fetch() {`);
+    // The decorator landed on the public method, never on the private-named
+    // one.
+    expect(output).toContain(`  async #load() {
+    return 1;
+  }`);
+  });
+
+  it('hands the import carrier to the public method when the public one comes first', () => {
+    const output = lint(`export class Loader {
+  public async fetch() {
+    return 2;
+  }
+
+  async #load() {
+    return 1;
+  }
+}
+`);
+
+    expect(importCount(output)).toBe(1);
+    expect(output.match(/@Memoize\(\)/g)).toHaveLength(1);
+    expect(output).toContain(`  async #load() {
+    return 1;
+  }`);
+  });
+
+  it('emits exactly one import with two private-named methods and one public method', () => {
+    const output = lint(`export class Loader {
+  async #load() {
+    return 1;
+  }
+
+  async #warm() {
+    return 2;
+  }
+
+  public async fetch() {
+    return 3;
+  }
+}
+`);
+
+    expect(importCount(output)).toBe(1);
+    expect(output.match(/@Memoize\(\)/g)).toHaveLength(1);
+    expect(output).toContain(`  @Memoize()
+  public async fetch() {`);
+  });
+
+  it('never emits a decorator without its import', () => {
+    const output = lint(`export class Loader {
+  async #load() {
+    return 1;
+  }
+
+  public async fetch() {
+    return 2;
+  }
+}
+`);
+
+    if (/@Memoize\(\)/.test(output)) {
+      expect(output).toContain(
+        "import { Memoize } from '@blumintinc/typescript-memoize';",
+      );
+    }
+  });
+
+  it('converges on a mixed file, leaving the private-named method bare', () => {
+    const code = `export class Loader {
+  async #load() {
+    return 1;
+  }
+
+  public async fetch() {
+    return 2;
+  }
+}
+`;
+    const first = createLinter().verifyAndFix(code, LINT_CONFIG, 'Service.ts');
+
+    expect(first.fixed).toBe(true);
+    // Re-fixing the output is the convergence detector: comparing strings would
+    // call an even-length cycle converged.
+    expect(
+      createLinter().verifyAndFix(first.output, LINT_CONFIG, 'Service.ts')
+        .fixed,
+    ).toBe(false);
+    expect(lintMessages(first.output)).toHaveLength(0);
+    expect(first.output.match(/@Memoize\(\)/g)).toHaveLength(1);
+  });
+
+  it('would have caught the bug: the pre-fix output decorates the private-named method', () => {
+    // Exactly what the rule wrote before the carve-out. It is a fixpoint — the
+    // rule reports nothing on it now — so only a text assertion catches it,
+    // which is what makes the silence assertions above non-vacuous. The
+    // compile guard below is what proves this text does not build.
+    const preFixOutput = `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Loader {
+  @Memoize()
+  async #load() {
+    return 1;
+  }
+}
+`;
+
+    expect(lint(PRIVATE_REPRO)).not.toBe(preFixOutput);
+    expect(lint(PRIVATE_REPRO)).not.toContain('@Memoize()');
+  });
+});
+
+// Issue #1954: the private-name carve-out is a claim about the COMPILER, and no
+// ESLint-level assertion can check it. `RuleTester` never type-checks, and the
+// private-named cases above are `valid`, so they produce no fix pair for
+// `fixer-type-safety` to compile — the whole suite would stay green with the
+// carve-out removed and `--fix` emitting TS1206 again. These cases compile each
+// shape under a real `ts.Program` with `experimentalDecorators: true` and assert
+// differentially: the fixed text must carry no diagnostic its input did not
+// already carry. An absolute count would only measure how many globals `noLib`
+// leaves undefined.
+describe('enforce-memoize-async: `--fix` leaves every member name compiling (issue #1954)', () => {
+  const FILENAME = '/memoize/Service.ts';
+  const MEMOIZE_STUB = '/memoize/typescript-memoize.d.ts';
+  const MEMOIZE_STUB_TEXT =
+    'export declare function Memoize(...args: unknown[]): MethodDecorator;\n';
+
+  const fix = (code: string) =>
+    createLinter().verifyAndFix(code, LINT_CONFIG, FILENAME);
+
+  /**
+   * `noLib` keeps each program to two source files, which is what makes a
+   * per-shape compile affordable here; the globals it leaves undefined cost the
+   * same diagnostics (TS2318 for `Promise`) on the input and the output alike,
+   * so they cancel in the differential. The memoize package resolves to an
+   * in-memory stub so that the import the fixer injects cannot manufacture a
+   * TS2307 the input lacked and mask the diagnostic actually under test.
+   */
+  const compilerOptions: ts.CompilerOptions = {
+    experimentalDecorators: true,
+    strict: true,
+    target: ts.ScriptTarget.ES2022,
+    noEmit: true,
+    noLib: true,
+    types: [],
+  };
+
+  const diagnosticsOf = (source: string): string[] => {
+    const files = new Map<string, string>([
+      [FILENAME, source],
+      [MEMOIZE_STUB, MEMOIZE_STUB_TEXT],
+    ]);
+    const sourceFiles = new Map(
+      [...files].map(([name, text]) => [
+        name,
+        ts.createSourceFile(name, text, ts.ScriptTarget.ES2022, true),
+      ]),
+    );
+    const host: ts.CompilerHost = {
+      getSourceFile: (name) => sourceFiles.get(name),
+      getDefaultLibFileName: () => 'lib.d.ts',
+      writeFile: () => undefined,
+      getCurrentDirectory: () => '/memoize',
+      getCanonicalFileName: (name) => name,
+      useCaseSensitiveFileNames: () => true,
+      getNewLine: () => '\n',
+      fileExists: (name) => files.has(name),
+      readFile: (name) => files.get(name),
+      resolveModuleNames: (moduleNames) =>
+        moduleNames.map((name) =>
+          name === '@blumintinc/typescript-memoize' ||
+          name === 'typescript-memoize'
+            ? {
+                resolvedFileName: MEMOIZE_STUB,
+                extension: ts.Extension.Dts,
+                isExternalLibraryImport: true,
+              }
+            : undefined,
+        ),
+    };
+    const program = ts.createProgram([FILENAME], compilerOptions, host);
+    const file = program.getSourceFile(FILENAME);
+    if (!file) {
+      throw new Error('the source under test is missing from the program');
+    }
+    // TS1206 is a grammar check the CHECKER runs, so it reaches neither
+    // `getSyntacticDiagnostics` nor a `transpileModule` round trip; reading
+    // both buckets is what makes it visible.
+    return [
+      ...program.getSyntacticDiagnostics(file),
+      ...program.getSemanticDiagnostics(file),
+    ].map((diagnostic) => `TS${diagnostic.code}`);
+  };
+
+  const introducedBy = (before: string, after: string): string[] => {
+    const carried = diagnosticsOf(before);
+    return diagnosticsOf(after).filter((code, index, all) => {
+      const seenBefore = carried.filter((entry) => entry === code).length;
+      const seenHere = all.slice(0, index + 1).filter((e) => e === code).length;
+      return seenHere > seenBefore;
+    });
+  };
+
+  it('proves the premise: a decorator on a private-named member is TS1206', () => {
+    // The harness itself needs a control, or a compile step that silently saw
+    // nothing would certify every shape below as clean. Written by hand, the
+    // very edit the fixer used to make is rejected — while the same decorator
+    // on the same method behind the `private` MODIFIER is accepted, which is
+    // the whole distinction the carve-out draws.
+    expect(
+      diagnosticsOf(`import { Memoize } from '@blumintinc/typescript-memoize';
+export class Loader {
+  @Memoize()
+  async #load() { return 1; }
+}
+`),
+    ).toContain('TS1206');
+
+    expect(
+      diagnosticsOf(`import { Memoize } from '@blumintinc/typescript-memoize';
+export class Loader {
+  @Memoize()
+  private async load() { return 1; }
+}
+`),
+    ).not.toContain('TS1206');
+
+    // The inline spelling is rejected too, so no placement of the decorator
+    // could have made the report writable.
+    expect(
+      diagnosticsOf(`import { Memoize } from '@blumintinc/typescript-memoize';
+export class Loader { @Memoize() async #load() { return 1; } }
+`),
+    ).toContain('TS1206');
+  });
+
+  // Spelled out rather than composed from a shared body: a mismatched brace
+  // would make the fixture a parse error, and an unparseable fixture reports
+  // nothing — which is indistinguishable from the silence under test. The
+  // `verify` assertion below counts the parse error too, so this cannot pass
+  // vacuously.
+  const PRIVATE_NAMES: [string, string][] = [
+    [
+      'on its own line',
+      'export class Loader {\n  async #load() {\n    return 1;\n  }\n}\n',
+    ],
+    [
+      'on a single line',
+      'export class Loader { async #load() { return 1; } }\n',
+    ],
+    [
+      'following a property on one line',
+      'export class Loader {\n  private locked = 1; async #load() { return 1; }\n}\n',
+    ],
+    [
+      'taking one parameter',
+      'export class Loader {\n  async #load(id: string) {\n    return id;\n  }\n}\n',
+    ],
+    [
+      'beside a private-named field',
+      'export class Loader {\n  #cache = 1;\n  async #load() {\n    return this.#cache;\n  }\n}\n',
+    ],
+    [
+      'in a default-exported class',
+      'export default class {\n  async #load() {\n    return 1;\n  }\n}\n',
+    ],
+    [
+      'in a class nested in a function',
+      'export function build() {\n  class Loader {\n    async #load() {\n      return 1;\n    }\n  }\n  return Loader;\n}\n',
+    ],
+    [
+      'in an abstract class',
+      'export abstract class Loader {\n  async #load() {\n    return 1;\n  }\n}\n',
+    ],
+  ];
+
+  it.each(PRIVATE_NAMES)(
+    'a private-named method %s is silent and left byte-for-byte alone',
+    (_name, code) => {
+      expect(createLinter().verify(code, LINT_CONFIG, FILENAME)).toHaveLength(
+        0,
+      );
+
+      const first = fix(code);
+
+      expect(first.fixed).toBe(false);
+      expect(first.output).toBe(code);
+      expect(introducedBy(code, first.output)).toEqual([]);
+    },
+  );
+
+  const DECORATABLE_NAMES: [string, string][] = [
+    [
+      'a private-modifier method',
+      'export class Loader {\n  private async load() {\n    return 1;\n  }\n}\n',
+    ],
+    [
+      'a protected method',
+      'export class Loader {\n  protected async load() {\n    return 1;\n  }\n}\n',
+    ],
+    [
+      'a public method',
+      'export class Loader {\n  public async load() {\n    return 1;\n  }\n}\n',
+    ],
+    [
+      'a single-line private-modifier method',
+      'export class Loader { private async load() { return 1; } }\n',
+    ],
+    [
+      'a string-literal key spelled like a private name',
+      "export class Loader {\n  async '#load'() {\n    return 1;\n  }\n}\n",
+    ],
+    [
+      'a public method beside a private-named one',
+      'export class Loader {\n  async #load() {\n    return 1;\n  }\n  public async fetch() {\n    return 2;\n  }\n}\n',
+    ],
+  ];
+
+  it.each(DECORATABLE_NAMES)(
+    '%s is still decorated, converges, and still compiles',
+    (_name, code) => {
+      const first = fix(code);
+
+      expect(first.fixed).toBe(true);
+      expect(first.output).toContain('@Memoize()');
+      // Re-running the fixer on its own output is the convergence detector:
+      // comparing the two strings would call an even-length cycle converged.
+      expect(fix(first.output).fixed).toBe(false);
+      expect(introducedBy(code, first.output)).toEqual([]);
+    },
+  );
+
+  it('would have caught the bug: the pre-fix edit introduces TS1206', () => {
+    // The mutation this guard exists to detect, applied by hand: had the rule
+    // kept decorating a private-named method, `introducedBy` would have
+    // returned exactly this, so the assertions above are not vacuous.
+    const before = `export class Loader {
+  async #load() {
+    return 1;
+  }
+}
+`;
+    const after = `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Loader {
+  @Memoize()
+  async #load() {
+    return 1;
+  }
+}
+`;
+
+    expect(introducedBy(before, after)).toEqual(['TS1206']);
   });
 });

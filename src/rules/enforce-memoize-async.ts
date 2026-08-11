@@ -355,13 +355,31 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
           return;
         }
 
+        // A `#private` name admits no decorator under `experimentalDecorators`
+        // — the mode this plugin's `@Memoize()` is written for — so the
+        // prescribed remedy is `TS1206: Decorators are not valid here.`,
+        // measured against the repo's tsc 5.0.3, for the own-line spelling
+        // exactly as for the inline one. Report and fix are both withheld, as
+        // `enforce-memoize-getters` withholds them (#1945): the message's only
+        // remedy, "add @Memoize() above the method", cannot be written on that
+        // member, and a report naming an edit its reader cannot make is worse
+        // than silence. The restriction is on the private NAME, not on privacy
+        // — `private async load()` is a legal decorator position and keeps both
+        // report and fix. Nothing is lost by the silence either: a `#private`
+        // member is unnameable outside its class, so an author who wants
+        // memoization can reach it through the `private` modifier.
+        if (node.key.type === AST_NODE_TYPES.PrivateIdentifier) {
+          return;
+        }
+
         // No decorator is legal on any member of a class expression, so this
         // rule has nothing to say there: it cannot fix, and its message names
         // the one edit the author cannot write. Silence, matching the sibling
         // rules `enforce-memoize-getters` and `require-memoize-jsx-returners`.
         // Withholding the report also keeps such a method out of the
         // import-carrier race below — a violation that never reports can never
-        // claim the file's `import { Memoize }` and strand it.
+        // claim the file's `import { Memoize }` and strand it. The private-name
+        // carve-out above is withheld ahead of the report for the same reason.
         if (isInsideClassExpression(node)) {
           return;
         }

@@ -27,6 +27,8 @@ The rule skips:
 - Methods declared in a class **expression** (`const Loader = class { … }`),
   where no decorator is legal at all (see
   [Methods on a class expression](#methods-on-a-class-expression)).
+- Methods with a **private name** (`async #load() { … }`), where no decorator is
+  legal either (see [Methods with a private name](#methods-with-a-private-name)).
 
 ### Examples of **incorrect** code for this rule:
 
@@ -400,6 +402,92 @@ This matches the sibling rules `enforce-memoize-getters` and
 ground. Should this plugin ever target standard (TC39) decorators —
 `experimentalDecorators: false`, where a class expression's members do accept
 decorators — the carve-out becomes mode-dependent and needs revisiting.
+
+### Methods with a private name
+
+A method whose key is a **private name** — `#load`, the `#` form of privacy — is
+never reported. Under `experimentalDecorators` TypeScript rejects a decorator on
+such a member outright: `@Memoize()` written above it, or inline ahead of it, is
+`TS1206: Decorators are not valid here.` The message's only remedy is "add
+`@Memoize()` above the method", which cannot be written on that member at all,
+so report and fix are both withheld — a report naming an edit its reader cannot
+make is worse than silence.
+
+```ts
+// Not reported: `@Memoize()` cannot be written on any of these members.
+export class Loader {
+  async #load() {
+    return 1;
+  }
+
+  async #fetch(id: string) {
+    return id;
+  }
+}
+
+export class Compact {
+  #cache = 1;
+  async #warm() {
+    return this.#cache;
+  }
+}
+```
+
+The restriction is on the member's **name**, not on privacy. The `private`
+modifier is an ordinary member name as far as decorators are concerned, so it
+keeps reporting and fixing, as do `protected` and public methods:
+
+```ts
+import { Memoize } from '@blumintinc/typescript-memoize';
+
+export class Loader {
+  @Memoize()
+  private async load() {
+    return 1;
+  }
+
+  @Memoize()
+  protected async fetch() {
+    return 2;
+  }
+}
+```
+
+That is also the remedy for a `#private` method whose result is worth caching:
+express its privacy with the modifier. Nothing is lost by the silence otherwise
+— a `#private` member is unnameable outside its class, so no caller elsewhere
+depends on the cache.
+
+The carve-out reads the member's key, so a member whose name merely contains a
+`#` — a string-literal key spelled `'#load'` — is an ordinary member name and
+keeps reporting and fixing. A `#private` **property** is not a method and is
+irrelevant to the methods declared beside it.
+
+Because such a method never reports, it never claims the file's import carrier
+either: the single injected
+`import { Memoize } from '@blumintinc/typescript-memoize';` rides on a violation
+that does fix, and a file whose only candidates are private-named is left
+untouched — no report, no decorator, no orphan import:
+
+```ts
+import { Memoize } from '@blumintinc/typescript-memoize';
+
+export class Loader {
+  async #load() {
+    return 1;
+  }
+
+  @Memoize()
+  public async fetch() {
+    return 2;
+  }
+}
+```
+
+This matches `enforce-memoize-getters`, which withholds report and fix on the
+same ground. The carve-out is mode-dependent in the same way the
+class-expression one is: standard (TC39) decorators do accept a private-named
+member, so targeting `experimentalDecorators: false` calls for revisiting it.
 
 ## When Not To Use It
 
