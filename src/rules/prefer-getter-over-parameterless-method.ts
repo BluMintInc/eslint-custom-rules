@@ -111,6 +111,27 @@ function lowerFirst(text: string): string {
   return text[0].toLowerCase() + text.slice(1);
 }
 
+/**
+ * The member's name as it is written, keeping the `#` of an ECMA private name.
+ * `#foo` and `foo` are two distinct members of the same class, so every
+ * name-keyed lookup here (collision, call-use, self-reference, duplicate
+ * suggestion) must carry the sigil rather than compare bare names. Returns null
+ * for keys whose name is not statically known (computed, literal, template).
+ */
+function memberNameOf(
+  key: TSESTree.Node | undefined | null,
+  computed?: boolean,
+): string | null {
+  if (!key || computed) return null;
+  if (key.type === AST_NODE_TYPES.Identifier) return key.name;
+  if (key.type === AST_NODE_TYPES.PrivateIdentifier) return `#${key.name}`;
+  return null;
+}
+
+function isEcmaPrivateName(name: string): boolean {
+  return name.startsWith('#');
+}
+
 function computeBodyLineCount(body: TSESTree.BlockStatement): number {
   return Math.max(0, body.loc.end.line - body.loc.start.line - 1);
 }
@@ -125,6 +146,11 @@ function hasNameCollision(
   }
 
   const targetIsStatic = (node as { static?: boolean }).static ?? false;
+  // An ECMA private name lives in a single per-class namespace: `class A {
+  // static #x = 1; #x = 2; }` is a SyntaxError ("Identifier '#x' has already
+  // been declared"). The static/instance split that keeps two `x` members apart
+  // therefore does not keep two `#x` members apart.
+  const targetIsEcmaPrivate = isEcmaPrivateName(newName);
 
   return classBody.body.some((member) => {
     if ((member as unknown as MethodLikeDefinition) === node) {
@@ -141,7 +167,7 @@ function hasNameCollision(
     }
 
     const memberIsStatic = (member as { static?: boolean }).static ?? false;
-    if (memberIsStatic !== targetIsStatic) {
+    if (!targetIsEcmaPrivate && memberIsStatic !== targetIsStatic) {
       return false;
     }
 
@@ -152,11 +178,7 @@ function hasNameCollision(
       return false;
     }
 
-    if (key.type === AST_NODE_TYPES.Identifier && key.name === newName) {
-      return true;
-    }
-
-    return false;
+    return memberNameOf(key) === newName;
   });
 }
 
@@ -166,11 +188,11 @@ function hasOverloadSignatures(node: MethodLikeDefinition): boolean {
     return false;
   }
 
-  if (node.key.type !== AST_NODE_TYPES.Identifier) {
+  const targetName = memberNameOf(node.key, node.computed);
+  if (targetName === null) {
     return false;
   }
 
-  const targetName = node.key.name;
   const targetIsStatic = (node as { static?: boolean }).static ?? false;
 
   return classBody.body.some((member) => {
@@ -185,8 +207,10 @@ function hasOverloadSignatures(node: MethodLikeDefinition): boolean {
       return false;
     }
 
-    const key = (member as { key?: TSESTree.PropertyName }).key;
-    if (!key || key.type !== AST_NODE_TYPES.Identifier) {
+    const memberName = memberNameOf(
+      (member as { key?: TSESTree.PropertyName }).key,
+    );
+    if (memberName === null) {
       return false;
     }
 
@@ -206,7 +230,7 @@ function hasOverloadSignatures(node: MethodLikeDefinition): boolean {
       member as TSESTree.MethodDefinition | TSESTree.TSAbstractMethodDefinition
     ).value?.body;
 
-    return !hasBody && key.name === targetName;
+    return !hasBody && memberName === targetName;
   });
 }
 
@@ -849,11 +873,9 @@ export const preferGetterOverParameterlessMethod = createRule<
         return false;
       }
 
-      if (
-        !member.computed &&
-        member.property.type === AST_NODE_TYPES.Identifier
-      ) {
-        return member.property.name === propName;
+      const propertyName = memberNameOf(member.property, member.computed);
+      if (propertyName !== null) {
+        return propertyName === propName;
       }
 
       if (
@@ -911,26 +933,24 @@ export const preferGetterOverParameterlessMethod = createRule<
       callUsedNamesByClass: WeakMap<TSESTree.ClassBody, Set<string>>,
       callUsedNamesInFile: Set<string>,
     ) {
-      if (
-        member.computed ||
-        member.property.type !== AST_NODE_TYPES.Identifier
-      ) {
+      const propName = memberNameOf(member.property, member.computed);
+      if (propName === null) {
         return;
       }
 
-      const propName = member.property.name;
-
       if (propName === 'call' || propName === 'apply' || propName === 'bind') {
         const target = member.object;
+        const targetPropName = isMemberExpressionNode(target)
+          ? memberNameOf(target.property, target.computed)
+          : null;
         if (
           isMemberExpressionNode(target) &&
-          !target.computed &&
-          target.property.type === AST_NODE_TYPES.Identifier &&
+          targetPropName !== null &&
           target.object.type === AST_NODE_TYPES.ThisExpression
         ) {
           addCallUseForMember(
             member,
-            target.property.name,
+            targetPropName,
             callUsedNamesByClass,
             callUsedNamesInFile,
           );
@@ -941,14 +961,10 @@ export const preferGetterOverParameterlessMethod = createRule<
             callUsedNamesByClass,
             callUsedNamesInFile,
           );
-        } else if (
-          isMemberExpressionNode(target) &&
-          !target.computed &&
-          target.property.type === AST_NODE_TYPES.Identifier
-        ) {
+        } else if (isMemberExpressionNode(target) && targetPropName !== null) {
           addCallUseForMember(
             target,
-            target.property.name,
+            targetPropName,
             callUsedNamesByClass,
             callUsedNamesInFile,
           );
@@ -1014,10 +1030,8 @@ export const preferGetterOverParameterlessMethod = createRule<
       callUsedNamesByClass: WeakMap<TSESTree.ClassBody, Set<string>>,
       callUsedNamesInFile: Set<string>,
     ) {
-      if (
-        member.computed ||
-        member.property.type !== AST_NODE_TYPES.Identifier
-      ) {
+      const propName = memberNameOf(member.property, member.computed);
+      if (propName === null) {
         return;
       }
 
@@ -1025,19 +1039,9 @@ export const preferGetterOverParameterlessMethod = createRule<
         return;
       }
 
-      if (member.object.type === AST_NODE_TYPES.ThisExpression) {
-        addCallUseForMember(
-          member,
-          member.property.name,
-          callUsedNamesByClass,
-          callUsedNamesInFile,
-        );
-        return;
-      }
-
       addCallUseForMember(
         member,
-        member.property.name,
+        propName,
         callUsedNamesByClass,
         callUsedNamesInFile,
       );
@@ -1094,6 +1098,12 @@ export const preferGetterOverParameterlessMethod = createRule<
      * to prescribing a remedy that does not compile.
      */
     function isConstrainedByHeritage(node: MethodLikeDefinition): boolean {
+      // An ECMA private member is unreachable from outside its own class body,
+      // so no `implements` or `extends` clause — resolvable or not — can oblige
+      // it to stay a method: a base class's `#x` is a different member, and a
+      // type can never declare one. Converting it cannot produce TS2416/TS2417.
+      if (node.key.type === AST_NODE_TYPES.PrivateIdentifier) return false;
+
       const classNode = getClassOf(node);
       if (!classNode) return false;
 
@@ -1118,7 +1128,10 @@ export const preferGetterOverParameterlessMethod = createRule<
     const candidates: Array<{
       node: MethodLikeDefinition;
       sideEffectReason: string | null;
-      suggestedName: string;
+      /** The member as written, `#`-prefixed for an ECMA private name. */
+      memberName: string;
+      /** The getter name to emit, carrying the same `#` the member has. */
+      getterName: string;
     }> = [];
 
     return {
@@ -1170,6 +1183,24 @@ export const preferGetterOverParameterlessMethod = createRule<
           );
         }
       },
+      BinaryExpression(node: TSESTree.BinaryExpression) {
+        // An ergonomic brand check (`#foo in candidate`) names the member
+        // without a MemberExpression, so the member trackers never see it. A
+        // rename would leave it pointing at a member that no longer exists, so
+        // it counts as a use that withholds the fix.
+        const left = node.left as TSESTree.Node;
+        if (
+          node.operator === 'in' &&
+          left.type === AST_NODE_TYPES.PrivateIdentifier
+        ) {
+          addCallUse(
+            node,
+            `#${left.name}`,
+            callUsedNamesByClass,
+            callUsedNamesInFile,
+          );
+        }
+      },
       'MethodDefinition, TSAbstractMethodDefinition'(
         node: MethodLikeDefinition,
       ) {
@@ -1179,7 +1210,18 @@ export const preferGetterOverParameterlessMethod = createRule<
         if (node.optional) return;
         if (node.computed) return;
         if (node.value.typeParameters) return;
-        if (node.key.type !== AST_NODE_TYPES.Identifier) return;
+        // An ECMA private name (`#foo`) is the same privacy as the TypeScript
+        // `private` modifier — and mutually exclusive with it, since `private
+        // #foo` is TS18010 — so it carries a plain, strippable name that the
+        // rule analyzes exactly like an `Identifier` key. Literal, computed and
+        // template keys stay out: their names are not always statically known
+        // and the emitted getter would need quoting the fixer does not do.
+        if (
+          node.key.type !== AST_NODE_TYPES.Identifier &&
+          node.key.type !== AST_NODE_TYPES.PrivateIdentifier
+        ) {
+          return;
+        }
         if (config.ignoreAsync && node.value.async) return;
         if (
           config.ignoreAbstract &&
@@ -1213,8 +1255,15 @@ export const preferGetterOverParameterlessMethod = createRule<
 
         const sideEffectReason = analyzeMutations(body);
         const suggestedName = suggestName(name);
+        const sigil =
+          node.key.type === AST_NODE_TYPES.PrivateIdentifier ? '#' : '';
 
-        candidates.push({ node, sideEffectReason, suggestedName });
+        candidates.push({
+          node,
+          sideEffectReason,
+          memberName: `${sigil}${name}`,
+          getterName: `${sigil}${suggestedName}`,
+        });
       },
       'Program:exit'() {
         const suggestedNameCounts = new WeakMap<
@@ -1222,31 +1271,36 @@ export const preferGetterOverParameterlessMethod = createRule<
           Map<string, number>
         >();
 
-        for (const { node, suggestedName } of candidates) {
+        // An ECMA private name is one per-class namespace across both sides of
+        // the class, so `static #x` and `#x` collide where `static x` and `x`
+        // do not — its bucket must not be split by static-ness.
+        const scopeKeyOf = (node: MethodLikeDefinition, getterName: string) => {
+          if (isEcmaPrivateName(getterName)) return `private:${getterName}`;
+          const side = (node as { static?: boolean }).static ?? false;
+          return `${side ? 'static' : 'instance'}:${getterName}`;
+        };
+
+        for (const { node, getterName } of candidates) {
           const classBody = node.parent;
           if (!classBody || classBody.type !== AST_NODE_TYPES.ClassBody) {
             continue;
           }
 
-          const scopeKey = `${
-            (node as { static?: boolean }).static ?? false
-              ? 'static'
-              : 'instance'
-          }:${suggestedName}`;
+          const scopeKey = scopeKeyOf(node, getterName);
           const existingCounts =
             suggestedNameCounts.get(classBody) ?? new Map<string, number>();
           existingCounts.set(scopeKey, (existingCounts.get(scopeKey) ?? 0) + 1);
           suggestedNameCounts.set(classBody, existingCounts);
         }
 
-        for (const { node, sideEffectReason, suggestedName } of candidates) {
-          const name = (node.key as TSESTree.Identifier).name;
+        for (const {
+          node,
+          sideEffectReason,
+          memberName,
+          getterName,
+        } of candidates) {
           const classBody = node.parent;
-          const scopeKey = `${
-            (node as { static?: boolean }).static ?? false
-              ? 'static'
-              : 'instance'
-          }:${suggestedName}`;
+          const scopeKey = scopeKeyOf(node, getterName);
 
           const leftParen = sourceCode.getTokenAfter(node.key, {
             filter: (token) => token.value === '(',
@@ -1260,15 +1314,15 @@ export const preferGetterOverParameterlessMethod = createRule<
           const body = node.value.body;
           const referencesSuggestedName =
             body && body.type === AST_NODE_TYPES.BlockStatement
-              ? bodyReferencesThisProperty(body, suggestedName)
+              ? bodyReferencesThisProperty(body, getterName)
               : false;
 
-          const hasCollision = hasNameCollision(node, suggestedName);
+          const hasCollision = hasNameCollision(node, getterName);
           const isCallUsed =
             classBody?.type === AST_NODE_TYPES.ClassBody
-              ? callUsedNamesByClass.get(classBody)?.has(name) ?? false
+              ? callUsedNamesByClass.get(classBody)?.has(memberName) ?? false
               : false;
-          const isCallUsedSomewhereInFile = callUsedNamesInFile.has(name);
+          const isCallUsedSomewhereInFile = callUsedNamesInFile.has(memberName);
           const hasDuplicateSuggestedName =
             classBody?.type === AST_NODE_TYPES.ClassBody
               ? (suggestedNameCounts.get(classBody)?.get(scopeKey) ?? 0) > 1
@@ -1276,13 +1330,24 @@ export const preferGetterOverParameterlessMethod = createRule<
 
           const isAsync = node.value.async;
 
+          // A decorator cannot be applied to an ECMA private member under
+          // `experimentalDecorators` (TS1206), so a decorated `#foo()` has no
+          // legal getter form to convert to — the fix is impossible, not merely
+          // risky, and the report stands on its own.
+          const isUndecoratableEcmaPrivate =
+            node.key.type === AST_NODE_TYPES.PrivateIdentifier &&
+            ((node as { decorators?: unknown[] }).decorators?.length ?? 0) > 0;
+
           // Only `private` methods are safe to autofix. A public / protected /
           // unspecified-accessibility method is API surface whose call sites of
           // the form `instance.method()` may live in other files this
           // single-file rule never sees. Converting such a method to a getter
           // silently breaks every external caller (the call would invoke the
           // getter's return value), so the fix must be withheld for anything
-          // not demonstrably private. The report (nudge) is still emitted.
+          // not demonstrably private. The report (nudge) is still emitted. An
+          // ECMA private name satisfies this more strongly than the erased
+          // `private` modifier: `#foo` is unreachable outside the class body at
+          // runtime, so every call site is in this file by construction.
           const isPrivate =
             node.accessibility === 'private' ||
             node.key.type === AST_NODE_TYPES.PrivateIdentifier;
@@ -1293,8 +1358,8 @@ export const preferGetterOverParameterlessMethod = createRule<
               ? 'preferGetterSideEffect'
               : 'preferGetter',
             data: {
-              name,
-              suggestedName,
+              name: memberName,
+              suggestedName: getterName,
               reason: sideEffectReason ?? 'it returns a value',
             },
             fix:
@@ -1307,12 +1372,13 @@ export const preferGetterOverParameterlessMethod = createRule<
               isCallUsed ||
               isCallUsedSomewhereInFile ||
               referencesSuggestedName ||
-              hasDuplicateSuggestedName
+              hasDuplicateSuggestedName ||
+              isUndecoratableEcmaPrivate
                 ? null
                 : (fixer) =>
                     fixer.replaceTextRange(
                       [node.key.range[0], rightParen.range[1]],
-                      `get ${suggestedName}()`,
+                      `get ${getterName}()`,
                     ),
           });
         }

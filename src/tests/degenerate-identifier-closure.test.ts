@@ -1320,7 +1320,6 @@ const LITERAL_UNDRIVEN: Record<string, UndrivenCause> = {
   'prefer-block-comments-for-declarations': 'inventsNoName',
   'prefer-destructuring-no-class': 'inventsNoName',
   'prefer-fragment-shorthand': 'noPerturbableSite',
-  'prefer-getter-over-parameterless-method': 'inventsNoName',
   'prefer-nullish-coalescing-boolean-props': 'inventsNoName',
   'prefer-params-over-parent-id': 'inventsNoName',
   'prefer-type-over-interface': 'inventsNoName',
