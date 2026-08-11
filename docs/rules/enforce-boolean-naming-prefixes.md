@@ -22,6 +22,7 @@ This rule requires your boolean-typed or boolean-valued identifiers to start wit
 - Your functions and methods that return boolean values.
 - Your function parameters typed as boolean and boolean properties inside parameter object type literals.
 - Your class properties with boolean types or values, including `abstract` properties (`abstract enabled: boolean`) and constructor parameter properties (`constructor(private enabled: boolean) {}`). Both declare a field you own, so they carry the same naming obligation as a concrete property; a parameter property is reported once, as a property rather than as a parameter.
+- Both spellings of privacy: a `private` modifier and an [ECMA private name](#ecma-private-members-name) (`#enabled`) declare the same member, so `#enabled = false` is checked exactly like `private enabled = false`.
 - Boolean property signatures in interfaces and type aliases **only when you opt in** via [`enforceForPropertySignatures`](#enforceforpropertysignatures). They are skipped by default because their names are frequently dictated by contracts you cannot rename (external API shapes, third-party interfaces, persisted data-model schemas such as Firestore fields).
 - The rule excludes type predicates and identifiers starting with `_`, which are treated as internal state.
 
@@ -279,6 +280,34 @@ whose type is the same. A value that may be absent is where an unprefixed name
 misleads most, since a falsy result no longer distinguishes "false" from
 "receiver was missing". The remedy is a rename of the binding, which never
 changes how the initializer short-circuits.
+
+#### ECMA private members (`#name`)
+
+An ECMA private member is checked exactly like one declared with the TypeScript `private` modifier. The two are the same privacy written two ways, and they are mutually exclusive — `private #verified` is a TypeScript error (TS18010, "An accessibility modifier cannot be used with a private identifier") — so the `#` spelling is an alternative, never an opt-out. It is also the most rename-safe name in the language: no structural type, serialized payload, or external caller can observe it, so the remedy is always available to you.
+
+```ts
+class UserAccount {
+  #verified = false; // Flagged — rename to #isVerified
+  static #premium = false; // Flagged — rename to #isPremium
+  readonly #locked!: boolean; // Flagged — rename to #isLocked
+  #_verified = false; // Not flagged — underscore-prefixed internal state
+  #status = 'active'; // Not flagged — not a boolean
+
+  // Flagged — rename to #isExpired
+  #expired(): boolean {
+    return this.#status === 'expired';
+  }
+
+  // Flagged — rename to #isActive
+  get #active() {
+    return this.#status === 'active';
+  }
+}
+```
+
+The `#` sigil marks privacy rather than forming part of the name, so the remedy prepends the prefix to the word itself: `#verified` becomes `#isVerified`. Reports quote the member as written, which keeps a report on `#verified` distinct from one on a sibling public `verified` — those are separate members. A read of a `#` member counts as any other member read does, so `get #active() { return this.#isVerified; }` is judged exactly as `get active() { return this.isVerified; }` is.
+
+Because the underscore exemption below is keyed on the name, it survives the `#` spelling too: `#_verified`'s name is `_verified`, so it stays exempt.
 
 #### Private/Internal Properties with Underscore Prefix
 
