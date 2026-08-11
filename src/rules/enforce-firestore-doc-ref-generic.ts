@@ -64,6 +64,46 @@ function unwrapOptionalChain(node: TSESTree.Node): TSESTree.Node {
   return node.type === AST_NODE_TYPES.ChainExpression ? node.expression : node;
 }
 
+/**
+ * The two ways a class member is named at a `this.<member>` site and at its
+ * declaration.
+ *
+ * `#foo` and `private foo` express the same privacy and are mutually exclusive
+ * spellings — `private #foo` is a TypeScript error (TS18010) — so a member
+ * lookup that reads only `Identifier` cannot be opted back into by adding a
+ * modifier. The schema a class member declares is evidence about the reference
+ * built from it whichever spelling names it, so both are resolved.
+ */
+type MemberName = TSESTree.Identifier | TSESTree.PrivateIdentifier;
+
+function isMemberName(node: TSESTree.Node): node is MemberName {
+  return (
+    node.type === AST_NODE_TYPES.Identifier ||
+    node.type === AST_NODE_TYPES.PrivateIdentifier
+  );
+}
+
+/**
+ * Whether a class member's key names the member a `this.<member>` site reaches.
+ *
+ * The spelling has to agree as well as the bare word: `#settings` and a sibling
+ * public `settings` are two distinct members that may hold different schemas,
+ * so matching on the name alone would answer a question about one of them with
+ * evidence taken from the other. `PrivateIdentifier.name` carries the bare word
+ * with no `#` at both the declaration and the reference, so once the node types
+ * agree the names compare directly.
+ */
+function isMemberKeyNamed(
+  key: TSESTree.Node,
+  reference: MemberName,
+): key is MemberName {
+  return (
+    isMemberName(key) &&
+    key.type === reference.type &&
+    key.name === reference.name
+  );
+}
+
 /** The spellings a function can be written in. */
 type FunctionNode =
   | TSESTree.FunctionDeclaration
@@ -421,15 +461,17 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
           const left = current.left;
           if (left.type === AST_NODE_TYPES.MemberExpression) {
             const obj = left.object;
-            if (obj.type === AST_NODE_TYPES.ThisExpression) {
+            const assigned = left.property;
+            if (
+              obj.type === AST_NODE_TYPES.ThisExpression &&
+              isMemberName(assigned)
+            ) {
               const classNode = findParentClass(current);
               if (classNode) {
                 const property = classNode.body.body.find(
                   (member): member is TSESTree.PropertyDefinition =>
                     member.type === AST_NODE_TYPES.PropertyDefinition &&
-                    member.key.type === AST_NODE_TYPES.Identifier &&
-                    member.key.name ===
-                      (left.property as TSESTree.Identifier).name,
+                    isMemberKeyNamed(member.key, assigned),
                 );
                 if (property?.typeAnnotation) {
                   nodeCache.set(node, true);
@@ -526,15 +568,14 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
       // Handle this.property access
       if (
         obj.type === AST_NODE_TYPES.ThisExpression &&
-        property.type === AST_NODE_TYPES.Identifier
+        isMemberName(property)
       ) {
         const classNode = findParentClass(node);
         if (classNode) {
           const classProp = classNode.body.body.find(
             (member): member is TSESTree.PropertyDefinition =>
               member.type === AST_NODE_TYPES.PropertyDefinition &&
-              member.key.type === AST_NODE_TYPES.Identifier &&
-              member.key.name === property.name,
+              isMemberKeyNamed(member.key, property),
           );
           if (classProp?.typeAnnotation) {
             return hasCollectionReferenceType(
@@ -573,7 +614,7 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
       // Handle getter methods like this.collection where collection is a getter
       if (
         obj.type === AST_NODE_TYPES.ThisExpression &&
-        property.type === AST_NODE_TYPES.Identifier
+        isMemberName(property)
       ) {
         const classNode = findParentClass(node);
         if (classNode) {
@@ -581,8 +622,7 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
             (member): member is TSESTree.MethodDefinition =>
               member.type === AST_NODE_TYPES.MethodDefinition &&
               member.kind === 'get' &&
-              member.key.type === AST_NODE_TYPES.Identifier &&
-              member.key.name === property.name,
+              isMemberKeyNamed(member.key, property),
           );
           if (getter) {
             return yieldsTypedCollectionReference(getter.value);
@@ -752,12 +792,12 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
         const obj = node.callee.object;
         const property = node.callee.property;
 
-        if (property.type === AST_NODE_TYPES.Identifier) {
+        if (isMemberName(property)) {
           // Check if this is a getter or method that returns CollectionReference
           if (obj.type === AST_NODE_TYPES.ThisExpression) {
             const classNode = findParentClass(node);
             if (classNode) {
-              const callee = findClassCallable(classNode, property.name);
+              const callee = findClassCallable(classNode, property);
               if (callee) {
                 return yieldsTypedCollectionReference(callee);
               }
@@ -778,7 +818,7 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
      */
     function findClassCallable(
       classNode: TSESTree.ClassDeclaration,
-      name: string,
+      reference: MemberName,
     ):
       | TSESTree.FunctionExpression
       | TSESTree.ArrowFunctionExpression
@@ -788,16 +828,14 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
         if (
           member.type === AST_NODE_TYPES.MethodDefinition &&
           member.kind === 'method' &&
-          member.key.type === AST_NODE_TYPES.Identifier &&
-          member.key.name === name
+          isMemberKeyNamed(member.key, reference)
         ) {
           return member.value;
         }
 
         if (
           member.type === AST_NODE_TYPES.PropertyDefinition &&
-          member.key.type === AST_NODE_TYPES.Identifier &&
-          member.key.name === name
+          isMemberKeyNamed(member.key, reference)
         ) {
           // An annotated property is already resolved by the member-expression
           // path, which reads the annotation rather than the initializer.
@@ -818,18 +856,17 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
     function getTypeOfMemberExpression(
       node: TSESTree.MemberExpression,
     ): TSESTree.TypeNode | null {
+      const property = node.property;
       if (
         node.object.type === AST_NODE_TYPES.ThisExpression &&
-        node.property.type === AST_NODE_TYPES.Identifier
+        isMemberName(property)
       ) {
         const classNode = findParentClass(node);
         if (classNode) {
           const classProp = classNode.body.body.find(
             (member): member is TSESTree.PropertyDefinition =>
               member.type === AST_NODE_TYPES.PropertyDefinition &&
-              member.key.type === AST_NODE_TYPES.Identifier &&
-              'name' in node.property &&
-              member.key.name === node.property.name,
+              isMemberKeyNamed(member.key, property),
           );
           return classProp?.typeAnnotation?.typeAnnotation || null;
         }
