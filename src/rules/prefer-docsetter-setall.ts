@@ -8,6 +8,10 @@ type IterationContext =
   | { kind: 'loop'; loopType: TSESTree.Node['type'] }
   | { kind: 'array-callback'; methodName: string };
 
+type MemberKeyType =
+  | AST_NODE_TYPES.Identifier
+  | AST_NODE_TYPES.PrivateIdentifier;
+
 const ITERATING_METHODS = new Set(['map', 'forEach']);
 const DOC_SETTER_NAMES = new Set<DocSetterKind>([
   'DocSetter',
@@ -105,8 +109,26 @@ function resolveDocSetterFromScope(
   return null;
 }
 
+/**
+ * `#docSetter` and `docSetter` are members of two disjoint namespaces: a class
+ * may declare both, and `this.#docSetter` can only ever mean the ECMA private
+ * field. Resolution therefore carries the receiver's key kind so a `set` call is
+ * never vouched for by a same-named member of the other namespace.
+ */
+function isMatchingMemberKey(
+  key: TSESTree.Node,
+  keyType: MemberKeyType,
+  name: string,
+): boolean {
+  if (keyType === AST_NODE_TYPES.PrivateIdentifier) {
+    return key.type === AST_NODE_TYPES.PrivateIdentifier && key.name === name;
+  }
+  return key.type === AST_NODE_TYPES.Identifier && key.name === name;
+}
+
 function resolveDocSetterFromClassProperty(
   propertyName: string,
+  keyType: MemberKeyType,
   startNode: TSESTree.Node,
 ): DocSetterKind | null {
   let current: TSESTree.Node | undefined = startNode;
@@ -115,8 +137,7 @@ function resolveDocSetterFromClassProperty(
       for (const element of current.body) {
         if (
           element.type === AST_NODE_TYPES.PropertyDefinition &&
-          element.key.type === AST_NODE_TYPES.Identifier &&
-          element.key.name === propertyName
+          isMatchingMemberKey(element.key, keyType, propertyName)
         ) {
           const ctorKind = getNewExpressionKind(element.value);
           if (ctorKind) return ctorKind;
@@ -131,7 +152,11 @@ function resolveDocSetterFromClassProperty(
       }
 
       const classNode = current.parent;
+      // A TypeScript parameter property always declares a public-namespace
+      // member: `constructor(private #x)` is not expressible, so this branch
+      // can never explain an ECMA private receiver.
       if (
+        keyType === AST_NODE_TYPES.Identifier &&
         classNode &&
         (classNode.type === AST_NODE_TYPES.ClassDeclaration ||
           classNode.type === AST_NODE_TYPES.ClassExpression)
@@ -252,14 +277,21 @@ function resolveDocSetterInfo(
   if (
     object.type === AST_NODE_TYPES.MemberExpression &&
     object.object.type === AST_NODE_TYPES.ThisExpression &&
-    object.property.type === AST_NODE_TYPES.Identifier
+    (object.property.type === AST_NODE_TYPES.Identifier ||
+      object.property.type === AST_NODE_TYPES.PrivateIdentifier)
   ) {
+    const keyType: MemberKeyType = object.property.type;
     const setterKind = resolveDocSetterFromClassProperty(
       object.property.name,
+      keyType,
       callee,
     );
     if (setterKind) {
-      return { setterName: object.property.name, setterKind };
+      // The reported name has to be spelled the way the author must write the
+      // remedy: `this.#docSetter.setAll(...)`. A bare `docSetter` names a
+      // member that does not exist.
+      const prefix = keyType === AST_NODE_TYPES.PrivateIdentifier ? '#' : '';
+      return { setterName: `${prefix}${object.property.name}`, setterKind };
     }
   }
 
