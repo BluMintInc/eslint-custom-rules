@@ -19,6 +19,36 @@ This rule reports parameterless, non-abstract, synchronous methods that return a
 
 The fixer is withheld unless the method is declared `private`. A `public`, `protected`, or unspecified-accessibility method is API surface whose `instance.method()` call sites may live in other files, and this rule only inspects the current file — it does not attempt project-wide call-site discovery. Auto-converting such a method to a getter would silently break every external caller (the call would invoke the getter's return value), so the rule reports but leaves the change to the developer. Only `private` methods (whose call sites cannot escape the class) are eligible for the automatic fix.
 
+### ECMA private names (`#method()`)
+
+A method keyed by an ECMA private name is treated exactly like one carrying the `private` modifier — the two spell the same privacy and are mutually exclusive, since `private #method` is a TypeScript error (`TS18010`). It is reported, and it is eligible for the fix on the same terms: `#method` is unreachable outside the class body at runtime, so every call site is in the file under lint by construction, which satisfies the fixer's privacy premise more strongly than the erased `private` modifier does.
+
+The emitted getter keeps the sigil, and the prefix is stripped from the name as usual:
+
+```ts
+class IndexSpecCanonicalizer {
+  #computeFingerprint(): string {
+    return createHash('sha256').update(this.#json).digest('hex');
+  }
+}
+```
+
+becomes
+
+```ts
+class IndexSpecCanonicalizer {
+  get #fingerprint(): string {
+    return createHash('sha256').update(this.#json).digest('hex');
+  }
+}
+```
+
+`#name` and `name` are two distinct members of one class, so they never mask each other: a sibling `fingerprint` field does not block `get #fingerprint()`, and a `#fingerprint` field does. Conversely, an ECMA private name lives in a *single* namespace per class — `static #x` and `#x` in one class body is a duplicate declaration — so a static sibling collides with an instance one, unlike the plainly-named case.
+
+Two further withholdings are specific to this spelling. An ergonomic brand check (`#method in candidate`) names the member without a member expression, so the rule holds the fix rather than leave the check pointing at a member that was renamed away. And a decorated `#method()` is never converted: a decorator cannot be applied to a private-named member under `experimentalDecorators` (`TS1206`), so no legal getter form exists to convert to.
+
+A heritage clause never constrains an ECMA private member — a base class's `#x` is a different member, and no interface or type can declare one — so the whole-class exemption for unresolvable heritage described below does not reach it.
+
 The fixer is also withheld when mutations are detected (assignments, `delete`, `++/--`, mutating array calls such as `fill`/`copyWithin`, or mutating collection calls like `set`/`add`/`delete`/`clear`), when the method name is used as a callable or stored as a function reference in the same file (including via optional chaining and when passed as a callback argument), when the method body already reads `this.<suggestedName>` which would create a self-referential getter, or when the suggested getter name would collide with an existing class member. In these cases the rule still reports but leaves the change to the developer to avoid breaking call sites or creating duplicate identifiers.
 
 Implementations that accompany overload signatures are skipped entirely because getters cannot have overload declarations; leaving those signatures in place would produce invalid TypeScript.

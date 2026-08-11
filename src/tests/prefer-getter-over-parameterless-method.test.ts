@@ -410,6 +410,84 @@ ruleTesterTs.run(
         public beta(): number { return 2; }
       }
       `,
+
+      // An ECMA private name is the same privacy as the `private` modifier and
+      // mutually exclusive with it (`private #foo` is TS18010), so `#foo` is
+      // analyzed like any other member — every exemption that silences a
+      // `private` method must silence its `#` spelling too.
+
+      // Already a getter: nothing to convert.
+      `
+      class Fingerprinter {
+        get #fingerprint(): string { return 'x'; }
+        describe(prefix: string): string { return prefix + this.#fingerprint; }
+      }
+      `,
+
+      // Parameters keep it a method.
+      `
+      class Fingerprinter {
+        #computeFingerprint(salt: string): string { return salt; }
+      }
+      `,
+
+      // Void return is an action.
+      `
+      class Fingerprinter {
+        #computeFingerprint(): void { this.log('x'); }
+      }
+      `,
+
+      // Async is an action by default.
+      `
+      class Fingerprinter {
+        async #computeFingerprint(): Promise<string> { return 'x'; }
+      }
+      `,
+
+      // A top-level throw makes it an imperative assertion, not a property.
+      `
+      class Fingerprinter {
+        #computeFingerprint(): string { throw new Error('nope'); }
+      }
+      `,
+
+      // A `@sideEffect` tag is honored on the `#` spelling too.
+      `
+      class Fingerprinter {
+        #hits = 0;
+        /**
+         * @sideEffect increments the hit counter
+         */
+        #computeFingerprint(): number { return ++this.#hits; }
+      }
+      `,
+
+      // `ignoredMethods` matches the bare name, sigil aside.
+      {
+        code: `
+        class Fingerprinter {
+          #serialize(): string { return 'x'; }
+        }
+        `,
+        options: [{ ignoredMethods: ['serialize'] }],
+      },
+
+      // A `#` implementation that accompanies overload signatures cannot become
+      // a getter, so it is skipped entirely rather than reported without a fix.
+      `
+      class Fingerprinter {
+        #computeFingerprint(): string;
+        #computeFingerprint(): string { return 'x'; }
+      }
+      `,
+
+      // A generator is never a property read.
+      `
+      class Fingerprinter {
+        *#computeParts(): Generator<string> { yield 'x'; }
+      }
+      `,
     ],
     invalid: [
       {
@@ -1405,6 +1483,425 @@ ruleTesterTs.run(
           {
             messageId: 'preferGetter',
             data: { name: 'count', suggestedName: 'count' },
+          },
+        ],
+      },
+
+      // An ECMA private name is the strongest privacy the language offers —
+      // strictly stronger than the erased `private` modifier, since `#foo` is
+      // unreachable outside the class body at runtime — so it is both reported
+      // and auto-fixed, and the emitted getter keeps its `#`.
+      {
+        code: [
+          'class Fingerprinter {',
+          "  #compute(): string { return 'x'; }",
+          '}',
+        ].join('\n'),
+        output: [
+          'class Fingerprinter {',
+          "  get #compute(): string { return 'x'; }",
+          '}',
+        ].join('\n'),
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: { name: '#compute', suggestedName: '#compute' },
+          },
+        ],
+      },
+
+      // The prefix is stripped from the `#` name exactly as from a plain one.
+      {
+        code: [
+          'class Fingerprinter {',
+          "  #computeFingerprint(): string { return 'x'; }",
+          '}',
+        ].join('\n'),
+        output: [
+          'class Fingerprinter {',
+          "  get #fingerprint(): string { return 'x'; }",
+          '}',
+        ].join('\n'),
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: {
+              name: '#computeFingerprint',
+              suggestedName: '#fingerprint',
+            },
+          },
+        ],
+      },
+
+      // Isolation control for the case above: renaming the member while KEEPING
+      // the `private` modifier does not move the verdict, so the `#` finding is
+      // about the privacy spelling and not about the name.
+      {
+        code: [
+          'class Fingerprinter {',
+          "  private computeFingerprint(): string { return 'x'; }",
+          '}',
+        ].join('\n'),
+        output: [
+          'class Fingerprinter {',
+          "  private get fingerprint(): string { return 'x'; }",
+          '}',
+        ].join('\n'),
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: { name: 'computeFingerprint', suggestedName: 'fingerprint' },
+          },
+        ],
+      },
+
+      // The static arm keeps `static` and the `#`.
+      {
+        code: [
+          'class Fingerprinter {',
+          '  static #computeBase(): number { return 1; }',
+          '}',
+        ].join('\n'),
+        output: [
+          'class Fingerprinter {',
+          '  static get #base(): number { return 1; }',
+          '}',
+        ].join('\n'),
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: { name: '#computeBase', suggestedName: '#base' },
+          },
+        ],
+      },
+
+      // `#foo` and `foo` are separate members of one class, so a public sibling
+      // named like the suggested getter is not a collision and does not block
+      // the fix.
+      {
+        code: [
+          'class Fingerprinter {',
+          "  fingerprint = 'a';",
+          "  #computeFingerprint(): string { return 'x'; }",
+          '}',
+        ].join('\n'),
+        output: [
+          'class Fingerprinter {',
+          "  fingerprint = 'a';",
+          "  get #fingerprint(): string { return 'x'; }",
+          '}',
+        ].join('\n'),
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: {
+              name: '#computeFingerprint',
+              suggestedName: '#fingerprint',
+            },
+          },
+        ],
+      },
+
+      // Both spellings in one class are two independent conversions.
+      {
+        code: [
+          'class Fingerprinter {',
+          "  private computeSignature(): string { return 'a'; }",
+          "  #computeFingerprint(): string { return 'b'; }",
+          '}',
+        ].join('\n'),
+        output: [
+          'class Fingerprinter {',
+          "  private get signature(): string { return 'a'; }",
+          "  get #fingerprint(): string { return 'b'; }",
+          '}',
+        ].join('\n'),
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: { name: 'computeSignature', suggestedName: 'signature' },
+          },
+          {
+            messageId: 'preferGetter',
+            data: {
+              name: '#computeFingerprint',
+              suggestedName: '#fingerprint',
+            },
+          },
+        ],
+      },
+
+      // A heritage clause cannot constrain a `#` member — a base class's `#x`
+      // is a different member and no type can declare one — so the whole-class
+      // exemption for unresolvable heritage does not reach it.
+      {
+        code: [
+          "import { Base } from './base';",
+          'class Fingerprinter extends Base {',
+          "  #computeFingerprint(): string { return 'x'; }",
+          '}',
+        ].join('\n'),
+        output: [
+          "import { Base } from './base';",
+          'class Fingerprinter extends Base {',
+          "  get #fingerprint(): string { return 'x'; }",
+          '}',
+        ].join('\n'),
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: {
+              name: '#computeFingerprint',
+              suggestedName: '#fingerprint',
+            },
+          },
+        ],
+      },
+
+      // An in-file call site must be rewritten for the conversion to compile,
+      // and this rule does not rewrite call sites — so it reports and withholds,
+      // exactly as it does for a called `private` method.
+      {
+        code: [
+          'class Fingerprinter {',
+          "  #computeFingerprint(): string { return 'x'; }",
+          '  render(): string { return this.#computeFingerprint(); }',
+          '}',
+        ].join('\n'),
+        output: null,
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: {
+              name: '#computeFingerprint',
+              suggestedName: '#fingerprint',
+            },
+          },
+          {
+            messageId: 'preferGetter',
+            data: { name: 'render', suggestedName: 'render' },
+          },
+        ],
+      },
+
+      // Stored as a function reference rather than called: same withholding.
+      {
+        code: [
+          'class Fingerprinter {',
+          "  #computeFingerprint(): string { return 'x'; }",
+          '  hold(): () => string { return this.#computeFingerprint; }',
+          '}',
+        ].join('\n'),
+        output: null,
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: {
+              name: '#computeFingerprint',
+              suggestedName: '#fingerprint',
+            },
+          },
+          {
+            messageId: 'preferGetter',
+            data: { name: 'hold', suggestedName: 'hold' },
+          },
+        ],
+      },
+
+      // Reached through another instance of the same class, which only a `#`
+      // member can be (`other.#x` is legal inside the class body).
+      {
+        code: [
+          'class Fingerprinter {',
+          "  #computeFingerprint(): string { return 'x'; }",
+          '  same(other: Fingerprinter): boolean {',
+          "    return other.#computeFingerprint() === 'x';",
+          '  }',
+          '}',
+        ].join('\n'),
+        output: null,
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: {
+              name: '#computeFingerprint',
+              suggestedName: '#fingerprint',
+            },
+          },
+        ],
+      },
+
+      // An ergonomic brand check names the member without a MemberExpression;
+      // renaming the declaration would leave it dangling, so the fix is held.
+      {
+        code: [
+          'class Fingerprinter {',
+          "  #computeFingerprint(): string { return 'x'; }",
+          '  static has(candidate: object): boolean {',
+          '    return #computeFingerprint in candidate;',
+          '  }',
+          '}',
+        ].join('\n'),
+        output: null,
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: {
+              name: '#computeFingerprint',
+              suggestedName: '#fingerprint',
+            },
+          },
+        ],
+      },
+
+      // A sibling `#fingerprint` field is a genuine collision: two members of
+      // one private namespace are a duplicate declaration.
+      {
+        code: [
+          'class Fingerprinter {',
+          "  #fingerprint = 'a';",
+          '  #computeFingerprint(): string { return this.#fingerprint; }',
+          '}',
+        ].join('\n'),
+        output: null,
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: {
+              name: '#computeFingerprint',
+              suggestedName: '#fingerprint',
+            },
+          },
+        ],
+      },
+
+      // A private name occupies ONE namespace per class: `static #base` and an
+      // instance `#base` cannot coexist, so the static sibling collides even
+      // though a `static base` would not.
+      {
+        code: [
+          'class Fingerprinter {',
+          '  static #base = 1;',
+          '  #computeBase(): number { return 2; }',
+          '}',
+        ].join('\n'),
+        output: null,
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: { name: '#computeBase', suggestedName: '#base' },
+          },
+        ],
+      },
+
+      // Two `#` methods reducing to one getter name would emit a duplicate
+      // private element, across the static boundary as well.
+      {
+        code: [
+          'class Fingerprinter {',
+          '  static #computeBase(): number { return 1; }',
+          '  #deriveBase(): number { return 2; }',
+          '}',
+        ].join('\n'),
+        output: null,
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: { name: '#computeBase', suggestedName: '#base' },
+          },
+          {
+            messageId: 'preferGetter',
+            data: { name: '#deriveBase', suggestedName: '#base' },
+          },
+        ],
+      },
+
+      // A decorator cannot be applied to a `#` member under
+      // `experimentalDecorators` (TS1206), so no legal getter form exists to
+      // convert to and the fix is declined rather than emitted.
+      {
+        code: [
+          'class Fingerprinter {',
+          '  @Memoize()',
+          "  #computeFingerprint(): string { return 'x'; }",
+          '}',
+        ].join('\n'),
+        output: null,
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: {
+              name: '#computeFingerprint',
+              suggestedName: '#fingerprint',
+            },
+          },
+        ],
+      },
+
+      // A mutating `#` method reports under the side-effect message and keeps
+      // the fix withheld, matching the `private` spelling.
+      {
+        code: [
+          'class Fingerprinter {',
+          '  #hits = 0;',
+          '  #computeHits(): number { return ++this.#hits; }',
+          '}',
+        ].join('\n'),
+        output: null,
+        errors: [
+          {
+            messageId: 'preferGetterSideEffect',
+            data: {
+              name: '#computeHits',
+              suggestedName: '#hits',
+              reason: 'it mutates state with ++/--',
+            },
+          },
+        ],
+      },
+
+      // The body already reading `this.#fingerprint` would make the getter
+      // self-referential.
+      {
+        code: [
+          'class Fingerprinter {',
+          '  #computeFingerprint(): string { return this.#fingerprint; }',
+          '}',
+        ].join('\n'),
+        output: null,
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: {
+              name: '#computeFingerprint',
+              suggestedName: '#fingerprint',
+            },
+          },
+        ],
+      },
+
+      // A sibling `set #fingerprint` is an accessor pair, not a collision, so
+      // the conversion completes the pair.
+      {
+        code: [
+          'class Fingerprinter {',
+          '  set #fingerprint(value: string) { void value; }',
+          "  #computeFingerprint(): string { return 'x'; }",
+          '}',
+        ].join('\n'),
+        output: [
+          'class Fingerprinter {',
+          '  set #fingerprint(value: string) { void value; }',
+          "  get #fingerprint(): string { return 'x'; }",
+          '}',
+        ].join('\n'),
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: {
+              name: '#computeFingerprint',
+              suggestedName: '#fingerprint',
+            },
           },
         ],
       },
