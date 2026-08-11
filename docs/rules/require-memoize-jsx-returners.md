@@ -37,9 +37,70 @@ class ProviderFactory {
 
 - Applies to instance getters and methods that return JSX directly or return functions that produce JSX (including nested `() => () => <div />` patterns).
 - Skips static members, so it does not conflict with `no-memoize-on-static`.
+- Skips members declared in a class **expression** (`const Widget = class { … }`), where no decorator is legal at all (see below).
 - Functions inside React components that rely on hooks (e.g., `useCallback`, `useMemo`) are out of scope because the rule only inspects class members.
 - Recognizes `@Memoize`, aliased imports, and namespaced forms like `@memoize.Memoize()`. Auto-fix reuses existing aliases and inserts `import { Memoize } from '@blumintinc/typescript-memoize';` if missing.
 - When other decorators exist, `@Memoize()` is added without removing them; multiple violations in a file share a single inserted import.
+
+### Members declared in a class expression
+
+A getter or method inside a class **expression** is never reported. Under
+`experimentalDecorators` — the mode this plugin's consumers compile in —
+TypeScript rejects a decorator on **every** member of a class expression with
+**TS1206**, "Decorators are not valid here.", whatever the member is named and
+wherever the decorator is written. The remedy this rule prescribes cannot be
+written in place, and a report naming an edit its reader cannot make is worse
+than silence. The carve-out covers each spelling of the shape — anonymous,
+named, returned from a factory, passed as an argument, or held in an object
+property, a class property or a parameter default:
+
+```ts
+// Not reported: `@Memoize()` cannot be written on any of these members.
+export const Widget = class {
+  public get Component() {
+    return () => <div />;
+  }
+};
+
+export const Named = class Inner {
+  public render() {
+    return <div />;
+  }
+};
+
+export function build() {
+  return class {
+    public render() {
+      return <div />;
+    }
+  };
+}
+```
+
+To memoize such a member, give the class a **declaration**, which takes
+decorators normally:
+
+```ts
+import { Memoize } from '@blumintinc/typescript-memoize';
+
+class Widget {
+  @Memoize()
+  public get Component() {
+    return () => <div />;
+  }
+}
+
+export { Widget };
+```
+
+The carve-out is keyed on the member's own enclosing class rather than on any
+ancestor: a class declaration nested inside a class expression's method is still
+reported and still fixed, and `export default class { … }` is a declaration
+despite having no name, so it is reported too.
+
+Should this plugin ever target standard (TC39) decorators —
+`experimentalDecorators: false`, where a class expression's members do accept
+decorators — this carve-out becomes mode-dependent and needs revisiting.
 
 ### Interaction with inline disable comments
 
