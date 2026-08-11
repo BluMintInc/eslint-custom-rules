@@ -2225,9 +2225,196 @@ class Example {
 }
 `,
       },
+      // Issue #1957: the anchor sits past the prologue precisely because the
+      // prologue precedes it, so widening the insertion to the anchor's line
+      // start jumps the directive whenever the two share a line.
+      {
+        name: 'keeps a directive that shares the anchor line first',
+        code: `'use client'; class Example {
+  async getData() {
+    return await fetch('data');
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `'use client'; import { Memoize } from '@blumintinc/typescript-memoize';
+class Example {
+  @Memoize()
+  async getData() {
+    return await fetch('data');
+  }
+}
+`,
+      },
+      {
+        name: 'keeps a directive sharing its line with an existing import first',
+        code: `'use client'; import { something } from 'lib';
+class Example {
+  async getData() {
+    return await something(fetch('data'));
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `'use client'; import { Memoize } from '@blumintinc/typescript-memoize';
+import { something } from 'lib';
+class Example {
+  @Memoize()
+  async getData() {
+    return await something(fetch('data'));
+  }
+}
+`,
+      },
+      // The own-line branch still widens, which is what keeps the displaced
+      // anchor on the indentation it already had.
+      {
+        name: 'keeps an indented anchor on its own indentation',
+        code: `  'use client';
+  class Example {
+    async getData() {
+      return await fetch('data');
+    }
+  }
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `  'use client';
+  import { Memoize } from '@blumintinc/typescript-memoize';
+  class Example {
+    @Memoize()
+    async getData() {
+      return await fetch('data');
+    }
+  }
+`,
+      },
     ],
   },
 );
+
+// Issue #1957: a `'use client'` directive is a directive only while it is the
+// FIRST statement, so an import spliced above it is silently demoted to an
+// inert expression statement. Nothing in the lint chain reports that — the
+// output re-lints clean, and unlike #1956 there is no compiler signal either,
+// since a demoted directive is still valid TypeScript. The oracle therefore has
+// to be STRUCTURAL: parse the output and ask whether the directive is still
+// first. A substring check passes on the corrupt output, because the directive
+// is still present — just no longer leading.
+describe('enforce-memoize-async: the injected import stays below the prologue (issue #1957)', () => {
+  const RULE_ID = '@blumintinc/blumint/enforce-memoize-async';
+  const FILENAME = 'Example.ts';
+
+  const createLinter = () => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(RULE_ID, enforceMemoizeAsync as unknown as Rule.RuleModule);
+    return linter;
+  };
+
+  const LINT_CONFIG = {
+    parser: '@typescript-eslint/parser',
+    parserOptions: {
+      ecmaVersion: 2022 as const,
+      sourceType: 'module' as const,
+    },
+    rules: { [RULE_ID]: 'error' as const },
+  };
+
+  const fix = (code: string) =>
+    createLinter().verifyAndFix(code, LINT_CONFIG, FILENAME);
+
+  const verify = (code: string) =>
+    createLinter().verify(code, LINT_CONFIG, FILENAME);
+
+  /** Whether `'use client'` still leads the program body. */
+  const directiveLeads = (code: string): boolean => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const parser = require('@typescript-eslint/parser');
+    const first = parser.parse(code, {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      range: true,
+      loc: true,
+    }).body[0];
+    return (
+      first?.type === 'ExpressionStatement' &&
+      first.expression?.type === 'Literal' &&
+      first.expression.value === 'use client'
+    );
+  };
+
+  const expectDirectiveSurvives = (code: string) => {
+    // A fixture the rule declined, or that never had a leading directive, would
+    // satisfy the assertions below vacuously.
+    expect(verify(code).length).toBeGreaterThan(0);
+    expect(directiveLeads(code)).toBe(true);
+
+    const first = fix(code);
+    expect(first.fixed).toBe(true);
+    expect(fix(first.output).fixed).toBe(false);
+    expect(verify(first.output)).toHaveLength(0);
+    expect(directiveLeads(first.output)).toBe(true);
+    expect(
+      first.output.match(
+        /import \{ Memoize \} from '@blumintinc\/typescript-memoize';/g,
+      ),
+    ).toHaveLength(1);
+
+    return first.output;
+  };
+
+  it('keeps the directive leading when it shares the anchor line', () => {
+    expectDirectiveSurvives(
+      `'use client'; class Example {\n  async getData() {\n    return await fetch('data');\n  }\n}\n`,
+    );
+  });
+
+  it('keeps the directive leading when an import shares its line', () => {
+    expectDirectiveSurvives(
+      `'use client'; import { something } from 'lib';\nclass Example {\n  async getData() {\n    return await something(fetch('data'));\n  }\n}\n`,
+    );
+  });
+
+  it('keeps the directive leading for use server', () => {
+    const output = fix(
+      `'use server'; class Example {\n  async getData() {\n    return await fetch('data');\n  }\n}\n`,
+    ).output;
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const parsed = require('@typescript-eslint/parser').parse(output, {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      range: true,
+      loc: true,
+    });
+    expect(parsed.body[0].expression.value).toBe('use server');
+  });
+
+  it('leaves the own-line spelling byte-identical to its prior output', () => {
+    expect(
+      expectDirectiveSurvives(
+        `'use client';\nclass Example {\n  async getData() {\n    return await fetch('data');\n  }\n}\n`,
+      ),
+    ).toBe(
+      `'use client';\nimport { Memoize } from '@blumintinc/typescript-memoize';\nclass Example {\n  @Memoize()\n  async getData() {\n    return await fetch('data');\n  }\n}\n`,
+    );
+  });
+
+  it('would have caught the bug: the pre-fix output is rejected by the oracle', () => {
+    // Verbatim output of the unguarded line-start anchor, kept as a planted
+    // positive control so this block cannot decay into passing vacuously.
+    const preFixOutput = `import { Memoize } from '@blumintinc/typescript-memoize';\n'use client'; class Example {\n  @Memoize()\n  async getData() {\n    return await fetch('data');\n  }\n}\n`;
+
+    // Both halves matter: it re-lints CLEAN, so a report-counting guard scores
+    // it a success, while the directive has stopped leading.
+    expect(verify(preFixOutput)).toHaveLength(0);
+    expect(preFixOutput).toContain(`'use client';`);
+    expect(directiveLeads(preFixOutput)).toBe(false);
+  });
+});
 
 // Issue #1697: a jest registrar's module factory is hoisted above the file's
 // imports, and babel-plugin-jest-hoist rejects a factory that reads an

@@ -82,6 +82,28 @@ class UserRepo {
 class Compact { @Memoize() async currentUser() { return api.getCurrent(); } }
 ```
 
+### Where the injected import is written
+
+The `import { Memoize } …` the fix adds when the file lacks one is placed below
+the file's prologue — a `'use client'` / `'use server'` directive, a `#!`
+shebang, a header comment — and above the first existing import. A directive is
+a directive only while it is the **first** statement, so an import spliced above
+one would silently demote it to an ordinary expression statement: still valid
+TypeScript, still reported clean by ESLint, but no longer read by the bundler.
+
+Where the anchor owns its line the import takes that line and the displaced
+statement keeps its indentation. Where the anchor shares its line with the
+prologue, the import is written inline after it rather than above it:
+
+```ts
+'use client';
+import { Memoize } from '@blumintinc/typescript-memoize';
+class UserRepo {
+  @Memoize()
+  async currentUser() { return api.getCurrent(); }
+}
+```
+
 ### Methods declared to produce no value
 
 A method annotated `void` or `Promise<void>` is exempt. Memoizing one is not an

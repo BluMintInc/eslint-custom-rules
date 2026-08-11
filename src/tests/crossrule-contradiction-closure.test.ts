@@ -244,8 +244,8 @@ const KNOWN_DIVERGENT: Record<string, Exemption> = {
   },
   'enforce-memoize-async::enforce-dynamic-imports': {
     reason:
-      "INCIDENTAL: the fixtures carry an unrelated static `import { something } from 'lib'` beside the decorator under test; without it both are silent (measured), and the decorator package itself is on `DEFAULT_IGNORED_LIBRARIES`.",
-    cases: { dynamicImportRequired: 6 },
+      "INCIDENTAL: the fixtures carry an unrelated static `import { something } from 'lib'` beside the decorator under test; without it both are silent (measured), and the decorator package itself is on `DEFAULT_IGNORED_LIBRARIES`. Was 6 — the #1957 prologue fixture carrying that same `from 'lib'` import joined the identical class, and `enforce-dynamic-imports` reports it on the fixture's INPUT just as it does on the output (measured), so the memoize fix introduces nothing. Of the three fixtures #1957 added only that one joins; the two without the unrelated import are silent under both.",
+    cases: { dynamicImportRequired: 7 },
   },
   'enforce-memoize-async::no-explicit-return-type': {
     reason:

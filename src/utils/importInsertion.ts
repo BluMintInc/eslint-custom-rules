@@ -140,6 +140,10 @@ export function insertAtImportAnchor(
  * Widens `anchor` to the start of its line, for rules that emit
  * `${indent}import …\n` so the displaced anchor keeps its own indentation.
  * Raw-offset anchors pass through: they never sit inside an indented line.
+ *
+ * Sound only where the anchor is known to open its line. Prefer
+ * `importAnchorLineStartIfOwned`, which establishes that rather than assuming
+ * it; a caller reaching for this one must make the check itself.
  */
 export function importAnchorLineStart(
   sourceCode: ImportInsertionSource,
@@ -151,6 +155,37 @@ export function importAnchorLineStart(
   const lineStart =
     sourceCode.text.lastIndexOf('\n', anchor.target.range[0] - 1) + 1;
   return { kind: 'index', index: lineStart };
+}
+
+/**
+ * Widens `anchor` to the start of its line only where whitespace is all that
+ * precedes it there, and leaves it alone otherwise.
+ *
+ * The widening buys one thing — an emitted `${indent}import …\n` leaves the
+ * displaced anchor on the indentation it already had — and that reasoning holds
+ * only while the anchor opens its line. When something else opens that line the
+ * widened offset sits ahead of it, and the anchor resolves past the prologue
+ * precisely because the prologue is what precedes it: a `'use client'` is a
+ * directive only while it is the first statement, so an import spliced above it
+ * demotes it to an inert expression statement that no bundler reads. Nothing
+ * downstream reports that — the output re-lints clean and the demoted directive
+ * is still valid TypeScript.
+ *
+ * Declining to widen costs the displaced anchor its indentation and keeps the
+ * file's meaning, which is the safe direction of that trade.
+ */
+export function importAnchorLineStartIfOwned(
+  sourceCode: ImportInsertionSource,
+  anchor: ImportInsertionAnchor,
+): ImportInsertionAnchor {
+  if (anchor.kind === 'index') {
+    return anchor;
+  }
+  const start = anchor.target.range[0];
+  const lineStart = sourceCode.text.lastIndexOf('\n', start - 1) + 1;
+  return /^[\t ]*$/.test(sourceCode.text.slice(lineStart, start))
+    ? { kind: 'index', index: lineStart }
+    : anchor;
 }
 
 /**
