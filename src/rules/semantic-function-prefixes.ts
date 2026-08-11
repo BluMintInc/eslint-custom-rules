@@ -1,5 +1,6 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { getMethodName } from '../utils/getMethodName';
 
 type MessageIds = 'avoidGenericPrefix';
 
@@ -122,6 +123,14 @@ export const semanticFunctionPrefixes = createRule<[], MessageIds>({
     function reportIfGenericPrefix(
       reportNode: TSESTree.Node,
       functionName: string,
+      /**
+       * The name as written, when it differs from the name the prefix
+       * heuristic reads. An ECMA private method matches on its bare word
+       * (`updateUser`) so every exemption applies to both privacy spellings,
+       * but the message must name `#updateUser` — the member the author wrote,
+       * and one that a sibling public `updateUser` does not share.
+       */
+      displayName: string = functionName,
     ) {
       // Skip if the name starts with 'is' (boolean check functions are okay)
       if (functionName.startsWith('is')) return;
@@ -146,7 +155,7 @@ export const semanticFunctionPrefixes = createRule<[], MessageIds>({
             node: reportNode,
             messageId: 'avoidGenericPrefix',
             data: {
-              functionName,
+              functionName: displayName,
               prefix,
               alternatives:
                 SUGGESTED_ALTERNATIVES[
@@ -165,11 +174,34 @@ export const semanticFunctionPrefixes = createRule<[], MessageIds>({
         return;
       }
 
-      const methodName =
-        node.key.type === AST_NODE_TYPES.Identifier ? node.key.name : '';
+      const { key } = node;
+
+      /**
+       * Computed and string-literal keys stay out of scope: `[expr]()` has no
+       * statically knowable name. A private identifier does — `#updateUser`
+       * carries the plain word `updateUser` on `key.name` — and it is the same
+       * privacy as `private updateUser`, which this rule reports. The two
+       * spellings are mutually exclusive (`private #foo` is TS18010), so
+       * treating `#` as nameless would leave the ECMA spelling permanently
+       * uncoverable rather than merely unchecked.
+       */
+      if (
+        key.type !== AST_NODE_TYPES.Identifier &&
+        key.type !== AST_NODE_TYPES.PrivateIdentifier
+      ) {
+        return;
+      }
+
+      const methodName = key.name;
       if (!methodName) return;
 
-      reportIfGenericPrefix(node.key, methodName);
+      reportIfGenericPrefix(
+        key,
+        methodName,
+        getMethodName(node, context.getSourceCode(), {
+          privateIdentifierPrefix: '#',
+        }),
+      );
     }
 
     function checkFunctionName(
