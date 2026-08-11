@@ -390,6 +390,73 @@ ruleTesterTs.run('semantic-function-prefixes', semanticFunctionPrefixes, {
         protected checkOutMember() {}
       }
     `,
+    // ECMA #private methods carry the same exemptions as every other spelling.
+    // Prefix matching reads the bare word, so `is`, the Next.js names and the
+    // compound lexemes all survive the `#`.
+    `
+      class Account {
+        #fetchUser() {}
+        #modifySettings() {}
+        #transformPayload() {}
+      }
+    `,
+    `
+      class Account {
+        #isReady() {}
+        static #isEnabled() {}
+      }
+    `,
+    `
+      class Registration {
+        #checkIn() {}
+        #checkOut() {}
+        static async #checkInMember() {}
+      }
+    `,
+    // A disallowed word used as the WHOLE name is not a prefix, in either
+    // privacy spelling.
+    `
+      class Account {
+        #get() {}
+        #update() {}
+        #process() {}
+      }
+    `,
+    // Names that merely begin with a banned prefix's letters
+    `
+      class Account {
+        #downloadFile() {}
+        #endowmentFund() {}
+      }
+    `,
+    // The Next.js allowlist is keyed on the name, so it stays spelling-neutral:
+    // `private getStaticProps() {}` is silent and the `#` respelling matches it.
+    `
+      class Page {
+        #getStaticProps() {}
+      }
+    `,
+    // Getters and setters are skipped regardless of privacy spelling
+    `
+      class Account {
+        #value = '';
+        get #getValue() {
+          return this.#value;
+        }
+        set #getValue(next) {
+          this.#value = next;
+        }
+      }
+    `,
+    // Isolation control for the #-spelling cases below: renaming the member
+    // while KEEPING the `private` modifier must also be silent, proving the
+    // verdicts move with the prefix and not with the spelling.
+    `
+      class Account {
+        private modifyUser() {}
+        private static transformData() {}
+      }
+    `,
   ],
   invalid: [
     // Basic invalid cases - functions with disallowed prefixes
@@ -812,6 +879,103 @@ ruleTesterTs.run('semantic-function-prefixes', semanticFunctionPrefixes, {
       errors: [
         error('checkUserEligibility', 'check'),
         error('checkOutdatedRoster', 'check'),
+      ],
+    },
+
+    // EDGE CASES - ECMA #private methods. `#foo` and `private foo` are the same
+    // privacy and are mutually exclusive (`private #foo` is TS18010), so the
+    // `#` spelling cannot opt back into coverage by adding a modifier. The
+    // reported name keeps the `#` so the message names a member that exists.
+    {
+      code: `
+        class Account {
+          #updateUser() {}
+        }
+      `,
+      output: null,
+      errors: [error('#updateUser', 'update')],
+    },
+    {
+      code: `
+        class Account {
+          static #processData() {}
+        }
+      `,
+      errors: [error('#processData', 'process')],
+    },
+    {
+      code: `
+        class Account {
+          async #getData() {}
+          async *#manageTasks() {}
+          #doWork() {}
+        }
+      `,
+      errors: [
+        error('#getData', 'get'),
+        error('#manageTasks', 'manage'),
+        error('#doWork', 'do'),
+      ],
+    },
+    // The compound-lexeme carve-out is matched on whole segments in the `#`
+    // spelling too: `#checkIn` is exempt above, `#checkInput` is not.
+    {
+      code: `
+        class Registration {
+          #checkInput() {}
+          #checkOutdatedRoster() {}
+        }
+      `,
+      errors: [
+        error('#checkInput', 'check'),
+        error('#checkOutdatedRoster', 'check'),
+      ],
+    },
+    // A `#foo` member and a public `foo` are distinct members; each is reported
+    // under the name it was written with, so neither message names the other.
+    {
+      code: `
+        class Account {
+          updateUser() {}
+          #updateUser() {}
+        }
+      `,
+      errors: [error('updateUser', 'update'), error('#updateUser', 'update')],
+    },
+    // Call sites do not change the verdict: the rule renames nothing, so a
+    // referenced #member reports exactly like an unreferenced one. `output:
+    // null` pins that — a rename fixer would have to rewrite `this.#updateUser`
+    // at every binding site, and this rule declares no fixer at all.
+    {
+      code: `
+        class Account {
+          #updateUser() {}
+          run() {
+            this.#updateUser();
+          }
+        }
+      `,
+      output: null,
+      errors: [error('#updateUser', 'update')],
+    },
+    // Mixed spellings in one class: the `#` member joins its `private`,
+    // `protected`, `public` and modifier-less siblings.
+    {
+      code: `
+        class TestClass {
+          public getData() {}
+          #updateUser() {}
+          protected checkInput() {}
+          static #manageTasks() {}
+          async processData() {}
+        }
+      `,
+      errors: [
+        error('getData', 'get'),
+        error('#updateUser', 'update'),
+        error('checkInput', 'check'),
+        error('#manageTasks', 'manage'),
+        error('processData', 'process'),
       ],
     },
   ],

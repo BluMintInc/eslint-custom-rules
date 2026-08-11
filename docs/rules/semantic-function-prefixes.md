@@ -18,6 +18,14 @@ Generic prefixes such as `get`, `update`, `check`, `manage`, `process`, or `do` 
 - Keep boolean checks starting with `is` and Next.js data functions (`getServerSideProps`, `getStaticProps`, `getStaticPaths`) as-is; the rule already exempts them.
 - Ensure the first word of PascalCase/camelCase names expresses the function's behavior rather than a placeholder verb.
 
+## Privacy is not a carve-out
+
+The rule reads the declared name of a function or method, whatever its visibility. `public`, `protected`, `private`, a modifier-less method and an ECMA private method (`#updateUser`) are all in scope, and the two private spellings behave identically — `private updateUser() {}` and `#updateUser() {}` both report. This matters because the spellings are mutually exclusive: `private #updateUser` is a TypeScript error (TS18010), so an author who writes `#` could not opt into the check by adding a modifier.
+
+Prefix matching reads the bare word, so the `is` prefix, the Next.js names and the compound lexemes below exempt a `#` member exactly as they exempt any other. The report names the member as written (`#updateUser`), which keeps it distinct from a sibling public `updateUser`.
+
+Keys the rule does not read are out of scope: a computed method (`[expr]() {}`) has no statically knowable name, and a quoted key (`'updateUser'() {}`) is likewise not checked.
+
 ## Compound lexemes
 
 A generic prefix is only generic when it is a standalone verb applied to an object. When the banned word is the head of a lexicalized verb-particle compound, it names the operation exactly: `checkIn` is the phrasal verb *to check in*, not the verb `check` applied to `In`. Renaming it to `validateIn` would be strictly less meaningful, so the rule exempts these.
@@ -45,6 +53,8 @@ const retrieveSettings = () => {}
 class FormService {
   validateInput() {}
   transformPayload() {}
+  #modifyPayload() {}
+  #isReady() {}
 }
 ```
 
@@ -56,6 +66,10 @@ const updateSettings = () => {}
 function checkUserPermissions() {}
 class FormService {
   processPayload() {}
+}
+class Account {
+  // ❌ an ECMA private method is the same privacy as `private updateUser()`
+  #updateUser() {}
 }
 ```
 
@@ -82,6 +96,9 @@ class TeamMutator {
     return { memberId, entireTeam };
   }
   public checkOut(memberId: string) {
+    return memberId;
+  }
+  #checkInMember(memberId: string) {
     return memberId;
   }
 }
