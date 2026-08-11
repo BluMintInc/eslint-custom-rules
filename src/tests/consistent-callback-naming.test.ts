@@ -1,4 +1,5 @@
 import { Linter, Rule } from 'eslint';
+import * as ts from 'typescript';
 import { ruleTesterJsx } from '../utils/ruleTester';
 import rule from '../rules/consistent-callback-naming';
 
@@ -1245,6 +1246,45 @@ ruleTesterJsx.run('consistent-callback-naming', rule, {
     // Bug #1944 regression guard: the withholding must not become a blanket
     // disable of the fixer. A class with NO heritage cannot be satisfying any
     // declaration, so its `handle` member is still reported AND still renamed.
+    // The class is module-private because an exported one is withheld for a
+    // different reason (Bug #1946), which would make this guard vacuous.
+    {
+      code: `
+        class SubmitForm {
+          handleSubmit(data: string): string {
+            return data;
+          }
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: `
+        class SubmitForm {
+          submit(data: string): string {
+            return data;
+          }
+        }
+      `,
+    },
+    // Bug #1946: the repro. The rename reached the declaration and left
+    // `this.handleClick()` behind, turning a file that compiled into
+    // `TS2339: Property 'handleClick' does not exist on type 'C'`. The class is
+    // exported, so its public members are named by files this fixer cannot
+    // edit and the rename is withheld outright — the report stands.
+    {
+      code: `
+        export class C {
+          handleClick(): void {}
+          run(): void {
+            this.handleClick();
+          }
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1946: an exported class's public member is withheld even with no
+    // reference in this file at all — the readers that make the rename unsafe
+    // are the ones in other modules.
     {
       code: `
         export class SubmitForm {
@@ -1254,12 +1294,288 @@ ruleTesterJsx.run('consistent-callback-naming', rule, {
         }
       `,
       errors: [{ messageId: 'callbackFunctionPrefix' }],
-      output: `
-        export class SubmitForm {
-          submit(data: string): string {
-            return data;
+      output: null,
+    },
+    // Bug #1946: a `private` member cannot be named outside the class body, so
+    // every reference to it is in this file and the rename owns them all — even
+    // when the class itself is exported. The declaration and the `this.` read
+    // move together, in one fix.
+    {
+      code: `
+        export class C {
+          private handleClick(): void {}
+          run(): void {
+            this.handleClick();
           }
         }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: `
+        export class C {
+          private click(): void {}
+          run(): void {
+            this.click();
+          }
+        }
+      `,
+    },
+    // Bug #1946: an optional-chained read is the same reference and moves with
+    // the declaration.
+    {
+      code: `
+        class C {
+          handleClick(): void {}
+          run(): void {
+            this?.handleClick();
+          }
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: `
+        class C {
+          click(): void {}
+          run(): void {
+            this?.click();
+          }
+        }
+      `,
+    },
+    // Bug #1946: a read from a nested arrow in another method still resolves to
+    // the class instance — the arrow inherits `this` lexically — so it is
+    // rewritten by the same fix.
+    {
+      code: `
+        class C {
+          handleClick(): void {}
+          run(items: number[]): void {
+            items.forEach(() => {
+              this.handleClick();
+            });
+          }
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: `
+        class C {
+          click(): void {}
+          run(items: number[]): void {
+            items.forEach(() => {
+              this.click();
+            });
+          }
+        }
+      `,
+    },
+    // Bug #1946: a field initializer's arrow is the same lexical `this`.
+    {
+      code: `
+        class C {
+          handleClick(): void {}
+          run = (): void => {
+            this.handleClick();
+          };
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: `
+        class C {
+          click(): void {}
+          run = (): void => {
+            this.click();
+          };
+        }
+      `,
+    },
+    // Bug #1946: `this` in a static member is the class object, so a static
+    // member and its static reads move together.
+    {
+      code: `
+        class C {
+          static handleClick(): void {}
+          static run(): void {
+            this.handleClick();
+          }
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: `
+        class C {
+          static click(): void {}
+          static run(): void {
+            this.click();
+          }
+        }
+      `,
+    },
+    // Bug #1946: a computed read spells the member as a string the fixer must
+    // not rewrite blindly, so the whole rename is withheld rather than applied
+    // in part — a partial rename is precisely the breakage being prevented.
+    {
+      code: `
+        class C {
+          handleClick(): void {}
+          run(): void {
+            this['handleClick']();
+          }
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1946: `this[key]` does not even name which member is read.
+    {
+      code: `
+        class C {
+          handleClick(): void {}
+          run(key: 'handleClick'): void {
+            this[key]();
+          }
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1946: an ordinary function expression rebinds `this` to its caller,
+    // so `this.handleClick` inside one may be some other object's member.
+    {
+      code: `
+        class C {
+          handleClick(): void {}
+          run(items: number[]): void {
+            items.forEach(function (this: C) {
+              this.handleClick();
+            }, this);
+          }
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1946: destructuring off `this` binds the member by name in a form no
+    // key rewrite follows.
+    {
+      code: `
+        class C {
+          handleClick(): void {}
+          run(): void {
+            const { handleClick } = this;
+            handleClick();
+          }
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1946: a read through an instance rather than through `this` is a
+    // reference the fixer cannot attribute to this class.
+    {
+      code: `
+        class C {
+          handleClick(): void {}
+        }
+        const c = new C();
+        c.handleClick();
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1946: a subclass in this file reads the member through `super`, and
+    // subclasses in other files can do the same.
+    {
+      code: `
+        class C {
+          handleClick(): void {}
+        }
+        class D extends C {
+          run(): void {
+            super.handleClick();
+          }
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1946: naming the class at all can hand an instance to another
+    // module — `export const c = new C()` exports no class yet exports the
+    // member — so any mention beyond the declaration withholds the rename.
+    {
+      code: `
+        class C {
+          handleClick(): void {}
+          run(): void {
+            this.handleClick();
+          }
+        }
+        export const c = new C();
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1946: a `get`/`set` pair declares the name twice. The getter is
+    // report-only, so renaming the setter alone would split the accessor and
+    // leave the assignment form of the property without a setter.
+    {
+      code: `
+        export class C {
+          private size = 0;
+          private get handleWidth(): number {
+            return this.size;
+          }
+          private set handleWidth(next: number) {
+            this.size = next;
+          }
+        }
+      `,
+      errors: [
+        { messageId: 'callbackFunctionPrefix' },
+        { messageId: 'callbackFunctionPrefix' },
+      ],
+      output: null,
+    },
+    // Bug #1946 regression guard for #1944: a heritage class is still reported
+    // and still never rewritten, whatever the reference scan finds.
+    {
+      code: `
+        interface Submittable {
+          handleSubmit(data: string): string;
+        }
+        class SubmitForm implements Submittable {
+          handleSubmit(data: string): string {
+            return this.handleSubmit(data);
+          }
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1946 regression guard for #1944: an abstract declaration still
+    // reports, and still without a fix.
+    {
+      code: `
+        abstract class BaseForm {
+          abstract handleSubmit(data: string): string;
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1946 regression guard: the class-member reference scan must not
+    // reach the object-literal and function paths, which still autofix — the
+    // function rename still moving its reference with it.
+    {
+      code: `
+        const config = { handleClick: onClick };
+        const handleSubmit = (): void => {};
+        handleSubmit();
+      `,
+      errors: [
+        { messageId: 'callbackFunctionPrefix' },
+        { messageId: 'callbackFunctionPrefix' },
+      ],
+      output: `
+        const config = { click: onClick };
+        const submit = (): void => {};
+        submit();
       `,
     },
   ],
@@ -1272,30 +1588,39 @@ ruleTesterJsx.run('consistent-callback-naming', rule, {
  * parse at all (`const { delete } = useMessage()`), so the fixer is run over a
  * whole file and its result fed back to the parser.
  */
-describe('consistent-callback-naming --fix output parses (Bug #1719)', () => {
-  const RULE_ID = 'test/consistent-callback-naming';
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const tsParser = require('@typescript-eslint/parser');
-  const PARSER_OPTIONS = {
-    ecmaVersion: 2020 as const,
-    sourceType: 'module' as const,
-    ecmaFeatures: { jsx: true },
-  };
+const RULE_ID = 'test/consistent-callback-naming';
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const tsParser = require('@typescript-eslint/parser');
+const PARSER_OPTIONS = {
+  ecmaVersion: 2020 as const,
+  sourceType: 'module' as const,
+  ecmaFeatures: { jsx: true },
+};
 
-  const fix = (code: string) => {
-    const linter = new Linter();
-    linter.defineParser('@typescript-eslint/parser', tsParser);
-    linter.defineRule(RULE_ID, rule as unknown as Rule.RuleModule);
-    return linter.verifyAndFix(
-      code,
-      {
-        parser: '@typescript-eslint/parser',
-        parserOptions: PARSER_OPTIONS,
-        rules: { [RULE_ID]: 'error' },
-      },
-      'useDeleteMessage.dynamic.tsx',
-    ).output;
-  };
+/**
+ * The whole-file `--fix` result, shared by both harnesses below: one asks
+ * whether the output parses (Bug #1719), the other whether it still type-checks
+ * (Bug #1946). `fixed` is the convergence signal — comparing strings cannot
+ * distinguish a converged fixer from one whose edits cancel out over an even
+ * number of passes.
+ */
+const fixWholeFile = (code: string) => {
+  const linter = new Linter();
+  linter.defineParser('@typescript-eslint/parser', tsParser);
+  linter.defineRule(RULE_ID, rule as unknown as Rule.RuleModule);
+  return linter.verifyAndFix(
+    code,
+    {
+      parser: '@typescript-eslint/parser',
+      parserOptions: PARSER_OPTIONS,
+      rules: { [RULE_ID]: 'error' },
+    },
+    'useDeleteMessage.dynamic.tsx',
+  );
+};
+
+describe('consistent-callback-naming --fix output parses (Bug #1719)', () => {
+  const fix = (code: string) => fixWholeFile(code).output;
 
   const parses = (code: string) => {
     try {
@@ -1383,4 +1708,172 @@ describe('consistent-callback-naming --fix output parses (Bug #1719)', () => {
     expect(output).toBe(code);
     expect(parses(output)).toBe(true);
   });
+});
+
+/**
+ * Bug #1946 whole-file check. The defect this guards against produced output
+ * that parsed perfectly and failed to TYPE-check: the declaration was renamed
+ * and `this.handleClick()` was left behind, so a clean build became
+ * `TS2339: Property 'handleClick' does not exist on type 'C'`. Neither a
+ * `RuleTester` `output` string nor the parse harness above can see that, so the
+ * fixer's output is run through a real `ts.Program`.
+ *
+ * The comparison is DIFFERENTIAL — codes the output has that the input did not.
+ * An absolute count says nothing: a fixture may legitimately carry a
+ * diagnostic, and the question is only whether `--fix` added one.
+ */
+describe('consistent-callback-naming --fix output type-checks (Bug #1946)', () => {
+  const COMPILER_OPTIONS: ts.CompilerOptions = {
+    strict: true,
+    target: ts.ScriptTarget.ES2020,
+    module: ts.ModuleKind.ESNext,
+    moduleResolution: ts.ModuleResolutionKind.NodeJs,
+    noEmit: true,
+    skipLibCheck: true,
+  };
+
+  /**
+   * Diagnostic codes per source, from one `ts.Program` over all of them. A
+   * virtual, delegating host keeps the real lib files (and therefore real
+   * semantic analysis) while the sources stay in memory.
+   */
+  const diagnosticCodes = (sources: readonly string[]): string[][] => {
+    const files = new Map<string, string>(
+      sources.map((code, index) => [
+        `/virtual/shape-${index}.ts`,
+        // Every shape is compiled as a module. A source with no import or
+        // export is a SCRIPT, whose top-level `class C` joins the global scope
+        // and collides with every other shape's (TS2300), which would both mask
+        // real diagnostics and invent phantom ones. The marker is appended
+        // after linting, so it never reaches the rule.
+        `${code}\nexport {};\n`,
+      ]),
+    );
+    const host = ts.createCompilerHost(COMPILER_OPTIONS, true);
+    const { getSourceFile, readFile, fileExists } = host;
+    host.getSourceFile = (name, languageVersion, onError, shouldCreate) => {
+      const virtual = files.get(name);
+      return virtual === undefined
+        ? getSourceFile.call(host, name, languageVersion, onError, shouldCreate)
+        : ts.createSourceFile(name, virtual, languageVersion, true);
+    };
+    host.readFile = (name) => files.get(name) ?? readFile.call(host, name);
+    host.fileExists = (name) => files.has(name) || fileExists.call(host, name);
+
+    const program = ts.createProgram([...files.keys()], COMPILER_OPTIONS, host);
+    return [...files.keys()].map((name) => {
+      const source = program.getSourceFile(name) as ts.SourceFile;
+      return [
+        ...program.getSyntacticDiagnostics(source),
+        ...program.getSemanticDiagnostics(source),
+      ].map((diagnostic) => `TS${diagnostic.code}`);
+    });
+  };
+
+  const SHAPES: [string, string][] = [
+    [
+      'the #1946 repro: exported class read through this',
+      `export class C {\n  handleClick(): void {}\n  run(): void {\n    this.handleClick();\n  }\n}\n`,
+    ],
+    [
+      'a private member of an exported class',
+      `export class C {\n  private handleClick(): void {}\n  run(): void {\n    this.handleClick();\n  }\n}\n`,
+    ],
+    [
+      'an optional-chained read',
+      `class C {\n  handleClick(): void {}\n  run(): void {\n    this?.handleClick();\n  }\n}\n`,
+    ],
+    [
+      'a read from a nested arrow',
+      `class C {\n  handleClick(): void {}\n  run(items: number[]): void {\n    items.forEach(() => {\n      this.handleClick();\n    });\n  }\n}\n`,
+    ],
+    [
+      'a static member read from a static method',
+      `class C {\n  static handleClick(): void {}\n  static run(): void {\n    this.handleClick();\n  }\n}\n`,
+    ],
+    [
+      'a computed read',
+      `class C {\n  handleClick(): void {}\n  run(): void {\n    this['handleClick']();\n  }\n}\n`,
+    ],
+    [
+      'a read through an instance',
+      `class C {\n  handleClick(): void {}\n}\nconst c = new C();\nc.handleClick();\n`,
+    ],
+    [
+      'an instance that leaves the module',
+      `class C {\n  handleClick(): void {}\n  run(): void {\n    this.handleClick();\n  }\n}\nexport const c = new C();\n`,
+    ],
+    [
+      'an implemented contract (#1944)',
+      `interface S {\n  handleSubmit(d: string): string;\n}\nclass F implements S {\n  handleSubmit(d: string): string {\n    return d;\n  }\n}\nvoid new F();\n`,
+    ],
+    [
+      'an object literal member',
+      `const config = { handleClick: (): void => {} };\nvoid config;\n`,
+    ],
+    [
+      'a function declaration and its call',
+      `function handleSubmit(): void {}\nhandleSubmit();\n`,
+    ],
+  ];
+
+  const results = SHAPES.map(([, code]) => fixWholeFile(code));
+  const before = diagnosticCodes(SHAPES.map(([, code]) => code));
+  const after = diagnosticCodes(results.map((result) => result.output));
+
+  it('compiles every input clean, so the differential means something', () => {
+    expect(
+      SHAPES.map(([label], index) => `${label}: ${before[index].join(',')}`),
+    ).toEqual(SHAPES.map(([label]) => `${label}: `));
+  });
+
+  it('detects the break the fixer used to ship (control)', () => {
+    // The pre-fix output of the first shape, written out by hand. Without this
+    // the differential could pass on a harness that never sees a type error.
+    const brokenByHand = `export class C {\n  click(): void {}\n  run(): void {\n    this.handleClick();\n  }\n}\n`;
+    const [inputCodes, brokenCodes] = diagnosticCodes([
+      SHAPES[0][1],
+      brokenByHand,
+    ]);
+
+    expect(inputCodes).toEqual([]);
+    expect(brokenCodes).toContain('TS2339');
+  });
+
+  it('rewrites exactly the shapes whose every reference it owns', () => {
+    // Pinning both directions: a differential over shapes the fixer never
+    // touched would pass forever while asserting nothing, and a withheld shape
+    // silently starting to rewrite is the regression this suite exists for.
+    expect(
+      SHAPES.filter((_shape, index) => results[index].fixed).map(
+        ([label]) => label,
+      ),
+    ).toEqual([
+      'a private member of an exported class',
+      'an optional-chained read',
+      'a read from a nested arrow',
+      'a static member read from a static method',
+      'an object literal member',
+      'a function declaration and its call',
+    ]);
+  });
+
+  it.each(SHAPES.map(([label], index) => [label, index] as const))(
+    'introduces no diagnostic into %s',
+    (_label, index) => {
+      expect(
+        after[index].filter((code) => !before[index].includes(code)),
+      ).toEqual([]);
+    },
+  );
+
+  it.each(SHAPES.map(([label], index) => [label, index] as const))(
+    'converges on %s',
+    (_label, index) => {
+      // `fixed` on a re-run, not string inequality: a fixer whose edits cancel
+      // out over two passes returns the original text while still not having
+      // converged.
+      expect(fixWholeFile(results[index].output).fixed).toBe(false);
+    },
+  );
 });
