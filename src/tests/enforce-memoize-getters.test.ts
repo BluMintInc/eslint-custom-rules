@@ -365,6 +365,31 @@ ruleTesterTs.run('enforce-memoize-getters', enforceMemoizeGetters, {
         }
       `,
     },
+    // ------------------------------------------------------------------
+    // Issue #1945: `experimentalDecorators` — the mode the memoize package
+    // requires — rejects a decorator on a `#private` member with TS1206, so
+    // the rule's remedy cannot be written there. The shape is a compile error
+    // on its own (TS18010: an accessibility modifier beside a private name),
+    // and the fix used to deepen that into TS1206 as well.
+    // ------------------------------------------------------------------
+    {
+      name: 'an ECMA-private getter without an accessibility modifier is ignored',
+      code: `
+        class Example {
+          get #fetcher() { return {}; }
+          public read() { return this.#fetcher; }
+        }
+      `,
+    },
+    {
+      name: 'a private-name getter admits no decorator, so it is not reported',
+      code: `
+        class Example {
+          private get #fetcher() { return {}; }
+          public read() { return this.#fetcher; }
+        }
+      `,
+    },
   ],
   invalid: [
     // Basic: add import and decorator
@@ -1361,6 +1386,124 @@ class Example {
         }
       `,
     },
+    // ------------------------------------------------------------------
+    // Issue #1945: the decorator attaches to the MEMBER, not to the start of
+    // the line the member happens to sit on. Anchoring on the line emitted the
+    // decorator before `class ...` whenever the getter was not first on its
+    // line, decorating the CLASS: the getter stayed bare, the rule reported
+    // again on the next pass, and `eslint --fix` stacked ten `@Memoize()`
+    // before hitting its pass cap. Every case below carries an explicit
+    // `output`, and the convergence describe block re-lints each output.
+    // ------------------------------------------------------------------
+    {
+      name: 'a single-line class body decorates the getter, not the class',
+      code: `class UserAccount { private get isLocked() { return true; } }`,
+      errors: [{ messageId: 'requireMemoizeGetter' }],
+      output: `import { Memoize } from '@blumintinc/typescript-memoize';
+class UserAccount { @Memoize() private get isLocked() { return true; } }`,
+    },
+    {
+      name: 'a single-line class body with two getters decorates both',
+      code: `class UserAccount { private get a() { return 1; } private get b() { return 2; } }`,
+      errors: [
+        { messageId: 'requireMemoizeGetter' },
+        { messageId: 'requireMemoizeGetter' },
+      ],
+      output: `import { Memoize } from '@blumintinc/typescript-memoize';
+class UserAccount { @Memoize() private get a() { return 1; } @Memoize() private get b() { return 2; } }`,
+    },
+    {
+      name: 'a getter sharing its line with an earlier getter is decorated in place',
+      code: `
+        class UserAccount {
+          private get a() { return 1; } private get b() { return 2; }
+        }
+      `,
+      errors: [
+        { messageId: 'requireMemoizeGetter' },
+        { messageId: 'requireMemoizeGetter' },
+      ],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class UserAccount {
+          @Memoize()
+          private get a() { return 1; } @Memoize() private get b() { return 2; }
+        }
+      `,
+    },
+    {
+      name: 'a getter sharing its line with an earlier property is decorated in place',
+      code: `
+        class UserAccount {
+          private locked = 1; private get isLocked() { return this.locked; }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoizeGetter' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class UserAccount {
+          private locked = 1; @Memoize() private get isLocked() { return this.locked; }
+        }
+      `,
+    },
+    {
+      name: 'a getter whose own line starts with a comment keeps the comment in place',
+      code: `
+        class UserAccount {
+          /* lazy */ private get isLocked() { return true; }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoizeGetter' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class UserAccount {
+          /* lazy */ @Memoize() private get isLocked() { return true; }
+        }
+      `,
+    },
+    {
+      name: 'an existing decorator sharing the getter line still owns the line',
+      code: `
+        function Log(): MethodDecorator { return () => {}; }
+        class UserAccount {
+          @Log() private get isLocked() { return true; }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoizeGetter' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        function Log(): MethodDecorator { return () => {}; }
+        class UserAccount {
+          @Memoize()
+          @Log() private get isLocked() { return true; }
+        }
+      `,
+    },
+    {
+      name: 'a getter whose modifiers span lines keeps the indentation of its first line',
+      code: `
+        class UserAccount {
+          private get
+          isLocked() { return true; }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoizeGetter' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class UserAccount {
+          @Memoize()
+          private get
+          isLocked() { return true; }
+        }
+      `,
+    },
+    {
+      name: 'a getter indented with tabs keeps its own indentation',
+      code: 'class UserAccount {\n\t\tprivate get isLocked() { return true; }\n}',
+      errors: [{ messageId: 'requireMemoizeGetter' }],
+      output:
+        "import { Memoize } from '@blumintinc/typescript-memoize';\nclass UserAccount {\n\t\t@Memoize()\n\t\tprivate get isLocked() { return true; }\n}",
+    },
   ],
 });
 
@@ -1667,5 +1810,135 @@ export function build(Memoize) {
 
     expect(topScopeMemoizeDeclarations(output)).toBe(1);
     expect(output.match(/@Memoize\(\)/g)).toHaveLength(1);
+  });
+});
+
+// Issue #1945: RuleTester applies a single fix pass, so it cannot see whether
+// `eslint --fix` settles. These cases run the real multi-pass fixer and assert
+// the invariant the bug violated: re-linting the fixed output reports nothing,
+// which is the only spelling that catches an even-length cycle as well as the
+// pass-cap runaway the bug produced (ten `@Memoize()` stacked on the CLASS).
+describe('enforce-memoize-getters: the fix converges wherever the getter sits (issue #1945)', () => {
+  const RULE_ID = '@blumintinc/blumint/enforce-memoize-getters';
+
+  const createLinter = () => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      RULE_ID,
+      enforceMemoizeGetters as unknown as Rule.RuleModule,
+    );
+    return linter;
+  };
+
+  const LINT_CONFIG = {
+    parser: '@typescript-eslint/parser',
+    parserOptions: {
+      ecmaVersion: 2022 as const,
+      sourceType: 'module' as const,
+    },
+    rules: { [RULE_ID]: 'error' as const },
+  };
+
+  const fix = (code: string) =>
+    createLinter().verifyAndFix(code, LINT_CONFIG, 'Service.ts');
+
+  const expectConverges = (code: string) => {
+    const first = fix(code);
+    // Re-running the fixer on its own output is the detector: comparing the two
+    // strings would call an even-length cycle converged.
+    const refixed = fix(first.output);
+    expect(refixed.fixed).toBe(false);
+    return first.output;
+  };
+
+  it('decorates the getter inside a single-line class body exactly once', () => {
+    const output = expectConverges(
+      'class UserAccount { private get isLocked() { return true; } }\n',
+    );
+
+    expect(output)
+      .toBe(`import { Memoize } from '@blumintinc/typescript-memoize';
+class UserAccount { @Memoize() private get isLocked() { return true; } }
+`);
+    expect(output.match(/@Memoize\(\)/g)).toHaveLength(1);
+    // The decorator belongs to the getter: nothing sits between the two, and
+    // the class keeps none of its own.
+    expect(output).not.toMatch(/@Memoize\(\)\s*(?:export\s+)?class\b/);
+  });
+
+  it('decorates each getter of a shared line exactly once', () => {
+    const output = expectConverges(
+      'class UserAccount { private get a() { return 1; } private get b() { return 2; } }\n',
+    );
+
+    expect(output.match(/@Memoize\(\) private get/g)).toHaveLength(2);
+    expect(output).not.toMatch(/@Memoize\(\)\s*(?:export\s+)?class\b/);
+  });
+
+  it('converges on a getter that shares its line with a property', () => {
+    const output = expectConverges(`class UserAccount {
+  private locked = 1; private get isLocked() { return this.locked; }
+}
+`);
+
+    expect(output.match(/@Memoize\(\)/g)).toHaveLength(1);
+    expect(output).toContain(
+      'private locked = 1; @Memoize() private get isLocked()',
+    );
+  });
+
+  it('converges on the multi-line spelling without changing its layout', () => {
+    const output = expectConverges(`class UserAccount {
+  private get isLocked() {
+    return true;
+  }
+}
+`);
+
+    expect(output)
+      .toBe(`import { Memoize } from '@blumintinc/typescript-memoize';
+class UserAccount {
+  @Memoize()
+  private get isLocked() {
+    return true;
+  }
+}
+`);
+  });
+
+  it('leaves a private-name getter untouched, since no decorator may apply', () => {
+    const code = `class UserAccount {
+  private get #isLocked() {
+    return true;
+  }
+  public read() {
+    return this.#isLocked;
+  }
+}
+`;
+
+    const first = fix(code);
+
+    expect(first.fixed).toBe(false);
+    expect(first.output).toBe(code);
+    expect(createLinter().verify(code, LINT_CONFIG, 'Service.ts')).toHaveLength(
+      0,
+    );
+  });
+
+  it('still reaches a fixpoint that carries a decorator (positive control)', () => {
+    // A run that fixed nothing would satisfy `refixed.fixed === false`
+    // vacuously, so the corpus above must be shown to rewrite its input.
+    const first = fix(
+      'class UserAccount { private get isLocked() { return true; } }\n',
+    );
+
+    expect(first.fixed).toBe(true);
+    expect(first.output).toContain('@Memoize()');
   });
 });
