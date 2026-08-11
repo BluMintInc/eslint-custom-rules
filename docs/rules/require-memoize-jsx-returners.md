@@ -41,6 +41,27 @@ class ProviderFactory {
 - Functions inside React components that rely on hooks (e.g., `useCallback`, `useMemo`) are out of scope because the rule only inspects class members.
 - Recognizes `@Memoize`, aliased imports, and namespaced forms like `@memoize.Memoize()`. Auto-fix reuses existing aliases and inserts `import { Memoize } from '@blumintinc/typescript-memoize';` if missing.
 - When other decorators exist, `@Memoize()` is added without removing them; multiple violations in a file share a single inserted import.
+- The decorator attaches to the member itself, so a member that shares its line receives it inline (see below).
+
+### Where the decorator is written
+
+The decorator attaches to the **member**, ahead of its modifiers and of any
+decorator it already carries — not to the start of the line the member happens
+to sit on. A member that owns its line receives the decorator on a line of its
+own at the member's indentation; a member that shares its line — a single-line
+class body, a member following a property or the class's own `{` — receives it
+inline, a spelling the grammar accepts just as readily:
+
+```tsx
+class ProviderFactory {
+  @Memoize()
+  public get Component() {
+    return () => <div />;
+  }
+}
+
+class Compact { @Memoize() public get Component() { return () => <div />; } }
+```
 
 ### Members declared in a class expression
 
