@@ -504,10 +504,24 @@ export const enforceMemoizeGetters = createRule<Options, MessageIds>({
         // breakage.
         if (node.key.type === AST_NODE_TYPES.PrivateIdentifier) return;
 
+        const classBody = node.parent;
+
+        // The same reasoning, one level out: under `experimentalDecorators` a
+        // decorator is rejected on EVERY member of a class EXPRESSION — TS1206
+        // again — whatever the member is named and wherever the decorator is
+        // written. `const K = class { … }`, a named `class Inner { … }`, and a
+        // class expression returned from a factory or held in a property are
+        // all out of reach, so `@Memoize()` cannot be added in place and the
+        // report would name a remedy the author cannot apply. The enclosing
+        // class is read directly rather than by walking ancestors: a class
+        // DECLARATION nested inside a class expression's method takes
+        // decorators normally, and `export default class { … }` is a
+        // declaration despite having no name.
+        if (classBody?.parent?.type === AST_NODE_TYPES.ClassExpression) return;
+
         // A getter whose value is a fresh read of live external state is not a
         // lazy factory: memoizing it pins the first observation forever, so the
         // report is dropped along with its unattended `--fix` edit.
-        const classBody = node.parent;
         if (
           classBody?.type === AST_NODE_TYPES.ClassBody &&
           impureMembersOf(classBody).has(node)
