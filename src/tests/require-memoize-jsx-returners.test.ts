@@ -1,5 +1,6 @@
 import { Linter, Rule } from 'eslint';
-import { ruleTesterTs } from '../utils/ruleTester';
+import * as ts from 'typescript';
+import { ruleTesterJsx, ruleTesterTs } from '../utils/ruleTester';
 import { requireMemoizeJsxReturners } from '../rules/require-memoize-jsx-returners';
 
 ruleTesterTs.run('require-memoize-jsx-returners', requireMemoizeJsxReturners, {
@@ -1307,6 +1308,525 @@ class ConditionalJsx {
   ],
 });
 
+// Issue #1950: under `experimentalDecorators` — the mode this plugin's
+// consumers compile in — TypeScript rejects a decorator on EVERY member of a
+// class EXPRESSION with TS1206, "Decorators are not valid here." The
+// `@Memoize()` this rule prescribes therefore cannot be written on such a
+// member at all, so the report is withheld along with its fix rather than
+// naming a remedy the author cannot apply. Measured against a real
+// `ts.Program` below: each valid shape here gained TS1206 the moment `--fix`
+// inserted the decorator.
+//
+// Declared under `ruleTesterJsx` because every fixture is JSX: the shared TS
+// tester enables JSX only through a `.tsx` filename, and a JSX fixture that
+// fails to parse reports nothing — silence indistinguishable from the carve-out
+// under test. Each case carries the filename too, since the rule itself is
+// gated on a `.ts`/`.tsx` path.
+ruleTesterJsx.run(
+  'require-memoize-jsx-returners (class expressions, issue #1950)',
+  requireMemoizeJsxReturners,
+  {
+    valid: [
+      {
+        name: 'a getter in an anonymous class expression is not reported',
+        filename: 'file.tsx',
+        code: `export const Widget = class {
+  public get view() {
+    return <div />;
+  }
+};`,
+      },
+      {
+        name: 'a method in an anonymous class expression is not reported',
+        filename: 'file.tsx',
+        code: `export const Widget = class {
+  public render() {
+    return <div />;
+  }
+};`,
+      },
+      {
+        name: 'a getter returning a JSX factory in a class expression is not reported',
+        filename: 'file.tsx',
+        code: `export const Widget = class {
+  get Component() {
+    return () => <div />;
+  }
+};`,
+      },
+      {
+        name: 'a getter in a named class expression is not reported',
+        filename: 'file.tsx',
+        code: `export const Widget = class Inner {
+  get view() {
+    return <div />;
+  }
+};`,
+      },
+      {
+        name: 'a method in a named class expression is not reported',
+        filename: 'file.tsx',
+        code: `export const Widget = class Inner {
+  render() {
+    return <div />;
+  }
+};`,
+      },
+      {
+        name: 'a class expression returned from a factory function is not reported',
+        filename: 'file.tsx',
+        code: `export function build() {
+  return class {
+    get view() {
+      return <div />;
+    }
+  };
+}`,
+      },
+      {
+        name: "a class expression in an arrow function's concise body is not reported",
+        filename: 'file.tsx',
+        code: `export const build = () =>
+  class {
+    get view() {
+      return <div />;
+    }
+  };`,
+      },
+      {
+        name: 'a class expression held in an object property is not reported',
+        filename: 'file.tsx',
+        code: `export const registry = {
+  Widget: class {
+    render() {
+      return <div />;
+    }
+  },
+};`,
+      },
+      {
+        name: 'a class expression passed as a call argument is not reported',
+        filename: 'file.tsx',
+        code: `declare function register(constructor: unknown): void;
+
+register(
+  class {
+    render() {
+      return <div />;
+    }
+  },
+);`,
+      },
+      {
+        name: 'a class expression in a default parameter is not reported',
+        filename: 'file.tsx',
+        code: `export function build(
+  Widget = class {
+    render() {
+      return <div />;
+    }
+  },
+) {
+  return Widget;
+}`,
+      },
+      {
+        name: 'a class expression held in a class property is not reported',
+        filename: 'file.tsx',
+        code: `export class Registry {
+  static Widget = class {
+    get view() {
+      return <div />;
+    }
+  };
+}`,
+      },
+      {
+        name: 'a class expression written on a single line is not reported',
+        filename: 'file.tsx',
+        code: `export const Widget = class { get view() { return <div />; } };`,
+      },
+      {
+        name: 'a class expression extending a base class is not reported',
+        filename: 'file.tsx',
+        code: `import { Base } from './Base';
+
+export const Widget = class extends Base {
+  get view() {
+    return <div />;
+  }
+};`,
+      },
+      {
+        name: 'an immediately instantiated class expression is not reported',
+        filename: 'file.tsx',
+        code: `export const widget = new (class {
+  get view() {
+    return <div />;
+  }
+})();`,
+      },
+      {
+        name: 'a class expression is silent even where the Memoize import exists',
+        filename: 'file.tsx',
+        code: `import { Memoize } from '@blumintinc/typescript-memoize';
+
+export const Widget = class {
+  get view() {
+    return <div />;
+  }
+};`,
+      },
+      {
+        name: 'a createElement call in a class expression is not reported',
+        filename: 'file.tsx',
+        code: `import React from 'react';
+
+export const Widget = class {
+  render() {
+    return React.createElement('div', null);
+  }
+};`,
+      },
+      {
+        name: "a class expression inside a class declaration's method is not reported",
+        filename: 'file.tsx',
+        code: `export class Outer {
+  build() {
+    return class {
+      get view() {
+        return <div />;
+      }
+    };
+  }
+}`,
+      },
+      {
+        name: 'a nested JSX factory in a class expression is not reported',
+        filename: 'file.tsx',
+        code: `export const Widget = class {
+  get Component() {
+    return () => () => <div />;
+  }
+};`,
+      },
+      {
+        // `export default class { … }` is a DECLARATION and still reports (see
+        // below); parenthesizing it makes it an expression, and only then does
+        // the carve-out apply.
+        name: 'a parenthesized default-exported class expression is not reported',
+        filename: 'file.tsx',
+        code: `export default (class {
+  render() {
+    return <div />;
+  }
+});`,
+      },
+      {
+        name: 'a class expression nested in another class expression is not reported',
+        filename: 'file.tsx',
+        code: `export const Outer = class {
+  build() {
+    return class {
+      render() {
+        return <span />;
+      }
+    };
+  }
+};`,
+      },
+    ],
+    invalid: [
+      // The boundary the carve-out must not cross: a class DECLARATION takes
+      // decorators in every position TypeScript accepts a class in, so each of
+      // these still reports and is still fixed. Reading the member's OWN
+      // enclosing class rather than walking ancestors is what keeps the nested
+      // cases here instead of among the silent ones above.
+      {
+        name: 'a getter in a class declaration is still reported and fixed',
+        filename: 'file.tsx',
+        code: `export class Widget {
+  public get view() {
+    return <div />;
+  }
+}`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Widget {
+  @Memoize()
+  public get view() {
+    return <div />;
+  }
+}`,
+      },
+      {
+        name: 'a method in a class declaration is still reported and fixed',
+        filename: 'file.tsx',
+        code: `export class Widget {
+  public render() {
+    return <div />;
+  }
+}`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Widget {
+  @Memoize()
+  public render() {
+    return <div />;
+  }
+}`,
+      },
+      {
+        // The case the whole design rests on: walking ancestors for a class
+        // expression would silence this inner class, whose members take
+        // decorators perfectly well.
+        name: "a class declaration inside a class expression's method is still fixed",
+        filename: 'file.tsx',
+        code: `export const Outer = class {
+  public build() {
+    class Widget {
+      get view() {
+        return <div />;
+      }
+    }
+    return Widget;
+  }
+};`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export const Outer = class {
+  public build() {
+    class Widget {
+      @Memoize()
+      get view() {
+        return <div />;
+      }
+    }
+    return Widget;
+  }
+};`,
+      },
+      {
+        // Both members return JSX, and exactly one of them can carry a
+        // decorator: the count pins that the carve-out is per MEMBER rather
+        // than per file.
+        name: 'only the nested declaration reports when both members return JSX',
+        filename: 'file.tsx',
+        code: `export const Outer = class {
+  public render() {
+    return <div />;
+  }
+  public build() {
+    class Widget {
+      renderInner() {
+        return <span />;
+      }
+    }
+    return Widget;
+  }
+};`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export const Outer = class {
+  public render() {
+    return <div />;
+  }
+  public build() {
+    class Widget {
+      @Memoize()
+      renderInner() {
+        return <span />;
+      }
+    }
+    return Widget;
+  }
+};`,
+      },
+      {
+        // An anonymous default export is a ClassDeclaration despite having no
+        // name, so nothing about it is out of a decorator's reach.
+        name: 'a getter in an anonymous default-exported class is still fixed',
+        filename: 'file.tsx',
+        code: `export default class {
+  public get view() {
+    return <div />;
+  }
+}`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export default class {
+  @Memoize()
+  public get view() {
+    return <div />;
+  }
+}`,
+      },
+      {
+        name: 'a method in an anonymous default-exported class is still fixed',
+        filename: 'file.tsx',
+        code: `export default class {
+  public render() {
+    return <div />;
+  }
+}`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export default class {
+  @Memoize()
+  public render() {
+    return <div />;
+  }
+}`,
+      },
+      {
+        name: 'a class declaration nested in a function is still fixed',
+        filename: 'file.tsx',
+        code: `export function build() {
+  class Widget {
+    get view() {
+      return <div />;
+    }
+  }
+  return Widget;
+}`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export function build() {
+  class Widget {
+    @Memoize()
+    get view() {
+      return <div />;
+    }
+  }
+  return Widget;
+}`,
+      },
+      {
+        name: 'a class declaration inside a block is still fixed',
+        filename: 'file.tsx',
+        code: `{
+  class Widget {
+    render() {
+      return <div />;
+    }
+  }
+}`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+{
+  class Widget {
+    @Memoize()
+    render() {
+      return <div />;
+    }
+  }
+}`,
+      },
+      {
+        name: 'a declaration is fixed while a sibling class expression stays silent',
+        filename: 'file.tsx',
+        code: `export class Widget {
+  get view() {
+    return <div />;
+  }
+}
+export const Inner = class {
+  get other() {
+    return <span />;
+  }
+};`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Widget {
+  @Memoize()
+  get view() {
+    return <div />;
+  }
+}
+export const Inner = class {
+  get other() {
+    return <span />;
+  }
+};`,
+      },
+      {
+        name: "a class declaration inside a class expression's getter is still fixed",
+        filename: 'file.tsx',
+        code: `export const Outer = class {
+  get factory() {
+    class Widget {
+      get view() {
+        return <div />;
+      }
+    }
+    return Widget;
+  }
+};`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export const Outer = class {
+  get factory() {
+    class Widget {
+      @Memoize()
+      get view() {
+        return <div />;
+      }
+    }
+    return Widget;
+  }
+};`,
+      },
+      {
+        name: 'a nested declaration returning a JSX factory is still fixed',
+        filename: 'file.tsx',
+        code: `export const Outer = class {
+  public build() {
+    class Widget {
+      get Component() {
+        return () => <div />;
+      }
+    }
+    return Widget;
+  }
+};`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export const Outer = class {
+  public build() {
+    class Widget {
+      @Memoize()
+      get Component() {
+        return () => <div />;
+      }
+    }
+    return Widget;
+  }
+};`,
+      },
+      {
+        // The report survives the carve-out; the FIX is declined for the
+        // unrelated reason that the emitted `@Memoize()` would resolve to the
+        // parameter. `output: null` asserts that decline — an omitted `output`
+        // would assert nothing at all.
+        name: 'a nested declaration reports without a fix when Memoize is shadowed',
+        filename: 'file.tsx',
+        code: `export const Outer = class {
+  public build(Memoize) {
+    class Widget {
+      get view() {
+        return <div />;
+      }
+    }
+    return Widget;
+  }
+};`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+        output: null,
+      },
+    ],
+  },
+);
+
 // Issue #1414: RuleTester applies a single fix pass and never shows the file
 // that `eslint --fix` actually writes. These cases run the real multi-pass
 // fixer and assert the invariant the bug violated: an emitted @Memoize()
@@ -1536,5 +2056,283 @@ export class Widget {
     expect(output).toBe(code);
     expect(output).not.toContain('@Memoize');
     expect(output).not.toContain('typescript-memoize');
+  });
+});
+
+// Issue #1950: the class-expression carve-out is a claim about the COMPILER,
+// and no ESLint-level assertion can check it. `RuleTester` never type-checks,
+// and the class-expression cases above are `valid`, so they produce no fix pair
+// for `fixer-type-safety` to compile — the whole suite would stay green with
+// the carve-out removed and `--fix` emitting TS1206 again. These cases compile
+// each shape under a real `ts.Program` with `experimentalDecorators: true` and
+// assert differentially: the fixed text must carry no diagnostic its input did
+// not already carry. An absolute count would only measure how many identifiers
+// a JSX fragment leaves undefined.
+describe('require-memoize-jsx-returners: `--fix` leaves every class shape compiling (issue #1950)', () => {
+  const RULE_ID = '@blumintinc/blumint/require-memoize-jsx-returners';
+  const FILENAME = '/memoize/Widget.tsx';
+  const MEMOIZE_STUB = '/memoize/typescript-memoize.d.ts';
+  const MEMOIZE_STUB_TEXT =
+    'export declare function Memoize(...args: unknown[]): MethodDecorator;\n';
+
+  const createLinter = () => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      RULE_ID,
+      requireMemoizeJsxReturners as unknown as Rule.RuleModule,
+    );
+    return linter;
+  };
+
+  const LINT_CONFIG = {
+    parser: '@typescript-eslint/parser',
+    parserOptions: {
+      ecmaVersion: 2022 as const,
+      sourceType: 'module' as const,
+      ecmaFeatures: { jsx: true },
+    },
+    rules: { [RULE_ID]: 'error' as const },
+  };
+
+  const fix = (code: string) =>
+    createLinter().verifyAndFix(code, LINT_CONFIG, FILENAME);
+
+  /**
+   * `noLib` keeps each program to two source files, which is what makes a
+   * per-shape compile affordable here; the lib and React types are absent from
+   * the input and the output alike, so the diagnostics they cost (TS2304 for
+   * the JSX factory, TS7026 for the intrinsic element) cancel in the
+   * differential. The memoize package resolves to an in-memory stub so that the
+   * import the fixer injects cannot manufacture a TS2307 the input lacked and
+   * mask the diagnostic actually under test.
+   */
+  const compilerOptions: ts.CompilerOptions = {
+    experimentalDecorators: true,
+    strict: true,
+    target: ts.ScriptTarget.ES2022,
+    jsx: ts.JsxEmit.React,
+    noEmit: true,
+    noLib: true,
+    types: [],
+  };
+
+  const diagnosticsOf = (source: string): string[] => {
+    const files = new Map<string, string>([
+      [FILENAME, source],
+      [MEMOIZE_STUB, MEMOIZE_STUB_TEXT],
+    ]);
+    const sourceFiles = new Map(
+      [...files].map(([name, text]) => [
+        name,
+        ts.createSourceFile(
+          name,
+          text,
+          ts.ScriptTarget.ES2022,
+          true,
+          // A `.tsx` source parsed as `.ts` makes every fixture a syntax
+          // error, which would read as "no new diagnostic" on both sides.
+          name.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+        ),
+      ]),
+    );
+    const host: ts.CompilerHost = {
+      getSourceFile: (name) => sourceFiles.get(name),
+      getDefaultLibFileName: () => 'lib.d.ts',
+      writeFile: () => undefined,
+      getCurrentDirectory: () => '/memoize',
+      getCanonicalFileName: (name) => name,
+      useCaseSensitiveFileNames: () => true,
+      getNewLine: () => '\n',
+      fileExists: (name) => files.has(name),
+      readFile: (name) => files.get(name),
+      resolveModuleNames: (moduleNames) =>
+        moduleNames.map((name) =>
+          name === '@blumintinc/typescript-memoize' ||
+          name === 'typescript-memoize'
+            ? {
+                resolvedFileName: MEMOIZE_STUB,
+                extension: ts.Extension.Dts,
+                isExternalLibraryImport: true,
+              }
+            : undefined,
+        ),
+    };
+    const program = ts.createProgram([FILENAME], compilerOptions, host);
+    const file = program.getSourceFile(FILENAME);
+    if (!file) {
+      throw new Error('the source under test is missing from the program');
+    }
+    // TS1206 is a grammar check the CHECKER runs, so it reaches neither
+    // `getSyntacticDiagnostics` nor a `transpileModule` round trip; reading
+    // both buckets is what makes it visible.
+    return [
+      ...program.getSyntacticDiagnostics(file),
+      ...program.getSemanticDiagnostics(file),
+    ].map((diagnostic) => `TS${diagnostic.code}`);
+  };
+
+  const introducedBy = (before: string, after: string): string[] => {
+    const carried = diagnosticsOf(before);
+    return diagnosticsOf(after).filter((code, index, all) => {
+      const seenBefore = carried.filter((entry) => entry === code).length;
+      const seenHere = all.slice(0, index + 1).filter((e) => e === code).length;
+      return seenHere > seenBefore;
+    });
+  };
+
+  it('proves the premise: a decorator inside a class expression is TS1206', () => {
+    // The harness itself needs a control, or a compile step that silently saw
+    // nothing would certify every shape below as clean. Written by hand, the
+    // very edit the fixer used to make is rejected — and the same decorator on
+    // the same member of a class DECLARATION is accepted.
+    expect(
+      diagnosticsOf(`import { Memoize } from '@blumintinc/typescript-memoize';
+export const Widget = class {
+  @Memoize()
+  public get view() { return <div />; }
+};
+`),
+    ).toContain('TS1206');
+
+    expect(
+      diagnosticsOf(`import { Memoize } from '@blumintinc/typescript-memoize';
+export class Widget {
+  @Memoize()
+  public get view() { return <div />; }
+}
+`),
+    ).not.toContain('TS1206');
+  });
+
+  // Spelled out rather than composed from a shared body: a mismatched brace
+  // would make the fixture a parse error, and an unparseable fixture reports
+  // nothing — which is indistinguishable from the silence under test. The
+  // `verify` assertion below counts the parse error too, so this cannot pass
+  // vacuously.
+  const CLASS_EXPRESSIONS: [string, string][] = [
+    [
+      'anonymous, bound to a const',
+      'export const Widget = class {\n  public get view() { return <div />; }\n};\n',
+    ],
+    [
+      'anonymous, with a method',
+      'export const Widget = class {\n  public render() { return <div />; }\n};\n',
+    ],
+    [
+      'named',
+      'export const Widget = class Inner {\n  public get view() { return <div />; }\n};\n',
+    ],
+    [
+      'returned from a factory',
+      'export function build() {\n  return class {\n    public get view() { return <div />; }\n  };\n}\n',
+    ],
+    [
+      'passed as an argument',
+      'declare function register(c: unknown): void;\nregister(class {\n  public render() { return <div />; }\n});\n',
+    ],
+    [
+      'held in an object property',
+      'export const registry = {\n  Widget: class {\n    public render() { return <div />; }\n  },\n};\n',
+    ],
+    [
+      'held in a class property',
+      'export class Registry {\n  static Widget = class {\n    public get view() { return <div />; }\n  };\n}\n',
+    ],
+    [
+      'in a default parameter',
+      'export function build(Widget = class {\n  public render() { return <div />; }\n}) {\n  return Widget;\n}\n',
+    ],
+    [
+      'returning a JSX factory',
+      'export const Widget = class {\n  public get Component() { return () => <div />; }\n};\n',
+    ],
+    [
+      'written on a single line',
+      'export const Widget = class { public get view() { return <div />; } };\n',
+    ],
+  ];
+
+  it.each(CLASS_EXPRESSIONS)(
+    'a class expression %s is silent and left byte-for-byte alone',
+    (_name, code) => {
+      expect(createLinter().verify(code, LINT_CONFIG, FILENAME)).toHaveLength(
+        0,
+      );
+
+      const first = fix(code);
+
+      expect(first.fixed).toBe(false);
+      expect(first.output).toBe(code);
+      expect(introducedBy(code, first.output)).toEqual([]);
+    },
+  );
+
+  const CLASS_DECLARATIONS: [string, string][] = [
+    [
+      'at the top level',
+      'export class Widget {\n  public get view() { return <div />; }\n}\n',
+    ],
+    [
+      'with a method',
+      'export class Widget {\n  public render() { return <div />; }\n}\n',
+    ],
+    [
+      'nested in a function',
+      'export function build() {\n  class Widget {\n    public get view() { return <div />; }\n  }\n  return Widget;\n}\n',
+    ],
+    [
+      'nested in a class expression method',
+      'export const Outer = class {\n  public build() {\n    class Widget {\n      public get view() { return <div />; }\n    }\n    return Widget;\n  }\n};\n',
+    ],
+    [
+      'anonymous and default-exported',
+      'export default class {\n  public get view() { return <div />; }\n}\n',
+    ],
+    // A DECLARATION whose member shares the class's own line is absent
+    // deliberately. The decorator is inserted at the member's LINE START, which
+    // for a one-line class is the line the class opens on, so the edit lands
+    // before `export class` and the member is still undecorated on the next
+    // pass — the fixer re-fires until ESLint's pass limit stops it. That is a
+    // defect of the insertion point rather than of the class-expression
+    // carve-out this guard exists for, and asserting it here would make one
+    // rule's fix converge only by fixing the other. The single-line EXPRESSION
+    // row above stays, since silence is the whole claim there.
+  ];
+
+  it.each(CLASS_DECLARATIONS)(
+    'a class declaration %s is still decorated, converges, and still compiles',
+    (_name, code) => {
+      const first = fix(code);
+
+      expect(first.fixed).toBe(true);
+      expect(first.output).toContain('@Memoize()');
+      // Re-running the fixer on its own output is the convergence detector:
+      // comparing the two strings would call an even-length cycle converged.
+      expect(fix(first.output).fixed).toBe(false);
+      expect(introducedBy(code, first.output)).toEqual([]);
+    },
+  );
+
+  it('would have caught the bug: the pre-fix edit introduces TS1206', () => {
+    // The mutation this guard exists to detect, applied by hand: had the rule
+    // kept decorating a class expression, `introducedBy` would have returned
+    // exactly this, so the assertions above are not vacuous.
+    const before = `export const Widget = class {
+  public get view() { return <div />; }
+};
+`;
+    const after = `import { Memoize } from '@blumintinc/typescript-memoize';
+export const Widget = class {
+  @Memoize()
+  public get view() { return <div />; }
+};
+`;
+
+    expect(introducedBy(before, after)).toEqual(['TS1206']);
   });
 });

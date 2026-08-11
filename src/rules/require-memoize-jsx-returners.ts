@@ -921,6 +921,24 @@ export const requireMemoizeJsxReturners = createRule<Options, MessageIds>({
           return;
         }
 
+        // Under `experimentalDecorators` — the mode this plugin's consumers
+        // compile in — TypeScript rejects a decorator on EVERY member of a
+        // class EXPRESSION with TS1206, "Decorators are not valid here.",
+        // whatever the member is named and wherever the decorator is written.
+        // `const K = class { … }`, a named `class Inner { … }`, and a class
+        // expression returned from a factory, passed as an argument or held in
+        // a property are all out of reach, so `@Memoize()` cannot be added in
+        // place. Report and fix are BOTH withheld: an unfixable report names a
+        // remedy — "Add @Memoize() to …" — that the author cannot write there
+        // at all, which is worse than silence. The enclosing class is read
+        // directly rather than by walking ancestors: a class DECLARATION nested
+        // inside a class expression's method takes decorators normally, and
+        // `export default class { … }` is a declaration despite having no name.
+        const classBody = node.parent;
+        if (classBody?.parent?.type === AST_NODE_TYPES.ClassExpression) {
+          return;
+        }
+
         const hasDecorator = node.decorators?.some((decorator) =>
           isMemoizeDecorator(decorator, memoizeAlias, memoizeNamespace),
         );

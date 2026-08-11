@@ -617,7 +617,11 @@ const UNPROBED_RULES: Record<string, Reason> = {
   'prefer-fragment-shorthand': REASONS.noEnclosingBlock,
   'prefer-getter-over-parameterless-method': REASONS.noEnclosingBlock,
   'prefer-next-dynamic': REASONS.noEnclosingBlock,
-  'require-memoize-jsx-returners': REASONS.noEnclosingBlock,
+  // `require-memoize-jsx-returners` is absent from this class deliberately
+  // (#1950): its corpus carries class DECLARATIONS nested in a function and in
+  // a class expression's method whose members are reported AND decorated, so
+  // its reports no longer all sit at class level and the probe below drives the
+  // rule for real.
   'sync-onwrite-name-func': REASONS.noEnclosingBlock,
   'use-custom-link': REASONS.noEnclosingBlock,
   'use-custom-memo': REASONS.noEnclosingBlock,
