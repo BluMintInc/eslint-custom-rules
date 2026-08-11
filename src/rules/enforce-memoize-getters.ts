@@ -495,6 +495,15 @@ export const enforceMemoizeGetters = createRule<Options, MessageIds>({
         // enforce only "private" accessibility (undefined => public)
         if (node.accessibility !== 'private') return;
 
+        // A `#private` name admits no decorator under `experimentalDecorators`
+        // — the mode this plugin's consumers compile in — so the prescribed
+        // remedy is TS1206 and cannot be written. The shape also carries
+        // TS18010 already, because an accessibility modifier beside a private
+        // name is a grammar error, so the report would only add noise to code
+        // the compiler already rejects while its `--fix` edit deepened the
+        // breakage.
+        if (node.key.type === AST_NODE_TYPES.PrivateIdentifier) return;
+
         // A getter whose value is a fresh read of live external state is not a
         // lazy factory: memoizing it pins the first observation forever, so the
         // report is dropped along with its unattended `--fix` edit.
@@ -599,17 +608,33 @@ export const enforceMemoizeGetters = createRule<Options, MessageIds>({
               scheduledImportFix = true;
             }
 
-            // Insert decorator above the getter (or before the first decorator), preserving indentation
+            // Anchor the decorator on the member — its first token, so ahead of
+            // `private`/`static` and of any decorator it already carries —
+            // rather than on the start of the line the member happens to sit
+            // on. The two coincide only while the member is first on its line:
+            // in a single-line class body, or where two members share a line, a
+            // line-start edit emits the decorator before `class …`, decorating
+            // the CLASS. The getter stays bare, so the rule reports again on the
+            // next pass and `--fix` stacks one more decorator per pass up to
+            // ESLint's pass cap instead of reaching a fixpoint.
             const insertionTarget = node.decorators?.[0] ?? node;
             const insertionStart = insertionTarget.range[0];
             const text = sourceCode.text;
             const lineStart = text.lastIndexOf('\n', insertionStart - 1) + 1;
-            const leadingWhitespace =
-              text.slice(lineStart, insertionStart).match(/^[ \t]*/)?.[0] ?? '';
+            const linePrefix = text.slice(lineStart, insertionStart);
+            // A member that owns its line keeps the decorator on a line of its
+            // own at the member's indentation, which is the layout authors
+            // write by hand. A member that shares its line has no line to take,
+            // and a newline there would strand the decorator against the
+            // neighbour's text, so it rides inline — a spelling the grammar
+            // accepts just as readily.
+            const ownsItsLine = /^[ \t]*$/.test(linePrefix);
             fixes.push(
-              fixer.insertTextBeforeRange(
-                [lineStart, lineStart],
-                `${leadingWhitespace}@${decoratorIdent}()\n`,
+              fixer.insertTextBefore(
+                insertionTarget,
+                ownsItsLine
+                  ? `@${decoratorIdent}()\n${linePrefix}`
+                  : `@${decoratorIdent}() `,
               ),
             );
 

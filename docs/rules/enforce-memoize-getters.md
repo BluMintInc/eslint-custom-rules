@@ -36,9 +36,36 @@ class Example {
 
 - Applies only to private instance getters (`get` accessors with `private` accessibility).
 - Ignores static getters.
+- Ignores getters named with an ECMAScript private name (`get #fetcher()`), which admit no decorator (see below).
 - Recognizes `@Memoize`, `@Memoize()`, and namespaced forms like `@ns.Memoize()`.
 - Auto-fix adds `@Memoize()` and imports `Memoize` from `@blumintinc/typescript-memoize` if missing, without duplicating existing imports or aliases.
 - Getters that sample live external state are exempt automatically (see below).
+
+### Where the decorator is written
+
+The decorator attaches to the **member**, ahead of its modifiers and of any
+decorator it already carries — not to the start of the line the member happens
+to sit on. A getter that owns its line receives the decorator on a line of its
+own at the getter's indentation; a getter that shares its line receives it
+inline, a spelling the grammar accepts just as readily:
+
+```ts
+class UserAccount {
+  @Memoize()
+  private get isLocked() { return true; }
+}
+
+class Compact { @Memoize() private get isLocked() { return true; } }
+```
+
+### Getters named with a private name
+
+`get #fetcher()` is never reported. TypeScript's `experimentalDecorators` mode —
+the mode `@blumintinc/typescript-memoize` requires — rejects a decorator on a
+`#private` member with **TS1206**, so the remedy this rule prescribes cannot be
+written there. `private get #fetcher()` is doubly out of reach: an accessibility
+modifier beside a private name is itself a grammar error (**TS18010**). Rename
+the getter, or hold the memoized value in a `#private` field the getter reads.
 
 ### Getters that read live external state
 
