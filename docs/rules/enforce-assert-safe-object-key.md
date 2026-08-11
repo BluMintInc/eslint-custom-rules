@@ -71,8 +71,9 @@ property name:
 - **The object reads as a sequence.** A name matching `array`, `arr`, `items`,
   `elements`, `list`, `collection` or `data` (singular or plural) is treated as
   a collection indexed by position. A collection reached as a field is judged by
-  the field name, so `raster.data[i]`, `this.items[i]` and `state.buffer.list[i]`
-  all qualify. A computed object (`grid[0][key]`) contributes no name.
+  the field name, so `raster.data[i]`, `this.items[i]`, `this.#items[i]` and
+  `state.buffer.list[i]` all qualify. A computed object (`grid[0][key]`)
+  contributes no name.
 - **The key is statically a number.** The key expression itself proves it —
   numeric literals, `i++`, `-x`, `~x`, arithmetic and bitwise operators
   (`-`, `*`, `/`, `%`, `**`, `<<`, `>>`, `>>>`, `&`, `|`, `^`), `Number(...)`,
@@ -160,13 +161,13 @@ Which site the author wrote the annotation on does not change the verdict:
   number`, `rankOf(id) satisfies number`, `<number>rankOf(id)`.
 - **`: number` as a function's return type** — `function rankOf(id): number`,
   `const rankOf = (id): number => …`, `private rankOf(id): number`,
-  `declare function rankOf(id): number`, and the getter spelling
-  `get rank(): number`. A call to one is numeric wherever it appears, key
-  position included.
+  `#rankOf(id): number`, `declare function rankOf(id): number`, and the getter
+  spellings `get rank(): number` and `get #rank(): number`. A call to one is
+  numeric wherever it appears, key position included.
 - **`: number` on a class property** — `private readonly rank: number = 1`,
-  `static rank: number = 1`, `abstract rank: number`, and the constructor
-  parameter property `constructor(private readonly rank: number) {}`. A read of
-  one is numeric.
+  `readonly #rank: number = 1`, `static rank: number = 1`,
+  `abstract rank: number`, and the constructor parameter property
+  `constructor(private readonly rank: number) {}`. A read of one is numeric.
 
 ```js
 // ✅ Exempt: the declaration is what proves the key numeric.
@@ -187,6 +188,19 @@ class Reader {
     return [this.mapping[rank], this.mapping[this.rankOf(seed)], this.mapping[this.rank]];
   }
 }
+
+class PrivateReader {
+  readonly #rank: number = 1;
+  constructor(private readonly mapping) {}
+  #rankOf(seed): number {
+    return seed + 1;
+  }
+  read(seed) {
+    // The ECMA spelling of privacy carries the same annotation, and the author
+    // cannot add `private` to opt in: `private #rankOf` is TS18010.
+    return [this.mapping[this.#rankOf(seed)], this.mapping[this.#rank]];
+  }
+}
 ```
 
 A call and a member read are credited only against the declaration they actually
@@ -198,6 +212,15 @@ instance half, `this` inside a `static` member and a bare `ClassName.` reach the
 static half, and a `this` a non-arrow callback rebinds reaches neither. A
 same-named member of another class, of the other half of this one, or of an
 object literal is never read.
+
+An ECMA private name is a member of its own. `#rank` and a public `rank` can be
+declared side by side in one class and name two different values, so each is
+credited only with its own declaration: `this.#rank` never reads the public
+annotation, and `this.rank` never reads the private one. The two privacy
+spellings are otherwise equal — TypeScript forbids writing both at once
+(`private #rank` is TS18010), so the proof is the written annotation and the
+declaration the reference resolves to, never which spelling of privacy the
+author chose.
 
 The proof is exact and it is local:
 

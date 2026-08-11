@@ -220,18 +220,22 @@ const ARRAY_LIKE_NAME = /^(array|arr|items|elements|list|collection|data)s?$/i;
  * The name an indexed object is judged by. A collection reached as a field —
  * `raster.data[i]`, `this.items[i]`, `a.b.list[i]` — carries its signal on the
  * property rather than on the root object, so the property name is what the
- * array-ish test sees there.
+ * array-ish test sees there. An ECMA private field carries the same signal:
+ * `this.#items` is the very collection `this.items` is, named under the other
+ * spelling of the same privacy.
  */
 function indexedObjectName(node: TSESTree.Node): string {
   if (node.type === AST_NODE_TYPES.Identifier) {
     return node.name;
   }
-  if (
-    node.type === AST_NODE_TYPES.MemberExpression &&
-    !node.computed &&
-    node.property.type === AST_NODE_TYPES.Identifier
-  ) {
-    return node.property.name;
+  if (node.type === AST_NODE_TYPES.MemberExpression && !node.computed) {
+    const { property } = node;
+    if (
+      property.type === AST_NODE_TYPES.Identifier ||
+      property.type === AST_NODE_TYPES.PrivateIdentifier
+    ) {
+      return property.name;
+    }
   }
   return '';
 }
@@ -426,23 +430,55 @@ const NAMED_CLASS_MEMBER_TYPES = new Set<AST_NODE_TYPES>([
 ]);
 
 /**
- * The name a class member declares, or null for an index signature, a static
+ * The member a name identifies: the name itself, plus whether it is an ECMA
+ * private name. The privacy travels beside the name because `#rank` and `rank`
+ * are two members a class can declare at once, while `PrivateIdentifier.name`
+ * is the bare `rank` with no `#` — matching on the name alone would let a read
+ * of the public member be credited with the private one's annotation.
+ */
+type ClassMemberKey = { name: string; isPrivate: boolean };
+
+/**
+ * The member a key node names, or null for a key whose text names no member the
+ * syntax can match — a numeric or computed key, or a `PrivateIdentifier` in a
+ * position where the syntax forbids one.
+ */
+function memberKeyOf(node: TSESTree.Node): ClassMemberKey | null {
+  switch (node.type) {
+    case AST_NODE_TYPES.PrivateIdentifier:
+      return { name: node.name, isPrivate: true };
+    case AST_NODE_TYPES.Identifier:
+      return { name: node.name, isPrivate: false };
+    case AST_NODE_TYPES.Literal:
+      return typeof node.value === 'string'
+        ? { name: node.value, isPrivate: false }
+        : null;
+    default:
+      return null;
+  }
+}
+
+/**
+ * The member a class member declares, or null for an index signature, a static
  * block, or a computed key whose text names no member the syntax can match.
  */
-function classMemberName(member: TSESTree.Node): string | null {
+function classMemberKey(member: TSESTree.Node): ClassMemberKey | null {
   if (!NAMED_CLASS_MEMBER_TYPES.has(member.type)) {
     return null;
   }
   const { key, computed } = member as TSESTree.PropertyDefinition;
-  if (computed) {
-    return null;
-  }
-  if (key.type === AST_NODE_TYPES.Identifier) {
-    return key.name;
-  }
-  return key.type === AST_NODE_TYPES.Literal && typeof key.value === 'string'
-    ? key.value
-    : null;
+  return computed ? null : memberKeyOf(key);
+}
+
+/**
+ * The member a non-computed access names — `this.rank`, `this.#rank`,
+ * `Reader.#rankOf`. A computed access names its member by a value rather than
+ * by syntax, so it identifies none.
+ */
+function memberAccessKey(
+  node: TSESTree.MemberExpression,
+): ClassMemberKey | null {
+  return node.computed ? null : memberKeyOf(node.property);
 }
 
 /**
@@ -1445,19 +1481,22 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
      * The declarations of a member name on one half of a class. A `static`
      * member and an instance member of the same name are separate declarations
      * that TypeScript keeps apart, so crediting the wrong half would credit an
-     * annotation the reference does not resolve to. Constructor parameter
-     * properties declare a member too, and are read alongside the body's own
-     * elements.
+     * annotation the reference does not resolve to. An ECMA private name is
+     * kept apart from the public name it spells the same way for the same
+     * reason. Constructor parameter properties declare a member too, and are
+     * read alongside the body's own elements — never for a private name, which
+     * the parameter-property syntax cannot declare.
      */
     const classMemberDeclarations = (
       body: TSESTree.ClassBody,
-      name: string,
+      key: ClassMemberKey,
       isStatic: boolean,
     ): TSESTree.Node[] => {
       const declarations: TSESTree.Node[] = [];
       for (const member of body.body) {
         if (
           !isStatic &&
+          !key.isPrivate &&
           member.type === AST_NODE_TYPES.MethodDefinition &&
           member.kind === 'constructor'
         ) {
@@ -1465,14 +1504,16 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
             if (
               parameter.type === AST_NODE_TYPES.TSParameterProperty &&
               (parameterPropertyBinding(parameter) as TSESTree.Identifier)
-                .name === name
+                .name === key.name
             ) {
               declarations.push(parameter);
             }
           }
         }
+        const declared = classMemberKey(member);
         if (
-          classMemberName(member) === name &&
+          declared?.name === key.name &&
+          declared.isPrivate === key.isPrivate &&
           (member as TSESTree.PropertyDefinition).static === isStatic
         ) {
           declarations.push(member);
@@ -1490,7 +1531,8 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
      * also yield.
      */
     const isNumberMemberRead = (node: TSESTree.MemberExpression): boolean => {
-      if (node.computed || node.property.type !== AST_NODE_TYPES.Identifier) {
+      const key = memberAccessKey(node);
+      if (!key) {
         return false;
       }
       const receiver = receiverClassContext(node.object);
@@ -1499,7 +1541,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
       }
       const declarations = classMemberDeclarations(
         receiver.body,
-        node.property.name,
+        key,
         receiver.isStatic,
       );
       return declarations.length > 0 && declarations.every(memberReadsNumber);
@@ -1553,11 +1595,11 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
             )
         );
       }
-      if (
-        callee.type !== AST_NODE_TYPES.MemberExpression ||
-        callee.computed ||
-        callee.property.type !== AST_NODE_TYPES.Identifier
-      ) {
+      if (callee.type !== AST_NODE_TYPES.MemberExpression) {
+        return false;
+      }
+      const key = memberAccessKey(callee);
+      if (!key) {
         return false;
       }
       const receiver = receiverClassContext(callee.object);
@@ -1566,7 +1608,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
       }
       const declarations = classMemberDeclarations(
         receiver.body,
-        callee.property.name,
+        key,
         receiver.isStatic,
       );
       return (

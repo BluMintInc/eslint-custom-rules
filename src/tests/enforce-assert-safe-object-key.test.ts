@@ -3833,6 +3833,301 @@ class Reader {
   ],
 });
 
+// Issue #1933: `private rankOf(): number` and `#rankOf(): number` are the same
+// privacy under two spellings, and TypeScript forbids writing both at once
+// (TS18010), so an author on the `#` spelling cannot opt into the declaration
+// proof by adding `private`. The proof the rule asks for is the WRITTEN
+// annotation plus a reference that RESOLVES to it, both of which a `#` member
+// satisfies — more strictly than the `private` one, since a `#` name is
+// unreachable outside the class body and cannot be shadowed or aliased.
+// The fence matters as much as the carve-out: `PrivateIdentifier.name` is the
+// bare name with no `#`, so `#rank` and a public `rank` in the same class must
+// stay separate declarations or crediting one would silence a read of the other.
+ruleTesterTs.run(
+  'enforce-assert-safe-object-key: ECMA private class members (issue #1933)',
+  enforceAssertSafeObjectKey,
+  {
+    valid: [
+      {
+        name: 'a `: number` return type on a `#` method is numeric proof at the call site',
+        code: `
+class Reader {
+  constructor(private readonly mapping) {}
+  #rankOf(seed): number {
+    return seed + 1;
+  }
+  read(seed) {
+    const rank = this.#rankOf(seed);
+    return this.mapping[rank];
+  }
+}
+      `,
+      },
+      {
+        name: 'a call to a `: number`-returning `#` method is numeric in key position',
+        code: `
+class Reader {
+  constructor(private readonly mapping) {}
+  #rankOf(seed): number {
+    return seed + 1;
+  }
+  read(seed) {
+    return this.mapping[this.#rankOf(seed)];
+  }
+}
+      `,
+      },
+      {
+        name: 'a `#` field annotated `: number` is numeric at the use site',
+        code: `
+class Reader {
+  readonly #rank: number = 1;
+  constructor(private readonly mapping) {}
+  read() {
+    return this.mapping[this.#rank];
+  }
+}
+      `,
+      },
+      {
+        name: 'a `#` getter returning `: number` is numeric at the read site',
+        code: `
+class Reader {
+  constructor(private readonly mapping) {}
+  get #rank(): number {
+    return 1;
+  }
+  read() {
+    return this.mapping[this.#rank];
+  }
+}
+      `,
+      },
+      {
+        // A setter constrains writes, not reads, on either spelling of privacy.
+        name: 'a `#` getter paired with a `#` setter keeps its numeric proof',
+        code: `
+class Reader {
+  constructor(private readonly mapping) {}
+  get #rank(): number {
+    return 1;
+  }
+  set #rank(next) {}
+  read() {
+    return this.mapping[this.#rank];
+  }
+}
+      `,
+      },
+      {
+        name: 'a `: number`-returning `#` arrow class field is numeric at the call site',
+        code: `
+class Reader {
+  constructor(private readonly mapping) {}
+  #rankOf = (seed): number => seed + 1;
+  read(seed) {
+    return this.mapping[this.#rankOf(seed)];
+  }
+}
+      `,
+      },
+      {
+        name: 'an optionally-called `: number` `#` method keeps its proof',
+        code: `
+class Reader {
+  constructor(private readonly mapping) {}
+  #rankOf(seed): number {
+    return seed;
+  }
+  read(seed) {
+    return this.mapping[this.#rankOf?.(seed)];
+  }
+}
+      `,
+      },
+      {
+        name: 'a `static #` method is numeric through a static `this`',
+        code: `
+class Reader {
+  static mapping = {};
+  static #rankOf(seed): number {
+    return seed + 1;
+  }
+  static read(seed) {
+    return this.mapping[this.#rankOf(seed)];
+  }
+}
+      `,
+      },
+      {
+        name: 'a `static #` method reached by the class name is numeric',
+        code: `
+class Reader {
+  static mapping = {};
+  static #rankOf(seed): number {
+    return seed + 1;
+  }
+  read(seed) {
+    return Reader.mapping[Reader.#rankOf(seed)];
+  }
+}
+      `,
+      },
+      {
+        // The array-ish name is read off the property, and `#items` names the
+        // very collection `items` does.
+        name: 'a `#` field carrying an array-ish name reads as a positional lookup',
+        code: `
+class Reader {
+  #items = [];
+  read(i) {
+    return this.#items[i];
+  }
+}
+      `,
+      },
+    ],
+    invalid: [
+      {
+        name: 'a `: string` return type on a `#` method proves nothing',
+        code: `
+class Reader {
+  constructor(private readonly mapping) {}
+  #rankOf(seed): string {
+    return String(seed);
+  }
+  read(seed) {
+    const rank = this.#rankOf(seed);
+    return this.mapping[rank];
+  }
+}
+      `,
+        errors: [lintError('rank')],
+        output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+class Reader {
+  constructor(private readonly mapping) {}
+  #rankOf(seed): string {
+    return String(seed);
+  }
+  read(seed) {
+    const rank = this.#rankOf(seed);
+    return this.mapping[assertSafe(rank)];
+  }
+}
+      `,
+      },
+      {
+        name: 'an unannotated `#` field initialized to a number proves nothing',
+        code: `
+class Reader {
+  constructor(private readonly mapping) {}
+  #rank = 1;
+  read() {
+    return this.mapping[this.#rank];
+  }
+}
+      `,
+        errors: [lintError('this.#rank')],
+        output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+class Reader {
+  constructor(private readonly mapping) {}
+  #rank = 1;
+  read() {
+    return this.mapping[assertSafe(this.#rank)];
+  }
+}
+      `,
+      },
+      {
+        // `PrivateIdentifier.name` drops the `#`, so a name-only match would
+        // credit this public `rank: string` read with the `#rank: number`
+        // annotation it never resolves to.
+        name: 'a `: number` `#` field proves nothing about the public field spelled the same',
+        code: `
+class Reader {
+  constructor(private readonly mapping) {}
+  #rank: number = 1;
+  rank: string = 'a';
+  read() {
+    return this.mapping[this.rank];
+  }
+}
+      `,
+        errors: [lintError('this.rank')],
+        output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+class Reader {
+  constructor(private readonly mapping) {}
+  #rank: number = 1;
+  rank: string = 'a';
+  read() {
+    return this.mapping[assertSafe(this.rank)];
+  }
+}
+      `,
+      },
+      {
+        name: 'a `: number` public field proves nothing about the `#` field spelled the same',
+        code: `
+class Reader {
+  constructor(private readonly mapping) {}
+  rank: number = 1;
+  #rank: string = 'a';
+  read() {
+    return this.mapping[this.#rank];
+  }
+}
+      `,
+        errors: [lintError('this.#rank')],
+        output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+class Reader {
+  constructor(private readonly mapping) {}
+  rank: number = 1;
+  #rank: string = 'a';
+  read() {
+    return this.mapping[assertSafe(this.#rank)];
+  }
+}
+      `,
+      },
+      {
+        // A `#` member of another class is unreachable by syntax, and its
+        // annotation is never read for a same-named member of this one.
+        name: 'a `: number` `#` field of another class proves nothing',
+        code: `
+class Ranked {
+  #rank: number = 1;
+}
+class Reader {
+  constructor(private readonly mapping) {}
+  rank = 'a';
+  read() {
+    return this.mapping[this.rank];
+  }
+}
+      `,
+        errors: [lintError('this.rank')],
+        output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+class Ranked {
+  #rank: number = 1;
+}
+class Reader {
+  constructor(private readonly mapping) {}
+  rank = 'a';
+  read() {
+    return this.mapping[assertSafe(this.rank)];
+  }
+}
+      `,
+      },
+    ],
+  },
+);
+
 // Issue #1875: a typed discriminant indexing a Record whose declared keys cover
 // its type is compile-time bounded — TypeScript rejects any key value outside
 // the record's declared keys — so wrapping it in assertSafe validates nothing
