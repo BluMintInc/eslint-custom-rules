@@ -43,6 +43,18 @@ type LiteralKey = {
 };
 
 /**
+ * Outcome of deriving the lookup constant's name. The two failures are
+ * different facts about the code and are reported as such: a discriminant with
+ * no usable name in it is nothing like one whose name is already taken, and a
+ * report-only message that states the wrong one misdiagnoses why the fix was
+ * withheld (#1941).
+ */
+type NameDerivation =
+  | { kind: 'ok'; name: string }
+  | { kind: 'taken'; name: string }
+  | { kind: 'underivable' };
+
+/**
  * Node types whose presence anywhere in a branch value means the value is NOT
  * safe to eager-evaluate inside a `Record` (all entries construct at once).
  */
@@ -60,6 +72,20 @@ const CONTAINER_TYPES = new Set<string>([
   AST_NODE_TYPES.BlockStatement,
   AST_NODE_TYPES.Program,
   AST_NODE_TYPES.SwitchCase,
+]);
+
+/**
+ * Node types whose children are a statement LIST, so a replacement spanning a
+ * declaration plus a statement fits. This is deliberately wider than
+ * `CONTAINER_TYPES`, which answers a different question — where a ternary's
+ * hoist lands — and would change that answer if it grew these.
+ */
+const STATEMENT_LIST_TYPES = new Set<string>([
+  AST_NODE_TYPES.BlockStatement,
+  AST_NODE_TYPES.Program,
+  AST_NODE_TYPES.SwitchCase,
+  AST_NODE_TYPES.StaticBlock,
+  AST_NODE_TYPES.TSModuleBlock,
 ]);
 
 const FUNCTION_TYPES = new Set<string>([
@@ -188,6 +214,17 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
     // Ternary/if forms stash their resolved discriminant here so the shared
     // `report`/fixer can recover it (switch reads `node.discriminant` directly).
     const discriminantMap = new WeakMap<TSESTree.Node, TSESTree.Node>();
+
+    // Lookup names this pass has committed to emitting, keyed by the scope that
+    // receives the declaration. The textual collision check only sees names the
+    // source already carries, so without a claim two dispatches sharing a
+    // trailing property name (`this.tier` and `this.#tier`, or `a.tier` and
+    // `b.tier`) both emit `const RESULT_BY_TIER` into one scope, which does not
+    // compile (TS2451). The key is the scope rather than the file because the
+    // same name in two sibling function bodies is two independent bindings, and
+    // blocking those would strand every dispatch after the first — the textual
+    // check sees the first fix's output on every later run.
+    const claimedNames = new Map<TSESTree.Node, Set<string>>();
 
     // ---- Type helpers -------------------------------------------------------
 
@@ -847,6 +884,77 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
       return found;
     }
 
+    /**
+     * Whether the subtree names an ECMA private member (`o.#f`, `#f in o`).
+     * Such a name resolves only lexically inside the class body that declares
+     * it, so text carrying one cannot be moved out of that body.
+     */
+    function referencesPrivateName(node: TSESTree.Node): boolean {
+      let found = false;
+      const visit = (n: unknown): void => {
+        if (found || !n || typeof n !== 'object') {
+          return;
+        }
+        const anyNode = n as Record<string, unknown> & { type?: string };
+        if (typeof anyNode.type !== 'string') {
+          return;
+        }
+        if (anyNode.type === AST_NODE_TYPES.PrivateIdentifier) {
+          found = true;
+          return;
+        }
+        for (const key of Object.keys(anyNode)) {
+          if (key === 'parent') {
+            continue;
+          }
+          const val = anyNode[key];
+          if (Array.isArray(val)) {
+            for (const child of val) {
+              visit(child);
+            }
+          } else {
+            visit(val);
+          }
+        }
+      };
+      visit(node);
+      return found;
+    }
+
+    /**
+     * Whether the ternary form's hoist would carry a branch value out of the
+     * class body that gives it meaning.
+     *
+     * Only the ternary hoists: it inserts the `Record` before the enclosing
+     * statement, and inside a class that statement can be the class declaration
+     * itself (a field initializer or a `static` block has no statement of its
+     * own inside the body). The lookup that replaces the construct stays put —
+     * a `#private` discriminant is still read where it was written — but the
+     * branch VALUES travel with the `Record`, and `this` or `#f` in one of them
+     * does not resolve at module scope (TS18013/TS18016, and a `this` that is
+     * no longer the instance). Values that name neither are free to move, so
+     * the test is on what the hoisted text needs, not on where it started.
+     */
+    function hoistLeavesClassBody(
+      node: TSESTree.Node,
+      values: TSESTree.Expression[],
+    ): boolean {
+      let stmt: TSESTree.Node = node;
+      let crossesClassBody = false;
+      while (stmt.parent && !CONTAINER_TYPES.has(stmt.parent.type)) {
+        stmt = stmt.parent;
+        if (stmt.type === AST_NODE_TYPES.ClassBody) {
+          crossesClassBody = true;
+        }
+      }
+      if (!crossesClassBody) {
+        return false;
+      }
+      return values.some(
+        (value) => referencesThis(value) || referencesPrivateName(value),
+      );
+    }
+
     // ---- Name derivation ----------------------------------------------------
 
     function toUpperSnake(name: string): string {
@@ -857,7 +965,31 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
         .toUpperCase();
     }
 
-    function deriveLookupName(discriminant: TSESTree.Node): string | null {
+    /**
+     * `RESULT_BY_<KEY>` for a discriminant, or why no such name is available.
+     *
+     * The trailing member property may be spelled as an ECMA private field
+     * (`this.#tier`). `#tier` and a `private tier` declared on the same class
+     * are the same privacy, they are mutually exclusive (`private #tier` is
+     * TS18010), and the parser hands the name over with the `#` already
+     * stripped — so the derivation has a perfectly ordinary identifier to work
+     * with and both spellings arrive at the same `RESULT_BY_TIER`. Reading the
+     * `#` spelling as "no name derivable" withheld the fix from it and reported
+     * a reason that was false (#1941).
+     *
+     * The name is only a name: it is not the private member and does not read
+     * it. A sibling public `tier` on the same class is a different member that
+     * the fix neither reads nor shadows — the emitted lookup copies the
+     * discriminant's source text verbatim, so `this.#tier` stays `this.#tier`.
+     * What the two spellings do share is the derived constant, which is why the
+     * name has to be claimed rather than merely tested against the source text:
+     * two dispatches in one scope both emitting `const RESULT_BY_TIER` do not
+     * compile (TS2451).
+     */
+    function deriveLookupName(
+      discriminant: TSESTree.Node,
+      fixScope: TSESTree.Node,
+    ): NameDerivation {
       const target = unwrapChain(discriminant);
       let key: string | null = null;
       if (target.type === AST_NODE_TYPES.Identifier) {
@@ -865,24 +997,50 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
       } else if (
         target.type === AST_NODE_TYPES.MemberExpression &&
         !target.computed &&
-        target.property.type === AST_NODE_TYPES.Identifier
+        (target.property.type === AST_NODE_TYPES.Identifier ||
+          target.property.type === AST_NODE_TYPES.PrivateIdentifier)
       ) {
         key = target.property.name;
       }
       if (!key) {
-        return null;
+        return { kind: 'underivable' };
       }
       const snake = toUpperSnake(key);
       if (!snake) {
-        return null;
+        return { kind: 'underivable' };
       }
       const name = `RESULT_BY_${snake}`;
-      // Conservative collision check: any textual occurrence of the name blocks
-      // the autofix (a false collision only downgrades to report-only).
-      if (new RegExp(`\\b${name}\\b`).test(sourceCode.getText())) {
-        return null;
+      // Conservative collision check: any textual occurrence of the name, or a
+      // claim staked by an earlier dispatch in this file, blocks the autofix (a
+      // false collision only downgrades to report-only).
+      if (
+        claimedNames.get(fixScope)?.has(name) ||
+        new RegExp(`\\b${name}\\b`).test(sourceCode.getText())
+      ) {
+        return { kind: 'taken', name };
       }
-      return name;
+      return { kind: 'ok', name };
+    }
+
+    /**
+     * The node whose children the generated `const` joins — the scope its
+     * binding lives in. A ternary hoists to the enclosing statement, so its
+     * declaration lands beside that statement; every other form is replaced in
+     * place, so the declaration lands beside the construct. A `const` written
+     * into a `case` clause is scoped to the whole `switch` block, so the clause
+     * answers with the statement that owns that block.
+     */
+    function fixScopeOf(node: TSESTree.Node, form: Analysis['form']) {
+      let stmt: TSESTree.Node = node;
+      if (form === 'expr') {
+        while (stmt.parent && !CONTAINER_TYPES.has(stmt.parent.type)) {
+          stmt = stmt.parent;
+        }
+      }
+      const container = stmt.parent ?? stmt;
+      return container.type === AST_NODE_TYPES.SwitchCase
+        ? container.parent ?? container
+        : container;
     }
 
     // ---- Fix construction ---------------------------------------------------
@@ -1131,12 +1289,22 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
       return { entries, fullCoverage: false, remainingCount: remaining.length };
     }
 
+    /**
+     * Why the fix was withheld, in the words of the condition that actually
+     * withheld it. Every arm here is a fact about the reported code, so a
+     * reason that is emitted is a reason that is true — a report-only message
+     * blaming the wrong condition sends the author to fix something that is not
+     * broken (#1941).
+     */
     function manualReason(flags: {
       fullCoverage: boolean;
       hasNullish: boolean;
       eagerSafe: boolean;
       canPlaceFix: boolean;
+      hoistEscapesClass: boolean;
+      inStatementList: boolean;
       commentSafe: boolean;
+      derivation: NameDerivation | null;
     }): string {
       if (flags.hasNullish) {
         return 'the union includes undefined/null, which cannot be a Record key — use Partial<Record<D, V>> with a ?? fallback';
@@ -1150,10 +1318,19 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
       if (!flags.canPlaceFix) {
         return 'the dispatch sits inside an expression-bodied function; extract the Record manually so it stays in scope';
       }
+      if (flags.hoistEscapesClass) {
+        return 'the Record would hoist outside the class body, where the branch values’ `this`/`#private` reads do not resolve; extract it manually inside the class';
+      }
+      if (!flags.inStatementList) {
+        return 'the dispatch is the whole body of a braceless branch, where a declaration is not allowed; add braces around it, then convert';
+      }
       if (!flags.commentSafe) {
         return 'a comment inside the dispatch cannot be carried onto the generated Record without changing what it annotates or suppresses — relocate the comment, then convert';
       }
-      return 'a collision-free lookup name could not be derived from the discriminant';
+      if (flags.derivation?.kind === 'taken') {
+        return `the lookup name ${flags.derivation.name} is already taken in this file — rename the colliding binding, or write the Record manually`;
+      }
+      return 'no lookup name could be derived from the discriminant';
     }
 
     function report(node: TSESTree.Node, analysis: Analysis): void {
@@ -1173,27 +1350,35 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
         (expr) => !containsEagerUnsafe(expr),
       );
 
-      let name: string | null = null;
+      const hoistEscapesClass =
+        form === 'expr' && hoistLeavesClassBody(node, contributingValues);
+
+      // Every non-ternary form replaces the construct with a declaration plus a
+      // statement, which needs a statement LIST to land in. As the sole body of
+      // a braceless `if`/`else`/loop the construct sits where exactly one
+      // statement is allowed and a lexical declaration is not allowed at all
+      // (TS1156), so the fix waits for braces.
+      const inStatementList =
+        form === 'expr' ||
+        (node.parent !== undefined &&
+          STATEMENT_LIST_TYPES.has(node.parent.type));
+
+      const fixScope = fixScopeOf(node, form);
+      let derivation: NameDerivation | null = null;
       // Name derivation is only needed for the autofix path.
       if (
         fullCoverage &&
         !hasNullish &&
         eagerSafe &&
         canPlaceFix &&
+        !hoistEscapesClass &&
+        inStatementList &&
         !commentBlocked
       ) {
-        name = deriveLookupName(discriminantOf(node));
+        derivation = deriveLookupName(discriminantOf(node), fixScope);
       }
 
-      const autofixable =
-        fullCoverage &&
-        !hasNullish &&
-        eagerSafe &&
-        canPlaceFix &&
-        !commentBlocked &&
-        name !== null;
-
-      if (!autofixable) {
+      if (derivation === null || derivation.kind !== 'ok') {
         context.report({
           node,
           messageId: 'preferMapManual',
@@ -1203,14 +1388,17 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
               hasNullish,
               eagerSafe,
               canPlaceFix,
+              hoistEscapesClass,
+              inStatementList,
               commentSafe: !commentBlocked,
+              derivation,
             }),
           },
         });
         return;
       }
 
-      const lookupName = name as string;
+      const lookupName = derivation.name;
       const vText = computeValueTypeText(contributingValues);
       if (!vText) {
         context.report({
@@ -1241,6 +1429,12 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
         });
         return;
       }
+
+      // Claimed only once every gate has passed, so a dispatch that ends up
+      // report-only never blocks a later one from using the name.
+      const claimed = claimedNames.get(fixScope) ?? new Set<string>();
+      claimed.add(lookupName);
+      claimedNames.set(fixScope, claimed);
 
       context.report({
         node,
