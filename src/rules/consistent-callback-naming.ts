@@ -151,18 +151,97 @@ function isApiSurfaceValue(node: TSESTree.Node): boolean {
  * exported or returned object literal.
  */
 function satisfiesDeclaredContract(node: TSESTree.Node): boolean {
+  const classNode = enclosingClass(node);
+  return (
+    !!classNode &&
+    (!!classNode.superClass || (classNode.implements?.length ?? 0) > 0)
+  );
+}
+
+/** The class a member belongs to, when `node` is a class member. */
+function enclosingClass(
+  node: TSESTree.Node,
+): TSESTree.ClassDeclaration | TSESTree.ClassExpression | undefined {
   const body = node.parent;
   if (body?.type !== AST_NODE_TYPES.ClassBody) {
-    return false;
+    return undefined;
   }
   const classNode = body.parent;
-  if (
-    classNode?.type !== AST_NODE_TYPES.ClassDeclaration &&
-    classNode?.type !== AST_NODE_TYPES.ClassExpression
-  ) {
-    return false;
+  return classNode?.type === AST_NODE_TYPES.ClassDeclaration ||
+    classNode?.type === AST_NODE_TYPES.ClassExpression
+    ? classNode
+    : undefined;
+}
+
+/**
+ * What `this` denotes at `node`: `classNode`'s instance, `classNode` itself
+ * (inside a `static` member), or nothing the rule can pin down.
+ *
+ * `this` is only rewritable evidence when it provably names the class whose
+ * member is being renamed. An arrow function inherits `this` lexically, so the
+ * walk passes through it; an ordinary function expression rebinds `this` to
+ * whatever calls it, so `this.handleClick` inside a callback may be some other
+ * object's member entirely and the rename must not touch it.
+ */
+function thisReceiverOf(
+  node: TSESTree.Node,
+  classNode: TSESTree.ClassDeclaration | TSESTree.ClassExpression,
+): 'instance' | 'static' | undefined {
+  const ownedBy = (member: TSESTree.Node & { static?: boolean }) =>
+    member.parent?.parent === classNode
+      ? member.static
+        ? ('static' as const)
+        : ('instance' as const)
+      : undefined;
+
+  let child: TSESTree.Node = node;
+  let current: TSESTree.Node | undefined = node.parent;
+  while (current) {
+    // A concise or block-bodied arrow keeps the enclosing `this`.
+    if (current.type === AST_NODE_TYPES.FunctionExpression) {
+      const owner = current.parent;
+      return (owner?.type === AST_NODE_TYPES.MethodDefinition ||
+        owner?.type === AST_NODE_TYPES.PropertyDefinition) &&
+        owner.value === current
+        ? ownedBy(owner)
+        : undefined;
+    }
+    if (current.type === AST_NODE_TYPES.FunctionDeclaration) {
+      return undefined;
+    }
+    if (current.type === AST_NODE_TYPES.PropertyDefinition) {
+      // Reached through arrows alone: a field initializer's `this` is the
+      // instance under construction.
+      return current.value === child ? ownedBy(current) : undefined;
+    }
+    if (current.type === AST_NODE_TYPES.StaticBlock) {
+      return current.parent === classNode.body ? 'static' : undefined;
+    }
+    // A computed key, a decorator or a heritage expression evaluates outside
+    // the class body, so `this` there is not the instance.
+    if (
+      current.type === AST_NODE_TYPES.ClassBody ||
+      current.type === AST_NODE_TYPES.Program
+    ) {
+      return undefined;
+    }
+    child = current;
+    current = current.parent;
   }
-  return !!classNode.superClass || (classNode.implements?.length ?? 0) > 0;
+  return undefined;
+}
+
+/** Whether a class body declares `name` twice — a `get`/`set` pair. */
+function declaresNameTwice(body: TSESTree.ClassBody, name: string): boolean {
+  const declarations = body.body.filter((member) => {
+    const key = (member as { computed?: boolean; key?: TSESTree.Node }).key;
+    return (
+      !(member as { computed?: boolean }).computed &&
+      key?.type === AST_NODE_TYPES.Identifier &&
+      key.name === name
+    );
+  });
+  return declarations.length > 1;
 }
 
 /** The member names already declared alongside `node`, keyed by identifier. */
@@ -201,17 +280,8 @@ function collectMemberReads(
   visitorKeys: Readonly<Record<string, readonly string[] | undefined>>,
 ): Set<string> {
   const names = new Set<string>();
-  const stack: TSESTree.Node[] = [program];
-  const push = (value: unknown) => {
-    if (Array.isArray(value)) {
-      value.forEach(push);
-    } else if (value && typeof value === 'object' && 'type' in value) {
-      stack.push(value as TSESTree.Node);
-    }
-  };
 
-  while (stack.length > 0) {
-    const node = stack.pop() as TSESTree.Node;
+  walkProgram(program, visitorKeys, (node) => {
     if (node.type === AST_NODE_TYPES.MemberExpression) {
       if (!node.computed && node.property.type === AST_NODE_TYPES.Identifier) {
         names.add(node.property.name);
@@ -235,11 +305,111 @@ function collectMemberReads(
         }
       }
     }
+  });
+  return names;
+}
+
+/**
+ * Every node of the file, type nodes included.
+ *
+ * The walk is driven by `visitorKeys` rather than by the rule's own visitors so
+ * that a reference is found wherever it sits — including before the declaration
+ * it refers to, and inside a type position the default traversal would still
+ * reach but a hand-written recursion routinely forgets.
+ */
+function walkProgram(
+  program: TSESTree.Program,
+  visitorKeys: Readonly<Record<string, readonly string[] | undefined>>,
+  visit: (node: TSESTree.Node) => void,
+): void {
+  const stack: TSESTree.Node[] = [program];
+  const push = (value: unknown) => {
+    if (Array.isArray(value)) {
+      value.forEach(push);
+    } else if (value && typeof value === 'object' && 'type' in value) {
+      stack.push(value as TSESTree.Node);
+    }
+  };
+
+  while (stack.length > 0) {
+    const node = stack.pop() as TSESTree.Node;
+    visit(node);
     for (const key of visitorKeys[node.type] ?? []) {
       push((node as unknown as Record<string, unknown>)[key]);
     }
   }
-  return names;
+}
+
+/**
+ * Every site in the file that could name a class member, split by whether an
+ * in-place rename can own it.
+ *
+ * `reads` are `<expr>.name` accesses — the only spelling this fixer rewrites,
+ * and then only when `<expr>` is a `this` that provably denotes the class being
+ * edited. Everything else is `opaque`: a string spelling of the name
+ * (`this['handleClick']`, `Pick<C, 'handleClick'>`, `emit('handleClick')`), a
+ * destructuring key, or a qualified type name. Those either resolve the member
+ * through text the fixer must not rewrite blindly or hand the name to something
+ * outside the file, so a single occurrence withholds the whole rename.
+ * `dynamicThisAccess` is the same verdict for `this[expr]`, where the member
+ * being read is not decidable at all.
+ */
+type MemberSites = {
+  reads: Map<string, TSESTree.MemberExpression[]>;
+  opaque: Set<string>;
+  dynamicThisAccess: boolean;
+};
+
+function collectMemberSites(
+  program: TSESTree.Program,
+  visitorKeys: Readonly<Record<string, readonly string[] | undefined>>,
+): MemberSites {
+  const reads = new Map<string, TSESTree.MemberExpression[]>();
+  const opaque = new Set<string>();
+  let dynamicThisAccess = false;
+
+  walkProgram(program, visitorKeys, (node) => {
+    if (node.type === AST_NODE_TYPES.MemberExpression) {
+      if (!node.computed && node.property.type === AST_NODE_TYPES.Identifier) {
+        const existing = reads.get(node.property.name);
+        if (existing) {
+          existing.push(node);
+        } else {
+          reads.set(node.property.name, [node]);
+        }
+      } else if (
+        node.computed &&
+        node.object.type === AST_NODE_TYPES.ThisExpression &&
+        !(
+          node.property.type === AST_NODE_TYPES.Literal &&
+          typeof node.property.value === 'string'
+        )
+      ) {
+        dynamicThisAccess = true;
+      }
+    }
+    if (
+      node.type === AST_NODE_TYPES.Literal &&
+      typeof node.value === 'string'
+    ) {
+      opaque.add(node.value);
+    }
+    if (node.type === AST_NODE_TYPES.TSQualifiedName) {
+      opaque.add(node.right.name);
+    }
+    if (node.type === AST_NODE_TYPES.ObjectPattern) {
+      for (const property of node.properties) {
+        if (
+          property.type === AST_NODE_TYPES.Property &&
+          !property.computed &&
+          property.key.type === AST_NODE_TYPES.Identifier
+        ) {
+          opaque.add(property.key.name);
+        }
+      }
+    }
+  });
+  return { reads, opaque, dynamicThisAccess };
 }
 
 export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
@@ -471,6 +641,122 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
         >,
       );
       return memberReads.has(name);
+    }
+
+    // Built once per file, and only when a class member is actually a rename
+    // candidate.
+    let memberSites: MemberSites | undefined;
+    function fileMemberSites(): MemberSites {
+      const sourceCode = context.getSourceCode();
+      memberSites ??= collectMemberSites(
+        sourceCode.ast,
+        sourceCode.visitorKeys as Readonly<
+          Record<string, readonly string[] | undefined>
+        >,
+      );
+      return memberSites;
+    }
+
+    /**
+     * Whether the class — and with it every value of its type — stays inside
+     * this file.
+     *
+     * A rename of a member another module can name is the JSX-prop problem in
+     * class clothing: the fixer edits one end of a contract whose readers it
+     * cannot see, and `import { C } from './c'; c.handleClick()` fails with
+     * TS2339 (Bug #1946). Export of the class is the obvious leak; a bare
+     * mention of the class name is the subtler one, since `export const c = new
+     * C()` hands the instance out without exporting the class at all. Neither is
+     * traceable across files, so both withhold.
+     */
+    function classStaysModulePrivate(
+      classNode: TSESTree.ClassDeclaration | TSESTree.ClassExpression,
+    ): boolean {
+      if (isApiSurfaceValue(classNode)) {
+        return false;
+      }
+      const bindings = [...context.getDeclaredVariables(classNode)];
+      if (classNode.type === AST_NODE_TYPES.ClassExpression) {
+        const declarator = classNode.parent;
+        if (
+          declarator?.type !== AST_NODE_TYPES.VariableDeclarator ||
+          declarator.init !== classNode ||
+          declarator.id.type !== AST_NODE_TYPES.Identifier
+        ) {
+          // A class expression passed to a call, stored on a property or
+          // returned is a value whose consumers the fixer cannot follow.
+          return false;
+        }
+        bindings.push(...context.getDeclaredVariables(declarator));
+      } else if (bindings.length === 0) {
+        // An unnamed declaration is only reachable through an export.
+        return false;
+      }
+      return bindings.every(
+        (variable) =>
+          !isExportedBinding(variable) &&
+          !variable.references.some(
+            (ref) =>
+              !(variable.identifiers as TSESTree.Node[]).includes(
+                ref.identifier,
+              ),
+          ),
+      );
+    }
+
+    /**
+     * The reads a class-member rename must rewrite alongside the key, or `null`
+     * when the rename has to be withheld entirely.
+     *
+     * The reads live in this file, so unlike the JSX prop or the exported
+     * binding they are the fixer's to move — and they must move in the SAME fix,
+     * because a rename that reaches the declaration and not `this.handleClick()`
+     * turns a compiling file into TS2339 (Bug #1946). Any read the fixer cannot
+     * prove it owns — a computed access, a `super.` or instance-variable read, a
+     * `this` that some other object binds — collapses the whole rename to
+     * `null`: a partial rename is the very breakage this returns to prevent.
+     */
+    function classMemberRenameTargets(
+      node: TSESTree.MethodDefinition,
+      name: string,
+    ): TSESTree.Node[] | null {
+      const classNode = enclosingClass(node);
+      if (!classNode || node.computed) {
+        return null;
+      }
+      // A `get`/`set` pair declares the name twice, and this report covers one
+      // half of it: the getter is report-only, so renaming the setter alone
+      // would split the accessor in two and leave `obj.handleResize = x`
+      // assigning to a property that no longer has a setter.
+      if (declaresNameTwice(classNode.body, name)) {
+        return null;
+      }
+      // A `private` member is unnameable outside the class body, so its
+      // references are all in this file however far the class itself travels.
+      if (
+        node.accessibility !== 'private' &&
+        !classStaysModulePrivate(classNode)
+      ) {
+        return null;
+      }
+      const sites = fileMemberSites();
+      if (sites.dynamicThisAccess || sites.opaque.has(name)) {
+        return null;
+      }
+      // `this` in a static member is the class object, so a static member's
+      // reads and an instance member's reads are different members entirely.
+      const receiver = node.static ? 'static' : 'instance';
+      const targets: TSESTree.Node[] = [];
+      for (const read of sites.reads.get(name) ?? []) {
+        if (
+          read.object.type !== AST_NODE_TYPES.ThisExpression ||
+          thisReceiverOf(read, classNode) !== receiver
+        ) {
+          return null;
+        }
+        targets.push(read.property);
+      }
+      return targets;
     }
 
     /**
@@ -832,7 +1118,7 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
         // the key also replaces the value: `{ handleClick }` becomes
         // `{ click }`, which both renames the member and re-points it at a
         // binding that need not exist (Bug #1719).
-        const canFix =
+        const isRenameable =
           isEmittableName(newName) &&
           // A sibling already holding the target name turns the rename into a
           // duplicate member: `{ click: a, handleClick: b }` would collapse to
@@ -848,12 +1134,29 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
             (isApiSurfaceValue(node.parent) || isReadByName(name))
           );
 
+        // A class member's readers are `this.handleClick` sites in this same
+        // file, so the rename owns them and rewrites them in one fix; `null`
+        // means at least one reference is beyond its reach (Bug #1946).
+        const referenceTargets =
+          isRenameable && !isProperty
+            ? classMemberRenameTargets(node as TSESTree.MethodDefinition, name)
+            : [];
+        const canFix = isRenameable && referenceTargets !== null;
+
         context.report({
           node: key,
           messageId: 'callbackFunctionPrefix',
           data: { functionName: name },
           fix(fixer) {
-            return canFix ? fixer.replaceText(key, newName) : null;
+            if (!canFix || !referenceTargets) {
+              return null;
+            }
+            // One fix carrying every edit: ESLint applies a fix atomically, so
+            // the declaration and its readers cannot be rewritten apart — a
+            // partial application would leave the file broken.
+            return [key, ...referenceTargets].map((target) =>
+              fixer.replaceText(target, newName),
+            );
           },
         });
       },
