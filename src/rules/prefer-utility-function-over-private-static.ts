@@ -11,6 +11,26 @@ type MessageIds =
 type ClassNode = TSESTree.ClassDeclaration | TSESTree.ClassExpression;
 
 /**
+ * What the class under examination is, as the receiver check needs it: the
+ * identifiers that resolve to its binding, and whether the code being examined
+ * is still written in its own class body.
+ *
+ * `super` is the one receiver whose meaning depends on where it is written: it
+ * names the parent of the class body that encloses it, so a `super` in a class
+ * declared inside the member body belongs to that class and says nothing about
+ * the enclosing one (#1931).
+ */
+type ClassContext = {
+  bindingIdentifiers: ReadonlySet<TSESTree.Node>;
+  ownsSuper: boolean;
+};
+
+const isNewTarget = (node: TSESTree.Node): boolean =>
+  node.type === 'MetaProperty' &&
+  node.meta.name === 'new' &&
+  node.property.name === 'target';
+
+/**
  * The class members that can hold a hidden utility. A helper is the same helper
  * whether it is written `compute() {}` or `compute = () => {}` — both are
  * class-owned function-valued members, and neither the description this rule
@@ -272,8 +292,10 @@ export const preferUtilityFunctionOverPrivateStatic = createRule<
 
     /**
      * Whether an expression evaluates to the class itself: `this`, which inside
-     * a static member is the class; the class binding; or a local holding
-     * either, as in `const owner = ClassName` or `const self = this`.
+     * a static member is the class; `new.target`, which is the class the member
+     * was invoked through; `super`, which names the class's parent; the class
+     * binding; or a local holding any of them, as in `const owner = ClassName`
+     * or `const self = this`.
      *
      * Every spelling of the class is answered here rather than by a check of
      * its own, because they all answer one question — does this expression name
@@ -281,7 +303,10 @@ export const preferUtilityFunctionOverPrivateStatic = createRule<
      * spelling came to disagree with the class binding on construction and
      * `instanceof`: it asked whether a `ThisExpression` appeared anywhere in the
      * member instead of whether a member was dereferenced, so `new self()` read
-     * as class state while its `new owner()` twin did not (#1928).
+     * as class state while its `new owner()` twin did not (#1928). `new.target`
+     * and `super` were left on that same token-presence shape and diverged the
+     * same way, so `new.target` handed straight back read as class state while
+     * its `const self = this` twin did not (#1931).
      *
      * Alias chains are followed to a fixpoint rather than to a fixed number of
      * hops: `const a = ClassName; const b = a; b.MEMBER` reads the same member
@@ -298,20 +323,28 @@ export const preferUtilityFunctionOverPrivateStatic = createRule<
      */
     const holdsClassReceiver = (
       node: TSESTree.Node,
-      classBindingIdentifiers: ReadonlySet<TSESTree.Node>,
+      classContext: ClassContext,
       visited: Set<TSESLint.Scope.Variable> = new Set(),
     ): boolean => {
       const target = unwrapTypeSyntax(node);
 
-      if (target.type === 'ThisExpression') {
+      if (target.type === 'ThisExpression' || isNewTarget(target)) {
         return true;
+      }
+
+      // A `super` written in the member's own class reaches its parent's
+      // statics through the class, which is a state read; one written in a
+      // class declared inside the member body belongs to that class, so it
+      // holds no receiver the enclosing member could be reading (#1931).
+      if (target.type === 'Super') {
+        return classContext.ownsSuper;
       }
 
       if (target.type !== 'Identifier') {
         return false;
       }
 
-      if (classBindingIdentifiers.has(target)) {
+      if (classContext.bindingIdentifiers.has(target)) {
         return true;
       }
 
@@ -342,40 +375,24 @@ export const preferUtilityFunctionOverPrivateStatic = createRule<
         return false;
       }
 
-      return holdsClassReceiver(
-        definition.node.init,
-        classBindingIdentifiers,
-        visited,
-      );
+      return holdsClassReceiver(definition.node.init, classContext, visited);
     };
 
     // A method reads the class it is declared on through several spellings, all
-    // equivalent: `this.x`, `super.x`, `new.target` and `ClassName.x`. What
-    // makes each of the first and last a read is the dereference, not the
-    // receiver's spelling — `this` and the class binding both reach the member
-    // arm below through `holdsClassReceiver`, so neither can answer the
-    // construction and `instanceof` boundary differently from the other
-    // (#1928). The class binding is resolved by identity (see
-    // collectClassBindingIdentifiers) so that a shadowing local of the same name
-    // does not read as class state, and aliases of it are followed so that the
-    // syntax reaching a member does not change the answer.
+    // equivalent: `this.x`, `super.x`, `new.target.x` and `ClassName.x`. What
+    // makes each of them a read is the dereference, not the receiver's spelling
+    // — every one of the four reaches the member arm below through
+    // `holdsClassReceiver`, so none can answer the construction and `instanceof`
+    // boundary differently from the others (#1928, #1931). The class binding is
+    // resolved by identity (see collectClassBindingIdentifiers) so that a
+    // shadowing local of the same name does not read as class state, and
+    // aliases of it are followed so that the syntax reaching a member does not
+    // change the answer.
     const referencesClassState = (
       node: TSESTree.Node,
-      classBindingIdentifiers: ReadonlySet<TSESTree.Node>,
+      classContext: ClassContext,
     ): boolean => {
       if (!node) return false;
-
-      if (node.type === 'Super') {
-        return true;
-      }
-
-      if (
-        node.type === 'MetaProperty' &&
-        node.meta.name === 'new' &&
-        node.property.name === 'target'
-      ) {
-        return true;
-      }
 
       // `this.member` and `ClassName.member` — including the optional-chained
       // `ClassName?.member`, whose MemberExpression is reached through its
@@ -383,7 +400,7 @@ export const preferUtilityFunctionOverPrivateStatic = createRule<
       // `owner.member` where `owner` is a local holding the class or `this`.
       if (
         node.type === 'MemberExpression' &&
-        holdsClassReceiver(node.object, classBindingIdentifiers)
+        holdsClassReceiver(node.object, classContext)
       ) {
         return true;
       }
@@ -398,10 +415,20 @@ export const preferUtilityFunctionOverPrivateStatic = createRule<
         node.id.type === 'ObjectPattern' &&
         node.id.properties.some((property) => property.type === 'Property') &&
         node.init &&
-        holdsClassReceiver(node.init, classBindingIdentifiers)
+        holdsClassReceiver(node.init, classContext)
       ) {
         return true;
       }
+
+      // A class written inside the member body owns the `super` its own members
+      // spell, so from its body downward `super` no longer names the enclosing
+      // class's parent. Its heritage clause is deliberately outside this
+      // boundary: `class Inner extends super.Base {}` is evaluated where the
+      // class is written, so that `super` is still the member's own (#1931).
+      const childContext =
+        node.type === 'ClassBody'
+          ? { ...classContext, ownsSuper: false }
+          : classContext;
 
       // Check all child properties that are objects or arrays
       for (const key in node) {
@@ -418,12 +445,12 @@ export const preferUtilityFunctionOverPrivateStatic = createRule<
             if (
               item &&
               typeof item === 'object' &&
-              referencesClassState(item, classBindingIdentifiers)
+              referencesClassState(item, childContext)
             ) {
               return true;
             }
           }
-        } else if (referencesClassState(child, classBindingIdentifiers)) {
+        } else if (referencesClassState(child, childContext)) {
           // If it's an object, recursively check it
           return true;
         }
@@ -582,13 +609,18 @@ export const preferUtilityFunctionOverPrivateStatic = createRule<
 
       const classNode = getClassNode(node);
       const className = classNode ? getClassName(classNode) : null;
-      const classBindingIdentifiers = classNode
-        ? collectClassBindingIdentifiers(classNode, className)
-        : new Set<TSESTree.Node>();
+      const classContext: ClassContext = {
+        bindingIdentifiers: classNode
+          ? collectClassBindingIdentifiers(classNode, className)
+          : new Set<TSESTree.Node>(),
+        // The member's body is written in its own class body, so a `super`
+        // reached before any nested class body names this class's parent.
+        ownsSuper: true,
+      };
 
       // A member that reaches its own class cannot become a module-level
       // utility: a `private static` member is unreachable from module scope.
-      if (referencesClassState(memberBody, classBindingIdentifiers)) {
+      if (referencesClassState(memberBody, classContext)) {
         return;
       }
 

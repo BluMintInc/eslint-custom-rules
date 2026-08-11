@@ -249,14 +249,19 @@ export class ApiClient {
         }
       `,
       },
-      // new.target reads the constructor the method is invoked on
+      // `new.target` is the class the member was invoked through, so it is a
+      // receiver like `this` and the class name — and like them it exempts on
+      // the dereference, not on the token. Its bare twin sits in the invalid
+      // list (#1931)
       {
         code: `
         export class Guarded {
+          private static readonly LIMIT = 10;
+
           private static describeTarget(values: number[]) {
-            const target = new.target;
+            const limit = new.target.LIMIT;
             const doubled = values.map((value) => value * 2);
-            return { target, doubled };
+            return { limit, doubled };
           }
         }
       `,
@@ -1190,6 +1195,71 @@ export class Aliased {
               return this.LIMIT;
             };
             return read.call(this);
+          }
+        }
+      `,
+      },
+      // An alias of `new.target` is followed exactly as an alias of `this` or of
+      // the class binding is: the receiver reaches the member either way, so the
+      // hop cannot change the answer (#1931)
+      {
+        code: `
+        export class Guarded {
+          private static readonly LIMIT = 10;
+
+          private static limitOf(values: number[]) {
+            const target = new.target;
+            const capped = values.map((value) => Math.min(value, target.LIMIT));
+            return capped;
+          }
+        }
+      `,
+      },
+      // Destructuring a named member off `new.target` is a dereference of it,
+      // as it is off `this` and off the class binding (#1931)
+      {
+        code: `
+        export class Guarded {
+          private static readonly LIMIT = 10;
+
+          private static describe(values: number[]) {
+            const { LIMIT } = new.target;
+            return values.length + LIMIT;
+          }
+        }
+      `,
+      },
+      // A `super` written in the member's own class names that class's parent,
+      // whose statics the member reaches — so it stays exempt, and the
+      // nested-class `super` in the invalid list does not (#1931)
+      {
+        code: `
+        export class Base {
+          protected static readonly BASE = { retries: 3 };
+        }
+
+        export class Derived extends Base {
+          private static describe(values: number[]) {
+            const base = super.BASE;
+            const doubled = values.map((value) => value * 2);
+            return { base, doubled };
+          }
+        }
+      `,
+      },
+      // An arrow written in the member body inherits the member's `super`, so
+      // the dereference still reaches the enclosing class's parent (#1931)
+      {
+        code: `
+        export class Base {
+          protected static readonly BASE = { retries: 3 };
+        }
+
+        export class Derived extends Base {
+          private static describe(values: number[]) {
+            const read = () => super.BASE;
+            const doubled = values.map((value) => value * 2);
+            return { base: read(), doubled };
           }
         }
       `,
@@ -2390,6 +2460,120 @@ export class Aliased {
         }
       `,
         errors: [buildError('describeAll', 'Aliased')],
+      },
+      // `new.target` is a receiver, not a state read: handing it straight back
+      // dereferences no member, so the helper moves to module scope unchanged.
+      // Its `new.target.LIMIT` twin in the valid list holds the other side of
+      // the boundary (#1931)
+      {
+        code: `
+        export class Guarded {
+          private static readonly LIMIT = 10;
+
+          private static describeTarget(values: number[]) {
+            const target = new.target;
+            const doubled = values.map((value) => value * 2);
+            return { target, doubled };
+          }
+        }
+      `,
+        errors: [buildError('describeTarget', 'Guarded')],
+      },
+      // The alias hop does not change that verdict either, exactly as it does
+      // not for `this` or for the class binding (#1931)
+      {
+        code: `
+        export class Guarded {
+          private static readonly LIMIT = 10;
+
+          private static owner(values: number[]) {
+            const target = new.target;
+            const alias = target;
+            return { alias, size: values.length };
+          }
+        }
+      `,
+        errors: [buildError('owner', 'Guarded')],
+      },
+      // A lone rest element off `new.target` selects no property, so it aliases
+      // the receiver rather than reading one of its members (#1931)
+      {
+        code: `
+        export class Guarded {
+          private static readonly LIMIT = 10;
+
+          private static describe(values: number[]) {
+            const { ...statics } = new.target;
+            const keys = Object.keys(statics);
+            return keys.length + values.length;
+          }
+        }
+      `,
+        errors: [buildError('describe', 'Guarded')],
+      },
+      // A `super` inside a class written in the member body belongs to that
+      // class, not to the enclosing one: `Inner`'s constructor calls `Base`'s,
+      // which says nothing about `Aliased`'s state, so the helper still moves
+      // (#1931)
+      {
+        code: `
+        declare class Base {}
+
+        export class Aliased {
+          private static readonly LIMIT = 10;
+
+          private static makeInner(values: number[]) {
+            class Inner extends Base {
+              constructor() {
+                super();
+              }
+            }
+            return { Inner, size: values.length };
+          }
+        }
+      `,
+        errors: [buildError('makeInner', 'Aliased')],
+      },
+      // The same holds for a nested class dereferencing through its own
+      // `super`: the member read belongs to `Base`, reached from `Inner` (#1931)
+      {
+        code: `
+        declare class Base { toString(): string; }
+
+        export class Aliased {
+          private static readonly LIMIT = 10;
+
+          private static makeInner(values: number[]) {
+            class Inner extends Base {
+              public describe() {
+                return super.toString();
+              }
+            }
+            return { Inner, size: values.length };
+          }
+        }
+      `,
+        errors: [buildError('makeInner', 'Aliased')],
+      },
+      // A nested class that extends the enclosing class and calls its
+      // constructor reads no member of it: `extends Aliased` hands the class
+      // along as a value, and the `super()` belongs to `Inner` (#1931)
+      {
+        code: `
+        export class Aliased {
+          private static readonly LIMIT = 10;
+
+          private static makeInner(values: number[]) {
+            class Inner extends Aliased {
+              constructor() {
+                super();
+              }
+            }
+            return { Inner, size: values.length };
+          }
+        }
+      `,
+        errors: [buildError('makeInner', 'Aliased')],
       },
       // A local named like the class but initialized from something else is not
       // the class, whatever it is dereferenced for
