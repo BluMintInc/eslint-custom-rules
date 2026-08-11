@@ -2569,12 +2569,15 @@ class Factory {
     // third `kind` added later leaves the Record valid, and the lookup returns
     // `undefined` under `noImplicitAny: false` with no diagnostic anywhere.
     //
-    // The issue spells the assertion as `const unhandled: never = body;`. That
-    // declarator sits inside the span the fix deletes, which reads to
-    // multi-declarator-closure's ARM B as a destroyed sibling (#1930) even
-    // though the binding it removes is scoped to the deleted block. The cast
-    // spelling asserts the same `never` exhaustiveness without a statement-level
-    // declarator, so the shape is pinned here without bumping that baseline.
+    // The assertion is spelled as the canonical exhaustiveness idiom — a
+    // block-scoped `const unhandled: never = body;` whose only consumer is the
+    // throw beside it — rather than an inline cast, because that declarator is
+    // what makes the arm a compile-time check: adding a third `kind` makes the
+    // ASSIGNMENT fail, which is the diagnostic the idiom exists to produce. The
+    // fix deletes the whole `default` block, taking that binding with it; that
+    // is the rule's documented contract for an arm unreachable for typed values,
+    // and nothing outside the block can reference a binding declared inside it
+    // (#1930).
     {
       code: `
 type Body = { kind: 'a' } | { kind: 'b' };
@@ -2585,7 +2588,8 @@ const f = (body: Body) => {
     case 'b':
       return 2;
     default: {
-      throw new Error(String(body as never));
+      const unhandled: never = body;
+      throw new Error(String(unhandled));
     }
   }
 };
