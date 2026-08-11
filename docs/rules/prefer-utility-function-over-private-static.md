@@ -80,23 +80,29 @@ spelling.
 
 **A member reads class state when it dereferences a member of its class.** The
 dereference is what decides, not the spelling of the receiver: inside a static
-member `this` *is* the class, so `this` and the class name are two spellings of
-one receiver and get one answer. The definition applies to a function-valued
-property just as it does to a method, since `this` inside a static property
-initializer is the class too.
+member `this` *is* the class, and so is `new.target`, so they and the class name
+are spellings of one receiver and get one answer. The definition applies to a
+function-valued property just as it does to a method, since `this` inside a
+static property initializer is the class too.
+
+The receivers that name the class are `this`, `new.target`, `<ClassName>`,
+`super` (which names the class's parent), and any binding holding one of them.
+None of them is a state read on its own — each becomes one when a member is
+dereferenced off it.
 
 These all count as using class state:
 
 - `this.member`, including the computed `this['member']`
 - `<ClassName>.member`, where `ClassName` is the enclosing class — including the
   optional-chained `<ClassName>?.member` and the computed `<ClassName>['member']`
-- `owner.member`, where `owner` is a binding holding the class or `this`
-  (`const owner = ClassName`, `const self = this`)
-- `const { member } = ClassName`, `const { member } = this` and
-  `const { member } = owner` — the pattern is the dereference, provided it names
-  at least one property
+- `new.target.member`, including the computed `new.target['member']`
 - `super.member`
-- `new.target`
+- `owner.member`, where `owner` is a binding holding the class, `this` or
+  `new.target` (`const owner = ClassName`, `const self = this`,
+  `const target = new.target`)
+- `const { member } = ClassName`, `const { member } = this`,
+  `const { member } = new.target` and `const { member } = owner` — the pattern
+  is the dereference, provided it names at least one property
 
 The class name is matched by binding, not by text: a local variable or parameter
 that shadows the class name reads as an unrelated value, and another class's
@@ -128,6 +134,26 @@ the class: `const self = this; self.MEMBER` reads that member, and
 `const a = this; const b = a; b.MEMBER` does too. Mentioning `this` is not by
 itself a state read — the dereference is.
 
+Aliasing `new.target` is resolved the same way again:
+`const target = new.target; target.MEMBER` reads that member, while
+`const target = new.target; return target;` reads none.
+
+### Where a `super` belongs
+
+`super` names the parent of the class body that encloses it, so which class it
+belongs to is decided lexically. A `super` written in the member's own body — or
+in an arrow nested in it, which inherits the member's `super` — names the
+member's own class's parent, and `super.MEMBER` therefore reaches state the
+member can only reach from inside the class.
+
+A `super` written inside a class *declared in the member body* belongs to that
+class instead. `class Inner extends Base { constructor() { super(); } }` calls
+`Base`'s constructor from `Inner`; it says nothing about the enclosing class, so
+it does not exempt the enclosing member — and neither does a `super.MEMBER`
+written in one of `Inner`'s own members. The nested class's heritage clause sits
+outside that boundary, because `class Inner extends super.Base {}` is evaluated
+where the class is written: that `super` is still the member's own.
+
 A destructuring pattern counts only when it names a property. `const {} = C`
 selects nothing, and `const { ...rest } = C` selects nothing either — that is
 the shape `no-unnecessary-destructuring` reports and rewrites to the plain
@@ -148,6 +174,13 @@ The `this` spelling sits on the same boundary, since it is the same receiver:
 `register(this)` all leave the report standing, while `this.MEMBER` and
 `const self = this; self.MEMBER` do not. Two spellings of one non-state use
 cannot get opposite verdicts.
+
+So does `new.target`: `const target = new.target; return target;` and
+`new (new.target)()` leave the report standing, while `new.target.MEMBER` and
+`const target = new.target; target.MEMBER` do not. Extending the enclosing class
+is a use of the same kind — `class Inner extends ClassName {}` hands the class
+along as a value and reads no member of it, so the report stands whether or not
+`Inner`'s constructor calls `super()`.
 
 Inside a nested `function` written in the member body, `this` is the call-time
 receiver rather than the class, but a dereference through it is still treated as
@@ -217,6 +250,39 @@ export class Aliased {
     const self = this;
     const made = values.map(() => new self());
     return made;
+  }
+}
+```
+
+```ts
+// `new.target` is a receiver like `this`: handing it back dereferences no
+// member, so this helper works unchanged at module scope
+export class Guarded {
+  private static readonly LIMIT = 10;
+
+  private static describeTarget(values: number[]) {
+    const target = new.target;
+    const doubled = values.map((value) => value * 2);
+    return { target, doubled };
+  }
+}
+```
+
+```ts
+// The `super()` belongs to `Inner`, whose parent is `Base` — it says nothing
+// about `Aliased`'s state, so this helper still moves out of the class
+declare class Base {}
+
+export class Aliased {
+  private static readonly LIMIT = 10;
+
+  private static makeInner(values: number[]) {
+    class Inner extends Base {
+      constructor() {
+        super();
+      }
+    }
+    return { Inner, size: values.length };
   }
 }
 ```
@@ -347,6 +413,36 @@ export class Aliased {
     const self = this;
     const capped = values.map((value) => Math.min(value, self.LIMIT));
     return capped;
+  }
+}
+```
+
+```ts
+// `new.target` reaches the same member the class name does, through an alias or
+// directly
+export class Guarded {
+  private static readonly LIMIT = 10;
+
+  private static capAll(values: number[]) {
+    const target = new.target;
+    const capped = values.map((value) => Math.min(value, target.LIMIT));
+    return capped;
+  }
+}
+```
+
+```ts
+// A `super` in the member's own class names that class's parent, whose statics
+// the member reaches only from inside the class
+export class Base {
+  protected static readonly BASE = { retries: 3 };
+}
+
+export class Derived extends Base {
+  private static describe(values: number[]) {
+    const base = super.BASE;
+    const doubled = values.map((value) => value * 2);
+    return { base, doubled };
   }
 }
 ```
