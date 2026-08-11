@@ -1,3 +1,5 @@
+import { Linter, Rule } from 'eslint';
+import * as ts from 'typescript';
 import { ruleTesterJsx } from '../utils/ruleTester';
 import { enforceEarlyDestructuring } from '../rules/enforce-early-destructuring';
 
@@ -1050,5 +1052,237 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
         `,
       errors: [{ messageId: 'hoistDestructuring' }],
     },
+    // Issue #1956: the hook call does not begin its line, so the line start is
+    // outside the component. The declaration reads the component's own
+    // parameter, so hoisting it there unbinds it.
+    {
+      name: 'hoists inside a component body written on one line',
+      code: `
+          const MyComponent = ({ value }) => { useLayoutEffect(() => { const { current } = value; doSomething(current); }, [value]); };
+        `,
+      output: `
+          const MyComponent = ({ value }) => { const { current } = value ?? {}; useLayoutEffect(() => { doSomething(current); }, [current]); };
+        `,
+      errors: [{ messageId: 'hoistDestructuring' }],
+    },
+    {
+      name: 'hoists beside a sibling declared ahead of the hook on its line',
+      code: `
+          const MyComponent = ({ value }) => {
+            const other = 1; useLayoutEffect(() => {
+              const { current } = value;
+              doSomething(current, other);
+            }, [value]);
+          };
+        `,
+      output: `
+          const MyComponent = ({ value }) => {
+            const other = 1; const { current } = value ?? {}; useLayoutEffect(() => {
+              doSomething(current, other);
+            }, [current]);
+          };
+        `,
+      errors: [{ messageId: 'hoistDestructuring' }],
+    },
+    {
+      name: 'hoists inside a one-line function declaration body',
+      code: `
+          function useThing(props) { useEffect(() => { const { id } = props; track(id); }, [props]); }
+        `,
+      output: `
+          function useThing(props) { const { id } = props ?? {}; useEffect(() => { track(id); }, [id]); }
+        `,
+      errors: [{ messageId: 'hoistDestructuring' }],
+    },
   ],
+});
+
+// Issue #1956: the hoist was anchored to the start of the LINE holding the hook
+// call rather than to the call itself. Those offsets coincide only while the
+// call opens its line; when the component body is written on one line the line
+// start is offset 0, so the declaration was emitted ABOVE the component and the
+// parameter it destructures went out of scope.
+//
+// The damage is invisible to every report-counting guard, which is why this
+// block exists: the rewritten file reports ZERO afterwards. `--fix` exits 0 and
+// the only surviving signal is a TypeScript error in a file the linter just
+// rewrote. So the oracle is a CHECKER DIFFERENTIAL — diagnostics on the output
+// minus diagnostics the input already carried — and not a re-lint, which cannot
+// see an unresolved identifier.
+describe('enforce-early-destructuring: the hoist stays in scope wherever the hook sits (issue #1956)', () => {
+  const RULE_ID = '@blumintinc/blumint/enforce-early-destructuring';
+  const FILENAME = 'Component.tsx';
+
+  const createLinter = () => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      RULE_ID,
+      enforceEarlyDestructuring as unknown as Rule.RuleModule,
+    );
+    return linter;
+  };
+
+  const LINT_CONFIG = {
+    parser: '@typescript-eslint/parser',
+    parserOptions: {
+      ecmaVersion: 2022 as const,
+      sourceType: 'module' as const,
+      ecmaFeatures: { jsx: true },
+    },
+    rules: { [RULE_ID]: 'error' as const },
+  };
+
+  const fix = (code: string) =>
+    createLinter().verifyAndFix(code, LINT_CONFIG, FILENAME);
+
+  const verify = (code: string) =>
+    createLinter().verify(code, LINT_CONFIG, FILENAME);
+
+  // Declaring the helpers keeps the baseline clean, so any diagnostic the
+  // differential reports is attributable to the hoist and not to the fixture
+  // referencing globals a bare program has never heard of.
+  const PRELUDE = [
+    'declare const useLayoutEffect: (fn: () => void, deps: unknown[]) => void;',
+    'declare const useEffect: (fn: () => void, deps: unknown[]) => void;',
+    'declare const doSomething: (...args: unknown[]) => void;',
+    'declare const track: (...args: unknown[]) => void;',
+    '',
+  ].join('\n');
+
+  const diagnosticCodesOf = (source: string): number[] => {
+    const name = 'probe.ts';
+    const sourceFile = ts.createSourceFile(
+      name,
+      PRELUDE + source,
+      ts.ScriptTarget.ES2020,
+      true,
+    );
+    const host: ts.CompilerHost = {
+      getSourceFile: (requested) =>
+        requested === name ? sourceFile : undefined,
+      writeFile: () => undefined,
+      getDefaultLibFileName: () => 'lib.d.ts',
+      useCaseSensitiveFileNames: () => true,
+      getCanonicalFileName: (n) => n,
+      getCurrentDirectory: () => '',
+      getNewLine: () => '\n',
+      fileExists: (requested) => requested === name,
+      readFile: () => undefined,
+    };
+    const program = ts.createProgram(
+      [name],
+      { noEmit: true, noLib: true, strict: false },
+      host,
+    );
+    return [
+      ...program.getSemanticDiagnostics(sourceFile),
+      ...program.getSyntacticDiagnostics(sourceFile),
+    ].map((d) => d.code);
+  };
+
+  /** Diagnostics the fix introduced — the input's own are not the fix's fault. */
+  const introducedBy = (input: string, output: string): number[] => {
+    const before = diagnosticCodesOf(input);
+    return diagnosticCodesOf(output).filter((code) => !before.includes(code));
+  };
+
+  const expectHoistStaysInScope = (code: string) => {
+    // A fixture that never parsed, or that the rule declined, would satisfy
+    // every assertion below vacuously, so the run must be shown to report and
+    // to rewrite its input first.
+    expect(verify(code).length).toBeGreaterThan(0);
+    expect(diagnosticCodesOf(code)).toHaveLength(0);
+
+    const first = fix(code);
+    expect(first.fixed).toBe(true);
+
+    // Re-fixing is the convergence detector: comparing the two strings would
+    // score an even-length oscillation as converged.
+    expect(fix(first.output).fixed).toBe(false);
+    expect(verify(first.output)).toHaveLength(0);
+    expect(introducedBy(code, first.output)).toEqual([]);
+
+    return first.output;
+  };
+
+  it('keeps the hoist inside a component body written on one line', () => {
+    const output = expectHoistStaysInScope(
+      `const MyComponent = ({ value }) => { useLayoutEffect(() => { const { current } = value; doSomething(current); }, [value]); };\n`,
+    );
+    // The declaration must follow the arrow that binds `value`, not precede it.
+    expect(output.indexOf('const { current } = value ?? {};')).toBeGreaterThan(
+      output.indexOf('=>'),
+    );
+  });
+
+  it('converges on the multi-line spelling without changing its layout', () => {
+    const code = `const MyComponent = ({ value }) => {
+  useLayoutEffect(() => {
+    const { current } = value;
+    doSomething(current);
+  }, [value]);
+};
+`;
+    // The own-line branch is byte-identical to the pre-fix behaviour, which is
+    // what makes the anchoring change safe for every existing fixture.
+    expect(expectHoistStaysInScope(code)).toBe(`const MyComponent = ({ value }) => {
+  const { current } = value ?? {};
+  useLayoutEffect(() => {
+    doSomething(current);
+  }, [current]);
+};
+`);
+  });
+
+  it('keeps the hoist beside a sibling declared ahead of the hook', () => {
+    const output = expectHoistStaysInScope(`const MyComponent = ({ value }) => {
+  const other = 1; useLayoutEffect(() => {
+    const { current } = value;
+    doSomething(current, other);
+  }, [value]);
+};
+`);
+    expect(output).toContain(
+      'const other = 1; const { current } = value ?? {}; useLayoutEffect(',
+    );
+  });
+
+  it('keeps the hoist inside a one-line function declaration body', () => {
+    const output = expectHoistStaysInScope(
+      `function useThing(props) { useEffect(() => { const { id } = props; track(id); }, [props]); }\n`,
+    );
+    expect(output).toContain('{ const { id } = props ?? {}; useEffect(');
+  });
+
+  it('keeps the hoist inside a body nested in an object method on one line', () => {
+    const output = expectHoistStaysInScope(
+      `export const hooks = { useThing(props) { useEffect(() => { const { id } = props; track(id); }, [props]); } };\n`,
+    );
+    expect(output).toContain('{ const { id } = props ?? {}; useEffect(');
+  });
+
+  it('would have caught the bug: the pre-fix output is rejected by the oracle', () => {
+    const input = `const MyComponent = ({ value }) => { useLayoutEffect(() => { const { current } = value; doSomething(current); }, [value]); };\n`;
+    // Verbatim output of the line-anchored fixer, kept as a planted positive
+    // control so a regression cannot pass this block silently.
+    const preFixOutput = `const { current } = value ?? {};\nconst MyComponent = ({ value }) => { useLayoutEffect(() => { doSomething(current); }, [current]); };\n`;
+
+    // Both halves matter: it re-lints CLEAN (so a report-counting guard scores
+    // it a success) while the checker sees an unbound identifier.
+    expect(verify(preFixOutput)).toHaveLength(0);
+    expect(introducedBy(input, preFixOutput)).toContain(2304);
+  });
+
+  it('leaves a compliant one-line component byte-for-byte alone (negative control)', () => {
+    const code = `const MyComponent = ({ value }) => { const { current } = value ?? {}; useLayoutEffect(() => { doSomething(current); }, [current]); };\n`;
+    expect(verify(code)).toHaveLength(0);
+    const result = fix(code);
+    expect(result.fixed).toBe(false);
+    expect(result.output).toBe(code);
+  });
 });

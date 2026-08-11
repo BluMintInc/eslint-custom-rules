@@ -1336,7 +1336,7 @@ function generateHoistingFixes(
     );
     const pattern = `{ ${sortedProps.map((p) => p.text).join(', ')} }`;
     hoistedLines.push(
-      `${indent}const ${pattern} = ${nullishSourceText(
+      `const ${pattern} = ${nullishSourceText(
         group.objectText,
         group.inits[0],
       )} ?? {};`,
@@ -1353,13 +1353,26 @@ function generateHoistingFixes(
     }
   }
 
-  const insertAt =
-    sourceCode.getText().lastIndexOf('\n', insertionStatement.range![0]) + 1;
+  // Anchoring to the start of the statement's LINE is the same offset as the
+  // statement itself only while the statement opens that line. When it does not
+  // — a body collapsed onto one line, or a sibling declared ahead of it — that
+  // offset sits outside the enclosing function, so a declaration reading the
+  // function's own parameters would be hoisted out of the scope that binds them.
+  const text = sourceCode.getText();
+  const lineStart = text.lastIndexOf('\n', insertionStatement.range![0]) + 1;
+  const ownsItsLine = /^[\t ]*$/.test(
+    text.slice(lineStart, insertionStatement.range![0]),
+  );
   const fixes = [
-    fixer.insertTextBeforeRange(
-      [insertAt, insertAt],
-      `${hoistedLines.join('\n')}\n`,
-    ),
+    ownsItsLine
+      ? fixer.insertTextBeforeRange(
+          [lineStart, lineStart],
+          `${hoistedLines.map((line) => `${indent}${line}`).join('\n')}\n`,
+        )
+      : fixer.insertTextBefore(
+          insertionStatement,
+          `${hoistedLines.join(' ')} `,
+        ),
     fixer.replaceText(depsArray, `[${newDepTexts.join(', ')}]`),
   ];
 
