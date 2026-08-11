@@ -1,4 +1,4 @@
-import { ASTUtils, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { ClassGraphSorterReadability } from './ClassGraphSorterReadability';
 import { ASTHelpers } from '../ASTHelpers';
 import { ClassGraphSorter } from './ClassGraphSorter';
@@ -29,6 +29,46 @@ type ClassMemberASTNode =
   | TSESTree.TSAbstractAccessorProperty;
 
 /**
+ * Names the member a class element declares, or null when the key names no
+ * member statically (a computed key, a static block, an index signature).
+ *
+ * An ECMA private key keeps its `#`, because `#foo` and `foo` are two distinct
+ * members of the same class and a bare `.name` collapses them onto one graph
+ * node. Every consumer must spell the name this way, since the graph and the
+ * source order are compared by name.
+ */
+export function classMemberNameOf(
+  member: TSESTree.ClassElement,
+): string | null {
+  if (!ClassGraphBuilder.isClassMember(member)) {
+    return null;
+  }
+  const { key } = member;
+  if (key.type === AST_NODE_TYPES.Identifier) {
+    return key.name;
+  }
+  if (key.type === AST_NODE_TYPES.PrivateIdentifier) {
+    return `#${key.name}`;
+  }
+  return null;
+}
+
+/**
+ * The accessibility a member is ranked by. An ECMA private member carries no
+ * `accessibility` modifier because `private #foo` is a TypeScript error
+ * (TS18010), yet it is exactly as private as `private foo`, so the two
+ * spellings must rank identically.
+ */
+function accessibilityOf(
+  member: ClassMemberASTNode,
+): TSESTree.Accessibility | undefined {
+  if (member.key.type === AST_NODE_TYPES.PrivateIdentifier) {
+    return 'private';
+  }
+  return member.accessibility;
+}
+
+/**
  * Builds a graph of class methods and properties with their dependencies from a class declaration.
  * A dependency in this case is the name of another class method.
  */
@@ -57,15 +97,15 @@ export class ClassGraphBuilder {
 
     this.classBody.body.forEach((member) => {
       if (ClassGraphBuilder.isNamedClassMethod(member)) {
-        const { key } = member;
-        if (ASTUtils.isIdentifier(key)) {
-          this.addDependencies(member, key.name);
+        const name = classMemberNameOf(member);
+        if (name !== null) {
+          this.addDependencies(member, name);
         }
       }
     });
   }
 
-  private static isClassMember(
+  public static isClassMember(
     node: TSESTree.ClassElement,
   ): node is ClassMemberASTNode {
     return (
@@ -78,12 +118,18 @@ export class ClassGraphBuilder {
   }
 
   private addMemberToGraph(member: ClassMemberASTNode): void {
-    const name = (member.key as TSESTree.Identifier).name;
+    const name = classMemberNameOf(member);
+    // A member whose key names nothing statically stays out of the graph: an
+    // `undefined` key would fabricate a node that no source member matches,
+    // and consumers already refuse to reorder a body they cannot name in full.
+    if (name === null) {
+      return;
+    }
     const type = ClassGraphBuilder.nodeTypeOf(member);
     const node = ClassGraphBuilder.createGraphNode(
       name,
       type,
-      member.accessibility,
+      accessibilityOf(member),
       member.static,
     );
     this.graph[name] = node;

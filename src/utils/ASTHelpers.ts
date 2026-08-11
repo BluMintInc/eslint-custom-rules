@@ -457,6 +457,85 @@ export class ASTHelpers {
   }
 
   /**
+   * Collects the class members a property initializer reads while that
+   * initializer runs.
+   *
+   * Field declaration order is observable, unlike method order: a field read
+   * before its own declaration evaluates to `undefined` under the `private`
+   * spelling and throws under the ECMA `#` spelling, so a reordering fixer must
+   * not hoist a reader above the field it reads. A read inside a function body
+   * is deferred to call time and constrains nothing — except when that function
+   * is an immediately invoked arrow, which runs during initialization and keeps
+   * the enclosing `this`.
+   */
+  public static classMemberNamesReadEagerly(
+    node: TSESTree.Node | null,
+    className: string,
+  ): string[] {
+    const names: string[] = [];
+    this.collectEagerClassMemberReads(node, className, names);
+    return [...new Set(names)];
+  }
+
+  private static collectEagerClassMemberReads(
+    node: unknown,
+    className: string,
+    names: string[],
+  ): void {
+    if (!this.isNode(node)) {
+      return;
+    }
+
+    switch (node.type as string) {
+      case 'FunctionExpression':
+      case 'ArrowFunctionExpression':
+      case 'FunctionDeclaration':
+      case 'TSDeclareFunction':
+      case 'ClassDeclaration':
+      case 'ClassExpression':
+        return;
+
+      case 'CallExpression': {
+        const { callee } = node as TSESTree.CallExpression;
+        // A non-arrow IIFE rebinds `this`, so only an arrow's body reads this
+        // instance eagerly.
+        if (callee.type === 'ArrowFunctionExpression') {
+          this.collectEagerClassMemberReads(callee.body, className, names);
+        }
+        break;
+      }
+
+      case 'MemberExpression': {
+        const memberName = this.classMemberNameReferencedBy(
+          node,
+          className,
+          true,
+        );
+        if (memberName !== null) {
+          names.push(memberName);
+        }
+        break;
+      }
+
+      default:
+        break;
+    }
+
+    for (const [key, value] of Object.entries(node)) {
+      if (ASTHelpers.NON_TRAVERSABLE_NODE_KEYS.has(key)) {
+        continue;
+      }
+      if (Array.isArray(value)) {
+        for (const element of value) {
+          this.collectEagerClassMemberReads(element, className, names);
+        }
+        continue;
+      }
+      this.collectEagerClassMemberReads(value, className, names);
+    }
+  }
+
+  /**
    * @param isThisTheInstance whether `this` still denotes the instance of the
    * class being graphed. A nested non-arrow function or class rebinds it, so a
    * `this.member` inside one names a different object entirely.
@@ -565,6 +644,12 @@ export class ASTHelpers {
 
     if (!computed && property?.type === 'Identifier') {
       return property.name;
+    }
+    // `this.#helper` names a member as precisely as `this.helper` does, and it
+    // is the only spelling available for an ECMA private member. The `#` is
+    // part of the name so `#helper` and `helper` stay distinct members.
+    if (!computed && property?.type === 'PrivateIdentifier') {
+      return `#${property.name}`;
     }
     // `this['helper']` names the member as precisely as `this.helper` does,
     // whereas `this[key]` names one only at runtime.

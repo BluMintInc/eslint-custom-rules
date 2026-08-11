@@ -1,18 +1,46 @@
 import { createRule } from '../utils/createRule';
 import { TSESLint, TSESTree } from '@typescript-eslint/utils';
-import { ClassGraphBuilder } from '../utils/graph/ClassGraphBuilder';
+import {
+  ClassGraphBuilder,
+  classMemberNameOf,
+  Graph,
+} from '../utils/graph/ClassGraphBuilder';
+import { ASTHelpers } from '../utils/ASTHelpers';
 
-function getMemberName(member: TSESTree.ClassElement): string | null {
-  if (
-    member.type === 'MethodDefinition' ||
-    member.type === 'PropertyDefinition' ||
-    member.type === 'TSAbstractMethodDefinition' ||
-    member.type === 'TSAbstractPropertyDefinition' ||
-    member.type === 'TSAbstractAccessorProperty'
-  ) {
-    return member.key.type === 'Identifier' ? member.key.name : null;
-  }
-  return null;
+// The source order and the sorted graph are matched by name, so both sides must
+// derive names from the same function: any disagreement makes the two arrays
+// differ in length and silently skips the whole class body.
+const getMemberName = classMemberNameOf;
+
+/**
+ * Whether the proposed order still declares every field above the initializer
+ * that reads it. Only field-to-field reads constrain the layout: methods (and
+ * private methods) are installed before any initializer runs, so relocating one
+ * is unobservable.
+ */
+function initializerReadsPrecedeDeclarations(
+  node: TSESTree.ClassBody,
+  sortedOrder: string[],
+  graph: Graph,
+  className: string,
+): boolean {
+  const positionOf = new Map(sortedOrder.map((name, index) => [name, index]));
+  return node.body.every((member) => {
+    if (member.type !== 'PropertyDefinition' || !member.value) {
+      return true;
+    }
+    const reader = getMemberName(member);
+    const readerPosition = reader === null ? undefined : positionOf.get(reader);
+    if (readerPosition === undefined) {
+      return true;
+    }
+    return ASTHelpers.classMemberNamesReadEagerly(member.value, className)
+      .filter((name) => graph[name]?.type === 'property' && name !== reader)
+      .every((name) => {
+        const readPosition = positionOf.get(name);
+        return readPosition === undefined || readPosition < readerPosition;
+      });
+  });
 }
 
 export const classMethodsReadTopToBottom: TSESLint.RuleModule<
@@ -78,6 +106,22 @@ export const classMethodsReadTopToBottom: TSESLint.RuleModule<
           return name !== null && trackedNames.has(name);
         });
         if (!allMembersRepresented) {
+          return;
+        }
+
+        // Field declaration order is observable where method order is not:
+        // methods are installed before any initializer runs, but a field read
+        // before its own declaration evaluates to `undefined` under the
+        // `private` spelling and throws under the ECMA `#` spelling. Bail
+        // rather than emit an order that changes what the class computes.
+        if (
+          !initializerReadsPrecedeDeclarations(
+            node,
+            sortedOrder,
+            graphBuilder.graph,
+            className,
+          )
+        ) {
           return;
         }
 
