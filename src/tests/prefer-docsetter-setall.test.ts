@@ -77,6 +77,63 @@ ruleTesterTs.run('prefer-docsetter-setall', preferDocSetterSetAll, {
 
       ids.forEach((id) => docSetter.set({ id }));
     `,
+    // An ECMA private setter written once, outside any iteration, is fine — the
+    // rule keys on iteration, not on the privacy spelling of the field.
+    `
+      class Writer {
+        #docSetter = new DocSetter(userCollection);
+
+        async save(userId: string) {
+          return this.#docSetter.set({ id: userId });
+        }
+      }
+    `,
+    `
+      class Writer {
+        #docSetter = new DocSetter(userCollection);
+
+        async write(ids: string[]) {
+          const updates = ids.map((id) => ({ id, activeTournament: null }) as const);
+          await this.#docSetter.setAll(updates);
+        }
+      }
+    `,
+    // A `#` field that is not a DocSetter keeps its unrelated `set` calls.
+    `
+      class Writer {
+        #seen = new Map();
+
+        track(ids: string[]) {
+          ids.forEach((id) => this.#seen.set(id, true));
+        }
+      }
+    `,
+    // `#docSetter` and `docSetter` are members of two different namespaces, so a
+    // sibling public DocSetter must not vouch for a private field of another type.
+    `
+      class Writer {
+        #docSetter = new Map();
+        docSetter = new DocSetter(userCollection);
+
+        write(ids: string[]) {
+          ids.forEach((id) => {
+            this.#docSetter.set(id, 1);
+          });
+        }
+      }
+    `,
+    `
+      class Writer {
+        #docSetter = new Map();
+        docSetter: DocSetter<User>;
+
+        write(ids: string[]) {
+          for (const id of ids) {
+            this.#docSetter.set(id, 1);
+          }
+        }
+      }
+    `,
   ],
   invalid: [
     {
@@ -270,6 +327,134 @@ ruleTesterTs.run('prefer-docsetter-setall', preferDocSetterSetAll, {
         }
       `,
       errors: [{ messageId: 'preferSetAll' }],
+    },
+    // `#docSetter` is the same privacy as `private docSetter` (and the two
+    // spellings are mutually exclusive — `private #x` is TS18010), so the ECMA
+    // private field must report exactly like its `private` counterpart above.
+    {
+      code: `
+        class TournamentWriter {
+          #docSetter = new DocSetter(userCollection);
+
+          async write(ids: string[]) {
+            ids.forEach((id) => {
+              this.#docSetter.set({ id, activeTournament: null });
+            });
+          }
+        }
+      `,
+      errors: [
+        {
+          messageId: 'preferSetAll',
+          data: { setterName: '#docSetter', context: 'forEach callback' },
+        },
+      ],
+    },
+    {
+      code: `
+        class TransactionWriter {
+          #docSetter: DocSetterTransaction<User>;
+
+          async write(ids: string[]) {
+            for (const id of ids) {
+              this.#docSetter.set({ id });
+            }
+          }
+        }
+      `,
+      errors: [
+        {
+          messageId: 'preferSetAll',
+          data: { setterName: '#docSetter', context: 'for...of loop' },
+        },
+      ],
+    },
+    {
+      code: `
+        class AnnotatedPrivateFieldWriter {
+          #docSetter!: DocSetter<User>;
+
+          constructor(docSetter: DocSetter<User>) {
+            this.#docSetter = docSetter;
+          }
+
+          save(ids: string[]) {
+            return ids.map((id) => this.#docSetter.set({ id }));
+          }
+        }
+      `,
+      errors: [
+        {
+          messageId: 'preferSetAll',
+          data: { setterName: '#docSetter', context: 'map callback' },
+        },
+      ],
+    },
+    // The private field is the DocSetter here and the public sibling is not, so
+    // resolution must reach the `#` member rather than stopping at the name.
+    {
+      code: `
+        class MixedNamespaceWriter {
+          #docSetter = new DocSetter(userCollection);
+          docSetter = new Map();
+
+          write(ids: string[]) {
+            ids.forEach((id) => {
+              this.#docSetter.set({ id });
+            });
+          }
+        }
+      `,
+      errors: [
+        {
+          messageId: 'preferSetAll',
+          data: { setterName: '#docSetter', context: 'forEach callback' },
+        },
+      ],
+    },
+    // Mirror of the case above: the public member keeps reporting even when a
+    // same-named private field of an unrelated type sits beside it.
+    {
+      code: `
+        class MixedNamespacePublicWriter {
+          #docSetter = new Map();
+          docSetter = new DocSetter(userCollection);
+
+          write(ids: string[]) {
+            ids.forEach((id) => {
+              this.docSetter.set({ id });
+            });
+          }
+        }
+      `,
+      errors: [
+        {
+          messageId: 'preferSetAll',
+          data: { setterName: 'docSetter', context: 'forEach callback' },
+        },
+      ],
+    },
+    // Isolation control: renaming the member while keeping `private` must not
+    // move the verdict, so the delta above is about the spelling of privacy
+    // rather than about the member's name.
+    {
+      code: `
+        class RenamedPrivateWriter {
+          private tournamentSetter = new DocSetter(userCollection);
+
+          async write(ids: string[]) {
+            ids.forEach((id) => {
+              this.tournamentSetter.set({ id, activeTournament: null });
+            });
+          }
+        }
+      `,
+      errors: [
+        {
+          messageId: 'preferSetAll',
+          data: { setterName: 'tournamentSetter', context: 'forEach callback' },
+        },
+      ],
     },
   ],
 });
