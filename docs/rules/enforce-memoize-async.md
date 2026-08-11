@@ -24,6 +24,9 @@ The rule skips:
   [Methods declared to produce no value](#methods-declared-to-produce-no-value)).
 - Methods whose sole parameter is **annotated as a function type** (see
   [Methods keyed only by a callback](#methods-keyed-only-by-a-callback)).
+- Methods declared in a class **expression** (`const Loader = class { … }`),
+  where no decorator is legal at all (see
+  [Methods on a class expression](#methods-on-a-class-expression)).
 
 ### Examples of **incorrect** code for this rule:
 
@@ -263,26 +266,48 @@ A mock is usually a stand-in whose caching is beside the point, so an inline
 
 Only the factory — the registrar's second argument — declines on this ground. A
 method in the module specifier position, inside a `jest.fn` callback, or
-anywhere else in the file is fixed as usual, subject to the class-expression
-limit below, and a declining factory never claims the import: the injected
+anywhere else in the file is fixed as usual, and a declining factory never
+claims the import: the injected
 `import { Memoize } from '@blumintinc/typescript-memoize';` rides on the first
 violation that does fix.
 
 ### Methods on a class expression
 
-Under `experimentalDecorators`, TypeScript accepts a member decorator only
-inside a class **declaration**. The same `@Memoize()` that compiles inside
-`class C {}` is `TS1206: Decorators are not valid here.` inside a class
-expression, so the fix is withheld for every expression form — a class assigned
-to a variable, a property, or passed as an argument — while the report stands:
+A method inside a class **expression** is never reported. Under
+`experimentalDecorators` — the mode this plugin's consumers compile in —
+TypeScript accepts a member decorator only inside a class **declaration**: the
+same `@Memoize()` that compiles inside `class C {}` is
+`TS1206: Decorators are not valid here.` inside a class expression, whatever the
+member is named and wherever the decorator is written. The only remedy this
+rule's message offers is "add `@Memoize()` above the method", which cannot be
+written there at all, and a report naming an edit its reader cannot make is
+worse than silence.
+
+The carve-out covers every spelling of the shape — anonymous, named, returned
+from a factory, passed as an argument, instantiated in place, or held in an
+object property, a class property or a parameter default:
 
 ```ts
-// Reported, and left untouched by --fix: a decorator here is TS1206.
+// Not reported: `@Memoize()` cannot be written on any of these members.
 const Loader = class {
   public async load() {
     return 1;
   }
 };
+
+export const Named = class NamedLoader {
+  public async load() {
+    return 1;
+  }
+};
+
+export function build() {
+  return class {
+    public async load() {
+      return 1;
+    }
+  };
+}
 
 register(
   class Arg {
@@ -293,9 +318,24 @@ register(
 );
 ```
 
-Hoisting the class to a declaration makes the decorator legal, and every
-declaration form is fixed — including an anonymous `export default class {}`,
-which is a declaration despite having no name:
+To memoize such a method, give the class a **declaration**, which takes
+decorators normally:
+
+```ts
+import { Memoize } from '@blumintinc/typescript-memoize';
+
+class Loader {
+  @Memoize()
+  public async load() {
+    return 1;
+  }
+}
+
+export { Loader };
+```
+
+Every declaration form is reported and fixed, including an anonymous
+`export default class {}`, which is a declaration despite having no name:
 
 ```ts
 import { Memoize } from '@blumintinc/typescript-memoize';
@@ -307,6 +347,38 @@ export default class {
   }
 }
 ```
+
+The carve-out is keyed on the method's own enclosing class rather than on any
+ancestor, so a class declaration nested inside a class expression's method is
+still reported and still fixed:
+
+```ts
+import { Memoize } from '@blumintinc/typescript-memoize';
+
+const Outer = class {
+  public build() {
+    class Inner {
+      @Memoize()
+      public async load() {
+        return 1;
+      }
+    }
+    return Inner;
+  }
+};
+```
+
+Because such a method never reports, it never claims the file's import carrier
+either: the single injected
+`import { Memoize } from '@blumintinc/typescript-memoize';` rides on a violation
+that does fix, and a file whose only candidates sit in class expressions is left
+untouched — no report, no decorator, no orphan import.
+
+This matches the sibling rules `enforce-memoize-getters` and
+`require-memoize-jsx-returners`, which withhold report and fix on the same
+ground. Should this plugin ever target standard (TC39) decorators —
+`experimentalDecorators: false`, where a class expression's members do accept
+decorators — the carve-out becomes mode-dependent and needs revisiting.
 
 ## When Not To Use It
 
