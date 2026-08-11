@@ -40,6 +40,27 @@ const isNewTarget = (node: TSESTree.Node): boolean =>
  */
 type ClassMember = TSESTree.MethodDefinition | TSESTree.PropertyDefinition;
 
+/**
+ * Whether a member is private, in either of the two spellings that express it.
+ *
+ * `private static foo` and `static #foo` are the same privacy, and TypeScript
+ * makes them mutually exclusive — `private #foo` is an error (TS18010, "An
+ * accessibility modifier cannot be used with a private identifier") — so an
+ * author who writes the ECMA spelling has no way to opt into a subject test
+ * keyed on the modifier alone. Keying on the modifier alone left `#` as a
+ * one-token evasion of exactly the shape the property arm closes for `=` and
+ * the getter arm closes for `get`: which syntax an author picked does not
+ * change whether the logic is class-agnostic, so it does not change the verdict
+ * either (#1942).
+ *
+ * The ECMA spelling is if anything the stronger case for the report, because a
+ * `#` member is unreachable at runtime while a TypeScript-private one is still
+ * reachable as `ClassName['foo']` — the "harder to unit test in isolation"
+ * grievance this rule names applies to it with more force, not less.
+ */
+const isPrivateMember = (member: ClassMember): boolean =>
+  member.accessibility === 'private' || member.key.type === 'PrivateIdentifier';
+
 // A declaration without an implementation — an overload signature or an
 // `abstract`/`declare` member — parses as a function with no body, and is left
 // to the body guard at the report site rather than filtered out here.
@@ -577,6 +598,13 @@ export const preferUtilityFunctionOverPrivateStatic = createRule<
     };
 
     const checkMember = (node: ClassMember) => {
+      // Privacy is decided here rather than in the selectors because a selector
+      // attribute reads one property, and privacy has two spellings that no
+      // single attribute covers (#1942).
+      if (!isPrivateMember(node)) {
+        return;
+      }
+
       // A setter is out of scope whatever its size: it has no return value
       // and module scope has no setter form, so "extract this logic into a
       // standalone utility function" names a rewrite its author cannot
@@ -624,9 +652,14 @@ export const preferUtilityFunctionOverPrivateStatic = createRule<
         return;
       }
 
+      // The `#` is part of how the member is written, and it is the only thing
+      // that distinguishes `#compute` from a sibling `compute` on the same
+      // class. Dropping it would name a declaration the class may not hold, and
+      // would name the wrong one where it holds both (#1942).
       const methodName =
         getMethodName(node, sourceCode, {
           computedFallbackToText: false,
+          privateIdentifierPrefix: '#',
         }) || '<unknown>';
 
       context.report({
@@ -640,12 +673,17 @@ export const preferUtilityFunctionOverPrivateStatic = createRule<
     };
 
     return {
-      'MethodDefinition[static=true][accessibility="private"]': checkMember,
+      // Privacy is not tested here: `accessibility` is populated only by the
+      // TypeScript modifier, so a selector keyed on it never reaches a member
+      // written `static #foo` and the whole analysis below is skipped for it.
+      // `isPrivateMember` answers both spellings at the top of `checkMember`
+      // instead (#1942).
+      'MethodDefinition[static=true]': checkMember,
       // The modifiers are matched exactly as the method arm matches them: a
       // helper escapes only by being spelled differently, and widening the
-      // property arm past `private static` would report members the method arm
-      // leaves alone (#1927).
-      'PropertyDefinition[static=true][accessibility="private"]': checkMember,
+      // property arm past private-and-static would report members the method
+      // arm leaves alone (#1927).
+      'PropertyDefinition[static=true]': checkMember,
     };
   },
 });

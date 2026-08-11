@@ -16,17 +16,23 @@ This rule flags private static members that:
 
 ### Member kinds in scope
 
-Both member spellings are covered. Which syntax an author picked does not change
-whether the logic is class-agnostic, so it does not change the verdict either.
+Every member spelling is covered — both the method/property spellings and both
+the privacy spellings. Which syntax an author picked does not change whether the
+logic is class-agnostic, so it does not change the verdict either.
 
 | Member kind | In scope | Why |
 | --- | --- | --- |
 | `private static method()` | Yes | Moves to module scope as-is. |
+| `static #method()` | Yes | The same privacy, the same remedy. |
 | `private static member = () => {}` | Yes | Moves to module scope as-is; module scope holds the arrow form. |
+| `static #member = () => {}` | Yes | The same privacy, the same remedy. |
 | `private static member = function () {}` | Yes | Same helper as the arrow spelling. |
 | `private static get member()` | Yes | The body moves to a module-level function the getter calls, or that the call sites call directly. |
+| `static get #member()` | Yes | The same privacy, the same remedy. |
 | `private static set member(value)` | No | The prescribed extraction cannot be performed. |
+| `static set #member(value)` | No | Same, whichever way the privacy is written. |
 | `private static MEMBER = 10` | No | A property holding no function holds no logic to extract. |
+| `static #MEMBER = 10` | No | Same, whichever way the privacy is written. |
 
 A function-valued property is in scope because it is the same hidden utility a
 method is, with the same remedy: module scope holds the arrow and function-
@@ -35,9 +41,38 @@ only the method spelling would leave a one-character evasion — writing `=` in
 front of a helper would silence the rule without changing anything about the
 logic it flags.
 
-The property arm matches `private static` exactly as the method arm does. Every
-other modifier — `protected static`, `public static`, bare `static`, and any
-non-static member — is out of scope for both spellings.
+The property arm draws its subject line exactly where the method arm draws
+its own: private, and static. Everything on the non-private side of that line —
+`protected static`, `public static`, and bare `static` with no privacy at all —
+is out of scope for every arm, as is any non-static member.
+
+### Privacy spellings
+
+**`private static member` and `static #member` are the same privacy, and both
+are in scope.** TypeScript's `private` modifier and the ECMAScript private field
+express one thing, and the rule is scoped by privacy rather than by which token
+expresses it.
+
+They are also mutually exclusive: `private #member` is a TypeScript error
+(TS18010, "An accessibility modifier cannot be used with a private identifier"),
+so an author writing the `#` spelling has no way to add `private` and opt into a
+check that recognised only the modifier. Recognising only the modifier would
+therefore leave `#` as a one-token evasion of exactly the shape the property arm
+closes for `=` and the getter arm closes for `get`.
+
+The rule's rationale applies to the `#` spelling with more force, not less: a
+`private static` member is erased at runtime and stays reachable as
+`ClassName['member']`, while a `#` member is unreachable from outside the class
+body altogether — so "makes isolated unit testing awkward" is more true of it.
+The prescribed remedy is available to it, too: a `#` member whose body reaches no
+class state is exactly a member with nothing holding it inside the class body, so
+moving it to module scope compiles unchanged.
+
+Every escape below applies to both spellings. A `#` member that reads
+`this.#MEMBER`, `<ClassName>.#MEMBER` or an alias of either is reading class
+state and is not reported; a `#` setter, a sub-threshold `#` body, a non-static
+`#` member and a `#` property holding no function are all out of scope, on the
+same grounds their `private` twins are.
 
 A getter is in scope because a class-agnostic getter body is the same hidden
 utility a class-agnostic method body is, and it has the same remedy one step
@@ -57,6 +92,10 @@ Reports name the member kind they found, so an accessor reads as
 `Private static property "x"`, rather than either reading as a method — a
 developer told a "method" is at fault would search for a declaration the class
 does not hold.
+
+Reports also name the member as it is written, so a `#` member reads as
+`Private static method "#x"`. The `#` is the only thing distinguishing `#x` from
+a sibling `x` on the same class, and a class may hold both.
 
 The size threshold is measured in statements, not lines. A line count moves with
 formatting: a JSDoc block, a line comment or a blank line inside the body would
@@ -320,6 +359,40 @@ export class Repro {
 }
 ```
 
+```ts
+// The ECMAScript private spelling is the same privacy the `private` modifier
+// is, so the same helper is reported through it — and the report names the
+// member as written, `#processData`
+export class DataProcessor {
+  static #processData(data: Item[]) {
+    const filtered = data.filter((item) => item.active);
+    return filtered.map((item) => item.value);
+  }
+}
+```
+
+```ts
+// The getter arm reads the `#` spelling too
+export class RequestDefaults {
+  static get #config() {
+    const base = { retries: 3 };
+    const extra = { timeout: 1000 };
+    return { ...base, ...extra };
+  }
+}
+```
+
+```ts
+// So does the function-valued-property arm
+export class Repro {
+  static #computeAlt = (v: number) => {
+    const doubled = v * 2;
+    const capped = Math.min(doubled, 10);
+    return capped;
+  };
+}
+```
+
 ### Examples of **correct** code for this rule:
 
 ```ts
@@ -470,6 +543,42 @@ export class Repro {
     const capped = values.map((value) => Math.min(value, Repro.LIMIT));
     return capped;
   };
+}
+```
+
+```ts
+// A `#` member that reads a `#` member of its own class is unreachable from
+// module scope, so every escape holds in this spelling too
+export class Aliased {
+  static #LIMIT = 10;
+
+  static #capAll(values: number[]) {
+    const capped = values.map((value) => Math.min(value, this.#LIMIT));
+    return capped;
+  }
+}
+```
+
+```ts
+// A `#` setter is silent for the same reason a `private static` one is: no
+// module-level function can take its place
+export class Recorder {
+  static set #payload(value: string[]) {
+    const trimmed = value.map((entry) => entry.trim());
+    const named = trimmed.filter((entry) => entry.length > 0);
+    console.log(named);
+  }
+}
+```
+
+```ts
+// A bare `static` member carries no privacy in either spelling, so it is part
+// of the class's published surface and out of scope
+export class Bare {
+  static processData(items: number[]) {
+    const doubled = items.map((item) => item * 2);
+    return doubled.filter((item) => item > 0);
+  }
 }
 ```
 
