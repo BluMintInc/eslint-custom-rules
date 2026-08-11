@@ -796,12 +796,42 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
       );
     }
 
+    /**
+     * Whether any scope from `from` up to — but NOT including — `until` binds
+     * `newName`.
+     *
+     * `until` is the scope the renamed declaration lives in, so it and
+     * everything above it is already answered by the upward walk in
+     * `isNameTaken`. What this adds is the span BETWEEN a reference and its
+     * declaration, which is where a binding of the new name captures the
+     * rewritten reference without colliding with anything the rename can see.
+     */
+    function bindsNameBelow(
+      from: TSESLint.Scope.Scope | null,
+      until: TSESLint.Scope.Scope,
+      newName: string,
+    ): boolean {
+      let scope = from;
+      while (scope && scope !== until) {
+        if (scope.set.has(newName)) {
+          return true;
+        }
+        scope = scope.upper;
+      }
+      return false;
+    }
+
     // A rename that collides with a name already visible where the binding (or
     // any of its references) lives silently re-points those references at the
     // other declaration.
     function isNameTaken(
       variable: TSESLint.Scope.Variable,
       newName: string,
+      // The sites the fix will actually rewrite. The function path gathers a
+      // wider set than `variable.references` — a reference resolved through a
+      // sibling or child scope is still a site the fixer emits the new name at,
+      // so it is still a site the new name has to resolve correctly at.
+      references: readonly TSESLint.Scope.Reference[] = variable.references,
     ): boolean {
       let scope: TSESLint.Scope.Scope | null = variable.scope;
       while (scope) {
@@ -810,7 +840,24 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
         }
         scope = scope.upper;
       }
-      return variable.scope.childScopes.some((child) => child.set.has(newName));
+      if (variable.scope.childScopes.some((child) => child.set.has(newName))) {
+        return true;
+      }
+      /**
+       * The declaration site is not the only place the new name has to mean the
+       * renamed binding: the fix emits it at every reference too, and a scope
+       * BETWEEN a reference and the declaration that binds the new name takes
+       * that reference over (Bug #1948). Nothing else notices — the module scope
+       * still holds one `submit`, so a redeclaration check passes, and the
+       * emitted reference is well-typed against a real binding right up until it
+       * is called (`TS2349`). Withholding the whole rename is the only safe
+       * answer: alpha-renaming the intervening binding instead would mean owning
+       * ITS references as well, and a partial rename is exactly the breakage
+       * this prevents.
+       */
+      return references.some((ref) =>
+        bindsNameBelow(ref.from, variable.scope, newName),
+      );
     }
 
     /**
@@ -1048,16 +1095,28 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
             ? isExportedBinding(declaredVariable)
             : isExportedDeclaration(node);
 
+          // Remove 'handle' prefix and convert first character to lowercase
+          const newName = stripHandlePrefix(functionName);
+
+          // The rename is emitted at the declaration AND at every reference, so
+          // it is safe only where the new name resolves to this declaration at
+          // each of them. A binding of that name between a reference and the
+          // declaration silently captures the rewritten reference (Bug #1948),
+          // and without the binding itself there is no scope chain to ask, so
+          // the fix is withheld rather than guessed. The violation still
+          // reports; only the rename is withheld.
+          const capturesReference =
+            !declaredVariable ||
+            isNameTaken(declaredVariable, newName, [...references]);
+
           context.report({
             node,
             messageId: 'callbackFunctionPrefix',
             data: { functionName },
             fix(fixer) {
-              if (leavesModule) {
+              if (leavesModule || capturesReference) {
                 return null;
               }
-              // Remove 'handle' prefix and convert first character to lowercase
-              const newName = stripHandlePrefix(functionName);
               // `const handleDelete = fn` would become `const delete = fn`,
               // which does not parse (Bug #1719).
               if (!isEmittableName(newName)) {

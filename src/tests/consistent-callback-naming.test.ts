@@ -1578,6 +1578,303 @@ ruleTesterJsx.run('consistent-callback-naming', rule, {
         submit();
       `,
     },
+    // Bug #1948: the repro. `submit` is bound between the call and the
+    // declaration, so emitting it at the call re-points the call at the local
+    // number — `TS2349: This expression is not callable` on input that compiled
+    // clean. Nothing else notices: the module scope still holds exactly one
+    // `submit`, so a redeclaration check passes.
+    {
+      code: `
+        function handleSubmit(): void {}
+        export function run(): void {
+          const submit = 1;
+          handleSubmit();
+          console.log(submit);
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1948: the arrow-variable spelling of the declaration captures
+    // identically — the hazard is the reference site, not the declaration form.
+    {
+      code: `
+        const handleSubmit = (): void => {};
+        export function run(): void {
+          const submit = 1;
+          handleSubmit();
+          console.log(submit);
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1948: a `let` binds the name exactly as a `const` does.
+    {
+      code: `
+        function handleSubmit(): void {}
+        export function run(): void {
+          let submit = 1;
+          submit += 1;
+          handleSubmit();
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1948: a parameter binds the new name in the scope the reference
+    // sits in, with no statement in the body to see it at.
+    {
+      code: `
+        function handleSubmit(): void {}
+        export function run(submit: number): void {
+          handleSubmit();
+          console.log(submit);
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1948: an inner function declaration of the new name. The capture is
+    // callable here, so the file still has no type error until the arity
+    // mismatch bites (`TS2554`).
+    {
+      code: `
+        function handleSubmit(): void {}
+        export function run(): void {
+          function submit(value: number): number {
+            return value;
+          }
+          handleSubmit();
+          console.log(submit(1));
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1948: a `catch` parameter binds the new name in the catch scope,
+    // which is the scope the reference resolves through.
+    {
+      code: `
+        function handleSubmit(): void {}
+        export function run(): void {
+          try {
+            void 0;
+          } catch (submit) {
+            handleSubmit();
+            console.log(submit);
+          }
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1948: an import binds the new name in module scope, above the
+    // declaration rather than below it — the rename would collide there too.
+    {
+      code: `
+        import { submit } from './helpers';
+        function handleSubmit(): void {}
+        export function run(): void {
+          handleSubmit();
+          console.log(submit(1));
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1948: a class declaration binds a value name just as a `const` does.
+    {
+      code: `
+        function handleSubmit(): void {}
+        export function run(): void {
+          class submit {}
+          handleSubmit();
+          void new submit();
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1948: an enum is a value binding too.
+    {
+      code: `
+        function handleSubmit(): void {}
+        export function run(): void {
+          enum submit {
+            A,
+          }
+          handleSubmit();
+          console.log(submit.A);
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1948: the binding need not be one scope away. A reference nested
+    // three scopes below the intervening binding is captured just the same, so
+    // the walk runs the whole span rather than checking a single level.
+    {
+      code: `
+        function handleSubmit(): void {}
+        export function run(items: number[]): void {
+          const submit = 1;
+          items.forEach(() => {
+            if (submit) {
+              handleSubmit();
+            }
+          });
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1948 reverse hazard: the new name is free at the reference and taken
+    // at the DECLARATION, where the rename would be an outright redeclaration
+    // (`TS2300`).
+    {
+      code: `
+        const submit = 1;
+        function handleSubmit(): void {}
+        export function run(): void {
+          handleSubmit();
+          console.log(submit);
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1948 boundary, and the reason the check is per-REFERENCE: a binding
+    // in a sibling block that encloses no reference captures nothing, so the
+    // rename still applies. A declaration-site-only check would withhold here
+    // and quietly turn the fix off for a whole class of correct renames.
+    {
+      code: `
+        function handleSubmit(): void {}
+        export function run(): void {
+          {
+            const submit = 1;
+            console.log(submit);
+          }
+          handleSubmit();
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: `
+        function submit(): void {}
+        export function run(): void {
+          {
+            const submit = 1;
+            console.log(submit);
+          }
+          submit();
+        }
+      `,
+    },
+    // Bug #1948 control: nothing binds the new name anywhere, so the plain
+    // rename still moves the declaration and its reference together.
+    {
+      code: `
+        function handleSubmit(): void {}
+        export function run(): void {
+          handleSubmit();
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: `
+        function submit(): void {}
+        export function run(): void {
+          submit();
+        }
+      `,
+    },
+    /**
+     * Bug #1948: the fixture that drives `src/tests/fixer-shadow-capture.test.ts`
+     * on this rule. That guard injects a binding of the emitted name into the
+     * function body enclosing each report site, so it only reaches this rule
+     * through a report whose OWN body carries a reference — a recursive call.
+     * Without such a case the guard listed this rule as "emits no new reference
+     * to a module-scope-bound name", a reason that was measured true only
+     * because no fixture posed the question.
+     */
+    {
+      code: `
+        function handleRetry(count: number): void {
+          if (count > 0) {
+            handleRetry(count - 1);
+          }
+        }
+        console.log(handleRetry);
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: `
+        function retry(count: number): void {
+          if (count > 0) {
+            retry(count - 1);
+          }
+        }
+        console.log(retry);
+      `,
+    },
+    // Bug #1948 regression guard for #1944: a member of a class with heritage
+    // is still reported and still never rewritten.
+    {
+      code: `
+        interface Submittable {
+          handleSubmit(data: string): string;
+        }
+        class SubmitForm implements Submittable {
+          handleSubmit(data: string): string {
+            return data;
+          }
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: null,
+    },
+    // Bug #1948 regression guard for #1944: an abstract declaration still
+    // reports, report-only.
+    {
+      code: `
+        abstract class BaseForm {
+          abstract handleSubmit(data: string): string;
+          abstract handleReset: () => void;
+        }
+      `,
+      errors: [
+        { messageId: 'callbackFunctionPrefix' },
+        { messageId: 'callbackFunctionPrefix' },
+      ],
+      output: null,
+    },
+    // Bug #1948 regression guard for #1946: a class member the file owns is
+    // still renamed at the declaration AND at its `this.` reader, in one fix.
+    {
+      code: `
+        class C {
+          handleClick(): void {}
+          run(): void {
+            this.handleClick();
+          }
+        }
+      `,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: `
+        class C {
+          click(): void {}
+          run(): void {
+            this.click();
+          }
+        }
+      `,
+    },
+    // Bug #1948 regression guard: a plain object-literal member is on neither
+    // path this fix touches, and is still reported and still autofixed.
+    {
+      code: `const config = { handleClick: onClick };`,
+      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: `const config = { click: onClick };`,
+    },
   ],
 });
 
@@ -1737,10 +2034,12 @@ describe('consistent-callback-naming --fix output type-checks (Bug #1946)', () =
    * virtual, delegating host keeps the real lib files (and therefore real
    * semantic analysis) while the sources stay in memory.
    */
+  const VIRTUAL_DIR = '/virtual';
+
   const diagnosticCodes = (sources: readonly string[]): string[][] => {
     const files = new Map<string, string>(
       sources.map((code, index) => [
-        `/virtual/shape-${index}.ts`,
+        `${VIRTUAL_DIR}/shape-${index}.ts`,
         // Every shape is compiled as a module. A source with no import or
         // export is a SCRIPT, whose top-level `class C` joins the global scope
         // and collides with every other shape's (TS2300), which would both mask
@@ -1748,6 +2047,14 @@ describe('consistent-callback-naming --fix output type-checks (Bug #1946)', () =
         // after linting, so it never reaches the rule.
         `${code}\nexport {};\n`,
       ]),
+    );
+    // A companion module for the shapes that import a binding of the NEW name
+    // (Bug #1948). An unresolvable specifier reports `TS2307` and types the
+    // import as `any`, which would swallow the very diagnostic those shapes
+    // exist to detect.
+    files.set(
+      `${VIRTUAL_DIR}/helpers.ts`,
+      'export const submit = (value: number): number => value;\n',
     );
     const host = ts.createCompilerHost(COMPILER_OPTIONS, true);
     const { getSourceFile, readFile, fileExists } = host;
@@ -1759,9 +2066,17 @@ describe('consistent-callback-naming --fix output type-checks (Bug #1946)', () =
     };
     host.readFile = (name) => files.get(name) ?? readFile.call(host, name);
     host.fileExists = (name) => files.has(name) || fileExists.call(host, name);
+    // Node module resolution gives up on a containing directory it believes
+    // does not exist, and never asks `fileExists` at all — which is how the
+    // companion module above resolved to `TS2307` while sitting right there.
+    const { directoryExists } = host;
+    host.directoryExists = (name) =>
+      name === VIRTUAL_DIR || !!directoryExists?.call(host, name);
 
     const program = ts.createProgram([...files.keys()], COMPILER_OPTIONS, host);
-    return [...files.keys()].map((name) => {
+    // Indexed by SHAPE, so the companion module above never shifts the answers.
+    return sources.map((_source, index) => {
+      const name = `${VIRTUAL_DIR}/shape-${index}.ts`;
       const source = program.getSourceFile(name) as ts.SourceFile;
       return [
         ...program.getSyntacticDiagnostics(source),
@@ -1815,6 +2130,59 @@ describe('consistent-callback-naming --fix output type-checks (Bug #1946)', () =
       'a function declaration and its call',
       `function handleSubmit(): void {}\nhandleSubmit();\n`,
     ],
+    // Bug #1948. Each of these compiles clean and would compile broken if the
+    // rename were applied — the codes measured on the shipping fixer are named
+    // per shape so a future weakening reports the diagnostic it reintroduces.
+    [
+      'the #1948 repro: an inner const binds the new name (TS2349)',
+      `function handleSubmit(): void {}\nexport function run(): void {\n  const submit = 1;\n  handleSubmit();\n  console.log(submit);\n}\n`,
+    ],
+    [
+      'the arrow-variable spelling of the same capture (TS2349)',
+      `const handleSubmit = (): void => {};\nexport function run(): void {\n  const submit = 1;\n  handleSubmit();\n  console.log(submit);\n}\n`,
+    ],
+    [
+      'a parameter binding the new name (TS2349)',
+      `function handleSubmit(): void {}\nexport function run(submit: number): void {\n  handleSubmit();\n  console.log(submit);\n}\n`,
+    ],
+    [
+      'an inner function declaration of the new name (TS2554)',
+      `function handleSubmit(): void {}\nexport function run(): void {\n  function submit(value: number): number {\n    return value;\n  }\n  handleSubmit();\n  console.log(submit(1));\n}\n`,
+    ],
+    [
+      'a catch parameter binding the new name (TS18046)',
+      `function handleSubmit(): void {}\nexport function run(): void {\n  try {\n    void 0;\n  } catch (submit) {\n    handleSubmit();\n    console.log(submit);\n  }\n}\n`,
+    ],
+    [
+      'an import of the new name (TS2440)',
+      `import { submit } from './helpers';\nfunction handleSubmit(): void {}\nexport function run(): void {\n  handleSubmit();\n  console.log(submit(1));\n}\n`,
+    ],
+    [
+      'a class declaration of the new name (TS2348)',
+      `function handleSubmit(): void {}\nexport function run(): void {\n  class submit {}\n  handleSubmit();\n  void new submit();\n}\n`,
+    ],
+    [
+      'an enum declaration of the new name (TS2349)',
+      `function handleSubmit(): void {}\nexport function run(): void {\n  enum submit {\n    A,\n  }\n  handleSubmit();\n  console.log(submit.A);\n}\n`,
+    ],
+    [
+      'a reference nested three scopes under the binding (TS2349)',
+      `function handleSubmit(): void {}\nexport function run(items: number[]): void {\n  const submit = 1;\n  items.forEach(() => {\n    if (submit) {\n      handleSubmit();\n    }\n  });\n}\n`,
+    ],
+    [
+      'the reverse hazard: the new name taken at the declaration (TS2300)',
+      `const submit = 1;\nfunction handleSubmit(): void {}\nexport function run(): void {\n  handleSubmit();\n  console.log(submit);\n}\n`,
+    ],
+    // The two arms that must STILL be rewritten. Without them the differential
+    // above would be satisfied by a fixer that had simply stopped firing.
+    [
+      'a sibling block binding that encloses no reference',
+      `function handleSubmit(): void {}\nexport function run(): void {\n  {\n    const submit = 1;\n    console.log(submit);\n  }\n  handleSubmit();\n}\n`,
+    ],
+    [
+      'a recursive function whose own body holds the reference',
+      `function handleRetry(count: number): void {\n  if (count > 0) {\n    handleRetry(count - 1);\n  }\n}\nconsole.log(handleRetry);\n`,
+    ],
   ];
 
   const results = SHAPES.map(([, code]) => fixWholeFile(code));
@@ -1855,7 +2223,44 @@ describe('consistent-callback-naming --fix output type-checks (Bug #1946)', () =
       'a static member read from a static method',
       'an object literal member',
       'a function declaration and its call',
+      'a sibling block binding that encloses no reference',
+      'a recursive function whose own body holds the reference',
     ]);
+  });
+
+  /**
+   * Bug #1948 control. Every capture shape above is withheld, so the
+   * differential over them would read identically if the fixer had stopped
+   * firing altogether — or if the check were declaration-site-only and simply
+   * withheld every enclosing scope. These are the two directions that pin it:
+   * the same source with the intervening binding REMOVED must still be
+   * rewritten, and the withheld output must be byte-identical to its input.
+   */
+  it('withholds by capture, not by giving up on the shape', () => {
+    const captured = `function handleSubmit(): void {}\nexport function run(): void {\n  const submit = 1;\n  handleSubmit();\n  console.log(submit);\n}\n`;
+    const uncaptured = `function handleSubmit(): void {}\nexport function run(): void {\n  const total = 1;\n  handleSubmit();\n  console.log(total);\n}\n`;
+
+    expect(fixWholeFile(captured).output).toBe(captured);
+    expect(fixWholeFile(uncaptured).output).toBe(
+      `function submit(): void {}\nexport function run(): void {\n  const total = 1;\n  submit();\n  console.log(total);\n}\n`,
+    );
+  });
+
+  /**
+   * Bug #1948 detector control. Without a hand-written captured output the
+   * per-shape differential could pass on a harness that never sees a capture:
+   * the emitted reference is well-typed against a real binding, so only a CALL
+   * of it produces a diagnostic at all.
+   */
+  it('detects the capture the fixer used to ship (control)', () => {
+    const capturedByHand = `function submit(): void {}\nexport function run(): void {\n  const submit = 1;\n  submit();\n  console.log(submit);\n}\n`;
+    const [inputCodes, capturedCodes] = diagnosticCodes([
+      `function handleSubmit(): void {}\nexport function run(): void {\n  const submit = 1;\n  handleSubmit();\n  console.log(submit);\n}\n`,
+      capturedByHand,
+    ]);
+
+    expect(inputCodes).toEqual([]);
+    expect(capturedCodes).toContain('TS2349');
   });
 
   it.each(SHAPES.map(([label], index) => [label, index] as const))(

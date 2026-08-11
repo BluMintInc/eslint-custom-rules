@@ -626,7 +626,12 @@ const UNPROBED_RULES: Record<string, Reason> = {
   // The healthy majority: these fixers reorder, rename in place, delete a
   // wrapper or rewrite an import specifier, and emit no reference at all.
   'class-methods-read-top-to-bottom': REASONS.noModuleBoundReference,
-  'consistent-callback-naming': REASONS.noModuleBoundReference,
+  // `consistent-callback-naming` is absent from this class deliberately
+  // (#1948). Its rename emits the new name at every reference, so the reason
+  // held only while no fixture paired a module-scope `handle*` declaration with
+  // a reference inside the function body enclosing the report — the one place
+  // this guard can stand a shadow. Its corpus carries a recursive function that
+  // does, and the probe below drives the rule for real.
   'enforce-centralized-mock-firestore': REASONS.noModuleBoundReference,
   'enforce-early-destructuring': REASONS.noModuleBoundReference,
   'enforce-empty-object-check': REASONS.noModuleBoundReference,
