@@ -3700,6 +3700,250 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
         }
       `,
     },
+
+    // ---------------------------------------------------------------------
+    // ECMA private members (`#name`) spell the SAME privacy as the TypeScript
+    // `private` modifier, and the two are mutually exclusive -- `private #foo`
+    // is TS18010 -- so an author who writes the `#` spelling can never opt back
+    // into a barrier by adding `private`. Every barrier below has a `private`
+    // twin above it in this file; the pairs must reach the same verdict,
+    // because the barriers are keyed on the RECEIVER and on the callee's VERB,
+    // neither of which the sigil changes. (#1938)
+    // ---------------------------------------------------------------------
+
+    // Barrier 7, the headline shape: `#load` writes instance state that `read`
+    // observes. The two members are reached through the same receiver (`this`),
+    // and parallelizing races the read ahead of the write -- measured to return
+    // a different value, not merely to run eagerly.
+    {
+      code: `
+        class C {
+          private summaries: string[] = [];
+          public async run() {
+            await this.#load();
+            const s = await this.read();
+            return s;
+          }
+          async #load() { this.summaries = ['a']; }
+          private async read() { return this.summaries[0]; }
+        }
+      `,
+    },
+    // Both members respelled: the receiver is still the one instance.
+    {
+      code: `
+        class C {
+          #summaries: string[] = [];
+          public async run() {
+            await this.#load();
+            const s = await this.#read();
+            return s;
+          }
+          async #load() { this.#summaries = ['a']; }
+          async #read() { return this.#summaries[0]; }
+        }
+      `,
+    },
+    // The docs' canonical shared-receiver example with the ref held in a `#`
+    // field. No private METHOD is involved: `#versionRef` is an ordinary object
+    // reached through a fixed chain on the instance, and `.get()` must observe
+    // what `.set()` wrote.
+    {
+      code: `
+        class VersionStore {
+          #versionRef: any;
+          public async bump(next: number) {
+            await this.#versionRef.set({ value: next });
+            await this.#versionRef.get();
+          }
+        }
+      `,
+    },
+    // A nested `#` receiver is a fixed chain over the instance just as
+    // `this.inner` is.
+    {
+      code: `
+        class C {
+          #inner: any;
+          public async run() {
+            await this.#inner.write(1);
+            const value = await this.#inner.read();
+            return value;
+          }
+        }
+      `,
+    },
+    // Optional and non-null spellings of a `#` chain reach the same slot.
+    {
+      code: `
+        class C {
+          #inner: any;
+          public async run() {
+            await this.#inner!.write(1);
+            const value = await this.#inner?.read();
+            return value;
+          }
+        }
+      `,
+    },
+    // `super.m()` and `this.#m()` execute against the same instance, so the
+    // this/super collapse composes with the `#` key. (A private member cannot
+    // be reached through `super` at all, which is exactly why the receiver --
+    // not the member -- is what the barrier keys on.)
+    {
+      code: `
+        class Child extends Base {
+          public async run() {
+            await super.initializeTeamData();
+            const stamp = await this.#resolveHostStamp();
+            return stamp;
+          }
+          async #resolveHostStamp() { return 1; }
+        }
+      `,
+    },
+    // A static `#` method is invoked on the class object, which is one
+    // statically-known receiver like any other.
+    {
+      code: `
+        class C {
+          static async #load() {}
+          static async #read() { return 1; }
+          public static async run() {
+            await C.#load();
+            const value = await C.#read();
+            return value;
+          }
+        }
+      `,
+    },
+    // Barrier 3: a side-effect verb is a side-effect verb whatever the sigil.
+    // `#commit` names the same operation `commit` does.
+    {
+      code: `
+        class C {
+          async #commit() {}
+          public async run() {
+            await this.#commit();
+            await notifySubscribers();
+          }
+        }
+      `,
+    },
+    // Barrier 4: a `#`-spelled guard is still a control-flow gate -- it throws
+    // to abort the run, so what follows it must not start eagerly.
+    {
+      code: `
+        class C {
+          async #assertOwner() {}
+          public async run() {
+            await this.#assertOwner();
+            await deleteTeam();
+          }
+        }
+      `,
+    },
+    // Barrier 5: a `#`-spelled refetch still exists to re-observe state the
+    // preceding await mutated.
+    {
+      code: `
+        class C {
+          async #refreshState() {}
+          public async run() {
+            await unlinkProvider();
+            await this.#refreshState();
+          }
+        }
+      `,
+    },
+    // Barrier 6: a `#`-spelled navigation still transitions the route, so the
+    // awaits around it are sequenced by UI lifetime.
+    {
+      code: `
+        class C {
+          async #pushRoute() {}
+          public async run() {
+            await this.#pushRoute();
+            await acceptInvite();
+          }
+        }
+      `,
+    },
+    // Barrier 6 again, through the receiver rather than the verb: every method
+    // on a router-like receiver counts as navigation. Both awaits also share
+    // the `this.#router` receiver, so the run is doubly sequenced.
+    {
+      code: `
+        class C {
+          #router: any;
+          public async run() {
+            await this.#router.back();
+            await this.#router.go(-1);
+          }
+        }
+      `,
+    },
+    // Barrier 2: a coordinator threaded through both awaits sequences them even
+    // when it never appears as a receiver. `#batchManager` is the same
+    // coordinator `batchManager` is.
+    {
+      code: `
+        class C {
+          #batchManager: any;
+          public async run() {
+            await persistDrafts(this.#batchManager);
+            await emitEvents(this.#batchManager);
+          }
+        }
+      `,
+    },
+    // Barrier 10: a callback write to a `#` slot that a later await READS is a
+    // dependency no value expresses. Pinned against the invalid case below,
+    // where the write and the read reach DISJOINT slots.
+    {
+      code: `
+        class C {
+          #mutator: any;
+          public async run() {
+            await runInBand(async (tx) => { this.#mutator = makeMutator(tx); });
+            await this.#mutator.deleteIfEmptied();
+          }
+        }
+      `,
+    },
+    // Isolation control: renaming the member while KEEPING `private` must not
+    // move the verdict. If this ever reports, the finding is name sensitivity
+    // rather than privacy-spelling sensitivity. (#1938)
+    {
+      code: `
+        class C {
+          private summaries: string[] = [];
+          public async run() {
+            await this.loadRenamedXyz();
+            const s = await this.read();
+            return s;
+          }
+          private async loadRenamedXyz() { this.summaries = ['a']; }
+          private async read() { return this.summaries[0]; }
+        }
+      `,
+    },
+    // Isolation control: removing the privacy modifier entirely must not move
+    // the verdict either -- the barrier is the receiver, not the modifier.
+    {
+      code: `
+        class C {
+          summaries: string[] = [];
+          public async run() {
+            await this.load();
+            const s = await this.read();
+            return s;
+          }
+          async load() { this.summaries = ['a']; }
+          async read() { return this.summaries[0]; }
+        }
+      `,
+    },
   ],
   invalid: [
     // The barrier must not collapse DISTINCT receivers onto one key: a key that
@@ -4023,6 +4267,162 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
           return [value, other];
         }
       }
+      `,
+    },
+
+    // ---------------------------------------------------------------------
+    // Recognizing `#name` keys must be a targeted widen of the barriers, not a
+    // blanket silencing of every run that mentions a private member. Each case
+    // below is genuinely parallelizable and must STILL report. (#1938)
+    // ---------------------------------------------------------------------
+
+    // Two DISTINCT private fields are two distinct receivers. Keying them by
+    // name is what keeps the barrier from fusing all instance state into one
+    // slot and disabling the rule inside any class that uses `#` fields.
+    {
+      code: `
+        class C {
+          #alpha: any;
+          #beta: any;
+          public async run() {
+            const a = await this.#alpha.fetchOne();
+            const b = await this.#beta.fetchTwo();
+            return [a, b];
+          }
+        }
+      `,
+      errors: [error(2)],
+      output: `
+        class C {
+          #alpha: any;
+          #beta: any;
+          public async run() {
+            const [a, b] = await Promise.all([
+              this.#alpha.fetchOne(),
+              this.#beta.fetchTwo()
+            ]);
+            return [a, b];
+          }
+        }
+      `,
+    },
+    // A private field passed as an ARGUMENT to a free function is not a
+    // receiver, so it carries no ordering barrier of its own.
+    {
+      code: `
+        class C {
+          #alphaId = 'a';
+          #betaId = 'b';
+          public async run() {
+            const a = await fetchAlpha(this.#alphaId);
+            const b = await fetchBeta(this.#betaId);
+            return [a, b];
+          }
+        }
+      `,
+      errors: [error(2)],
+      output: `
+        class C {
+          #alphaId = 'a';
+          #betaId = 'b';
+          public async run() {
+            const [a, b] = await Promise.all([
+              fetchAlpha(this.#alphaId),
+              fetchBeta(this.#betaId)
+            ]);
+            return [a, b];
+          }
+        }
+      `,
+    },
+    // Conflation control: `#svc` and `svc` are two members a class can declare
+    // AT ONCE, holding unrelated objects. The keys must keep the sigil so the
+    // barrier does not fuse them -- a fusion here would be a silent false
+    // negative on every class that shadows a public member with a private one.
+    {
+      code: `
+        class C {
+          #svc: any;
+          svc: any;
+          public async run() {
+            const people = await this.#svc.read();
+            const articles = await this.svc.read();
+            return [people, articles];
+          }
+        }
+      `,
+      errors: [error(2)],
+      output: `
+        class C {
+          #svc: any;
+          svc: any;
+          public async run() {
+            const [people, articles] = await Promise.all([
+              this.#svc.read(),
+              this.svc.read()
+            ]);
+            return [people, articles];
+          }
+        }
+      `,
+    },
+    // The coordinator barrier compares names for identity, so two DIFFERENT
+    // private coordinators do not sequence a run.
+    {
+      code: `
+        class C {
+          #batchManagerA: any;
+          #batchManagerB: any;
+          public async run() {
+            await persistDrafts(this.#batchManagerA);
+            await emitEvents(this.#batchManagerB);
+          }
+        }
+      `,
+      errors: [error(2)],
+      output: `
+        class C {
+          #batchManagerA: any;
+          #batchManagerB: any;
+          public async run() {
+            await Promise.all([
+              persistDrafts(this.#batchManagerA),
+              emitEvents(this.#batchManagerB)
+            ]);
+          }
+        }
+      `,
+    },
+    // Barrier 10 keyed per slot: a callback write to `#mutator` leaves a later
+    // read of `#other` parallelizable, exactly as the `private` spelling does.
+    // This is the one arm where naming the slot NARROWS a key -- the untyped
+    // fallback used to truncate `this.#mutator` to the bare instance, which
+    // overlapped every instance read and suppressed this report. Held as the
+    // polarity partner of the valid case where the write and the read reach the
+    // SAME slot.
+    {
+      code: `
+        class C {
+          #mutator: any;
+          #other: any;
+          public async run() {
+            await runInBand(async (tx) => { this.#mutator = makeMutator(tx); });
+            await this.#other.deleteIfEmptied();
+          }
+        }
+      `,
+      errors: [error(2)],
+      output: `
+        class C {
+          #mutator: any;
+          #other: any;
+          public async run() {
+            await Promise.all([
+              runInBand(async (tx) => { this.#mutator = makeMutator(tx); }),
+              this.#other.deleteIfEmptied()
+            ]);
+          }
+        }
       `,
     },
   ],

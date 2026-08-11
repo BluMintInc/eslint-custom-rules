@@ -167,6 +167,22 @@ class MatchWinnerAnnouncer {
 }
 ```
 
+**Privacy spelling does not change any of this.** A member declared with the TypeScript `private` modifier and one declared as an ECMA private field (`#name`) express the same privacy, and they are mutually exclusive—`private #foo` is a TypeScript error (TS18010), so an author who writes the `#` spelling cannot opt back into a barrier by adding `private`. Every barrier therefore reads the two spellings identically: `this.#versionRef.set(...)` then `this.#versionRef.get()` shares a receiver exactly as `this.versionRef` would, `await this.#assertOwner()` gates what follows it exactly as `assertOwner()` would, and a coordinator held in `this.#batchManager` sequences the awaits that thread it.
+
+```typescript
+class VersionStore {
+  #versionRef: VersionRef;
+
+  public async bump(next: number) {
+    await this.#versionRef.set({ value: next });
+    const snapshot = await this.#versionRef.get(); // read-after-write on the same ref
+    return snapshot.val();
+  }
+}
+```
+
+The `#` is part of the member's identity, so `#svc` and `svc`—two members a class can declare at once—remain distinct receivers and are still parallelized, and a write to `this.#alpha` still leaves a later read of `this.#beta` parallelizable.
+
 Receivers that differ, or whose identity varies per evaluation, are still flagged: a distinct member (`api.users.get()` vs `api.posts.get()`, `super.users.read()` vs `this.posts.read()`), a bare binding paired with the instance (`svc.read()` vs `super.read()`), a fresh chain per call (`db.collection(a).get()` vs `db.collection(b).get()`), or a numeric/dynamic index (`operations[0]()` vs `operations[1]()`) selects a different target each time. Two pure reads on one receiver are conservatively kept sequential as well, since a shared receiver can hold hidden state (for example a paginated cursor)—the worst case is a missed parallelization, which is safer than reordering a real dependency.
 
 ### ✅ Correct (refetch/refresh ordering)
