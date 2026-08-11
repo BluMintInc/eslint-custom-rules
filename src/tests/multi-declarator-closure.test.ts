@@ -43,15 +43,43 @@
  *   - a sibling REWRITE is compared against the same fixer run on the sibling
  *     standing ALONE in the subject's scope. An edit the rule makes either way
  *     is its own consistent opinion about that declarator, not damage from the
- *     subject's fix.
- * That third isolation is per-ORACLE, not per-rule, and the distinction is the
+ *     subject's fix; and
+ *   - a DESTROYED sibling is read together with what became of the SUBJECT in
+ *     the same run, because a fixer entitled to remove a whole SPAN removes the
+ *     bindings declared inside it, and that is a deletion it owns (#1930).
+ * Those isolations are per-ORACLE, not per-rule, and the distinction is the
  * whole point: a report about a binding licenses REWRITING it and never
  * DELETING it, so destruction, duplication and unparseable output are still
  * measured on a rule that reports on the sibling. Keying it on attribution
  * instead would drop that entire class (`control-mixed-destroyer` holds the
- * line). Without the licensing isolation, `global-const-style` appending
+ * line). Without the rewrite licensing, `global-const-style` appending
  * `as const` to a module-level literal — exactly what it exists to do —
  * fabricated 148 findings.
+ *
+ * DESTRUCTION LICENSING (#1930), the narrowest of the four and the one closest
+ * to blinding the arm, so its shape is exact. "The sibling is gone" is purely
+ * syntactic and cannot by itself separate the defect ARM B hunts — a fixer that
+ * CORRUPTS a declaration it was only asked to rewrite — from a fixer that
+ * REMOVES a span it is entitled to remove and takes that span's own bindings
+ * with it. `prefer-map-over-conditional-dispatch` is the second kind: its
+ * documented contract drops a `default` arm that is unreachable for typed
+ * values, so an exhaustiveness `const unhandled: never = body;` inside that arm
+ * disappears with the arm, and every reference to it disappears in the same
+ * span. A deletion is therefore licensed only when ALL of:
+ *   - the fixer's edit — the minimal input span outside the common prefix and
+ *     suffix of input and output — CONTAINS the whole subject declarator as
+ *     well as the sibling's, so the statement went as a unit rather than the
+ *     sibling being carved out of a statement the fixer kept; and
+ *   - the SUBJECT binding is likewise absent from the finished output, which
+ *     both proves the subject was not merely rewritten in place and rejects the
+ *     case where a removal leaves a dangling reference behind.
+ * The licensing is keyed on the subject's fate, never on a rule name: a
+ * rule-keyed exemption un-gates every other arm that rule participates in, which
+ * is how #1839 shipped. `control-relocating-destroyer` is the reason it cannot
+ * simply ask "is the sibling inside something that got deleted" — a fixer that
+ * deletes the whole declaration and re-emits the SUBJECT elsewhere destroyed the
+ * sibling for real, and must still be caught. `control-span-deleter` is the
+ * converse and proves the gate fires at all.
  */
 import { Linter, Rule } from 'eslint';
 import { parse as estreeParse } from '@typescript-eslint/typescript-estree';
@@ -95,6 +123,13 @@ type Perturbation = {
   sibling: string;
   /** The subject binding, so a finding names what was supposed to be probed. */
   subject: string;
+  /**
+   * The subject declarator's range IN `code`, carried rather than looked up by
+   * name: the destruction licensing asks whether the fixer's edit swallowed this
+   * exact declarator, and a fixture with two same-named bindings in different
+   * scopes would answer that about the wrong one.
+   */
+  subjectRange: [number, number];
   /**
    * The fixture with the SUBJECT replaced by the sibling, so the sibling stands
    * alone in the subject's exact scope, export form and file. This is the
@@ -247,12 +282,16 @@ const perturbationsFor = (code: string, preferJsx: boolean): Perturbation[] => {
       0,
       start,
     )}${sibling} = ${SIBLING_INIT}${code.slice(end)}`;
+    // What SUBJECT_SECOND inserts ahead of the subject, and so exactly how far
+    // the subject declarator moves in that variant's coordinates.
+    const leadingInsert = `${sibling} = ${SIBLING_INIT}, `;
     const candidates: Perturbation[] = [
       {
         kind: 'SUBJECT_FIRST',
         sibling,
         subject,
         soloSibling,
+        subjectRange: [start, end],
         code: `${code.slice(0, end)}, ${sibling} = ${SIBLING_INIT}${code.slice(
           end,
         )}`,
@@ -262,10 +301,11 @@ const perturbationsFor = (code: string, preferJsx: boolean): Perturbation[] => {
         sibling,
         subject,
         soloSibling,
-        code: `${code.slice(
-          0,
-          start,
-        )}${sibling} = ${SIBLING_INIT}, ${code.slice(start)}`,
+        subjectRange: [
+          start + leadingInsert.length,
+          end + leadingInsert.length,
+        ],
+        code: `${code.slice(0, start)}${leadingInsert}${code.slice(start)}`,
       },
     ];
     for (const candidate of candidates) {
@@ -374,8 +414,45 @@ const siblingDeclaratorRange = (
   return null;
 };
 
-const siblingOccurrences = (code: string, sibling: string) =>
-  (code.match(new RegExp(`\\b${sibling}\\b`, 'g')) || []).length;
+/** Whole-word occurrences of a binding name, used for both probe bindings. */
+const occurrencesOf = (code: string, name: string) =>
+  (code.match(new RegExp(`\\b${name}\\b`, 'g')) || []).length;
+
+type EditedSpan = {
+  /** The replaced region, in the INPUT's coordinates. */
+  start: number;
+  end: number;
+  /** What the fixer put there. */
+  replacement: string;
+};
+
+/**
+ * The minimal region of `before` the fixer can have touched: everything outside
+ * the common prefix and suffix it shares with `after`.
+ *
+ * `verifyAndFix` runs to a fixpoint, so this is the covering span of every pass
+ * rather than one edit — which is the conservative direction for a licensing
+ * gate, since a WIDER span is easier to satisfy only in combination with the
+ * output check that follows it. Nothing here needs the individual edits: the
+ * question is whether the subject declarator was inside what went away.
+ */
+const editedSpanOf = (before: string, after: string): EditedSpan => {
+  const shortest = Math.min(before.length, after.length);
+  let prefix = 0;
+  while (prefix < shortest && before[prefix] === after[prefix]) prefix++;
+  let suffix = 0;
+  while (
+    suffix < shortest - prefix &&
+    before[before.length - 1 - suffix] === after[after.length - 1 - suffix]
+  ) {
+    suffix++;
+  }
+  return {
+    start: prefix,
+    end: before.length - suffix,
+    replacement: after.slice(prefix, after.length - suffix),
+  };
+};
 
 // ---------------------------------------------------------------------------
 // Probe
@@ -429,6 +506,12 @@ type Counters = {
    */
   mutationLicensed: number;
   /**
+   * Sibling DELETIONS where the fixer removed a span containing the whole
+   * declaration and the subject went with it, so the binding died inside a
+   * removal the fixer owns rather than being carved out of a kept statement.
+   */
+  destructionLicensed: number;
+  /**
    * Rewrites that survived both isolations and were actually measured against
    * B1-B4. The rewrite count alone cannot carry the arm-B zero: if every
    * rewrite were filtered out before the oracles ran, the arm would be silent
@@ -449,6 +532,7 @@ const blankCounters = (): Counters => ({
   siblingIsMixedSubject: 0,
   attributionRejected: 0,
   mutationLicensed: 0,
+  destructionLicensed: 0,
   oraclesEvaluated: 0,
 });
 
@@ -615,11 +699,49 @@ const probeFixture = (
       push('UNPARSEABLE', 'the fixed output does not parse');
       continue;
     }
-    const occurrences = siblingOccurrences(fixed, perturbation.sibling);
+    const occurrences = occurrencesOf(fixed, perturbation.sibling);
     if (occurrences === 0) {
+      /**
+       * Licensing isolation for DESTRUCTION (#1930). A fixer allowed to remove a
+       * whole SPAN removes the bindings declared inside it, and those bindings
+       * are unreachable from outside the span by construction, so nothing is
+       * left dangling — `prefer-map-over-conditional-dispatch` dropping a
+       * `default` arm that is unreachable for typed values is its documented
+       * contract, and the exhaustiveness `const unhandled: never = body;` inside
+       * that arm goes with it.
+       *
+       * Two conditions, and BOTH are needed. The span test alone would license
+       * `control-relocating-destroyer`, which deletes the same statement but
+       * re-emits the subject elsewhere: it destroyed the sibling for real. The
+       * output test alone would license a fixer that deletes the two declarators
+       * by unrelated edits while keeping the statement around them.
+       *
+       * Keyed on the SUBJECT's fate rather than on a rule name, since a
+       * rule-keyed exemption un-gates every other arm that rule participates in
+       * (#1839). The limit worth stating: a fixer that removes the span and
+       * re-declares the subject under a DIFFERENT name reads as licensed here.
+       * That is a rename defect — the renamer axis owns it — and it is not the
+       * silent sibling loss this arm was built to find.
+       */
+      const editedSpan = editedSpanOf(perturbation.code, fixed);
+      const insideEdit = (range: [number, number]) =>
+        range[0] >= editedSpan.start && range[1] <= editedSpan.end;
+      const subjectSurvives = occurrencesOf(fixed, perturbation.subject) > 0;
+      const spanTookBoth =
+        siblingRange !== null &&
+        insideEdit(siblingRange) &&
+        insideEdit(perturbation.subjectRange);
+      if (spanTookBoth && !subjectSurvives) {
+        counters.destructionLicensed++;
+        continue;
+      }
       push(
         'SIBLING_DESTROYED',
-        'the sibling binding is absent from the output',
+        `the sibling binding is absent from the output (${
+          subjectSurvives
+            ? `the subject \`${perturbation.subject}\` survives, so the fixer did not remove the declaration as a unit`
+            : 'the edit the fixer made does not cover the whole declaration'
+        })`,
       );
       continue;
     }
@@ -811,7 +933,7 @@ const plantedNegative: Rule.RuleModule = {
 };
 
 /**
- * The licensing isolation's own NEGATIVE control: a rule with a genuine opinion
+ * The REWRITE licensing's own NEGATIVE control: a rule with a genuine opinion
  * about every declarator, whose fix appends `as const` to a literal `1`. It
  * rewrites the sibling identically whether or not the subject is present, which
  * is precisely `global-const-style`'s shape. The probe must stay silent, and
@@ -845,7 +967,7 @@ const plantedLicensed: Rule.RuleModule = {
 };
 
 /**
- * The licensing isolation's POSITIVE control, and the reason the gate is
+ * The REWRITE licensing's POSITIVE control, and the reason that gate is
  * per-oracle rather than per-attribution: a fixer that reports on the sibling
  * AND deletes it. A report about a binding never licenses destroying it, so this
  * must still be caught even though its attribution is `mixed`.
@@ -880,13 +1002,110 @@ const plantedMixedDestroyer: Rule.RuleModule = {
   },
 };
 
+/**
+ * The DESTRUCTION licensing's NEGATIVE control (#1930): a fixer that removes an
+ * entire statement it owns — here a labelled block, chosen because the gate must
+ * not be keyed on any particular syntax — and so removes every binding declared
+ * inside it. Nothing outside the block can reference those bindings, which is
+ * why the removal is not a sibling loss. The probe must stay silent AND record
+ * the skip as LICENSED, since silence produced by never reaching the oracle
+ * would prove nothing.
+ */
+const PLANTED_SPAN_DELETER = 'control-span-deleter';
+const plantedSpanDeleter: Rule.RuleModule = {
+  meta: {
+    type: 'problem',
+    fixable: 'code',
+    schema: [],
+    messages: { m: 'This block is unreachable.' },
+  },
+  create(context) {
+    return {
+      LabeledStatement(node: any) {
+        if (node.label?.name !== '__probeDrop') return;
+        context.report({
+          node,
+          messageId: 'm',
+          fix: (fixer) => fixer.remove(node),
+        });
+      },
+    };
+  },
+};
+
+/**
+ * The DESTRUCTION licensing's POSITIVE control (#1930), and the reason the gate
+ * cannot simply ask "did the sibling sit inside something that got deleted": a
+ * fixer that removes the whole declaration — sibling included — and re-emits the
+ * SUBJECT elsewhere in rewritten form. The subject surviving is precisely what
+ * makes this a real sibling loss rather than a span the fixer owns, so it must
+ * still be reported. Were the licensing keyed on the deletion alone, this defect
+ * — the `hoists the whole statement` shape named in this file's header — would
+ * pass unseen.
+ */
+const PLANTED_RELOCATING_DESTROYER = 'control-relocating-destroyer';
+const plantedRelocatingDestroyer: Rule.RuleModule = {
+  meta: {
+    type: 'problem',
+    fixable: 'code',
+    schema: [],
+    messages: { m: 'Move this declaration.' },
+  },
+  create(context) {
+    const source = context.getSourceCode();
+    return {
+      VariableDeclaration(node: any) {
+        if (node.declarations.length < 2) return;
+        const kept = source.getText(node.declarations[0]);
+        const end = source.getText().length;
+        context.report({
+          node,
+          messageId: 'm',
+          // Converges on the second pass: what lands at the end is a single
+          // declarator, which this rule has no opinion about.
+          fix: (fixer) => [
+            fixer.remove(node),
+            fixer.insertTextAfterRange([end, end], `\n${node.kind} ${kept};\n`),
+          ],
+        });
+      },
+    };
+  },
+};
+
 linter.defineRule(PREFIX + PLANTED_POSITIVE, plantedPositive);
 linter.defineRule(PREFIX + PLANTED_NEGATIVE, plantedNegative);
 linter.defineRule(PREFIX + PLANTED_LICENSED, plantedLicensed);
 linter.defineRule(PREFIX + PLANTED_MIXED_DESTROYER, plantedMixedDestroyer);
+linter.defineRule(PREFIX + PLANTED_SPAN_DELETER, plantedSpanDeleter);
+linter.defineRule(
+  PREFIX + PLANTED_RELOCATING_DESTROYER,
+  plantedRelocatingDestroyer,
+);
 
 const controlCase: FixtureCase = {
   code: 'const probeSubject = { alpha: 1 };\nexport { probeSubject };\n',
+  tester: 'ruleTesterTs',
+  language: 'ts',
+  origin: 'planted control',
+  bucket: 'invalid',
+};
+
+/**
+ * A deletable span with a binding declared INSIDE it and used only from within,
+ * which is the shape the destruction licensing exists for: the fix removes the
+ * label, and `probeSubject` — plus whichever sibling the probe plants beside it
+ * — can have no reader left anywhere.
+ */
+const spanDeletionCase: FixtureCase = {
+  code:
+    'const probeGate = (flag: boolean) => {\n' +
+    '  __probeDrop: {\n' +
+    '    const probeSubject = flag ? 1 : 2;\n' +
+    '    console.log(probeSubject);\n' +
+    '  }\n' +
+    '  return 0;\n' +
+    '};\n',
   tester: 'ruleTesterTs',
   language: 'ts',
   origin: 'planted control',
@@ -898,6 +1117,16 @@ const negativeResult = probeFixture(PLANTED_NEGATIVE, controlCase, true);
 const licensedResult = probeFixture(PLANTED_LICENSED, controlCase, true);
 const mixedDestroyerResult = probeFixture(
   PLANTED_MIXED_DESTROYER,
+  controlCase,
+  true,
+);
+const spanDeleterResult = probeFixture(
+  PLANTED_SPAN_DELETER,
+  spanDeletionCase,
+  true,
+);
+const relocatingDestroyerResult = probeFixture(
+  PLANTED_RELOCATING_DESTROYER,
   controlCase,
   true,
 );
@@ -949,6 +1178,7 @@ console.log(
     ),
     `  skipped: attribution rejected (broken without a sibling): ${totals.attributionRejected}`,
     `  skipped: sibling rewrite LICENSED (identical when it stands alone): ${totals.mutationLicensed}`,
+    `  skipped: sibling deletion LICENSED (the subject went with it): ${totals.destructionLicensed}`,
     `  non-TypeScript fixtures skipped: ${nonTypeScriptSkipped}`,
     '  declarations skipped, by reason:',
     ...Object.entries(skipped).map(
@@ -1038,6 +1268,30 @@ describe('the multi-declarator probe is load-bearing', () => {
     expect(licensedResult.counters.siblingIsMixedSubject).toBeGreaterThan(0);
     expect(licensedResult.counters.mutationLicensed).toBeGreaterThan(0);
     expect(licensedResult.findings).toEqual([]);
+  });
+
+  it('licenses a deletion that removes the subject and the sibling together', () => {
+    // Silence must come from the DESTRUCTION licensing, not from an earlier
+    // filter: an attribution rejection, a decline or a fixer the probe never
+    // drove would each produce the same empty findings list.
+    expect(spanDeleterResult.counters.fixersRewrote).toBeGreaterThan(0);
+    expect(spanDeleterResult.counters.oraclesEvaluated).toBeGreaterThan(0);
+    expect(spanDeleterResult.counters.attributionRejected).toBe(0);
+    expect(spanDeleterResult.counters.destructionLicensed).toBeGreaterThan(0);
+    expect(spanDeleterResult.findings).toEqual([]);
+  });
+
+  it('still catches a deletion that keeps the SUBJECT and drops the sibling', () => {
+    // The licensing is keyed on the subject's fate, so a fixer that removes the
+    // same statement but re-emits the subject elsewhere stays a finding. Without
+    // this the licensing would swallow the very defect ARM B exists to find.
+    expect(relocatingDestroyerResult.counters.fixersRewrote).toBeGreaterThan(0);
+    expect(relocatingDestroyerResult.counters.attributionRejected).toBe(0);
+    expect(relocatingDestroyerResult.counters.destructionLicensed).toBe(0);
+    const destroyed = relocatingDestroyerResult.findings.filter(
+      (finding) => finding.oracle === 'SIBLING_DESTROYED',
+    );
+    expect(destroyed.length).toBeGreaterThan(0);
   });
 
   it('still catches a fixer that reports on the sibling AND destroys it', () => {
