@@ -543,21 +543,38 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
               scheduledImportFix = true;
             }
 
-            // Add decorator for this method
-            const insertionTarget =
-              node.decorators && node.decorators.length > 0
-                ? node.decorators[0]
-                : node;
-            const insertionStart =
-              insertionTarget.range?.[0] ?? node.range?.[0] ?? 0;
+            // Anchor the decorator on the method — its first token, so ahead of
+            // `public`/`static` and of any decorator it already carries —
+            // rather than on the start of the line the method happens to sit
+            // on. The two coincide only while the method is first on its line:
+            // in a single-line class body, where a method shares the class's
+            // own `{`, or where a property is declared ahead of it, a line-start
+            // edit emits the decorator before `export class …` (or before that
+            // property), decorating the CLASS with what is a METHOD decorator.
+            // The method stays bare, so the rule reports it again on the next
+            // pass and `--fix` stacks one more decorator per pass up to
+            // ESLint's pass cap instead of reaching a fixpoint. Spelled as
+            // `enforce-memoize-getters` (#1945) and
+            // `require-memoize-jsx-returners` (#1951) spell it, since all three
+            // rules emit the same decorator onto the same kind of member.
+            const insertionTarget = node.decorators?.[0] ?? node;
+            const insertionStart = insertionTarget.range[0];
             const text = sourceCode.text;
             const lineStart = text.lastIndexOf('\n', insertionStart - 1) + 1;
-            const leadingWhitespace =
-              text.slice(lineStart, insertionStart).match(/^[ \t]*/)?.[0] ?? '';
+            const linePrefix = text.slice(lineStart, insertionStart);
+            // A method that owns its line keeps the decorator on a line of its
+            // own at the method's indentation, which is the layout authors
+            // write by hand. A method that shares its line has no line to take,
+            // and a newline there would strand the decorator against the
+            // neighbour's text, so it rides inline — a spelling the grammar
+            // accepts just as readily.
+            const ownsItsLine = /^[ \t]*$/.test(linePrefix);
             fixes.push(
-              fixer.insertTextBeforeRange(
-                [lineStart, lineStart],
-                `${leadingWhitespace}@${decoratorIdent}()\n`,
+              fixer.insertTextBefore(
+                insertionTarget,
+                ownsItsLine
+                  ? `@${decoratorIdent}()\n${linePrefix}`
+                  : `@${decoratorIdent}() `,
               ),
             );
 

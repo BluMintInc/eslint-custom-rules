@@ -3372,6 +3372,491 @@ const Second = class {
   },
 );
 
+// Issue #1953: the decorator attaches to the METHOD, not to the start of the
+// line the method happens to sit on. Anchoring on the line emitted the
+// decorator before `export class …` whenever the method was not first on its
+// line — a single-line class body, a method sharing the class's opening line, a
+// property declared ahead of it — decorating the CLASS with what is a METHOD
+// decorator. The method stayed bare, so the rule reported it again on the next
+// pass and `eslint --fix` stacked ten `@Memoize()` before hitting its pass cap,
+// never reaching a fixpoint. The convergence describe block at the bottom of
+// this file re-lints each output, which is the assertion a single-pass `output`
+// cannot make.
+ruleTesterTs.run(
+  'enforce-memoize-async: decorator placement (issue #1953)',
+  enforceMemoizeAsync,
+  {
+    valid: [
+      {
+        // The fixpoint of the single-line invalid case below, stated as a
+        // fixture: whatever `--fix` writes there must be silent here, or the
+        // rule cannot converge however the decorator is placed.
+        name: 'a single-line method already carrying the decorator inline is silent',
+        code: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Loader { @Memoize() public async load() { return 1; } }`,
+      },
+      {
+        name: 'a single-line method already carrying an aliased decorator inline is silent',
+        code: `import { Memoize as Cache } from '@blumintinc/typescript-memoize';
+export class Loader { @Cache() public async load() { return 1; } }`,
+      },
+      {
+        name: 'a single-line method already carrying a namespaced decorator inline is silent',
+        code: `import * as memoize from '@blumintinc/typescript-memoize';
+export class Loader { @memoize.Memoize() public async load() { return 1; } }`,
+      },
+      {
+        // The #1952 carve-out, in the spelling this issue is about: a
+        // single-line class EXPRESSION admits no decorator anywhere, so the
+        // placement fix must not reach it.
+        name: 'a single-line class expression stays silent',
+        code: `export const Loader = class { public async load() { return 1; } };`,
+      },
+      {
+        name: 'a single-line named class expression stays silent',
+        code: `export const Loader = class Inner { public async load() { return 1; } };`,
+      },
+      {
+        // A static method is out of scope for the rule entirely, so no anchor
+        // is ever computed for it.
+        name: 'a single-line static method is not reported',
+        code: `export class Loader { public static async load() { return 1; } }`,
+      },
+      {
+        name: 'a single-line synchronous method is not reported',
+        code: `export class Loader { public load() { return 1; } }`,
+      },
+      {
+        // The `Promise<void>` exemption is decided before the fix is built, so
+        // the placement branch must not reach it on a shared line either.
+        name: 'a single-line method declared to produce no value keeps its exemption',
+        code: `export class Loader { public async load(): Promise<void> { return; } }`,
+      },
+      {
+        name: 'a single-line method with two parameters is not reported',
+        code: `export class Loader { public async load(a: string, b: string) { return a; } }`,
+      },
+    ],
+    invalid: [
+      // ------------------------------------------------------------------
+      // The whole class on one line: the shape that produced ten stacked
+      // decorators on the class.
+      // ------------------------------------------------------------------
+      {
+        name: 'a single-line class body decorates the method, not the class',
+        code: `export class Loader { public async load() { return 1; } }`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Loader { @Memoize() public async load() { return 1; } }`,
+      },
+      {
+        name: 'a single-line method without an accessibility modifier is decorated in place',
+        code: `export class Loader { async load() { return 1; } }`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Loader { @Memoize() async load() { return 1; } }`,
+      },
+      {
+        // The anchor is the method's first token, which is its modifier rather
+        // than its key: a decorator emitted between `private` and `async` would
+        // not parse.
+        name: 'a private single-line method is decorated ahead of its modifier',
+        code: `export class Loader { private async load() { return 1; } }`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Loader { @Memoize() private async load() { return 1; } }`,
+      },
+      {
+        name: 'a protected single-line method is decorated ahead of its modifier',
+        code: `export class Loader { protected async load() { return 1; } }`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Loader { @Memoize() protected async load() { return 1; } }`,
+      },
+      {
+        name: 'an override modifier keeps the decorator ahead of it',
+        code: `export class Loader extends Base { override async load() { return 1; } }`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Loader extends Base { @Memoize() override async load() { return 1; } }`,
+      },
+      // A `#private`-keyed method is absent deliberately. Under
+      // `experimentalDecorators` — the decorator mode this plugin's `@Memoize()`
+      // is written for — TypeScript rejects a decorator on a private-named
+      // member with `TS1206: Decorators are not valid here.` (measured against
+      // the repo's tsc 5.0.3), and it does so for the own-line spelling exactly
+      // as for the inline one. So it is not the anchor that is wrong there but
+      // the report: the rule names a remedy the author cannot write on that
+      // member at all, the way it once did inside a class expression (#1952).
+      // That is a separate defect with a separate remedy — silence, a
+      // fix-less report, or a rename suggestion, decided across all three
+      // `@Memoize()`-emitting rules — and asserting it here would make this
+      // placement fix carry it. The string-literal and computed-key rows below
+      // cover what this issue is about, that the anchor is the member's first
+      // token rather than its key.
+      {
+        name: 'a string-literal key on one line is decorated ahead of its modifier',
+        code: `export class Loader { public async 'load'() { return 1; } }`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Loader { @Memoize() public async 'load'() { return 1; } }`,
+      },
+      {
+        name: 'a computed key on one line is decorated ahead of its modifier',
+        code: `declare const key: string;
+export class Loader { public async [key]() { return 1; } }`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+declare const key: string;
+export class Loader { @Memoize() public async [key]() { return 1; } }`,
+      },
+      {
+        name: 'a single-line method taking one parameter is decorated in place',
+        code: `export class Loader { public async load(id: string) { return id; } }`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Loader { @Memoize() public async load(id: string) { return id; } }`,
+      },
+      {
+        name: 'a single-line abstract class decorates its concrete method in place',
+        code: `export abstract class Loader { public async load() { return 1; } }`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export abstract class Loader { @Memoize() public async load() { return 1; } }`,
+      },
+      {
+        // Two reports on one line: each edit is anchored on its own method, so
+        // neither displaces the other.
+        name: 'both methods of a single-line class are decorated exactly once each',
+        code: `export class Loader { async a() { return 1; } async b() { return 2; } }`,
+        errors: [
+          { messageId: 'requireMemoize' as const },
+          { messageId: 'requireMemoize' as const },
+        ],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Loader { @Memoize() async a() { return 1; } @Memoize() async b() { return 2; } }`,
+      },
+      {
+        name: 'a single-line class nested in a function is decorated in place',
+        code: `export function build() {
+  class Loader { async load() { return 1; } }
+  return Loader;
+}`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export function build() {
+  class Loader { @Memoize() async load() { return 1; } }
+  return Loader;
+}`,
+      },
+      {
+        // A #1952 boundary case: `export default class {}` is a DECLARATION, so
+        // it keeps reporting and fixing, single-line included.
+        name: 'a single-line default-exported class is decorated in place',
+        code: `export default class { async load() { return 1; } }`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export default class { @Memoize() async load() { return 1; } }`,
+      },
+      {
+        // The other #1952 boundary: the enclosing class EXPRESSION admits no
+        // decorator, while the single-line declaration inside its method takes
+        // one inline.
+        name: 'a single-line class declaration inside a class expression is decorated in place',
+        code: `export const Outer = class {
+  public build() {
+    class Inner { async load() { return 1; } }
+    return Inner;
+  }
+};`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export const Outer = class {
+  public build() {
+    class Inner { @Memoize() async load() { return 1; } }
+    return Inner;
+  }
+};`,
+      },
+      {
+        // A decorator the CLASS legitimately carries is exactly what the bug's
+        // output looked like, so the fixed rule must leave it — and only it —
+        // attached to the class.
+        //
+        // Every decorator factory these rows need is declared ambiently rather
+        // than as `function Injectable(): ClassDecorator { … }`, which is the
+        // spelling the older fixtures use. That spelling annotates an inferable
+        // return, so `no-explicit-return-type` reports it, and the
+        // `enforce-memoize-async::no-explicit-return-type` disagreement in
+        // `crossrule-contradiction-closure` is signed off on an exact fixture
+        // count. The declaration form is immaterial to the anchor under test,
+        // so these rows take the spelling both rules accept and leave that
+        // sign-off measuring what it was written for.
+        name: 'a class-level decorator is left alone while the method takes its own',
+        code: `declare const Injectable: () => ClassDecorator;
+@Injectable()
+export class Loader { async load() { return 1; } }`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+declare const Injectable: () => ClassDecorator;
+@Injectable()
+export class Loader { @Memoize() async load() { return 1; } }`,
+      },
+      {
+        name: 'a single-line class reuses an existing Memoize import',
+        code: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Loader { async load() { return 1; } }`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Loader { @Memoize() async load() { return 1; } }`,
+      },
+      {
+        name: 'a single-line class under an aliased import decorates with the alias',
+        code: `import { Memoize as Cache } from '@blumintinc/typescript-memoize';
+export class Loader { async load() { return 1; } }`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `import { Memoize as Cache } from '@blumintinc/typescript-memoize';
+export class Loader { @Cache() async load() { return 1; } }`,
+      },
+      {
+        name: 'a single-line class under a namespace import decorates with the qualified name',
+        code: `import * as memoize from '@blumintinc/typescript-memoize';
+export class Loader { async load() { return 1; } }`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `import * as memoize from '@blumintinc/typescript-memoize';
+export class Loader { @memoize.Memoize() async load() { return 1; } }`,
+      },
+      {
+        // The inline decorator and the import anchor are independent edits;
+        // a directive prologue still keeps the import below it.
+        name: "a single-line class under a 'use client' directive keeps the import below it",
+        code: `'use client';
+export class Loader { async load() { return 1; } }`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `'use client';
+import { Memoize } from '@blumintinc/typescript-memoize';
+export class Loader { @Memoize() async load() { return 1; } }`,
+      },
+      // ------------------------------------------------------------------
+      // Between the two extremes: the method shares its line with something,
+      // but the class is not written on one line.
+      // ------------------------------------------------------------------
+      {
+        name: 'a method sharing the class opening line rides inline while later methods keep their own line',
+        code: `export class Loader { async load() { return 1; }
+  async other() {
+    return 2;
+  }
+}`,
+        errors: [
+          { messageId: 'requireMemoize' as const },
+          { messageId: 'requireMemoize' as const },
+        ],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Loader { @Memoize() async load() { return 1; }
+  @Memoize()
+  async other() {
+    return 2;
+  }
+}`,
+      },
+      {
+        name: 'a method sharing its line with an earlier property is decorated in place',
+        code: `export class Loader {
+  private locked = 1; async load() { return 1; }
+}`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Loader {
+  private locked = 1; @Memoize() async load() { return 1; }
+}`,
+      },
+      {
+        // The first method owns its line and keeps the historical layout; only
+        // the second one, which has no line to take, rides inline.
+        name: 'two methods sharing one line are decorated by their own anchors',
+        code: `export class Loader {
+  async a() { return 1; } async b() { return 2; }
+}`,
+        errors: [
+          { messageId: 'requireMemoize' as const },
+          { messageId: 'requireMemoize' as const },
+        ],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Loader {
+  @Memoize()
+  async a() { return 1; } @Memoize() async b() { return 2; }
+}`,
+      },
+      {
+        name: 'a method whose line starts with a block comment keeps the comment in place',
+        code: `export class Loader {
+  /* lazy */ async load() { return 1; }
+}`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Loader {
+  /* lazy */ @Memoize() async load() { return 1; }
+}`,
+      },
+      {
+        // The method owns its line even though the class's `}` shares it, so
+        // the historical own-line layout stands.
+        name: 'a method sharing its line with the closing brace keeps its own line',
+        code: `export class Loader {
+  async load() { return 1; } }`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Loader {
+  @Memoize()
+  async load() { return 1; } }`,
+      },
+      // ------------------------------------------------------------------
+      // The `node.decorators[0]` anchor path: an existing decorator, not the
+      // method itself, is what the edit is measured against.
+      // ------------------------------------------------------------------
+      {
+        name: 'an existing decorator that owns its line keeps the added decorator above it',
+        code: `declare const Log: () => MethodDecorator;
+export class Loader {
+  @Log()
+  async load() { return 1; }
+}`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+declare const Log: () => MethodDecorator;
+export class Loader {
+  @Memoize()
+  @Log()
+  async load() { return 1; }
+}`,
+      },
+      {
+        name: 'an existing decorator sharing the method line still owns that line',
+        code: `declare const Log: () => MethodDecorator;
+export class Loader {
+  @Log() async load() { return 1; }
+}`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+declare const Log: () => MethodDecorator;
+export class Loader {
+  @Memoize()
+  @Log() async load() { return 1; }
+}`,
+      },
+      {
+        name: 'an existing decorator sharing a line with earlier code takes the decorator inline',
+        code: `declare const Log: () => MethodDecorator;
+export class Loader {
+  private locked = 1; @Log() async load() { return 1; }
+}`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+declare const Log: () => MethodDecorator;
+export class Loader {
+  private locked = 1; @Memoize() @Log() async load() { return 1; }
+}`,
+      },
+      {
+        name: 'a single-line class with an existing decorator is decorated ahead of it',
+        code: `declare const Log: () => MethodDecorator;
+export class Loader { @Log() async load() { return 1; } }`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+declare const Log: () => MethodDecorator;
+export class Loader { @Memoize() @Log() async load() { return 1; } }`,
+      },
+      // ------------------------------------------------------------------
+      // The controls: a method that owns its line. Its output must be
+      // byte-identical to what the rule emitted before this fix — that case
+      // already converged, and the branch exists to leave it alone.
+      // ------------------------------------------------------------------
+      {
+        name: 'a method that owns its line keeps the decorator on a line of its own',
+        code: `export class Loader {
+  public async load() {
+    return 1;
+  }
+}`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Loader {
+  @Memoize()
+  public async load() {
+    return 1;
+  }
+}`,
+      },
+      {
+        name: 'a tab-indented method keeps its own indentation',
+        code: 'export class Loader {\n\t\tasync load() { return 1; }\n}',
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output:
+          "import { Memoize } from '@blumintinc/typescript-memoize';\nexport class Loader {\n\t\t@Memoize()\n\t\tasync load() { return 1; }\n}",
+      },
+      {
+        name: 'a method preceded by a line comment keeps the comment above the decorator',
+        code: `export class Loader {
+  // lazy
+  async load() { return 1; }
+}`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Loader {
+  // lazy
+  @Memoize()
+  async load() { return 1; }
+}`,
+      },
+      {
+        // A method whose modifiers straddle a line break still owns the line it
+        // starts on, so the historical layout stands.
+        name: 'a method whose modifiers span lines keeps the indentation of its first line',
+        code: `export class Loader {
+  public
+  async load() { return 1; }
+}`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Loader {
+  public
+  @Memoize()
+  async load() { return 1; }
+}`,
+      },
+      // ------------------------------------------------------------------
+      // Reports whose fix is declined: `output: null` asserts the decline,
+      // where an omitted `output` would assert nothing at all.
+      // ------------------------------------------------------------------
+      {
+        // The emitted `@Memoize()` would resolve to the parameter, so the fix
+        // is withheld (#1423). The placement branch must not turn a declined
+        // fix into an applied one.
+        name: 'a single-line class reports without a fix when Memoize is shadowed',
+        code: `export function build(Memoize) {
+  class Loader { async load() { return 1; } }
+  return Loader;
+}`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: null,
+      },
+      {
+        // A hoisted jest factory cannot reach a module-scope import (#1697), so
+        // the fix is withheld there on a shared line too.
+        name: 'a single-line class in a jest factory reports without a fix',
+        filename: 'Service.test.ts',
+        code: `jest.mock('../Fetcher', () => {
+  class Mock { async fetch() { return []; } }
+  return { Fetcher: Mock };
+});`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: null,
+      },
+    ],
+  },
+);
+
 // The real multi-pass fixer over the class-expression shapes: RuleTester runs a
 // single pass and so cannot show the file `eslint --fix` writes.
 describe('enforce-memoize-async: class expressions under --fix (issues #1735, #1952)', () => {
@@ -3510,5 +3995,284 @@ export class Fetcher {
     expect(output.match(/@Memoize\(\)/g)).toHaveLength(1);
     expect(output).toContain(`      @Memoize()
       public async load() {`);
+  });
+});
+
+// Issue #1953: `RuleTester` applies a single fix pass, so an `output` fixture
+// cannot tell a settled file from one the fixer will rewrite again. These cases
+// run the real multi-pass fixer and assert the invariant the bug violated:
+// re-linting the fixed output reports NOTHING and re-fixing it changes nothing,
+// which is the only spelling that catches an even-length cycle as well as the
+// pass-cap runaway the bug produced — ten `@Memoize()` stacked on the CLASS
+// while the method the rule named stayed bare.
+describe('enforce-memoize-async: the fix converges wherever the method sits (issue #1953)', () => {
+  const fix = (code: string) =>
+    createLinter().verifyAndFix(code, LINT_CONFIG, 'Service.ts');
+
+  /** `@Memoize()` immediately followed by a class opener is the bug's shape. */
+  const DECORATED_CLASS =
+    /@Memoize\(\)\s*(?:export\s+)?(?:default\s+)?(?:abstract\s+)?class\b/;
+
+  const expectConverges = (code: string, expectedDecorators: number) => {
+    // A fixture that never parsed, or that the rule declined, would satisfy
+    // every convergence assertion vacuously, so the run must be shown to report
+    // and to rewrite its input first.
+    expect(lintMessages(code).length).toBeGreaterThan(0);
+
+    const first = fix(code);
+    expect(first.fixed).toBe(true);
+
+    // Re-running the fixer on its own output is the detector: comparing the two
+    // strings would call an even-length cycle converged.
+    expect(fix(first.output).fixed).toBe(false);
+    expect(lintMessages(first.output)).toHaveLength(0);
+
+    expect(first.output.match(/@Memoize\(\)/g)).toHaveLength(
+      expectedDecorators,
+    );
+    expect(first.output).not.toMatch(DECORATED_CLASS);
+    expect(
+      first.output.match(
+        /import \{ Memoize \} from '@blumintinc\/typescript-memoize';/g,
+      ),
+    ).toHaveLength(1);
+
+    return first.output;
+  };
+
+  it('decorates the method of a single-line class exactly once', () => {
+    const output = expectConverges(
+      'export class Loader { public async load() { return 1; } }\n',
+      1,
+    );
+
+    expect(output)
+      .toBe(`import { Memoize } from '@blumintinc/typescript-memoize';
+export class Loader { @Memoize() public async load() { return 1; } }
+`);
+  });
+
+  it('converges on the multi-line spelling without changing its layout', () => {
+    // The control: this shape converged before the fix and its output must be
+    // byte-identical afterwards, since the branch exists to leave it alone.
+    const output = expectConverges(
+      `export class Loader {
+  public async load() {
+    return 1;
+  }
+}
+`,
+      1,
+    );
+
+    expect(output)
+      .toBe(`import { Memoize } from '@blumintinc/typescript-memoize';
+export class Loader {
+  @Memoize()
+  public async load() {
+    return 1;
+  }
+}
+`);
+  });
+
+  it('decorates each method of a single-line class exactly once', () => {
+    const output = expectConverges(
+      'export class Loader { async a() { return 1; } async b() { return 2; } }\n',
+      2,
+    );
+
+    expect(output).toContain(
+      'export class Loader { @Memoize() async a() { return 1; } @Memoize() async b() { return 2; } }',
+    );
+  });
+
+  it('converges on a method that shares the class opening line', () => {
+    const output = expectConverges(
+      `export class Loader { async load() { return 1; }
+  async other() {
+    return 2;
+  }
+}
+`,
+      2,
+    );
+
+    expect(output).toContain(
+      'export class Loader { @Memoize() async load() { return 1; }',
+    );
+    expect(output).toContain('  @Memoize()\n  async other()');
+  });
+
+  it('converges on a method that follows a property on its line', () => {
+    const output = expectConverges(
+      `export class Loader {
+  private locked = 1; async load() { return 1; }
+}
+`,
+      1,
+    );
+
+    expect(output).toContain(
+      '  private locked = 1; @Memoize() async load() { return 1; }',
+    );
+  });
+
+  it('converges through the existing-decorator anchor on a shared line', () => {
+    const output = expectConverges(
+      `declare const Log: () => MethodDecorator;
+export class Loader {
+  private locked = 1; @Log() async load() { return 1; }
+}
+`,
+      1,
+    );
+
+    expect(output).toContain(
+      '  private locked = 1; @Memoize() @Log() async load() { return 1; }',
+    );
+  });
+
+  it('converges on a tab-indented method without touching its indentation', () => {
+    const output = expectConverges(
+      'export class Loader {\n\t\tasync load() { return 1; }\n}\n',
+      1,
+    );
+
+    expect(output).toContain('\n\t\t@Memoize()\n\t\tasync load()');
+  });
+
+  it('converges on a single-line class nested in a function', () => {
+    const output = expectConverges(
+      `export function build() {
+  class Loader { async load() { return 1; } }
+  return Loader;
+}
+`,
+      1,
+    );
+
+    expect(output).toContain(
+      '  class Loader { @Memoize() async load() { return 1; } }',
+    );
+  });
+
+  it('converges on a single-line default-exported class', () => {
+    // A #1952 boundary: the declaration forms must keep reporting and fixing,
+    // and a single-line one must converge like any other.
+    const output = expectConverges(
+      'export default class { async load() { return 1; } }\n',
+      1,
+    );
+
+    expect(output).toContain(
+      'export default class { @Memoize() async load() { return 1; } }',
+    );
+  });
+
+  it('converges on a single-line declaration nested in a class expression', () => {
+    // The other #1952 boundary: the enclosing expression stays bare while the
+    // declaration inside it takes the decorator inline.
+    const output = expectConverges(
+      `export const Outer = class {
+  public build() {
+    class Inner { async load() { return 1; } }
+    return Inner;
+  }
+};
+`,
+      1,
+    );
+
+    expect(output).toContain(
+      '    class Inner { @Memoize() async load() { return 1; } }',
+    );
+    expect(output).toContain('export const Outer = class {\n  public build()');
+  });
+
+  it('emits nothing for a shared line whose reports are all disabled inline', () => {
+    // `eslint-disable-next-line` covers the whole line, so both methods of a
+    // shared line are suppressed by one directive: neither decorator is written
+    // and — the #1404 invariant — no import is left behind for a decorator that
+    // never appeared. Placing the decorator inline must not smuggle an edit
+    // past a suppression.
+    const code = `export class Loader {
+  // eslint-disable-next-line @blumintinc/blumint/enforce-memoize-async
+  async a() { return 1; } async b() { return 2; }
+}
+`;
+
+    const first = fix(code);
+
+    expect(first.fixed).toBe(false);
+    expect(first.output).toBe(code);
+    expect(first.output).not.toContain('typescript-memoize');
+  });
+
+  it('decorates the surviving methods when only one of a group is disabled', () => {
+    const output = fix(`export class Loader {
+  // eslint-disable-next-line @blumintinc/blumint/enforce-memoize-async
+  async a() { return 1; }
+  async b() { return 2; } async c() { return 3; }
+}
+`);
+
+    expect(output.output)
+      .toBe(`import { Memoize } from '@blumintinc/typescript-memoize';
+export class Loader {
+  // eslint-disable-next-line @blumintinc/blumint/enforce-memoize-async
+  async a() { return 1; }
+  @Memoize()
+  async b() { return 2; } @Memoize() async c() { return 3; }
+}
+`);
+    // The disabled method keeps reporting nothing, so the file has settled even
+    // though one violation remains unfixed by design.
+    expect(fix(output.output).fixed).toBe(false);
+  });
+
+  it('leaves a single-line class expression byte-for-byte alone (negative control)', () => {
+    // The #1952 carve-out, restated where a placement regression would show up
+    // first: an assertion set that only counted decorators would be satisfied
+    // by silence, so this shape is pinned as unchanged rather than as settled.
+    const code =
+      'export const Loader = class { public async load() { return 1; } };\n';
+
+    expect(lintMessages(code)).toHaveLength(0);
+    expect(fix(code).fixed).toBe(false);
+    expect(fix(code).output).toBe(code);
+  });
+
+  it('leaves a declined single-line fix unapplied and still reported', () => {
+    // A shadowed `Memoize` withholds the fix (#1423). The file never settles
+    // clean, so `expectConverges` cannot be used: what is asserted instead is
+    // that no text was written at all.
+    const code = `export function build(Memoize) {
+  class Loader { async load() { return 1; } }
+  return Loader;
+}
+`;
+
+    expect(lintMessages(code)).toHaveLength(1);
+    expect(fix(code).fixed).toBe(false);
+    expect(fix(code).output).toBe(code);
+  });
+
+  it('would have caught the bug: the pre-fix output leaves the method reported', () => {
+    // Exactly what the line-start anchor wrote on its first pass. Every
+    // assertion `expectConverges` makes fails on it — the method is still
+    // reported, so a re-lint is not clean and another decorator is appended —
+    // which is what makes the assertions above non-vacuous.
+    const preFixOutput = `import { Memoize } from '@blumintinc/typescript-memoize';
+@Memoize()
+export class Loader { public async load() { return 1; } }
+`;
+
+    expect(lintMessages(preFixOutput)).toHaveLength(1);
+    expect(preFixOutput).toMatch(DECORATED_CLASS);
+
+    const refixed = fix(preFixOutput);
+    expect(refixed.fixed).toBe(true);
+    expect(refixed.output.match(/@Memoize\(\)/g)).toHaveLength(2);
   });
 });
