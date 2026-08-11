@@ -715,9 +715,14 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
      * prove it owns — a computed access, a `super.` or instance-variable read, a
      * `this` that some other object binds — collapses the whole rename to
      * `null`: a partial rename is the very breakage this returns to prevent.
+     *
+     * A field (`handleClick = () => {}`) has exactly the binding sites a method
+     * has — the key, and `this.` reads of it — so it is answered here rather
+     * than on a parallel path that would have to re-derive every one of these
+     * withholdings (Bug #1949).
      */
     function classMemberRenameTargets(
-      node: TSESTree.MethodDefinition,
+      node: TSESTree.MethodDefinition | TSESTree.PropertyDefinition,
       name: string,
     ): TSESTree.Node[] | null {
       const classNode = enclosingClass(node);
@@ -1139,9 +1144,33 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
         }
       },
 
-      // Check class methods and object methods
-      'MethodDefinition, Property'(
-        node: TSESTree.MethodDefinition | TSESTree.Property,
+      /**
+       * Class members (methods and fields) and object-literal members.
+       *
+       * A class FIELD is a subject here because it is one of the docs' own
+       * subjects — "a function, method, class property, or parameter" — and
+       * because covering only the method spelling leaves the rule evadable by a
+       * single token: `handleClick() {}` reported while `handleClick = () => {}`
+       * did not, so writing `=` silenced it without changing anything about the
+       * callback (Bug #1949).
+       *
+       * The field is judged on its NAME alone, not on whether it holds a
+       * function — the same question this arm already asks of an object-literal
+       * member, that the abstract-member arm asks of `abstract handleSubmit:
+       * (d: string) => string`, and that the variable arm asks of `const
+       * handleClickCount = 0`. The subject is the `handle<Something>` prefix
+       * itself, which describes no action whatever sits to the right of the
+       * `=`. Gating on a function-typed value would reinstate the same evasion
+       * one level down — `handleClick = makeHandler()` and `handleClick =
+       * deps.click` are the identical name behind a value the rule cannot
+       * always resolve, and a file parsed without type information resolves
+       * none of them.
+       */
+      'MethodDefinition, PropertyDefinition, Property'(
+        node:
+          | TSESTree.MethodDefinition
+          | TSESTree.PropertyDefinition
+          | TSESTree.Property,
       ) {
         const key = node.key;
         if (
@@ -1152,6 +1181,17 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
           return;
         }
         const name = key.name;
+
+        // A computed key is an expression evaluated where the class is
+        // defined, so the identifier in `[handleClick] = fn` REFERENCES a
+        // binding and the member's own name is whatever that binding holds —
+        // something the rule cannot read. That binding is a subject in its own
+        // right and is reported at its declaration, so reporting the reference
+        // too would name a member that need not exist. The abstract-member arm
+        // skips a computed key for the same reason.
+        if (node.type === AST_NODE_TYPES.PropertyDefinition && node.computed) {
+          return;
+        }
 
         // Skip autofixing for class parameters and getters
         if (
@@ -1187,6 +1227,12 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
           // A member of a class with heritage may be satisfying a declaration
           // the fixer cannot rewrite (Bug #1944).
           !satisfiesDeclaredContract(node) &&
+          // A `declare` field defines nothing: it asserts that a property is
+          // established somewhere the class body does not show — a base
+          // constructor, a decorator, a framework assigning by name — so the
+          // definition the rename must move with is out of the fixer's reach,
+          // exactly as an abstract declaration's implementors are (Bug #1949).
+          !(node.type === AST_NODE_TYPES.PropertyDefinition && node.declare) &&
           !(
             isProperty &&
             node.parent &&
@@ -1198,7 +1244,10 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
         // means at least one reference is beyond its reach (Bug #1946).
         const referenceTargets =
           isRenameable && !isProperty
-            ? classMemberRenameTargets(node as TSESTree.MethodDefinition, name)
+            ? classMemberRenameTargets(
+                node as TSESTree.MethodDefinition | TSESTree.PropertyDefinition,
+                name,
+              )
             : [];
         const canFix = isRenameable && referenceTargets !== null;
 
