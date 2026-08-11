@@ -1450,6 +1450,218 @@ export class Aliased {
         }
       `,
       },
+      // ---------------------------------------------------------------------
+      // Every carve-out restated in the ECMA-private spelling. Admitting
+      // `static #foo` widens the subject on the privacy axis only, so each
+      // escape a `private static` member has must still hold for its `#` twin —
+      // otherwise the widening is a false-positive source rather than an
+      // evasion closure (#1942).
+      // ---------------------------------------------------------------------
+      // Class state read through `this`, which inside a static member is the
+      // class: a `#` member of it is unreachable from module scope
+      {
+        code: `
+        export class Aliased {
+          static #LIMIT = 10;
+
+          static #capAll(values: number[]) {
+            const capped = values.map((value) => Math.min(value, this.#LIMIT));
+            return capped;
+          }
+        }
+      `,
+      },
+      // The class-name-qualified spelling reaches the same `#` member the
+      // `this` spelling does
+      {
+        code: `
+        export class Aliased {
+          static #LIMIT = 10;
+
+          static #capAll(values: number[]) {
+            const capped = values.map((value) => Math.min(value, Aliased.#LIMIT));
+            return capped;
+          }
+        }
+      `,
+      },
+      // A local holding the class binding reaches the `#` member through the
+      // alias, resolved by binding exactly as the TypeScript spelling is
+      // (#1922)
+      {
+        code: `
+        export class Aliased {
+          static #LIMIT = 10;
+
+          static #capAll(values: number[]) {
+            const owner = Aliased;
+            const capped = values.map((value) => Math.min(value, owner.#LIMIT));
+            return capped;
+          }
+        }
+      `,
+      },
+      // An alias of `this` reaches the `#` member as an alias of the class
+      // binding does
+      {
+        code: `
+        export class Aliased {
+          static #LIMIT = 10;
+
+          static #capAll(values: number[]) {
+            const self = this;
+            const capped = values.map((value) => Math.min(value, self.#LIMIT));
+            return capped;
+          }
+        }
+      `,
+      },
+      // `new.target` is a spelling of the class receiver in the `#` arm too
+      // (#1931)
+      {
+        code: `
+        export class Guarded {
+          static #LIMIT = 10;
+
+          static #capAll(values: number[]) {
+            const target = new.target;
+            const capped = values.map((value) => Math.min(value, target.#LIMIT));
+            return capped;
+          }
+        }
+      `,
+      },
+      // A `super` written in the member's own class names that class's parent,
+      // whose statics the member reaches only from inside the class (#1931)
+      {
+        code: `
+        export class Base {
+          protected static readonly BASE = { retries: 3 };
+        }
+
+        export class Derived extends Base {
+          static #describe(values: number[]) {
+            const base = super.BASE;
+            const doubled = values.map((value) => value * 2);
+            return { base, doubled };
+          }
+        }
+      `,
+      },
+      // Destructuring a named member off the class is the dereference, in this
+      // spelling as in the other
+      {
+        code: `
+        export class Aliased {
+          static #LIMIT = 10;
+
+          static #describe(values: number[]) {
+            const { length } = Aliased;
+            return values.length + length;
+          }
+        }
+      `,
+      },
+      // A setter has no module-level form to move to, so it is silent at any
+      // size whichever way its privacy is written
+      {
+        code: `
+        export class Recorder {
+          static set #payload(value: string[]) {
+            const trimmed = value.map((entry) => entry.trim());
+            const named = trimmed.filter((entry) => entry.length > 0);
+            console.log(named);
+          }
+        }
+      `,
+      },
+      // The size escape decides the `#` spelling too: a single-statement body
+      // is trivial whatever its privacy is written as
+      {
+        code: `
+        export class Slugger {
+          static #toSlug(title: string) {
+            // Comments and line breaks do not count toward the threshold.
+            return title.trim().toLowerCase().replace(/\\s+/g, '-');
+          }
+        }
+      `,
+      },
+      // A sub-threshold `#` getter and a sub-threshold `#` property escape on
+      // the same measure a method does
+      {
+        code: `
+        export class Repro {
+          static get #multiplier() {
+            return 2;
+          }
+
+          static #double = (value: number) => {
+            return value * 2;
+          };
+        }
+      `,
+      },
+      // A `#` property holding no function holds no logic to extract
+      {
+        code: `
+        export class Limits {
+          static #LIMIT = 10;
+          static #NAMES: string[] = ['first', 'second'];
+        }
+      `,
+      },
+      // An instance `#` member is not a static one: the static axis is
+      // untouched by admitting the ECMA privacy spelling (#1942)
+      {
+        code: `
+        export class Instance {
+          #processData(items: number[]) {
+            const doubled = items.map((item) => item * 2);
+            return doubled.filter((item) => item > 0);
+          }
+        }
+      `,
+      },
+      // A bare `static` member carries no privacy in either spelling, so it
+      // stays out of scope — the boundary the property arm's comment protects
+      // is unmoved (#1927, #1942)
+      {
+        code: `
+        export class Bare {
+          static processData(items: number[]) {
+            const doubled = items.map((item) => item * 2);
+            return doubled.filter((item) => item > 0);
+          }
+
+          static computeAlt = (value: number) => {
+            const doubled = value * 2;
+            const capped = Math.min(doubled, 10);
+            return capped;
+          };
+        }
+      `,
+      },
+      // A `#` member whose sibling is a public member of the same bare name is
+      // still judged on its own body: the public sibling is out of scope and
+      // the `#` one reads class state, so neither reports (#1942)
+      {
+        code: `
+        export class Twins {
+          static #LIMIT = 10;
+
+          static #compute(values: number[]) {
+            const capped = values.map((value) => Math.min(value, Twins.#LIMIT));
+            return capped;
+          }
+
+          static compute(values: number[]) {
+            const doubled = values.map((value) => value * 2);
+            return doubled.filter((value) => value > 0);
+          }
+        }
+      `,
+      },
     ],
     invalid: [
       // Basic case: private static method that should be a utility function
@@ -2814,6 +3026,196 @@ export class Repro {
           buildGetterError('multiplier', 'Repro'),
           buildPropertyError('computeAlt', 'Repro'),
         ],
+      },
+      // -----------------------------------------------------------------------
+      // ECMA-private statics. `private static foo` and `static #foo` are the
+      // same privacy, and TypeScript makes them mutually exclusive (`private
+      // #foo` is TS18010), so keying the subject test on the modifier alone
+      // left `#` as a one-token evasion — the same shape as the `=` evasion the
+      // property arm closes and the `get` evasion the getter arm closes. The
+      // member is named as written, `#` and all, because that is the only thing
+      // distinguishing it from a sibling of the bare name (#1942).
+      // -----------------------------------------------------------------------
+      {
+        code: `
+        export class DataProcessor {
+          static #processData(data: Item[]) {
+            const filtered = data.filter((item) => item.active);
+            return filtered.map((item) => item.value);
+          }
+        }
+      `,
+        errors: [buildError('#processData', 'DataProcessor')],
+      },
+      // The getter arm sees the ECMA spelling too, and renders its own subject
+      // noun for it (#1942)
+      {
+        code: `
+        export class RequestDefaults {
+          static get #config() {
+            const base = { retries: 3 };
+            const extra = { timeout: 1000 };
+            return { ...base, ...extra };
+          }
+        }
+      `,
+        errors: [buildGetterError('#config', 'RequestDefaults')],
+      },
+      // The function-valued-property arm sees it as well (#1942)
+      {
+        code: `
+        export class Repro {
+          static #computeAlt = (v: number) => {
+            const doubled = v * 2;
+            const capped = Math.min(doubled, 10);
+            return capped;
+          };
+        }
+      `,
+        errors: [buildPropertyError('#computeAlt', 'Repro')],
+      },
+      // A function expression is the same helper as an arrow in this spelling
+      // too (#1942)
+      {
+        code: `
+        export class Repro {
+          static #computeAll = function (values: number[]) {
+            const doubled = values.map((value) => value * 2);
+            return doubled.filter((value) => value > 0);
+          };
+        }
+      `,
+        errors: [buildPropertyError('#computeAll', 'Repro')],
+      },
+      // The class-state escape's other side in the `#` spelling: the same
+      // method with its one read of `Aliased.#LIMIT` removed reports, so its
+      // silent twin above is owed to that read and not to the privacy
+      // spelling (#1942)
+      {
+        code: `
+        export class Aliased {
+          static #LIMIT = 10;
+
+          static #capAll(values: number[]) {
+            const capped = values.map((value) => Math.min(value, 10));
+            return capped;
+          }
+        }
+      `,
+        errors: [buildError('#capAll', 'Aliased')],
+      },
+      // Reading another class's member leaves the report standing here as it
+      // does for the TypeScript spelling (#1942)
+      {
+        code: `
+        export class Other {
+          public static readonly LIMIT = 10;
+        }
+
+        export class Aliased {
+          static #capAll(values: number[]) {
+            const capped = values.map((value) => Math.min(value, Other.LIMIT));
+            return capped;
+          }
+        }
+      `,
+        errors: [buildError('#capAll', 'Aliased')],
+      },
+      // Handing `new.target` back dereferences no member, so the helper still
+      // moves out of the class — the #1931 boundary is the same one in this
+      // spelling (#1942)
+      {
+        code: `
+        export class Guarded {
+          static #LIMIT = 10;
+
+          static #describeTarget(values: number[]) {
+            const target = new.target;
+            const doubled = values.map((value) => value * 2);
+            return { target, doubled };
+          }
+        }
+      `,
+        errors: [buildError('#describeTarget', 'Guarded')],
+      },
+      // The `super()` belongs to `Inner`, whose parent is `Base`: it says
+      // nothing about the enclosing class's state in this spelling either
+      // (#1931, #1942)
+      {
+        code: `
+        declare class Base {}
+
+        export class Aliased {
+          static #LIMIT = 10;
+
+          static #makeInner(values: number[]) {
+            class Inner extends Base {
+              constructor() {
+                super();
+              }
+            }
+            return { Inner, size: values.length };
+          }
+        }
+      `,
+        errors: [buildError('#makeInner', 'Aliased')],
+      },
+      // Construction through an alias of the class is not a state read here
+      // either (#1928, #1942)
+      {
+        code: `
+        export class Aliased {
+          static #LIMIT = 10;
+
+          static #buildAll(values: number[]) {
+            const owner = Aliased;
+            const made = values.map(() => new owner());
+            return made;
+          }
+        }
+      `,
+        errors: [buildError('#buildAll', 'Aliased')],
+      },
+      // `#compute` and a sibling `compute` are different members, and each is
+      // judged and named on its own: conflating them would report a
+      // declaration the class does not hold at that privacy (#1942)
+      {
+        code: `
+        export class Twins {
+          static #compute(values: number[]) {
+            const doubled = values.map((value) => value * 2);
+            return doubled.filter((value) => value > 0);
+          }
+
+          private static compute(values: number[]) {
+            const halved = values.map((value) => value / 2);
+            return halved.filter((value) => value > 0);
+          }
+        }
+      `,
+        errors: [
+          buildError('#compute', 'Twins'),
+          buildError('compute', 'Twins'),
+        ],
+      },
+      // A `#` member alongside a public sibling of the same bare name: only the
+      // private one is in scope, and the public sibling neither draws a report
+      // nor lends the private one its name (#1942)
+      {
+        code: `
+        export class Twins {
+          static #compute(values: number[]) {
+            const doubled = values.map((value) => value * 2);
+            return doubled.filter((value) => value > 0);
+          }
+
+          public static compute(values: number[]) {
+            const halved = values.map((value) => value / 2);
+            return halved.filter((value) => value > 0);
+          }
+        }
+      `,
+        errors: [buildError('#compute', 'Twins')],
       },
     ],
   },
