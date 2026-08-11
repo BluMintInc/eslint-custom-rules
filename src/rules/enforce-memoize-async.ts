@@ -4,7 +4,7 @@ import { ASTHelpers } from '../utils/ASTHelpers';
 import { createSuppressionChecker } from '../utils/disableDirectives';
 import {
   importAnchorIndent,
-  importAnchorLineStart,
+  importAnchorLineStartIfOwned,
   importInsertionAnchor,
   insertAtImportAnchor,
 } from '../utils/importInsertion';
@@ -551,7 +551,7 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
                 insertAtImportAnchor(
                   sourceCode,
                   fixer,
-                  importAnchorLineStart(sourceCode, anchor),
+                  importAnchorLineStartIfOwned(sourceCode, anchor),
                   `${importAnchorIndent(
                     sourceCode,
                     anchor,
