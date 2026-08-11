@@ -52,6 +52,37 @@ The root is resolved whether it is a constructor parameter property, a
 separately declared field, an accessor, an `#`-private field, or a member
 inherited from a base class.
 
+#### `#`-private members rank as `private`
+
+An `#`-prefixed member carries no accessibility modifier while reaching no
+further than the class body — the same reach TypeScript's `private` has — so
+both sides of the comparison score it as `private`. This applies to the
+**getter** as well as to the root:
+
+```typescript
+export class MatchAdmin {
+  constructor(private readonly settings: MatchAdminProps) {}
+
+  // Reported: `#uid` reaches no further than `settings`. Every caller it has
+  // sits in this class body, where `this.settings.uid` is already readable.
+  get #uid() {
+    return this.settings.uid;
+  }
+}
+```
+
+`private #uid` is a TypeScript error (TS18010, "An accessibility modifier
+cannot be used with a private identifier"), so `get #uid()` is the only way to
+spell this member — there is no modifier spelling that opts it into or out of
+the rule.
+
+The mirror case is still exempt: a `protected` or `public` getter over an
+`#`-private root reaches an audience (a subclass, an external caller) that
+cannot read `this.#settings` at all, so that getter is the boundary.
+
+`#settings` and `settings` are separate members that may coexist in one class,
+and the rule scores whichever one the getter actually forwards.
+
 ## Examples
 
 ### ❌ Incorrect

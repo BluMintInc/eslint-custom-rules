@@ -599,6 +599,69 @@ ruleTesterTs.run('no-passthrough-getters', noPassthroughGetters, {
     }
     `,
 
+    // `#settings` and a sibling `settings` are separate members: forwarding the
+    // ECMAScript private one still widens even though a public field shares the
+    // name
+    `
+    export class MatchAdmin {
+      public settings: MatchAdminProps;
+      readonly #settings: MatchAdminProps;
+
+      constructor(settings: MatchAdminProps) {
+        this.settings = settings;
+        this.#settings = settings;
+      }
+
+      public get uid() {
+        return this.#settings.uid;
+      }
+    }
+    `,
+
+    // An unannotated (public by default) getter over an ECMAScript private root
+    // widens for the same reason the explicitly public spelling does
+    `
+    export class MatchAdmin {
+      readonly #settings: MatchAdminProps;
+
+      constructor(settings: MatchAdminProps) {
+        this.#settings = settings;
+      }
+
+      get uid() {
+        return this.#settings.uid;
+      }
+    }
+    `,
+
+    // A protected getter over an ECMAScript private root is the boundary: a
+    // subclass body cannot read `this.#settings` at all (Issue #1937)
+    `
+    export abstract class MatchAdmin {
+      readonly #settings: MatchAdminProps;
+
+      constructor(settings: MatchAdminProps) {
+        this.#settings = settings;
+      }
+
+      protected get uid() {
+        return this.#settings.uid;
+      }
+    }
+    `,
+
+    // An ECMAScript private getter that adds logic stays valid for the
+    // pre-existing reason (the body is not a bare passthrough) (Issue #1937)
+    `
+    export class MatchAdmin {
+      constructor(private readonly settings: MatchAdminProps) {}
+
+      get #uid() {
+        return this.settings.uid ?? ANONYMOUS_UID;
+      }
+    }
+    `,
+
     // Bracket notation must reach the same root as dot notation
     `
     export class MatchAdmin {
@@ -1112,6 +1175,168 @@ ruleTesterTs.run('no-passthrough-getters', noPassthroughGetters, {
       }
       `,
       errors: [error('uid', 'this["settings"].uid')],
+    },
+
+    // An ECMAScript private getter reaches no further than a `private` root:
+    // every caller of `#uid` sits in the class body, where `this.settings` is
+    // readable, so the "read it directly" remedy exists (Issue #1937).
+    // `private #uid` is illegal TypeScript (TS18010), so the `#` spelling is
+    // the only way to write this member.
+    {
+      code: `
+      export class MatchAdmin {
+        constructor(private readonly settings: MatchAdminProps) {}
+
+        get #uid() {
+          return this.settings.uid;
+        }
+      }
+      `,
+      errors: [error('#uid', 'this.settings.uid')],
+    },
+
+    // Same, over a `protected` root: `#` reaches strictly less far than
+    // `protected`, so it never qualifies as the encapsulation boundary
+    {
+      code: `
+      export abstract class MatchAdmin {
+        constructor(protected readonly settings: MatchAdminProps) {}
+
+        get #uid() {
+          return this.settings.uid;
+        }
+      }
+      `,
+      errors: [error('#uid', 'this.settings.uid')],
+    },
+
+    // Both sides spelled `#`: equal visibility keeps reporting, exactly as
+    // `private get` over a `private` field does
+    {
+      code: `
+      export class MatchAdmin {
+        readonly #settings: MatchAdminProps;
+
+        constructor(settings: MatchAdminProps) {
+          this.#settings = settings;
+        }
+
+        get #uid() {
+          return this.#settings.uid;
+        }
+      }
+      `,
+      errors: [error('#uid', 'this.#settings.uid')],
+    },
+
+    // A `private` getter over an ECMAScript private root: the forwarded path is
+    // named in the message rather than falling back to the generic phrasing
+    {
+      code: `
+      export class MatchAdmin {
+        readonly #settings: MatchAdminProps;
+
+        constructor(settings: MatchAdminProps) {
+          this.#settings = settings;
+        }
+
+        private get uid() {
+          return this.#settings.uid;
+        }
+      }
+      `,
+      errors: [error('uid', 'this.#settings.uid')],
+    },
+
+    // An ECMAScript private getter over a PUBLIC root already reported before
+    // the ranking fix, but named itself `uid` rather than `#uid`
+    {
+      code: `
+      export class MatchAdmin {
+        constructor(public readonly settings: MatchAdminProps) {}
+
+        get #uid() {
+          return this.settings.uid;
+        }
+      }
+      `,
+      errors: [error('#uid', 'this.settings.uid')],
+    },
+
+    // An inherited `protected` root is readable throughout the subclass body,
+    // which is the whole audience of an ECMAScript private getter
+    {
+      code: `
+      abstract class WebhookEventProcessor {
+        constructor(protected readonly event: WebhookEvent) {}
+      }
+
+      export abstract class BaseEventProcessor extends WebhookEventProcessor {
+        get #channelType() {
+          return this.event.channel_type;
+        }
+      }
+      `,
+      errors: [error('#channelType', 'this.event.channel_type')],
+    },
+
+    // A sibling `#settings` must not lend its privacy to the public `settings`
+    // the getter actually forwards. Declaring the `#` field FIRST is the order
+    // that used to win the name-only lookup and silence this report.
+    {
+      code: `
+      export class MatchAdmin {
+        readonly #settings: MatchAdminProps;
+        public settings: MatchAdminProps;
+
+        constructor(settings: MatchAdminProps) {
+          this.#settings = settings;
+          this.settings = settings;
+        }
+
+        public get uid() {
+          return this.settings.uid;
+        }
+      }
+      `,
+      errors: [error('uid', 'this.settings.uid')],
+    },
+
+    // Declaration-order control: the same two members the other way round
+    // reported before and must keep reporting
+    {
+      code: `
+      export class MatchAdmin {
+        public settings: MatchAdminProps;
+        readonly #settings: MatchAdminProps;
+
+        constructor(settings: MatchAdminProps) {
+          this.#settings = settings;
+          this.settings = settings;
+        }
+
+        public get uid() {
+          return this.settings.uid;
+        }
+      }
+      `,
+      errors: [error('uid', 'this.settings.uid')],
+    },
+
+    // Isolation control for Issue #1937: renaming the getter while KEEPING the
+    // `private` modifier must not move the verdict, so the delta above is the
+    // privacy spelling rather than the member name
+    {
+      code: `
+      export class MatchAdmin {
+        constructor(private readonly settings: MatchAdminProps) {}
+
+        private get uidRenamedZzz() {
+          return this.settings.uid;
+        }
+      }
+      `,
+      errors: [error('uidRenamedZzz', 'this.settings.uid')],
     },
   ],
 });
