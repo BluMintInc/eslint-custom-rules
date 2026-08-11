@@ -1294,12 +1294,16 @@ ruleTesterTs.run('enforce-memoize-async', enforceMemoizeAsync, {
       output: null,
     },
     {
+      // A class DECLARATION carries the shadow question on its own: the class
+      // expression spelling is silent for an unrelated reason (#1952), which
+      // would leave the shadow check untested.
       name: 'a shadowing parameter named Memoize withholds the fix at that site',
       code: `
         export function build(Memoize) {
-          return class {
+          class Loader {
             async load() { return Memoize; }
-          };
+          }
+          return Loader;
         }
       `,
       errors: [{ messageId: 'requireMemoize' }],
@@ -1326,9 +1330,10 @@ ruleTesterTs.run('enforce-memoize-async', enforceMemoizeAsync, {
           async first() { return 1; }
         }
         export function build(Memoize) {
-          return class {
+          class Inner {
             async second() { return Memoize; }
-          };
+          }
+          return Inner;
         }
       `,
       errors: [
@@ -1342,9 +1347,10 @@ ruleTesterTs.run('enforce-memoize-async', enforceMemoizeAsync, {
           async first() { return 1; }
         }
         export function build(Memoize) {
-          return class {
+          class Inner {
             async second() { return Memoize; }
-          };
+          }
+          return Inner;
         }
       `,
     },
@@ -1879,12 +1885,15 @@ export class Service {
   });
 
   it('leaves a shadowing binding alone across every pass', () => {
+    // The shadowed class is a DECLARATION: a class expression is silent for an
+    // unrelated reason (#1952) and would prove nothing about shadowing.
     const code = `export function build(Memoize) {
-  return class {
+  class Loader {
     async load() {
       return Memoize;
     }
-  };
+  }
+  return Loader;
 }
 `;
 
@@ -1899,11 +1908,12 @@ export class Service {
   }
 }
 export function build(Memoize) {
-  return class {
+  class Inner {
     async second() {
       return Memoize;
     }
-  };
+  }
+  return Inner;
 }
 `);
 
@@ -2325,17 +2335,22 @@ jest.setMock('../FirestoreFetcher', () => {
       },
       {
         // The ancestor walk has to reach the factory from arbitrary depth, not
-        // just from a class statement directly in the factory body.
-        name: 'a class expression inside the returned object literal withholds the fix',
+        // just from a class statement directly in the factory body. The nested
+        // class is a DECLARATION, so the factory check is the only thing that
+        // can withhold the fix here — a class expression would be silent for an
+        // unrelated reason (#1952) and would leave the walk untested.
+        name: 'a class nested below the factory body withholds the fix',
         code: `
 jest.mock('../FirestoreFetcher', () => {
-  return {
-    FirestoreFetcher: class {
+  const build = () => {
+    class FirestoreFetcherMock {
       public async fetch() {
         return [];
       }
-    },
+    }
+    return FirestoreFetcherMock;
   };
+  return { FirestoreFetcher: build() };
 });
 `,
         errors: [{ messageId: 'requireMemoize' as const }],
@@ -2344,13 +2359,16 @@ jest.mock('../FirestoreFetcher', () => {
       {
         name: 'a concise arrow factory withholds the fix',
         code: `
-jest.mock('../FirestoreFetcher', () => ({
-  FirestoreFetcher: class {
-    public async fetch() {
-      return [];
+jest.mock('../FirestoreFetcher', () =>
+  (() => {
+    class FirestoreFetcherMock {
+      public async fetch() {
+        return [];
+      }
     }
-  },
-}));
+    return { FirestoreFetcher: FirestoreFetcherMock };
+  })(),
+);
 `,
         errors: [{ messageId: 'requireMemoize' as const }],
         output: null,
@@ -2471,24 +2489,39 @@ export class Loader {
       },
       {
         // The module specifier is evaluated in place rather than hoisted with
-        // the factory, so the factory guard does not apply here — but the class
-        // is an EXPRESSION, where a member decorator is TS1206 (#1735), so the
-        // report stands without a fix on that ground instead.
-        name: 'a class in the mock specifier position reports without a fix',
+        // the factory, so the factory guard does not apply here and the class
+        // declaration inside it fixes like any other. Only `arguments[1]` is
+        // out of reach.
+        name: 'a class in the mock specifier position still fixes',
         code: `
 jest.mock(
-  resolveModule(
+  resolveModule(() => {
     class Locator {
       public async path() {
         return './FirestoreFetcher';
       }
-    },
-  ),
+    }
+    return Locator;
+  }),
   () => ({}),
 );
 `,
         errors: [{ messageId: 'requireMemoize' as const }],
-        output: null,
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+jest.mock(
+  resolveModule(() => {
+    class Locator {
+      @Memoize()
+      public async path() {
+        return './FirestoreFetcher';
+      }
+    }
+    return Locator;
+  }),
+  () => ({}),
+);
+`,
       },
       {
         // `jest.fn` is not a registrar: its callback is never hoisted, so a
@@ -2678,20 +2711,21 @@ export class Loader {
   });
 });
 
-// Issue #1735: under `experimentalDecorators`, TypeScript accepts a member
-// decorator only inside a class DECLARATION. Verified against tsc 5.0.3: the
-// same `@Memoize()` method compiles inside `class C {}`, `export class C {}`
+// Issues #1735 and #1952: under `experimentalDecorators`, TypeScript accepts a
+// member decorator only inside a class DECLARATION. Verified against tsc 5.0.3:
+// the same `@Memoize()` method compiles inside `class C {}`, `export class C {}`
 // and `export default class {}`, and is `TS1206: Decorators are not valid here.`
 // inside `const C = class {}`, a class in argument position, or a class
-// assigned to a property. The fix is withheld for every expression form while
-// the report stands; the declaration forms must keep fixing.
+// assigned to a property. Report and fix are both withheld for every expression
+// form — the message's only remedy, "add @Memoize() above the method", cannot be
+// written there — while every declaration form must keep reporting and fixing.
 ruleTesterTs.run(
-  'enforce-memoize-async: class expressions cannot carry decorators (issue #1735)',
+  'enforce-memoize-async: class expressions cannot carry decorators (issues #1735, #1952)',
   enforceMemoizeAsync,
   {
     valid: [
-      // The exemptions that precede the report are unaffected: withholding the
-      // fix must not turn a non-violation into one.
+      // The exemptions that precede the report are unaffected: staying silent
+      // must not turn a non-violation into one.
       {
         name: 'a decorated method in a class expression reports nothing',
         code: `
@@ -2714,10 +2748,10 @@ const Loader = class {
 };
 `,
       },
-    ],
-    invalid: [
+      // Every spelling of the shape. A member decorator is TS1206 in all of
+      // them, so the rule has nothing writable to prescribe.
       {
-        name: 'a class expression assigned to a const reports without a fix',
+        name: 'an anonymous class expression assigned to a const stays silent',
         code: `
 const Loader = class {
   public async load() {
@@ -2725,13 +2759,11 @@ const Loader = class {
   }
 };
 `,
-        errors: [{ messageId: 'requireMemoize' as const }],
-        output: null,
       },
       {
         // A class expression's own name binds inside its body only, so it is
         // still an expression and still rejects the decorator.
-        name: 'a named class expression reports without a fix',
+        name: 'a named class expression stays silent',
         code: `
 const Loader = class NamedLoader {
   public async load() {
@@ -2739,25 +2771,42 @@ const Loader = class NamedLoader {
   }
 };
 `,
-        errors: [{ messageId: 'requireMemoize' as const }],
-        output: null,
       },
       {
-        name: 'a class expression in argument position reports without a fix',
+        name: 'an exported class expression stays silent',
         code: `
-register(
-  class Arg {
+export const Loader = class {
+  public async load() {
+    return 1;
+  }
+};
+`,
+      },
+      {
+        name: 'a class expression returned from a function declaration stays silent',
+        code: `
+export function build() {
+  return class {
     public async load() {
       return 1;
     }
-  },
-);
+  };
+}
 `,
-        errors: [{ messageId: 'requireMemoize' as const }],
-        output: null,
       },
       {
-        name: 'a class expression assigned to a property reports without a fix',
+        name: 'a class expression as an arrow factory body stays silent',
+        code: `
+export const build = () =>
+  class {
+    public async load() {
+      return 1;
+    }
+  };
+`,
+      },
+      {
+        name: 'a class expression held in an object property stays silent',
         code: `
 const registry = {
   Loader: class {
@@ -2767,11 +2816,9 @@ const registry = {
   },
 };
 `,
-        errors: [{ messageId: 'requireMemoize' as const }],
-        output: null,
       },
       {
-        name: 'a class expression assigned to a member reports without a fix',
+        name: 'a class expression assigned to a member stays silent',
         code: `
 registry.Loader = class {
   public async load() {
@@ -2779,13 +2826,59 @@ registry.Loader = class {
   }
 };
 `,
-        errors: [{ messageId: 'requireMemoize' as const }],
-        output: null,
+      },
+      {
+        name: 'a class expression passed as a call argument stays silent',
+        code: `
+register(
+  class Arg {
+    public async load() {
+      return 1;
+    }
+  },
+);
+`,
+      },
+      {
+        name: 'a class expression in a default parameter stays silent',
+        code: `
+export function build(
+  Loader = class {
+    public async load() {
+      return 1;
+    }
+  },
+) {
+  return Loader;
+}
+`,
+      },
+      {
+        name: 'a class expression instantiated in place stays silent',
+        code: `
+const loader = new (class {
+  public async load() {
+    return 1;
+  }
+})();
+`,
+      },
+      {
+        name: 'a class expression held in a class property stays silent',
+        code: `
+export class Holder {
+  static Loader = class {
+    public async load() {
+      return 1;
+    }
+  };
+}
+`,
       },
       {
         // `export default (class {})` is parenthesised into an expression,
-        // unlike the declaration form below.
-        name: 'a parenthesised default-exported class expression reports without a fix',
+        // unlike the anonymous declaration form.
+        name: 'a parenthesised default-exported class expression stays silent',
         code: `
 export default (class {
   public async load() {
@@ -2793,12 +2886,110 @@ export default (class {
   }
 });
 `,
-        errors: [{ messageId: 'requireMemoize' as const }],
-        output: null,
       },
       {
+        name: 'a class expression inside an array literal stays silent',
+        code: `
+const loaders = [
+  class {
+    public async load() {
+      return 1;
+    }
+  },
+];
+`,
+      },
+      {
+        name: 'a class expression extending a base stays silent',
+        code: `
+const Loader = class extends Base {
+  public async load() {
+    return 1;
+  }
+};
+`,
+      },
+      {
+        // Another decorator already present changes nothing: @Memoize() beside
+        // it is TS1206 too, so there is still no writable remedy.
+        name: 'a class expression whose method carries another decorator stays silent',
+        code: `
+const Loader = class {
+  @Log()
+  public async load() {
+    return 1;
+  }
+};
+`,
+      },
+      {
+        name: 'a single-parameter method in a class expression stays silent',
+        code: `
+const Loader = class {
+  public async load(id: string) {
+    return id;
+  }
+};
+`,
+      },
+      {
+        name: 'a private-named method in a class expression stays silent',
+        code: `
+const Loader = class {
+  async #load() {
+    return 1;
+  }
+};
+`,
+      },
+      {
+        // Both carve-outs apply at once; neither may leak a report.
+        name: 'a class expression inside a jest.mock factory stays silent',
+        code: `
+jest.mock('../FirestoreFetcher', () => ({
+  FirestoreFetcher: class {
+    public async fetch() {
+      return [];
+    }
+  },
+}));
+`,
+      },
+      {
+        // The import carrier: a file whose only violation is unreportable must
+        // stay completely silent, and must not gain an orphan import.
+        name: 'a file whose only violation sits in a class expression stays silent',
+        code: `
+const Loader = class {
+  public async load() {
+    return 1;
+  }
+};
+
+const Fetcher = class {
+  public async fetch() {
+    return 2;
+  }
+};
+`,
+      },
+      {
+        name: 'a class expression with an already-imported Memoize stays silent',
+        code: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+
+const Loader = class {
+  public async load() {
+    return 1;
+  }
+};
+`,
+      },
+    ],
+    invalid: [
+      {
         // The controls: every declaration form is a legal decorator position
-        // and must keep its fix.
+        // and must keep both report and fix.
         name: 'a plain class declaration still fixes',
         code: `
 class Loader {
@@ -2909,9 +3100,124 @@ function build() {
 `,
       },
       {
-        // A declining class expression must not consume the import carrier: the
-        // declaration in the same file still gets both decorator and import.
-        name: 'a declining class expression passes the import carrier on',
+        name: 'an abstract class declaration still fixes',
+        code: `
+abstract class Loader {
+  public async load() {
+    return 1;
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+abstract class Loader {
+  @Memoize()
+  public async load() {
+    return 1;
+  }
+}
+`,
+      },
+      {
+        // The case an ancestor walk would get wrong: the INNER class is a
+        // declaration, which takes decorators normally, even though every
+        // ancestor of it sits inside a class expression.
+        name: 'a class declaration nested in a class expression method still fixes',
+        code: `
+const Outer = class {
+  public build() {
+    class Inner {
+      public async load() {
+        return 1;
+      }
+    }
+    return Inner;
+  }
+};
+`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+const Outer = class {
+  public build() {
+    class Inner {
+      @Memoize()
+      public async load() {
+        return 1;
+      }
+    }
+    return Inner;
+  }
+};
+`,
+      },
+      {
+        name: 'a class declaration nested in a class expression property initializer still fixes',
+        code: `
+const Outer = class {
+  build = () => {
+    class Inner {
+      public async load() {
+        return 1;
+      }
+    }
+    return Inner;
+  };
+};
+`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+const Outer = class {
+  build = () => {
+    class Inner {
+      @Memoize()
+      public async load() {
+        return 1;
+      }
+    }
+    return Inner;
+  };
+};
+`,
+      },
+      {
+        // A class expression nested inside a class DECLARATION's method is the
+        // mirror image, and stays silent while the outer declaration reports.
+        name: 'an outer declaration reports while its nested class expression stays silent',
+        code: `
+class Outer {
+  public async load() {
+    const Inner = class {
+      public async fetch() {
+        return 2;
+      }
+    };
+    return Inner;
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Outer {
+  @Memoize()
+  public async load() {
+    const Inner = class {
+      public async fetch() {
+        return 2;
+      }
+    };
+    return Inner;
+  }
+}
+`,
+      },
+      {
+        // The import carrier, expression first: a silent class expression must
+        // not consume the file's single `import { Memoize }`.
+        name: 'a class expression before a declaration passes the import carrier on',
         code: `
 const Anonymous = class {
   public async load() {
@@ -2925,10 +3231,7 @@ export class Loader {
   }
 }
 `,
-        errors: [
-          { messageId: 'requireMemoize' as const },
-          { messageId: 'requireMemoize' as const },
-        ],
+        errors: [{ messageId: 'requireMemoize' as const }],
         output: `
 import { Memoize } from '@blumintinc/typescript-memoize';
 const Anonymous = class {
@@ -2945,19 +3248,151 @@ export class Loader {
 }
 `,
       },
+      {
+        name: 'a class expression after a declaration leaves the carrier alone',
+        code: `
+export class Loader {
+  public async fetch() {
+    return 2;
+  }
+}
+
+const Anonymous = class {
+  public async load() {
+    return 1;
+  }
+};
+`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+export class Loader {
+  @Memoize()
+  public async fetch() {
+    return 2;
+  }
+}
+
+const Anonymous = class {
+  public async load() {
+    return 1;
+  }
+};
+`,
+      },
+      {
+        name: 'two class expressions before a declaration still leave one import',
+        code: `
+const First = class {
+  public async a() {
+    return 1;
+  }
+};
+
+const Second = class {
+  public async b() {
+    return 2;
+  }
+};
+
+export class Loader {
+  public async fetch() {
+    return 3;
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+const First = class {
+  public async a() {
+    return 1;
+  }
+};
+
+const Second = class {
+  public async b() {
+    return 2;
+  }
+};
+
+export class Loader {
+  @Memoize()
+  public async fetch() {
+    return 3;
+  }
+}
+`,
+      },
+      {
+        name: 'two class expressions sandwiching a declaration still leave one import',
+        code: `
+const First = class {
+  public async a() {
+    return 1;
+  }
+};
+
+export class Loader {
+  public async fetch() {
+    return 3;
+  }
+}
+
+const Second = class {
+  public async b() {
+    return 2;
+  }
+};
+`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+const First = class {
+  public async a() {
+    return 1;
+  }
+};
+
+export class Loader {
+  @Memoize()
+  public async fetch() {
+    return 3;
+  }
+}
+
+const Second = class {
+  public async b() {
+    return 2;
+  }
+};
+`,
+      },
     ],
   },
 );
 
-// The real multi-pass fixer over the #1735 repro: RuleTester runs a single pass
-// and so cannot show the file `eslint --fix` writes.
-describe('enforce-memoize-async: class expressions under --fix (issue #1735)', () => {
+// The real multi-pass fixer over the class-expression shapes: RuleTester runs a
+// single pass and so cannot show the file `eslint --fix` writes.
+describe('enforce-memoize-async: class expressions under --fix (issues #1735, #1952)', () => {
   const EXPRESSION_REPRO = `const Loader = class {
   public async load() {
     return 1;
   }
 };
 `;
+
+  const DECLARATION_CONTROL = `class Loader {
+  public async load() {
+    return 1;
+  }
+}
+`;
+
+  const importCount = (output: string) =>
+    output.match(
+      /import \{ Memoize \} from '@blumintinc\/typescript-memoize';/g,
+    )?.length ?? 0;
 
   it('leaves a class expression untouched across every pass', () => {
     const output = lint(EXPRESSION_REPRO);
@@ -2966,21 +3401,14 @@ describe('enforce-memoize-async: class expressions under --fix (issue #1735)', (
     expect(output).not.toContain('Memoize');
   });
 
-  it('drops the fix from the report rather than the report itself', () => {
-    const messages = lintMessages(EXPRESSION_REPRO);
+  it('withholds the report as well as the fix', () => {
+    expect(lintMessages(EXPRESSION_REPRO)).toHaveLength(0);
 
-    expect(messages).toHaveLength(1);
-    expect(messages[0].ruleId).toBe(RULE_ID);
-    expect(messages[0].fix).toBeUndefined();
-
-    // The same method inside a declaration still arrives with a fix attached.
-    const declared = lintMessages(`class Loader {
-  public async load() {
-    return 1;
-  }
-}
-`);
+    // The control proves the silence is the carve-out and not a dead fixture:
+    // the same method inside a declaration reports, with a fix attached.
+    const declared = lintMessages(DECLARATION_CONTROL);
     expect(declared).toHaveLength(1);
+    expect(declared[0].ruleId).toBe(RULE_ID);
     expect(declared[0].fix).toBeDefined();
   });
 
@@ -2994,5 +3422,93 @@ describe('enforce-memoize-async: class expressions under --fix (issue #1735)', (
 
     expect(output).not.toContain('@blumintinc/typescript-memoize');
     expect(output).not.toContain('@Memoize');
+  });
+
+  it('hands the import carrier to the declaration when the expression comes first', () => {
+    const output = lint(`${EXPRESSION_REPRO}
+export class Fetcher {
+  public async fetch() {
+    return 2;
+  }
+}
+`);
+
+    expect(importCount(output)).toBe(1);
+    expect(output.match(/@Memoize\(\)/g)).toHaveLength(1);
+    expect(output).toContain(`  @Memoize()
+  public async fetch() {`);
+    // The decorator landed on the declaration, never in the expression.
+    expect(output).toContain(`const Loader = class {
+  public async load() {`);
+  });
+
+  it('hands the import carrier to the declaration when the declaration comes first', () => {
+    const output = lint(`export class Fetcher {
+  public async fetch() {
+    return 2;
+  }
+}
+
+${EXPRESSION_REPRO}`);
+
+    expect(importCount(output)).toBe(1);
+    expect(output.match(/@Memoize\(\)/g)).toHaveLength(1);
+    expect(output).toContain(`const Loader = class {
+  public async load() {`);
+  });
+
+  it('emits exactly one import with two class expressions and one declaration', () => {
+    const output = lint(`${EXPRESSION_REPRO}const Fetcher = class {
+  public async fetch() {
+    return 2;
+  }
+};
+
+export class Reader {
+  public async read() {
+    return 3;
+  }
+}
+`);
+
+    expect(importCount(output)).toBe(1);
+    expect(output.match(/@Memoize\(\)/g)).toHaveLength(1);
+    expect(output).toContain(`  @Memoize()
+  public async read() {`);
+  });
+
+  it('never emits a decorator without its import', () => {
+    const output = lint(`${EXPRESSION_REPRO}
+export class Fetcher {
+  public async fetch() {
+    return 2;
+  }
+}
+`);
+
+    if (/@Memoize\(\)/.test(output)) {
+      expect(output).toContain(
+        "import { Memoize } from '@blumintinc/typescript-memoize';",
+      );
+    }
+  });
+
+  it('decorates a class declaration nested inside a class expression method', () => {
+    const output = lint(`const Outer = class {
+  public build() {
+    class Inner {
+      public async load() {
+        return 1;
+      }
+    }
+    return Inner;
+  }
+};
+`);
+
+    expect(importCount(output)).toBe(1);
+    expect(output.match(/@Memoize\(\)/g)).toHaveLength(1);
+    expect(output).toContain(`      @Memoize()
+      public async load() {`);
   });
 });

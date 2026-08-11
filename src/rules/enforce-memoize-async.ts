@@ -122,13 +122,19 @@ function enclosingClass(
  * {}`, a class in argument position, a class assigned to a property — rather
  * than as a declaration.
  *
- * Under `experimentalDecorators`, TypeScript accepts a member decorator only
- * inside a class DECLARATION: the same `@Memoize()` that compiles inside `class
- * C {}`, `export class C {}` or `export default class {}` is `TS1206:
- * Decorators are not valid here.` inside a class expression. An emitted
- * decorator there breaks the consumer's build, so the report stands without a
- * fix and the author restructures deliberately — hoisting the class to a
- * declaration makes the decorator legal.
+ * Under `experimentalDecorators` — the mode this plugin's consumers compile in
+ * — TypeScript accepts a member decorator only inside a class DECLARATION: the
+ * same `@Memoize()` that compiles inside `class C {}`, `export class C {}` or
+ * `export default class {}` is `TS1206: Decorators are not valid here.` inside
+ * a class expression, whatever the member is named and wherever the decorator
+ * is written. Report and fix are both withheld: the only remedy the message
+ * offers is "add @Memoize() above the method", which is unwritable there, and a
+ * report naming an edit its reader cannot make is worse than silence.
+ *
+ * The enclosing class is read directly rather than by walking ancestors: a
+ * class DECLARATION nested inside a class expression's method takes decorators
+ * normally, and `export default class { … }` is a declaration despite having no
+ * name.
  */
 function isInsideClassExpression(node: TSESTree.MethodDefinition): boolean {
   return enclosingClass(node)?.type === AST_NODE_TYPES.ClassExpression;
@@ -349,6 +355,17 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
           return;
         }
 
+        // No decorator is legal on any member of a class expression, so this
+        // rule has nothing to say there: it cannot fix, and its message names
+        // the one edit the author cannot write. Silence, matching the sibling
+        // rules `enforce-memoize-getters` and `require-memoize-jsx-returners`.
+        // Withholding the report also keeps such a method out of the
+        // import-carrier race below — a violation that never reports can never
+        // claim the file's `import { Memoize }` and strand it.
+        if (isInsideClassExpression(node)) {
+          return;
+        }
+
         // Skip methods with more than one parameter
         if (node.value.params.length > 1) {
           return;
@@ -444,15 +461,6 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
             // the author reaches for a remedy the factory can hold, such as
             // decorating the real class the mock stands in for.
             if (isInsideMockFactory(node)) {
-              return null;
-            }
-
-            // A decorator is legal only on a member of a class declaration, so
-            // decorating a class expression's method emits code the consumer's
-            // compiler rejects outright (TS1206). Declining ahead of the import
-            // carrier claim below leaves the import to a violation that does
-            // fix.
-            if (isInsideClassExpression(node)) {
               return null;
             }
 
