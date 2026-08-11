@@ -298,6 +298,36 @@ class Panel {
   }
 }
 `,
+    // #1941: the narrowing exemption is spelling-agnostic. An ECMA private field
+    // is the same privacy as a `private` one (and mutually exclusive with it —
+    // `private #result` is TS18010), and the walk to the chain root goes through
+    // `.object`, never the property, so a `#`-spelled base object narrows and
+    // exempts exactly as its `private` twin does.
+    `
+class Holder {
+  readonly #result!: { kind: 'ok'; data: number } | { kind: 'err' };
+  public read() {
+    switch (this.#result.kind) {
+      case 'ok':
+        return this.#result.data;
+      case 'err':
+        return -1;
+    }
+  }
+}
+`,
+    // #1941: a `this`-rooted ternary is out of scope for BOTH privacy spellings.
+    // `isValidDiscriminant` requires an identifier root, so respelling the field
+    // must not turn a silent construct into a reported one.
+    `
+type Tier = 'free' | 'pro';
+class Pricing {
+  readonly #tier!: Tier;
+  public label() {
+    return this.#tier === 'free' ? 'Free' : 'Pro';
+  }
+}
+`,
     // Edge 4: discriminant statically 'string' (trust-boundary switch).
     `
 declare function split(): string;
@@ -2465,6 +2495,632 @@ class Pricing {
     };
     return RESULT_BY_TIER[this.tier];
   }
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1941: the ECMA-private twin of the fixture above — the same privacy, and
+    // the only spelling available to an author who wants it (`private #tier` is
+    // TS18010). The parser hands the trailing property over as a
+    // `PrivateIdentifier` whose `name` is already `#`-free, so the very same
+    // `RESULT_BY_TIER` is derivable and free; reading that node as "no name"
+    // withheld the fix and blamed a collision that never existed. The lookup is
+    // written where the switch was, inside the class body, so `this.#tier`
+    // stays readable.
+    {
+      code: `
+type Tier = 'free' | 'pro';
+class Pricing {
+  readonly #tier!: Tier;
+  public monthlyCost() {
+    switch (this.#tier) {
+      case 'free':
+        return 0;
+      case 'pro':
+        return 25;
+    }
+  }
+}
+`,
+      output: `
+type Tier = 'free' | 'pro';
+class Pricing {
+  readonly #tier!: Tier;
+  public monthlyCost() {
+    const RESULT_BY_TIER: Record<Tier, number> = {
+      free: 0,
+      pro: 25,
+    };
+    return RESULT_BY_TIER[this.#tier];
+  }
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1941 isolation control: renaming the member while KEEPING `private` must
+    // not move the verdict. Both this and the `#tier` case above fix, so the
+    // divergence the issue reported was the privacy spelling, not the name.
+    {
+      code: `
+type Tier = 'free' | 'pro';
+class Pricing {
+  private readonly zqx!: Tier;
+  public monthlyCost() {
+    switch (this.zqx) {
+      case 'free':
+        return 0;
+      case 'pro':
+        return 25;
+    }
+  }
+}
+`,
+      output: `
+type Tier = 'free' | 'pro';
+class Pricing {
+  private readonly zqx!: Tier;
+  public monthlyCost() {
+    const RESULT_BY_ZQX: Record<Tier, number> = {
+      free: 0,
+      pro: 25,
+    };
+    return RESULT_BY_ZQX[this.zqx];
+  }
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1941: a static ECMA private field read off the class name. The fix is
+    // written in place inside the class body, where `Pricing.#tier` is legal.
+    {
+      code: `
+type Tier = 'free' | 'pro';
+class Pricing {
+  static readonly #tier: Tier = 'free';
+  public static monthlyCost() {
+    switch (Pricing.#tier) {
+      case 'free':
+        return 0;
+      case 'pro':
+        return 25;
+    }
+  }
+}
+`,
+      output: `
+type Tier = 'free' | 'pro';
+class Pricing {
+  static readonly #tier: Tier = 'free';
+  public static monthlyCost() {
+    const RESULT_BY_TIER: Record<Tier, number> = {
+      free: 0,
+      pro: 25,
+    };
+    return RESULT_BY_TIER[Pricing.#tier];
+  }
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1941: a private GETTER is reached through the same PrivateIdentifier
+    // node, so it derives its name the same way.
+    {
+      code: `
+type Tier = 'free' | 'pro';
+class Pricing {
+  readonly raw!: Tier;
+  get #tier(): Tier {
+    return this.raw;
+  }
+  public monthlyCost() {
+    switch (this.#tier) {
+      case 'free':
+        return 0;
+      case 'pro':
+        return 25;
+    }
+  }
+}
+`,
+      output: `
+type Tier = 'free' | 'pro';
+class Pricing {
+  readonly raw!: Tier;
+  get #tier(): Tier {
+    return this.raw;
+  }
+  public monthlyCost() {
+    const RESULT_BY_TIER: Record<Tier, number> = {
+      free: 0,
+      pro: 25,
+    };
+    return RESULT_BY_TIER[this.#tier];
+  }
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1941: the assign form on an ECMA private discriminant.
+    {
+      code: `
+type Tier = 'free' | 'pro';
+class Pricing {
+  readonly #tier!: Tier;
+  public monthlyCost() {
+    let cost = 0;
+    switch (this.#tier) {
+      case 'free':
+        cost = 0;
+        break;
+      case 'pro':
+        cost = 25;
+        break;
+    }
+    return cost;
+  }
+}
+`,
+      output: `
+type Tier = 'free' | 'pro';
+class Pricing {
+  readonly #tier!: Tier;
+  public monthlyCost() {
+    let cost = 0;
+    const RESULT_BY_TIER: Record<Tier, number> = {
+      free: 0,
+      pro: 25,
+    };
+    cost = RESULT_BY_TIER[this.#tier];
+    return cost;
+  }
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1941: the ternary form on an ECMA private field read off an identifier
+    // (the one form that HOISTS its Record). The enclosing statement is inside
+    // the method body, so the hoist stays within the class body and the emitted
+    // `other.#tier` still resolves.
+    {
+      code: `
+type Tier = 'free' | 'pro';
+class Pricing {
+  readonly #tier!: Tier;
+  public compare(other: Pricing) {
+    const label = other.#tier === 'free' ? 'Free' : 'Pro';
+    return label;
+  }
+}
+`,
+      output: `
+type Tier = 'free' | 'pro';
+class Pricing {
+  readonly #tier!: Tier;
+  public compare(other: Pricing) {
+    const RESULT_BY_TIER: Record<Tier, string> = {
+      free: 'Free',
+      pro: 'Pro',
+    };
+    const label = RESULT_BY_TIER[other.#tier];
+    return label;
+  }
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1941: `#kind` and a sibling public `kind` are DIFFERENT members. The
+    // key type must come from the private field's own union — `Holder['kind']`
+    // is not expressible for a private name and would silently name the public
+    // sibling's union instead, so the resolved literal union is what ships.
+    {
+      code: `
+class Holder {
+  readonly kind!: 'x' | 'y';
+  readonly #kind!: 'a' | 'b';
+  public read() {
+    switch (this.#kind) {
+      case 'a':
+        return 1;
+      case 'b':
+        return 2;
+    }
+  }
+}
+`,
+      output: `
+class Holder {
+  readonly kind!: 'x' | 'y';
+  readonly #kind!: 'a' | 'b';
+  public read() {
+    const RESULT_BY_KIND: Record<"a" | "b", number> = {
+      a: 1,
+      b: 2,
+    };
+    return RESULT_BY_KIND[this.#kind];
+  }
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1941: a public `tier` and a private `#tier` on one class each dispatch in
+    // their own method. Both derive `RESULT_BY_TIER`, and both are fixed: the
+    // two constants are separate bindings in separate scopes, so withholding
+    // either would strand it (the textual collision check sees the first fix's
+    // output on every later run).
+    {
+      code: `
+type Tier = 'free' | 'pro';
+class Pricing {
+  readonly tier!: Tier;
+  readonly #tier!: Tier;
+  public listed() {
+    switch (this.tier) {
+      case 'free':
+        return 0;
+      case 'pro':
+        return 25;
+    }
+  }
+  public actual() {
+    switch (this.#tier) {
+      case 'free':
+        return 1;
+      case 'pro':
+        return 26;
+    }
+  }
+}
+`,
+      output: `
+type Tier = 'free' | 'pro';
+class Pricing {
+  readonly tier!: Tier;
+  readonly #tier!: Tier;
+  public listed() {
+    const RESULT_BY_TIER: Record<Tier, number> = {
+      free: 0,
+      pro: 25,
+    };
+    return RESULT_BY_TIER[this.tier];
+  }
+  public actual() {
+    const RESULT_BY_TIER: Record<Tier, number> = {
+      free: 1,
+      pro: 26,
+    };
+    return RESULT_BY_TIER[this.#tier];
+  }
+}
+`,
+      errors: [{ messageId: 'preferMap' }, { messageId: 'preferMap' }],
+    },
+    // #1941: the same two members dispatching in ONE scope. `#tier` and `tier`
+    // are different members that derive the same constant name, so emitting
+    // both would redeclare it (TS2451). The second dispatch reports without a
+    // fix, and says so truthfully.
+    {
+      code: `
+type Tier = 'free' | 'pro';
+class Pricing {
+  readonly tier!: Tier;
+  readonly #tier!: Tier;
+  public both() {
+    let listed = 0;
+    switch (this.tier) {
+      case 'free':
+        listed = 0;
+        break;
+      case 'pro':
+        listed = 25;
+        break;
+    }
+    let actual = 0;
+    switch (this.#tier) {
+      case 'free':
+        actual = 1;
+        break;
+      case 'pro':
+        actual = 26;
+        break;
+    }
+    return listed + actual;
+  }
+}
+`,
+      output: `
+type Tier = 'free' | 'pro';
+class Pricing {
+  readonly tier!: Tier;
+  readonly #tier!: Tier;
+  public both() {
+    let listed = 0;
+    const RESULT_BY_TIER: Record<Tier, number> = {
+      free: 0,
+      pro: 25,
+    };
+    listed = RESULT_BY_TIER[this.tier];
+    let actual = 0;
+    switch (this.#tier) {
+      case 'free':
+        actual = 1;
+        break;
+      case 'pro':
+        actual = 26;
+        break;
+    }
+    return listed + actual;
+  }
+}
+`,
+      errors: [
+        { messageId: 'preferMap' },
+        {
+          messageId: 'preferMapManual',
+          data: {
+            reason:
+              'the lookup name RESULT_BY_TIER is already taken in this file — rename the colliding binding, or write the Record manually',
+          },
+        },
+      ],
+    },
+    // #1941: the reason string has to be TRUE wherever the fix is genuinely
+    // withheld. Here the name really is taken, and the message says which name.
+    {
+      code: `
+type Tier = 'free' | 'pro';
+const RESULT_BY_TIER = 1;
+class Pricing {
+  readonly #tier!: Tier;
+  public monthlyCost() {
+    switch (this.#tier) {
+      case 'free':
+        return 0;
+      case 'pro':
+        return 25;
+    }
+  }
+}
+export { RESULT_BY_TIER };
+`,
+      output: null,
+      errors: [
+        {
+          messageId: 'preferMapManual',
+          data: {
+            reason:
+              'the lookup name RESULT_BY_TIER is already taken in this file — rename the colliding binding, or write the Record manually',
+          },
+        },
+      ],
+    },
+    // #1941: a discriminant with no name in it at all still reports, and the
+    // reason names the real condition rather than blaming a collision.
+    {
+      code: `
+type Tier = 'free' | 'pro';
+declare function readTier(): Tier;
+function monthlyCost() {
+  switch (readTier()) {
+    case 'free':
+      return 0;
+    case 'pro':
+      return 25;
+  }
+}
+`,
+      output: null,
+      errors: [
+        {
+          messageId: 'preferMapManual',
+          data: {
+            reason: 'no lookup name could be derived from the discriminant',
+          },
+        },
+      ],
+    },
+    // #1941: the ternary form hoists its Record to the enclosing statement, and
+    // inside a class that statement can be the class declaration itself. A
+    // branch value naming an ECMA private member cannot travel there (TS18013),
+    // so the fix is withheld and the reason says where it would have landed.
+    {
+      code: `
+type Tier = 'free' | 'pro';
+declare const p: Pricing;
+class Pricing {
+  readonly #tier!: Tier;
+  static readonly #free = 'Free';
+  static label = p.#tier === 'free' ? Pricing.#free : 'Pro';
+}
+`,
+      output: null,
+      errors: [
+        {
+          messageId: 'preferMapManual',
+          data: {
+            reason:
+              'the Record would hoist outside the class body, where the branch values’ `this`/`#private` reads do not resolve; extract it manually inside the class',
+          },
+        },
+      ],
+    },
+    // #1941: the same escape with a `this` branch value — the privacy spelling
+    // of the discriminant is irrelevant to where the Record lands, so the guard
+    // is on what the hoisted text needs, not on how the discriminant is
+    // spelled.
+    {
+      code: `
+type Tier = 'free' | 'pro';
+declare const p: { tier: Tier };
+class Pricing {
+  readonly base = 'Free';
+  label = p.tier === 'free' ? this.base : 'Pro';
+}
+`,
+      output: null,
+      errors: [
+        {
+          messageId: 'preferMapManual',
+          data: {
+            reason:
+              'the Record would hoist outside the class body, where the branch values’ `this`/`#private` reads do not resolve; extract it manually inside the class',
+          },
+        },
+      ],
+    },
+    // #1941: a hoist that leaves the class body carrying only literals needs
+    // nothing from the class, so it still fixes — the guard above is about what
+    // travels, not about crossing the boundary.
+    {
+      code: `
+type Tier = 'free' | 'pro';
+declare const p: Pricing;
+class Pricing {
+  readonly #tier!: Tier;
+  static label = p.#tier === 'free' ? 'Free' : 'Pro';
+}
+`,
+      output: `
+type Tier = 'free' | 'pro';
+declare const p: Pricing;
+const RESULT_BY_TIER: Record<Tier, string> = {
+  free: 'Free',
+  pro: 'Pro',
+};
+class Pricing {
+  readonly #tier!: Tier;
+  static label = RESULT_BY_TIER[p.#tier];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1941: the in-place forms replace the construct with a declaration plus a
+    // statement, so they need a statement list to land in. As the whole body of
+    // a braceless `if` the switch sits where a lexical declaration is not
+    // allowed (TS1156), so the fix waits for braces — for either privacy
+    // spelling, since where the construct sits is not a question about how its
+    // discriminant is declared.
+    {
+      code: `
+type Tier = 'free' | 'pro';
+class Pricing {
+  readonly #tier!: Tier;
+  public monthlyCost(cond: boolean) {
+    if (cond) switch (this.#tier) {
+      case 'free':
+        return 0;
+      case 'pro':
+        return 25;
+    }
+    return -1;
+  }
+}
+`,
+      output: null,
+      errors: [
+        {
+          messageId: 'preferMapManual',
+          data: {
+            reason:
+              'the dispatch is the whole body of a braceless branch, where a declaration is not allowed; add braces around it, then convert',
+          },
+        },
+      ],
+    },
+    {
+      code: `
+type Tier = 'free' | 'pro';
+declare const flags: { tier: Tier };
+function monthlyCost(cond: boolean) {
+  if (cond) switch (flags.tier) {
+    case 'free':
+      return 0;
+    case 'pro':
+      return 25;
+  }
+  return -1;
+}
+`,
+      output: null,
+      errors: [
+        {
+          messageId: 'preferMapManual',
+          data: {
+            reason:
+              'the dispatch is the whole body of a braceless branch, where a declaration is not allowed; add braces around it, then convert',
+          },
+        },
+      ],
+    },
+    // #1941: a `static` block holds a statement list, so the in-place fix still
+    // lands — the carve-out above is about single-statement positions, not
+    // about every position that is not a function body.
+    {
+      code: `
+type Tier = 'free' | 'pro';
+declare const p: Pricing;
+class Pricing {
+  readonly #tier!: Tier;
+  static label = '';
+  static {
+    let out = '';
+    switch (p.#tier) {
+      case 'free':
+        out = 'Free';
+        break;
+      case 'pro':
+        out = 'Pro';
+        break;
+    }
+    Pricing.label = out;
+  }
+}
+`,
+      output: `
+type Tier = 'free' | 'pro';
+declare const p: Pricing;
+class Pricing {
+  readonly #tier!: Tier;
+  static label = '';
+  static {
+    let out = '';
+    const RESULT_BY_TIER: Record<Tier, string> = {
+      free: 'Free',
+      pro: 'Pro',
+    };
+    out = RESULT_BY_TIER[p.#tier];
+    Pricing.label = out;
+  }
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1941: a namespace body is a statement list too.
+    {
+      code: `
+type Tier = 'free' | 'pro';
+declare const flags: { tier: Tier };
+namespace Pricing {
+  export let out = 0;
+  switch (flags.tier) {
+    case 'free':
+      out = 0;
+      break;
+    case 'pro':
+      out = 25;
+      break;
+  }
+}
+`,
+      output: `
+type Tier = 'free' | 'pro';
+declare const flags: { tier: Tier };
+namespace Pricing {
+  export let out = 0;
+  const RESULT_BY_TIER: Record<Tier, number> = {
+    free: 0,
+    pro: 25,
+  };
+  out = RESULT_BY_TIER[flags.tier];
 }
 `,
       errors: [{ messageId: 'preferMap' }],

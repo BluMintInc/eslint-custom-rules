@@ -112,6 +112,14 @@ does not count as reading the narrowed object; an arrow function's `this` is the
 lexical one and does count, matching how a closure over an identifier-rooted base
 object counts.
 
+How the member is made private does not enter into any of this. A `private`
+modifier and an ECMA private field (`#result`) are the same privacy, the walk to
+the chain's root goes through the receiver rather than the property, and an
+author who picks the `#` spelling cannot opt back into the other (`private #x` is
+TS18010) — so `switch (this.#result.kind)` is exempt exactly as
+`switch (this.result.kind)` is, and every non-narrowing `#private` dispatch
+reports and autofixes exactly as its `private` twin does.
+
 An optional-chained discriminant is read the same way, in every form. TypeScript
 discriminates a union through `?.`, so `switch (result?.kind)` and
 `result?.kind === 'success' ? ... : ...` narrow exactly as their plain spellings
@@ -204,13 +212,31 @@ report-only message (`preferMapManual`) explaining why and suggesting the shape:
 - **A derivable, collision-free lookup name.** The name is derived
   deterministically from the discriminant as `RESULT_BY_<KEY>`, upper-snake-cased
   from the discriminant's identifier or trailing member property
-  (`token.standard` → `RESULT_BY_STANDARD`, `side` → `RESULT_BY_SIDE`). If that
-  name already appears in scope, or no usable name can be derived, the fix is
-  skipped.
+  (`token.standard` → `RESULT_BY_STANDARD`, `side` → `RESULT_BY_SIDE`). An ECMA
+  private field is a trailing member property like any other: `this.#tier` and
+  `this.tier` both derive `RESULT_BY_TIER`, because the two are the same privacy
+  written two ways (and mutually exclusive — `private #tier` is TS18010), and the
+  emitted lookup copies the discriminant's source text verbatim, so `this.#tier`
+  is still read as `this.#tier` from inside the class body where the fix lands.
+  If the derived name already appears in the file, or a dispatch earlier in the
+  same scope has already claimed it (`#tier` and a sibling public `tier` are
+  different members that derive the same constant, and two `const RESULT_BY_TIER`
+  in one scope do not compile), or no usable name can be derived at all, the fix
+  is skipped — and the message names which of those happened.
 - **The fix can be placed.** A ternary hoists its `Record` to the enclosing
   statement; if that would cross a function boundary (a ternary as an
   expression-bodied arrow's body), the fix is skipped so values/discriminant
-  stay in scope.
+  stay in scope. Inside a class, the enclosing statement of a field initializer
+  or `static` block is the class declaration itself, so the hoist leaves the
+  class body: a branch value reading `this` or a `#private` member cannot travel
+  there (TS18013), and the fix is skipped. Branch values that need nothing from
+  the class still hoist, and the lookup replacing the construct never moves, so a
+  `#private` discriminant is always read where it was written.
+  The `switch` and `if`/`else if` forms are replaced where they stand, with a
+  declaration followed by a statement, so they need a statement **list** to land
+  in. A construct that is the entire body of a braceless branch
+  (`if (cond) switch (x) { ... }`) sits where a lexical declaration is not
+  allowed at all (TS1156); it reports, and the fix waits for braces.
 - **A printable, in-scope annotation.** The `Record<D, V>` value type is
   synthesized from the checker's printed types. Union members in function,
   constructor, or conditional notation are parenthesized, as TypeScript
