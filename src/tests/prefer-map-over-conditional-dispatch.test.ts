@@ -55,6 +55,92 @@ function f() {
   }
 }
 `,
+    // Edge 1 (#1929): the ternary arm reaches the narrowing exemption through
+    // the same unwrapping, so teaching it to see `?.` must not turn a narrowing
+    // ternary into a false positive whose remedy does not compile — hoisting
+    // `result.data` out of the narrowing fails with TS2339 exactly as it does
+    // in the switch form.
+    `
+type Result = { kind: 'success'; data: string } | { kind: 'failure' };
+declare const result: Result;
+function f() {
+  const size = result?.kind === 'success' ? result.data.length : 0;
+  return size;
+}
+`,
+    // Edge 1 (#1929): the plain spelling of the ternary above, so the pair
+    // proves the exemption — not blindness to `?.` — is what keeps both quiet.
+    `
+type Result = { kind: 'success'; data: string } | { kind: 'failure' };
+declare const result: Result;
+function f() {
+  const size = result.kind === 'success' ? result.data.length : 0;
+  return size;
+}
+`,
+    // Edge 1 (#1929): a non-null assertion narrows the union exactly as the
+    // plain access does, so the exemption must survive it in either arm. A walk
+    // that stops at the assertion cannot name the root `result`, and the
+    // construct is then reported with a Record that hoists `result.data` out of
+    // the narrowing (TS2339).
+    `
+type Result = { kind: 'success'; data: string } | { kind: 'failure' };
+declare const result: Result;
+function f() {
+  switch (result!.kind) {
+    case 'success':
+      return result.data.length;
+    case 'failure':
+      return 0;
+  }
+}
+`,
+    `
+type Result = { kind: 'success'; data: string } | { kind: 'failure' };
+declare const result: Result;
+function f() {
+  const size = result!.kind === 'success' ? result.data.length : 0;
+  return size;
+}
+`,
+    // Edge 1 (#1929): the assertion sits mid-chain, above an optional link —
+    // the root is two wrappers down and still names the narrowed object.
+    `
+type Result = { kind: 'success'; data: string } | { kind: 'failure' };
+type Box = { r: Result };
+declare const box: Box;
+function f() {
+  const size = box?.r!.kind === 'success' ? box.r.data.length : 0;
+  return size;
+}
+`,
+    // Edge 1 (#1929): the assertion applies to the tag access as a whole, which
+    // leaves the same narrowing to lose.
+    `
+type Result = { kind: 'success'; data: string } | { kind: 'failure' };
+declare const result: Result;
+function f() {
+  switch (result.kind!) {
+    case 'success':
+      return result.data.length;
+    case 'failure':
+      return 0;
+  }
+}
+`,
+    // Edge 1 (#1929): the if/else-if arm derives its discriminant through the
+    // same helper, so it reaches the same exemption under `?.`.
+    `
+type Result = { kind: 'success'; data: string } | { kind: 'failure' };
+declare const result: Result;
+function f() {
+  if (result?.kind === 'success') {
+    return result.data.length;
+  } else {
+    return 0;
+  }
+}
+`,
     // Edge 1: multiple variants, each reading its own field.
     `
 type ReportTarget =
@@ -186,6 +272,18 @@ class Runner {
         return () => null;
     }
   }
+}
+`,
+    // #1929: an assertion on the tag access as a WHOLE (rather than on a link
+    // inside the chain) stays out of scope for the ternary/if forms: the name
+    // and key-type derivations reach the member access through the chain
+    // unwrap, so admitting it would emit a report no fix can serve.
+    `
+type Flags = { tier: 'free' | 'pro' };
+declare const flags: Flags;
+function f() {
+  const label = flags.tier! === 'free' ? 'Free' : 'Pro';
+  return label;
 }
 `,
     // #1626: the ternary/if forms accept only identifier-rooted discriminants
@@ -593,6 +691,282 @@ function rank() {
     offchain: 2,
   };
   return RESULT_BY_STANDARD[token?.standard];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1929: the ternary arm asks the same question of the same discriminant.
+    // ESTree wraps `flags?.tier` in a ChainExpression, so the arm's shape test
+    // saw something other than a member chain and the construct went silent
+    // while its plain spelling reported and fixed — the switch spelling below
+    // is the parity twin. The generated lookup copies the discriminant
+    // verbatim, so the optional link survives the fix.
+    {
+      code: `
+type Flags = { tier: 'free' | 'pro' };
+declare const flags: Flags;
+function f() {
+  const label = flags?.tier === 'free' ? 'Free' : 'Pro';
+  return label;
+}
+`,
+      output: `
+type Flags = { tier: 'free' | 'pro' };
+declare const flags: Flags;
+function f() {
+  const RESULT_BY_TIER: Record<Flags['tier'], string> = {
+    free: 'Free',
+    pro: 'Pro',
+  };
+  const label = RESULT_BY_TIER[flags?.tier];
+  return label;
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1929: the switch twin of the ternary above, on the same discriminant.
+    {
+      code: `
+type Flags = { tier: 'free' | 'pro' };
+declare const flags: Flags;
+function f() {
+  switch (flags?.tier) {
+    case 'free':
+      return 'Free';
+    case 'pro':
+      return 'Pro';
+  }
+}
+`,
+      output: `
+type Flags = { tier: 'free' | 'pro' };
+declare const flags: Flags;
+function f() {
+  const RESULT_BY_TIER: Record<Flags['tier'], string> = {
+    free: 'Free',
+    pro: 'Pro',
+  };
+  return RESULT_BY_TIER[flags?.tier];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1929: every link of a longer chain optional, in the ternary form.
+    {
+      code: `
+type Inner = { tier: 'free' | 'pro' };
+type Outer = { inner: Inner };
+declare const o: Outer;
+function f() {
+  const label = o?.inner?.tier === 'free' ? 'Free' : 'Pro';
+  return label;
+}
+`,
+      output: `
+type Inner = { tier: 'free' | 'pro' };
+type Outer = { inner: Inner };
+declare const o: Outer;
+function f() {
+  const RESULT_BY_TIER: Record<Inner['tier'], string> = {
+    free: 'Free',
+    pro: 'Pro',
+  };
+  const label = RESULT_BY_TIER[o?.inner?.tier];
+  return label;
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1929: the switch twin of the longer chain.
+    {
+      code: `
+type Inner = { tier: 'free' | 'pro' };
+type Outer = { inner: Inner };
+declare const o: Outer;
+function f() {
+  switch (o?.inner?.tier) {
+    case 'free':
+      return 'Free';
+    case 'pro':
+      return 'Pro';
+  }
+}
+`,
+      output: `
+type Inner = { tier: 'free' | 'pro' };
+type Outer = { inner: Inner };
+declare const o: Outer;
+function f() {
+  const RESULT_BY_TIER: Record<Inner['tier'], string> = {
+    free: 'Free',
+    pro: 'Pro',
+  };
+  return RESULT_BY_TIER[o?.inner?.tier];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1929: a non-null assertion is the other spelling wrapper the ternary
+    // arm's shape test walked into — `flags!.tier` hangs a TSNonNullExpression
+    // where the walk expected the chain's root, so it went silent for the same
+    // reason `?.` did while the switch arm fixed it.
+    {
+      code: `
+type Flags = { tier: 'free' | 'pro' };
+declare const flags: Flags;
+function f() {
+  const label = flags!.tier === 'free' ? 'Free' : 'Pro';
+  return label;
+}
+`,
+      output: `
+type Flags = { tier: 'free' | 'pro' };
+declare const flags: Flags;
+function f() {
+  const RESULT_BY_TIER: Record<Flags['tier'], string> = {
+    free: 'Free',
+    pro: 'Pro',
+  };
+  const label = RESULT_BY_TIER[flags!.tier];
+  return label;
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1929: the switch twin of the non-null assertion.
+    {
+      code: `
+type Flags = { tier: 'free' | 'pro' };
+declare const flags: Flags;
+function f() {
+  switch (flags!.tier) {
+    case 'free':
+      return 'Free';
+    case 'pro':
+      return 'Pro';
+  }
+}
+`,
+      output: `
+type Flags = { tier: 'free' | 'pro' };
+declare const flags: Flags;
+function f() {
+  const RESULT_BY_TIER: Record<Flags['tier'], string> = {
+    free: 'Free',
+    pro: 'Pro',
+  };
+  return RESULT_BY_TIER[flags!.tier];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1929: mixed spelling — one optional link, one asserted — in the ternary
+    // form. The wrappers nest, so looking through only the outermost one is not
+    // enough.
+    {
+      code: `
+type Inner = { tier: 'free' | 'pro' };
+type Outer = { inner: Inner };
+declare const o: Outer;
+function f() {
+  const label = o?.inner!.tier === 'free' ? 'Free' : 'Pro';
+  return label;
+}
+`,
+      output: `
+type Inner = { tier: 'free' | 'pro' };
+type Outer = { inner: Inner };
+declare const o: Outer;
+function f() {
+  const RESULT_BY_TIER: Record<Inner['tier'], string> = {
+    free: 'Free',
+    pro: 'Pro',
+  };
+  const label = RESULT_BY_TIER[o?.inner!.tier];
+  return label;
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1929: the switch twin of the mixed spelling.
+    {
+      code: `
+type Inner = { tier: 'free' | 'pro' };
+type Outer = { inner: Inner };
+declare const o: Outer;
+function f() {
+  switch (o?.inner!.tier) {
+    case 'free':
+      return 'Free';
+    case 'pro':
+      return 'Pro';
+  }
+}
+`,
+      output: `
+type Inner = { tier: 'free' | 'pro' };
+type Outer = { inner: Inner };
+declare const o: Outer;
+function f() {
+  const RESULT_BY_TIER: Record<Inner['tier'], string> = {
+    free: 'Free',
+    pro: 'Pro',
+  };
+  return RESULT_BY_TIER[o?.inner!.tier];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1929: mixed the other way round — a plain link above an optional one.
+    {
+      code: `
+type Inner = { tier: 'free' | 'pro' };
+type Outer = { inner: Inner };
+declare const o: Outer;
+function f() {
+  const label = o.inner?.tier === 'free' ? 'Free' : 'Pro';
+  return label;
+}
+`,
+      output: `
+type Inner = { tier: 'free' | 'pro' };
+type Outer = { inner: Inner };
+declare const o: Outer;
+function f() {
+  const RESULT_BY_TIER: Record<Inner['tier'], string> = {
+    free: 'Free',
+    pro: 'Pro',
+  };
+  const label = RESULT_BY_TIER[o.inner?.tier];
+  return label;
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1929: the if/else-if arm derives its discriminant through the same
+    // helper as the ternary arm, so it went blind on `?.` too and regains the
+    // fix with it.
+    {
+      code: `
+type Flags = { tier: 'free' | 'pro' };
+declare const flags: Flags;
+function f() {
+  if (flags?.tier === 'free') {
+    return 'Free';
+  } else {
+    return 'Pro';
+  }
+}
+`,
+      output: `
+type Flags = { tier: 'free' | 'pro' };
+declare const flags: Flags;
+function f() {
+  const RESULT_BY_TIER: Record<Flags['tier'], string> = {
+    free: 'Free',
+    pro: 'Pro',
+  };
+  return RESULT_BY_TIER[flags?.tier];
 }
 `,
       errors: [{ messageId: 'preferMap' }],
@@ -2286,13 +2660,30 @@ function f() {
       errors: [{ messageId: 'preferMap' }],
     },
     // #1926: the key type is derived from the discriminant, not from the
-    // construct, so the ternary form carries the indexed access too. The
-    // fixture pinning that is WITHHELD: a ternary whose discriminant is a
-    // member expression goes silent under `?.`, because the ternary arm never
-    // gained the ChainExpression unwrapping #1867 gave the switch arm. That
-    // blindness predates #1926 and belongs to the ternary arm rather than to
-    // the key-type derivation, so it is filed as #1929 with the fixture text
-    // to restore here once the arm is fixed.
+    // construct, so the ternary form carries the indexed access too (#1929).
+    {
+      code: `
+type Flags = { tier: 'free' | 'pro' };
+declare const flags: Flags;
+function f() {
+  const label = flags.tier === 'free' ? 'Free' : 'Pro';
+  return label;
+}
+`,
+      output: `
+type Flags = { tier: 'free' | 'pro' };
+declare const flags: Flags;
+function f() {
+  const RESULT_BY_TIER: Record<Flags['tier'], string> = {
+    free: 'Free',
+    pro: 'Pro',
+  };
+  const label = RESULT_BY_TIER[flags.tier];
+  return label;
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
     // #1926: the tag access is flow-narrowed above the switch, so the
     // property's DECLARED union ('a' | 'b' | 'c') is wider than the cases the
     // construct covers. `Holder['kind']` would demand a `c` entry the switch

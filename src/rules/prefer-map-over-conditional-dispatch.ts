@@ -594,18 +594,57 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
         : node;
     }
 
-    /** Whether a discriminant expression is an identifier or a call-free,
-     * non-optional member chain (safe to collapse repeated evaluations). */
-    function isValidDiscriminant(node: TSESTree.Node): boolean {
-      if (node.type === AST_NODE_TYPES.Identifier) {
-        return true;
+    /**
+     * The link a chain-internal spelling wraps: `unwrapChain` for `?.`, plus the
+     * `TSNonNullExpression` a `!` hangs around the link it asserts.
+     *
+     * Both wrappers sit between one link and the next while changing nothing a
+     * walk down a chain is asking — `a!.b` and `a?.b` read the same property of
+     * the same receiver as `a.b` — so a walk that stops at either one reports
+     * the wrapper's own node type as its answer. `unwrapChain` stays the single
+     * place that knows how `?.` is shaped; this composes with it so no walk
+     * grows a second one (#1929).
+     */
+    function unwrapLink(node: TSESTree.Node): TSESTree.Node {
+      let cur = unwrapChain(node);
+      while (cur.type === AST_NODE_TYPES.TSNonNullExpression) {
+        cur = unwrapChain(cur.expression);
       }
-      let cur: TSESTree.Node = node;
+      return cur;
+    }
+
+    /**
+     * Whether a discriminant expression is an identifier or a call-free member
+     * chain rooted at one (safe to collapse repeated evaluations).
+     *
+     * The walk down the chain goes through `unwrapLink`, so a link spelled
+     * `a?.b` or `a!.b` is read as the member access it is. Both are pure
+     * property reads, so collapsing repeated evaluations of `flags?.tier` into
+     * one lookup is exactly as safe as collapsing `flags.tier`, and the emitted
+     * lookup copies the discriminant's source text verbatim so the spelling
+     * survives the fix. Stopping at either wrapper answered "is this a member
+     * chain?" with false and took the whole construct silent, while the switch
+     * arm — which reads its discriminant through `unwrapChain` — reported and
+     * fixed the same code: two arms disagreeing about one spelling of one
+     * question (#1929).
+     *
+     * The OUTERMOST `!` is deliberately not stripped: `a.b!` asserts the
+     * discriminant as a whole rather than a link inside it, and the name and
+     * key-type derivations reach the member access through `unwrapChain`, so
+     * admitting it here would emit a report no fix can serve.
+     *
+     * Whether the chain can yield `undefined` is decided by the discriminant's
+     * TYPE (`hasNullish` routes it to the report-only path), never by its
+     * shape. A computed link stays out: `a[i].b` re-reads `i`, which is the
+     * evaluation this test exists to protect.
+     */
+    function isValidDiscriminant(node: TSESTree.Node): boolean {
+      let cur: TSESTree.Node = unwrapChain(node);
       while (cur.type === AST_NODE_TYPES.MemberExpression) {
-        if (cur.optional || cur.computed) {
+        if (cur.computed) {
           return false;
         }
-        cur = cur.object;
+        cur = unwrapLink(cur.object);
       }
       return cur.type === AST_NODE_TYPES.Identifier;
     }
@@ -617,11 +656,17 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
      * binding, so it needs a sentinel to participate in root-keyed analysis at
      * all. `'this'` cannot collide with a real root: `this` is a reserved word,
      * so no identifier can ever carry that name.
+     *
+     * The descent goes through `unwrapLink`, because a root the walk cannot
+     * name is a narrowing exemption that cannot fire: `switch (result!.kind)`
+     * narrows its union exactly as `result.kind` does, so failing to reach
+     * `result` reports a discriminated-union dispatch whose Record hoists
+     * `result.data` out of the narrowing and does not compile (#1929).
      */
     function chainRootName(node: TSESTree.Node): string | null {
-      let cur: TSESTree.Node = node;
+      let cur: TSESTree.Node = unwrapLink(node);
       while (cur.type === AST_NODE_TYPES.MemberExpression) {
-        cur = cur.object;
+        cur = unwrapLink(cur.object);
       }
       if (cur.type === AST_NODE_TYPES.ThisExpression) {
         return THIS_ROOT;
@@ -1291,13 +1336,15 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
      * through an optional chain — so the discriminant is unwrapped before its
      * shape is read. A nullable discriminant is exactly where `?.` gets written,
      * and reading the `ChainExpression` as "not a member access" skipped this
-     * carve-out entirely (#1867).
+     * carve-out entirely (#1867). `obj.tag!` and `obj!.tag` are the same access
+     * under an assertion and are unwrapped for the same reason: a carve-out
+     * that a spelling can switch off is a carve-out for one spelling (#1929).
      */
     function isNarrowingExempt(
       discriminant: TSESTree.Node,
       keptValues: TSESTree.Expression[],
     ): boolean {
-      const chain = unwrapChain(discriminant);
+      const chain = unwrapLink(discriminant);
       if (chain.type !== AST_NODE_TYPES.MemberExpression) {
         return false;
       }
