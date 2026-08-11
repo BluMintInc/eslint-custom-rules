@@ -133,6 +133,38 @@ function isApiSurfaceValue(node: TSESTree.Node): boolean {
   return false;
 }
 
+/**
+ * Whether `node` is a member of a class that `extends` or `implements`
+ * something.
+ *
+ * Such a member is one end of a contract whose other end this fixer does not
+ * own. Renaming only the implementation leaves the declaration behind and the
+ * class stops satisfying it: `TS2515` when an abstract base declares the member,
+ * `TS2420` when an `implements` clause does (Bug #1944). The heritage itself is
+ * the trigger rather than a matching declaration the rule can find, because the
+ * base is routinely imported — the declaration need not be in this file at all,
+ * and sibling implementors of the same contract certainly need not be. Erring
+ * toward withholding costs an autofix on members that override nothing; it buys
+ * a fixer that cannot turn a compiling file into a broken one. The violation is
+ * still reported, so the author renames both ends deliberately — the same policy
+ * that already withholds the rename for exported bindings and for members of an
+ * exported or returned object literal.
+ */
+function satisfiesDeclaredContract(node: TSESTree.Node): boolean {
+  const body = node.parent;
+  if (body?.type !== AST_NODE_TYPES.ClassBody) {
+    return false;
+  }
+  const classNode = body.parent;
+  if (
+    classNode?.type !== AST_NODE_TYPES.ClassDeclaration &&
+    classNode?.type !== AST_NODE_TYPES.ClassExpression
+  ) {
+    return false;
+  }
+  return !!classNode.superClass || (classNode.implements?.length ?? 0) > 0;
+}
+
 /** The member names already declared alongside `node`, keyed by identifier. */
 function siblingMemberNames(node: TSESTree.Node | undefined): Set<string> {
   const names = new Set<string>();
@@ -807,6 +839,9 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
           // two `click` keys, silently discarding the first.
           !siblingMemberNames(node.parent).has(newName) &&
           !(isProperty && node.shorthand) &&
+          // A member of a class with heritage may be satisfying a declaration
+          // the fixer cannot rewrite (Bug #1944).
+          !satisfiesDeclaredContract(node) &&
           !(
             isProperty &&
             node.parent &&
@@ -820,6 +855,40 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
           fix(fixer) {
             return canFix ? fixer.replaceText(key, newName) : null;
           },
+        });
+      },
+
+      // The declaration half of a class contract: `abstract handleSubmit(): T`
+      // and `abstract handleSubmit: () => T`. The docs scope the subject by what
+      // the member IS — "a function, method, class property, or parameter" — and
+      // an abstract member is a method or a class property, so silence here is
+      // a gap rather than a carve-out (Bug #1944).
+      //
+      // Report-only, and permanently so: the declaration binds every implementor
+      // of the class, and implementors live in files a single-file fixer cannot
+      // see, let alone edit atomically. Interface and type-literal members
+      // (`TSMethodSignature`, `TSPropertySignature`) are deliberately NOT
+      // reported here — a member of a type is a prop declaration, which this
+      // rule governs through `callbackPropPrefix`, whose remedy is the OPPOSITE
+      // one (`onSubmit`, not `submit`). Reporting both on one declaration would
+      // hand the author contradictory instructions.
+      'TSAbstractMethodDefinition, TSAbstractPropertyDefinition'(
+        node:
+          | TSESTree.TSAbstractMethodDefinition
+          | TSESTree.TSAbstractPropertyDefinition,
+      ) {
+        const key = node.key;
+        if (
+          node.computed ||
+          key.type !== AST_NODE_TYPES.Identifier ||
+          !hasHandlePrefix(key.name)
+        ) {
+          return;
+        }
+        context.report({
+          node: key,
+          messageId: 'callbackFunctionPrefix',
+          data: { functionName: key.name },
         });
       },
 
