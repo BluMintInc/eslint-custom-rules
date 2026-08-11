@@ -187,13 +187,35 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
     }
 
     /**
-     * Generic AST visitor for identifier collection
+     * Generic AST visitor for identifier collection.
+     *
+     * An ECMA private name (`this.#batchManager`) is a member name like any
+     * other, so it is collected under the SIGIL-BEARING spelling `#name`. The
+     * sigil is what keeps the two vocabularies apart: a declared variable and a
+     * public member can both be spelled `batchManager`, and the barriers that
+     * consume these names compare them for identity, so an unsigiled key would
+     * fuse `this.#batchManager` with an unrelated local of the same name. It
+     * also reproduces the `private` spelling's behaviour exactly -- a
+     * non-computed member property is skipped unless `includeMemberProperties`
+     * asks for it, and `#name` can never equal a variable name -- while making
+     * the coordinator barrier see a coordinator held in a private field.
+     * (#1938)
      */
     function visitIdentifiers(
       node: TSESTree.Node,
       callback: (name: string) => boolean | void,
       options: { includeMemberProperties?: boolean } = {},
     ): boolean {
+      if (node.type === AST_NODE_TYPES.PrivateIdentifier) {
+        const parent = node.parent;
+        const isMemberProperty =
+          parent?.type === AST_NODE_TYPES.MemberExpression &&
+          parent.property === node;
+        if (!isMemberProperty || options.includeMemberProperties) {
+          if (callback(`#${node.name}`) === true) return true;
+        }
+      }
+
       if (node.type === AST_NODE_TYPES.Identifier) {
         const parent = node.parent;
 
@@ -357,6 +379,14 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
      * verb) from an await expression argument. Handles both direct
      * CallExpressions and optional-call ChainExpressions, and both bare
      * identifier callees and member-expression callees.
+     *
+     * An ECMA private method (`this.#commit()`) yields the BARE name, without
+     * the `#` sigil: the verb patterns this feeds (guard, refetch, navigation,
+     * side-effect) are anchored at the start, so a sigil-bearing key would
+     * defeat every one of them, and `#commit` names the same operation
+     * `commit` does. The name is only ever regex-tested here, never compared
+     * for identity against another member's name, so dropping the sigil cannot
+     * fuse `#commit` with a sibling public `commit`. (#1938)
      */
     function getCalleeMethodName(
       awaitExpr: TSESTree.AwaitExpression,
@@ -378,7 +408,8 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
       const callee = callExpr.callee;
       if (
         callee.type === AST_NODE_TYPES.MemberExpression &&
-        callee.property.type === AST_NODE_TYPES.Identifier
+        (callee.property.type === AST_NODE_TYPES.Identifier ||
+          callee.property.type === AST_NODE_TYPES.PrivateIdentifier)
       ) {
         return callee.property.name;
       }
@@ -394,6 +425,15 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
      * string-literal key (`api['users']`). Both spell the same slot, so they
      * yield the same segment and compare equal.
      *
+     * An ECMA private member (`this.#ref`) is a fixed slot like any other, so
+     * it yields a segment too. `PrivateIdentifier.name` carries the bare word,
+     * so the sigil is restored to keep `this.#ref` and `this.ref` -- two
+     * members a class can declare at once -- on distinct keys. The one shape
+     * that then collides is the computed string `this['#ref']`, which reads a
+     * string-keyed slot rather than the private one; a collision can only make
+     * two awaits look like they share a receiver, which ADDS a barrier, the
+     * direction this rule's trade-off already prefers. (#1938)
+     *
      * A numeric or dynamic index (`operations[0]`, `operations[i]`) yields null:
      * it selects a distinct element from a container rather than reaching a
      * fixed slot on a stateful object, so two such accesses carry no shared
@@ -408,6 +448,9 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
           typeof property.value === 'string'
           ? property.value
           : null;
+      }
+      if (property.type === AST_NODE_TYPES.PrivateIdentifier) {
+        return `#${property.name}`;
       }
       return property.type === AST_NODE_TYPES.Identifier ? property.name : null;
     }
@@ -509,6 +552,15 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
      * truncates to the longest fixed prefix (`this.rows`). For an ordering
      * question a prefix is the conservative answer: it overlaps every path
      * beneath it, so the barrier still engages.
+     *
+     * An ECMA private segment is NOT such a case: `this.#mutator` names its slot
+     * exactly, so it keys in full and two disjoint private slots stay
+     * parallelizable -- the same answer the `private` spelling of those members
+     * already gets. This is the one consumer of getMemberSegment where naming a
+     * segment narrows a key rather than widening one, so it is also the only
+     * place recognizing `#` can turn silence into a report; the overlapping
+     * case (`this.#state` written, `this.#state.mutator` read) still matches.
+     * (#1938)
      *
      * Bare-identifier roots yield null. They are already covered by the
      * root-binding behaviour of collectAssignmentTarget, and re-keying them by
