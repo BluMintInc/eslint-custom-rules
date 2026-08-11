@@ -921,6 +921,28 @@ export const requireMemoizeJsxReturners = createRule<Options, MessageIds>({
           return;
         }
 
+        // A `#private` NAME admits no decorator under `experimentalDecorators`
+        // — the mode this plugin's `@Memoize()` is written for — so the
+        // prescribed remedy is `TS1206: Decorators are not valid here.`,
+        // measured against the repo's tsc 5.0.3, for the own-line spelling
+        // exactly as for the inline one, and for a `get #view()` accessor
+        // exactly as for a `#view()` method. Report and fix are both withheld,
+        // as `enforce-memoize-getters` withholds them (#1945) and
+        // `enforce-memoize-async` since #1954: the message's only remedy, "Add
+        // @Memoize() to …", cannot be written on that member, and a report
+        // naming an edit its reader cannot make is worse than silence. The
+        // restriction is on the private NAME, not on privacy — `private get
+        // view()` is a legal decorator position and keeps both report and fix,
+        // as does a string-literal key that merely contains a `#`, which is why
+        // the key's node type is what is read here rather than its text.
+        // Nothing is lost by the silence either: a `#private` member is
+        // unnameable outside its class, so an author who wants memoization can
+        // reach it through the `private` modifier. Withholding the report ahead
+        // of it also keeps such a member out of the import-carrier race below.
+        if (node.key.type === AST_NODE_TYPES.PrivateIdentifier) {
+          return;
+        }
+
         // Under `experimentalDecorators` — the mode this plugin's consumers
         // compile in — TypeScript rejects a decorator on EVERY member of a
         // class EXPRESSION with TS1206, "Decorators are not valid here.",

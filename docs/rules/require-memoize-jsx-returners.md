@@ -38,6 +38,7 @@ class ProviderFactory {
 - Applies to instance getters and methods that return JSX directly or return functions that produce JSX (including nested `() => () => <div />` patterns).
 - Skips static members, so it does not conflict with `no-memoize-on-static`.
 - Skips members declared in a class **expression** (`const Widget = class { … }`), where no decorator is legal at all (see below).
+- Skips members with a **private name** (`#view() { … }`, `get #view() { … }`), where no decorator is legal either (see below).
 - Functions inside React components that rely on hooks (e.g., `useCallback`, `useMemo`) are out of scope because the rule only inspects class members.
 - Recognizes `@Memoize`, aliased imports, and namespaced forms like `@memoize.Memoize()`. Auto-fix reuses existing aliases and inserts `import { Memoize } from '@blumintinc/typescript-memoize';` if missing.
 - When other decorators exist, `@Memoize()` is added without removing them; multiple violations in a file share a single inserted import.
@@ -122,6 +123,89 @@ despite having no name, so it is reported too.
 Should this plugin ever target standard (TC39) decorators —
 `experimentalDecorators: false`, where a class expression's members do accept
 decorators — this carve-out becomes mode-dependent and needs revisiting.
+
+### Members with a private name
+
+A getter or method whose key is a **private name** — `#view`, the `#` form of
+privacy — is never reported. Under `experimentalDecorators` TypeScript rejects a
+decorator on such a member outright: `@Memoize()` written above it, or inline
+ahead of it, is **TS1206**, "Decorators are not valid here." The message's only
+remedy — "Add @Memoize() to …" — cannot be written on that member at all, so
+report and fix are both withheld; a report naming an edit its reader cannot make
+is worse than silence. Both member kinds this rule governs are covered, and so is
+every placement, since the decorator is rejected wherever it is written:
+
+```tsx
+// Not reported: `@Memoize()` cannot be written on any of these members.
+export class Widget {
+  #view() {
+    return <div />;
+  }
+
+  get #Component() {
+    return () => <div />;
+  }
+}
+
+export class Compact { #view() { return <div />; } }
+```
+
+The restriction is on the member's **name**, not on privacy. The `private`
+modifier leaves an ordinary member name as far as decorators are concerned, so it
+keeps reporting and fixing, as do `protected` and public members:
+
+```tsx
+import { Memoize } from '@blumintinc/typescript-memoize';
+
+export class Widget {
+  @Memoize()
+  private get view() {
+    return <div />;
+  }
+
+  @Memoize()
+  protected render() {
+    return <span />;
+  }
+}
+```
+
+That is also the remedy for a `#private` member whose JSX is worth memoizing:
+express its privacy with the modifier. Nothing is lost by the silence otherwise —
+a `#private` member is unnameable outside its class, so no caller elsewhere holds
+the reference this rule stabilizes.
+
+The carve-out reads the member's key, so a member whose name merely contains a
+`#` — a string-literal key spelled `'#view'` — is an ordinary member name and
+keeps reporting and fixing. A `#private` **property** is not a member this rule
+inspects and is irrelevant to the getters and methods declared beside it.
+
+Because such a member never reports, it never claims the file's import carrier
+either: the single injected
+`import { Memoize } from '@blumintinc/typescript-memoize';` rides on a violation
+that does fix, and a file whose only candidates are private-named is left
+untouched — no report, no decorator, no orphan import:
+
+```tsx
+import { Memoize } from '@blumintinc/typescript-memoize';
+
+export class Widget {
+  #view() {
+    return <div />;
+  }
+
+  @Memoize()
+  public get other() {
+    return <span />;
+  }
+}
+```
+
+This matches `enforce-memoize-getters` and `enforce-memoize-async`, which
+withhold report and fix on the same ground. The carve-out is mode-dependent in
+the same way the class-expression one is: standard (TC39) decorators do accept a
+private-named member, so targeting `experimentalDecorators: false` calls for
+revisiting it.
 
 ### Interaction with inline disable comments
 
