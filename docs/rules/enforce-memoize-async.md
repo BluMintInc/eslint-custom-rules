@@ -59,6 +59,27 @@ class UserRepo {
 }
 ```
 
+### Where the decorator is written
+
+The auto-fix attaches `@Memoize()` to the **method**, ahead of its modifiers and
+of any decorator it already carries — not to the start of the line the method
+happens to sit on. A method that owns its line receives the decorator on a line
+of its own at the method's indentation; a method that shares its line — a
+single-line class body, a method following the class's own `{` or a property
+declaration — receives it inline, a spelling the grammar accepts just as
+readily:
+
+```ts
+import { Memoize } from '@blumintinc/typescript-memoize';
+
+class UserRepo {
+  @Memoize()
+  async currentUser() { return api.getCurrent(); }
+}
+
+class Compact { @Memoize() async currentUser() { return api.getCurrent(); } }
+```
+
 ### Methods declared to produce no value
 
 A method annotated `void` or `Promise<void>` is exempt. Memoizing one is not an
