@@ -96,6 +96,9 @@ export const noPassthroughGetters = createRule({
             const getterName =
               getMethodName(node, sourceCode, {
                 computedFallbackToText: false,
+                // `#uid` and a sibling `uid` are separate members, so the
+                // message has to name the one it reports on.
+                privateIdentifierPrefix: '#',
               }) || 'getter';
             const propertyPath =
               getMemberPath(returnStatement.argument) ??
@@ -144,11 +147,31 @@ export const noPassthroughGetters = createRule({
         return false;
       }
 
-      const getterAccessibility = node.accessibility ?? 'public';
       return (
-        VISIBILITY_RANK[getterAccessibility] >
+        VISIBILITY_RANK[accessibilityOfGetter(node)] >
         VISIBILITY_RANK[rootAccessibility]
       );
+    }
+
+    /**
+     * Reach of the getter itself.
+     *
+     * A `#`-keyed getter carries no `accessibility` modifier, so the raw
+     * `?? 'public'` default would score the narrowest member the language has
+     * as the widest — inverting the comparison and exempting every `#` getter
+     * over a `private`/`protected` root. `#` and `private` have the same reach
+     * (the class body and nothing else), which is exactly how
+     * `accessibilityOfRoot` already scores a `#` ROOT, so both sides of the
+     * comparison read the same ranking. `private #uid` is a TypeScript error
+     * (TS18010), so an author on the `#` spelling has no way to restate this.
+     */
+    function accessibilityOfGetter(
+      node: TSESTree.MethodDefinition,
+    ): Accessibility {
+      if (node.key.type === AST_NODE_TYPES.PrivateIdentifier) {
+        return 'private';
+      }
+      return node.accessibility ?? 'public';
     }
 
     /**
@@ -195,7 +218,7 @@ export const noPassthroughGetters = createRule({
 
       const declared = declaredAccessibilityIn(
         node.parent as TSESTree.Node | undefined,
-        root.name,
+        root,
       );
       if (declared) {
         return declared;
@@ -208,17 +231,25 @@ export const noPassthroughGetters = createRule({
     }
 
     /**
-     * Accessibility of `name` as declared in the class body that owns `node`,
+     * Accessibility of the root as declared in the class body that owns `node`,
      * covering constructor parameter properties, fields and accessors alike —
      * a forwarded root is spelled any of the three in practice.
+     *
+     * `#settings` and `settings` are SEPARATE members that may coexist, so the
+     * lookup matches on the key kind as well as the name. Matching on the name
+     * alone made the answer depend on declaration order: a `#settings` declared
+     * above a public `settings` scored the public field as `private`, silencing
+     * a genuine passthrough over it.
      */
     function declaredAccessibilityIn(
       classBody: TSESTree.Node | undefined,
-      name: string,
+      root: { name: string; isEcmaPrivate: boolean },
     ): Accessibility | null {
       if (!classBody || classBody.type !== AST_NODE_TYPES.ClassBody) {
         return null;
       }
+
+      const { name } = root;
 
       for (const member of classBody.body) {
         if (
@@ -229,9 +260,13 @@ export const noPassthroughGetters = createRule({
             member.key.type === AST_NODE_TYPES.PrivateIdentifier &&
             member.key.name === name
           ) {
-            return 'private';
+            if (root.isEcmaPrivate) {
+              return 'private';
+            }
+            continue;
           }
           if (
+            !root.isEcmaPrivate &&
             !member.computed &&
             member.key.type === AST_NODE_TYPES.Identifier &&
             member.key.name === name
@@ -245,6 +280,13 @@ export const noPassthroughGetters = createRule({
           member.type !== AST_NODE_TYPES.MethodDefinition &&
           member.type !== AST_NODE_TYPES.TSAbstractMethodDefinition
         ) {
+          continue;
+        }
+
+        // Only a `#`-keyed field can declare a `#`-private root: neither a
+        // constructor parameter property nor an accessor may carry that key,
+        // so an identically named one below is a different member.
+        if (root.isEcmaPrivate) {
           continue;
         }
 
@@ -503,6 +545,13 @@ export const noPassthroughGetters = createRule({
 
       if (node.property.type === 'Identifier') {
         return `${objectPath}.${node.property.name}`;
+      }
+
+      // `this.#settings.uid` is a concrete path the reader can act on; without
+      // this arm the message degrades to the generic "nested property on a
+      // constructor-injected object" fallback.
+      if (node.property.type === AST_NODE_TYPES.PrivateIdentifier) {
+        return `${objectPath}.#${node.property.name}`;
       }
 
       return null;
