@@ -10,6 +10,7 @@ Assert-prefixed helpers are meant to be fail-fast guards: they signal invariants
 
 - Assert-prefixed functions must throw an error, call `process.exit(1)`, or delegate to another assert helper to stop execution on failure.
 - Any function that calls an assert-prefixed helper must itself use the `assert-` prefix to communicate that it can terminate execution.
+- A class member is checked by its name alone, whichever way its privacy is spelled. `#assertFoo`, `private assertFoo` and a public `assertFoo` are all assert helpers, and `this.#assertFoo()` counts as calling one: the `#` sigil marks privacy, not the name. A `#` member is reported under the name as written (`#assertFoo`), which keeps it distinct from a sibling of the same name.
 
 ### Examples of **incorrect** code for this rule:
 
@@ -30,6 +31,26 @@ class SessionManager {
   assertSessionActive() {
     const result = this.checkAuth(); // No throw/exit/delegation to an assert helper.
     return result;
+  }
+}
+```
+
+```typescript
+class SessionManager {
+  #assertSessionActive() {
+    return this.checkAuth(); // An ECMA private member is still an assert helper.
+  }
+}
+```
+
+```typescript
+class SessionManager {
+  private endSession() {
+    this.#assertSessionActive(); // Calls an assert helper without the assert- prefix.
+  }
+
+  #assertSessionActive() {
+    throw new Error('Session is not active');
   }
 }
 ```
@@ -61,6 +82,18 @@ function assertSessionActive() {
 ```typescript
 function canDeleteUser(user: User) {
   return isAdmin(user); // No assert helpers invoked, so no assert- prefix is needed.
+}
+```
+
+```typescript
+class SessionManager {
+  private assertSessionActive(id: string) {
+    return this.#assertKnownSession(id); // Delegating to a `#` assert helper is still delegation.
+  }
+
+  #assertKnownSession(id: string) {
+    throw new Error('Unknown session');
+  }
 }
 ```
 

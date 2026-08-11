@@ -135,6 +135,156 @@ ruleTesterTs.run('enforce-assert-throws', enforceAssertThrows, {
         }
       `,
     },
+    // ECMA private (#) members carry the same privacy as the `private` modifier
+    // and the same assert- naming convention (issue #1934).
+    // A `private` caller that delegates to a `#assert` helper still delegates.
+    {
+      code: `
+        class Session {
+          private assertSessionActive(id: string) {
+            return this.#assertKnownSession(id);
+          }
+
+          #assertKnownSession(id: string) {
+            throw new Error('Unknown session');
+          }
+        }
+      `,
+    },
+    // Isolation control for the delegation case: renaming the delegate while
+    // keeping `private` must not move the verdict.
+    {
+      code: `
+        class Session {
+          private assertSessionActive(id: string) {
+            return this.assertKnownSessionProbe(id);
+          }
+
+          private assertKnownSessionProbe(id: string) {
+            throw new Error('Unknown session');
+          }
+        }
+      `,
+    },
+    // #assert helper that throws
+    {
+      code: `
+        class Validator {
+          #assertValidName(name: string) {
+            if (name.length === 0) {
+              throw new Error('Name cannot be empty');
+            }
+          }
+        }
+      `,
+    },
+    // #assert helper delegating to another #assert helper
+    {
+      code: `
+        class Validator {
+          #assertOuter() {
+            return this.#assertInner();
+          }
+
+          #assertInner() {
+            throw new Error('Invalid');
+          }
+        }
+      `,
+    },
+    // #assert-prefixed caller of a #assert helper needs no rename
+    {
+      code: `
+        class Validator {
+          #assertFoo() {
+            throw new Error('Invalid');
+          }
+
+          #assertDoStuff() {
+            this.#assertFoo();
+          }
+        }
+      `,
+    },
+    // #assert helper that exits the process
+    {
+      code: `
+        class Validator {
+          #assertEnvironment() {
+            if (!process.env.API_KEY) {
+              process.exit(1);
+            }
+          }
+        }
+      `,
+    },
+    // Static delegation through the class name: A.#assertInner()
+    {
+      code: `
+        class Validator {
+          private static assertOuter() {
+            return Validator.#assertInner();
+          }
+
+          static #assertInner() {
+            throw new Error('Invalid');
+          }
+        }
+      `,
+    },
+    // Awaited delegation to a #assert helper
+    {
+      code: `
+        class Validator {
+          private async assertOuter() {
+            await this.#assertInner();
+          }
+
+          async #assertInner() {
+            throw new Error('Invalid');
+          }
+        }
+      `,
+    },
+    // Promise chain rooted at a #assert helper
+    {
+      code: `
+        class Validator {
+          private assertOuter() {
+            return this.#assertInner().then(() => undefined);
+          }
+
+          async #assertInner() {
+            throw new Error('Invalid');
+          }
+        }
+      `,
+    },
+    // Variable assigned a #assert method and then invoked
+    {
+      code: `
+        class Validator {
+          private assertOuter() {
+            const check = this.#assertInner;
+            check();
+          }
+
+          #assertInner() {
+            throw new Error('Invalid');
+          }
+        }
+      `,
+    },
+    // Non-assert # member that calls nothing assert-like
+    {
+      code: `
+        class Validator {
+          #doStuff() {
+            return 1;
+          }
+        }
+      `,
+    },
   ],
   invalid: [
     // Simple function that calls assert- method but is not prefixed with assert-
@@ -262,6 +412,146 @@ ruleTesterTs.run('enforce-assert-throws', enforceAssertThrows, {
         }
       `,
       errors: [assertShouldThrowError('assertComplexLogic')],
+    },
+    // ECMA private (#) assert helper that does not throw (issue #1934, arm A)
+    {
+      code: `
+        class Validator {
+          #assertValidName(name: string) {
+            return name.length > 0;
+          }
+        }
+      `,
+      errors: [assertShouldThrowError('#assertValidName')],
+    },
+    // Isolation control for arm A: renaming while keeping `private` still reports,
+    // so the blindness is the privacy spelling and not the name.
+    {
+      code: `
+        class Validator {
+          private assertValidNameProbe(name: string) {
+            return name.length > 0;
+          }
+        }
+      `,
+      errors: [assertShouldThrowError('assertValidNameProbe')],
+    },
+    // Non-assert # member calling an assert helper (issue #1934, arm C)
+    {
+      code: `
+        class DataProcessor {
+          #processData() {
+            this.assertValidInput();
+          }
+
+          private assertValidInput() {
+            throw new Error('Invalid input');
+          }
+        }
+      `,
+      errors: [shouldBeAssertPrefixedError('#processData')],
+    },
+    // Non-assert `private` member calling a # assert helper (issue #1934, arm D)
+    {
+      code: `
+        class DataProcessor {
+          private processData() {
+            this.#assertValidInput();
+          }
+
+          #assertValidInput() {
+            throw new Error('Invalid input');
+          }
+        }
+      `,
+      errors: [shouldBeAssertPrefixedError('processData')],
+    },
+    // Both members spelled with #: the caller still needs the assert- prefix
+    {
+      code: `
+        class DataProcessor {
+          #processData() {
+            this.#assertValidInput();
+          }
+
+          #assertValidInput() {
+            throw new Error('Invalid input');
+          }
+        }
+      `,
+      errors: [shouldBeAssertPrefixedError('#processData')],
+    },
+    // Static # assert helper without a throw
+    {
+      code: `
+        class Validator {
+          static #assertValidName(name: string) {
+            return name.length > 0;
+          }
+        }
+      `,
+      errors: [assertShouldThrowError('#assertValidName')],
+    },
+    // Getter # assert helper without a throw
+    {
+      code: `
+        class Validator {
+          get #assertValidName() {
+            return true;
+          }
+        }
+      `,
+      errors: [assertShouldThrowError('#assertValidName')],
+    },
+    // Setter # assert helper without a throw
+    {
+      code: `
+        class Validator {
+          set #assertValidName(name: string) {
+            this.name = name;
+          }
+        }
+      `,
+      errors: [assertShouldThrowError('#assertValidName')],
+    },
+    // A # member and a public member of the same name are distinct members:
+    // only the one that fails to throw is reported, and it is named with its sigil.
+    {
+      code: `
+        class Validator {
+          assertValidName(name: string) {
+            throw new Error('Name cannot be empty');
+          }
+
+          #assertValidName(name: string) {
+            return name.length > 0;
+          }
+        }
+      `,
+      errors: [
+        {
+          ...assertShouldThrowError('#assertValidName'),
+          line: 7,
+        },
+      ],
+    },
+    // Both privacy spellings are checked in the same class
+    {
+      code: `
+        class Validator {
+          private assertPrivateModifier(name: string) {
+            return name.length > 0;
+          }
+
+          #assertEcmaPrivate(name: string) {
+            return name.length > 0;
+          }
+        }
+      `,
+      errors: [
+        assertShouldThrowError('assertPrivateModifier'),
+        assertShouldThrowError('#assertEcmaPrivate'),
+      ],
     },
   ],
 });
