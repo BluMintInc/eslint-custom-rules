@@ -949,6 +949,104 @@ export class Repro {
   }
 }`,
       },
+      // ── #1932: an ECMA private member is the same privacy as `private` ──
+      // `private #foo` is a TypeScript error (TS18010), so the `#` spelling is
+      // the only way to write these members and must be ordered, not skipped.
+      {
+        code: `export class Repro {
+  public run() {
+    return this.#helper();
+  }
+
+  #helper() {
+    return 1;
+  }
+}`,
+      },
+      {
+        code: `export class Repro {
+  #unrelated = 1;
+
+  public run() {
+    return this.helper();
+  }
+
+  public helper() {
+    return 1;
+  }
+}`,
+      },
+      {
+        code: `export class Repro {
+  public static run() {
+    return Repro.#helper();
+  }
+
+  static #helper() {
+    return 1;
+  }
+}`,
+      },
+      // A `#` member ranks with `private`, so it trails the public API rather
+      // than leading it.
+      {
+        code: `export class Repro {
+  public a = 1;
+  #b = 2;
+}`,
+      },
+      // `#foo` and `foo` are distinct members; keying them apart keeps this
+      // already-sorted class from reading as a duplicate name.
+      {
+        code: `export class Repro {
+  public run() {
+    return this.#foo() + this.foo();
+  }
+
+  #foo() {
+    return 1;
+  }
+
+  public foo() {
+    return 2;
+  }
+}`,
+      },
+      // Field declaration order is observable, so a field whose initializer
+      // reads another field pins the layout: hoisting the reader would read
+      // `undefined` under `private` and throw under `#`.
+      {
+        code: `export class Repro {
+  #a = 1;
+  public b = this.#a;
+}`,
+      },
+      {
+        code: `export class Repro {
+  private a = 1;
+  public b = this.a;
+}`,
+      },
+      {
+        code: `export class Repro {
+  private a = 1;
+  public b = this['a'];
+}`,
+      },
+      {
+        code: `export class Repro {
+  private static a = 1;
+  public static b = Repro.a;
+}`,
+      },
+      // An immediately invoked arrow runs during initialization and keeps the
+      // enclosing `this`, so its read pins the layout too.
+      {
+        code: `export class Repro {
+  #a = 1;
+  public b = (() => this.#a)();
+}`,
+      },
     ],
     invalid: [
       {
@@ -1562,6 +1660,174 @@ class Grouped {
 
   public helper() {
     return 1;
+  }
+}`,
+        errors: [{ messageId: 'classMethodsReadTopToBottom' }],
+      },
+
+      // ── #1932: the ECMA private spelling is ordered like `private` ───────
+      // A `#` member used to leave the graph and the source order disagreeing
+      // about how many members exist, which silenced the whole class body.
+      {
+        code: `export class Repro {
+  #helper() {
+    return 1;
+  }
+
+  public run() {
+    return this.#helper();
+  }
+}`,
+        output: `export class Repro {
+  public run() {
+    return this.#helper();
+  }
+
+  #helper() {
+    return 1;
+  }
+}`,
+        errors: [
+          {
+            messageId: 'classMethodsReadTopToBottom',
+            data: {
+              className: 'Repro',
+              actualMember: '#helper',
+              expectedMember: 'run',
+            },
+          },
+        ],
+      },
+      // The bystander shape: the `#` member is ordered correctly and the
+      // violation is entirely among plain public methods, so its presence must
+      // not cost the class its diagnostic.
+      {
+        code: `export class Repro {
+  #unrelated = 1;
+
+  public helper() {
+    return 1;
+  }
+
+  public run() {
+    return this.helper();
+  }
+}`,
+        output: `export class Repro {
+  #unrelated = 1;
+
+  public run() {
+    return this.helper();
+  }
+
+  public helper() {
+    return 1;
+  }
+}`,
+        errors: [
+          {
+            messageId: 'classMethodsReadTopToBottom',
+            data: {
+              className: 'Repro',
+              actualMember: 'helper',
+              expectedMember: 'run',
+            },
+          },
+        ],
+      },
+      // `Repro.#helper()` names a static the same way `Repro.helper()` does.
+      {
+        code: `export class Repro {
+  static #helper() {
+    return 1;
+  }
+
+  public static run() {
+    return Repro.#helper();
+  }
+}`,
+        output: `export class Repro {
+  public static run() {
+    return Repro.#helper();
+  }
+
+  static #helper() {
+    return 1;
+  }
+}`,
+        errors: [{ messageId: 'classMethodsReadTopToBottom' }],
+      },
+      // A `#` field ranks with `private`, so it belongs below the public field.
+      {
+        code: `export class Repro {
+  #b = 2;
+  public a = 1;
+}`,
+        output: `export class Repro {
+  public a = 1;
+  #b = 2;
+}`,
+        errors: [{ messageId: 'classMethodsReadTopToBottom' }],
+      },
+      // A read inside an arrow is deferred to call time, so the reader may
+      // still be hoisted above the field it reads.
+      {
+        code: `export class Repro {
+  #config = { a: 1 };
+  public handler = () => this.#config;
+}`,
+        output: `export class Repro {
+  public handler = () => this.#config;
+  #config = { a: 1 };
+}`,
+        errors: [{ messageId: 'classMethodsReadTopToBottom' }],
+      },
+      // Private methods are installed on the instance before any field
+      // initializer runs, so a field that calls one may precede it.
+      {
+        code: `export class Repro {
+  #helper() {
+    return 1;
+  }
+
+  public a = this.#helper();
+}`,
+        output: `export class Repro {
+  public a = this.#helper();
+
+  #helper() {
+    return 1;
+  }
+}`,
+        errors: [{ messageId: 'classMethodsReadTopToBottom' }],
+      },
+      // `#foo` and `foo` coexist: they must key apart, or one overwrites the
+      // other and the fixer emits a body missing a member.
+      {
+        code: `export class Repro {
+  #foo() {
+    return 1;
+  }
+
+  public foo() {
+    return 2;
+  }
+
+  public run() {
+    return this.#foo() + this.foo();
+  }
+}`,
+        output: `export class Repro {
+  public run() {
+    return this.#foo() + this.foo();
+  }
+
+  #foo() {
+    return 1;
+  }
+
+  public foo() {
+    return 2;
   }
 }`,
         errors: [{ messageId: 'classMethodsReadTopToBottom' }],

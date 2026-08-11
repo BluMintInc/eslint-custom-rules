@@ -21,9 +21,11 @@ Fields come first, then the constructor, then methods ordered so that each calle
 1. `static` members before instance members.
 2. Within each group, `public`, then members with no accessibility modifier, then `protected`, then `private`. That is the conventional TypeScript layout: the public API leads, the extension points a subclass overrides follow, and the internals sit last.
 
+An ECMA private member (`#helper`) ranks as `private`. The two spellings express the same privacy and are mutually exclusive—`private #helper` is a TypeScript error (TS18010)—so the `#` spelling must not be a way to opt out of the layout. `#helper` and `helper` remain distinct members of the same class and are ordered independently.
+
 ### What counts as a dependency
 
-A member is a dependency of a method when the method reads it through `this.<member>`, or through `<ClassName>.<member>` for a static. The enclosing syntax is irrelevant: a call inside `try`/`catch`/`finally`, a `switch`, any loop, a labeled block, a template literal, an optional chain (`this?.helper()`, `this.helper?.()`) or a nested arrow function counts exactly as much as one written at the top of the body. A method referenced without being called—passed as a callback, for instance—counts too.
+A member is a dependency of a method when the method reads it through `this.<member>`, or through `<ClassName>.<member>` for a static. That includes the ECMA private spelling of both forms: `this.#helper()` and `<ClassName>.#helper()`. The enclosing syntax is irrelevant: a call inside `try`/`catch`/`finally`, a `switch`, any loop, a labeled block, a template literal, an optional chain (`this?.helper()`, `this.helper?.()`) or a nested arrow function counts exactly as much as one written at the top of the body. A method referenced without being called—passed as a callback, for instance—counts too.
 
 Names alone never create a dependency. A local variable, a parameter, a destructured binding, a `catch` binding or an imported function that merely shares a member's name is a different binding, so it does not pull that member anywhere. For the same reason, `this` inside a nested non-arrow `function () {}` denotes that function's own receiver rather than the instance, and `super.helper()` names the base class's member, so neither creates a dependency on this class's member.
 
@@ -76,6 +78,17 @@ Abstract member signatures—abstract methods (`protected abstract foo(): number
 ## Non-destructive autofix
 
 The autofix rewrites the class body from the members the rule tracks. To guarantee it never removes source it does not track, it bails when the class contains a member it cannot safely relocate—such as a `static {}` initialization block or a computed-key method—leaving the class untouched instead of emitting a body that would omit that member.
+
+Field declaration order is observable in a way method order is not, so the rule also bails when the proposed layout would move a field below an initializer that reads it while running. Reading a field before its declaration yields `undefined` under the `private` spelling and throws under the `#` spelling, so no reordering of
+
+```typescript
+class Repro {
+  #a = 1;
+  public b = this.#a; // ℹ️ reading #a pins it above b
+}
+```
+
+is offered. A read inside an arrow function is deferred to call time (`public handler = () => this.#config;`) and a method—including a private one—is installed before any initializer runs, so neither constrains the layout.
 
 The rewrite also preserves the class body's existing whitespace: the newline and indentation after `{`, the blank lines separating members, and the newline before `}` are all carried over verbatim rather than collapsed. Each member keeps its own leading comments, so documentation travels with the member it describes.
 
