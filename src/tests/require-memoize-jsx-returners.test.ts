@@ -1827,6 +1827,424 @@ export const Outer = class {
   },
 );
 
+// Issue #1951: the decorator attaches to the MEMBER, not to the start of the
+// line the member happens to sit on. Anchoring on the line emitted the
+// decorator before `export class …` whenever the member was not first on its
+// line — a single-line class body, a member sharing the class's opening line,
+// a property declared ahead of it — decorating the CLASS with what is a METHOD
+// decorator. The member stayed bare, so the rule reported it again on the next
+// pass and `eslint --fix` stacked ten `@Memoize()` before hitting its pass cap,
+// never reaching a fixpoint. The convergence describe block at the bottom of
+// this file re-lints each output, which is the assertion a single-pass
+// `output` cannot make.
+//
+// Declared under `ruleTesterJsx` because every fixture is JSX: the shared TS
+// tester enables JSX only through a `.tsx` filename, and a JSX fixture that
+// fails to parse reports nothing — silence indistinguishable from a carve-out.
+// Each case carries the filename too, since the rule itself is gated on a
+// `.ts`/`.tsx` path.
+ruleTesterJsx.run(
+  'require-memoize-jsx-returners (decorator placement, issue #1951)',
+  requireMemoizeJsxReturners,
+  {
+    valid: [
+      {
+        // The fixpoint of the single-line invalid case below, stated as a
+        // fixture: whatever `--fix` writes there must be silent here, or the
+        // rule cannot converge however the decorator is placed.
+        name: 'a single-line member already carrying the decorator inline is silent',
+        filename: 'file.tsx',
+        code: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Widget { @Memoize() public get view() { return <div />; } }`,
+      },
+      {
+        name: 'a single-line member already carrying an aliased decorator inline is silent',
+        filename: 'file.tsx',
+        code: `import { Memoize as Cache } from '@blumintinc/typescript-memoize';
+export class Widget { @Cache() public get view() { return <div />; } }`,
+      },
+      {
+        // The #1950 carve-out, in the spelling this issue is about: a
+        // single-line class EXPRESSION admits no decorator anywhere, so the
+        // placement fix must not reach it.
+        name: 'a single-line class expression stays silent',
+        filename: 'file.tsx',
+        code: `export const Widget = class { public get view() { return <div />; } };`,
+      },
+      {
+        name: 'a single-line named class expression stays silent',
+        filename: 'file.tsx',
+        code: `export const Widget = class Inner { public render() { return <div />; } };`,
+      },
+      {
+        // A static member is out of scope for the rule entirely, so no anchor
+        // is ever computed for it.
+        name: 'a single-line static member is not reported',
+        filename: 'file.tsx',
+        code: `export class Widget { public static get view() { return <div />; } }`,
+      },
+      {
+        name: 'a single-line member returning no JSX is not reported',
+        filename: 'file.tsx',
+        code: `export class Widget { public get total() { return 1 + 2; } }`,
+      },
+    ],
+    invalid: [
+      // ------------------------------------------------------------------
+      // The whole class on one line: the shape that produced ten stacked
+      // decorators on the class.
+      // ------------------------------------------------------------------
+      {
+        name: 'a single-line class body decorates the getter, not the class',
+        filename: 'file.tsx',
+        code: `export class Widget { public get view() { return <div />; } }`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Widget { @Memoize() public get view() { return <div />; } }`,
+      },
+      {
+        name: 'a single-line class body decorates an ordinary method in place',
+        filename: 'file.tsx',
+        code: `export class Widget { public render() { return <div />; } }`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Widget { @Memoize() public render() { return <div />; } }`,
+      },
+      {
+        name: 'a single-line member without an accessibility modifier is decorated in place',
+        filename: 'file.tsx',
+        code: `export class Widget { get view() { return <div />; } }`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Widget { @Memoize() get view() { return <div />; } }`,
+      },
+      {
+        // The anchor is the member's first token, which is its modifier rather
+        // than its key: a decorator emitted between `private` and `get` would
+        // not parse.
+        name: 'a private single-line getter is decorated ahead of its modifier',
+        filename: 'file.tsx',
+        code: `export class Widget { private get view() { return <div />; } }`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Widget { @Memoize() private get view() { return <div />; } }`,
+      },
+      {
+        name: 'a protected single-line method is decorated ahead of its modifier',
+        filename: 'file.tsx',
+        code: `export class Widget { protected render() { return <div />; } }`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Widget { @Memoize() protected render() { return <div />; } }`,
+      },
+      {
+        name: 'an override modifier keeps the decorator ahead of it',
+        filename: 'file.tsx',
+        code: `import { Base } from './Base';
+export class Widget extends Base { override get view() { return <div />; } }`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+import { Base } from './Base';
+export class Widget extends Base { @Memoize() override get view() { return <div />; } }`,
+      },
+      {
+        name: 'a string-literal key on one line is decorated ahead of its modifier',
+        filename: 'file.tsx',
+        code: `export class Widget { public get 'view'() { return <div />; } }`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Widget { @Memoize() public get 'view'() { return <div />; } }`,
+      },
+      {
+        name: 'a single-line member returning a JSX factory is decorated in place',
+        filename: 'file.tsx',
+        code: `export class Widget { get Component() { return () => <div />; } }`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Widget { @Memoize() get Component() { return () => <div />; } }`,
+      },
+      {
+        // Two reports on one line: each edit is anchored on its own member, so
+        // neither displaces the other.
+        name: 'both members of a single-line class are decorated exactly once each',
+        filename: 'file.tsx',
+        code: `export class Widget { get view() { return <div />; } render() { return <span />; } }`,
+        errors: [
+          { messageId: 'requireMemoizeJsxReturner' },
+          { messageId: 'requireMemoizeJsxReturner' },
+        ],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Widget { @Memoize() get view() { return <div />; } @Memoize() render() { return <span />; } }`,
+      },
+      {
+        name: 'a single-line class nested in a function is decorated in place',
+        filename: 'file.tsx',
+        code: `export function build() {
+  class Widget { get view() { return <div />; } }
+  return Widget;
+}`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export function build() {
+  class Widget { @Memoize() get view() { return <div />; } }
+  return Widget;
+}`,
+      },
+      {
+        name: 'a single-line default-exported class is decorated in place',
+        filename: 'file.tsx',
+        code: `export default class { get view() { return <div />; } }`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export default class { @Memoize() get view() { return <div />; } }`,
+      },
+      {
+        name: 'a single-line class reuses an existing Memoize import',
+        filename: 'file.tsx',
+        code: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Widget { get view() { return <div />; } }`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Widget { @Memoize() get view() { return <div />; } }`,
+      },
+      {
+        name: 'a single-line class under an aliased import decorates with the alias',
+        filename: 'file.tsx',
+        code: `import { Memoize as Cache } from '@blumintinc/typescript-memoize';
+export class Widget { get view() { return <div />; } }`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+        output: `import { Memoize as Cache } from '@blumintinc/typescript-memoize';
+export class Widget { @Cache() get view() { return <div />; } }`,
+      },
+      {
+        // Written against the FORK's specifier rather than the upstream
+        // `typescript-memoize` the older namespace fixtures use: the upstream
+        // name is claimed by `enforce-dynamic-imports`, whose disagreement with
+        // this rule is signed off in `crossrule-contradiction-closure` on an
+        // exact fixture count. The module string is immaterial to the anchor
+        // under test, so the fixture takes the spelling that leaves that
+        // sign-off measuring what it was written for.
+        name: 'a single-line class under a namespace import decorates with the qualified name',
+        filename: 'file.tsx',
+        code: `import * as memoize from '@blumintinc/typescript-memoize';
+export class Widget { get view() { return <div />; } }`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+        output: `import * as memoize from '@blumintinc/typescript-memoize';
+export class Widget { @memoize.Memoize() get view() { return <div />; } }`,
+      },
+      // ------------------------------------------------------------------
+      // Between the two extremes: the member shares its line with something,
+      // but the class is not written on one line.
+      // ------------------------------------------------------------------
+      {
+        name: 'a member sharing the class opening line rides inline while later members keep their own line',
+        filename: 'file.tsx',
+        code: `export class Widget { get view() { return <div />; }
+  render() {
+    return <span />;
+  }
+}`,
+        errors: [
+          { messageId: 'requireMemoizeJsxReturner' },
+          { messageId: 'requireMemoizeJsxReturner' },
+        ],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Widget { @Memoize() get view() { return <div />; }
+  @Memoize()
+  render() {
+    return <span />;
+  }
+}`,
+      },
+      {
+        name: 'a member sharing its line with an earlier property is decorated in place',
+        filename: 'file.tsx',
+        code: `export class Widget {
+  private locked = 1; get view() { return <div />; }
+}`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Widget {
+  private locked = 1; @Memoize() get view() { return <div />; }
+}`,
+      },
+      {
+        // The first member owns its line and keeps the historical layout; only
+        // the second one, which has no line to take, rides inline.
+        name: 'two members sharing one line are decorated by their own anchors',
+        filename: 'file.tsx',
+        code: `export class Widget {
+  get view() { return <div />; } get other() { return <span />; }
+}`,
+        errors: [
+          { messageId: 'requireMemoizeJsxReturner' },
+          { messageId: 'requireMemoizeJsxReturner' },
+        ],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Widget {
+  @Memoize()
+  get view() { return <div />; } @Memoize() get other() { return <span />; }
+}`,
+      },
+      {
+        name: 'a member whose line starts with a block comment keeps the comment in place',
+        filename: 'file.tsx',
+        code: `export class Widget {
+  /* lazy */ get view() { return <div />; }
+}`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Widget {
+  /* lazy */ @Memoize() get view() { return <div />; }
+}`,
+      },
+      // ------------------------------------------------------------------
+      // The `node.decorators[0]` anchor path: an existing decorator, not the
+      // member itself, is what the edit is measured against.
+      // ------------------------------------------------------------------
+      {
+        name: 'an existing decorator that owns its line keeps the added decorator above it',
+        filename: 'file.tsx',
+        code: `function Log(): MethodDecorator { return () => {}; }
+export class Widget {
+  @Log()
+  get view() { return <div />; }
+}`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+function Log(): MethodDecorator { return () => {}; }
+export class Widget {
+  @Memoize()
+  @Log()
+  get view() { return <div />; }
+}`,
+      },
+      {
+        name: 'an existing decorator sharing the member line still owns that line',
+        filename: 'file.tsx',
+        code: `function Log(): MethodDecorator { return () => {}; }
+export class Widget {
+  @Log() get view() { return <div />; }
+}`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+function Log(): MethodDecorator { return () => {}; }
+export class Widget {
+  @Memoize()
+  @Log() get view() { return <div />; }
+}`,
+      },
+      {
+        name: 'an existing decorator sharing a line with earlier code takes the decorator inline',
+        filename: 'file.tsx',
+        code: `function Log(): MethodDecorator { return () => {}; }
+export class Widget {
+  private locked = 1; @Log() get view() { return <div />; }
+}`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+function Log(): MethodDecorator { return () => {}; }
+export class Widget {
+  private locked = 1; @Memoize() @Log() get view() { return <div />; }
+}`,
+      },
+      {
+        name: 'a single-line class with an existing decorator is decorated ahead of it',
+        filename: 'file.tsx',
+        code: `function Log(): MethodDecorator { return () => {}; }
+export class Widget { @Log() get view() { return <div />; } }`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+function Log(): MethodDecorator { return () => {}; }
+export class Widget { @Memoize() @Log() get view() { return <div />; } }`,
+      },
+      // ------------------------------------------------------------------
+      // The control: a member that owns its line. Its output must be
+      // byte-identical to what the rule emitted before this fix — that case
+      // already converged, and the branch exists to leave it alone.
+      // ------------------------------------------------------------------
+      {
+        name: 'a member that owns its line keeps the decorator on a line of its own',
+        filename: 'file.tsx',
+        code: `export class Widget {
+  public get view() {
+    return <div />;
+  }
+}`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Widget {
+  @Memoize()
+  public get view() {
+    return <div />;
+  }
+}`,
+      },
+      {
+        name: 'a tab-indented member keeps its own indentation',
+        filename: 'file.tsx',
+        code: 'export class Widget {\n\t\tget view() { return <div />; }\n}',
+        errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+        output:
+          "import { Memoize } from '@blumintinc/typescript-memoize';\nexport class Widget {\n\t\t@Memoize()\n\t\tget view() { return <div />; }\n}",
+      },
+      {
+        // A member whose modifiers straddle a line break still owns the line it
+        // starts on, so the historical layout stands.
+        name: 'a member whose modifiers span lines keeps the indentation of its first line',
+        filename: 'file.tsx',
+        code: `export class Widget {
+  public get
+  view() { return <div />; }
+}`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Widget {
+  @Memoize()
+  public get
+  view() { return <div />; }
+}`,
+      },
+      {
+        // The report survives; the FIX is declined because the emitted
+        // `@Memoize()` would resolve to the parameter. `output: null` asserts
+        // that decline — an omitted `output` would assert nothing at all, and
+        // the placement branch must not turn a declined fix into an applied
+        // one.
+        name: 'a single-line class reports without a fix when Memoize is shadowed',
+        filename: 'file.tsx',
+        code: `export function build(Memoize) {
+  class Widget { get view() { return <div />; } }
+  return Widget;
+}`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+        output: null,
+      },
+      {
+        // Both carve-outs at once: the enclosing class EXPRESSION admits no
+        // decorator (#1950) while the single-line declaration inside its method
+        // takes one inline (#1951).
+        name: 'a single-line class declaration inside a class expression is decorated in place',
+        filename: 'file.tsx',
+        code: `export const Outer = class {
+  public build() {
+    class Widget { get view() { return <div />; } }
+    return Widget;
+  }
+};`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export const Outer = class {
+  public build() {
+    class Widget { @Memoize() get view() { return <div />; } }
+    return Widget;
+  }
+};`,
+      },
+    ],
+  },
+);
+
 // Issue #1414: RuleTester applies a single fix pass and never shows the file
 // that `eslint --fix` actually writes. These cases run the real multi-pass
 // fixer and assert the invariant the bug violated: an emitted @Memoize()
@@ -2293,15 +2711,38 @@ export class Widget {
       'anonymous and default-exported',
       'export default class {\n  public get view() { return <div />; }\n}\n',
     ],
-    // A DECLARATION whose member shares the class's own line is absent
-    // deliberately. The decorator is inserted at the member's LINE START, which
-    // for a one-line class is the line the class opens on, so the edit lands
-    // before `export class` and the member is still undecorated on the next
-    // pass — the fixer re-fires until ESLint's pass limit stops it. That is a
-    // defect of the insertion point rather than of the class-expression
-    // carve-out this guard exists for, and asserting it here would make one
-    // rule's fix converge only by fixing the other. The single-line EXPRESSION
-    // row above stays, since silence is the whole claim there.
+    // A DECLARATION whose member shares the class's own line was withheld
+    // while #1951 was live: the decorator went in at the member's LINE START,
+    // which for a one-line class is the line the class opens on, so the edit
+    // landed before `export class` and the member stayed undecorated, the fixer
+    // re-firing until ESLint's pass limit. With the anchor moved to the member
+    // these rows belong here — the inline `@Memoize() public get …` spelling is
+    // a compiler claim like every other row, and this is the harness that can
+    // check it.
+    [
+      'written on a single line',
+      'export class Widget { public get view() { return <div />; } }\n',
+    ],
+    [
+      'written on a single line with a method',
+      'export class Widget { public render() { return <div />; } }\n',
+    ],
+    [
+      'with two members sharing one line',
+      'export class Widget { public get view() { return <div />; } public render() { return <span />; } }\n',
+    ],
+    [
+      'whose first member shares the opening line',
+      'export class Widget { public get view() { return <div />; }\n  public render() { return <span />; }\n}\n',
+    ],
+    [
+      'whose member follows a property on one line',
+      'export class Widget {\n  private locked = 1; public get view() { return <div />; }\n}\n',
+    ],
+    [
+      'written on a single line inside a function',
+      'export function build() {\n  class Widget { public get view() { return <div />; } }\n  return Widget;\n}\n',
+    ],
   ];
 
   it.each(CLASS_DECLARATIONS)(
@@ -2334,5 +2775,265 @@ export const Widget = class {
 `;
 
     expect(introducedBy(before, after)).toEqual(['TS1206']);
+  });
+});
+
+// Issue #1951: `RuleTester` applies a single fix pass, so an `output` fixture
+// cannot tell a settled file from one the fixer will rewrite again. These cases
+// run the real multi-pass fixer and assert the invariant the bug violated:
+// re-linting the fixed output reports NOTHING and fixes nothing, which is the
+// only spelling that catches an even-length cycle as well as the pass-cap
+// runaway the bug produced — ten `@Memoize()` stacked on the CLASS while the
+// member the rule named stayed bare.
+describe('require-memoize-jsx-returners: the fix converges wherever the member sits (issue #1951)', () => {
+  const RULE_ID = '@blumintinc/blumint/require-memoize-jsx-returners';
+  const FILENAME = 'Widget.tsx';
+
+  const createLinter = () => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      RULE_ID,
+      requireMemoizeJsxReturners as unknown as Rule.RuleModule,
+    );
+    return linter;
+  };
+
+  const LINT_CONFIG = {
+    parser: '@typescript-eslint/parser',
+    parserOptions: {
+      ecmaVersion: 2022 as const,
+      sourceType: 'module' as const,
+      ecmaFeatures: { jsx: true },
+    },
+    rules: { [RULE_ID]: 'error' as const },
+  };
+
+  const fix = (code: string) =>
+    createLinter().verifyAndFix(code, LINT_CONFIG, FILENAME);
+
+  const verify = (code: string) =>
+    createLinter().verify(code, LINT_CONFIG, FILENAME);
+
+  /** `@Memoize()` immediately followed by a class opener is the bug's shape. */
+  const DECORATED_CLASS = /@Memoize\(\)\s*(?:export\s+)?(?:default\s+)?class\b/;
+
+  const expectConverges = (code: string, expectedDecorators: number) => {
+    // A fixture that never parsed, or that the rule declined, would satisfy
+    // every convergence assertion vacuously, so the run must be shown to report
+    // and to rewrite its input first.
+    expect(verify(code).length).toBeGreaterThan(0);
+
+    const first = fix(code);
+    expect(first.fixed).toBe(true);
+
+    // Re-running the fixer on its own output is the detector: comparing the two
+    // strings would call an even-length cycle converged.
+    expect(fix(first.output).fixed).toBe(false);
+    expect(verify(first.output)).toHaveLength(0);
+
+    expect(first.output.match(/@Memoize\(\)/g)).toHaveLength(
+      expectedDecorators,
+    );
+    expect(first.output).not.toMatch(DECORATED_CLASS);
+    expect(
+      first.output.match(
+        /import \{ Memoize \} from '@blumintinc\/typescript-memoize';/g,
+      ),
+    ).toHaveLength(1);
+
+    return first.output;
+  };
+
+  it('decorates the member of a single-line class exactly once', () => {
+    const output = expectConverges(
+      'export class Widget { public get view() { return <div />; } }\n',
+      1,
+    );
+
+    expect(output)
+      .toBe(`import { Memoize } from '@blumintinc/typescript-memoize';
+export class Widget { @Memoize() public get view() { return <div />; } }
+`);
+  });
+
+  it('converges on the multi-line spelling without changing its layout', () => {
+    // The control: this shape converged before the fix and its output must be
+    // byte-identical afterwards, since the branch exists to leave it alone.
+    const output = expectConverges(
+      `export class Widget {
+  public get view() {
+    return <div />;
+  }
+}
+`,
+      1,
+    );
+
+    expect(output)
+      .toBe(`import { Memoize } from '@blumintinc/typescript-memoize';
+export class Widget {
+  @Memoize()
+  public get view() {
+    return <div />;
+  }
+}
+`);
+  });
+
+  it('decorates each member of a single-line class exactly once', () => {
+    const output = expectConverges(
+      'export class Widget { get view() { return <div />; } render() { return <span />; } }\n',
+      2,
+    );
+
+    expect(output).toContain(
+      'export class Widget { @Memoize() get view() { return <div />; } @Memoize() render() { return <span />; } }',
+    );
+  });
+
+  it('converges on a member that shares the class opening line', () => {
+    const output = expectConverges(
+      `export class Widget { get view() { return <div />; }
+  render() {
+    return <span />;
+  }
+}
+`,
+      2,
+    );
+
+    expect(output).toContain(
+      'export class Widget { @Memoize() get view() { return <div />; }',
+    );
+    expect(output).toContain('  @Memoize()\n  render()');
+  });
+
+  it('converges on a member that follows a property on its line', () => {
+    const output = expectConverges(
+      `export class Widget {
+  private locked = 1; get view() { return <div />; }
+}
+`,
+      1,
+    );
+
+    expect(output).toContain(
+      '  private locked = 1; @Memoize() get view() { return <div />; }',
+    );
+  });
+
+  it('converges through the existing-decorator anchor on a shared line', () => {
+    const output = expectConverges(
+      `function Log(): MethodDecorator { return () => {}; }
+export class Widget {
+  private locked = 1; @Log() get view() { return <div />; }
+}
+`,
+      1,
+    );
+
+    expect(output).toContain(
+      '  private locked = 1; @Memoize() @Log() get view() { return <div />; }',
+    );
+  });
+
+  it('converges on a tab-indented member without touching its indentation', () => {
+    const output = expectConverges(
+      'export class Widget {\n\t\tget view() { return <div />; }\n}\n',
+      1,
+    );
+
+    expect(output).toContain('\n\t\t@Memoize()\n\t\tget view()');
+  });
+
+  it('converges on a single-line class nested in a function', () => {
+    const output = expectConverges(
+      `export function build() {
+  class Widget { get view() { return <div />; } }
+  return Widget;
+}
+`,
+      1,
+    );
+
+    expect(output).toContain(
+      '  class Widget { @Memoize() get view() { return <div />; } }',
+    );
+  });
+
+  it('emits nothing for a shared line whose reports are all disabled inline', () => {
+    // `eslint-disable-next-line` covers the whole line, so both members of a
+    // shared line are suppressed by one directive: neither decorator is written
+    // and — the #1414 invariant — no import is left behind for a decorator that
+    // never appeared. Placing the decorator inline must not smuggle an edit
+    // past a suppression.
+    const code = `export class Widget {
+  // eslint-disable-next-line @blumintinc/blumint/require-memoize-jsx-returners
+  get view() { return <div />; } get other() { return <span />; }
+}
+`;
+
+    const first = fix(code);
+
+    expect(first.fixed).toBe(false);
+    expect(first.output).toBe(code);
+    expect(first.output).not.toContain('typescript-memoize');
+  });
+
+  it('decorates the surviving member when only one of a pair is disabled', () => {
+    const output = fix(`export class Widget {
+  // eslint-disable-next-line @blumintinc/blumint/require-memoize-jsx-returners
+  get view() { return <div />; }
+  get other() { return <span />; } get third() { return <section />; }
+}
+`);
+
+    expect(output.output)
+      .toBe(`import { Memoize } from '@blumintinc/typescript-memoize';
+export class Widget {
+  // eslint-disable-next-line @blumintinc/blumint/require-memoize-jsx-returners
+  get view() { return <div />; }
+  @Memoize()
+  get other() { return <span />; } @Memoize() get third() { return <section />; }
+}
+`);
+    // The disabled member keeps reporting nothing, so the file has settled even
+    // though one violation remains unfixed by design.
+    expect(fix(output.output).fixed).toBe(false);
+  });
+
+  it('leaves a single-line class expression byte-for-byte alone (negative control)', () => {
+    // The #1950 carve-out, restated where a placement regression would show up
+    // first: an assertion set that only counted decorators would be satisfied
+    // by silence, so this shape is pinned as unchanged rather than as settled.
+    const code =
+      'export const Widget = class { get view() { return <div />; } };\n';
+
+    expect(verify(code)).toHaveLength(0);
+    expect(fix(code).fixed).toBe(false);
+    expect(fix(code).output).toBe(code);
+  });
+
+  it('would have caught the bug: the pre-fix output leaves the member reported', () => {
+    // Exactly what the line-start anchor wrote on its first pass. Every
+    // assertion `expectConverges` makes fails on it — the member is still
+    // reported, so a re-lint is not clean and another decorator is appended —
+    // which is what makes the assertions above non-vacuous.
+    const preFixOutput = `import { Memoize } from '@blumintinc/typescript-memoize';
+@Memoize()
+export class Widget { public get view() { return <div />; } }
+`;
+
+    expect(verify(preFixOutput)).toHaveLength(1);
+    expect(preFixOutput).toMatch(DECORATED_CLASS);
+
+    const refixed = fix(preFixOutput);
+    expect(refixed.fixed).toBe(true);
+    expect(refixed.output.match(/@Memoize\(\)/g)).toHaveLength(2);
   });
 });

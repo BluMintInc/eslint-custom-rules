@@ -1008,23 +1008,37 @@ export const requireMemoizeJsxReturners = createRule<Options, MessageIds>({
               );
             scheduledImportFix = newScheduledImportFix;
 
-            const insertionTarget =
-              node.decorators && node.decorators.length > 0
-                ? node.decorators[0]
-                : node;
-            const insertionStart = insertionTarget.range
-              ? insertionTarget.range[0]
-              : node.range
-              ? node.range[0]
-              : 0;
+            // Anchor the decorator on the member — its first token, so ahead of
+            // `public`/`private` and of any decorator it already carries —
+            // rather than on the start of the line the member happens to sit
+            // on. The two coincide only while the member is first on its line:
+            // in a single-line class body, or where a member shares a line with
+            // the class's own `{`, a line-start edit emits the decorator before
+            // `class …`, decorating the CLASS. `Memoize` is a METHOD decorator,
+            // so that lands TS1238 and TS1270 on the class, and the member it
+            // was meant for stays bare — the rule reports it again on the next
+            // pass and `--fix` stacks one more decorator per pass up to
+            // ESLint's pass cap instead of reaching a fixpoint. Spelled as
+            // `enforce-memoize-getters` spells it, since both rules emit the
+            // same decorator onto the same kind of member.
+            const insertionTarget = node.decorators?.[0] ?? node;
+            const insertionStart = insertionTarget.range[0];
             const text = sourceCode.text;
             const lineStart = text.lastIndexOf('\n', insertionStart - 1) + 1;
-            const leadingWhitespace =
-              text.slice(lineStart, insertionStart).match(/^[ \t]*/)?.[0] ?? '';
+            const linePrefix = text.slice(lineStart, insertionStart);
+            // A member that owns its line keeps the decorator on a line of its
+            // own at the member's indentation, which is the layout authors
+            // write by hand. A member that shares its line has no line to take,
+            // and a newline there would strand the decorator against the
+            // neighbour's text, so it rides inline — a spelling the grammar
+            // accepts just as readily.
+            const ownsItsLine = /^[ \t]*$/.test(linePrefix);
             fixes.push(
-              fixer.insertTextBeforeRange(
-                [lineStart, lineStart],
-                `${leadingWhitespace}@${decoratorIdent}()\n`,
+              fixer.insertTextBefore(
+                insertionTarget,
+                ownsItsLine
+                  ? `@${decoratorIdent}()\n${linePrefix}`
+                  : `@${decoratorIdent}() `,
               ),
             );
 
