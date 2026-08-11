@@ -1,5 +1,113 @@
 [
   {
+    "version": "1.20.139",
+    "date": "2026-08-11T03:05:43.013Z",
+    "rules": [
+      {
+        "name": "class-methods-read-top-to-bottom",
+        "changeType": "fix",
+        "issues": [
+          1916,
+          1917,
+          1918
+        ],
+        "summary": "key dependency edges on this-qualified references (closes #1916, closes #1917, closes #1918)"
+      },
+      {
+        "name": "enforce-assert-safe-object-key",
+        "changeType": "fix",
+        "issues": [
+          1915
+        ],
+        "summary": "credit return-type and class-field numeric proof (closes #1915)"
+      },
+      {
+        "name": "enforce-firestore-doc-ref-generic",
+        "changeType": "fix",
+        "issues": [
+          1909
+        ],
+        "summary": "credit a return annotation in any spelling (closes #1909)"
+      },
+      {
+        "name": "extract-global-constants",
+        "changeType": "fix",
+        "issues": [
+          1755
+        ],
+        "summary": "report a hoistable nested arrow helper (closes #1755)"
+      },
+      {
+        "name": "memo-nested-react-components",
+        "changeType": "fix",
+        "issues": [
+          1911,
+          1925
+        ],
+        "summary": "credit a component handed back in an array (closes #1925); see through an optional chain (closes #1911)"
+      },
+      {
+        "name": "no-unused-props",
+        "changeType": "fix",
+        "issues": [
+          1910,
+          1912
+        ],
+        "summary": "check a component nested inside another (closes #1912); examine function-declaration components (closes #1910)"
+      },
+      {
+        "name": "parallelize-async-operations",
+        "changeType": "fix",
+        "issues": [
+          1914,
+          1923,
+          1924
+        ],
+        "summary": "barrier closure writes to instance state (closes #1924); treat `super` and `this` as one receiver (closes #1923); engage the receiver barrier for this/super/nested (closes #1914)"
+      },
+      {
+        "name": "prefer-map-over-conditional-dispatch",
+        "changeType": "fix",
+        "issues": [
+          1926,
+          1929
+        ],
+        "summary": "look through `?.` in the ternary and if arms (closes #1929); emit the Record key as a type expression (closes #1926)"
+      },
+      {
+        "name": "prefer-spread-over-reassembly",
+        "changeType": "fix",
+        "issues": [
+          1908
+        ],
+        "summary": "examine function declarations too (closes #1908)"
+      },
+      {
+        "name": "prefer-utility-function-over-private-static",
+        "changeType": "fix",
+        "issues": [
+          1913,
+          1920,
+          1921,
+          1922,
+          1927,
+          1928,
+          1931
+        ],
+        "summary": "decide `new.target` and `super` on dereference too (closes #1931); decide the `this` arm on dereference, not presence (closes #1928); see a helper spelled as a private static property (closes #1927); credit class state read through an alias (closes #1922); exempt setters, name getters correctly (closes #1921); size the body in statements (closes #1920); credit class-name-qualified state (closes #1913)"
+      },
+      {
+        "name": "require-memo",
+        "changeType": "fix",
+        "issues": [
+          1774,
+          1919
+        ],
+        "summary": "credit a container-carried memo() hand-back (closes #1919); claim a nested component in both spellings (closes #1774)"
+      }
+    ]
+  },
+  {
     "version": "1.20.138",
     "date": "2026-08-10T02:17:15.300Z",
     "rules": [
