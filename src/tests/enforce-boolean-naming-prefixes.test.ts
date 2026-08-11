@@ -333,6 +333,54 @@ const enabled = flags?.['isEnabled'];`,
       `const Boolean = (value: unknown) => value;
 declare const state: unknown;
 const flag = Boolean?.(state);`,
+
+      // ECMA private members (`#name`) are the same subject as `private` ones,
+      // so an approved prefix satisfies the rule under either spelling.
+      'class UserAccount { #isVerified = false; }',
+      'class UserAccount { readonly #hasAccess!: boolean; }',
+      'class UserAccount { static #isPremium = false; }',
+      'class UserAccount { #isLocked(): boolean { return true; } }',
+      `
+    class UserAccount {
+      #status = 'active';
+
+      get #isActive() {
+        return this.#status === 'active';
+      }
+    }
+    `,
+
+      // A `#` member that holds no boolean carries no naming obligation
+      "class UserAccount { #name = 'x'; }",
+      'class UserAccount { #count: number = 3; }',
+
+      // The documented underscore opt-out is keyed on the name, so it survives
+      // the `#` spelling: `#_verified`'s name is `_verified`.
+      'class UserAccount { #_verified = false; }',
+
+      // Custom prefixes reach `#` members exactly as they reach `private` ones
+      {
+        code: 'class UserAccount { #hasAccess!: boolean; }',
+        options: [{ prefixes: ['has'] }],
+      },
+
+      // Isolation control for the `#` cases: the same rename while KEEPING the
+      // `private` modifier is silent too, so the verdicts above are attributable
+      // to the name rather than to the privacy spelling.
+      'class UserAccount { private isVerified = false; }',
+      'class UserAccount { private static isPremium = false; }',
+      // Spelled over several lines because the single-line spelling of this
+      // control trips a fix-fixpoint defect in `enforce-memoize-getters`, whose
+      // fixer stacks `@Memoize()` above a one-line class instead of on the
+      // getter `prefer-getter-over-parameterless-method` just produced. The
+      // control's subject is the name, which the line breaks do not touch.
+      `
+    class UserAccount {
+      private isLocked(): boolean {
+        return true;
+      }
+    }
+    `,
     ],
     invalid: [
       // Variables without proper boolean prefixes
@@ -1053,6 +1101,223 @@ const flag = Boolean?.(state);`,
             type: 'variable',
             name: 'flag',
             capitalizedName: 'Flag',
+            prefixes: defaultPrefixes,
+          }),
+        ],
+      },
+
+      // ECMA private (`#`) members carry the same obligation as `private` ones.
+      // The two spellings are mutually exclusive — `private #foo` is TS18010 —
+      // so an author on `#` cannot opt into coverage by adding the modifier.
+      // Reports quote the member as written, keeping `#verified` distinct from a
+      // sibling public `verified`. The rule ships no fixer, so `output: null`
+      // records that the remedy stays manual.
+      {
+        code: 'class UserAccount { #verified = false; }',
+        output: null,
+        errors: [
+          buildError({
+            type: 'property',
+            name: '#verified',
+            capitalizedName: 'Verified',
+            prefixes: defaultPrefixes,
+          }),
+        ],
+      },
+      {
+        code: 'class UserAccount { #verified!: boolean; }',
+        errors: [
+          buildError({
+            type: 'property',
+            name: '#verified',
+            capitalizedName: 'Verified',
+            prefixes: defaultPrefixes,
+          }),
+        ],
+      },
+      {
+        code: 'class UserAccount { readonly #verified!: boolean; }',
+        errors: [
+          buildError({
+            type: 'property',
+            name: '#verified',
+            capitalizedName: 'Verified',
+            prefixes: defaultPrefixes,
+          }),
+        ],
+      },
+      {
+        code: 'class UserAccount { static #premium = false; }',
+        errors: [
+          buildError({
+            type: 'property',
+            name: '#premium',
+            capitalizedName: 'Premium',
+            prefixes: defaultPrefixes,
+          }),
+        ],
+      },
+      {
+        code: 'class UserAccount { #locked(): boolean { return true; } }',
+        errors: [
+          buildError({
+            type: 'method',
+            name: '#locked',
+            capitalizedName: 'Locked',
+            prefixes: defaultPrefixes,
+          }),
+        ],
+      },
+      {
+        code: `
+      class UserAccount {
+        #status = 'active';
+
+        get #active() {
+          return this.#status === 'active';
+        }
+      }
+      `,
+        errors: [
+          buildError({
+            type: 'getter',
+            name: '#active',
+            capitalizedName: 'Active',
+            prefixes: defaultPrefixes,
+          }),
+        ],
+      },
+      {
+        code: 'class UserAccount { static get #ready(): boolean { return true; } }',
+        errors: [
+          buildError({
+            type: 'getter',
+            name: '#ready',
+            capitalizedName: 'Ready',
+            prefixes: defaultPrefixes,
+          }),
+        ],
+      },
+
+      // A `#` member read inside the class is as boolean-suggesting as the same
+      // member reached through the `private` spelling, so the subject that reads
+      // it stays in scope.
+      {
+        code: `
+      class UserAccount {
+        #isVerified = false;
+
+        get #active() {
+          return this.#isVerified;
+        }
+      }
+      `,
+        errors: [
+          buildError({
+            type: 'getter',
+            name: '#active',
+            capitalizedName: 'Active',
+            prefixes: defaultPrefixes,
+          }),
+        ],
+      },
+      {
+        code: `
+      class UserAccount {
+        #isStatusOk(): boolean {
+          return true;
+        }
+
+        get #active() {
+          return this.#isStatusOk();
+        }
+      }
+      `,
+        errors: [
+          buildError({
+            type: 'getter',
+            name: '#active',
+            capitalizedName: 'Active',
+            prefixes: defaultPrefixes,
+          }),
+        ],
+      },
+      {
+        code: `
+      class UserAccount {
+        #isVerified = false;
+
+        render() {
+          const flag = this.#isVerified;
+          return flag;
+        }
+      }
+      `,
+        errors: [
+          buildError({
+            type: 'variable',
+            name: 'flag',
+            capitalizedName: 'Flag',
+            prefixes: defaultPrefixes,
+          }),
+        ],
+      },
+
+      // A `#` member and a public member of the same word are separate
+      // declarations, each reported under the name it is written with.
+      {
+        code: `
+      class UserAccount {
+        verified = false;
+        #verified = false;
+      }
+      `,
+        errors: [
+          buildError({
+            type: 'property',
+            name: 'verified',
+            capitalizedName: 'Verified',
+            prefixes: defaultPrefixes,
+          }),
+          buildError({
+            type: 'property',
+            name: '#verified',
+            capitalizedName: 'Verified',
+            prefixes: defaultPrefixes,
+          }),
+        ],
+      },
+
+      // The docs' headline incorrect example respelled: swapping `private` for
+      // `#` must not change how many members the rule sees.
+      {
+        code: `
+      class UserAccount {
+        #verified = false;
+        static premium = false;
+
+        accountLocked(): boolean {
+          return this.failedAttempts > 3;
+        }
+      }
+      `,
+        errors: [
+          buildError({
+            type: 'property',
+            name: '#verified',
+            capitalizedName: 'Verified',
+            prefixes: defaultPrefixes,
+          }),
+          buildError({
+            type: 'property',
+            name: 'premium',
+            capitalizedName: 'Premium',
+            prefixes: defaultPrefixes,
+          }),
+          buildError({
+            type: 'method',
+            name: 'accountLocked',
+            capitalizedName: 'AccountLocked',
             prefixes: defaultPrefixes,
           }),
         ],

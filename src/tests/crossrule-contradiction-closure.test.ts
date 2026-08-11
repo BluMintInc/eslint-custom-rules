@@ -204,8 +204,8 @@ const KNOWN_DIVERGENT: Record<string, Exemption> = {
   },
   'enforce-boolean-naming-prefixes::no-explicit-return-type': {
     reason:
-      'PIPELINE: the fixtures annotate an inferable return only to display the boolean under test; `--fix` strips it on 44 of 49 and the prefix check reads the name either way.',
-    cases: { noExplicitReturnTypeInferable: 49 },
+      'PIPELINE: the fixtures annotate an inferable return only to display the boolean under test; `--fix` strips it on 46 of 51 and the prefix check reads the name either way. Two joined with #1935 — `#isLocked(): boolean` and its `private isLocked(): boolean` isolation control — and both are that same shape: the owner detects a boolean METHOD only through the annotation, so dropping it would not satisfy both rules but make the fixture vacuous, and the composed `--fix` strips it on both (measured) leaving them silent under both rules.',
+    cases: { noExplicitReturnTypeInferable: 51 },
   },
   'no-inline-component-prop::global-const-style': {
     reason:

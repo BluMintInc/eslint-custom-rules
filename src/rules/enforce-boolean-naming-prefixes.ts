@@ -54,6 +54,41 @@ const BOOLEANISH_BINARY_OPERATORS = new Set<
   TSESTree.BinaryExpression['operator']
 >(['===', '!==', '==', '!=', '>', '<', '>=', '<=', 'in', 'instanceof']);
 
+type MemberName = {
+  /** The bare word, which every prefix and underscore check reads. */
+  name: string;
+  /** The member as written, which every report quotes. */
+  written: string;
+};
+
+/**
+ * The name a class member key declares, for both spellings of privacy.
+ *
+ * `#verified` and `private verified` declare the same thing, and TypeScript
+ * forbids writing them together (TS18010, "An accessibility modifier cannot be
+ * used with a private identifier"), so an author on the `#` spelling can never
+ * opt into the `Identifier` path. A `#` name is also the most rename-safe key in
+ * the language — no structural type, serialized payload or external caller can
+ * observe it — which is why it belongs with `Identifier` rather than with the
+ * keys this returns `undefined` for: computed keys carry no static name, and
+ * string-literal keys usually carry one an external contract dictates.
+ *
+ * `PrivateIdentifier.name` excludes the `#` sigil, so `name` reads as an
+ * ordinary word while `written` keeps the sigil: a report on `#verified` must
+ * not read as one on a sibling public `verified`.
+ */
+function memberNameOf(key: TSESTree.Node): MemberName | undefined {
+  if (key.type === AST_NODE_TYPES.Identifier) {
+    return { name: key.name, written: key.name };
+  }
+
+  if (key.type === AST_NODE_TYPES.PrivateIdentifier) {
+    return { name: key.name, written: `#${key.name}` };
+  }
+
+  return undefined;
+}
+
 export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
   name: 'enforce-boolean-naming-prefixes',
   meta: {
@@ -665,11 +700,13 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         }
       }
 
-      if (
-        callExpression.callee.type === AST_NODE_TYPES.MemberExpression &&
-        callExpression.callee.property.type === AST_NODE_TYPES.Identifier
-      ) {
-        const methodName = callExpression.callee.property.name;
+      const calleeMember =
+        callExpression.callee.type === AST_NODE_TYPES.MemberExpression
+          ? memberNameOf(callExpression.callee.property)
+          : undefined;
+
+      if (calleeMember) {
+        const methodName = calleeMember.name;
         const lowerMethodName = methodName.toLowerCase();
 
         if (lowerMethodName.startsWith('assert')) {
@@ -751,13 +788,11 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         return identifierIsBoolean(currentExpression) ? 'boolean' : 'unknown';
       }
 
-      if (
-        currentExpression.type === AST_NODE_TYPES.MemberExpression &&
-        currentExpression.property.type === AST_NODE_TYPES.Identifier
-      ) {
-        return nameSuggestsBoolean(currentExpression.property.name)
-          ? 'boolean'
-          : 'unknown';
+      if (currentExpression.type === AST_NODE_TYPES.MemberExpression) {
+        const member = memberNameOf(currentExpression.property);
+        if (member) {
+          return nameSuggestsBoolean(member.name) ? 'boolean' : 'unknown';
+        }
       }
 
       if (currentExpression.type === AST_NODE_TYPES.CallExpression) {
@@ -1545,16 +1580,12 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         }
 
         // Check for property access with boolean-suggesting name
-        if (
-          init.type === AST_NODE_TYPES.MemberExpression &&
-          init.property.type === AST_NODE_TYPES.Identifier
-        ) {
-          const propertyName = (init.property as TSESTree.Identifier).name;
+        if (init.type === AST_NODE_TYPES.MemberExpression) {
+          const member = memberNameOf(init.property);
           // If the property name suggests it's a boolean (starts with a boolean prefix)
-          const isBooleanProperty = isPrefixedByBooleanKeyword(
-            propertyName,
-            approvedPrefixes,
-          );
+          const isBooleanProperty =
+            !!member &&
+            isPrefixedByBooleanKeyword(member.name, approvedPrefixes);
 
           if (isBooleanProperty) {
             return true;
@@ -1719,9 +1750,10 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
     function checkMethodDefinition(
       node: TSESTree.MethodDefinition | TSESTree.TSAbstractMethodDefinition,
     ) {
-      if (node.key.type !== AST_NODE_TYPES.Identifier) return;
+      const key = memberNameOf(node.key);
+      if (!key) return;
 
-      const methodName = node.key.name;
+      const methodName = key.name;
       const isGetter = node.kind === 'get';
 
       const returnAnnotation =
@@ -1759,7 +1791,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           messageId: 'missingBooleanPrefix',
           data: {
             type: isGetter ? 'getter' : 'method',
-            name: methodName,
+            name: key.written,
             capitalizedName: capitalizeFirst(methodName),
             prefixes: formatPrefixes(),
           },
@@ -1776,9 +1808,10 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
      * so it carries the same naming obligation as a concrete one.
      */
     function checkClassPropertyDeclaration(node: any) {
-      if (node.key.type !== AST_NODE_TYPES.Identifier) return;
+      const key = memberNameOf(node.key);
+      if (!key) return;
 
-      const propertyName = node.key.name;
+      const propertyName = key.name;
 
       // Check if it's a boolean property
       let isBooleanProperty = false;
@@ -1806,7 +1839,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           messageId: 'missingBooleanPrefix',
           data: {
             type: 'property',
-            name: propertyName,
+            name: key.written,
             capitalizedName: capitalizeFirst(propertyName),
             prefixes: formatPrefixes(),
           },
