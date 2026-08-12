@@ -24,6 +24,9 @@ The rule skips:
   [Methods declared to produce no value](#methods-declared-to-produce-no-value)).
 - Methods whose sole parameter is **annotated as a function type** (see
   [Methods keyed only by a callback](#methods-keyed-only-by-a-callback)).
+- Methods that **take part in a database transaction** — one that opens a
+  `runTransaction(…)` call, or one handed the attempt's `Transaction` handle
+  (see [Methods that take part in a transaction](#methods-that-take-part-in-a-transaction)).
 - Methods declared in a class **expression** (`const Loader = class { … }`),
   where no decorator is legal at all (see
   [Methods on a class expression](#methods-on-a-class-expression)).
@@ -212,6 +215,66 @@ else keeps reporting:
 
 To exempt one of those, annotate the parameter with the function type itself or
 suppress the report deliberately.
+
+### Methods that take part in a transaction
+
+A transaction handle is valid only for the **attempt** that created it, and an
+attempt is re-run whenever the driver retries — Firestore retries an attempt
+whose reads a concurrent write invalidated. `@Memoize()` on a transaction body
+hands the retry the first attempt's cached promise, so the retry queues no
+writes on its own handle, commits empty, and the caller reads the first
+attempt's return value and reports success. The failure is silent and defeats
+the very concurrency the transaction was written for. Memoizing the method that
+**owns** the call is the same defect one level up: the whole transaction, writes
+included, then runs once per instance.
+
+Three shapes are exempt:
+
+| shape | example |
+|---|---|
+| a parameter typed as the handle | `apply(transaction: Transaction)`, `apply({ transaction }: { transaction: Transaction })`, `apply(tx: FirebaseFirestore.Transaction)` |
+| a method that opens a transaction | `create() { return db.runTransaction(async (t) => …); }` |
+| a method the callback hands the attempt to | `db.runTransaction((t) => this.body(t))`, `db.runTransaction(this.body)` |
+
+```ts
+class MembershipSecretary {
+  // ✅ not reported: memoizing the owner would run the whole transaction,
+  // writes included, once per instance
+  public async create() {
+    return db.runTransaction(async (transaction) => {
+      return this.applyMembership({ transaction });
+    });
+  }
+
+  // ✅ not reported: a retried attempt must re-run this body against its own
+  // handle, and a cached promise would let the retry commit empty
+  private async applyMembership({ transaction }: { transaction: Transaction }) {
+    transaction.set(this.membershipRef, { joined: true });
+    return true;
+  }
+
+  // ❌ still reported: it neither opens a transaction nor receives a handle
+  public async loadPlan() {
+    return this.api.getPlan();
+  }
+}
+```
+
+The qualified spellings (`FirebaseFirestore.Transaction`,
+`admin.firestore.Transaction`) and an aliased import
+(`import { Transaction as Txn }`) are read as the handle they name. Where the
+handle's type is behind an alias the rule cannot resolve (`args: MembershipArgs`),
+the call site inside the callback is what recognises the method — passing the
+handle on is the signal, so a helper the callback calls **without** it keeps
+reporting and stays worth caching.
+
+Like the other carve-outs, this reads the **declared annotation** rather than the
+parameter's name: a parameter merely named `transaction` is as likely to hold a
+payment or a ledger entry, and those key a cache perfectly well. So
+`record(transaction: PaymentTransaction)` and an **unannotated**
+`apply(transaction)` both keep reporting, as does a method that merely produces a
+handle (`open(): Promise<Transaction>`) or holds a collection of them
+(`summarize(byId: Map<string, Transaction>)`).
 
 ### Interaction with inline disable comments
 

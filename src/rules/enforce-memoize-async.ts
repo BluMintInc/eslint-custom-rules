@@ -236,6 +236,300 @@ function declaresFunctionParameter(params: TSESTree.Parameter[]): boolean {
 }
 
 /**
+ * A database transaction handle is valid only for the attempt that created it,
+ * and a transaction body is re-run whenever the driver retries — Firestore
+ * retries an attempt whose reads a concurrent write invalidated. A memoized
+ * body hands the retry the first attempt's cached promise, so the retry queues
+ * no writes on its own handle, commits empty, and the caller reads the first
+ * attempt's return value and reports success. Memoizing the method that OWNS
+ * the transaction is the same defect one level up: the whole transaction, writes
+ * included, then runs once per instance.
+ */
+const TRANSACTION_TYPE_NAME = 'Transaction';
+const RUN_TRANSACTION_NAME = 'runTransaction';
+
+/**
+ * Keys that hold source positions or the tree's only back-edge rather than
+ * child nodes; `parent` would make a subtree walk non-terminating.
+ */
+const NON_TRAVERSABLE_KEYS = new Set(['parent', 'range', 'loc', 'type']);
+
+/** Every node of `root`'s subtree, `root` included. */
+function* subtreeOf(root: TSESTree.Node): Generator<TSESTree.Node> {
+  yield root;
+  for (const [key, value] of Object.entries(root)) {
+    if (NON_TRAVERSABLE_KEYS.has(key)) {
+      continue;
+    }
+    if (Array.isArray(value)) {
+      for (const element of value) {
+        if (ASTHelpers.isNode(element)) {
+          yield* subtreeOf(element);
+        }
+      }
+    } else if (ASTHelpers.isNode(value)) {
+      yield* subtreeOf(value);
+    }
+  }
+}
+
+/** The name a call invokes, for `f()` and for `o.f()` alike. */
+function calleeName(node: TSESTree.CallExpression): string | undefined {
+  const callee = withoutChain(node.callee);
+  if (callee.type === AST_NODE_TYPES.Identifier) {
+    return callee.name;
+  }
+  if (
+    callee.type === AST_NODE_TYPES.MemberExpression &&
+    !callee.computed &&
+    callee.property.type === AST_NODE_TYPES.Identifier
+  ) {
+    return callee.property.name;
+  }
+  return undefined;
+}
+
+/**
+ * Whether the node is a `runTransaction(…)` call, under any receiver:
+ * `db.runTransaction`, `firestore.runTransaction` and a bare imported
+ * `runTransaction` all open a retryable transaction.
+ */
+function isRunTransactionCall(node: TSESTree.Node): boolean {
+  return (
+    node.type === AST_NODE_TYPES.CallExpression &&
+    calleeName(node) === RUN_TRANSACTION_NAME
+  );
+}
+
+/** Whether the method opens a transaction anywhere in its own body. */
+function ownsTransaction(fn: TSESTree.FunctionExpression): boolean {
+  for (const node of subtreeOf(fn)) {
+    if (isRunTransactionCall(node)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Whether a type name denotes the transaction handle. The rightmost segment is
+ * the type's own name, so the qualified spellings — `FirebaseFirestore.
+ * Transaction`, `admin.firestore.Transaction` — answer alongside the bare one;
+ * a locally aliased import (`import { Transaction as Txn }`) answers through
+ * the alias set the file's imports define.
+ */
+function namesTransaction(
+  typeName: TSESTree.EntityName,
+  aliases: ReadonlySet<string>,
+): boolean {
+  if (typeName.type === AST_NODE_TYPES.Identifier) {
+    return (
+      typeName.name === TRANSACTION_TYPE_NAME || aliases.has(typeName.name)
+    );
+  }
+  if (typeName.type === AST_NODE_TYPES.TSQualifiedName) {
+    return typeName.right.name === TRANSACTION_TYPE_NAME;
+  }
+  return false;
+}
+
+/**
+ * Whether a declared type hands the method a transaction handle: written
+ * directly, as one arm of a union or intersection, or as a property of an
+ * object type — the shape a destructured `{ transaction }: { transaction:
+ * Transaction }` parameter carries.
+ *
+ * Type ARGUMENTS are deliberately not entered: `Map<string, Transaction>` or
+ * `Promise<Transaction>` describes a collection of handles or a handle yet to
+ * exist, neither of which is the attempt-scoped handle this carve-out is about.
+ */
+function declaresTransactionType(
+  annotation: TSESTree.TypeNode | undefined,
+  aliases: ReadonlySet<string>,
+): boolean {
+  if (!annotation) {
+    return false;
+  }
+  if (annotation.type === AST_NODE_TYPES.TSTypeReference) {
+    return namesTransaction(annotation.typeName, aliases);
+  }
+  if (
+    annotation.type === AST_NODE_TYPES.TSUnionType ||
+    annotation.type === AST_NODE_TYPES.TSIntersectionType
+  ) {
+    return annotation.types.some((member) =>
+      declaresTransactionType(member, aliases),
+    );
+  }
+  if (annotation.type === AST_NODE_TYPES.TSTypeLiteral) {
+    return annotation.members.some(
+      (member) =>
+        member.type === AST_NODE_TYPES.TSPropertySignature &&
+        declaresTransactionType(member.typeAnnotation?.typeAnnotation, aliases),
+    );
+  }
+  return false;
+}
+
+/**
+ * The type annotation a parameter declares, including the destructuring shapes
+ * `parameterAnnotation` does not reach: an object or array pattern carries its
+ * annotation on the pattern itself.
+ */
+function bindingAnnotation(param: TSESTree.Parameter) {
+  if (
+    param.type === AST_NODE_TYPES.ObjectPattern ||
+    param.type === AST_NODE_TYPES.ArrayPattern
+  ) {
+    return param.typeAnnotation?.typeAnnotation;
+  }
+  return parameterAnnotation(param);
+}
+
+/**
+ * Whether the method declares a parameter typed as a transaction handle.
+ *
+ * The test reads the ANNOTATION, not the parameter's name: a parameter merely
+ * named `transaction` is as likely to hold a payment or a ledger entry, and the
+ * rule's other carve-outs (void result, callback parameter) are annotation-driven
+ * for the same reason. A bare `async apply(transaction)` therefore keeps
+ * reporting — it declares nothing to honour, and under the `noImplicitAny` its
+ * consumers compile with it does not type-check anyway. Where the handle arrives
+ * through an unresolvable alias (`args: MembershipArgs`), the call-site test
+ * below is what recognises it.
+ */
+function declaresTransactionParameter(
+  params: TSESTree.Parameter[],
+  aliases: ReadonlySet<string>,
+): boolean {
+  return params.some((param) =>
+    declaresTransactionType(bindingAnnotation(param), aliases),
+  );
+}
+
+/**
+ * The expression itself, with any `ChainExpression` wrapper removed. ESTree
+ * wraps a whole optional chain in that node, so `this?.body` and
+ * `this.body.bind?.(this)` reach a bare member/call test as something else
+ * entirely. Nullish spellings carry the transaction handle exactly as the plain
+ * ones do, and reading through the wrapper is what keeps the carve-out from
+ * lapsing on them — a lapse that would restore the empty-commit autofix.
+ */
+function withoutChain(node: TSESTree.Node): TSESTree.Node {
+  return node.type === AST_NODE_TYPES.ChainExpression
+    ? withoutChain(node.expression)
+    : node;
+}
+
+/** The own-method name a `this.foo` reference reads, if it reads one. */
+function thisMemberName(node: TSESTree.Node): string | undefined {
+  const expression = withoutChain(node);
+  if (
+    expression.type === AST_NODE_TYPES.MemberExpression &&
+    !expression.computed &&
+    withoutChain(expression.object).type === AST_NODE_TYPES.ThisExpression &&
+    expression.property.type === AST_NODE_TYPES.Identifier
+  ) {
+    return expression.property.name;
+  }
+  // `this.body.bind(this)` passes the same method, one wrapper out.
+  if (
+    expression.type === AST_NODE_TYPES.CallExpression &&
+    expression.callee.type === AST_NODE_TYPES.MemberExpression &&
+    !expression.callee.computed &&
+    expression.callee.property.type === AST_NODE_TYPES.Identifier &&
+    expression.callee.property.name === 'bind'
+  ) {
+    return thisMemberName(expression.callee.object);
+  }
+  return undefined;
+}
+
+/** Whether the subtree mentions the binding, under any nesting. */
+function mentionsBinding(node: TSESTree.Node, name: string): boolean {
+  for (const descendant of subtreeOf(node)) {
+    if (
+      descendant.type === AST_NODE_TYPES.Identifier &&
+      descendant.name === name
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Own methods a `runTransaction` argument hands the attempt to: the method
+ * passed as the callback itself, and every `this.method(…)` the callback body
+ * invokes with the attempt's handle among its arguments.
+ *
+ * Passing the handle on is what makes a method part of the attempt, so a
+ * helper the callback calls WITHOUT it — a config read, a lookup that takes no
+ * transaction — is untouched and keeps reporting.
+ */
+function collectTransactionParticipants(
+  argument: TSESTree.Node,
+  participants: Set<string>,
+): void {
+  const passed = thisMemberName(argument);
+  if (passed) {
+    participants.add(passed);
+    return;
+  }
+  if (
+    argument.type !== AST_NODE_TYPES.ArrowFunctionExpression &&
+    argument.type !== AST_NODE_TYPES.FunctionExpression
+  ) {
+    return;
+  }
+  const handle = argument.params[0];
+  if (handle?.type !== AST_NODE_TYPES.Identifier) {
+    return;
+  }
+  for (const node of subtreeOf(argument.body)) {
+    if (node.type !== AST_NODE_TYPES.CallExpression) {
+      continue;
+    }
+    const method = thisMemberName(node.callee);
+    if (
+      method &&
+      node.arguments.some((arg) => mentionsBinding(arg, handle.name))
+    ) {
+      participants.add(method);
+    }
+  }
+}
+
+/** Every own method the class hands a transaction handle to. */
+function transactionParticipantsOf(body: TSESTree.ClassBody): Set<string> {
+  const participants = new Set<string>();
+  for (const node of subtreeOf(body)) {
+    if (!isRunTransactionCall(node)) {
+      continue;
+    }
+    for (const argument of (node as TSESTree.CallExpression).arguments) {
+      collectTransactionParticipants(argument, participants);
+    }
+  }
+  return participants;
+}
+
+/** The statically known name of a method, for matching call sites against it. */
+function methodName(node: TSESTree.MethodDefinition): string | undefined {
+  if (node.computed) {
+    return undefined;
+  }
+  const { key } = node;
+  if (key.type === AST_NODE_TYPES.Identifier) {
+    return key.name;
+  }
+  if (key.type === AST_NODE_TYPES.Literal && typeof key.value === 'string') {
+    return key.value;
+  }
+  return undefined;
+}
+
+/**
  * Matches a memoize decorator in supported syntaxes:
  * - @Alias()
  * - @Alias
@@ -344,6 +638,74 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
       return memoizeImportCache;
     };
 
+    /**
+     * Local names bound to an imported `Transaction` type, so that an aliased
+     * import (`import { Transaction as Txn } from 'firebase-admin/firestore'`)
+     * is read as the handle it is. The module is not constrained: a handle is
+     * re-exported through as many paths as a codebase has layers, and the
+     * imported NAME already carries the signal.
+     */
+    let transactionAliasCache: Set<string> | null = null;
+    const transactionAliases = () => {
+      if (!transactionAliasCache) {
+        transactionAliasCache = new Set<string>();
+        for (const statement of context.sourceCode.ast.body) {
+          if (statement.type !== AST_NODE_TYPES.ImportDeclaration) {
+            continue;
+          }
+          for (const spec of statement.specifiers) {
+            if (
+              spec.type === AST_NODE_TYPES.ImportSpecifier &&
+              spec.imported.type === AST_NODE_TYPES.Identifier &&
+              spec.imported.name === TRANSACTION_TYPE_NAME
+            ) {
+              transactionAliasCache.add(spec.local.name);
+            }
+          }
+        }
+      }
+      return transactionAliasCache;
+    };
+
+    /**
+     * The class-level scan is shared by every method of the class, so it runs
+     * once per class body rather than once per candidate method.
+     */
+    const participantCache = new WeakMap<TSESTree.ClassBody, Set<string>>();
+    const transactionParticipants = (body: TSESTree.ClassBody) => {
+      let participants = participantCache.get(body);
+      if (!participants) {
+        participants = transactionParticipantsOf(body);
+        participantCache.set(body, participants);
+      }
+      return participants;
+    };
+
+    /**
+     * Whether the method takes part in a database transaction attempt, either
+     * by opening one or by being handed the attempt's handle. Caching such a
+     * method is never an optimisation: a retried attempt would replay the first
+     * attempt's promise, writing nothing on its own handle while the caller
+     * reads a success it did not get.
+     */
+    const participatesInTransaction = (
+      node: TSESTree.MethodDefinition,
+      fn: TSESTree.FunctionExpression,
+    ) => {
+      if (declaresTransactionParameter(fn.params, transactionAliases())) {
+        return true;
+      }
+      if (ownsTransaction(fn)) {
+        return true;
+      }
+      const body = node.parent;
+      if (body?.type !== AST_NODE_TYPES.ClassBody) {
+        return false;
+      }
+      const name = methodName(node);
+      return name !== undefined && transactionParticipants(body).has(name);
+    };
+
     return {
       MethodDefinition(node: TSESTree.MethodDefinition) {
         // Only process async instance methods (skip static methods)
@@ -400,6 +762,18 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
         // fixer would convert a repeatable side effect into a
         // once-per-instance one, unattended, under `--fix`.
         if (declaresVoidResult(node.value.returnType)) {
+          return;
+        }
+
+        // A transaction handle is valid only for the attempt that created it,
+        // so a result derived from one must not outlive that attempt. Caching
+        // the body of a `runTransaction` callback — or the method that owns the
+        // call — turns the retry a concurrent write provokes into a silent
+        // no-op: the retry replays the first attempt's promise, queues nothing
+        // on its own handle, commits empty, and reports the first attempt's
+        // value as success. The fixer would apply that unattended under
+        // `--fix`, so both report and fix are withheld.
+        if (participatesInTransaction(node, node.value)) {
           return;
         }
 
