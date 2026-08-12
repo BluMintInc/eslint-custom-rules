@@ -249,8 +249,8 @@ const KNOWN_DIVERGENT: Record<string, Exemption> = {
   },
   'enforce-memoize-async::no-explicit-return-type': {
     reason:
-      'PIPELINE: the fixtures annotate an inferable `Promise<T>` return; `--fix` strips 12 of 13 and the decorator requirement is unaffected.',
-    cases: { noExplicitReturnTypeInferable: 13 },
+      "PIPELINE: the fixtures annotate an inferable `Promise<T>` return; `--fix` strips 13 of 14 and the decorator requirement is unaffected. Was 13 — the #1975 fixture pinning that a `Promise<Transaction>` RETURN type still reports joined the identical class. Its annotation is load-bearing rather than incidental: the fixture is the negative control proving the transaction carve-out reads PARAMETERS, where the attempt-scoped handle actually arrives, and not the return type, which describes a handle the method produces. So no spelling drops it. `verifyAndFix` with both rules converges on `@Memoize() public async open()` with zero messages remaining (measured), stripping the annotation while leaving the decorator requirement the fixture asserts.",
+    cases: { noExplicitReturnTypeInferable: 14 },
   },
   'enforce-memoize-getters::enforce-dynamic-imports': {
     reason:

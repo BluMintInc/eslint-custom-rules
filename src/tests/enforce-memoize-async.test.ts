@@ -466,6 +466,282 @@ ruleTesterTs.run('enforce-memoize-async', enforceMemoizeAsync, {
         }
       `,
     },
+    {
+      code: `
+    class Secretary {
+      private async applyMembership({ transaction }: { transaction: Transaction }) {
+        const doc = await fetch(this.ref, { transaction });
+        transaction.set(this.ref, { x: 1 });
+        return true;
+      }
+      public async create() {
+        return await db.runTransaction(async (transaction) => {
+          return await this.applyMembership({ transaction });
+        });
+      }
+    }
+  `,
+      // currently: 1 error on applyMembership + an auto-fix ADDING @Memoize(),
+      //            which makes every Firestore retry commit empty
+      // expected:  valid — a method receiving a Transaction must not be memoized
+    },
+    {
+      code: `
+    class Runner {
+      async body(transaction: Transaction) { transaction.set(ref, {}); }
+      async run() { return db.runTransaction((t) => this.body(t)); }
+    }
+  `,
+      // same expectation via the positional-parameter spelling
+    },
+    {
+      // The annotation alone decides: no `runTransaction` call is needed
+      // anywhere in the file, because a handle only ever reaches a method that
+      // some attempt created it for.
+      name: 'a positionally annotated transaction parameter is exempt',
+      code: `
+        class Ledger {
+          public async apply(transaction: Transaction) {
+            transaction.set(this.ref, { applied: true });
+            return true;
+          }
+        }
+      `,
+    },
+    {
+      name: 'a qualified transaction type is exempt',
+      code: `
+        class Ledger {
+          public async apply(tx: FirebaseFirestore.Transaction) {
+            tx.set(this.ref, { applied: true });
+            return true;
+          }
+        }
+      `,
+    },
+    {
+      name: 'a deeply qualified transaction type is exempt',
+      code: `
+        import type * as admin from 'firebase-admin';
+        class Ledger {
+          public async apply(tx: admin.firestore.Transaction) {
+            tx.set(this.ref, { applied: true });
+            return true;
+          }
+        }
+      `,
+    },
+    {
+      name: 'an aliased transaction import is exempt',
+      code: `
+        import type { Transaction as Txn } from 'firebase-admin/firestore';
+        class Ledger {
+          public async apply(tx: Txn) {
+            tx.set(this.ref, { applied: true });
+            return true;
+          }
+        }
+      `,
+    },
+    {
+      name: 'an optional transaction parameter is exempt',
+      code: `
+        class Ledger {
+          public async apply(transaction?: Transaction) {
+            return transaction?.get(this.ref);
+          }
+        }
+      `,
+    },
+    {
+      name: 'a defaulted transaction parameter is exempt',
+      code: `
+        class Ledger {
+          public async apply(transaction: Transaction = fallbackTransaction) {
+            return transaction.get(this.ref);
+          }
+        }
+      `,
+    },
+    {
+      name: 'a union that includes a transaction is exempt',
+      code: `
+        class Ledger {
+          public async apply(transaction: Transaction | undefined) {
+            return transaction?.get(this.ref);
+          }
+        }
+      `,
+    },
+    {
+      name: 'a destructured transaction beside another property is exempt',
+      code: `
+        class Ledger {
+          public async apply({
+            transaction,
+            id,
+          }: {
+            transaction: Transaction;
+            id: string;
+          }) {
+            transaction.set(this.refOf(id), { applied: true });
+            return true;
+          }
+        }
+      `,
+    },
+    {
+      // The handle arrives through an object type whether or not the parameter
+      // is destructured, so the undestructured spelling answers the same.
+      name: 'an undestructured object type carrying a transaction is exempt',
+      code: `
+        class Ledger {
+          public async apply(args: { transaction: Transaction; id: string }) {
+            args.transaction.set(this.refOf(args.id), { applied: true });
+            return true;
+          }
+        }
+      `,
+    },
+    {
+      // The owner of the call is exempt too: memoizing it runs the whole
+      // transaction, writes included, once per instance.
+      name: 'a method that owns a runTransaction call is exempt',
+      code: `
+        class Secretary {
+          public async create(userId: string) {
+            return db.runTransaction(async (t) => {
+              t.set(this.refOf(userId), { joined: true });
+              return true;
+            });
+          }
+        }
+      `,
+    },
+    {
+      name: 'a bare runTransaction callee is recognised',
+      code: `
+        class Secretary {
+          public async create() {
+            return runTransaction(db, async (t) => {
+              t.set(this.ref, { joined: true });
+              return true;
+            });
+          }
+        }
+      `,
+    },
+    {
+      // The handle's type is behind an alias the syntactic test cannot resolve,
+      // so the call site inside the callback is what recognises the method.
+      name: 'a callback-invoked method handed the attempt is exempt',
+      code: `
+        class Secretary {
+          private async applyMembership(args: MembershipArgs) {
+            args.transaction.set(this.ref, { joined: true });
+            return true;
+          }
+          public async create() {
+            const membershipData = await this.generateMembershipData();
+            return db.runTransaction(async (transaction) => {
+              return this.applyMembership({ membershipData, transaction });
+            });
+          }
+        }
+      `,
+    },
+    {
+      name: 'a method passed directly as the callback is exempt',
+      code: `
+        class Runner {
+          private async body(t) {
+            t.set(this.ref, {});
+            return true;
+          }
+          public async run() {
+            return db.runTransaction(this.body);
+          }
+        }
+      `,
+    },
+    {
+      name: 'a bound method passed as the callback is exempt',
+      code: `
+        class Runner {
+          private async body(t) {
+            t.set(this.ref, {});
+            return true;
+          }
+          public async run() {
+            return db.runTransaction(this.body.bind(this));
+          }
+        }
+      `,
+    },
+    {
+      // ESTree wraps a whole optional chain in a ChainExpression, so the
+      // nullish spelling of a call or a member read is a different node than
+      // the plain one. The handle it carries is the same, and a carve-out that
+      // lapsed here would put the empty-commit autofix back on this method.
+      name: 'a nullish-spelled callback member read is exempt',
+      code: `
+        class Runner {
+          private async body(t) {
+            t?.set(this?.ref, {});
+            return true;
+          }
+          public async run() {
+            return db?.runTransaction(this?.body);
+          }
+        }
+      `,
+    },
+    {
+      name: 'a nullish-spelled bound callback is exempt',
+      code: `
+        class Runner {
+          private async body(t) {
+            t?.set(this?.ref, {});
+            return true;
+          }
+          public async run() {
+            return db?.runTransaction?.(this.body.bind?.(this));
+          }
+        }
+      `,
+    },
+    {
+      name: 'a nullish-spelled participant call is exempt',
+      code: `
+        class Runner {
+          private async body(t) {
+            t.set(this.ref, {});
+            return true;
+          }
+          public async run() {
+            return db.runTransaction(async (t) => this?.body(t));
+          }
+        }
+      `,
+    },
+    {
+      // The carve-out drops the methods entirely, so a class of only
+      // transaction members must not gain `import { Memoize }` either.
+      name: 'a class of only transaction methods pulls in no import',
+      code: `
+        export class Secretary {
+          private async applyMembership({ transaction }: { transaction: Transaction }) {
+            transaction.set(this.ref, { joined: true });
+            return true;
+          }
+          public async create() {
+            return db.runTransaction(async (transaction) => {
+              return this.applyMembership({ transaction });
+            });
+          }
+        }
+      `,
+    },
   ],
   invalid: [
     // Missing decorator on async method with no parameters
@@ -1638,6 +1914,196 @@ ruleTesterTs.run('enforce-memoize-async', enforceMemoizeAsync, {
         }
       `,
     },
+    {
+      // The transaction carve-out reads the TYPE, not the parameter's name: a
+      // ledger entry, a payment, an audit record all get called `transaction`
+      // and all key a cache perfectly well.
+      name: 'a parameter merely named transaction still reports',
+      code: `
+        class Payments {
+          public async record(transaction: PaymentTransaction) {
+            return this.api.post(transaction);
+          }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class Payments {
+          @Memoize()
+          public async record(transaction: PaymentTransaction) {
+            return this.api.post(transaction);
+          }
+        }
+      `,
+    },
+    {
+      // The bare name lands OUTSIDE the carve-out: an unannotated parameter
+      // declares nothing to honour, exactly as the callback and void carve-outs
+      // read declarations rather than guess at them, and the consumers this
+      // rule ships to compile under `noImplicitAny`, where the shape does not
+      // type-check anyway. A handle that genuinely arrives here is recognised
+      // by its call site inside the `runTransaction` callback instead.
+      name: 'an unannotated parameter named transaction still reports',
+      code: `
+        class Ledger {
+          public async apply(transaction) {
+            return this.store.write(transaction);
+          }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class Ledger {
+          @Memoize()
+          public async apply(transaction) {
+            return this.store.write(transaction);
+          }
+        }
+      `,
+    },
+    {
+      // The type name is matched whole, not by substring.
+      name: 'a differently named type containing Transaction still reports',
+      code: `
+        class Reports {
+          public async render(summary: TransactionSummary) {
+            return this.template(summary);
+          }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class Reports {
+          @Memoize()
+          public async render(summary: TransactionSummary) {
+            return this.template(summary);
+          }
+        }
+      `,
+    },
+    {
+      // A method that PRODUCES a handle is not a method that holds one for an
+      // attempt, so the return type is not read for this carve-out.
+      name: 'a transaction in the return type still reports',
+      code: `
+        class Sessions {
+          public async open(): Promise<Transaction> {
+            return this.pool.begin();
+          }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class Sessions {
+          @Memoize()
+          public async open(): Promise<Transaction> {
+            return this.pool.begin();
+          }
+        }
+      `,
+    },
+    {
+      // Type arguments are deliberately not entered: a collection of handles is
+      // not the attempt-scoped handle the carve-out is about.
+      name: 'a transaction inside a type argument still reports',
+      code: `
+        class Ledger {
+          public async summarize(byId: Map<string, Transaction>) {
+            return byId.size;
+          }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class Ledger {
+          @Memoize()
+          public async summarize(byId: Map<string, Transaction>) {
+            return byId.size;
+          }
+        }
+      `,
+    },
+    {
+      // The carve-out is per METHOD, not per class: a sibling that neither
+      // opens a transaction nor receives a handle still reports, and still
+      // carries the file's import.
+      name: 'a transaction owner does not suppress its unrelated sibling',
+      code: `
+        export class Secretary {
+          public async create() {
+            return db.runTransaction(async (t) => {
+              t.set(this.ref, { joined: true });
+              return true;
+            });
+          }
+
+          public async loadConfig() {
+            return this.api.getConfig();
+          }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        export class Secretary {
+          public async create() {
+            return db.runTransaction(async (t) => {
+              t.set(this.ref, { joined: true });
+              return true;
+            });
+          }
+
+          @Memoize()
+          public async loadConfig() {
+            return this.api.getConfig();
+          }
+        }
+      `,
+    },
+    {
+      // Being CALLED from a callback is not enough — passing the handle on is.
+      // A helper the callback calls without it is untouched by the retry and
+      // remains worth caching.
+      name: 'a callback-invoked method that is handed no handle still reports',
+      code: `
+        export class Secretary {
+          public async create() {
+            return db.runTransaction(async (t) => {
+              const config = await this.loadConfig();
+              t.set(this.ref, config);
+              return true;
+            });
+          }
+
+          public async loadConfig() {
+            return this.api.getConfig();
+          }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        export class Secretary {
+          public async create() {
+            return db.runTransaction(async (t) => {
+              const config = await this.loadConfig();
+              t.set(this.ref, config);
+              return true;
+            });
+          }
+
+          @Memoize()
+          public async loadConfig() {
+            return this.api.getConfig();
+          }
+        }
+      `,
+    },
   ],
 });
 
@@ -2311,7 +2777,10 @@ describe('enforce-memoize-async: the injected import stays below the prologue (i
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       require('@typescript-eslint/parser'),
     );
-    linter.defineRule(RULE_ID, enforceMemoizeAsync as unknown as Rule.RuleModule);
+    linter.defineRule(
+      RULE_ID,
+      enforceMemoizeAsync as unknown as Rule.RuleModule,
+    );
     return linter;
   };
 
