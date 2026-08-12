@@ -1032,7 +1032,6 @@ const DETECTION_UNDRIVEN: Record<string, UndrivenCause> = {
   'enforce-types-directory-placement': 'silentOnComparedPairs',
   'enforce-typescript-markdown-code-blocks': 'noTsFixture',
   'jsdoc-above-field': 'noRespelling',
-  'no-circular-references': 'silentOnComparedPairs',
   'no-conditional-literals-in-jsx': 'noRespelling',
   'no-filter-without-return': 'silentOnComparedPairs',
   'no-harness-coupled-disables': 'noRespelling',
