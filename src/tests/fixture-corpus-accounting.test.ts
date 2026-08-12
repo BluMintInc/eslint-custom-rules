@@ -43,6 +43,7 @@ import { Linter } from 'eslint';
 import { IMPORTS_SHARED_TESTER } from '../utils/harvestRuleTesterCases';
 import {
   harvestFixtureCorpus,
+  harvestOnce,
   defaultFilenameFor,
   defineCorpusParsers,
   parserKeyFor,
@@ -158,6 +159,50 @@ describe('fixture corpus accounting', () => {
     expect(corpus.totalCases).toBeGreaterThan(MIN_CASES);
     expect(corpus.suitesUsed).toBeGreaterThan(MIN_SUITES);
     expect(registered.length).toBeGreaterThan(MIN_RULES);
+  });
+
+  /**
+   * The suite-FILE dimension, which the rule and dropped-suite dimensions above
+   * cannot see.
+   *
+   * A suite the harvest never enumerates is indistinguishable from one that
+   * declares nothing, and its rule's own top-level namesake keeps every
+   * per-rule assertion green — so the gap reads as coverage from every angle
+   * the other tests check. `src/tests/rules/` held three such suites (2,076
+   * lines for two `recommended: 'error'` rules): the walk was non-recursive and
+   * the admission pattern only matched a single `../`, so both the depth and
+   * the import spelling excluded them, and two guards had baselined
+   * `no-circular-references` as undrivable purely because of it.
+   *
+   * Equality, not a floor: every file on disk must be either loaded or
+   * deliberately skipped, and the skip must be the documented one.
+   */
+  it('enumerates every suite file under the tests root, at any depth', () => {
+    const testsRoot = path.join(__dirname);
+    const walk = (dir: string): string[] =>
+      fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) return walk(full);
+        return entry.name.endsWith('.test.ts') ? [full] : [];
+      });
+    const onDisk = walk(testsRoot);
+    const raw = harvestOnce();
+
+    expect(raw.filesLoaded + raw.filesSkipped).toBe(onDisk.length);
+    expect(raw.filesLoaded).toBe(
+      onDisk.filter((file) =>
+        IMPORTS_SHARED_TESTER.test(fs.readFileSync(file, 'utf8')),
+      ).length,
+    );
+
+    // Non-vacuity: the equality above is satisfied trivially by a flat tree, so
+    // the recursion is only actually asserted while a nested suite exists. If
+    // the tree is ever legitimately flattened, replace this with a fixture
+    // rather than deleting it — otherwise the walk can silently stop recursing.
+    const nested = onDisk.filter((file) =>
+      path.relative(testsRoot, file).includes(path.sep),
+    );
+    expect(nested.length).toBeGreaterThan(0);
   });
 
   it('accounts for every registered rule: it has a corpus, or it is a named exemption', () => {

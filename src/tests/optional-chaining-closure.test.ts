@@ -308,7 +308,6 @@ const UNDRIVEN: Record<string, UndrivenCause> = {
   'generic-starts-with-t::member': 'noSite',
   'jsdoc-above-field::call': 'noSite',
   'jsdoc-above-field::member': 'noSite',
-  'no-circular-references::call': 'noSite',
   'no-compositing-layer-props::call': 'noSite',
   'no-compositing-layer-props::member': 'noSite',
   'no-curly-brackets-around-commented-properties::member': 'noSite',

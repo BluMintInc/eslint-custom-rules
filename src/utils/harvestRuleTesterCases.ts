@@ -73,7 +73,31 @@ const TESTS_DIR = path.join(__dirname, '..', 'tests');
  * (`const jsx = ruleTesterJsx`) before calling `run`, so a call-site pattern
  * drops it.
  */
-export const IMPORTS_SHARED_TESTER = /from\s+'\.\.\/utils\/ruleTester'/;
+export const IMPORTS_SHARED_TESTER = /from\s+'(?:\.\.\/)+utils\/ruleTester'/;
+
+/**
+ * Every suite file under the tests root, as a path relative to it.
+ *
+ * The enumeration is recursive because a suite in a subdirectory is still a
+ * suite: `src/tests/rules/` holds three that jest runs and that every
+ * harvest-based gate used to miss, while their rules' top-level namesakes kept
+ * the per-rule closure green — so the gap read as coverage from every angle
+ * that was checked.
+ *
+ * Paths stay relative rather than collapsing to a basename so that two suites
+ * with the same name (`no-circular-references.test.ts` exists at both depths)
+ * remain distinguishable, which is what keeps a per-file baseline or a dedupe
+ * key from silently merging them.
+ */
+function suiteFilesUnder(root: string): string[] {
+  const walk = (dir: string): string[] =>
+    fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) return walk(full);
+      return entry.name.endsWith('.test.ts') ? [path.relative(root, full)] : [];
+    });
+  return walk(root).sort();
+}
 
 /**
  * Jest registers a test for every `describe`/`it` a loaded module calls, so
@@ -204,10 +228,7 @@ export function harvestRuleTesterCases(): HarvestResult {
   process.chdir(scratchRoot);
 
   try {
-    const files = fs
-      .readdirSync(TESTS_DIR)
-      .filter((file) => file.endsWith('.test.ts'))
-      .sort();
+    const files = suiteFilesUnder(TESTS_DIR);
 
     for (const file of files) {
       const fullPath = path.join(TESTS_DIR, file);
