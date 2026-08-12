@@ -140,12 +140,12 @@ const value = false ? "yes" : "no";
 `,
     errors: [expectAlwaysFalse('false')],
   },
-  // Always true in while loop
+  // A `while (true)` whose body cannot exit really does run forever, so the
+  // literal is still reported; the loop-with-`break` idiom is valid (#1973).
   {
     code: `
 while (true) {
   doSomething();
-  if (shouldBreak()) break;
 }
 `,
     errors: [expectAlwaysTrue('true')],
@@ -177,12 +177,12 @@ do {
 `,
     errors: [expectAlwaysFalse('false')],
   },
-  // Always true in for loop
+  // A literal `for` test over a body with no way out, matching the `while`
+  // case above; the same loop carrying a `break` is valid (#1973).
   {
     code: `
 for (let i = 0; true; i++) {
   doSomething();
-  if (shouldBreak()) break;
 }
 `,
     errors: [expectAlwaysTrue('true')],
@@ -790,6 +790,33 @@ const result = thing?.prop ? "yes" : "no";
 ];
 
 const invalidRest = [
+  // The exit has to be one the loop can actually take. An unlabeled break binds
+  // to the nearest breakable, so a switch consumes it and the loop still runs
+  // forever — reading any `break` in the subtree as an exit would lose this.
+  {
+    code: `
+while (true) {
+  switch (next()) {
+    case 1:
+      break;
+  }
+}
+`,
+    errors: [expectAlwaysTrue('true')],
+  },
+  // A nested function has its own `return`, which never leaves the loop.
+  {
+    code: `
+while (true) {
+  const restart = () => {
+    return 1;
+  };
+  restart();
+}
+`,
+    errors: [expectAlwaysTrue('true')],
+  },
+
   // Always true condition in if statement (should still be flagged)
   {
     code: `
@@ -962,6 +989,58 @@ ruleTesterTs.run(
   noAlwaysTrueFalseConditions,
   {
     valid: [
+      // A loop whose exit is only known mid-body is written `while (true)` with
+      // a `break` — cursor pagination being the usual case. `for (;;)` says the
+      // same thing and was always accepted, only because it has no test node to
+      // check, so the three spellings disagreed (#1973).
+      `
+let cursor = null;
+while (true) {
+  const { data, nextCursor } = await fetchPage(cursor);
+  if (!nextCursor) break;
+  cursor = nextCursor;
+}
+`,
+      `
+do {
+  const next = advance();
+  if (!next) break;
+} while (true);
+`,
+      // `return` and `throw` leave the loop just as plainly as `break`.
+      `
+function find(items) {
+  let i = 0;
+  while (true) {
+    if (items[i] === undefined) return null;
+    if (items[i].matches) return items[i];
+    i += 1;
+  }
+}
+`,
+      `
+function poll() {
+  while (true) {
+    if (attempts > 5) throw new Error('gave up');
+    attempts += 1;
+  }
+}
+`,
+      // An unlabeled break binds to the nearest breakable, so this one has to
+      // be read as leaving the outer loop by its label.
+      `
+outer: while (true) {
+  while (hasNext()) {
+    if (done()) break outer;
+  }
+}
+`,
+      // A `for` carrying a literal test is the same loop with the same exit.
+      `
+for (let i = 0; true; i += 1) {
+  if (i > limit) break;
+}
+`,
       // Test case for the bug with optional chaining on array length
       `
       function countOwned() {
