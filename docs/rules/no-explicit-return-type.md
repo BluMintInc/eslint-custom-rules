@@ -172,6 +172,42 @@ Limitations, all of which err toward silence or toward the status quo:
 - A function with no resolvable name (an anonymous callback) cannot be self-referential by name, so it is always reported.
 - An annotation whose removal would strand a declaration the fixer cannot delete is reported without a fix rather than fixed halfway.
 
+### The fix carries the comments the annotation was sitting among
+
+A comment written inside the annotation belongs to the span the strip deletes, so it is **re-emitted** where the annotation was rather than going with it:
+
+```ts
+// before
+export function computeCount(): /** the count */ number {
+  return 1;
+}
+
+// after --fix
+export function computeCount() /** the count */ {
+  return 1;
+}
+```
+
+An **arrow** is the one subject whose annotation sits inside a restricted production. `ArrowParameters [no LineTerminator here] =>` forbids a line terminator between the parameter list and the arrow, and a block comment containing a line terminator *is* a LineTerminator to the syntactic grammar — as is the newline a line comment ends on. A comment left in that gap makes the file a hard `SyntaxError`, which no parser in the lint pipeline reports: `@typescript-eslint/parser` and the TypeScript parser both accept the text, and only V8 (`node --check`) refuses it. Such a comment is therefore re-emitted **past the `=>`**, the nearest position outside the restricted gap that cannot begin one of its own:
+
+```ts
+// before
+export const buildCount = () /**
+ * the count
+ */: number => 1;
+
+// after --fix
+export const buildCount = () => /**
+ * the count
+ */ 1;
+```
+
+Hoisting it above the enclosing line instead would anchor an insertion at a column zero that can sit inside a template literal or JSX text, where the comment becomes content rather than code.
+
+A comment that fits on one line trips no restricted production and is left exactly where it was written (`() /* doc */: number => 1` → `() /* doc */ => 1`), and a function declaration, method or function expression ends its parameter list at a body rather than an arrow, so its comments never move.
+
+A directive comment (`// eslint-disable-next-line`, `@ts-expect-error`) inside an arrow's restricted gap withholds the fix when that gap has to be rewritten, since the rewrite collapses the lines it spanned and would leave the directive pointing at a different line. A directive that shares its gap with nothing else keeps both its position and the fix.
+
 ### Examples of incorrect code
 
 ```ts

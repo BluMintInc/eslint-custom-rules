@@ -1,3 +1,7 @@
+import { execFileSync } from 'child_process';
+import { mkdtempSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import { Linter, Rule } from 'eslint';
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import * as tsParser from '@typescript-eslint/parser';
@@ -3068,6 +3072,319 @@ const SEED: User = { id: 'seed' };
 export const buildUser = (id: string) => ({ id, seed: SEED });
 `,
     },
+    // Issue #1964: `ArrowParameters [no LineTerminator here] =>` forbids a line
+    // terminator between the parameter list and the arrow, and a block comment
+    // containing one IS a line terminator to the grammar. Leaving the comment
+    // where it stands emits a hard SyntaxError that only V8 reports, so the
+    // comment moves past the arrow — the nearest position outside the restricted
+    // gap — rather than being dropped (#1877).
+    {
+      code: `export const buildCount = () /**
+ * doc
+ */: number => 1;
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildCount"' },
+        },
+      ],
+      output: `export const buildCount = () => /**
+ * doc
+ */ 1;
+`,
+    },
+    {
+      code: `export const buildCount = async () /**
+ * doc
+ */: Promise<number> => 1;
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildCount"' },
+        },
+      ],
+      output: `export const buildCount = async () => /**
+ * doc
+ */ 1;
+`,
+    },
+    // A line comment ends its line, so it displaces the arrow the same way.
+    {
+      code: `export const buildCount = () // doc
+: number => 1;
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildCount"' },
+        },
+      ],
+      output: `export const buildCount = () => // doc
+1;
+`,
+    },
+    // A comment on one line trips no restricted production, so it stays exactly
+    // where it was written.
+    {
+      code: `export const buildCount = () /* doc */: number => 1;
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildCount"' },
+        },
+      ],
+      output: `export const buildCount = () /* doc */ => 1;
+`,
+    },
+    // A function declaration's annotation is followed by a body, not by a
+    // restricted production, so its comment stays put whatever it spans.
+    {
+      code: `export function computeCount() /**
+ * doc
+ */: number {
+  return 1;
+}
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'function "computeCount"' },
+        },
+      ],
+      output: `export function computeCount() /**
+ * doc
+ */ {
+  return 1;
+}
+`,
+    },
+    {
+      code: `export class Counter {
+  computeCount() /**
+   * doc
+   */: number {
+    return 1;
+  }
+}
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'class method "computeCount"' },
+        },
+      ],
+      output: `export class Counter {
+  computeCount() /**
+   * doc
+   */ {
+    return 1;
+  }
+}
+`,
+    },
+    // A comment written after the colon sits inside the annotation, so a plain
+    // deletion of that span takes the comment with it (#1877).
+    {
+      code: `export const formatCount = (): /** doc */ number => 1;
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "formatCount"' },
+        },
+      ],
+      output: `export const formatCount = () /** doc */ => 1;
+`,
+    },
+    {
+      code: `export const formatCount = (): /**
+ * doc
+ */ number => 1;
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "formatCount"' },
+        },
+      ],
+      output: `export const formatCount = () => /**
+ * doc
+ */ 1;
+`,
+    },
+    {
+      code: `export function computeCount(): /** doc */ number {
+  return 1;
+}
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'function "computeCount"' },
+        },
+      ],
+      output: `export function computeCount() /** doc */ {
+  return 1;
+}
+`,
+    },
+    // A comment between the annotation and the arrow is in the same restricted
+    // gap, and so is a raw line break that the annotation was not carrying.
+    {
+      code: `export const readCount = (): number /**
+ * doc
+ */ => 1;
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "readCount"' },
+        },
+      ],
+      output: `export const readCount = () => /**
+ * doc
+ */ 1;
+`,
+    },
+    {
+      code: `export const parseCount = ()
+  : number => 1;
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "parseCount"' },
+        },
+      ],
+      output: `export const parseCount = () => 1;
+`,
+    },
+    // Each comment keeps the treatment its own shape calls for: the one-line
+    // block stays in the gap, the one carrying a line terminator moves past the
+    // arrow.
+    {
+      code: `export const renderRow = () /* a */ /**
+ * b
+ */: number => 1;
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "renderRow"' },
+        },
+      ],
+      output: `export const renderRow = () /* a */ => /**
+ * b
+ */ 1;
+`,
+    },
+    {
+      code: `export const buildRecord = () /**
+ * doc
+ */: { a: number } => ({ a: 1 });
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildRecord"' },
+        },
+      ],
+      output: `export const buildRecord = () => /**
+ * doc
+ */ ({ a: 1 });
+`,
+    },
+    {
+      code: `export class Registry {
+  buildCount = () /**
+   * doc
+   */: number => 1;
+}
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function' },
+        },
+      ],
+      output: `export class Registry {
+  buildCount = () => /**
+   * doc
+   */ 1;
+}
+`,
+    },
+    // An arrow whose body already starts a line of its own needs no separator of
+    // the fixer's own.
+    {
+      code: `export const loadCount = () /**
+ * doc
+ */: number =>
+  1;
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "loadCount"' },
+        },
+      ],
+      output: `export const loadCount = () => /**
+ * doc
+ */
+  1;
+`,
+    },
+    // A block body is reached the same way: `=>` binds it whether or not a line
+    // terminator precedes it.
+    {
+      code: `export const readRow = () // doc
+: number => {
+  return 1;
+};
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "readRow"' },
+        },
+      ],
+      output: `export const readRow = () => // doc
+{
+  return 1;
+};
+`,
+    },
+    // A directive that shares the gap with nothing else keeps both its line and
+    // the fix: nothing about its position changes.
+    {
+      code: `export const trackCount = () /* eslint-disable-next-line no-console */: number => 1;
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "trackCount"' },
+        },
+      ],
+      output: `export const trackCount = () /* eslint-disable-next-line no-console */ => 1;
+`,
+    },
+    // A directive whose gap has to be rewritten would point at a different line
+    // afterwards, so the report ships without a fix.
+    {
+      code: `export const sendCount = () /* eslint-disable-next-line no-console */
+  : number => 1;
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "sendCount"' },
+        },
+      ],
+      output: null,
+    },
   ],
 });
 
@@ -4008,5 +4325,152 @@ export function second() {
     expect(fixed).toBe(true);
     expect(output).not.toContain(': boolean');
     expect(fixWith(output).output).toBe(output);
+  });
+});
+
+/**
+ * Issue #1964: `ArrowParameters [no LineTerminator here] =>` is a restricted
+ * production, and a block comment containing a line terminator IS a
+ * LineTerminator to the syntactic grammar. An annotation strip that leaves such
+ * a comment between the parameter list and the arrow therefore emits a hard
+ * SyntaxError.
+ *
+ * V8 is the oracle because no parser in this repo's pipeline reports the breach:
+ * `@typescript-eslint/parser` and the TypeScript parser both accept the broken
+ * text, so every reparse-based guard reads it as clean. The fixtures below are
+ * written free of TypeScript syntax once the annotation is gone, which is what
+ * lets `node --check` read the fixer's own output verbatim.
+ */
+describe('no-explicit-return-type --fix emits code V8 accepts', () => {
+  const RULE_ID = '@blumintinc/blumint/no-explicit-return-type';
+  const FILENAME = 'x.ts';
+  const checkDirectory = mkdtempSync(join(tmpdir(), 'blumint-v8-check-'));
+  let checkCounter = 0;
+
+  const linter = new Linter();
+  linter.defineParser('@typescript-eslint/parser', tsParser as never);
+  linter.defineRule(
+    RULE_ID,
+    noExplicitReturnType as unknown as Rule.RuleModule,
+  );
+
+  const CONFIG: Linter.Config = {
+    parser: '@typescript-eslint/parser',
+    parserOptions: {
+      ecmaVersion: 2022 as const,
+      sourceType: 'module' as const,
+    },
+    rules: { [RULE_ID]: 'error' },
+  };
+
+  /** V8's own verdict on a source, as the message it refuses it with. */
+  const v8SyntaxErrorOf = (code: string): string | null => {
+    const file = join(checkDirectory, `case-${(checkCounter += 1)}.mjs`);
+    writeFileSync(file, code);
+    try {
+      execFileSync(process.execPath, ['--check', file], { stdio: 'pipe' });
+      return null;
+    } catch (error) {
+      const stderr = String((error as { stderr?: Buffer }).stderr ?? '');
+      return (
+        stderr.split('\n').find((line) => line.includes('SyntaxError')) ??
+        'rejected without a SyntaxError'
+      );
+    }
+  };
+
+  const DOC = ['/**', ' * doc', ' */'].join('\n');
+
+  // The text the strip used to emit: the annotation gone, the comment left in
+  // the restricted gap. Every assertion below is worthless if this shape is not
+  // actually broken, and if the parsers do not actually accept it.
+  const NAIVE_STRIP = `export const f = () ${DOC} => 1;\n`;
+
+  it('rejects the shape a bare strip leaves behind', () => {
+    expect(v8SyntaxErrorOf(NAIVE_STRIP)).toContain(
+      "SyntaxError: Unexpected token '=>'",
+    );
+  });
+
+  it('is answering a question the parsers cannot', () => {
+    expect(() =>
+      tsParser.parse(NAIVE_STRIP, {
+        ecmaVersion: 2022,
+        sourceType: 'module',
+        range: true,
+        loc: true,
+      }),
+    ).not.toThrow();
+  });
+
+  it.each([
+    ['an arrow', `export const f = () ${DOC}: number => 1;\n`],
+    [
+      'an async arrow',
+      `export const f = async () ${DOC}: Promise<number> => 1;\n`,
+    ],
+    ['a comment after the colon', `export const f = (): ${DOC} number => 1;\n`],
+    [
+      'a comment after the annotation',
+      `export const f = (): number ${DOC} => 1;\n`,
+    ],
+    ['a line comment', 'export const f = () // doc\n: number => 1;\n'],
+    [
+      'a block body',
+      `export const f = () ${DOC}: number => {\n  return 1;\n};\n`,
+    ],
+    ['a nested arrow', `foo(() ${DOC}: number => 1);\n`],
+    [
+      'a class property arrow',
+      `export class C {\n  m = () ${DOC}: number => 1;\n}\n`,
+    ],
+  ])('emits V8-legal code for %s', (_label, source) => {
+    const { output, fixed } = linter.verifyAndFix(source, CONFIG, FILENAME);
+
+    expect(fixed).toBe(true);
+    expect(output).not.toBe(source);
+    expect(output).not.toContain(': number');
+    // Declining or dropping the comment is not the remedy (#1877): the comment
+    // has to arrive somewhere legal, character for character.
+    expect(output).toContain('doc');
+    expect(v8SyntaxErrorOf(output)).toBeNull();
+  });
+
+  // No comment is needed to breach the gap: a line break the annotation was not
+  // carrying is left behind by the strip just the same.
+  it('emits V8-legal code for a raw line break before the annotation', () => {
+    const source = 'export const f = ()\n  : number => 1;\n';
+    const { output } = linter.verifyAndFix(source, CONFIG, FILENAME);
+
+    expect(output).toBe('export const f = () => 1;\n');
+    expect(v8SyntaxErrorOf(output)).toBeNull();
+  });
+
+  // A comment that trips no restricted production must not be moved at all —
+  // the guard above passes just as well for a fixer that relocates every
+  // comment it meets.
+  it('leaves a one-line comment where it was written', () => {
+    const source = 'export const f = () /* doc */: number => 1;\n';
+    const { output } = linter.verifyAndFix(source, CONFIG, FILENAME);
+
+    expect(output).toBe('export const f = () /* doc */ => 1;\n');
+    expect(v8SyntaxErrorOf(output)).toBeNull();
+  });
+
+  // A function declaration ends its parameter list at a body, so nothing about
+  // its comments is restricted. Moving them would be a regression of its own.
+  it('leaves a function declaration untouched', () => {
+    const source = `export function j() ${DOC}: number {\n  return 1;\n}\n`;
+    const { output } = linter.verifyAndFix(source, CONFIG, FILENAME);
+
+    expect(output).toBe(`export function j() ${DOC} {\n  return 1;\n}\n`);
+    expect(v8SyntaxErrorOf(output)).toBeNull();
+  });
+
+  it('settles in one pass', () => {
+    const source = `export const f = () ${DOC}: number => 1;\n`;
+    const { output } = linter.verifyAndFix(source, CONFIG, FILENAME);
+
+    expect(linter.verifyAndFix(output, CONFIG, FILENAME).fixed).toBe(false);
   });
 });
