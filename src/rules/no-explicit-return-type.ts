@@ -1,9 +1,6 @@
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
-import {
-  createSuppressionChecker,
-  parseDisableDirectives,
-} from '../utils/disableDirectives';
+import { createSuppressionChecker } from '../utils/disableDirectives';
 import {
   bindingUses,
   ImportRemovalSource,
@@ -14,13 +11,19 @@ import { planTypeDeclarationRemoval } from '../utils/typeDeclarationRemoval';
 import {
   joinSegmentBody,
   requiresLineBreakAfter,
-  requiresOwnLine,
 } from '../utils/replacementSegments';
 import {
   BOUND_UNPROVABLE,
   declarationOf,
   resolveInEnclosingScopes,
 } from '../utils/lexicalScope';
+import {
+  Edit,
+  indentAt,
+  isDisjoint,
+  isPositionalDirective,
+  planArrowAnnotationEdits,
+} from '../utils/arrowAnnotationGap';
 
 type MessageIds =
   | 'noExplicitReturnTypeInferable'
@@ -1079,27 +1082,6 @@ function batchAnnotations(
 }
 
 /**
- * A comment whose meaning is tied to where it sits. Re-emitting one somewhere
- * else retargets it — a disable directive lands on an unrelated line and a
- * `@ts-expect-error` becomes an error of its own — so a removal that would move
- * one is withheld instead.
- */
-function isPositionalDirective(comment: TSESTree.Comment): boolean {
-  if (parseDisableDirectives([comment]).length > 0) {
-    return true;
-  }
-  const value = comment.value.trim();
-  return value.startsWith('@ts-expect-error') || value.startsWith('@ts-ignore');
-}
-
-/** The indentation of the line `offset` sits on, for a carried line break. */
-function indentAt(source: TSESLint.SourceCode, offset: number): string {
-  const lineStart = source.text.lastIndexOf('\n', offset - 1) + 1;
-  const [indent] = /^[ \t]*/.exec(source.text.slice(lineStart, offset)) ?? [''];
-  return indent;
-}
-
-/**
  * Whether the span deletes a whole declaration of the program.
  *
  * Such a span owns the comments inside it: they describe the declaration that is
@@ -1160,88 +1142,20 @@ function carriedText(
   return `${lead}${body}${trail}`;
 }
 
-/** One span of the fix, and the text that replaces it. */
-type Edit = { range: TextRange; text: string };
-
-/** Every character the syntactic grammar counts as a LineTerminator. */
-const LINE_TERMINATOR = /[\n\r\u2028\u2029]/;
-
-const textOf = (source: TSESLint.SourceCode, range: TextRange): string =>
-  source.text.slice(range[0], range[1]);
-
-/**
- * The span an arrow's return annotation occupies between the parameter list and
- * the `=>`, together with that arrow token.
- *
- * The span holds the annotation, whitespace and comments and nothing else,
- * which is what makes it safe to rewrite wholesale: no binding reference can
- * hide in it beyond the ones the annotation itself names.
- */
-function arrowAnnotationGap(
-  source: TSESLint.SourceCode,
-  returnType: TSESTree.TSTypeAnnotation,
-): { gap: TextRange; arrow: TSESTree.Token } | null {
-  const parametersEnd = source.getTokenBefore(returnType);
-  const arrow = source.getTokenAfter(returnType, {
-    filter: (token) => token.value === '=>',
-  });
-  if (!parametersEnd || !arrow) return null;
-
-  const gap: TextRange = [parametersEnd.range[1], arrow.range[0]];
-  return containsRange(gap, returnType.range) ? { gap, arrow } : null;
-}
-
-/**
- * Re-emits `comments` on the far side of the arrow, where a line terminator is
- * inert, consuming the horizontal whitespace the arrow already had after it so
- * the body keeps a single separator.
- */
-function hoistPastArrow(
-  source: TSESLint.SourceCode,
-  arrow: TSESTree.Token,
-  comments: readonly TSESTree.Comment[],
-): Edit {
-  const indent = indentAt(source, arrow.range[0]);
-  const trailingText = source.text.slice(arrow.range[1]);
-  const [spacing] = /^[ \t]*/.exec(trailingText) ?? [''];
-  const body = joinSegmentBody(
-    comments.map((comment) => ({
-      text: textOf(source, comment.range),
-      breakAfter: true,
-    })),
-    indent,
-  );
-  const rest = trailingText.slice(spacing.length);
-  const separator = LINE_TERMINATOR.test(rest.charAt(0))
-    ? ''
-    : requiresLineBreakAfter(comments[comments.length - 1])
-    ? `\n${indent}`
-    : ' ';
-  return {
-    range: [arrow.range[1], arrow.range[1] + spacing.length],
-    text: ` ${body}${separator}`,
-  };
-}
-
 /**
  * The edits that strip one annotation, carrying every comment the strip
  * strands rather than deleting it (#1877). `null` withholds the fix, for a
  * comment whose meaning is its position and which cannot stay where it is.
  *
  * An arrow is the one subject whose annotation sits inside a restricted
- * production: `ArrowParameters [no LineTerminator here] =>` forbids a line
- * terminator between the parameter list and the arrow, and a block comment
- * carrying a line terminator IS one to the grammar. A comment left there — or
- * carried there from inside the annotation — therefore turns the output into a
- * hard SyntaxError that only V8 reports, since `@typescript-eslint/parser`
- * accepts it (#1964). Such a comment is re-emitted past the `=>` instead, the
- * nearest position outside the restricted gap that cannot itself begin one;
- * hoisting it above the enclosing line would anchor an insertion at a column
- * zero that may sit inside a template literal or JSX text, where the comment
- * would become content rather than code.
+ * production, so its edits come from the shared planner that answers for that
+ * grammar (#1964). The removal span handed to it is the annotation's own
+ * range: unlike the planner's other caller, nothing here reaches back over the
+ * whitespace ahead of the `:`.
  *
  * Every other subject ends its parameter list at a body or a semicolon, so its
- * stranded comments stay where they were written.
+ * stranded comments stay where they were written and a deletion that carries
+ * them in place is correct.
  */
 function planAnnotationEdits(
   source: TSESLint.SourceCode,
@@ -1253,62 +1167,7 @@ function planAnnotationEdits(
     return carried === null ? null : [{ range, text: carried }];
   }
 
-  const gapInfo = arrowAnnotationGap(source, entry.returnType);
-  if (!gapInfo) return null;
-  const { gap, arrow } = gapInfo;
-
-  const comments = source
-    .getAllComments()
-    .filter((comment) => containsRange(gap, comment.range));
-  const stranded = comments.filter((comment) =>
-    containsRange(range, comment.range),
-  );
-  // What the plain deletion would leave between the parameters and the arrow.
-  // A comment left there contributes its own text, so a line comment or a
-  // multi-line block comment shows up here as the line terminator it is.
-  const residue = `${textOf(source, [gap[0], range[0]])}${textOf(source, [
-    range[1],
-    gap[1],
-  ])}`;
-
-  // The plain deletion is kept wherever it already lands a legal gap and
-  // strands nothing, so no output that survives today moves by a byte.
-  if (stranded.length === 0 && !LINE_TERMINATOR.test(residue)) {
-    return [{ range, text: '' }];
-  }
-
-  // Rewriting the gap collapses the lines it spanned, which moves the line a
-  // directive inside it points at, so the whole fix is withheld rather than
-  // retargeting one. The gap a directive can share with nothing else is left
-  // untouched by the branch above.
-  if (comments.some(isPositionalDirective)) return null;
-
-  const hoisted = comments.filter(requiresOwnLine);
-  const inline = comments
-    .filter((comment) => !requiresOwnLine(comment))
-    .map((comment) => textOf(source, comment.range));
-  const edits: Edit[] = [
-    { range: gap, text: inline.length === 0 ? ' ' : ` ${inline.join(' ')} ` },
-  ];
-  if (hoisted.length > 0) {
-    edits.push(hoistPastArrow(source, arrow, hoisted));
-  }
-  return edits;
-}
-
-/**
- * ESLint applies a fix whole or not at all, and rejects one whose edits
- * overlap. Two spans planned independently — an annotation and the declaration
- * that strands it — can only overlap if a premise here is wrong, so an overlap
- * withdraws the fix rather than throwing at apply time.
- */
-function isDisjoint(edits: readonly Edit[]): boolean {
-  const sorted = [...edits].sort(
-    (left, right) => left.range[0] - right.range[0],
-  );
-  return sorted.every(
-    (edit, index) => index === 0 || sorted[index - 1].range[1] <= edit.range[0],
-  );
+  return planArrowAnnotationEdits(source, entry.returnType, range);
 }
 
 /**
