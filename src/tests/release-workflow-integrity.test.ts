@@ -36,6 +36,29 @@ function parse(source: string): Workflow {
 }
 
 /**
+ * Context expressions whose value differs between two runs of the same branch.
+ * `github.ref`/`github.workflow` are deliberately absent: they are constant
+ * across the concurrent runs a release mutex must exclude, so interpolating
+ * them still yields a shared bucket.
+ */
+const PER_RUN_CONTEXTS = [
+  'github.sha',
+  'github.run_id',
+  'github.run_number',
+  'github.run_attempt',
+  'github.event.head_commit.id',
+  'github.event.after',
+];
+
+/** The per-run contexts a `concurrency.group` expression interpolates. */
+function perRunContexts(group: string | undefined): string[] {
+  if (!group) return [];
+  return PER_RUN_CONTEXTS.filter((ctx) =>
+    new RegExp(`\\$\\{\\{[^}]*\\b${ctx.replace(/\./g, '\\.')}\\b`).test(group),
+  );
+}
+
+/**
  * YAML 1.1 resolves a bare `on` key to boolean `true`. js-yaml's default
  * schema keeps it a string, but reading both keeps the guard from silently
  * finding no triggers (and asserting nothing) if that resolution ever changes.
@@ -128,9 +151,24 @@ describe('release workflow cannot strand a publish', () => {
   it('serializes releases so tip-checkout cannot double-publish', () => {
     expect(typeof workflow.concurrency?.group).toBe('string');
     expect(workflow.concurrency?.group).toBeTruthy();
+    // A group is only a mutex if concurrent runs land in the SAME bucket. Any
+    // per-run context in the expression gives every run its own group, which
+    // satisfies a truthiness check while serializing nothing — the exact shape
+    // this guard exists to forbid, since two runs both checking out the branch
+    // tip would publish twice.
+    expect(perRunContexts(workflow.concurrency?.group)).toEqual([]);
     // Cancelling mid-publish could abort between the npm publish and the
     // chore(release) commit pushed back to main.
     expect(workflow.concurrency?.['cancel-in-progress']).not.toBe(true);
+  });
+
+  it('detects a per-run concurrency group (positive control)', () => {
+    expect(perRunContexts('release-${{ github.sha }}')).toEqual(['github.sha']);
+    expect(perRunContexts('release-${{ github.run_id }}')).toEqual([
+      'github.run_id',
+    ]);
+    expect(perRunContexts('release-main')).toEqual([]);
+    expect(perRunContexts('release-${{ github.ref }}')).toEqual([]);
   });
 
   it('detects the stranding shape it is meant to catch (positive control)', () => {
