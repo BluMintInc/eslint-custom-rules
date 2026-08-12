@@ -104,7 +104,21 @@ const defaults = { retries: 3 };
 if (defaults?.timeout) {
   wait(); // the property is absent from the literal, so the outcome is open
 }
+
+// A loop whose exit is only known mid-body: the literal is deliberate
+let cursor = null;
+while (true) {
+  const { nextCursor } = await fetchPage(cursor);
+  if (!nextCursor) break;
+  cursor = nextCursor;
+}
 ```
+
+### Loops that exit from the body
+
+A literal `true` loop test is not reported when the body can leave the loop — cursor pagination and retry loops are written this way, and `for (;;)` says the same thing. `break`, `return` and `throw` all count, and the exit has to be one the loop can take: a `break` a nested `switch` or inner loop consumes does not free the outer loop, and a `return` inside a nested function belongs to that function. A labelled `break outer` counts for the loop it names.
+
+A literal-`true` loop whose body has no way out is still reported, because that loop really does run forever.
 
 ## How to fix
 

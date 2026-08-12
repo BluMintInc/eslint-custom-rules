@@ -1,8 +1,97 @@
 import { createRule } from '../utils/createRule';
 import type { TSESLint } from '@typescript-eslint/utils';
 import { TSESTree, AST_NODE_TYPES } from '@typescript-eslint/utils';
+import { ASTHelpers } from '../utils/ASTHelpers';
 
 type MessageIds = 'alwaysTrueCondition' | 'alwaysFalseCondition';
+
+type LoopStatement =
+  | TSESTree.WhileStatement
+  | TSESTree.DoWhileStatement
+  | TSESTree.ForStatement;
+
+const BREAKABLE = new Set<AST_NODE_TYPES>([
+  AST_NODE_TYPES.WhileStatement,
+  AST_NODE_TYPES.DoWhileStatement,
+  AST_NODE_TYPES.ForStatement,
+  AST_NODE_TYPES.ForInStatement,
+  AST_NODE_TYPES.ForOfStatement,
+  AST_NODE_TYPES.SwitchStatement,
+]);
+
+/**
+ * Whether `body` can leave the loop that owns it.
+ *
+ * An unlabeled `break` binds to the nearest enclosing loop or switch, so a
+ * nested breakable is still walked but its own unlabeled breaks do not count; a
+ * labeled one counts when it names this loop. `return` and `throw` leave the
+ * loop as well, unless they sit inside a nested function, which has its own.
+ */
+function canExitLoop(body: TSESTree.Statement, label: string | null): boolean {
+  let escapes = false;
+
+  const visit = (node: TSESTree.Node, insideNestedBreakable: boolean): void => {
+    if (escapes) return;
+
+    switch (node.type) {
+      case AST_NODE_TYPES.FunctionDeclaration:
+      case AST_NODE_TYPES.FunctionExpression:
+      case AST_NODE_TYPES.ArrowFunctionExpression:
+        return;
+      case AST_NODE_TYPES.BreakStatement:
+        if (node.label ? node.label.name === label : !insideNestedBreakable) {
+          escapes = true;
+        }
+        return;
+      case AST_NODE_TYPES.ReturnStatement:
+      case AST_NODE_TYPES.ThrowStatement:
+        escapes = true;
+        return;
+      default:
+        break;
+    }
+
+    const nested = insideNestedBreakable || BREAKABLE.has(node.type);
+
+    for (const [key, value] of Object.entries(node)) {
+      if (key === 'parent') continue;
+
+      if (Array.isArray(value)) {
+        for (const child of value) {
+          if (ASTHelpers.isNode(child)) visit(child, nested);
+        }
+      } else if (ASTHelpers.isNode(value)) {
+        visit(value, nested);
+      }
+    }
+  };
+
+  visit(body, false);
+
+  return escapes;
+}
+
+/**
+ * `while (true)` and `do … while (true)` around a `break` are how a loop whose
+ * exit is only known mid-body is written — cursor pagination being the usual
+ * case. The condition is the point, and unlike an `if` it cannot be removed:
+ * the only way to satisfy the report is to rewrite the loop as `for (;;)`,
+ * which this rule already accepts because it has no test node to check. A
+ * literal `true` over a body with no way out is still reported, since that loop
+ * really does run forever (#1973).
+ */
+function isDeliberateInfiniteLoop(loop: LoopStatement): boolean {
+  if (loop.test?.type !== AST_NODE_TYPES.Literal || loop.test.value !== true) {
+    return false;
+  }
+
+  const label =
+    loop.parent?.type === AST_NODE_TYPES.LabeledStatement
+      ? loop.parent.label.name
+      : null;
+
+  return canExitLoop(loop.body, label);
+}
 
 export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
   name: 'no-always-true-false-conditions',
@@ -1925,17 +2014,19 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
 
       // Check while loops
       WhileStatement(node): void {
+        if (isDeliberateInfiniteLoop(node)) return;
         checkCondition(node.test);
       },
 
       // Check do-while loops
       DoWhileStatement(node): void {
+        if (isDeliberateInfiniteLoop(node)) return;
         checkCondition(node.test);
       },
 
       // Check for loop conditions
       ForStatement(node): void {
-        if (node.test) {
+        if (node.test && !isDeliberateInfiniteLoop(node)) {
           checkCondition(node.test);
         }
       },
