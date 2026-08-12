@@ -1,3 +1,10 @@
+## [1.20.143](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.142...v1.20.143) (2026-08-12)
+
+
+### Bug Fixes
+
+* **prefer-sx-prop-over-system-props:** key the exemption on (component, prop) (closes [#1966](https://github.com/BluMintInc/eslint-custom-rules/issues/1966)) ([fb490cf](https://github.com/BluMintInc/eslint-custom-rules/commit/fb490cf47ddfb4ff24b9db29752f2574d19af258)), closes [#1273](https://github.com/BluMintInc/eslint-custom-rules/issues/1273)
+
 ## [1.20.142](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.141...v1.20.142) (2026-08-12)
 
 
