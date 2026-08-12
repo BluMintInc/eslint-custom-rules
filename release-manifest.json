@@ -1,5 +1,35 @@
 [
   {
+    "version": "1.20.145",
+    "date": "2026-08-12T16:05:12.174Z",
+    "rules": [
+      {
+        "name": "no-always-true-false-conditions",
+        "changeType": "fix",
+        "issues": [
+          1973
+        ],
+        "summary": "accept a literal loop test the body can exit (closes #1973)"
+      },
+      {
+        "name": "no-redundant-annotation-assertion",
+        "changeType": "fix",
+        "issues": [
+          1972
+        ],
+        "summary": "do not treat unresolved types as identical (closes #1972)"
+      },
+      {
+        "name": "no-undefined-null-passthrough",
+        "changeType": "fix",
+        "issues": [
+          1974
+        ],
+        "summary": "stop reporting the identity function (closes #1974)"
+      }
+    ]
+  },
+  {
     "version": "1.20.144",
     "date": "2026-08-12T12:16:01.495Z",
     "rules": [

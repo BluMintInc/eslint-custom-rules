@@ -1,3 +1,12 @@
+## [1.20.145](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.144...v1.20.145) (2026-08-12)
+
+
+### Bug Fixes
+
+* **no-always-true-false-conditions:** accept a literal loop test the body can exit (closes [#1973](https://github.com/BluMintInc/eslint-custom-rules/issues/1973)) ([33b8b09](https://github.com/BluMintInc/eslint-custom-rules/commit/33b8b09483423c094158b1c05db327e76c406e9e))
+* **no-redundant-annotation-assertion:** do not treat unresolved types as identical (closes [#1972](https://github.com/BluMintInc/eslint-custom-rules/issues/1972)) ([d18e328](https://github.com/BluMintInc/eslint-custom-rules/commit/d18e328a45e4be29f1a05fadfa190e4048af1501))
+* **no-undefined-null-passthrough:** stop reporting the identity function (closes [#1974](https://github.com/BluMintInc/eslint-custom-rules/issues/1974)) ([e09a36c](https://github.com/BluMintInc/eslint-custom-rules/commit/e09a36ce081810bf4c586ebd6ccd00b53bbbf9ff)), closes [#1785](https://github.com/BluMintInc/eslint-custom-rules/issues/1785)
+
 ## [1.20.144](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.143...v1.20.144) (2026-08-12)
 
 
