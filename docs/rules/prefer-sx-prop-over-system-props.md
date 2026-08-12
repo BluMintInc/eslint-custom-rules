@@ -40,6 +40,28 @@ The following are genuine component API props, not system props, and are always 
 
 `direction`, `spacing`, `container`, `item`, `xs`, `sm`, `md`, `lg`, `xl`, `variant`, `component`, `ref`, `key`, `children`, `id`, `className`, `style`, `divider`, `useFlexGap`, `columns`, `wrap`, `rowSpacing`, `columnSpacing`, `zeroMinWidth`, `offset`, `size`, event handlers (`onClick`, `onChange`, etc.), and accessibility/data attributes (`aria-*`, `data-*`).
 
+### Props a specific component owns
+
+Some names are a system prop on one component and that component's own API on another, so these exemptions are keyed on the **(component, prop) pair** rather than on the prop name. The component consumes the value — feeding `ownerState`, selecting a theme value and MUI's internal `.Mui*-*` class selectors — instead of forwarding it as CSS, so moving the prop into `sx` emits a declaration whose value is not a CSS value for that property. The browser drops it, and because `SxProps` accepts `string | number` there is no type error and no runtime warning to catch the loss.
+
+| Component | Prop | Why it is not a system prop |
+| --- | --- | --- |
+| `Button`, `IconButton`, `Chip`, `Badge` | `color` | A closed palette/variant selector (`'primary' \| 'error' \| …`), never a CSS color. |
+| `AppBar` | `color` | Selects the *background* shade from the palette, so `sx` would also target the wrong CSS property. |
+| `Container`, `Dialog` | `maxWidth` | A breakpoint **key** (`'xs' \| … \| 'xl' \| false`) resolved against `theme.breakpoints.values`. As CSS, `max-width: xl` is invalid and the element unbounds. |
+
+The pairing matters in both directions. `maxWidth` on a `Box`, `Stack` or `Paper` is a genuine CSS system prop and is still reported and moved into `sx`; likewise `color` on `Typography` or `Box`. And a prop the component owns does not shield the rest of the element — every other system prop on it still moves:
+
+```tsx
+// Before
+<Container maxWidth="xl" mt={2} minWidth="320px" />
+
+// After
+<Container maxWidth="xl" sx={{ mt: 2, minWidth: '320px' }} />
+```
+
+For a custom component whose props collide with a system prop name, use the [`allowedProps`](#allowedprops) option.
+
 ### Examples of incorrect code
 
 System props used directly — should be in `sx`:
@@ -66,6 +88,12 @@ Merged correctly into an existing `sx` object:
 
 ```tsx
 <Box sx={{ pt: 2, display: 'flex', backgroundColor: 'primary.main' }} />
+```
+
+A prop the component owns stays where it is — `maxWidth` here is a breakpoint key `Container` resolves itself, not a CSS length:
+
+```tsx
+<Container maxWidth="xl" sx={{ py: 4 }} />
 ```
 
 ## Options

@@ -79,6 +79,39 @@ ruleTesterJsx.run(
       // nothing to move into sx.
       `<Chip color="secondary" variant="outlined" onClick={() => {}} />`,
 
+      // --- Issue #1966: `maxWidth` on Container is a breakpoint KEY selecting a
+      // width from theme.breakpoints.values, not a CSS length. Moving it to sx
+      // emits `max-width: xl`, which is dropped as invalid and silently unbounds
+      // the container. ---
+      `
+import Container from '@mui/material/Container';
+import type { ContainerProps } from '@mui/material/Container';
+
+type Props = { maxWidth?: ContainerProps['maxWidth'] };
+
+export const Wrapper = ({ maxWidth }: Props) => (
+  <Container component="main" maxWidth={maxWidth}>
+    content
+  </Container>
+);
+`,
+      `<Container maxWidth="xl">x</Container>`,
+      `<Container maxWidth={false}>x</Container>`,
+
+      // The owned prop coexists with an sx the rule has nothing to merge into.
+      `<Container maxWidth="md" sx={{ py: 4 }} />`,
+      // `Dialog` reads the same breakpoint key for its Paper.
+      `<Dialog open maxWidth="sm" fullWidth />`,
+      // `AppBar` picks a background shade from its `color` enum.
+      `<AppBar color="primary" />`,
+
+      // The exemption is a property of the component itself, so restricting the
+      // `components` option does not re-arm it.
+      {
+        code: `<Container maxWidth="lg" />`,
+        options: [{ components: ['Container'] }],
+      },
+
       // A namespaced element name has no component name to match against.
       `<svg:rect mt={2} />`,
 
@@ -378,6 +411,97 @@ function B() { return <Box sx={{ mt: 2, display: 'flex' }} />; }
         code: `<Button color="warning" mt={2} />`,
         errors: [{ messageId: 'preferSxProp', data: { prop: 'mt' } }],
         output: `<Button color="warning" sx={{ mt: 2 }} />`,
+      },
+
+      // --- Issue #1966: the exemption is keyed on the (component, prop) pair,
+      // so `maxWidth` stays a CSS system prop everywhere Container does not own
+      // it. Exempting the bare prop name would blind the rule on these. ---
+      {
+        code: `<Box maxWidth="640px" />`,
+        errors: [{ messageId: 'preferSxProp', data: { prop: 'maxWidth' } }],
+        output: `<Box sx={{ maxWidth: '640px' }} />`,
+      },
+      {
+        code: `<Stack maxWidth={400} />`,
+        errors: [{ messageId: 'preferSxProp', data: { prop: 'maxWidth' } }],
+        output: `<Stack sx={{ maxWidth: 400 }} />`,
+      },
+      {
+        code: `<Paper maxWidth="100%" sx={{ p: 2 }} />`,
+        errors: [{ messageId: 'preferSxProp', data: { prop: 'maxWidth' } }],
+        output: `<Paper sx={{ maxWidth: '100%', p: 2 }} />`,
+      },
+      // A breakpoint key on a component that does NOT own `maxWidth` is still a
+      // system prop: the value is wrong there, but that is the author's bug and
+      // moving it into sx does not change what the browser sees.
+      {
+        code: `<Box maxWidth="xl" />`,
+        errors: [{ messageId: 'preferSxProp', data: { prop: 'maxWidth' } }],
+        output: `<Box sx={{ maxWidth: 'xl' }} />`,
+      },
+
+      // --- Container owns `maxWidth` only; every other system prop on it is
+      // still reported and still moves into sx. ---
+      {
+        code: `<Container mt={2} />`,
+        errors: [{ messageId: 'preferSxProp', data: { prop: 'mt' } }],
+        output: `<Container sx={{ mt: 2 }} />`,
+      },
+      {
+        code: `<Container maxWidth="xl" mt={2} minWidth="320px" />`,
+        errors: [
+          { messageId: 'preferSxProp', data: { prop: 'mt' } },
+          { messageId: 'preferSxProp', data: { prop: 'minWidth' } },
+        ],
+        output: `<Container maxWidth="xl" sx={{ mt: 2, minWidth: '320px' }} />`,
+      },
+      // The exempt prop is left alone even when it sits ahead of the sx the
+      // other props merge into.
+      {
+        code: `<Container maxWidth={false} p={3} sx={{ borderRadius: 2 }} />`,
+        errors: [{ messageId: 'preferSxProp', data: { prop: 'p' } }],
+        output: `<Container maxWidth={false} sx={{ p: 3, borderRadius: 2 }} />`,
+      },
+
+      // The fix rewrites the whole element when the attributes no longer fit on
+      // one line; the owned prop has to come through that rewrite verbatim.
+      {
+        code: `
+export const C = () => (
+  <Container maxWidth="lg" alignItems="center" justifyContent="center" bgcolor="red" />
+);
+`,
+        errors: [
+          { messageId: 'preferSxProp', data: { prop: 'alignItems' } },
+          { messageId: 'preferSxProp', data: { prop: 'justifyContent' } },
+          { messageId: 'preferSxProp', data: { prop: 'bgcolor' } },
+        ],
+        output: `
+export const C = () => (
+  <Container
+    maxWidth="lg"
+    sx={{ alignItems: 'center', justifyContent: 'center', bgcolor: 'red' }}
+  />
+);
+`,
+      },
+
+      // --- Dialog owns `maxWidth` (the same breakpoint key) but nothing else. ---
+      {
+        code: `<Dialog open maxWidth="sm" mb={2} />`,
+        errors: [{ messageId: 'preferSxProp', data: { prop: 'mb' } }],
+        output: `<Dialog open maxWidth="sm" sx={{ mb: 2 }} />`,
+      },
+
+      // --- AppBar owns `color` (it picks a background shade); the CSS system
+      // props sitting beside it still move. ---
+      {
+        code: `<AppBar color="transparent" px={2} boxShadow={0} />`,
+        errors: [
+          { messageId: 'preferSxProp', data: { prop: 'px' } },
+          { messageId: 'preferSxProp', data: { prop: 'boxShadow' } },
+        ],
+        output: `<AppBar color="transparent" sx={{ px: 2, boxShadow: 0 }} />`,
       },
 
       // --- Issue #1565 shape 1: a new sx object that would overflow the print
