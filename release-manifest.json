@@ -1,5 +1,27 @@
 [
   {
+    "version": "1.20.142",
+    "date": "2026-08-12T07:04:58.677Z",
+    "rules": [
+      {
+        "name": "no-explicit-return-type",
+        "changeType": "fix",
+        "issues": [
+          1964
+        ],
+        "summary": "keep the annotation's comments clear of the arrow gap (closes #1964)"
+      },
+      {
+        "name": "no-usememo-for-pass-by-value",
+        "changeType": "fix",
+        "issues": [
+          1963
+        ],
+        "summary": "hoist a carried multi-line comment clear of the return (closes #1963)"
+      }
+    ]
+  },
+  {
     "version": "1.20.141",
     "date": "2026-08-12T00:57:09.340Z",
     "rules": [
