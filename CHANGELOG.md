@@ -1,3 +1,13 @@
+## [1.20.141](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.140...v1.20.141) (2026-08-12)
+
+
+### Bug Fixes
+
+* **enforce-early-destructuring:** anchor the hoist to the hook call, not to its line (closes [#1956](https://github.com/BluMintInc/eslint-custom-rules/issues/1956)) ([cc5db6b](https://github.com/BluMintInc/eslint-custom-rules/commit/cc5db6baa7f329949f7f1a4da0407238f69884af)), closes [1951/#1953](https://github.com/BluMintInc/eslint-custom-rules/issues/1953) [#1951](https://github.com/BluMintInc/eslint-custom-rules/issues/1951)
+* **enforce-memoize-async:** keep the injected import below a shared-line directive (closes [#1957](https://github.com/BluMintInc/eslint-custom-rules/issues/1957)) ([215e334](https://github.com/BluMintInc/eslint-custom-rules/commit/215e3341487dd56634eefdafa2f660b5d32e3e1e)), closes [#1956](https://github.com/BluMintInc/eslint-custom-rules/issues/1956)
+* **enforce-memoize-getters:** keep the injected import below a shared-line directive (closes [#1958](https://github.com/BluMintInc/eslint-custom-rules/issues/1958)) ([28229fd](https://github.com/BluMintInc/eslint-custom-rules/commit/28229fdb601a1baf8d668e94ef913c253709fdae)), closes [#1956](https://github.com/BluMintInc/eslint-custom-rules/issues/1956) [#1951](https://github.com/BluMintInc/eslint-custom-rules/issues/1951) [#1953](https://github.com/BluMintInc/eslint-custom-rules/issues/1953)
+* **prefer-use-deep-compare-memo:** keep the injected import below a shared-line directive (closes [#1959](https://github.com/BluMintInc/eslint-custom-rules/issues/1959)) ([5bdadd3](https://github.com/BluMintInc/eslint-custom-rules/commit/5bdadd3b31a74a43995185bbe0113166a907d1b4)), closes [#1957](https://github.com/BluMintInc/eslint-custom-rules/issues/1957) [#1958](https://github.com/BluMintInc/eslint-custom-rules/issues/1958) [#1956](https://github.com/BluMintInc/eslint-custom-rules/issues/1956)
+
 ## [1.20.140](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.139...v1.20.140) (2026-08-11)
 
 

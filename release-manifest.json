@@ -1,5 +1,43 @@
 [
   {
+    "version": "1.20.141",
+    "date": "2026-08-12T00:57:09.340Z",
+    "rules": [
+      {
+        "name": "enforce-early-destructuring",
+        "changeType": "fix",
+        "issues": [
+          1956
+        ],
+        "summary": "anchor the hoist to the hook call, not to its line (closes #1956)"
+      },
+      {
+        "name": "enforce-memoize-async",
+        "changeType": "fix",
+        "issues": [
+          1957
+        ],
+        "summary": "keep the injected import below a shared-line directive (closes #1957)"
+      },
+      {
+        "name": "enforce-memoize-getters",
+        "changeType": "fix",
+        "issues": [
+          1958
+        ],
+        "summary": "keep the injected import below a shared-line directive (closes #1958)"
+      },
+      {
+        "name": "prefer-use-deep-compare-memo",
+        "changeType": "fix",
+        "issues": [
+          1959
+        ],
+        "summary": "keep the injected import below a shared-line directive (closes #1959)"
+      }
+    ]
+  },
+  {
     "version": "1.20.140",
     "date": "2026-08-11T22:49:18.139Z",
     "rules": [
