@@ -1080,10 +1080,6 @@ const DETECTION_EXEMPT: Record<string, string> = {
   // `as const` remedy makes properties readonly and can break a test that
   // reassigns a mock.
   'enforce-object-literal-as-const': 'breadth decision, tracked as #1795',
-  // The `&&` and ternary shapes reached block bodies in #1794; the bare
-  // identity shape is deliberately still concise-only, because widening it
-  // would ship a second copy of behaviour whose boundary is unsettled.
-  'no-undefined-null-passthrough': 'identity shape deferred, tracked as #1785',
   // Reports in BOTH spellings and swaps `preferMap` for `preferMapManual` when
   // the dispatch sits in a concise body, whose message names the reason: there
   // is no statement position to place the `Record` in, so the fix is withheld
