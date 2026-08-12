@@ -1,3 +1,10 @@
+## [1.20.144](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.143...v1.20.144) (2026-08-12)
+
+
+### Bug Fixes
+
+* **no-redundant-annotation-assertion:** carry a stranded comment past the arrow (closes [#1969](https://github.com/BluMintInc/eslint-custom-rules/issues/1969)) ([f3418f7](https://github.com/BluMintInc/eslint-custom-rules/commit/f3418f7ca7b7f8e595a94db8c3321cebd7790f13)), closes [#1964](https://github.com/BluMintInc/eslint-custom-rules/issues/1964)
+
 ## [1.20.143](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.142...v1.20.143) (2026-08-12)
 
 

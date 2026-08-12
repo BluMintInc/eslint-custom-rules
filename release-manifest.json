@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.144",
+    "date": "2026-08-12T12:16:01.495Z",
+    "rules": [
+      {
+        "name": "no-redundant-annotation-assertion",
+        "changeType": "fix",
+        "issues": [
+          1969
+        ],
+        "summary": "carry a stranded comment past the arrow (closes #1969)"
+      }
+    ]
+  },
+  {
     "version": "1.20.143",
     "date": "2026-08-12T07:48:25.970Z",
     "rules": [
