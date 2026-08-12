@@ -229,6 +229,61 @@ function typeText(type: ts.Type, checker: ts.TypeChecker): string {
   return checker.typeToString(type, undefined, typeFormatFlags());
 }
 
+/**
+ * Whether the checker failed to resolve `type` to a real one.
+ *
+ * `@typescript-eslint/parser` hands back parser services even with no
+ * `parserOptions.project`, but the program it builds then has no lib, so every
+ * type naming a global degrades: array types collapse to one shared anonymous
+ * `{}` (no symbol), and generic references such as `Map<K, V>` become the error
+ * type. Both are assignable to everything and stringify alike, so two unrelated
+ * types compare equal — `string[]` and `number[]` are literally the same object.
+ * Answering "no type information" with a report is what made this rule delete
+ * annotations and silently change a binding's type (#1972).
+ *
+ * A genuine `{}`, `{ a: number }` or `() => void` carries a `__type` symbol, so
+ * only the degraded forms match here. Under a real `tsconfig` nothing does.
+ */
+function isUnresolvedType(type: ts.Type): boolean {
+  const candidate = type as ts.Type & {
+    intrinsicName?: string;
+    objectFlags?: number;
+  };
+
+  if (
+    (type.flags & ts.TypeFlags.Any) !== 0 &&
+    candidate.intrinsicName === 'error'
+  ) {
+    return true;
+  }
+
+  return (
+    candidate.objectFlags !== undefined &&
+    (candidate.objectFlags & ts.ObjectFlags.Anonymous) !== 0 &&
+    !type.symbol
+  );
+}
+
+/**
+ * Whitespace inside a type is not part of it, so `Map<string, A>` and
+ * `Map<string,A>` must compare equal. Spaces between two word characters are
+ * kept so `keyof A` cannot collapse onto a type named `keyofA`.
+ */
+function normalizeTypeSpelling(text: string): string {
+  return text
+    .replace(/\s+/g, ' ')
+    .replace(/\s*([<>,[\]()|&{}:;?])\s*/g, '$1')
+    .trim();
+}
+
+/**
+ * The comparison form drops spacing the developer chose, so a type spanning
+ * several lines is flattened for the message but otherwise quoted as written.
+ */
+function displayTypeSpelling(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
+}
+
 function unwrapAlias(type: ts.Type, checker: ts.TypeChecker): ts.Type {
   const aliasSymbol = (type as ts.Type & { aliasSymbol?: ts.Symbol })
     .aliasSymbol;
@@ -509,10 +564,13 @@ function doTypeTextsMatch(representations: TypeRepresentations): boolean {
   );
 }
 
-function selectMatchingTypeRepresentation(
-  representations: TypeRepresentations,
-): string {
-  return representations.annotationText;
+/**
+ * The message names the type the developer is looking at, so it is the
+ * annotation's own spelling rather than `typeToString`, which renders
+ * `ValidResult[]` as `Array<ValidResult>` and an unresolved type as `{}`.
+ */
+function selectMatchingTypeRepresentation(annotationSpelling: string): string {
+  return annotationSpelling;
 }
 
 /**
@@ -558,11 +616,33 @@ function haveMatchingTypes(
   assertion: TSESTree.TypeNode,
   checker: ts.TypeChecker,
   services: ParserServices,
+  sourceCode: TSESLint.SourceCode,
 ): string | null {
   const annotationType = getComparableType(annotation, checker, services);
   const assertionType = getComparableType(assertion, checker, services);
 
   if (!annotationType || !assertionType) return null;
+
+  const annotationText = sourceCode.getText(annotation);
+  const annotationSpelling = normalizeTypeSpelling(annotationText);
+  const reportedType = displayTypeSpelling(annotationText);
+
+  /**
+   * With either side unresolved the checker cannot separate "same type" from
+   * "no type information", so fall back to how the two are written. Identical
+   * spellings in one scope denote one type, which keeps every genuinely
+   * redundant pair reportable while the mismatched pairs that motivated this
+   * fallback — `string[]` against `number[]` — no longer match.
+   */
+  if (isUnresolvedType(annotationType) || isUnresolvedType(assertionType)) {
+    const assertionSpelling = normalizeTypeSpelling(
+      sourceCode.getText(assertion),
+    );
+
+    return annotationSpelling === assertionSpelling
+      ? selectMatchingTypeRepresentation(reportedType)
+      : null;
+  }
 
   const representations = getTypeRepresentations(
     annotationType,
@@ -581,7 +661,7 @@ function haveMatchingTypes(
     return null;
   }
 
-  return selectMatchingTypeRepresentation(representations);
+  return selectMatchingTypeRepresentation(reportedType);
 }
 
 type AnnotatedFunction =
@@ -1296,6 +1376,7 @@ export const noRedundantAnnotationAssertion = createRule<[], MessageIds>({
         assertion,
         checker,
         parserServices as ParserServices,
+        sourceCode,
       );
 
       if (!matchingType) return null;

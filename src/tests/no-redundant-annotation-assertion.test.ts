@@ -2250,3 +2250,128 @@ describe('no-redundant-annotation-assertion --fix emits code the compiler accept
     expect(linter.verifyAndFix(output, CONFIG, FILENAME).fixed).toBe(false);
   });
 });
+
+/**
+ * Every case here names a type the checker cannot resolve without
+ * `parserOptions.project`, which the `RuleTester` never supplies: array types
+ * collapse to one shared anonymous `{}` and generic references become the error
+ * type. The rule used to read that collapse as proof the two types matched, so
+ * it reported unrelated pairs and `--fix` deleted the annotation, silently
+ * changing the binding's type (#1972).
+ *
+ * The valid arm is therefore load-bearing rather than decorative: these exact
+ * inputs were the false positives. The invalid arm holds the other half — the
+ * pairs really are redundant, so degrading to a spelling comparison must not
+ * cost the report.
+ */
+ruleTesterTs.run(
+  'no-redundant-annotation-assertion (unresolved types, issue #1972)',
+  noRedundantAnnotationAssertion,
+  {
+    valid: [
+      // Both element types collapse to the same `{}`; the annotations differ.
+      `
+declare const x: unknown;
+const v: string[] = x as number[];
+`,
+      `
+interface A { id: string }
+interface B { n: number }
+declare const x: unknown;
+const v: A[] = x as B[];
+`,
+      // `readonly` is erased by the collapse, so the pair looked identical.
+      `
+interface A { id: string }
+declare const x: unknown;
+const v: readonly A[] = x as A[];
+`,
+      // Generic references degrade to the error type, assignable both ways.
+      `
+declare const x: unknown;
+const v: Record<string, string> = x as Record<string, number>;
+`,
+      `
+declare const x: unknown;
+const v: Promise<string> = x as Promise<number>;
+`,
+      `
+interface A { id: string }
+declare const x: unknown;
+const v: A[] = x as Map<string, A>;
+`,
+      // The same collapse reaches the return-position arm.
+      `
+declare function f(): unknown;
+function g(): string[] {
+  return f() as number[];
+}
+`,
+    ],
+    invalid: [
+      {
+        name: 'an array type spelled identically on both sides is still redundant',
+        code: `
+interface A { id: string }
+declare const x: unknown;
+const v: A[] = x as A[];
+`,
+        // The message quotes the annotation as written. It reported `{}` while
+        // the collapse went unnoticed, naming a type absent from the source.
+        errors: [
+          {
+            messageId: 'redundantAnnotationAndAssertion',
+            data: { type: 'A[]' },
+          },
+        ],
+        output: `
+interface A { id: string }
+declare const x: unknown;
+const v = x as A[];
+`,
+      },
+      {
+        name: 'spacing inside a generic argument list does not hide the match',
+        code: `
+interface A { id: string }
+declare const x: unknown;
+const v: Map<string, A> = x as Map<string,A>;
+`,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+interface A { id: string }
+declare const x: unknown;
+const v = x as Map<string,A>;
+`,
+      },
+      {
+        name: 'an unresolved generic reference is still redundant against itself',
+        code: `
+declare const x: unknown;
+const v: Record<string, number> = x as Record<string, number>;
+`,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+declare const x: unknown;
+const v = x as Record<string, number>;
+`,
+      },
+      {
+        name: 'the return-position arm keeps reporting an identical spelling',
+        code: `
+declare function f(): unknown;
+function g(): string[] {
+  return f() as string[];
+}
+`,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+declare function f(): unknown;
+function g() {
+  return f() as string[];
+}
+`,
+      },
+    ],
+  },
+);
