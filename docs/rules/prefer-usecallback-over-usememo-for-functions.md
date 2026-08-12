@@ -52,7 +52,7 @@ const handleClick = useMemo(() => {
 
 ```jsx
 // Using useCallback for function memoization
-const handleClick = useCallback(() => {
+const logClick = useCallback(() => {
   console.log('Button clicked');
 }, []);
 

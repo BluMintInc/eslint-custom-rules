@@ -36,7 +36,7 @@ Patterns longer than 200 characters or containing nested greedy quantifiers are 
 ```typescript
 // Default configuration (callers-first, event handlers first)
 
-// Lint: vertically-group-related-functions - "processUserInput" should appear below its caller "handleClick"
+// Lint: vertically-group-related-functions - "processUserInput" should appear below its caller "onSubmit"
 function processUserInput(input: string) {
   const sanitized = sanitizeInput(input);
   return validateInput(sanitized);
@@ -52,8 +52,8 @@ function validateInput(input: string) {
   return input.length > 0;
 }
 
-// Lint: vertically-group-related-functions - "handleClick" (event handler) should appear at the top of the file
-function handleClick() {
+// Lint: vertically-group-related-functions - "onSubmit" (event handler) should appear at the top of the file
+function onSubmit() {
   const input = "example input";
   processUserInput(input);
 }
@@ -72,7 +72,7 @@ function prepareRequest() {}
 
 ```typescript
 // Default configuration (callers-first, event handlers first)
-function handleClick() {
+function onSubmit() {
   const input = "example input";
   processUserInput(input);
 }

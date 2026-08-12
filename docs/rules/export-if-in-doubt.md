@@ -47,11 +47,11 @@ export function getCachedScore(id: string) {
 In this example, the declaration is intentionally private, so it is moved into a narrower scope instead of being exported. Only top-level declarations are reported, so nesting `buildCache` inside the exported function satisfies the rule without widening the module's public API.
 
 ```typescript
-const handleRequest = async () => {
+const serveRequest = async () => {
   return 'ok';
 };
 
-export default handleRequest;
+export default serveRequest;
 ```
 
 A declaration named by `export default` is part of the module API, so it is not reported.
@@ -61,15 +61,15 @@ A declaration named by `export default` is part of the module API, so it is not 
 Only the bare `export default <identifier>` form counts. Where the declaration is an argument to a wrapper rather than the exported value itself, it stays unimportable and the rule still reports it:
 
 ```typescript
-const handleRequest = async () => {
+const serveRequest = async () => {
   return 'ok';
 };
 
-// `handleRequest` is not importable from this module — only the wrapped result is
-export default withLogging(handleRequest);
+// `serveRequest` is not importable from this module — only the wrapped result is
+export default withLogging(serveRequest);
 ```
 
-Export it as well (`export const handleRequest = …;`) if callers need it.
+Export it as well (`export const serveRequest = …;`) if callers need it.
 
 ### Reading the example in the error message
 
