@@ -162,20 +162,39 @@ const DEFAULT_MUI_COMPONENTS = new Set([
 ]);
 
 /**
- * Components whose public prop API defines `color` as a closed semantic enum
- * (a palette / variant selector like `'primary' | 'secondary' | 'error' | …`),
- * not a CSS-forwarded system style prop. On these, `color` feeds
- * `ownerState.color`, selecting theme variants and MUI's internal
- * `.Mui*-color*` class selectors — moving it into `sx` both drops the variant
- * selection and produces an invalid CSS `color` value. So `color` here is a
- * first-class component prop, never a deprecated system prop.
+ * Props a component declares as its own first-class API, keyed by the
+ * (component, prop) pair. Each name below collides with a system prop, but the
+ * component *consumes* it — feeding `ownerState`, selecting a theme value and
+ * MUI's internal `.Mui*-*` class selectors — instead of forwarding it as CSS.
+ * The system-prop reading is therefore wrong for the pair whatever value is
+ * written, and moving the prop into `sx` emits a declaration whose value is not
+ * a CSS value for that property: the browser drops it, so the fix type-checks
+ * (`SxProps` accepts `string | number`), lints clean, and silently loses the
+ * styling.
+ *
+ * The keying has to be per pair, not per prop name: the same name is a genuine
+ * system prop elsewhere (`color` on `Typography`, `maxWidth` on `Box`), so
+ * exempting the bare name would blind the rule on every other component.
  */
-const COMPONENT_COLOR_IS_SEMANTIC = new Set([
-  'Button',
-  'IconButton',
-  'Chip',
-  'Badge',
+const COMPONENT_OWN_PROPS = new Map<string, ReadonlySet<string>>([
+  // `color` is a closed palette/variant selector (`'primary' | 'error' | …`)
+  // on these — never a CSS color (#1273). On `AppBar` it picks the *background*
+  // shade, so the system-prop reading also targets the wrong CSS property.
+  ['Button', new Set(['color'])],
+  ['IconButton', new Set(['color'])],
+  ['Chip', new Set(['color'])],
+  ['Badge', new Set(['color'])],
+  ['AppBar', new Set(['color'])],
+  // `maxWidth` is a breakpoint KEY (`'xs' | … | 'xl' | false`) that selects a
+  // width from `theme.breakpoints.values` and drives the `maxWidth*` class
+  // (#1966). As CSS, `max-width: xl` is invalid and the element unbounds.
+  ['Container', new Set(['maxWidth'])],
+  ['Dialog', new Set(['maxWidth'])],
 ]);
+
+/** True when `propName` belongs to `componentName`'s own prop API. */
+const componentOwnsProp = (componentName: string, propName: string): boolean =>
+  COMPONENT_OWN_PROPS.get(componentName)?.has(propName) === true;
 
 /**
  * Props that must never be moved to `sx` because they are genuine component
@@ -930,10 +949,10 @@ export const preferSxPropOverSystemProps = createRule<Options, MessageIds>({
     }
 
     function isSystemProp(name: string, componentName: string): boolean {
-      // `color` is a semantic enum prop (not a CSS system prop) on components
-      // like Button/IconButton/Chip/Badge — exempt it there so the autofix
-      // never rewrites a variant selector into an invalid CSS color.
-      if (name === 'color' && COMPONENT_COLOR_IS_SEMANTIC.has(componentName)) {
+      // A prop the component owns is never the system prop of the same name, so
+      // the autofix must not rewrite it into a CSS declaration the browser
+      // discards.
+      if (componentOwnsProp(componentName, name)) {
         return false;
       }
       return MUI_SYSTEM_PROPS.has(name) && !isAllowedProp(name);
