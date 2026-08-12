@@ -74,6 +74,18 @@ const Comp = ({ fn }) => {
 };
 `,
       },
+      // Issue #1979: a string prop read through a member is still a string, and
+      // React already compares it by value.
+      {
+        name: 'leaves a string prop read via a member alone',
+        code: `
+import { useMemo } from 'react';
+const Comp = ({ slug }: { slug: string }) => {
+  const v = useMemo(() => slug.toUpperCase(), [slug]);
+  return <div>{v}</div>;
+};
+`,
+      },
     ],
     invalid: [
       // Identifier non-primitive (heuristic) triggers replacement
@@ -93,6 +105,26 @@ import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
 const Comp = ({ userConfig }) => {
   const formatted = useDeepCompareMemo(() => ({ name: userConfig.name }), [userConfig]);
   return <div>{formatted.name}</div>;
+};
+`,
+      },
+      // Issue #1979 anti-vacuity control: the same shape as the string prop
+      // above, with an object prop. The primitive carve-out must not reach it.
+      {
+        name: 'still reports an object prop read via a member',
+        code: `
+import { useMemo } from 'react';
+const Comp = ({ cfg }: { cfg: { a: string } }) => {
+  const v = useMemo(() => cfg.a, [cfg]);
+  return <div>{v}</div>;
+};
+`,
+        errors: [error],
+        output: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+const Comp = ({ cfg }: { cfg: { a: string } }) => {
+  const v = useDeepCompareMemo(() => cfg.a, [cfg]);
+  return <div>{v}</div>;
 };
 `,
       },
@@ -469,8 +501,434 @@ function f(x: number) { return x; }
 const v = useMemo(() => f(1), [f(1)]);
 `,
       },
+
+      // ---------------------------------------------------------------------
+      // Issue #1979: reading a member off a dependency proves the receiver has
+      // members, which every primitive also has. Each case below reported once
+      // before the primitive carve-out, and `--fix` wrapped a deep comparison
+      // around a value React already compares by value.
+      // ---------------------------------------------------------------------
+
+      // Layer A/B: an explicit primitive annotation on a parameter.
+      {
+        name: 'string parameter calling a string method',
+        code: `
+import { useMemo } from 'react';
+export function useSlug(slug: string) {
+  return useMemo(() => slug.toUpperCase(), [slug]);
+}
+`,
+      },
+      {
+        name: 'number parameter calling a number method',
+        code: `
+import { useMemo } from 'react';
+export function usePrice(cents: number) {
+  return useMemo(() => cents.toFixed(2), [cents]);
+}
+`,
+      },
+      {
+        name: 'string parameter read through a property arrays also carry',
+        code: `
+import { useMemo } from 'react';
+export function useLong(s: string) {
+  return useMemo(() => s.length > 3, [s]);
+}
+`,
+      },
+      {
+        name: 'boolean parameter calling a shared method',
+        code: `
+import { useMemo } from 'react';
+export function useFlag(flag: boolean) {
+  return useMemo(() => flag.toString(), [flag]);
+}
+`,
+      },
+      {
+        name: 'bigint parameter calling a shared method',
+        code: `
+import { useMemo } from 'react';
+export function useBig(a: bigint) {
+  return useMemo(() => a.toString(), [a]);
+}
+`,
+      },
+      {
+        name: 'symbol parameter calling a shared method',
+        code: `
+import { useMemo } from 'react';
+export function useSym(sym: symbol) {
+  return useMemo(() => sym.toString(), [sym]);
+}
+`,
+      },
+      // An optional parameter is `string | undefined`, and the access reaching
+      // the rule is a ChainExpression rather than a bare MemberExpression.
+      {
+        name: 'optional string parameter accessed through a chain',
+        code: `
+import { useMemo } from 'react';
+export function useMaybe(a?: string) {
+  return useMemo(() => a?.toUpperCase(), [a]);
+}
+`,
+      },
+      // A union answers only when nothing in it can carry identity.
+      {
+        name: 'union of primitives',
+        code: `
+import { useMemo } from 'react';
+export function useEither(x: string | number) {
+  return useMemo(() => x.toString(), [x]);
+}
+`,
+      },
+      {
+        name: 'union of string literal types',
+        code: `
+import { useMemo } from 'react';
+export function useMode(mode: 'compact' | 'full') {
+  return useMemo(() => mode.toUpperCase(), [mode]);
+}
+`,
+      },
+      // An annotation constrains every assignment, so it answers for a `let`.
+      {
+        name: 'annotated let',
+        code: `
+import { useMemo } from 'react';
+export function useLabel(initial: string) {
+  let label: string = initial;
+  label = initial.trim();
+  return useMemo(() => label.toUpperCase(), [label]);
+}
+`,
+      },
+      // Layer B: an unannotated `const` whose initializer is a literal.
+      {
+        name: 'const bound to a string literal',
+        code: `
+import { useMemo } from 'react';
+const s = 'abc';
+export const v = useMemo(() => s.toUpperCase(), [s]);
+`,
+      },
+      {
+        name: 'const bound to a number literal',
+        code: `
+import { useMemo } from 'react';
+const rate = 42;
+export const v = useMemo(() => rate.toFixed(1), [rate]);
+`,
+      },
+      {
+        name: 'const bound to a template literal',
+        code: `
+import { useMemo } from 'react';
+const prefix = \`/t\`;
+export const v = useMemo(() => prefix.trim(), [prefix]);
+`,
+      },
+      // Layer B: the `useState` tuple. `useState` is imported, so under a
+      // program without `project` it resolves to `any` and the checker cannot
+      // answer here at all — the syntax is the only evidence there is.
+      {
+        name: 'useState tuple initialised with a string literal',
+        code: `
+import { useMemo, useState } from 'react';
+export function useName() {
+  const [name] = useState('');
+  return useMemo(() => name.trim(), [name]);
+}
+`,
+      },
+      {
+        name: 'React.useState tuple initialised with a number literal',
+        code: `
+import React, { useMemo } from 'react';
+export function useCount() {
+  const [count] = React.useState(0);
+  return useMemo(() => count.toFixed(0), [count]);
+}
+`,
+      },
+      {
+        name: 'useState tuple with a primitive type argument',
+        code: `
+import { useMemo, useState } from 'react';
+export function useLabel() {
+  const [label] = useState<string>();
+  return useMemo(() => label?.toUpperCase(), [label]);
+}
+`,
+      },
+      // Layer C: the consumer's own shape. `useRouter()` resolves to `any`, the
+      // binding carries no annotation and no literal initializer, and every read
+      // of it names a method only a string has.
+      {
+        name: 'destructured router field read only through string methods',
+        code: `
+import { useMemo } from 'react';
+import { useRouter } from 'next/router';
+export function useIsKeywordInUrl(keyword: string) {
+  const { asPath } = useRouter();
+  return useMemo(() => {
+    return asPath.toLowerCase().includes(keyword.toLowerCase());
+  }, [asPath, keyword]);
+}
+`,
+      },
+      // A primitive spread is still a primitive: `[...s]` splits a string into
+      // characters, and deep-comparing the string it came from buys nothing.
+      {
+        name: 'string spread inside the callback',
+        code: `
+import { useMemo } from 'react';
+export function useChars(s: string) {
+  return useMemo(() => [...s], [s]);
+}
+`,
+      },
+      // The issue's silent controls: these never reported, so they pin that the
+      // measurement above is a change in behaviour rather than a change in what
+      // the fixtures exercise.
+      {
+        name: 'control: a string dependency concatenated rather than read',
+        code: `
+import { useMemo } from 'react';
+export function useBang(slug: string) {
+  return useMemo(() => slug + '!', [slug]);
+}
+`,
+      },
+      {
+        name: 'control: a string dependency interpolated',
+        code: `
+import { useMemo } from 'react';
+export function usePath(slug: string) {
+  return useMemo(() => \`/t/\${slug}\`, [slug]);
+}
+`,
+      },
+      {
+        name: 'control: a numeric literal dependency',
+        code: `
+import { useMemo } from 'react';
+export const v = useMemo(() => 1, [2]);
+`,
+      },
     ],
     invalid: [
+      // ---------------------------------------------------------------------
+      // Issue #1979 anti-vacuity: the primitive carve-out must leave every
+      // dependency it cannot prove primitive reporting exactly as before.
+      // ---------------------------------------------------------------------
+      {
+        name: 'object parameter read via a member still reports',
+        code: `
+import { useMemo } from 'react';
+export function useCfg(cfg: { a: string }) {
+  return useMemo(() => cfg.a, [cfg]);
+}
+`,
+        errors: [error],
+        output: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+export function useCfg(cfg: { a: string }) {
+  return useDeepCompareMemo(() => cfg.a, [cfg]);
+}
+`,
+      },
+      // `length` is deliberately absent from the primitive-only member list:
+      // arrays carry it, and vetoing on it would blind the rule to the array
+      // dependencies it exists to catch.
+      {
+        name: 'array parameter read through length still reports',
+        code: `
+import { useMemo } from 'react';
+export function useItems(items: string[]) {
+  return useMemo(() => items.length, [items]);
+}
+`,
+        errors: [error],
+        output: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+export function useItems(items: string[]) {
+  return useDeepCompareMemo(() => items.length, [items]);
+}
+`,
+      },
+      {
+        name: 'array parameter mapped still reports',
+        code: `
+import { useMemo } from 'react';
+export function useLabels(items: string[]) {
+  return useMemo(() => items.map((item) => item.trim()), [items]);
+}
+`,
+        errors: [error],
+        output: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+export function useLabels(items: string[]) {
+  return useDeepCompareMemo(() => items.map((item) => item.trim()), [items]);
+}
+`,
+      },
+      // One non-primitive member of a union is enough to keep the report.
+      {
+        name: 'union carrying an object member still reports',
+        code: `
+import { useMemo } from 'react';
+export function useEither(x: string | { a: number }) {
+  return useMemo(() => x.toString(), [x]);
+}
+`,
+        errors: [error],
+        output: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+export function useEither(x: string | { a: number }) {
+  return useDeepCompareMemo(() => x.toString(), [x]);
+}
+`,
+      },
+      // The initializer arm reads the literal, not merely the `const`.
+      {
+        name: 'const bound to an object literal still reports',
+        code: `
+import { useMemo } from 'react';
+const cfg = { a: 1 };
+export const v = useMemo(() => cfg.a, [cfg]);
+`,
+        errors: [error],
+        output: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+const cfg = { a: 1 };
+export const v = useDeepCompareMemo(() => cfg.a, [cfg]);
+`,
+      },
+      {
+        name: 'useState tuple initialised with an object literal still reports',
+        code: `
+import { useMemo, useState } from 'react';
+export function useCfg() {
+  const [cfg] = useState({ a: 1 });
+  return useMemo(() => cfg.a, [cfg]);
+}
+`,
+        errors: [error],
+        output: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+import { useState } from 'react';
+export function useCfg() {
+  const [cfg] = useState({ a: 1 });
+  return useDeepCompareMemo(() => cfg.a, [cfg]);
+}
+`,
+      },
+      // The type argument overrides whatever the initial value would infer.
+      {
+        name: 'useState tuple with an object type argument still reports',
+        code: `
+import { useMemo, useState } from 'react';
+export function useCfg() {
+  const [cfg] = useState<{ a: number }>();
+  return useMemo(() => cfg?.a, [cfg]);
+}
+`,
+        errors: [error],
+        output: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+import { useState } from 'react';
+export function useCfg() {
+  const [cfg] = useState<{ a: number }>();
+  return useDeepCompareMemo(() => cfg?.a, [cfg]);
+}
+`,
+      },
+      // Only element 0 of the tuple is the state value; element 1 is the setter,
+      // and the initial value says nothing about it.
+      {
+        name: 'the useState setter element is not covered by the carve-out',
+        code: `
+import { useMemo, useState } from 'react';
+export function useSetter() {
+  const [, setName] = useState('');
+  return useMemo(() => setName.name, [setName]);
+}
+`,
+        errors: [error],
+        output: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+import { useState } from 'react';
+export function useSetter() {
+  const [, setName] = useState('');
+  return useDeepCompareMemo(() => setName.name, [setName]);
+}
+`,
+      },
+      // Layer C answers only where the checker is silent. Here the checker
+      // resolves an object type, so a method name that looks primitive does not
+      // get to overrule it.
+      {
+        name: 'a resolved object type outranks a primitive-looking method name',
+        code: `
+import { useMemo } from 'react';
+export function useBox(box: { toUpperCase: () => string }) {
+  return useMemo(() => box.toUpperCase(), [box]);
+}
+`,
+        errors: [error],
+        output: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+export function useBox(box: { toUpperCase: () => string }) {
+  return useDeepCompareMemo(() => box.toUpperCase(), [box]);
+}
+`,
+      },
+      // Every read must agree: one occurrence that says nothing about the shape
+      // withdraws Layer C's guess.
+      {
+        name: 'a mixed read of an unresolvable binding still reports',
+        code: `
+import { useMemo } from 'react';
+import { useThing } from './useThing';
+export function useMixed() {
+  const { data } = useThing();
+  return useMemo(() => data.trim() + data.rest, [data]);
+}
+`,
+        errors: [error],
+        output: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+import { useThing } from './useThing';
+export function useMixed() {
+  const { data } = useThing();
+  return useDeepCompareMemo(() => data.trim() + data.rest, [data]);
+}
+`,
+      },
+      {
+        name: 'a computed read of an unresolvable binding still reports',
+        code: `
+import { useMemo } from 'react';
+import { useThing } from './useThing';
+export function useComputed(key: string) {
+  const { data } = useThing();
+  return useMemo(() => data[key], [data, key]);
+}
+`,
+        errors: [error],
+        output: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+import { useThing } from './useThing';
+export function useComputed(key: string) {
+  const { data } = useThing();
+  return useDeepCompareMemo(() => data[key], [data, key]);
+}
+`,
+      },
       // Array dep with computed object inside
       {
         code: `
@@ -911,6 +1369,100 @@ const second = useMemo(() => 2, [{ b: 2 }]);
     ],
   },
 );
+
+// Issue #1979: the syntactic layers of the primitive carve-out exist because
+// the type layer goes blind, so they have to be exercised with the type layer
+// switched OFF. Under the shared TypeScript testers the checker answers every
+// question these cases turn on — `let s = 'abc'` is a `string` to the checker
+// whatever the `const` gate decides — so a differential run there would score
+// the same verdict twice and pin nothing.
+//
+// The default parser supplies no `parserServices` at all, which is the honest
+// standing of a JavaScript file in a consumer repository, and leaves the
+// syntactic layers as the only thing answering.
+describe('prefer-use-deep-compare-memo: the syntactic primitive layers without a checker (issue #1979)', () => {
+  const RULE_ID = '@blumintinc/blumint/prefer-use-deep-compare-memo';
+
+  const LINT_CONFIG = {
+    parserOptions: {
+      ecmaVersion: 2022 as const,
+      sourceType: 'module' as const,
+    },
+    rules: { [RULE_ID]: 'error' as const },
+  };
+
+  /**
+   * Reports this rule raised, filtered by id: a rule the linter failed to find
+   * reads as an empty message list, which every assertion below would pass
+   * against vacuously.
+   */
+  const reportsFor = (code: string) => {
+    const linter = new Linter();
+    linter.defineRule(
+      RULE_ID,
+      preferUseDeepCompareMemo as unknown as Rule.RuleModule,
+    );
+    const messages = linter.verify(code, LINT_CONFIG, 'hook.js');
+    expect(messages.filter((message) => message.fatal)).toHaveLength(0);
+    return messages.filter((message) => message.ruleId === RULE_ID);
+  };
+
+  const memoOver = (declaration: string, body: string, dep: string) => `
+import { useMemo } from 'react';
+${declaration}
+export const v = useMemo(() => ${body}, [${dep}]);
+`;
+
+  it('vetoes a const bound to a primitive literal', () => {
+    expect(reportsFor(memoOver(`const s = 'abc';`, 's.length', 's'))).toEqual(
+      [],
+    );
+  });
+
+  it('declines the same binding spelled as a reassigned let', () => {
+    // The identical callback and dependency, one keyword apart: an unannotated
+    // initializer describes the binding only while nothing can rebind it.
+    const reports = reportsFor(
+      memoOver(`let s = 'abc';\ns = getObj();`, 's.length', 's'),
+    );
+    expect(reports).toHaveLength(1);
+    expect(reports[0].messageId).toBe('preferUseDeepCompareMemo');
+  });
+
+  it('reports a const bound to an object literal, checker or no checker', () => {
+    // The negative control: with the type layer switched off the rule still has
+    // to fire, or the two cases above prove only that it went silent.
+    const reports = reportsFor(memoOver(`const o = { a: 1 };`, 'o.a', 'o'));
+    expect(reports).toHaveLength(1);
+    expect(reports[0].messageId).toBe('preferUseDeepCompareMemo');
+  });
+
+  it('vetoes an unresolvable binding read only through primitive methods', () => {
+    expect(
+      reportsFor(`
+import { useMemo } from 'react';
+import { useThing } from './useThing';
+export function useMixed() {
+  const { data } = useThing();
+  return useMemo(() => data.toUpperCase(), [data]);
+}
+`),
+    ).toEqual([]);
+  });
+
+  it('declines the same binding read through a member arrays also carry', () => {
+    const reports = reportsFor(`
+import { useMemo } from 'react';
+import { useThing } from './useThing';
+export function useMixed() {
+  const { data } = useThing();
+  return useMemo(() => data.slice(1), [data]);
+}
+`);
+    expect(reports).toHaveLength(1);
+    expect(reports[0].messageId).toBe('preferUseDeepCompareMemo');
+  });
+});
 
 // Issue #1959: a `'use client'` directive is a directive only while it is the
 // FIRST statement, so an import spliced above it is silently demoted to an
