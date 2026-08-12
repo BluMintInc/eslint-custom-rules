@@ -318,18 +318,42 @@ const FILENAMES = [
   '/repo/functions/src/util/helper.ts',
 ];
 
+/** Byte ranges of the `invalid:` arrays declared in a RuleTester suite. */
+const invalidArrayRanges = (ast: AstNode): Array<[number, number]> => {
+  const ranges: Array<[number, number]> = [];
+  walk(ast, (node) => {
+    if (node.type !== 'Property' || !node.key) return;
+    const key = (node.key.name ?? node.key.value) as unknown;
+    if (key !== 'invalid') return;
+    const value = node.value as AstNode | undefined;
+    if (value?.type !== 'ArrayExpression' || !value.range) return;
+    ranges.push(value.range);
+  });
+  return ranges;
+};
+
 /**
  * A rule's own test file is the one corpus guaranteed to trigger it, which is
  * what keeps this from passing vacuously on code the rule ignores.
+ *
+ * The ordering is load-bearing. Taking literals in AST order yields the
+ * `valid:` array, which precedes `invalid:` in every suite — i.e. precisely the
+ * code the rule stays SILENT on. An option read on the report or fix path never
+ * runs there, so the crash probe below would drive it over code that returns
+ * before reaching the option at all. Measured at v1.20.145: AST order drew 417
+ * of 477 snippets from `valid:` and left 39 of 60 optioned rules reporting
+ * nothing whatsoever. Taking `invalid:` first inverts that.
  */
 const harvestSnippets = (ruleName: string): string[] => {
   const testFile = path.join(__dirname, `${ruleName}.test.ts`);
   if (!fs.existsSync(testFile)) return [];
   const ast = parseSource(fs.readFileSync(testFile, 'utf8'));
   if (!ast) return [];
-  const out: string[] = [];
+  const ranges = invalidArrayRanges(ast);
+  const reporting: string[] = [];
+  const rest: string[] = [];
   const seen = new Set<string>();
-  const push = (value: unknown) => {
+  const push = (value: unknown, range?: [number, number]) => {
     if (
       typeof value !== 'string' ||
       value.length < 25 ||
@@ -338,10 +362,12 @@ const harvestSnippets = (ruleName: string): string[] => {
       return;
     if (seen.has(value)) return;
     seen.add(value);
-    out.push(value);
+    const fromInvalid =
+      !!range && ranges.some(([lo, hi]) => range[0] >= lo && range[1] <= hi);
+    (fromInvalid ? reporting : rest).push(value);
   };
   walk(ast, (node) => {
-    if (node.type === 'Literal') push(node.value);
+    if (node.type === 'Literal') push(node.value, node.range);
     if (
       node.type === 'TemplateLiteral' &&
       (node.expressions as unknown[])?.length === 0
@@ -350,10 +376,11 @@ const harvestSnippets = (ruleName: string): string[] => {
         (node.quasis as Array<{ value: { cooked: string } }>)
           .map((q) => q.value.cooked)
           .join(''),
+        node.range,
       );
     }
   });
-  return out.slice(0, MAX_SNIPPETS);
+  return [...reporting, ...rest].slice(0, MAX_SNIPPETS);
 };
 
 const linter = new Linter();
@@ -408,6 +435,32 @@ describe('rules survive every schema-valid option object', () => {
     expect(
       throwsWith(controlId, [{ list: [] }], 'const a = 1;', '/repo/src/x.ts'),
     ).toBeNull();
+  });
+
+  /**
+   * The crash probe only exercises option-reading code that the snippet
+   * actually reaches. A corpus the rules stay silent on would keep every
+   * assertion below green while driving nothing, so hold a floor on how many
+   * rules the corpus genuinely triggers.
+   */
+  it('drives a corpus the rules actually report on (non-vacuity)', () => {
+    const triggered = rulesWithOptions.filter(({ name }) => {
+      const ruleId = PREFIX + name;
+      return harvestSnippets(name).some((code) =>
+        FILENAMES.some((filename) => {
+          try {
+            return linter
+              .verify(code, configFor(ruleId, []) as never, { filename })
+              .some((m) => m.ruleId === ruleId && !m.fatal);
+          } catch {
+            return false;
+          }
+        }),
+      );
+    });
+
+    // AST order (valid-first) triggered 21 of 60; invalid-first triggers 50+.
+    expect(triggered.length).toBeGreaterThan(45);
   });
 
   it.each(
