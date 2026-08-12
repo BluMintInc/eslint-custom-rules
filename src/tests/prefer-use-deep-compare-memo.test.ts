@@ -1,3 +1,4 @@
+import { Linter, Rule } from 'eslint';
 import { ruleTesterJsx, ruleTesterTs } from '../utils/ruleTester';
 import { preferUseDeepCompareMemo } from '../rules/prefer-use-deep-compare-memo';
 
@@ -388,6 +389,62 @@ const Comp = ({ userConfig }) => {
         output: `
 import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
 import React from 'react';
+const Comp = ({ userConfig }) => {
+  const formatted = useDeepCompareMemo(() => ({ name: userConfig.name }), [userConfig]);
+  return <div>{formatted.name}</div>;
+};
+`,
+      },
+      // Issue #1959: the anchor sits past the prologue precisely because the
+      // prologue precedes it, so widening the insertion to the anchor's line
+      // start jumps the directive whenever the two share a line. Every file
+      // this rule rewrites is a component module, which is where `'use client'`
+      // lives.
+      {
+        name: 'keeps a directive sharing its line with the react import first',
+        code: `'use client'; import { useMemo } from 'react';
+const Comp = ({ userConfig }) => {
+  const formatted = useMemo(() => ({ name: userConfig.name }), [userConfig]);
+  return <div>{formatted.name}</div>;
+};
+`,
+        errors: [error],
+        output: `'use client'; import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+const Comp = ({ userConfig }) => {
+  const formatted = useDeepCompareMemo(() => ({ name: userConfig.name }), [userConfig]);
+  return <div>{formatted.name}</div>;
+};
+`,
+      },
+      {
+        name: 'keeps a directive sharing its line with the component first',
+        code: `'use client'; const Comp = ({ userConfig }) => {
+  const formatted = useMemo(() => ({ name: userConfig.name }), [userConfig]);
+  return <div>{formatted.name}</div>;
+};
+`,
+        errors: [error],
+        output: `'use client'; import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+const Comp = ({ userConfig }) => {
+  const formatted = useDeepCompareMemo(() => ({ name: userConfig.name }), [userConfig]);
+  return <div>{formatted.name}</div>;
+};
+`,
+      },
+      // The own-line branch still widens, which is what keeps the displaced
+      // anchor on the indentation it already had.
+      {
+        name: 'keeps a directive on its own line first, indentation intact',
+        code: `'use client';
+import { useMemo } from 'react';
+const Comp = ({ userConfig }) => {
+  const formatted = useMemo(() => ({ name: userConfig.name }), [userConfig]);
+  return <div>{formatted.name}</div>;
+};
+`,
+        errors: [error],
+        output: `'use client';
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
 const Comp = ({ userConfig }) => {
   const formatted = useDeepCompareMemo(() => ({ name: userConfig.name }), [userConfig]);
   return <div>{formatted.name}</div>;
@@ -854,3 +911,132 @@ const second = useMemo(() => 2, [{ b: 2 }]);
     ],
   },
 );
+
+// Issue #1959: a `'use client'` directive is a directive only while it is the
+// FIRST statement, so an import spliced above it is silently demoted to an
+// inert expression statement. Nothing in the lint chain reports that — the
+// output re-lints clean, and unlike #1956 there is no compiler signal either,
+// since a demoted directive is still valid TypeScript. The oracle is therefore
+// STRUCTURAL: parse the output and ask whether the directive still leads. A
+// substring check passes on the corrupt output, because the directive is still
+// present — just no longer first.
+//
+// This rule is the most exposed of the three sharing the defect (#1957, #1958):
+// every file it rewrites is a React component module.
+describe('prefer-use-deep-compare-memo: the injected import stays below the prologue (issue #1959)', () => {
+  const RULE_ID = '@blumintinc/blumint/prefer-use-deep-compare-memo';
+  const FILENAME = 'Component.tsx';
+
+  const createLinter = () => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      RULE_ID,
+      preferUseDeepCompareMemo as unknown as Rule.RuleModule,
+    );
+    return linter;
+  };
+
+  const LINT_CONFIG = {
+    parser: '@typescript-eslint/parser',
+    parserOptions: {
+      ecmaVersion: 2022 as const,
+      sourceType: 'module' as const,
+      ecmaFeatures: { jsx: true },
+    },
+    rules: { [RULE_ID]: 'error' as const },
+  };
+
+  const fix = (code: string) =>
+    createLinter().verifyAndFix(code, LINT_CONFIG, FILENAME);
+
+  const verify = (code: string) =>
+    createLinter().verify(code, LINT_CONFIG, FILENAME);
+
+  /** The leading directive's value, or null when none leads. */
+  const leadingDirective = (code: string): string | null => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const first = require('@typescript-eslint/parser').parse(code, {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      ecmaFeatures: { jsx: true },
+      range: true,
+      loc: true,
+    }).body[0];
+    return first?.type === 'ExpressionStatement' &&
+      first.expression?.type === 'Literal'
+      ? String(first.expression.value)
+      : null;
+  };
+
+  const BODY = `const Comp = ({ userConfig }) => {
+  const formatted = useMemo(() => ({ name: userConfig.name }), [userConfig]);
+  return <div>{formatted.name}</div>;
+};
+`;
+
+  const expectDirectiveSurvives = (code: string, directive: string) => {
+    // A fixture the rule declined, or one with no leading directive, would
+    // satisfy every assertion below vacuously.
+    expect(verify(code).length).toBeGreaterThan(0);
+    expect(leadingDirective(code)).toBe(directive);
+
+    const first = fix(code);
+    expect(first.fixed).toBe(true);
+    expect(fix(first.output).fixed).toBe(false);
+    expect(verify(first.output)).toHaveLength(0);
+    expect(leadingDirective(first.output)).toBe(directive);
+    expect(
+      first.output.match(
+        /import \{ useDeepCompareMemo \} from '@blumintinc\/use-deep-compare';/g,
+      ),
+    ).toHaveLength(1);
+
+    return first.output;
+  };
+
+  it('keeps the directive leading when the react import shares its line', () => {
+    expectDirectiveSurvives(
+      `'use client'; import { useMemo } from 'react';\n${BODY}`,
+      'use client',
+    );
+  });
+
+  it('keeps the directive leading when the component shares its line', () => {
+    expectDirectiveSurvives(`'use client'; ${BODY}`, 'use client');
+  });
+
+  it('keeps a use server directive leading', () => {
+    expectDirectiveSurvives(
+      `'use server'; import { useMemo } from 'react';\n${BODY}`,
+      'use server',
+    );
+  });
+
+  it('leaves the own-line spelling byte-identical to its prior output', () => {
+    expect(
+      expectDirectiveSurvives(
+        `'use client';\nimport { useMemo } from 'react';\n${BODY}`,
+        'use client',
+      ),
+    ).toBe(
+      `'use client';\nimport { useDeepCompareMemo } from '@blumintinc/use-deep-compare';\nconst Comp = ({ userConfig }) => {\n  const formatted = useDeepCompareMemo(() => ({ name: userConfig.name }), [userConfig]);\n  return <div>{formatted.name}</div>;\n};\n`,
+    );
+  });
+
+  it('would have caught the bug: the pre-fix output is rejected by the oracle', () => {
+    // Verbatim output of the unguarded line-start anchor, kept as a planted
+    // positive control so this block cannot decay into passing vacuously.
+    const preFixOutput = `import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';\n'use client'; const Comp = ({ userConfig }) => {\n  const formatted = useDeepCompareMemo(() => ({ name: userConfig.name }), [userConfig]);\n  return <div>{formatted.name}</div>;\n};\n`;
+
+    // Both halves matter: it re-lints CLEAN, so a report-counting guard scores
+    // it a success, while the directive has stopped leading.
+    expect(verify(preFixOutput)).toHaveLength(0);
+    expect(preFixOutput).toContain(`'use client';`);
+    expect(leadingDirective(preFixOutput)).not.toBe('use client');
+  });
+});
