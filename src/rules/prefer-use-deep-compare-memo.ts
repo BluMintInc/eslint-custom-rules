@@ -10,6 +10,12 @@ import {
 import { planOrphanedImportRemoval } from '../utils/importRemoval';
 import { createSuppressionChecker } from '../utils/disableDirectives';
 
+/**
+ * Type-only, so the reference erases at compile time. The value side of
+ * `typescript` stays behind a `require` inside the function that needs it.
+ */
+type TsType = import('typescript').Type;
+
 const DEEP_COMPARE_MODULE = '@blumintinc/use-deep-compare';
 const DEEP_COMPARE_HOOK = 'useDeepCompareMemo';
 
@@ -96,33 +102,373 @@ function isNonPrimitiveWithoutTypes(expr: TSESTree.Expression): boolean {
   }
 }
 
-// TypeScript-aware check. Defensive and conservative.
-function isNonPrimitiveWithTypes(
+/**
+ * What a type checker can say about one dependency's primitiveness.
+ *
+ * The third value is the load-bearing one. A checker running without a
+ * `project` still answers every question, but it resolves imported symbols and
+ * `lib` types to `any` — so reading that absence of information as "not a
+ * primitive" lets a degraded program decide verdicts it knows nothing about
+ * (#1972). `unproven` hands the question to the syntactic layers instead of
+ * settling it.
+ */
+type PrimitivenessVerdict = 'primitive' | 'nonPrimitive' | 'unproven';
+
+/**
+ * Layer A: what the type checker proves about a dependency expression.
+ *
+ * Reading the type at the *reference* rather than at the declaration is
+ * deliberate: control-flow narrowing is what makes an optional `a?: string`
+ * answer `string` at the site React actually compares.
+ */
+function primitivenessByType(
   context: TSESLint.RuleContext<'preferUseDeepCompareMemo', []>,
   expr: TSESTree.Expression,
-): boolean {
+): PrimitivenessVerdict {
   const services = context.parserServices;
   if (!services?.program || !services?.esTreeNodeToTSNodeMap) {
-    return false;
+    return 'unproven';
   }
   try {
+    // Dereferenced inside the function rather than at module scope: reading
+    // `ts.TypeFlags` while the module is being loaded takes the whole plugin
+    // down wherever `typescript` is not yet resolvable (#1354).
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const ts: typeof import('typescript') = require('typescript');
     const checker = services.program.getTypeChecker();
     const tsNode = services.esTreeNodeToTSNodeMap.get(expr);
-    if (!tsNode) return false;
-    const type = checker.getTypeAtLocation(tsNode);
+    if (!tsNode) return 'unproven';
 
-    // Explicitly ignore functions even though they are non-primitive
-    if (type.getCallSignatures().length > 0) return false;
+    const primitiveFlags =
+      ts.TypeFlags.StringLike |
+      ts.TypeFlags.NumberLike |
+      ts.TypeFlags.BooleanLike |
+      ts.TypeFlags.BigIntLike |
+      ts.TypeFlags.ESSymbolLike |
+      ts.TypeFlags.Null |
+      ts.TypeFlags.Undefined |
+      ts.TypeFlags.Void;
+    // `any` and `unknown` carry no shape, and an unresolved type parameter is
+    // whatever its caller supplies, so none of the three is an answer.
+    const uninformativeFlags =
+      ts.TypeFlags.Any | ts.TypeFlags.Unknown | ts.TypeFlags.TypeParameter;
 
-    // Avoid guessing for unknown/any or non-function types
-    if (type.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown)) return false;
+    const classify = (candidate: TsType): PrimitivenessVerdict => {
+      if (candidate.flags & uninformativeFlags) return 'unproven';
+      if (candidate.isUnion()) {
+        const verdicts = candidate.types.map(classify);
+        if (verdicts.includes('unproven')) return 'unproven';
+        return verdicts.every((verdict) => verdict === 'primitive')
+          ? 'primitive'
+          : 'nonPrimitive';
+      }
+      return candidate.flags & primitiveFlags ? 'primitive' : 'nonPrimitive';
+    };
 
-    return false;
+    return classify(checker.getTypeAtLocation(tsNode));
   } catch {
+    return 'unproven';
+  }
+}
+
+/**
+ * Type nodes naming a primitive outright. A `TSTypeReference` is absent by
+ * design: an alias resolves only through the checker, which is Layer A's job.
+ */
+const PRIMITIVE_TYPE_KEYWORDS = new Set<string>([
+  AST_NODE_TYPES.TSStringKeyword,
+  AST_NODE_TYPES.TSNumberKeyword,
+  AST_NODE_TYPES.TSBooleanKeyword,
+  AST_NODE_TYPES.TSBigIntKeyword,
+  AST_NODE_TYPES.TSSymbolKeyword,
+  AST_NODE_TYPES.TSNullKeyword,
+  AST_NODE_TYPES.TSUndefinedKeyword,
+  AST_NODE_TYPES.TSVoidKeyword,
+]);
+
+function isPrimitiveLiteralNode(node: TSESTree.Node): boolean {
+  if (node.type === AST_NODE_TYPES.TemplateLiteral) return true;
+  if (node.type === AST_NODE_TYPES.UnaryExpression) {
+    // `-1` and `+1` are literal types spelled across two nodes.
+    return (
+      (node.operator === '-' || node.operator === '+') &&
+      isPrimitiveLiteralNode(node.argument)
+    );
+  }
+  if (node.type !== AST_NODE_TYPES.Literal) return false;
+  // A regular expression literal is an object, and its `value` is null in
+  // hosts that cannot construct it — the same shape a `null` literal has.
+  if ('regex' in node && node.regex) return false;
+  const { value } = node;
+  return (
+    value === null ||
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean' ||
+    typeof value === 'bigint'
+  );
+}
+
+function isPrimitiveTypeNode(node: TSESTree.TypeNode): boolean {
+  if (PRIMITIVE_TYPE_KEYWORDS.has(node.type)) return true;
+  if (node.type === AST_NODE_TYPES.TSLiteralType) {
+    return isPrimitiveLiteralNode(node.literal);
+  }
+  // A union is primitive only if nothing in it can carry identity, which is
+  // what makes `string | undefined` — the type an optional parameter has —
+  // answer the same as `string`.
+  if (node.type === AST_NODE_TYPES.TSUnionType) {
+    return node.types.length > 0 && node.types.every(isPrimitiveTypeNode);
+  }
+  return false;
+}
+
+function isUseStateCallee(callee: TSESTree.LeftHandSideExpression): boolean {
+  if (callee.type === AST_NODE_TYPES.Identifier) {
+    return callee.name === 'useState';
+  }
+  return (
+    callee.type === AST_NODE_TYPES.MemberExpression &&
+    !callee.computed &&
+    callee.property.type === AST_NODE_TYPES.Identifier &&
+    callee.property.name === 'useState'
+  );
+}
+
+/**
+ * Whether a `const [x] = useState(<primitive>)` binding holds a primitive.
+ *
+ * Only element 0 qualifies: element 1 is the setter, a function. The setter is
+ * also the only other writer of element 0, and the initial value types what it
+ * accepts, so the state stays whatever kind the initializer made it.
+ */
+function isPrimitiveUseStateElement(
+  declarator: TSESTree.VariableDeclarator,
+  bound: TSESTree.Identifier,
+): boolean {
+  const { id, init } = declarator;
+  if (id.type !== AST_NODE_TYPES.ArrayPattern) return false;
+  if (id.elements[0] !== bound) return false;
+  if (!init || init.type !== AST_NODE_TYPES.CallExpression) return false;
+  if (!isUseStateCallee(init.callee)) return false;
+
+  // An explicit type argument overrides whatever the initial value would have
+  // inferred, so it answers instead of the initializer.
+  const typeArguments = init.typeParameters?.params;
+  if (typeArguments && typeArguments.length > 0) {
+    return typeArguments.every(isPrimitiveTypeNode);
+  }
+  const [initial] = init.arguments;
+  return initial !== undefined && isPrimitiveLiteralNode(initial);
+}
+
+/**
+ * Layer B: primitiveness the parser alone can see.
+ *
+ * This layer exists because Layer A goes blind exactly where the shared rule
+ * testers run it — with no `project`, `useState` imported from react resolves
+ * to `any`, and so does every `lib` type. Syntax the file spells out does not
+ * degrade that way.
+ */
+function isProvablyPrimitiveBinding(
+  definition: TSESLint.Scope.Definition,
+): boolean {
+  const bound = definition.name;
+  if (bound.type !== AST_NODE_TYPES.Identifier) return false;
+
+  // An annotation constrains every assignment to the binding, so it answers for
+  // a `let` and a reassigned parameter just as it does for a `const`.
+  const annotation = bound.typeAnnotation?.typeAnnotation;
+  if (annotation) return isPrimitiveTypeNode(annotation);
+
+  const declarator = definition.node;
+  const declaration = definition.parent;
+  if (declarator.type !== AST_NODE_TYPES.VariableDeclarator) return false;
+  // Without an annotation the initializer is the only evidence, and it only
+  // describes the binding for as long as nothing rebinds it.
+  if (
+    !declaration ||
+    declaration.type !== AST_NODE_TYPES.VariableDeclaration ||
+    declaration.kind !== 'const'
+  ) {
     return false;
   }
+
+  if (declarator.id === bound) {
+    return declarator.init !== null && isPrimitiveLiteralNode(declarator.init);
+  }
+  return isPrimitiveUseStateElement(declarator, bound);
+}
+
+/**
+ * Members that exist on primitives and on nothing else in ordinary code.
+ *
+ * `length`, `slice`, `includes`, `indexOf`, `concat`, `at`, `toString` and
+ * `valueOf` are deliberately absent: arrays and objects carry them too, so
+ * vetoing on one would stop the rule seeing the array dependencies it exists
+ * to catch.
+ */
+const PRIMITIVE_ONLY_MEMBERS = new Set([
+  'toUpperCase',
+  'toLowerCase',
+  'toFixed',
+  'toPrecision',
+  'trim',
+  'trimStart',
+  'trimEnd',
+  'padStart',
+  'padEnd',
+  'charAt',
+  'charCodeAt',
+  'codePointAt',
+  'normalize',
+  'localeCompare',
+  'startsWith',
+  'endsWith',
+  'repeat',
+  'toExponential',
+]);
+
+/**
+ * The children of a node an identifier can be *referenced* from.
+ *
+ * A non-computed member's property and a non-computed key spell a name rather
+ * than read a binding, so counting them as occurrences would let an unrelated
+ * `other.trim` decide what `trim` denotes.
+ */
+function referencedChildren(node: TSESTree.Node): TSESTree.Node[] {
+  const children: TSESTree.Node[] = [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const record = node as any;
+  for (const key of Object.keys(record)) {
+    if (key === 'parent') continue;
+    if (
+      key === 'property' &&
+      node.type === AST_NODE_TYPES.MemberExpression &&
+      !node.computed
+    ) {
+      continue;
+    }
+    if (
+      key === 'key' &&
+      (node.type === AST_NODE_TYPES.Property ||
+        node.type === AST_NODE_TYPES.MethodDefinition ||
+        node.type === AST_NODE_TYPES.PropertyDefinition) &&
+      !node.computed
+    ) {
+      continue;
+    }
+    const child = record[key];
+    if (!child) continue;
+    if (Array.isArray(child)) {
+      for (const element of child) {
+        if (element && typeof element === 'object' && 'type' in element) {
+          children.push(element as TSESTree.Node);
+        }
+      }
+    } else if (typeof child === 'object' && 'type' in child) {
+      children.push(child as TSESTree.Node);
+    }
+  }
+  return children;
+}
+
+/**
+ * Layer C: every read of the name inside the callback is a member that only a
+ * primitive has.
+ *
+ * The weakest of the three layers, and the only one that reaches a binding the
+ * file gives no annotation and no initializer for — `const { asPath } =
+ * useRouter()` is the shape the consumer's hooks are written in. It answers
+ * only when *every* occurrence agrees: a computed access, a spread, or the bare
+ * name passed along says nothing about the value's shape, and one such
+ * occurrence withdraws the guess.
+ */
+function readsOnlyPrimitiveMembers(
+  callback: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression,
+  name: string,
+): boolean {
+  let accesses = 0;
+  let proven = true;
+
+  const visit = (node: TSESTree.Node): void => {
+    if (!proven) return;
+
+    if (
+      node.type === AST_NODE_TYPES.MemberExpression &&
+      node.object.type === AST_NODE_TYPES.Identifier &&
+      node.object.name === name
+    ) {
+      if (
+        node.computed ||
+        node.property.type !== AST_NODE_TYPES.Identifier ||
+        !PRIMITIVE_ONLY_MEMBERS.has(node.property.name)
+      ) {
+        proven = false;
+        return;
+      }
+      accesses += 1;
+      return;
+    }
+
+    if (node.type === AST_NODE_TYPES.Identifier && node.name === name) {
+      proven = false;
+      return;
+    }
+
+    for (const child of referencedChildren(node)) {
+      visit(child);
+    }
+  };
+
+  visit(callback.body);
+  return proven && accesses > 0;
+}
+
+/**
+ * The one binding a name denotes at a call site, or null when the answer is not
+ * a single declaration. A name with several definitions — a redeclared `var`, a
+ * merged declaration — describes more than one thing, and no one of them speaks
+ * for the reference.
+ */
+function soleDefinitionOf(
+  context: TSESLint.RuleContext<'preferUseDeepCompareMemo', []>,
+  node: TSESTree.Node,
+  name: string,
+): TSESLint.Scope.Definition | null {
+  const variable = ASTHelpers.findVariableInScope(
+    ASTHelpers.getScope(context, node),
+    name,
+  );
+  if (!variable || variable.defs.length !== 1) return null;
+  return variable.defs[0];
+}
+
+/**
+ * Whether a dependency is *provably* a primitive, across all three layers.
+ *
+ * The direction is asymmetric on purpose. A missed deep comparison costs a
+ * recomputation; a deep comparison wrapped around a `string` costs an injected
+ * dependency, a new import and a hook that cannot help, so nothing short of a
+ * proof promotes a dependency here (#1979).
+ */
+function isProvablyPrimitiveDependency(
+  context: TSESLint.RuleContext<'preferUseDeepCompareMemo', []>,
+  call: TSESTree.CallExpression,
+  callback: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression,
+  dep: TSESTree.Identifier,
+): boolean {
+  const verdict = primitivenessByType(context, dep);
+  if (verdict === 'primitive') return true;
+
+  const definition = soleDefinitionOf(context, call, dep.name);
+  if (definition && isProvablyPrimitiveBinding(definition)) return true;
+
+  // Method names are evidence only where nothing better exists: a checker that
+  // resolved the type has already answered, and answered from more than a name.
+  return (
+    verdict === 'unproven' && readsOnlyPrimitiveMembers(callback, dep.name)
+  );
 }
 
 function collectMemoizedIdentifiers(
@@ -496,13 +842,8 @@ export const preferUseDeepCompareMemo = createRule<[], MessageIds>({
 
           const expr = el as TSESTree.Expression;
 
-          // TS-aware check first
-          let isNonPrimitive = isNonPrimitiveWithTypes(context, expr);
-
-          // Fallback heuristic without type info for literals/arrays/objects/functions
-          if (!isNonPrimitive) {
-            isNonPrimitive = isNonPrimitiveWithoutTypes(expr);
-          }
+          // Syntactic classification for literals/arrays/objects/functions
+          let isNonPrimitive = isNonPrimitiveWithoutTypes(expr);
 
           // Identifier-specific heuristic: consider non-primitive only if used as object or function in callback
           if (!isNonPrimitive && expr.type === AST_NODE_TYPES.Identifier) {
@@ -511,7 +852,15 @@ export const preferUseDeepCompareMemo = createRule<[], MessageIds>({
               isNonPrimitive = false;
             } else if (
               identifierUsedAsObjectOrArray(callback, expr.name) &&
-              !isIdentifierMemoizedAbove(expr.name, memoizedIds)
+              !isIdentifierMemoizedAbove(expr.name, memoizedIds) &&
+              // Reading a member off a name proves the receiver has members,
+              // which every primitive also has: `slug.toUpperCase()` and
+              // `cfg.a` are the same shape. The promotion therefore stands only
+              // while the receiver is not provably a primitive — a bare
+              // Identifier reaches this branch through no other signal, so the
+              // veto can withhold nothing the rule established some other way
+              // (#1979).
+              !isProvablyPrimitiveDependency(context, node, callback, expr)
             ) {
               isNonPrimitive = true;
             }

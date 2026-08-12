@@ -12,6 +12,7 @@
 
 - **Why**: Non-primitive dependencies change identity each render. Reference equality in `useMemo` sees them as different, so the memo recomputes and can force avoidable renders.
 - **How**: The rule flags `useMemo` calls when the dependency array contains an object or array that is not already memoized. Identifiers are considered safe when they come from `useMemo`, `useCallback`, `useLatestCallback`, or `useDeepCompareMemo`.
+- **Not**: A dependency the rule can *prove* holds a primitive is never flagged, however it is read inside the callback. Reading a member off a name — `slug.toUpperCase()`, `cents.toFixed(2)`, `s.length` — proves only that the receiver has members, which strings, numbers, booleans, bigints and symbols all do. See [Primitive dependencies](#primitive-dependencies).
 - **Fix**: Auto-fix replaces `useMemo` with `useDeepCompareMemo` and inserts `import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';`. The rewritten call no longer reads whatever carried the hook, so the fix also unbinds `useMemo` — or `React`, for a `React.useMemo(...)` call — from the React import when nothing else in the file reads it, leaving the other specifiers untouched. You can also silence the warning by memoizing the dependencies first.
 
 Auto-fix adds the import if needed:
@@ -79,9 +80,70 @@ that `useMemo` still lists an unmemoized object in its own dependency array, so
 it is reported in turn. Depend on the object's primitive fields, or reach for
 `useDeepCompareMemo` as shown above.
 
+#### Examples of correct code — a primitive dependency read through a member
+
+A primitive carries members as readily as an object does, so reading one says
+nothing about identity. `slug` is a `string`: React already compares it by
+value, and a deep comparison wrapped around it costs an import and a dependency
+that cannot help.
+
+```tsx
+const Breadcrumb = ({ slug }: { slug: string }) => {
+  const label = useMemo(() => slug.toUpperCase(), [slug]);
+
+  return <span>{label}</span>;
+};
+```
+
+It holds for a member an array carries too, once the dependency's type settles
+what it is, and for state whose initial value is a primitive:
+
+```tsx
+const Counter = ({ label }: { label: string }) => {
+  const [count] = useState(0);
+  const caption = useMemo(
+    () => `${label.length}:${count.toFixed(0)}`,
+    [label, count],
+  );
+
+  return <span>{caption}</span>;
+};
+```
+
+### Primitive dependencies
+
+A dependency is exempt from the member-access heuristic only when it is
+*provably* a primitive. Three independent layers can supply that proof, and any
+one of them is enough:
+
+1. **Its type.** The type checker resolves the dependency to a string, number,
+   boolean, bigint, symbol, `null`, `undefined` or `void` — or to a union whose
+   every member is one of those, which is what an optional `slug?: string`
+   resolves to. A type of `any` or `unknown` is *not* a proof: a checker running
+   without `parserOptions.project` answers `any` for every imported symbol, and
+   reading that silence as an answer would let a degraded program decide the
+   verdict.
+2. **Its declaration.** A primitive type annotation on the binding — including
+   on a `let`, which the annotation constrains just as firmly — or an
+   unannotated `const` initialised with a primitive literal or a template
+   literal, or a `const [value] = useState(<primitive literal>)` tuple.
+3. **Every read of it.** Where the first two layers are silent, the dependency
+   is exempt if every read of it inside the callback names a member only a
+   primitive has (`toUpperCase`, `toFixed`, `trim`, `startsWith`, `repeat`, and
+   the like). `length`, `slice`, `includes`, `indexOf`, `concat`, `at`,
+   `toString` and `valueOf` are excluded on purpose — arrays carry them too, so
+   accepting one would hide the array dependencies the rule exists to catch. A
+   single occurrence that says nothing about the shape — a computed access, a
+   spread, the bare name passed along — withdraws this layer.
+
+Nothing short of a proof exempts a dependency, so a dependency whose kind is
+genuinely unknowable is still reported. The asymmetry is deliberate: a missed
+deep comparison costs one recomputation, while a deep comparison wrapped around
+a string costs an injected dependency, a new import and a hook that cannot help.
+
 ### Edge Cases
 
-- Primitives: dependency arrays with only primitives are ignored.
+- Primitives: dependency arrays with only primitives are ignored, and so is a primitive dependency read through a member.
 - Already memoized: identifiers produced by `useMemo`, `useCallback`, `useLatestCallback`, or `useDeepCompareMemo` are treated as stable.
 - Empty dependency arrays: ignored.
 - JSX in memo body: ignored, to avoid false positives with JSX-returning memos.
