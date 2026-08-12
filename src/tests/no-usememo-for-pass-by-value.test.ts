@@ -1405,12 +1405,157 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       }
       `,
       errors: [{ messageId: 'primitiveMemo' }],
+      // A block comment carrying a line terminator is itself a LineTerminator to
+      // the grammar, so folding it after `return` would let ASI end the
+      // statement and return `undefined` instead of the expression (#1963). It
+      // is hoisted above the statement, verbatim, rather than dropped.
       output: `
 
       export function useJsDocInCallback() {
-        return /**
+        /**
            * Why this value is nothing.
-           */ undefined;
+           */
+        return undefined;
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+      import { useMemo } from 'react';
+
+      export function useJsDocBeforeNull() {
+        return useMemo(() => {
+          /**
+           * The doc.
+           */
+          return null;
+        }, []);
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+
+      export function useJsDocBeforeNull() {
+        /**
+           * The doc.
+           */
+        return null;
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+      import { useMemo } from 'react';
+
+      export function useMultiLineCommentBeforeArrow(flag: boolean) {
+        return useMemo(/* first
+        second */ () => flag, [flag]);
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+
+      export function useMultiLineCommentBeforeArrow(flag: boolean) {
+        /* first
+        second */
+        return flag;
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+      import { useMemo } from 'react';
+
+      export function useSingleLineBlockBeforeReturn(flag: boolean) {
+        return useMemo(() => {
+          /* keep me inline */
+          return flag;
+        }, [flag]);
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      // A block comment written on one line folds inline safely: the grammar
+      // sees no line terminator, so `return` keeps its argument.
+      output: `
+
+      export function useSingleLineBlockBeforeReturn(flag: boolean) {
+        return /* keep me inline */ flag;
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+      import { useMemo } from 'react';
+
+      export function useMultiLineAndLineComments(flag: boolean) {
+        return useMemo(() => {
+          /* first
+          still first */
+          // second
+          return flag;
+        }, [flag]);
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+
+      export function useMultiLineAndLineComments(flag: boolean) {
+        /* first
+          still first */
+        // second
+        return flag;
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+      import { useMemo } from 'react';
+
+      export function useMultiLineCommentInsideParens(flag: boolean) {
+        return !useMemo(() => {
+          /* first
+          still first */
+          return flag;
+        }, [flag]);
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      // Parentheses make the carried line terminator harmless, so the comment
+      // needs no line of its own and rides within the replacement.
+      output: `
+
+      export function useMultiLineCommentInsideParens(flag: boolean) {
+        return !(/* first
+          still first */ flag);
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+      import { useMemo } from 'react';
+
+      export function useMultiLineTrailingComment(flag: boolean) {
+        return useMemo(() => {
+          return flag;
+          /* trailing
+          still trailing */
+        }, [flag]);
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      // After the expression has begun, a line terminator cannot trip the
+      // restricted production, so a trailing comment stays where it was written.
+      output: `
+
+      export function useMultiLineTrailingComment(flag: boolean) {
+        return flag /* trailing
+          still trailing */;
       }
       `,
     },

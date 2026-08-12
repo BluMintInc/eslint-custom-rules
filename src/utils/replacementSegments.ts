@@ -27,6 +27,36 @@ export function requiresLineBreakAfter(comment: TSESTree.Comment): boolean {
   );
 }
 
+/**
+ * Whether a comment's own text carries a line terminator, which only a block
+ * comment can do.
+ */
+function spansMultipleLines(comment: TSESTree.Comment): boolean {
+  return comment.loc.start.line !== comment.loc.end.line;
+}
+
+/**
+ * A comment that cannot be folded onto the code that follows it, so a fixer
+ * placing it ahead of an expression must give it a line of its own.
+ *
+ * Two kinds qualify. One is the line-bound comment {@link requiresLineBreakAfter}
+ * describes, whose meaning is tied to the line it occupies. The other is a block
+ * comment containing a line terminator: the syntactic grammar treats such a
+ * comment as a LineTerminator in its own right, so it triggers every restricted
+ * production a raw newline would. Measured with `node --check`, a block comment
+ * on one line between arrow parameters and their arrow parses, while the same
+ * comment broken across two lines is a SyntaxError; ahead of a `return`
+ * argument, the multi-line form is worse still — it parses, and ASI silently
+ * replaces the returned value with `undefined` (#1963).
+ *
+ * Only fixers emitting text where a newline is meaningful need this;
+ * a replacement wrapped in parentheses can never trip a restricted production
+ * and can keep such a comment inline.
+ */
+export function requiresOwnLine(comment: TSESTree.Comment): boolean {
+  return requiresLineBreakAfter(comment) || spansMultipleLines(comment);
+}
+
 export type ReplacementSegment = { text: string; breakAfter: boolean };
 
 /**
