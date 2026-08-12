@@ -254,8 +254,8 @@ const KNOWN_DIVERGENT: Record<string, Exemption> = {
   },
   'enforce-memoize-getters::enforce-dynamic-imports': {
     reason:
-      'INCIDENTAL: the fixtures import the UPSTREAM `typescript-memoize`; the fork this plugin injects, `@blumintinc/typescript-memoize`, is on `DEFAULT_IGNORED_LIBRARIES` and clean under both (measured).',
-    cases: { dynamicImportRequired: 6 },
+      "INCIDENTAL: the fixtures import the UPSTREAM `typescript-memoize`; the fork this plugin injects, `@blumintinc/typescript-memoize`, is on `DEFAULT_IGNORED_LIBRARIES` and clean under both (measured). Was 6 — the #1958 prologue fixture joined on the same incidental footing but through a different carrier, an unrelated static `import { something } from 'lib'` the case needs in order to put a directive and an existing import on one line. `enforce-dynamic-imports` reports it on that fixture's INPUT just as on its output (measured), so the memoize fix introduces nothing. Of the three fixtures #1958 added only that one joins; the two without an unrelated import are silent under both.",
+    cases: { dynamicImportRequired: 7 },
   },
   'enforce-microdiff::enforce-dynamic-imports': {
     reason:

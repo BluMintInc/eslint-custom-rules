@@ -59,6 +59,28 @@ class UserAccount {
 class Compact { @Memoize() private get isLocked() { return true; } }
 ```
 
+### Where the injected import is written
+
+The `import { Memoize } …` the fix adds when the file lacks one is placed below
+the file's prologue — a `'use client'` / `'use server'` directive, a `#!`
+shebang, a header comment — and above the first existing import. A directive is
+a directive only while it is the **first** statement, so an import spliced above
+one would silently demote it to an ordinary expression statement: still valid
+TypeScript, still reported clean by ESLint, but no longer read by the bundler.
+
+Where the anchor owns its line the import takes that line and the displaced
+statement keeps its indentation. Where the anchor shares its line with the
+prologue, the import is written inline after it rather than above it:
+
+```ts
+'use client';
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Session {
+  @Memoize()
+  private get isLocked() { return true; }
+}
+```
+
 ### Getters named with a private name
 
 `get #fetcher()` is never reported. TypeScript's `experimentalDecorators` mode —
