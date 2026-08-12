@@ -73,6 +73,30 @@ const result: FormattedPart = { year: parseYear() } as const;
 
 A type that is exported, or still named elsewhere in the file, keeps its declaration and its autofix — nothing is orphaned by the removal.
 
+#### Comments an arrow's annotation strands
+
+An arrow function's return annotation is the one that does not sit in free text: `ArrowParameters [no LineTerminator here] =>` is a restricted production, and the syntactic grammar counts a block comment carrying a line terminator as a line terminator in its own right. A comment left between the parameter list and the `=>` — or stranded there by the deletion — is therefore a hard `SyntaxError` (TS1200, "Line terminator not permitted before arrow"), even though `@typescript-eslint/parser` parses it happily.
+
+Such a comment is re-emitted on the far side of the `=>`, the nearest position outside the restricted gap where a line terminator is inert:
+
+```ts
+// Before
+const getUser = () /**
+ * why this exists
+ */: User => fetchUser() as User;
+
+// After: the comment is carried past the arrow, character for character
+const getUser = () => /**
+ * why this exists
+ */ fetchUser() as User;
+```
+
+Three things bound that rewrite:
+
+- **A comment that trips no restricted production is not moved.** A single-line block comment stays exactly where it was written (`const getUser = () /* doc */ => …`); relocating comments gratuitously is its own regression.
+- **A positional directive in the gap withholds the fix.** Rewriting the gap collapses the lines it spanned, which would retarget an `eslint-disable-next-line` or a `@ts-expect-error` written there. The report ships without a fixer instead.
+- **Every other subject is untouched.** A function declaration, a method, a class property with a body and a plain binding all end their signature at a body or a separator, so their comments keep their place and the annotation is simply deleted.
+
 ### Annotations that carry type information
 
 Redundancy is only redundancy if the annotation can be deleted without changing what the file means. Two shapes look identical to a type-equality test yet are load-bearing, and both are left alone.
