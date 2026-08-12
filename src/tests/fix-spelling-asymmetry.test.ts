@@ -197,11 +197,17 @@ const arrowToDeclaration = (source: string, ast: any): Edit[] => {
     const afterTypeParams = init.typeParameters
       ? init.typeParameters.range[1]
       : init.range[0] + (init.async ? 'async'.length : 0);
-    const signature = source
-      .slice(afterTypeParams, init.body.range[0])
-      .trim()
-      .replace(/=>$/, '')
-      .trim();
+    const head = source.slice(afterTypeParams, init.body.range[0]);
+    // The arrow is not always the last thing before the body: a comment can sit
+    // between them, and reading the arrow off the end of the text emits `=>`
+    // into a function declaration, which does not parse. The text following the
+    // arrow is carried VERBATIM, since a line comment there needs the line
+    // break that follows it to keep the body out of the comment.
+    const arrowAt = head.lastIndexOf('=>');
+    if (arrowAt === -1) return;
+    const signature = head.slice(0, arrowAt).trim();
+    const afterArrow = head.slice(arrowAt + 2);
+    const separator = /\/\*|\/\//.test(afterArrow) ? afterArrow : ' ';
     if (!signature.startsWith('(')) return;
     const body = source.slice(init.body.range[0], init.body.range[1]);
     edits.push({
@@ -209,7 +215,7 @@ const arrowToDeclaration = (source: string, ast: any): Edit[] => {
       end: node.range[1],
       text: `${init.async ? 'async ' : ''}function ${
         declarator.id.name
-      }${typeParams}${signature} ${body}`,
+      }${typeParams}${signature}${separator}${body}`,
     });
   });
   return edits;
