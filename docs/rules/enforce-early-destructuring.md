@@ -106,7 +106,7 @@ const MyComponent = () => {
 const { data } = response ?? {};
 
 useEffect(() => {
-  if (!data) return;
+  if (!data || Object.keys(data).length === 0) return;
   processData(data);
 }, [data]);
 ```

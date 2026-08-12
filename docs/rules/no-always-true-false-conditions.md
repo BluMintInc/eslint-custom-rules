@@ -89,7 +89,9 @@ while (shouldRetry()) {
 }
 
 const label = status ? status : 'offline'; // default value pattern allowed
-const options = config || {}; // fallback allowed
+
+const config: { retries?: number } | undefined = readConfig();
+const options = config ?? {}; // only this rule ignores fallbacks; ?? beats || everywhere else
 
 if (value?.length) {
   show(value);

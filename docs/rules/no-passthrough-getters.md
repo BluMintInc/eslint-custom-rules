@@ -130,22 +130,29 @@ export class MatchAdmin {
 ### ✅ Correct (Valid getter use cases)
 
 ```typescript
+export type MatchAdminProps = {
+  /** Absent until the match reports its results. */
+  otherResults?: RawResult[];
+};
+
 export class MatchAdmin {
   constructor(private readonly settings: MatchAdminProps) {}
 
   // Getter with memoization decorator - allowed
   @Memoize()
   private get computedResults() {
-    return this.settings.otherResults.filter(result => result.isValid);
+    return this.safeResults.filter(result => result.isValid);
   }
 
   // Getter with null/undefined handling - allowed
+  // `otherResults` is optional, so `??` supplies the empty array exactly when
+  // the property is null or undefined, leaving any present array untouched.
   private get safeResults() {
-    return this.settings.otherResults || [];
+    return this.settings.otherResults ?? [];
   }
 
   // Getter with type assertion - allowed (provides a safer, narrowed API surface)
-  private get typedResults(): ValidResult[] {
+  private get typedResults() {
     return this.settings.otherResults as ValidResult[];
   }
 
@@ -157,8 +164,8 @@ export class MatchAdmin {
 
   // Getter with conditional logic - allowed
   private get processedResults() {
-    return this.settings.otherResults?.length > 0
-      ? this.settings.otherResults
+    return this.safeResults.length > 0
+      ? this.safeResults
       : this.getDefaultResults();
   }
 }

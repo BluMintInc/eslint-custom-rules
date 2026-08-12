@@ -29,9 +29,9 @@ const b = a;
 
 ```typescript
 const { groupTabState } = useGroupRouter();
-const group = useGroupDoc();
+const group: Group = useGroupDoc();
 const extra = 1;
-const { id } = group || {};
+const { id } = group;
 ```
 
 ```typescript
@@ -58,8 +58,8 @@ const b = a;
 
 ```typescript
 const { groupTabState } = useGroupRouter();
-const group = useGroupDoc();
-const { id } = group || {};
+const group: Group = useGroupDoc();
+const { id } = group;
 const extra = 1;
 ```
 

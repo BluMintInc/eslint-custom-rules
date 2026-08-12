@@ -190,9 +190,11 @@ function getPair(): readonly [string, number] {
 ```
 
 ```ts
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+
 // The exemption covers identifier and member elements too
 const useHits = (hits: readonly { id: string }[], hasQuery: boolean) => {
-  return useMemo(() => {
+  return useDeepCompareMemo(() => {
     if (hasQuery && hits.length === 0) {
       return [ANY_GAME_HIT];
     }

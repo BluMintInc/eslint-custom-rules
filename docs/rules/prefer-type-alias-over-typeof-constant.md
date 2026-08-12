@@ -52,8 +52,8 @@ type StatusExceeding = 'exceeding';
 type StatusSucceeding = 'succeeding';
 
 // Use types in constants
-const STATUS_EXCEEDING: StatusExceeding = 'exceeding' as const;
-const STATUS_SUCCEEDING: StatusSucceeding = 'succeeding' as const;
+const STATUS_EXCEEDING: StatusExceeding = 'exceeding';
+const STATUS_SUCCEEDING: StatusSucceeding = 'succeeding';
 
 // Reuse types
 type StatusToCheck = StatusExceeding | StatusSucceeding;

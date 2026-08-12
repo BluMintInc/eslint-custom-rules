@@ -70,13 +70,13 @@ const ExamplePanel = ({ prefix, file, submit, upload }) => {
 
   // Setter IS used — regeneration pattern (e.g. after a completed operation)
   const [idempotencyKey, setIdempotencyKey] = useState(() => uuidv4Base62());
-  const handleSubmit = async () => {
+  const submitForm = async () => {
     await submit({ idempotencyKey });
     setIdempotencyKey(uuidv4Base62()); // intentional regeneration
   };
 
   // Per-operation uniqueness inside a callback — valid
-  const handleUpload = () => {
+  const uploadFile = () => {
     const operationId = uuidv4Base62();
     upload(file, operationId);
   };
@@ -85,8 +85,8 @@ const ExamplePanel = ({ prefix, file, submit, upload }) => {
   const key = useMemo(() => `${prefix}-${uuidv4Base62()}`, [prefix]);
 
   return (
-    <form id={placementId} key={key} onSubmit={handleSubmit}>
-      <button onClick={handleUpload}>Upload</button>
+    <form id={placementId} key={key} onSubmit={submitForm}>
+      <button onClick={uploadFile}>Upload</button>
     </form>
   );
 };

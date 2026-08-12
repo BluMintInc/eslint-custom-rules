@@ -79,8 +79,8 @@ function getUser() {
   return { id: 1 };
 }
 
-function getConfig() {
-  return config || {};
+function getConfig(config) {
+  return config ?? {};
 }
 ```
 

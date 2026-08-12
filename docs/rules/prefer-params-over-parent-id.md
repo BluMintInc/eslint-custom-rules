@@ -66,7 +66,7 @@ export const updateRelatedDocuments: DocumentChangeHandler<
 ```
 
 ```typescript
-export const handleUpdate: DocumentChangeHandler<
+export const fetchUserProfile: DocumentChangeHandler<
   UserData,
   UserPath
 > = async (event) => {
@@ -120,7 +120,7 @@ export const updateRelatedDocuments: DocumentChangeHandler<
 ```
 
 ```typescript
-export const handleUpdate: DocumentChangeHandler<
+export const fetchUserProfile: DocumentChangeHandler<
   UserData,
   UserPath
 > = async (event) => {

@@ -58,7 +58,7 @@ const completed = isTaskFinished();
 const visible = Boolean(anchorEl);
 
 function toggleFeature(enabled: boolean) { /* ... */ }
-const handleSubmit = (valid: boolean) => { /* ... */ };
+const submitForm = (valid: boolean) => { /* ... */ };
 
 class UserAccount {
   private verified = false;
@@ -120,11 +120,13 @@ const wouldBenefit = calculateBenefit() > threshold;
 const mustValidate = isRequired && !isValidated;
 const allowsEditing = checkPermission("edit");
 const supportsVideo = checkFeatures().video;
+const isStale: boolean = cacheAge > MAX_CACHE_AGE;
+const isOutdated: boolean = schemaVersion !== LATEST_SCHEMA_VERSION;
 const needsRefresh = isStale || isOutdated;
 
 function toggleFeature(isEnabled: boolean) { /* ... */ }
 function processUser(hasAccess: boolean, canModify: boolean) { /* ... */ }
-const handleSubmit = (isValid: boolean) => { /* ... */ };
+const submitForm = (isValid: boolean) => { /* ... */ };
 
 class UserAccount {
   private isVerified = false;

@@ -34,12 +34,16 @@ if (!config) {
 
 ### ✅ Correct
 
-```js
-function processUserData(userData) {
+```ts
+type UserData = {
+  name?: string;
+};
+
+function processUserData(userData: UserData | undefined) {
   if (!userData || Object.keys(userData).length === 0) {
     return null;
   }
-  return userData.name || 'Unknown';
+  return userData.name ?? 'Unknown';
 }
 
 const config = getConfig();
