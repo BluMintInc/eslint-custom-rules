@@ -2,6 +2,11 @@ import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { visitorKeys } from '@typescript-eslint/visitor-keys';
 import * as ts from 'typescript';
 import { ASTHelpers } from '../utils/ASTHelpers';
+import {
+  Edit,
+  isDisjoint,
+  planArrowAnnotationEdits,
+} from '../utils/arrowAnnotationGap';
 import { createRule } from '../utils/createRule';
 import { createSuppressionChecker } from '../utils/disableDirectives';
 import { planOrphanedImportRemoval, TextRange } from '../utils/importRemoval';
@@ -15,7 +20,16 @@ type CandidateSite = {
   removal: TextRange;
   /** The shared type name, rendered into the message. */
   matchingType: string;
+  /**
+   * Set when the removal strips an arrow function's return annotation, whose
+   * slice sits inside the `ArrowParameters [no LineTerminator here] =>`
+   * restricted production and so cannot simply be deleted (#1969).
+   */
+  arrowReturnType?: TSESTree.TSTypeAnnotation;
 };
+
+/** A site whose edits are planned, and therefore ships a fix. */
+type FixableSite = { site: CandidateSite; edits: Edit[] };
 
 /**
  * Type string formatting flags chosen to keep comparisons stable and predictable.
@@ -1275,6 +1289,7 @@ export const noRedundantAnnotationAssertion = createRule<[], MessageIds>({
       assertion: TSESTree.TypeNode,
       reportNode: TSESTree.Node,
       fixerTarget: TSESTree.TSTypeAnnotation,
+      arrowReturnType?: TSESTree.TSTypeAnnotation,
     ): CandidateSite | null {
       const matchingType = haveMatchingTypes(
         annotation.typeAnnotation,
@@ -1289,6 +1304,7 @@ export const noRedundantAnnotationAssertion = createRule<[], MessageIds>({
         reportNode,
         removal: annotationRemovalRange(fixerTarget, sourceCode),
         matchingType,
+        arrowReturnType,
       };
       sites.push(site);
 
@@ -1327,29 +1343,63 @@ export const noRedundantAnnotationAssertion = createRule<[], MessageIds>({
         assertionSite.assertion,
         reportNode,
         annotation,
+        node.type === AST_NODE_TYPES.ArrowFunctionExpression
+          ? annotation
+          : undefined,
       );
 
       if (site) returnCandidates.push({ site, owners, references });
     }
 
     /**
+     * The text a site's removal writes in place of the annotation.
+     *
+     * An arrow's annotation is the one that cannot simply be deleted: its slice
+     * sits inside a restricted production, so a comment left in the gap — or
+     * stranded there by the deletion — turns the output into a SyntaxError that
+     * only a compiler reports (#1969). Every other subject ends its signature at
+     * a body or a separator, so its slice is deleted exactly as before.
+     */
+    function planEdits(site: CandidateSite): Edit[] | null {
+      if (!site.arrowReturnType) {
+        return [{ range: site.removal, text: '' }];
+      }
+      return planArrowAnnotationEdits(
+        sourceCode,
+        site.arrowReturnType,
+        site.removal,
+      );
+    }
+
+    /**
      * The sites whose fixes actually ship. A site is excluded when its report
-     * will be suppressed, or when its own removal orphans something the helper
-     * cannot rewrite — a local alias, an interface, a type parameter. Deleting a
-     * declaration is a materially riskier edit than dropping an import
-     * specifier, and the author is better placed to decide whether the type
-     * should go or be used elsewhere.
+     * will be suppressed, when its own removal orphans something the helper
+     * cannot rewrite — a local alias, an interface, a type parameter — or when
+     * its edits cannot be planned without moving a comment whose meaning is its
+     * position. Deleting a declaration is a materially riskier edit than
+     * dropping an import specifier, and the author is better placed to decide
+     * whether the type should go or be used elsewhere.
      *
      * Screening individually before batching keeps one unfixable site from
      * vetoing the rest: orphanhood grows monotonically with the removed set, so
      * a site that cannot be planned alone can only ever poison the batch.
      */
-    function selectFixableSites(candidates: CandidateSite[]): CandidateSite[] {
-      return candidates.filter(
-        (site) =>
-          !isReportSuppressed(site.reportNode) &&
-          planOrphanedImportRemoval(sourceCode, [site.removal]) !== null,
-      );
+    function selectFixableSites(candidates: CandidateSite[]): FixableSite[] {
+      const fixable: FixableSite[] = [];
+
+      for (const site of candidates) {
+        if (isReportSuppressed(site.reportNode)) continue;
+        if (planOrphanedImportRemoval(sourceCode, [site.removal]) === null) {
+          continue;
+        }
+
+        const edits = planEdits(site);
+        if (edits === null) continue;
+
+        fixable.push({ site, edits });
+      }
+
+      return fixable;
     }
 
     /**
@@ -1395,7 +1445,7 @@ export const noRedundantAnnotationAssertion = createRule<[], MessageIds>({
         if (reportable.length === 0) return;
 
         const fixable = selectFixableSites(reportable);
-        const removals = fixable.map((site) => site.removal);
+        const removals = fixable.map((entry) => entry.site.removal);
         // One plan over every surviving removal: an import referenced solely by
         // annotations that all go in this pass is orphaned by their union, even
         // though no single one of them orphans it.
@@ -1404,10 +1454,21 @@ export const noRedundantAnnotationAssertion = createRule<[], MessageIds>({
             ? planOrphanedImportRemoval(sourceCode, removals)
             : null;
 
+        // The batch rewrites some spans rather than deleting them, and ships as
+        // one fix: ESLint rejects a fix whose edits overlap, so an overlap
+        // withdraws the fix instead of throwing at apply time. Only a wrong
+        // premise can produce one — an annotation's gap and an import
+        // declaration are disjoint regions of the file.
+        const edits: Edit[] = [
+          ...fixable.flatMap((entry) => entry.edits),
+          ...(importRanges ?? []).map((range) => ({ range, text: '' })),
+        ];
+
         // The whole batch ships as one fix, so no removal can land without the
         // others that the import's orphanhood was judged against. The rest
         // report without a fixer; the carrier's pass already resolves them.
-        const carrier = importRanges ? fixable[0] : undefined;
+        const carrier =
+          importRanges && isDisjoint(edits) ? fixable[0]?.site : undefined;
 
         for (const site of reportable) {
           context.report({
@@ -1415,15 +1476,14 @@ export const noRedundantAnnotationAssertion = createRule<[], MessageIds>({
             messageId: 'redundantAnnotationAndAssertion',
             data: { type: site.matchingType },
             fix:
-              site === carrier && importRanges
-                ? (fixer: TSESLint.RuleFixer) => [
-                    ...removals.map((range) =>
-                      fixer.removeRange([range[0], range[1]]),
-                    ),
-                    ...importRanges.map((range) =>
-                      fixer.removeRange([range[0], range[1]]),
-                    ),
-                  ]
+              site === carrier
+                ? (fixer: TSESLint.RuleFixer) =>
+                    edits.map((edit) =>
+                      fixer.replaceTextRange(
+                        [edit.range[0], edit.range[1]],
+                        edit.text,
+                      ),
+                    )
                 : null,
           });
         }

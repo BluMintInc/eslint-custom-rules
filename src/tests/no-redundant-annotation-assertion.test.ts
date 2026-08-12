@@ -1,3 +1,7 @@
+import { Linter, Rule } from 'eslint';
+import * as tsParser from '@typescript-eslint/parser';
+import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import * as ts from 'typescript';
 import { ruleTesterTs } from '../utils/ruleTester';
 import { noRedundantAnnotationAssertion } from '../rules/no-redundant-annotation-assertion';
 
@@ -1463,3 +1467,786 @@ export const obj = {
     ],
   },
 );
+
+/**
+ * Issue #1969: an arrow function's return annotation sits inside the
+ * `ArrowParameters [no LineTerminator here] =>` restricted production, and the
+ * syntactic grammar counts a block comment carrying a line terminator AS a line
+ * terminator. Deleting the annotation and leaving such a comment in the gap
+ * therefore emits a hard SyntaxError (TS1200), which `@typescript-eslint/parser`
+ * accepts — so the fixer has to answer for it rather than a reparse.
+ *
+ * Every other subject ends its signature at a body or a separator, so its
+ * comments stay exactly where they were written.
+ */
+ruleTesterTs.run(
+  'no-redundant-annotation-assertion',
+  noRedundantAnnotationAssertion,
+  {
+    valid: [
+      // A comment in the restricted gap is not itself a violation: the types
+      // still have to match before anything is removed.
+      `
+type User = { id: string };
+type Admin = { id: string; role: string };
+declare function fetchAdmin(): Admin;
+const getUser = () /**
+ * doc
+ */ : User => fetchAdmin() as Admin;
+      `,
+      `
+type User = { id: string };
+type Admin = { id: string; role: string };
+declare function fetchAdmin(): Admin;
+const getUser = () // doc
+: User => fetchAdmin() as Admin;
+      `,
+      // Nothing to remove without an assertion, whatever sits in the gap.
+      `
+type User = { id: string };
+declare function fetchUser(): User;
+const getUser = () /**
+ * doc
+ */ : User => fetchUser();
+      `,
+      // Nothing to remove without an annotation either.
+      `
+type User = { id: string };
+declare function fetchUser(): User;
+const getUser = () => /**
+ * doc
+ */ fetchUser() as User;
+      `,
+      // Two returns leave the branches free to assert different types, so the
+      // annotation stays and the gap is never rewritten.
+      `
+type User = { id: string };
+declare function fetchUser(): User;
+const getUser = (flag: boolean) /**
+ * doc
+ */ : User => {
+  if (flag) {
+    return fetchUser() as User;
+  }
+  return fetchUser();
+};
+      `,
+      // The assertion belongs to the inner arrow, which the outer annotation
+      // does not duplicate.
+      `
+type User = { id: string };
+declare function fetchUser(): User;
+const build = () /**
+ * doc
+ */ : (() => User) => () => fetchUser() as User;
+      `,
+      `
+type User = { id: string };
+type Admin = { id: string; role: string };
+declare function fetchAdmin(): Admin;
+function getUser() /**
+ * doc
+ */ : User {
+  return fetchAdmin() as Admin;
+}
+      `,
+      `
+type User = { id: string };
+declare function fetchUsers(): User[];
+const getUsers = () /**
+ * doc
+ */ : User[] => fetchUsers()[0] as User;
+      `,
+    ],
+    invalid: [
+      {
+        name: 'a multi-line block comment ahead of an arrow annotation is carried past the arrow',
+        code: `
+type User = { id: string };
+declare function fetchUser(): User;
+const getUser = () /**
+ * why this exists
+ */ : User => fetchUser() as User;
+`,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+type User = { id: string };
+declare function fetchUser(): User;
+const getUser = () => /**
+ * why this exists
+ */ fetchUser() as User;
+`,
+      },
+      {
+        // A single-line block comment trips no restricted production, so moving
+        // it would be a regression of its own.
+        name: 'a single-line block comment stays in the gap',
+        code: `
+type User = { id: string };
+declare function fetchUser(): User;
+const getUser = () /* doc */: User => fetchUser() as User;
+`,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+type User = { id: string };
+declare function fetchUser(): User;
+const getUser = () /* doc */ => fetchUser() as User;
+`,
+      },
+      {
+        name: 'a line comment ahead of the annotation is carried past the arrow',
+        code: `
+type User = { id: string };
+declare function fetchUser(): User;
+const getUser = () // doc
+: User => fetchUser() as User;
+`,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+type User = { id: string };
+declare function fetchUser(): User;
+const getUser = () => // doc
+fetchUser() as User;
+`,
+      },
+      {
+        // The comment sits inside the deleted slice, so a plain deletion would
+        // drop it outright (#1877).
+        name: 'a single-line comment inside the annotation survives in the gap',
+        code: `
+type User = { id: string };
+declare function fetchUser(): User;
+const getUser = (): /* doc */ User => fetchUser() as User;
+`,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+type User = { id: string };
+declare function fetchUser(): User;
+const getUser = () /* doc */ => fetchUser() as User;
+`,
+      },
+      {
+        name: 'a multi-line comment inside the annotation is carried past the arrow',
+        code: `
+type User = { id: string };
+declare function fetchUser(): User;
+const getUser = (): /**
+ * doc
+ */ User => fetchUser() as User;
+`,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+type User = { id: string };
+declare function fetchUser(): User;
+const getUser = () => /**
+ * doc
+ */ fetchUser() as User;
+`,
+      },
+      {
+        name: 'a multi-line comment after the annotation is carried past the arrow',
+        code: `
+type User = { id: string };
+declare function fetchUser(): User;
+const getUser = (): User /**
+ * doc
+ */ => fetchUser() as User;
+`,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+type User = { id: string };
+declare function fetchUser(): User;
+const getUser = () => /**
+ * doc
+ */ fetchUser() as User;
+`,
+      },
+      {
+        // No comment is needed to breach the gap: a raw line break the
+        // annotation was not carrying is left behind by the deletion just the
+        // same.
+        name: 'a raw line break ahead of the annotation is collapsed',
+        code: `
+type User = { id: string };
+declare function fetchUser(): User;
+const getUser = ()
+  : User => fetchUser() as User;
+`,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+type User = { id: string };
+declare function fetchUser(): User;
+const getUser = () => fetchUser() as User;
+`,
+      },
+      {
+        name: 'an async arrow carries its comment past the arrow',
+        code: `
+type User = { id: string };
+declare function fetchUser(): Promise<User>;
+const getUser = async () /**
+ * doc
+ */ : Promise<User> => fetchUser() as Promise<User>;
+`,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+type User = { id: string };
+declare function fetchUser(): Promise<User>;
+const getUser = async () => /**
+ * doc
+ */ fetchUser() as Promise<User>;
+`,
+      },
+      {
+        name: 'a nested arrow carries its comment past its own arrow',
+        code: `
+type User = { id: string };
+declare function fetchUser(): User;
+const outer = () => (() /**
+ * doc
+ */ : User => fetchUser() as User);
+`,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+type User = { id: string };
+declare function fetchUser(): User;
+const outer = () => (() => /**
+ * doc
+ */ fetchUser() as User);
+`,
+      },
+      {
+        name: 'a class-property arrow carries its comment past the arrow',
+        code: `
+type User = { id: string };
+declare function fetchUser(): User;
+class Repo {
+  getUser = () /**
+   * doc
+   */ : User => fetchUser() as User;
+}
+`,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+type User = { id: string };
+declare function fetchUser(): User;
+class Repo {
+  getUser = () => /**
+   * doc
+   */ fetchUser() as User;
+}
+`,
+      },
+      {
+        name: 'an object-property arrow carries its comment past the arrow',
+        code: `
+type User = { id: string };
+declare function fetchUser(): User;
+const repo = {
+  getUser: () /**
+   * doc
+   */ : User => fetchUser() as User,
+};
+`,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+type User = { id: string };
+declare function fetchUser(): User;
+const repo = {
+  getUser: () => /**
+   * doc
+   */ fetchUser() as User,
+};
+`,
+      },
+      {
+        name: 'an arrow with a block body carries its comment past the arrow',
+        code: `
+type User = { id: string };
+declare function fetchUser(): User;
+const getUser = () /**
+ * doc
+ */ : User => {
+  return fetchUser() as User;
+};
+`,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+type User = { id: string };
+declare function fetchUser(): User;
+const getUser = () => /**
+ * doc
+ */ {
+  return fetchUser() as User;
+};
+`,
+      },
+      {
+        name: 'a generic arrow carries its comment past the arrow',
+        code: `
+type Box<T> = { value: T };
+declare function make<T>(): Box<T>;
+const build = <T,>() /**
+ * doc
+ */ : Box<T> => make<T>() as Box<T>;
+`,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+type Box<T> = { value: T };
+declare function make<T>(): Box<T>;
+const build = <T,>() => /**
+ * doc
+ */ make<T>() as Box<T>;
+`,
+      },
+      {
+        // Each comment is judged on its own: only the one that carries a line
+        // terminator has to leave the gap.
+        name: 'only the comment that breaches the gap is moved',
+        code: `
+type User = { id: string };
+declare function fetchUser(): User;
+const getUser = () /* a */ /**
+ * b
+ */ : User => fetchUser() as User;
+`,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+type User = { id: string };
+declare function fetchUser(): User;
+const getUser = () /* a */ => /**
+ * b
+ */ fetchUser() as User;
+`,
+      },
+      {
+        name: 'a comment already past the arrow keeps its place behind the carried one',
+        code: `
+type User = { id: string };
+declare function fetchUser(): User;
+const getUser = () /**
+ * doc
+ */ : User => /* body */ fetchUser() as User;
+`,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+type User = { id: string };
+declare function fetchUser(): User;
+const getUser = () => /**
+ * doc
+ */ /* body */ fetchUser() as User;
+`,
+      },
+      {
+        // The whole batch ships as one fix, so both arrows are rewritten in the
+        // same pass and neither edit may overlap the other.
+        name: 'two arrows in one file are both carried',
+        code: `
+type User = { id: string };
+declare function fetchUser(): User;
+const first = () /**
+ * one
+ */ : User => fetchUser() as User;
+const second = () /**
+ * two
+ */ : User => fetchUser() as User;
+`,
+        errors: [
+          { messageId: 'redundantAnnotationAndAssertion' },
+          { messageId: 'redundantAnnotationAndAssertion' },
+        ],
+        output: `
+type User = { id: string };
+declare function fetchUser(): User;
+const first = () => /**
+ * one
+ */ fetchUser() as User;
+const second = () => /**
+ * two
+ */ fetchUser() as User;
+`,
+      },
+      {
+        name: 'an arrow batched with a plain binding keeps both removals',
+        code: `
+type User = { id: string };
+declare function fetchUser(): User;
+const cached: User = fetchUser() as User;
+const getUser = () /**
+ * doc
+ */ : User => fetchUser() as User;
+`,
+        errors: [
+          { messageId: 'redundantAnnotationAndAssertion' },
+          { messageId: 'redundantAnnotationAndAssertion' },
+        ],
+        output: `
+type User = { id: string };
+declare function fetchUser(): User;
+const cached = fetchUser() as User;
+const getUser = () => /**
+ * doc
+ */ fetchUser() as User;
+`,
+      },
+      {
+        // Rewriting the gap collapses the lines it spanned, which would move the
+        // line the directive points at, so the fix is withheld and only the
+        // report ships. `output: null` is what asserts that — an omitted
+        // `output` asserts nothing.
+        name: 'a disable directive in the gap withholds the fix',
+        code: `
+type User = { id: string };
+declare function fetchUser(): User;
+const getUser = ()
+// eslint-disable-next-line no-console
+: User => fetchUser() as User;
+`,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: null,
+      },
+      {
+        name: 'a @ts-expect-error in the gap withholds the fix',
+        code: `
+type User = { id: string };
+declare function fetchUser(): User;
+const getUser = ()
+/* @ts-expect-error intentional */
+: User => fetchUser() as User;
+`,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: null,
+      },
+      {
+        // A function declaration ends its signature at a body, so nothing about
+        // its comments is restricted and the deletion stays byte-identical.
+        name: 'a function declaration keeps its comment where it was written',
+        code: `
+type User = { id: string };
+declare function fetchUser(): User;
+function getUser() /**
+ * doc
+ */ : User {
+  return fetchUser() as User;
+}
+`,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+type User = { id: string };
+declare function fetchUser(): User;
+function getUser() /**
+ * doc
+ */ {
+  return fetchUser() as User;
+}
+`,
+      },
+      {
+        name: 'a method keeps its comment where it was written',
+        code: `
+type User = { id: string };
+declare function fetchUser(): User;
+class Repo {
+  getUser() /**
+   * doc
+   */ : User {
+    return fetchUser() as User;
+  }
+}
+`,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+type User = { id: string };
+declare function fetchUser(): User;
+class Repo {
+  getUser() /**
+   * doc
+   */ {
+    return fetchUser() as User;
+  }
+}
+`,
+      },
+      {
+        name: 'a function expression keeps its comment where it was written',
+        code: `
+type User = { id: string };
+declare function fetchUser(): User;
+const getUser = function () /**
+ * doc
+ */ : User {
+  return fetchUser() as User;
+};
+`,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+type User = { id: string };
+declare function fetchUser(): User;
+const getUser = function () /**
+ * doc
+ */ {
+  return fetchUser() as User;
+};
+`,
+      },
+      {
+        name: 'a class property keeps its comment where it was written',
+        code: `
+type User = { id: string };
+declare function fetchUser(): User;
+class Repo {
+  user /**
+   * doc
+   */ : User = fetchUser() as User;
+}
+`,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+type User = { id: string };
+declare function fetchUser(): User;
+class Repo {
+  user /**
+   * doc
+   */ = fetchUser() as User;
+}
+`,
+      },
+      {
+        name: 'a plain binding keeps its comment where it was written',
+        code: `
+type User = { id: string };
+declare function fetchUser(): User;
+const user /* doc */: User = fetchUser() as User;
+`,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+type User = { id: string };
+declare function fetchUser(): User;
+const user /* doc */ = fetchUser() as User;
+`,
+      },
+    ],
+  },
+);
+
+/**
+ * Issue #1969: the fixer's own output, judged by a compiler rather than by a
+ * parser.
+ *
+ * TS1200 ("Line terminator not permitted before arrow") is the only instrument
+ * that sees this breach. `@typescript-eslint/parser` accepts the broken text —
+ * the case below measures that — so every reparse-based guard in this repo,
+ * including the RuleTester's own, reads it as clean. The program is built over
+ * an in-memory file with `noResolve`/`noLib` because only the syntactic verdict
+ * on the emitted text is at stake, not whether the fixture's types resolve.
+ */
+describe('no-redundant-annotation-assertion --fix emits code the compiler accepts', () => {
+  const RULE_ID = '@blumintinc/blumint/no-redundant-annotation-assertion';
+  const FILENAME = 'x.ts';
+
+  const linter = new Linter();
+  linter.defineParser('@typescript-eslint/parser', tsParser as never);
+  linter.defineRule(
+    RULE_ID,
+    noRedundantAnnotationAssertion as unknown as Rule.RuleModule,
+  );
+
+  const CONFIG: Linter.Config = {
+    parser: '@typescript-eslint/parser',
+    parserOptions: {
+      ecmaVersion: 2022 as const,
+      sourceType: 'module' as const,
+    },
+    rules: { [RULE_ID]: 'error' },
+  };
+
+  /** The restricted-production breaches a compiler finds in `code`. */
+  const restrictedProductionErrorsOf = (code: string): string[] => {
+    const file = ts.createSourceFile(
+      FILENAME,
+      code,
+      ts.ScriptTarget.ES2022,
+      true,
+      ts.ScriptKind.TS,
+    );
+    const host: ts.CompilerHost = {
+      getSourceFile: (name) => (name === FILENAME ? file : undefined),
+      getDefaultLibFileName: () => 'lib.d.ts',
+      writeFile: () => undefined,
+      getCurrentDirectory: () => '/',
+      getCanonicalFileName: (name) => name,
+      useCaseSensitiveFileNames: () => true,
+      getNewLine: () => '\n',
+      fileExists: (name) => name === FILENAME,
+      readFile: (name) => (name === FILENAME ? code : undefined),
+    };
+    const program = ts.createProgram(
+      [FILENAME],
+      { noResolve: true, noLib: true },
+      host,
+    );
+
+    return [
+      ...program.getSyntacticDiagnostics(file),
+      ...program.getSemanticDiagnostics(file),
+    ]
+      .filter((diagnostic) => diagnostic.code === 1200)
+      .map((diagnostic) =>
+        ts.flattenDiagnosticMessageText(diagnostic.messageText, ' '),
+      );
+  };
+
+  /**
+   * How many return annotations `code` still declares. Substring assertions
+   * cannot answer this — the fixtures name their type in a `declare` and in an
+   * assertion the fix must keep — so the count is read off the AST instead.
+   */
+  const returnAnnotationCount = (code: string): number => {
+    const ast = tsParser.parse(code, {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      range: true,
+      loc: true,
+    });
+    let count = 0;
+
+    const visit = (node: TSESTree.Node): void => {
+      if (
+        (node.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+          node.type === AST_NODE_TYPES.FunctionDeclaration ||
+          node.type === AST_NODE_TYPES.FunctionExpression) &&
+        node.returnType
+      ) {
+        count += 1;
+      }
+
+      for (const [key, value] of Object.entries(node)) {
+        if (key === 'parent') continue;
+        for (const child of Array.isArray(value) ? value : [value]) {
+          if (child && typeof child === 'object' && 'type' in child) {
+            visit(child as TSESTree.Node);
+          }
+        }
+      }
+    };
+
+    visit(ast as unknown as TSESTree.Node);
+    return count;
+  };
+
+  const HEAD =
+    'type User = { id: string };\ndeclare function fetchUser(): User;\n';
+  const DOC = ['/**', ' * why this exists', ' */'].join('\n');
+
+  // The text a bare deletion used to emit: the annotation gone, the comment
+  // left in the restricted gap. Every assertion below is worthless if this
+  // shape is not actually broken, and if the parsers do not actually accept it.
+  const NAIVE_STRIP = `${HEAD}const getUser = () ${DOC} => fetchUser() as User;\n`;
+
+  it('rejects the shape a bare deletion leaves behind', () => {
+    expect(restrictedProductionErrorsOf(NAIVE_STRIP)).toEqual([
+      'Line terminator not permitted before arrow.',
+    ]);
+  });
+
+  it('accepts the source that shape was fixed from', () => {
+    expect(
+      restrictedProductionErrorsOf(
+        `${HEAD}const getUser = () ${DOC} : User => fetchUser() as User;\n`,
+      ),
+    ).toEqual([]);
+  });
+
+  it('is answering a question the parsers cannot', () => {
+    expect(() =>
+      tsParser.parse(NAIVE_STRIP, {
+        ecmaVersion: 2022,
+        sourceType: 'module',
+        range: true,
+        loc: true,
+      }),
+    ).not.toThrow();
+  });
+
+  it.each([
+    [
+      'the reported repro',
+      `${HEAD}const getUser = () ${DOC} : User => fetchUser() as User;\n`,
+    ],
+    [
+      'a comment inside the annotation',
+      `${HEAD}const getUser = (): ${DOC} User => fetchUser() as User;\n`,
+    ],
+    [
+      'a comment after the annotation',
+      `${HEAD}const getUser = (): User ${DOC} => fetchUser() as User;\n`,
+    ],
+    [
+      'a line comment',
+      `${HEAD}const getUser = () // why this exists\n: User => fetchUser() as User;\n`,
+    ],
+    [
+      'an async arrow',
+      `type User = { id: string };\ndeclare function fetchUser(): Promise<User>;\nconst getUser = async () ${DOC} : Promise<User> => fetchUser() as Promise<User>;\n`,
+    ],
+    [
+      'a nested arrow',
+      `${HEAD}const outer = () => (() ${DOC} : User => fetchUser() as User);\n`,
+    ],
+    [
+      'a class-property arrow',
+      `${HEAD}class Repo {\n  getUser = () ${DOC} : User => fetchUser() as User;\n}\n`,
+    ],
+    [
+      'a block body',
+      `${HEAD}const getUser = () ${DOC} : User => {\n  return fetchUser() as User;\n};\n`,
+    ],
+    [
+      'two arrows in one batch',
+      `${HEAD}const first = () ${DOC} : User => fetchUser() as User;\nconst second = () ${DOC} : User => fetchUser() as User;\n`,
+    ],
+  ])('emits compiler-legal code for %s', (_label, source) => {
+    const { output, fixed } = linter.verifyAndFix(source, CONFIG, FILENAME);
+
+    expect(fixed).toBe(true);
+    expect(output).not.toBe(source);
+    expect(returnAnnotationCount(source)).toBeGreaterThan(0);
+    expect(returnAnnotationCount(output)).toBe(0);
+    // Declining or dropping the comment is not the remedy (#1877): the comment
+    // has to arrive somewhere legal, character for character.
+    expect(output).toContain('why this exists');
+    expect(restrictedProductionErrorsOf(output)).toEqual([]);
+  });
+
+  // A comment that trips no restricted production must not be moved at all —
+  // the table above passes just as well for a fixer that relocates every
+  // comment it meets.
+  it('leaves a one-line comment where it was written', () => {
+    const source = `${HEAD}const getUser = () /* doc */: User => fetchUser() as User;\n`;
+    const { output } = linter.verifyAndFix(source, CONFIG, FILENAME);
+
+    expect(output).toBe(
+      `${HEAD}const getUser = () /* doc */ => fetchUser() as User;\n`,
+    );
+    expect(restrictedProductionErrorsOf(output)).toEqual([]);
+  });
+
+  // A function declaration ends its signature at a body, so nothing about its
+  // comments is restricted. Moving them would be a regression of its own.
+  it('leaves a function declaration untouched', () => {
+    const source = `${HEAD}function getUser() ${DOC} : User {\n  return fetchUser() as User;\n}\n`;
+    const { output } = linter.verifyAndFix(source, CONFIG, FILENAME);
+
+    expect(output).toBe(
+      `${HEAD}function getUser() ${DOC} {\n  return fetchUser() as User;\n}\n`,
+    );
+    expect(restrictedProductionErrorsOf(output)).toEqual([]);
+  });
+
+  it('settles in one pass', () => {
+    const source = `${HEAD}const getUser = () ${DOC} : User => fetchUser() as User;\n`;
+    const { output } = linter.verifyAndFix(source, CONFIG, FILENAME);
+
+    expect(linter.verifyAndFix(output, CONFIG, FILENAME).fixed).toBe(false);
+  });
+});
