@@ -3,7 +3,7 @@ import { createRule } from '../utils/createRule';
 import { ASTHelpers } from '../utils/ASTHelpers';
 import {
   importAnchorIndent,
-  importAnchorLineStart,
+  importAnchorLineStartIfOwned,
   importInsertionAnchor,
   insertAtImportAnchor,
 } from '../utils/importInsertion';
@@ -322,13 +322,16 @@ function ensureDeepCompareImportFixes(
   const indent = importAnchorIndent(sourceCode, anchor);
   const importText = `${indent}import { ${DEEP_COMPARE_HOOK} } from '${DEEP_COMPARE_MODULE}';\n`;
 
-  // Widened to the anchor's line start because the emitted statement carries
-  // its own indentation, leaving the displaced anchor sitting on the original.
+  // Widened to the anchor's line start where the anchor opens it, because the
+  // emitted statement carries its own indentation and so leaves the displaced
+  // anchor sitting on the original. Where the anchor shares its line the
+  // widening is declined: the offset would otherwise fall ahead of the prologue
+  // this anchor was chosen to sit below.
   return [
     insertAtImportAnchor(
       sourceCode,
       fixer,
-      importAnchorLineStart(sourceCode, anchor),
+      importAnchorLineStartIfOwned(sourceCode, anchor),
       importText,
     ),
   ];
