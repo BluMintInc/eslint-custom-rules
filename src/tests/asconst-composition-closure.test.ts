@@ -32,7 +32,10 @@ import {
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const plugin = require('..') as { rules: Record<string, any> };
+const plugin = require('..') as {
+  rules: Record<string, any>;
+  configs: { recommended: { rules: Record<string, unknown> } };
+};
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const tsParser = require('@typescript-eslint/parser');
 
@@ -44,10 +47,19 @@ for (const [name, rule] of Object.entries(plugin.rules)) {
 }
 linter.defineParser('ts', tsParser);
 
-/** Recommended rules whose fixer appends an `as const`. */
+/**
+ * Recommended rules whose fixer appends an `as const`.
+ *
+ * Derived by measurement, not by hand, and closed in both directions below:
+ * every `fixable: 'code'` recommended rule was driven over its own corpus and
+ * kept when the fix RAISED the `as const` token count. The hand-written list
+ * held three; the measurement finds five.
+ */
 const CULPRITS = [
+  'enforce-global-constants',
   'enforce-object-literal-as-const',
   'global-const-style',
+  'prefer-clone-deep',
   'prefer-union-from-const-array',
 ];
 
@@ -562,6 +574,64 @@ describe("a sibling fixer's assertion must not silence a rule", () => {
      * which is exactly the state in which most per-rule rows go vacuous.
      */
     expect(drivenVictims.length).toBeGreaterThan(90);
+  });
+
+  /**
+   * The culprit POPULATION, closed by measurement in both directions.
+   *
+   * Everything else here asks whether a victim survives the perturbation; none
+   * of it can ask whether the perturbation is ever applied. A culprit missing
+   * from the list is not under-probed, it is unprobed — its assertion is never
+   * written, so every victim passes against a rewrite that never happened. The
+   * hand-written list named three and had been wrong since the guard shipped:
+   * `enforce-global-constants` and `prefer-clone-deep` also append one, the
+   * latter emitting `cloneDeep(x, {…} as const)` outright.
+   *
+   * Token count rather than presence: a fixer that merely preserves an
+   * assertion it found is not writing one, and counting presence would enroll
+   * it, diluting the floors above with a culprit that perturbs nothing.
+   */
+  it('declares exactly the recommended fixers that measurably append an `as const`', () => {
+    const assertions = (text: string) =>
+      (text.match(/\bas const\b/g) || []).length;
+    const enabled = new Set(
+      Object.keys(plugin.configs.recommended.rules).map((id) =>
+        id.replace(PREFIX, ''),
+      ),
+    );
+    const appends = (name: string, testCase: FixtureCase): boolean => {
+      try {
+        const fixed = linter.verifyAndFix(
+          testCase.code,
+          configWith(testCase, {
+            [PREFIX + name]: severityWithOptions(testCase),
+          }),
+          { filename: defaultFilenameFor(testCase) },
+        );
+        return (
+          fixed.fixed && assertions(fixed.output) > assertions(testCase.code)
+        );
+      } catch {
+        return false;
+      }
+    };
+
+    const measured = Object.entries(plugin.rules)
+      .filter(
+        ([name, rule]) => rule.meta?.fixable === 'code' && enabled.has(name),
+      )
+      .filter(([name]) =>
+        (corpus.byRule.get(name) || [])
+          .filter((testCase) => testCase.language === 'ts')
+          .some((testCase) => appends(name, testCase)),
+      )
+      .map(([name]) => name)
+      .sort();
+
+    // Non-vacuity: a harness that stopped fixing would measure the empty set
+    // and quietly agree with an empty CULPRITS.
+    expect(measured.length).toBeGreaterThan(2);
+    expect(measured).toEqual([...CULPRITS].sort());
   });
 
   it('flags exactly the rules whose silence is a filed decision', () => {
