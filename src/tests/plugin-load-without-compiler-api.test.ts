@@ -14,6 +14,23 @@
  */
 jest.mock('typescript', () => ({ version: '7.0.2' }));
 
+import * as path from 'path';
+
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { loadRuleNames } = require('../../scripts/load-rule-names');
+
+/**
+ * The canonical rule set, parsed from `src/index.ts` without building — the same
+ * source commitlint, the validate-commit-scopes CI gate and the release-manifest
+ * generator read. Comparing against it closes the gap a cardinality floor leaves:
+ * `> 0` is satisfied by a barrel that exposes ONE rule, so a partial load —
+ * exactly the shape #1354 produced downstream of the throwing import — would read
+ * as a healthy plugin. Equality cannot be satisfied by a degraded load.
+ */
+const EXPECTED_RULE_NAMES: string[] = loadRuleNames(
+  path.resolve(__dirname, '../..'),
+);
+
 type PluginShape = {
   rules: Record<string, { create?: unknown }>;
   configs: { recommended: { rules: Record<string, unknown> } };
@@ -29,7 +46,8 @@ describe('plugin loads against a compiler without a root-exported API', () => {
     const plugin = require('..') as PluginShape;
     const names = Object.keys(plugin.rules);
 
-    expect(names.length).toBeGreaterThan(0);
+    expect(EXPECTED_RULE_NAMES.length).toBeGreaterThan(150);
+    expect([...names].sort()).toEqual([...EXPECTED_RULE_NAMES].sort());
 
     const unusable = names.filter(
       (name) => typeof plugin.rules[name]?.create !== 'function',
@@ -40,8 +58,17 @@ describe('plugin loads against a compiler without a root-exported API', () => {
   it('still exposes the recommended config', () => {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const plugin = require('..') as PluginShape;
-    expect(
-      Object.keys(plugin.configs.recommended.rules).length,
-    ).toBeGreaterThan(0);
+    const configured = Object.keys(plugin.configs.recommended.rules);
+
+    // Some rules ship deliberately absent from `recommended`, so this cannot be
+    // an equality against the rule set — but every entry this plugin owns must
+    // still name a rule the degraded load actually exposed. Entries owned by
+    // other plugins (`@typescript-eslint/*`) are passed through untouched.
+    expect(configured.length).toBeGreaterThan(150);
+    const PREFIX = '@blumintinc/blumint/';
+    const dangling = configured
+      .filter((id) => id.startsWith(PREFIX))
+      .filter((id) => !plugin.rules[id.slice(PREFIX.length)]);
+    expect(dangling).toEqual([]);
   });
 });
