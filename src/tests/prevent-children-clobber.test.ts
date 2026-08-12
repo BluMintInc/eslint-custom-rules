@@ -443,6 +443,260 @@ ruleTesterJsx.run('prevent-children-clobber', preventChildrenClobber, {
       `,
       filename: 'component.tsx',
     },
+    {
+      // The spelling `prefer-union-from-const-array` rewrites a literal-union
+      // alias into. A keep-list that reads decidable before that transform has
+      // to stay decidable after it, or applying the recommended config's own
+      // `--fix` would manufacture this false positive back.
+      code: `
+        const CARD_KEYS_VALUES = ['sx', 'elevation'] as const;
+        type CardKeys = (typeof CARD_KEYS_VALUES)[number];
+        type CardProps = Pick<PaperProps, CardKeys>;
+        const Card = (props: CardProps) => (
+          <Paper {...props}>
+            <CardBody />
+          </Paper>
+        );
+      `,
+      filename: 'component.tsx',
+    },
+    {
+      // The composition `require-props-composition` documents as the correct
+      // way to narrow a button: a keep-list props type handed to `forwardRef`
+      // as a type argument. Neither half was legible, so the rule reported on
+      // the shape its sibling rule prescribes (#1980).
+      code: `
+        export type WithdrawButtonProps = Readonly<
+          Pick<LoadingButtonProps, 'sx' | 'size'>
+        >;
+        const WithdrawButton = forwardRef<HTMLButtonElement, WithdrawButtonProps>(
+          (props, ref) => (
+            <LoadingButton {...props} ref={ref} color="secondary">
+              Withdraw
+            </LoadingButton>
+          ),
+        );
+      `,
+      filename: 'component.tsx',
+    },
+    {
+      // A keep-list is a stronger guarantee than an omit-list: `Pick` drops
+      // every member it does not name.
+      code: `
+        type CardProps = Pick<PaperProps, 'sx' | 'elevation'>;
+        const Card = (props: CardProps) => (
+          <Paper {...props}>
+            <CardBody />
+          </Paper>
+        );
+      `,
+      filename: 'component.tsx',
+    },
+    {
+      // A single literal key is a keep-list too, not just a union of them.
+      code: `
+        type CardProps = Pick<PaperProps, 'sx'>;
+        const Card = (props: CardProps) => (
+          <Paper {...props}>
+            <CardBody />
+          </Paper>
+        );
+      `,
+      filename: 'component.tsx',
+    },
+    {
+      code: `
+        const Card = (props: Pick<PaperProps, 'sx' | 'elevation'>) => (
+          <Paper {...props}>
+            <CardBody />
+          </Paper>
+        );
+      `,
+      filename: 'component.tsx',
+    },
+    {
+      // A keep-list spelled through an alias is as decidable as an inline one.
+      // A multi-key list is spelled as the const array below, since
+      // `prefer-union-from-const-array` owns the literal-union alias shape.
+      code: `
+        type CardKey = 'sx';
+        type CardProps = Pick<PaperProps, CardKey>;
+        const Card = (props: CardProps) => (
+          <Paper {...props}>
+            <CardBody />
+          </Paper>
+        );
+      `,
+      filename: 'component.tsx',
+    },
+    {
+      // The documented `Omit` remedy already applied, intersected with the
+      // component's own closed literal — a live false positive in agora's
+      // `withMenu.test.tsx` until #1980.
+      code: `
+        type TestMenuProps = Readonly<
+          Omit<MenuProps, 'children'> & { onClose: () => void }
+        >;
+        const TestMenu = (props: TestMenuProps) => (
+          <Menu {...props}>
+            <MenuItem>Replace</MenuItem>
+          </Menu>
+        );
+      `,
+      filename: 'component.tsx',
+    },
+    {
+      // A closed object type declares its whole surface, so one without a
+      // `children` member provably cannot carry one.
+      code: `
+        type BadgeProps = { label: string; sx?: SxProps };
+        const Badge = (props: BadgeProps) => (
+          <Chip {...props}>
+            <Dot />
+          </Chip>
+        );
+      `,
+      filename: 'component.tsx',
+    },
+    {
+      code: `
+        type BadgeProps = { onSave(): void; 'data-testid'?: string };
+        const Badge = (props: BadgeProps) => (
+          <Chip {...props}>
+            <Dot />
+          </Chip>
+        );
+      `,
+      filename: 'component.tsx',
+    },
+    {
+      code: `
+        type BadgeProps = {};
+        const Badge = (props: BadgeProps) => (
+          <Chip {...props}>
+            <Dot />
+          </Chip>
+        );
+      `,
+      filename: 'component.tsx',
+    },
+    {
+      code: `
+        type BadgeProps = { sx?: SxProps } & { label: string };
+        const Badge = (props: BadgeProps) => (
+          <Chip {...props}>
+            <Dot />
+          </Chip>
+        );
+      `,
+      filename: 'component.tsx',
+    },
+    {
+      // Every arm of the union excludes children, so the union does too.
+      code: `
+        type SaveProps = Pick<ButtonProps, 'sx'> | { label: string };
+        const Save = (props: SaveProps) => (
+          <Button {...props}>
+            <Label />
+          </Button>
+        );
+      `,
+      filename: 'component.tsx',
+    },
+    {
+      // The gap-3 isolation case: the same `Omit` the rule's own message
+      // prescribes, unreachable in the `forwardRef` spelling because the
+      // parameters carry no annotation of their own.
+      code: `
+        type WithdrawProps = Readonly<Omit<LoadingButtonProps, 'children'>>;
+        const Withdraw = forwardRef<HTMLButtonElement, WithdrawProps>(
+          (props, ref) => (
+            <LoadingButton {...props} ref={ref}>
+              Withdraw
+            </LoadingButton>
+          ),
+        );
+      `,
+      filename: 'component.tsx',
+    },
+    {
+      code: `
+        type SaveProps = Pick<ButtonProps, 'sx' | 'size'>;
+        const Save = React.forwardRef<HTMLButtonElement, SaveProps>(
+          (props, ref) => (
+            <Button {...props} ref={ref}>
+              Save
+            </Button>
+          ),
+        );
+      `,
+      filename: 'component.tsx',
+    },
+    {
+      code: `
+        type SaveProps = Pick<ButtonProps, 'sx'>;
+        const Save = memo(
+          forwardRef<HTMLButtonElement, SaveProps>((props, ref) => (
+            <Button {...props} ref={ref}>
+              Save
+            </Button>
+          )),
+        );
+      `,
+      filename: 'component.tsx',
+    },
+    {
+      // A destructured rest inside a `forwardRef` callback inherits the type
+      // argument the same way a plain parameter does.
+      code: `
+        type SaveProps = Readonly<Omit<ButtonProps, 'children'>>;
+        const Save = forwardRef<HTMLButtonElement, SaveProps>(
+          ({ sx, ...rest }, ref) => (
+            <Button sx={sx} {...rest} ref={ref}>
+              Save
+            </Button>
+          ),
+        );
+      `,
+      filename: 'component.tsx',
+    },
+    {
+      code: `
+        type SaveProps = Pick<ButtonProps, 'sx'>;
+        const Save = forwardRef<HTMLButtonElement, SaveProps>(
+          (props = {}, ref) => (
+            <Button {...props} ref={ref}>
+              Save
+            </Button>
+          ),
+        );
+      `,
+      filename: 'component.tsx',
+    },
+    {
+      // `Partial` and `Required` re-map members without contributing any, so
+      // the proof about the argument still describes the props type.
+      code: `
+        type SaveProps = Partial<Pick<ButtonProps, 'sx'>>;
+        const Save = (props: SaveProps) => (
+          <Button {...props}>
+            <Label />
+          </Button>
+        );
+      `,
+      filename: 'component.tsx',
+    },
+    {
+      code: `
+        type SaveProps = Required<{ sx?: SxProps }>;
+        const Save = (props: SaveProps) => (
+          <Button {...props}>
+            <Label />
+          </Button>
+        );
+      `,
+      filename: 'component.tsx',
+    },
   ],
   invalid: [
     {
@@ -780,6 +1034,309 @@ ruleTesterJsx.run('prevent-children-clobber', preventChildrenClobber, {
             <AccordionDetails />
           </AccordionRoot>
         );
+      `,
+      filename: 'component.tsx',
+      errors: [{ messageId: 'childrenClobbered' }],
+    },
+    {
+      // A keep-list that names `children` keeps it.
+      code: `
+        type SaveProps = Pick<ButtonProps, 'children' | 'sx'>;
+        const Save = (props: SaveProps) => (
+          <Button {...props}>
+            <Label />
+          </Button>
+        );
+      `,
+      filename: 'component.tsx',
+      errors: [{ messageId: 'childrenClobbered' }],
+    },
+    {
+      // A keep-list built from a type parameter names an unknown set of keys,
+      // and `children` may be one of them.
+      code: `
+        function makeSave<K extends keyof ButtonProps>() {
+          const Save = (props: Pick<ButtonProps, K>) => (
+            <Button {...props}>
+              <Label />
+            </Button>
+          );
+          return Save;
+        }
+      `,
+      filename: 'component.tsx',
+      errors: [{ messageId: 'childrenClobbered' }],
+    },
+    {
+      code: `
+        type SaveProps = Pick<ButtonProps, keyof ButtonProps>;
+        const Save = (props: SaveProps) => (
+          <Button {...props}>
+            <Label />
+          </Button>
+        );
+      `,
+      filename: 'component.tsx',
+      errors: [{ messageId: 'childrenClobbered' }],
+    },
+    {
+      // One undecidable member poisons the whole keep-list; the decidable
+      // sibling key proves nothing on its own.
+      code: `
+        function makeSave<K extends keyof ButtonProps>() {
+          const Save = (props: Pick<ButtonProps, 'sx' | K>) => (
+            <Button {...props}>
+              <Label />
+            </Button>
+          );
+          return Save;
+        }
+      `,
+      filename: 'component.tsx',
+      errors: [{ messageId: 'childrenClobbered' }],
+    },
+    {
+      code: `
+        type SaveProps = Pick<ButtonProps, \`on\${string}\`>;
+        const Save = (props: SaveProps) => (
+          <Button {...props}>
+            <Label />
+          </Button>
+        );
+      `,
+      filename: 'component.tsx',
+      errors: [{ messageId: 'childrenClobbered' }],
+    },
+    {
+      // The wrapper ADDS `children`, so a proof about its argument says
+      // nothing about the props type. Contrast the `Required<{ sx?: SxProps }>`
+      // valid case above, which is the same shape under a wrapper that
+      // contributes no members of its own.
+      code: `
+        type SaveProps = PropsWithChildren<{ sx?: SxProps }>;
+        const Save = (props: SaveProps) => (
+          <Button {...props}>
+            <Label />
+          </Button>
+        );
+      `,
+      filename: 'component.tsx',
+      errors: [{ messageId: 'childrenClobbered' }],
+    },
+    {
+      // Same hazard for the keep-list arm: `Pick<ButtonProps, 'sx'>` alone is
+      // exempt, and wrapping it must not carry that exemption outward.
+      code: `
+        type SaveProps = PropsWithChildren<Pick<ButtonProps, 'sx'>>;
+        const Save = (props: SaveProps) => (
+          <Button {...props}>
+            <Label />
+          </Button>
+        );
+      `,
+      filename: 'component.tsx',
+      errors: [{ messageId: 'childrenClobbered' }],
+    },
+    {
+      // An index signature over string keys admits `children`, so the mapped
+      // type built from one carries it however children-free its argument is.
+      code: `
+        type SaveProps = Record<string, { a: number }>;
+        const Save = (props: SaveProps) => (
+          <Button {...props}>
+            <Label />
+          </Button>
+        );
+      `,
+      filename: 'component.tsx',
+      errors: [{ messageId: 'childrenClobbered' }],
+    },
+    {
+      // An unknown generic is not a wrapper the rule can reason through.
+      code: `
+        type SaveProps = Envelope<{ sx?: SxProps }>;
+        const Save = (props: SaveProps) => (
+          <Button {...props}>
+            <Label />
+          </Button>
+        );
+      `,
+      filename: 'component.tsx',
+      errors: [{ messageId: 'childrenClobbered' }],
+    },
+    {
+      // An index signature reopens the literal, so the intersection loses the
+      // exemption the `Omit` arm would otherwise carry. Contrast the
+      // `{ onClose: () => void }` valid case, which is closed.
+      code: `
+        type SaveProps = Omit<ButtonProps, 'children'> & {
+          [key: string]: unknown;
+        };
+        const Save = (props: SaveProps) => (
+          <Button {...props}>
+            <Label />
+          </Button>
+        );
+      `,
+      filename: 'component.tsx',
+      errors: [{ messageId: 'childrenClobbered' }],
+    },
+    {
+      // The constant behind a computed key may well be 'children'.
+      code: `
+        type SaveProps = Omit<ButtonProps, 'children'> & {
+          [SLOT_KEY]: ReactNode;
+        };
+        const Save = (props: SaveProps) => (
+          <Button {...props}>
+            <Label />
+          </Button>
+        );
+      `,
+      filename: 'component.tsx',
+      errors: [{ messageId: 'childrenClobbered' }],
+    },
+    {
+      code: `
+        type SaveProps = { children?: ReactNode; sx?: SxProps };
+        const Save = (props: SaveProps) => (
+          <Button {...props}>
+            <Label />
+          </Button>
+        );
+      `,
+      filename: 'component.tsx',
+      errors: [{ messageId: 'childrenClobbered' }],
+    },
+    {
+      // A string-literal key names the same member an identifier key does.
+      code: `
+        type SaveProps = { 'children': ReactNode; sx?: SxProps };
+        const Save = (props: SaveProps) => (
+          <Button {...props}>
+            <Label />
+          </Button>
+        );
+      `,
+      filename: 'component.tsx',
+      errors: [{ messageId: 'childrenClobbered' }],
+    },
+    {
+      // One children-carrying arm is enough: the spread may be that arm.
+      code: `
+        type SaveProps = Pick<ButtonProps, 'sx'> | MenuProps;
+        const Save = (props: SaveProps) => (
+          <Button {...props}>
+            <Label />
+          </Button>
+        );
+      `,
+      filename: 'component.tsx',
+      errors: [{ messageId: 'childrenClobbered' }],
+    },
+    {
+      // agora's `withMenu.test.tsx:109`, the true-positive sibling of the
+      // false positive at `:22`: nothing removes `children` from `MenuProps`.
+      code: `
+        type SpyMenuProps = Readonly<MenuProps & { onClose: () => void }>;
+        const PropsSpyMenu = (props: SpyMenuProps) => (
+          <Menu {...props}>
+            <MenuItem>Action</MenuItem>
+          </Menu>
+        );
+      `,
+      filename: 'component.tsx',
+      errors: [{ messageId: 'childrenClobbered' }],
+    },
+    {
+      // Reading a `forwardRef` type argument must not fail open: a props type
+      // that genuinely carries children still clobbers.
+      code: `
+        type SpyMenuProps = Readonly<MenuProps>;
+        const SpyMenu = forwardRef<HTMLDivElement, SpyMenuProps>(
+          (props, ref) => (
+            <Menu {...props} ref={ref}>
+              <MenuItem>Action</MenuItem>
+            </Menu>
+          ),
+        );
+      `,
+      filename: 'component.tsx',
+      errors: [{ messageId: 'childrenClobbered' }],
+    },
+    {
+      // The parameter's own annotation is the type its body is checked
+      // against, so it wins over the contextual type argument.
+      code: `
+        type CleanMenuProps = Omit<MenuProps, 'children'>;
+        const SpyMenu = forwardRef<HTMLDivElement, CleanMenuProps>(
+          (props: MenuProps, ref) => (
+            <Menu {...props} ref={ref}>
+              <MenuItem>Action</MenuItem>
+            </Menu>
+          ),
+        );
+      `,
+      filename: 'component.tsx',
+      errors: [{ messageId: 'childrenClobbered' }],
+    },
+    {
+      // A const-array keep-list that names `children` keeps it.
+      code: `
+        const SLOT_KEYS_VALUES = ['children', 'sx'] as const;
+        type SlotKeys = (typeof SLOT_KEYS_VALUES)[number];
+        type SaveProps = Pick<ButtonProps, SlotKeys>;
+        const Save = (props: SaveProps) => (
+          <Button {...props}>
+            <Label />
+          </Button>
+        );
+      `,
+      filename: 'component.tsx',
+      errors: [{ messageId: 'childrenClobbered' }],
+    },
+    {
+      // A name bound to anything but an `as const` array literal names an
+      // unknown set of keys. A bare `['sx']` would be the same defect, but
+      // `global-const-style` rewrites it into the decidable spelling, so the
+      // assertion could not survive its own config.
+      code: `
+        const SLOT_KEYS_VALUES = makeSlotKeys();
+        type SlotKeys = (typeof SLOT_KEYS_VALUES)[number];
+        type SaveProps = Pick<ButtonProps, SlotKeys>;
+        const Save = (props: SaveProps) => (
+          <Button {...props}>
+            <Label />
+          </Button>
+        );
+      `,
+      filename: 'component.tsx',
+      errors: [{ messageId: 'childrenClobbered' }],
+    },
+    {
+      // An element that is not a string literal may itself be 'children'.
+      code: `
+        const SLOT_KEYS_VALUES = [SLOT, 'sx'] as const;
+        type SlotKeys = (typeof SLOT_KEYS_VALUES)[number];
+        type SaveProps = Pick<ButtonProps, SlotKeys>;
+        const Save = (props: SaveProps) => (
+          <Button {...props}>
+            <Label />
+          </Button>
+        );
+      `,
+      filename: 'component.tsx',
+      errors: [{ messageId: 'childrenClobbered' }],
+    },
+    {
+      // The props type is the SECOND type argument; the first is the element.
+      code: `
+        type SaveProps = Pick<ButtonProps, 'sx'>;
+        const Save = forwardRef<SaveProps, MenuProps>((props, ref) => (
+          <Button {...props} ref={ref}>
+            <Label />
+          </Button>
+        ));
       `,
       filename: 'component.tsx',
       errors: [{ messageId: 'childrenClobbered' }],

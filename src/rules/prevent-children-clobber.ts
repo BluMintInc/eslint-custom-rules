@@ -108,14 +108,18 @@ function typeNodeContainsLiteral(
 }
 
 /**
- * Resolves a type-alias name to the type it stands for, or `undefined` when the
- * name is not declared in the scope chain the resolver was built for.
+ * Resolves a name declared in the scope chain the resolver was built for: a
+ * type-alias name to the type it stands for, and a value name to the string
+ * members of the `as const` array it binds.
  *
- * A resolution carries its own resolver so that names referenced *inside* the
- * alias body resolve from the scope the alias was declared in rather than from
- * the scope that referenced it.
+ * A type resolution carries its own resolver so that names referenced *inside*
+ * the alias body resolve from the scope the alias was declared in rather than
+ * from the scope that referenced it.
  */
-type AliasResolver = (name: string) => AliasResolution | undefined;
+type AliasResolver = {
+  typeAlias(name: string): AliasResolution | undefined;
+  constArrayKeys(name: string): readonly string[] | undefined;
+};
 
 type AliasResolution = {
   typeNode: TSESTree.TypeNode;
@@ -144,8 +148,63 @@ function aliasDeclarationNamed(
 }
 
 /**
- * Lexical alias lookup over pre-collected statement lists, innermost first, so
- * an inner declaration shadows a same-named outer one.
+ * The string members of `const NAME = ['a', 'b'] as const`, or `undefined` when
+ * the statement declares something else or an element is not a string literal.
+ *
+ * `prefer-union-from-const-array` rewrites a string-literal union alias into
+ * exactly this pair of declarations plus `(typeof NAME)[number]`, so a keep-list
+ * that reads decidable before that transform has to stay decidable after it.
+ */
+function constArrayMembersNamed(
+  statement: TSESTree.Node,
+  name: string,
+): readonly string[] | undefined {
+  const declared = declarationOf(statement);
+  if (
+    declared.type !== AST_NODE_TYPES.VariableDeclaration ||
+    declared.kind !== 'const'
+  ) {
+    return undefined;
+  }
+
+  for (const declarator of declared.declarations) {
+    if (
+      declarator.id.type !== AST_NODE_TYPES.Identifier ||
+      declarator.id.name !== name ||
+      declarator.init?.type !== AST_NODE_TYPES.TSAsExpression
+    ) {
+      continue;
+    }
+
+    const { expression, typeAnnotation } = declarator.init;
+    // Without `as const` the elements widen to `string`, and the indexed access
+    // yields `string` rather than a union of the literals.
+    const isConstAssertion =
+      typeAnnotation.type === AST_NODE_TYPES.TSTypeReference &&
+      typeAnnotation.typeName.type === AST_NODE_TYPES.Identifier &&
+      typeAnnotation.typeName.name === 'const';
+    if (!isConstAssertion || expression.type !== AST_NODE_TYPES.ArrayExpression)
+      return undefined;
+
+    const members: string[] = [];
+    for (const element of expression.elements) {
+      if (
+        element?.type !== AST_NODE_TYPES.Literal ||
+        typeof element.value !== 'string'
+      ) {
+        return undefined;
+      }
+      members.push(element.value);
+    }
+    return members;
+  }
+
+  return undefined;
+}
+
+/**
+ * Lexical lookup over pre-collected statement lists, innermost first, so an
+ * inner declaration shadows a same-named outer one.
  *
  * Resolution is by scope rather than by a map built during traversal because
  * type aliases hoist: a component declared above its own props alias must still
@@ -155,19 +214,30 @@ function aliasResolverFrom(
   lists: readonly (readonly TSESTree.Node[])[],
   startIndex = 0,
 ): AliasResolver {
-  return (name) => {
-    for (let index = startIndex; index < lists.length; index += 1) {
-      for (const statement of lists[index]) {
-        const declaration = aliasDeclarationNamed(statement, name);
-        if (declaration) {
-          return {
-            typeNode: declaration.typeAnnotation,
-            resolve: aliasResolverFrom(lists, index),
-          };
+  return {
+    typeAlias(name) {
+      for (let index = startIndex; index < lists.length; index += 1) {
+        for (const statement of lists[index]) {
+          const declaration = aliasDeclarationNamed(statement, name);
+          if (declaration) {
+            return {
+              typeNode: declaration.typeAnnotation,
+              resolve: aliasResolverFrom(lists, index),
+            };
+          }
         }
       }
-    }
-    return undefined;
+      return undefined;
+    },
+    constArrayKeys(name) {
+      for (let index = startIndex; index < lists.length; index += 1) {
+        for (const statement of lists[index]) {
+          const members = constArrayMembersNamed(statement, name);
+          if (members) return members;
+        }
+      }
+      return undefined;
+    },
   };
 }
 
@@ -175,11 +245,152 @@ function aliasResolverAt(from: TSESTree.Node): AliasResolver {
   return aliasResolverFrom(enclosingStatementLists(from));
 }
 
+/**
+ * The property names a `Pick<T, K>` keep-list names, or `null` when the list is
+ * not decidable from syntax alone.
+ *
+ * `null` means "prove nothing", never "keeps nothing": a keep-list spelled as a
+ * type parameter, `keyof T`, `string`, or a template-literal type can include
+ * `children`, and treating an undecidable list as an empty one would exempt
+ * exactly those.
+ */
+function stringLiteralKeySet(
+  node: TSESTree.TypeNode,
+  resolveAlias?: AliasResolver,
+  seen: Set<string> = new Set(),
+): Set<string> | null {
+  if (node.type === AST_NODE_TYPES.TSLiteralType) {
+    return node.literal.type === AST_NODE_TYPES.Literal &&
+      typeof node.literal.value === 'string'
+      ? new Set([node.literal.value])
+      : null;
+  }
+
+  if (node.type === AST_NODE_TYPES.TSUnionType) {
+    const keys = new Set<string>();
+    for (const member of node.types) {
+      const memberKeys = stringLiteralKeySet(member, resolveAlias, seen);
+      if (!memberKeys) return null;
+      for (const key of memberKeys) {
+        keys.add(key);
+      }
+    }
+    return keys;
+  }
+
+  // `(typeof KEYS)[number]` over a `const KEYS = [...] as const` names exactly
+  // the array's members — the spelling `prefer-union-from-const-array` rewrites
+  // a literal union alias into.
+  if (
+    node.type === AST_NODE_TYPES.TSIndexedAccessType &&
+    node.indexType.type === AST_NODE_TYPES.TSNumberKeyword &&
+    node.objectType.type === AST_NODE_TYPES.TSTypeQuery &&
+    node.objectType.exprName.type === AST_NODE_TYPES.Identifier
+  ) {
+    const members = resolveAlias?.constArrayKeys(node.objectType.exprName.name);
+    return members ? new Set(members) : null;
+  }
+
+  // A bare alias standing for a literal union (`type Keys = 'sx' | 'size'`) is
+  // as decidable as the union written inline. A parameterized reference is not:
+  // it is a computed key list whose members this rule cannot enumerate.
+  if (
+    node.type === AST_NODE_TYPES.TSTypeReference &&
+    node.typeName.type === AST_NODE_TYPES.Identifier &&
+    !node.typeParameters
+  ) {
+    const name = node.typeName.name;
+    if (!resolveAlias || seen.has(name)) return null;
+    const alias = resolveAlias.typeAlias(name);
+    if (!alias) return null;
+    // Guarding before the recursion terminates a self-referential alias.
+    seen.add(name);
+    return stringLiteralKeySet(alias.typeNode, alias.resolve, seen);
+  }
+
+  return null;
+}
+
+/**
+ * Whether a closed object type provably declares no `propertyName` member.
+ *
+ * An index signature reopens the type — `{ [key: string]: unknown }` admits
+ * `children` — and so does a computed key the rule cannot evaluate, since the
+ * constant behind `[KEY]` may well be `'children'`. Both surrender the proof.
+ */
+function typeLiteralExcludesProperty(
+  node: TSESTree.TSTypeLiteral,
+  propertyName: string,
+): boolean {
+  return node.members.every((member) => {
+    if (member.type === AST_NODE_TYPES.TSIndexSignature) return false;
+
+    if (
+      member.type !== AST_NODE_TYPES.TSPropertySignature &&
+      member.type !== AST_NODE_TYPES.TSMethodSignature
+    ) {
+      // Call and construct signatures declare no named member.
+      return true;
+    }
+
+    const key = member.key;
+    if (member.computed) {
+      return (
+        key.type === AST_NODE_TYPES.Literal &&
+        String(key.value) !== propertyName
+      );
+    }
+    if (key.type === AST_NODE_TYPES.Identifier) {
+      return key.name !== propertyName;
+    }
+    if (key.type === AST_NODE_TYPES.Literal) {
+      return String(key.value) !== propertyName;
+    }
+    return false;
+  });
+}
+
+/**
+ * Generic wrappers that re-map a type's own members without contributing any of
+ * their own, so their argument still stands for the whole props type.
+ *
+ * `PropsWithChildren` is the counter-example the list exists for: it ADDS
+ * `children`, so a proof about its argument says nothing about the wrapper.
+ */
+const PROPERTY_PRESERVING_WRAPPERS = new Set([
+  'Readonly',
+  'Required',
+  'Partial',
+  'NonNullable',
+]);
+
+function wrapperNameOf(typeName: TSESTree.EntityName): string | null {
+  if (typeName.type === AST_NODE_TYPES.Identifier) return typeName.name;
+  if (typeName.type === AST_NODE_TYPES.TSQualifiedName) {
+    return typeName.right.type === AST_NODE_TYPES.Identifier
+      ? typeName.right.name
+      : null;
+  }
+  return null;
+}
+
+/**
+ * Whether a type node provably lacks `propertyName`.
+ *
+ * `closedLiteralCounts` records whether this position IS the props type rather
+ * than merely a part of it. Two of the proofs below — a `Pick<>` keep-list and
+ * a closed object literal — describe the type they sit on, so they only carry
+ * to the binding when nothing can add members on the way back out. The blanket
+ * recursion through a type reference's arguments is where that distinction
+ * bites: `PropsWithChildren<{ sx?: string }>` and `Record<string, { a: number }>`
+ * both wrap a children-free argument in something that admits `children`.
+ */
 function typeNodeExcludesProperty(
   node: TSESTree.TypeNode,
   propertyName: string,
   resolveAlias?: AliasResolver,
   seen: Set<string> = new Set(),
+  closedLiteralCounts = false,
 ): boolean {
   if (node.type === AST_NODE_TYPES.TSTypeReference) {
     const typeName =
@@ -197,23 +408,54 @@ function typeNodeExcludesProperty(
       }
     }
 
+    // A keep-list is a stronger guarantee than an omit-list: `Pick` drops every
+    // member it does not name, so a fully decidable list without `propertyName`
+    // excludes it outright.
+    if (
+      closedLiteralCounts &&
+      typeName === 'Pick' &&
+      node.typeParameters?.params?.[1]
+    ) {
+      const kept = stringLiteralKeySet(
+        node.typeParameters.params[1],
+        resolveAlias,
+      );
+      if (kept && !kept.has(propertyName)) {
+        return true;
+      }
+    }
+
     if (node.typeParameters?.params) {
+      const argumentsAreTheType =
+        closedLiteralCounts &&
+        PROPERTY_PRESERVING_WRAPPERS.has(wrapperNameOf(node.typeName) ?? '');
       return node.typeParameters.params.some((param) =>
-        typeNodeExcludesProperty(param, propertyName, resolveAlias, seen),
+        typeNodeExcludesProperty(
+          param,
+          propertyName,
+          resolveAlias,
+          seen,
+          argumentsAreTheType,
+        ),
       );
     }
 
-    if (typeName && resolveAlias && !seen.has(typeName)) {
-      const alias = resolveAlias(typeName);
+    // Keyed by position as well as by name: the same alias proves different
+    // things in a props position than inside an arbitrary generic, so a visit
+    // in one position must not suppress the visit in the other.
+    const seenKey = `${closedLiteralCounts ? 'props' : 'part'}:${typeName}`;
+    if (typeName && resolveAlias && !seen.has(seenKey)) {
+      const alias = resolveAlias.typeAlias(typeName);
       if (alias) {
         // Guarding before the recursion terminates a self-referential alias.
-        seen.add(typeName);
+        seen.add(seenKey);
         if (
           typeNodeExcludesProperty(
             alias.typeNode,
             propertyName,
             alias.resolve,
             seen,
+            closedLiteralCounts,
           )
         ) {
           return true;
@@ -222,19 +464,57 @@ function typeNodeExcludesProperty(
     }
   }
 
+  if (node.type === AST_NODE_TYPES.TSTypeLiteral) {
+    return (
+      closedLiteralCounts && typeLiteralExcludesProperty(node, propertyName)
+    );
+  }
+
   if (node.type === AST_NODE_TYPES.TSUnionType) {
     return node.types.every((typeNode) =>
-      typeNodeExcludesProperty(typeNode, propertyName, resolveAlias, seen),
+      typeNodeExcludesProperty(
+        typeNode,
+        propertyName,
+        resolveAlias,
+        seen,
+        closedLiteralCounts,
+      ),
     );
   }
 
   if (node.type === AST_NODE_TYPES.TSIntersectionType) {
     return node.types.every((typeNode) =>
-      typeNodeExcludesProperty(typeNode, propertyName, resolveAlias, seen),
+      typeNodeExcludesProperty(
+        typeNode,
+        propertyName,
+        resolveAlias,
+        seen,
+        closedLiteralCounts,
+      ),
     );
   }
 
   return false;
+}
+
+/**
+ * Entry point for a type node that stands for a whole props type, whether it
+ * was written as a parameter annotation or supplied as a `forwardRef` type
+ * argument.
+ */
+function propsTypeNodeExcludesProperty(
+  typeNode: TSESTree.TypeNode | null | undefined,
+  propertyName: string,
+  resolveAlias?: AliasResolver,
+): boolean {
+  if (!typeNode) return false;
+  return typeNodeExcludesProperty(
+    typeNode,
+    propertyName,
+    resolveAlias,
+    new Set(),
+    true,
+  );
 }
 
 function typeAnnotationExcludesProperty(
@@ -242,9 +522,8 @@ function typeAnnotationExcludesProperty(
   propertyName: string,
   resolveAlias?: AliasResolver,
 ): boolean {
-  if (!annotation) return false;
-  return typeNodeExcludesProperty(
-    annotation.typeAnnotation,
+  return propsTypeNodeExcludesProperty(
+    annotation?.typeAnnotation,
     propertyName,
     resolveAlias,
   );
@@ -253,7 +532,7 @@ function typeAnnotationExcludesProperty(
 function collectRestBindingsFromPattern(
   pattern: TSESTree.ObjectPattern,
   ctx: FunctionContext,
-  annotation: TSESTree.TSTypeAnnotation | null | undefined,
+  typeNode: TSESTree.TypeNode | null | undefined,
   resolveAlias?: AliasResolver,
   sourceChildrenSourceId?: string,
 ): void {
@@ -267,8 +546,8 @@ function collectRestBindingsFromPattern(
       ctx.bindings.set(prop.argument.name, {
         identifier: prop.argument,
         childrenExcluded: childrenPresent,
-        typeAnnotationExcludesProperty: typeAnnotationExcludesProperty(
-          annotation,
+        typeAnnotationExcludesProperty: propsTypeNodeExcludesProperty(
+          typeNode,
           'children',
           resolveAlias,
         ),
@@ -317,18 +596,43 @@ function recordChildrenValueBindingsFromPattern(
   }
 }
 
+/**
+ * The props type a parameter carries: its own annotation when it has one, and
+ * otherwise the type the call site supplies contextually.
+ *
+ * An explicit annotation always wins. It is the type the body is checked
+ * against, so a `forwardRef<E, Clean>((props: MenuProps, ref) => …)` still
+ * carries whatever `MenuProps` declares.
+ */
+function propsTypeNodeOf(
+  param: TSESTree.Parameter,
+  contextualTypeNode?: TSESTree.TypeNode,
+): TSESTree.TypeNode | null | undefined {
+  // A `TSParameterProperty` (a constructor's `private x: T`) carries its
+  // annotation on the parameter it wraps and never takes part in a component's
+  // props, so it simply has no props type of its own.
+  const own =
+    param.type === AST_NODE_TYPES.TSParameterProperty
+      ? undefined
+      : param.typeAnnotation?.typeAnnotation;
+  return own ?? contextualTypeNode;
+}
+
 function recordParamBindings(
   param: TSESTree.Parameter,
   ctx: FunctionContext,
   resolveAlias?: AliasResolver,
+  contextualTypeNode?: TSESTree.TypeNode,
 ) {
+  const typeNode = propsTypeNodeOf(param, contextualTypeNode);
+
   if (param.type === AST_NODE_TYPES.Identifier) {
     ctx.propsLikeIdentifiers.add(param.name);
     ctx.bindings.set(param.name, {
       identifier: param,
       childrenExcluded: false,
-      typeAnnotationExcludesProperty: typeAnnotationExcludesProperty(
-        param.typeAnnotation,
+      typeAnnotationExcludesProperty: propsTypeNodeExcludesProperty(
+        typeNode,
         'children',
         resolveAlias,
       ),
@@ -345,8 +649,8 @@ function recordParamBindings(
     ctx.bindings.set(param.left.name, {
       identifier: param.left,
       childrenExcluded: false,
-      typeAnnotationExcludesProperty: typeAnnotationExcludesProperty(
-        param.typeAnnotation,
+      typeAnnotationExcludesProperty: propsTypeNodeExcludesProperty(
+        typeNode,
         'children',
         resolveAlias,
       ),
@@ -359,23 +663,67 @@ function recordParamBindings(
     param.type === AST_NODE_TYPES.AssignmentPattern &&
     param.left.type === AST_NODE_TYPES.ObjectPattern
   ) {
-    collectRestBindingsFromPattern(
-      param.left,
-      ctx,
-      param.typeAnnotation,
-      resolveAlias,
-    );
+    collectRestBindingsFromPattern(param.left, ctx, typeNode, resolveAlias);
     return;
   }
 
   if (param.type === AST_NODE_TYPES.ObjectPattern) {
-    collectRestBindingsFromPattern(
-      param,
-      ctx,
-      param.typeAnnotation,
-      resolveAlias,
-    );
+    collectRestBindingsFromPattern(param, ctx, typeNode, resolveAlias);
   }
+}
+
+/**
+ * The props type a `forwardRef<Element, Props>(…)` call supplies to its render
+ * callback, whose parameters carry no annotation of their own.
+ *
+ * Without this the props type is invisible in the `forwardRef` spelling, so
+ * even the documented `Omit<…, 'children'>` remedy could not be seen and the
+ * rule reported on props it could prove children-free in every other spelling.
+ */
+function forwardRefPropsTypeNode(
+  node: FunctionLike,
+): TSESTree.TypeNode | undefined {
+  const call = node.parent;
+  if (call?.type !== AST_NODE_TYPES.CallExpression) return undefined;
+  if (call.arguments[0] !== node) return undefined;
+
+  // An optional call detaches the type arguments onto a
+  // `TSInstantiationExpression` — `forwardRef<E, P>?.(…)` parses as
+  // instantiate-then-call — so both the callee and the type arguments are read
+  // through it. The node predates the `LeftHandSideExpression` union this
+  // version declares, hence the hand-written narrowing.
+  const rawCallee = call.callee as unknown as {
+    type: string;
+    expression?: TSESTree.LeftHandSideExpression;
+  };
+  const instantiation =
+    rawCallee.type === AST_NODE_TYPES.TSInstantiationExpression
+      ? rawCallee
+      : undefined;
+
+  const callee = instantiation?.expression ?? call.callee;
+  const calleeName =
+    callee.type === AST_NODE_TYPES.Identifier
+      ? callee.name
+      : callee.type === AST_NODE_TYPES.MemberExpression &&
+        !callee.computed &&
+        callee.property.type === AST_NODE_TYPES.Identifier
+      ? callee.property.name
+      : null;
+  if (calleeName !== 'forwardRef') return undefined;
+
+  // `typeParameters` is where @typescript-eslint/utils 5 puts a call's type
+  // arguments; `typeArguments` is the name later majors use. Reading both keeps
+  // this working across the rename.
+  const instantiated = (instantiation ?? call) as {
+    typeParameters?: TSESTree.TSTypeParameterInstantiation;
+    typeArguments?: TSESTree.TSTypeParameterInstantiation;
+  };
+  const typeArguments =
+    instantiated.typeParameters ?? instantiated.typeArguments;
+
+  // The first type argument is the element type; the props type is the second.
+  return typeArguments?.params?.[1];
 }
 
 function findNearestComponentContext(
@@ -641,9 +989,17 @@ export const preventChildrenClobber = createRule<Options, MessageIds>({
           // ESLint has assigned `parent` up the chain by the time this visitor
           // runs, but not yet onto the parameter's own type annotation.
           const resolveAlias = aliasResolverAt(node);
-          for (const param of node.params) {
-            recordParamBindings(param, ctx, resolveAlias);
-          }
+          // Only the first parameter receives the contextual props type; the
+          // second is the forwarded ref.
+          const contextualPropsType = forwardRefPropsTypeNode(node);
+          node.params.forEach((param, index) => {
+            recordParamBindings(
+              param,
+              ctx,
+              resolveAlias,
+              index === 0 ? contextualPropsType : undefined,
+            );
+          });
         }
 
         functionStack.push(ctx);
@@ -743,7 +1099,7 @@ export const preventChildrenClobber = createRule<Options, MessageIds>({
           collectRestBindingsFromPattern(
             id,
             componentCtx,
-            id.typeAnnotation ?? null,
+            id.typeAnnotation?.typeAnnotation ?? null,
             aliasResolverAt(node),
             sourceChildrenSourceId,
           );
