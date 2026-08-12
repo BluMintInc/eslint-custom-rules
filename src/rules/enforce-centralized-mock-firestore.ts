@@ -4,7 +4,7 @@ import {
   ImportInsertionAnchor,
   ImportInsertionSource,
   importAnchorIndent,
-  importAnchorLineStart,
+  importAnchorLineStartIfOwned,
   importInsertionAnchor,
   insertAtImportAnchor,
 } from '../utils/importInsertion';
@@ -278,25 +278,18 @@ function editOffset(anchor: ImportInsertionAnchor): number {
  *
  * Widening to the anchor's line start is what lets the emitted
  * `${indent}import …\n` leave the displaced statement on the indentation it
- * already had, but that is sound only while whitespace is all that precedes
- * the anchor: a `'use client';` sharing the anchor's line would be demoted by
- * an insertion at column 0. When the resulting position still falls inside a
- * retirement — the anchor statement is itself the declaration being retired,
- * and the retirement claims the indentation ahead of it — the insertion moves
- * to that edit's start, since ESLint rejects a fix nested inside another.
+ * already had; `importAnchorLineStartIfOwned` restricts that to the anchors it
+ * is sound for. When the resulting position still falls inside a retirement —
+ * the anchor statement is itself the declaration being retired, and the
+ * retirement claims the indentation ahead of it — the insertion moves to that
+ * edit's start, since ESLint rejects a fix nested inside another.
  */
 function importPlacement(
   sourceCode: ImportInsertionSource,
   anchor: ImportInsertionAnchor,
   edits: SourceEdit[],
 ): ImportInsertionAnchor {
-  const anchorStart = editOffset(anchor);
-  const lineStart = sourceCode.text.lastIndexOf('\n', anchorStart - 1) + 1;
-  const placement = /^[ \t]*$/.test(
-    sourceCode.text.slice(lineStart, anchorStart),
-  )
-    ? importAnchorLineStart(sourceCode, anchor)
-    : anchor;
+  const placement = importAnchorLineStartIfOwned(sourceCode, anchor);
   const offset = editOffset(placement);
   const enclosing = edits.find(
     (edit) => edit.start < offset && offset < edit.end,

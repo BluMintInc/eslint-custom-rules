@@ -3,7 +3,7 @@ import { SourceCode } from 'eslint';
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import {
   importAnchorIndent,
-  importAnchorLineStart,
+  importAnchorLineStartIfOwned,
   importInsertionAnchor,
   insertAtImportAnchor,
 } from '../utils/importInsertion';
@@ -240,11 +240,11 @@ describe('degenerate files', () => {
   });
 });
 
-describe('importAnchorLineStart and importAnchorIndent', () => {
-  it('widens a before-anchor to its line start', () => {
+describe('importAnchorLineStartIfOwned and importAnchorIndent', () => {
+  it('widens a before-anchor that owns its line', () => {
     const text = `'use client';\n  const x = 1;\n`;
     const sourceCode = sourceCodeOf(text);
-    const anchor = importAnchorLineStart(
+    const anchor = importAnchorLineStartIfOwned(
       sourceCode,
       importInsertionAnchor(sourceCode),
     );
@@ -257,7 +257,41 @@ describe('importAnchorLineStart and importAnchorIndent', () => {
   it('passes a raw-offset anchor through unchanged', () => {
     const sourceCode = sourceCodeOf(`'use client';\n`);
     const anchor = importInsertionAnchor(sourceCode);
-    expect(importAnchorLineStart(sourceCode, anchor)).toEqual(anchor);
+    expect(importAnchorLineStartIfOwned(sourceCode, anchor)).toEqual(anchor);
     expect(importAnchorIndent(sourceCode, anchor)).toBe('');
+  });
+
+  // Issue #1960: widening past a non-whitespace prefix is what demoted a
+  // `'use client'` sharing the anchor's line in #1957-#1959. The anchor is
+  // returned untouched instead, so the insertion lands after the prologue.
+  it('declines to widen an anchor sharing its line with a directive', () => {
+    const sourceCode = sourceCodeOf(`'use client'; const x = 1;\n`);
+    const anchor = importInsertionAnchor(sourceCode);
+    expect(anchor.kind).toBe('before');
+    expect(importAnchorLineStartIfOwned(sourceCode, anchor)).toBe(anchor);
+  });
+
+  it('declines to widen an anchor sharing its line with an import', () => {
+    const sourceCode = sourceCodeOf(
+      `'use client'; import { a } from 'lib';\nconst x = a;\n`,
+    );
+    const anchor = importInsertionAnchor(sourceCode);
+    expect(anchor.kind).toBe('before');
+    expect(importAnchorLineStartIfOwned(sourceCode, anchor)).toBe(anchor);
+  });
+
+  it('widens a tab-indented anchor that owns its line', () => {
+    const text = `'use client';\n\tconst x = 1;\n`;
+    const sourceCode = sourceCodeOf(text);
+    expect(
+      importAnchorLineStartIfOwned(sourceCode, importInsertionAnchor(sourceCode)),
+    ).toEqual({ kind: 'index', index: text.indexOf('\tconst') });
+  });
+
+  it('widens an anchor that opens the file', () => {
+    const sourceCode = sourceCodeOf(`const x = 1;\n`);
+    expect(
+      importAnchorLineStartIfOwned(sourceCode, importInsertionAnchor(sourceCode)),
+    ).toEqual({ kind: 'index', index: 0 });
   });
 });
