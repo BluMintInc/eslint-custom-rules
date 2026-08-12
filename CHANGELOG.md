@@ -1,3 +1,11 @@
+## [1.20.142](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.141...v1.20.142) (2026-08-12)
+
+
+### Bug Fixes
+
+* **no-explicit-return-type:** keep the annotation's comments clear of the arrow gap (closes [#1964](https://github.com/BluMintInc/eslint-custom-rules/issues/1964)) ([e34a4bc](https://github.com/BluMintInc/eslint-custom-rules/commit/e34a4bc172944c653b6cceefd876785742cf6e90)), closes [#1877](https://github.com/BluMintInc/eslint-custom-rules/issues/1877)
+* **no-usememo-for-pass-by-value:** hoist a carried multi-line comment clear of the return (closes [#1963](https://github.com/BluMintInc/eslint-custom-rules/issues/1963)) ([8551e1c](https://github.com/BluMintInc/eslint-custom-rules/commit/8551e1c7903c8d3c68b5113596c0f710cc803664))
+
 ## [1.20.141](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.140...v1.20.141) (2026-08-12)
 
 
