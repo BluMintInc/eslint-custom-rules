@@ -137,29 +137,10 @@ export function insertAtImportAnchor(
 }
 
 /**
- * Widens `anchor` to the start of its line, for rules that emit
- * `${indent}import …\n` so the displaced anchor keeps its own indentation.
- * Raw-offset anchors pass through: they never sit inside an indented line.
- *
- * Sound only where the anchor is known to open its line. Prefer
- * `importAnchorLineStartIfOwned`, which establishes that rather than assuming
- * it; a caller reaching for this one must make the check itself.
- */
-export function importAnchorLineStart(
-  sourceCode: ImportInsertionSource,
-  anchor: ImportInsertionAnchor,
-): ImportInsertionAnchor {
-  if (anchor.kind === 'index') {
-    return anchor;
-  }
-  const lineStart =
-    sourceCode.text.lastIndexOf('\n', anchor.target.range[0] - 1) + 1;
-  return { kind: 'index', index: lineStart };
-}
-
-/**
  * Widens `anchor` to the start of its line only where whitespace is all that
  * precedes it there, and leaves it alone otherwise.
+ *
+ * Raw-offset anchors pass through: they never sit inside an indented line.
  *
  * The widening buys one thing — an emitted `${indent}import …\n` leaves the
  * displaced anchor on the indentation it already had — and that reasoning holds
