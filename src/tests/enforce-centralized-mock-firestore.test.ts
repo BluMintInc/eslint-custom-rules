@@ -319,6 +319,38 @@ export { mockFirestore };`,
         }
       `,
       },
+      // Dynamic import destructured under a NEW NAME. The generic
+      // `VariableDeclarator` visitor is the only carrier of both shapes above —
+      // the selector that claimed to serve dynamic imports matched nothing,
+      // since `await import(…)` yields an `ImportExpression` rather than a
+      // `CallExpression` (#1967). Renaming is pinned separately because it is
+      // the arm that populates `customMockFirestoreNames`, so narrowing that
+      // visitor would strand the call sites instead of renaming them.
+      {
+        code: `
+        async function setupTests() {
+          const { mockFirestore: customMockFirestore } = await import('./localMocks');
+
+          beforeEach(() => {
+            customMockFirestore({
+              'some/path': [{ id: 'test' }],
+            });
+          });
+        }
+      `,
+        errors: [ERROR],
+        output: `
+        import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
+        async function setupTests() {
+
+          beforeEach(() => {
+            mockFirestore({
+              'some/path': [{ id: 'test' }],
+            });
+          });
+        }
+      `,
+      },
       // Invalid case: Using with multiple declarations. Both branches of the
       // selector are read only by the retired declaration, so the fix is
       // withheld rather than stranding two locals (#1900).
