@@ -330,14 +330,22 @@ function checkImplicitReturn(
 
   if (!paramName) return;
 
+  /**
+   * A body that is the parameter itself — `(value) => value` — is not reported.
+   * What this rule looks for is a function that ANSWERS a nullish argument by
+   * handing the absence back: a guard, an `&&`, a ternary whose alternate is
+   * nullish. The identity function has no nullish-specific behaviour at all, so
+   * the prescribed remedy (validate up front, or return a concrete fallback)
+   * does not apply to it — least of all to `items.filter((x) => x)`, the
+   * standard truthiness filter, or to a generic `identity` helper.
+   *
+   * Every other spelling of that same function — a block-bodied arrow, a
+   * declaration, a function expression — was already accepted, so reporting
+   * only the implicit-return form made the verdict turn on body spelling. The
+   * test suite recorded that asymmetry as a deferred question and asked that a
+   * carve-out settle both spellings at once; this is that carve-out (#1974).
+   */
   if (isNullishPassthroughExpression(node.body, paramName)) {
-    context.report({
-      node,
-      messageId: 'unexpected',
-      data: { paramName },
-    });
-  } else if (node.body.type === 'Identifier' && node.body.name === paramName) {
-    // Check for (param) => param
     context.report({
       node,
       messageId: 'unexpected',

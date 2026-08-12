@@ -269,22 +269,35 @@ ruleTesterTs.run('no-undefined-null-passthrough', noUndefinedNullPassthrough, {
       return a + String(b);
     }`,
 
-    // The bare-identifier passthrough is deliberately withheld from the
-    // block-bodied path. Its boundary is unsettled — inline callback arguments
-    // such as `items.filter((x) => x)` reach the same shape without the
-    // prescribed remedy applying — so the implicit-return spelling's treatment
-    // of it is intentionally NOT mirrored here. Whatever carve-out settles that
-    // question should land on both spellings at once rather than being fixed
-    // twice.
+    // The bare-identifier passthrough is accepted in every spelling. The rule
+    // looks for a function that ANSWERS a nullish argument by handing the
+    // absence back; the identity function has no nullish-specific behaviour, so
+    // the prescribed remedy does not apply to it. The block-bodied path always
+    // withheld it, and the boundary that once made the implicit-return spelling
+    // differ is settled here for both at once (#1974).
+    `const identity = (value) => value;`,
+
     `const identity = (value) => { return value; };`,
 
     `function identity(value) {
       return value;
     }`,
 
+    `const passThrough = (payload = null) => payload;`,
+
     `const passThrough = function (payload = null) {
       return payload;
     };`,
+
+    // The shape that motivated the carve-out: an inline callback argument
+    // reaches it without the remedy applying. `.filter((x) => x)` is the
+    // standard truthiness filter, and a generic identity helper is not a
+    // passthrough of anything absent.
+    `const kept = items.filter((x) => x);`,
+
+    `const same = items.map((x) => x);`,
+
+    `export const identity = <T,>(value: T): T => value;`,
 
     // Only a SOLE return statement is in scope: a block that does other work
     // before returning is not the same claim as an implicit return.
@@ -405,18 +418,6 @@ ruleTesterTs.run('no-undefined-null-passthrough', noUndefinedNullPassthrough, {
     {
       code: `const getData = (data) => data ? data.value : null`,
       errors: [error('data')],
-    },
-
-    // A bare-identifier body is the only shape reaching the identity branch;
-    // every other implicit-return fixture here has a conditional or logical
-    // body and is answered before it.
-    {
-      code: `const identity = (value) => value;`,
-      errors: [error('value')],
-    },
-    {
-      code: `const passThrough = (payload = null) => payload;`,
-      errors: [error('payload')],
     },
 
     // Function with multiple parameters and early return

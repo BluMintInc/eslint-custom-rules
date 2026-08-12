@@ -64,3 +64,15 @@ function deriveRounds(rounds) {
     .sort((a, b) => a.roundIndex - b.roundIndex);
 }
 ```
+
+### ✅ Correct (the identity function)
+
+Returning the argument unchanged is not a passthrough of an absence. What the rule looks for is a function that *answers* a nullish argument by handing it back — a guard, an `&&`, a ternary whose alternate is nullish. An identity function has no nullish-specific behaviour, so validating up front or returning a fallback is not a remedy for it.
+
+```typescript
+const kept = items.filter((x) => x); // the standard truthiness filter
+const same = items.map((x) => x);
+const identity = <T,>(value: T): T => value;
+```
+
+This holds for every spelling of that function — an implicit return, a block-bodied arrow, a declaration, a function expression — so the verdict never turns on how the body is written.
