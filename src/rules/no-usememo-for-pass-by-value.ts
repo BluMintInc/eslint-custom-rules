@@ -13,6 +13,7 @@ import {
   joinSegmentBody,
   joinSegments,
   requiresLineBreakAfter,
+  requiresOwnLine,
 } from '../utils/replacementSegments';
 
 type Options = [
@@ -800,13 +801,13 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
           // line is hoisted onto a full line of its own ABOVE the line the
           // call starts on. That insertion can never split a token pair, and
           // it lands a `-next-line` directive exactly one line above the
-          // statement that now hosts its subject. Everything else stays
-          // inline: a block comment beside the expression, and a trailing
-          // line-bound comment followed by a line break, which is safe after
-          // the expression has begun.
-          const hoistedComments = leadingComments.filter(
-            requiresLineBreakAfter,
-          );
+          // statement that now hosts its subject. A block comment carrying a
+          // line terminator demands a line the same way, because the grammar
+          // reads it AS a line terminator (#1963). Everything else stays
+          // inline: a single-line block comment beside the expression, and a
+          // trailing line-bound comment followed by a line break, which is
+          // safe after the expression has begun.
+          const hoistedComments = leadingComments.filter(requiresOwnLine);
           if (hoistedComments.length > 0) {
             const lineStartIndex = sourceCode.getIndexFromLoc({
               line: node.loc.start.line,
@@ -829,7 +830,7 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
 
           const segments: ReplacementSegment[] = [
             ...leadingComments
-              .filter((comment) => !requiresLineBreakAfter(comment))
+              .filter((comment) => !requiresOwnLine(comment))
               .map(toSegment),
             { text: replacementText, breakAfter: false },
             ...trailingComments.map(toSegment),

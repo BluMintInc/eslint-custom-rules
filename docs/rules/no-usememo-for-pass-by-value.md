@@ -16,7 +16,7 @@ The fixer replaces `useMemo(() => expr, deps)` with `expr` (when the callback is
 
 Inlining discards the callback, the `return` keyword and the dependency array, so a comment written in any of those places has no anchor of its own in the replacement. The fixer carries every such comment into the rewritten code — deleting it silently and declining the fix are both fidelity bugs, since declining lets the mere presence of a comment decide whether the rule rewrites at all.
 
-A block comment stays beside the expression, on the side it was written on:
+A block comment written on a single line stays beside the expression, on the side it was written on:
 
 ```ts
 // Before
@@ -33,7 +33,7 @@ export function useLabel(slug: string) {
 }
 ```
 
-A comment whose meaning is bound to its line — a `//` comment, or a block-comment `eslint-disable-next-line`, which targets the line after the comment ends — gets a full line of its own above the statement, because folding it onto the expression would comment the code out (or, after `return`, change the program through ASI):
+A comment that cannot share a line with the expression gets a full line of its own above the statement. Three kinds qualify: a `//` comment, whose meaning is bound to its line; a block-comment `eslint-disable-next-line`, which targets the line after the comment ends; and a block comment spanning more than one line, which the grammar reads as a line terminator in its own right. Folding any of them onto the expression would comment the code out, retarget the directive, or — after `return` — change the program through ASI:
 
 ```ts
 // Before
@@ -47,6 +47,28 @@ export function useDelay() {
 // After --fix
 export function useDelay() {
   // the caller polls, so this stays constant
+  return 0;
+}
+```
+
+A JSDoc block is the common shape of the third kind. Folding it after `return` would parse, yet ASI would end the statement at the comment and the hook would return `undefined` instead of its value, so it is hoisted too. Its text is carried verbatim, which is why the continuation lines keep the columns they were written at:
+
+```ts
+// Before
+export function useDelay() {
+  return useMemo(() => {
+    /**
+     * The caller polls, so this stays constant.
+     */
+    return 0;
+  }, []);
+}
+
+// After --fix
+export function useDelay() {
+  /**
+     * The caller polls, so this stays constant.
+     */
   return 0;
 }
 ```
