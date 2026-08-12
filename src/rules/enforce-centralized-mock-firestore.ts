@@ -435,36 +435,6 @@ export const enforceCentralizedMockFirestore = createRule<[], MessageIds>({
         }
       },
 
-      // Handle dynamic imports
-      'AwaitExpression > CallExpression[callee.type="ImportExpression"]'(
-        node: TSESTree.CallExpression,
-      ) {
-        const parent = node.parent;
-        if (
-          parent?.type === AST_NODE_TYPES.AwaitExpression &&
-          parent.parent?.type === AST_NODE_TYPES.VariableDeclarator &&
-          parent.parent.id.type === AST_NODE_TYPES.ObjectPattern
-        ) {
-          for (const prop of parent.parent.id.properties) {
-            if (
-              prop.type === AST_NODE_TYPES.Property &&
-              prop.key.type === AST_NODE_TYPES.Identifier &&
-              prop.key.name === 'mockFirestore'
-            ) {
-              mockFirestoreNodes.add(parent.parent);
-              // Track renamed destructured imports
-              if (
-                prop.value.type === AST_NODE_TYPES.Identifier &&
-                prop.value.name !== 'mockFirestore'
-              ) {
-                customMockFirestoreNames.add(prop.value.name);
-              }
-              break;
-            }
-          }
-        }
-      },
-
       // Handle complex object destructuring
       'ObjectPattern > Property > ObjectPattern > Property > ObjectPattern > Property[key.name="mockFirestore"]'(
         node: TSESTree.Property,

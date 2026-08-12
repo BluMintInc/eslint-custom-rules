@@ -636,7 +636,12 @@ const UNPROBED_RULES: Record<string, Reason> = {
   // a reference inside the function body enclosing the report — the one place
   // this guard can stand a shadow. Its corpus carries a recursive function that
   // does, and the probe below drives the rule for real.
-  'enforce-centralized-mock-firestore': REASONS.noModuleBoundReference,
+  //
+  // `enforce-centralized-mock-firestore` left this class for the same reason
+  // (#1967): its fixer injects a module-scope `mockFirestore` import and then
+  // renames the call sites to it, so once a fixture destructured the mock under
+  // a new name INSIDE a function, the reason stopped holding and the probe
+  // below drives it for real.
   'enforce-early-destructuring': REASONS.noModuleBoundReference,
   'enforce-empty-object-check': REASONS.noModuleBoundReference,
   'enforce-exported-function-types': REASONS.noModuleBoundReference,
