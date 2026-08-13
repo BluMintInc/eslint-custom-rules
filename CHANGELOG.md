@@ -1,3 +1,10 @@
+## [1.20.147](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.146...v1.20.147) (2026-08-13)
+
+
+### Bug Fixes
+
+* **no-entire-object-hook-deps:** stop hoisting a guarded dereference into the dependency array (closes [#1985](https://github.com/BluMintInc/eslint-custom-rules/issues/1985)) ([ff684a3](https://github.com/BluMintInc/eslint-custom-rules/commit/ff684a3be4767a20e083acb25b7c199f215d0e4d)), closes [#1401](https://github.com/BluMintInc/eslint-custom-rules/issues/1401)
+
 ## [1.20.146](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.145...v1.20.146) (2026-08-13)
 
 

@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.147",
+    "date": "2026-08-13T06:24:35.769Z",
+    "rules": [
+      {
+        "name": "no-entire-object-hook-deps",
+        "changeType": "fix",
+        "issues": [
+          1985
+        ],
+        "summary": "stop hoisting a guarded dereference into the dependency array (closes #1985)"
+      }
+    ]
+  },
+  {
     "version": "1.20.146",
     "date": "2026-08-13T00:14:52.842Z",
     "rules": [
