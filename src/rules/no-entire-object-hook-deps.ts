@@ -266,6 +266,211 @@ function unwrapExpression(expr: TSESTree.Node): TSESTree.Node {
   return current;
 }
 
+/** Applies `visitChild` to every AST child of `node`, skipping `parent` links. */
+function forEachChildNode(
+  node: TSESTree.Node,
+  visitChild: (child: TSESTree.Node) => void,
+): void {
+  for (const key in node) {
+    if (key === 'parent') continue;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const child = (node as any)[key];
+    if (!child || typeof child !== 'object') continue;
+
+    if (Array.isArray(child)) {
+      for (const item of child) {
+        if (item && typeof item === 'object' && 'type' in item) {
+          visitChild(item);
+        }
+      }
+    } else if ('type' in child) {
+      visitChild(child);
+    }
+  }
+}
+
+/**
+ * Whether `node` is the callee of a call — `u.date.toISOString` in
+ * `u.date.toISOString()` — looking through the wrappers that can sit between
+ * the member expression and its call (`?.` chains, `!`, `as T`).
+ */
+function isCallCallee(node: TSESTree.MemberExpression): boolean {
+  let current: TSESTree.Node = node;
+  let parent = node.parent;
+  while (
+    parent &&
+    (parent.type === AST_NODE_TYPES.TSAsExpression ||
+      parent.type === AST_NODE_TYPES.TSTypeAssertion ||
+      parent.type === AST_NODE_TYPES.ChainExpression ||
+      parent.type === AST_NODE_TYPES.TSNonNullExpression)
+  ) {
+    current = parent;
+    parent = parent.parent;
+  }
+  return (
+    !!parent &&
+    parent.type === AST_NODE_TYPES.CallExpression &&
+    parent.callee === current
+  );
+}
+
+/**
+ * Renders `node`'s access path when the chain is rooted at `objectName`, or
+ * null when it is rooted elsewhere or holds a link with no stable rendering.
+ *
+ * why: guard collection asks a different question than `buildAccessPath` —
+ * "which value did this condition establish something about?" rather than
+ * "which dependency should replace the object?" — so it must not apply that
+ * function's narrowing policy (method carve-outs, whole-object escalation) nor
+ * its side effects on the usage set.
+ */
+function renderMemberPathIfRootedAt(
+  node: TSESTree.MemberExpression,
+  objectName: string,
+): string | null {
+  const segments: PathSegment[] = [];
+  let current: TSESTree.Node = node;
+
+  while (current.type === AST_NODE_TYPES.MemberExpression) {
+    const memberExpr = current;
+
+    if (memberExpr.computed) {
+      const literalValue =
+        memberExpr.property.type === AST_NODE_TYPES.Literal
+          ? memberExpr.property.value
+          : undefined;
+      if (
+        typeof literalValue !== 'number' &&
+        typeof literalValue !== 'string'
+      ) {
+        return null;
+      }
+      segments.unshift({
+        text:
+          typeof literalValue === 'number'
+            ? `[${literalValue}]`
+            : `[${JSON.stringify(literalValue)}]`,
+        computed: true,
+        optional: memberExpr.optional,
+      });
+    } else {
+      if (memberExpr.property.type !== AST_NODE_TYPES.Identifier) {
+        return null;
+      }
+      segments.unshift({
+        text: memberExpr.property.name,
+        computed: false,
+        optional: memberExpr.optional,
+      });
+    }
+
+    current = unwrapExpression(memberExpr.object);
+  }
+
+  const base = unwrapExpression(current);
+  if (
+    segments.length === 0 ||
+    base.type !== AST_NODE_TYPES.Identifier ||
+    base.name !== objectName
+  ) {
+    return null;
+  }
+  return renderPathSegments(objectName, segments);
+}
+
+/**
+ * Every path of `objectName` whose dereferenceability the hook body establishes
+ * with a guard rather than with the plain shape of the source.
+ *
+ * why: a dependency array is an array literal, so every element is evaluated
+ * eagerly on every render — outside the `if`, the `&&`, the ternary and the
+ * `!` assertion that made the access safe inside the body. Extending a
+ * dependency path *through* such a link therefore turns guarded code into an
+ * unconditional `TypeError`. The paths collected here mark where a path must
+ * stop; see `safePrefixOf`.
+ *
+ * The collection is deliberately over-broad — it accepts any member path
+ * appearing anywhere in a condition, not only one that provably governs the
+ * access. Over-collecting costs a coarser dependency (the memo recomputes more
+ * often than strictly needed); under-collecting is the crash.
+ */
+function collectGuardedPaths(
+  hookBody: TSESTree.Node,
+  objectName: string,
+): Set<string> {
+  const guarded = new Set<string>();
+  const visited = new Set<TSESTree.Node>();
+
+  function markConditionPaths(node: TSESTree.Node | null | undefined): void {
+    if (!node) return;
+
+    if (node.type === AST_NODE_TYPES.MemberExpression) {
+      const path = renderMemberPathIfRootedAt(node, objectName);
+      if (path) {
+        guarded.add(path);
+        // why: only the outermost link of the chain is what the condition
+        // established. `if (a.b.c)` dereferences `a.b` unconditionally, so it
+        // proves nothing about `a.b` and must not truncate paths there. A
+        // computed key can still hold a condition-worthy read of its own.
+        if (node.computed) {
+          markConditionPaths(node.property);
+        }
+        return;
+      }
+    }
+
+    forEachChildNode(node, markConditionPaths);
+  }
+
+  function walk(node: TSESTree.Node): void {
+    if (!node || visited.has(node)) return;
+    visited.add(node);
+
+    if (
+      node.type === AST_NODE_TYPES.IfStatement ||
+      node.type === AST_NODE_TYPES.ConditionalExpression ||
+      node.type === AST_NODE_TYPES.WhileStatement ||
+      node.type === AST_NODE_TYPES.DoWhileStatement ||
+      node.type === AST_NODE_TYPES.ForStatement
+    ) {
+      // Covers `if (a.b)`, `a.b ? x : y`, and the early-return form
+      // `if (!a.b) return;` — the `!` is reached by walking the test.
+      markConditionPaths(node.test);
+    } else if (node.type === AST_NODE_TYPES.LogicalExpression) {
+      // `a.b && a.b.c`, `a.b || fallback`, `a.b ?? fallback`: the left operand
+      // decides whether the right one runs at all.
+      markConditionPaths(node.left);
+    } else if (node.type === AST_NODE_TYPES.UnaryExpression) {
+      if (node.operator === '!' || node.operator === 'typeof') {
+        markConditionPaths(node.argument);
+      }
+    } else if (node.type === AST_NODE_TYPES.BinaryExpression) {
+      if (node.operator === 'instanceof') {
+        markConditionPaths(node.left);
+      } else if (node.operator === 'in') {
+        markConditionPaths(node.right);
+      }
+    } else if (node.type === AST_NODE_TYPES.TSNonNullExpression) {
+      // `a.b!.c` — the assertion is the author's guard, and it exists only in
+      // the type system. The emitted dependency has to stop at `a.b`.
+      //
+      // Unlike a condition, an assertion speaks about exactly one value, so
+      // this does NOT descend: in `load(a.b)!` the `!` covers the call's
+      // result and says nothing about `a.b`.
+      const asserted = unwrapExpression(node.expression);
+      if (asserted.type === AST_NODE_TYPES.MemberExpression) {
+        markConditionPaths(asserted);
+      }
+    }
+
+    forEachChildNode(node, walk);
+  }
+
+  walk(hookBody);
+  return guarded;
+}
+
 /**
  * Whether the hook body anywhere calls the state setter that corresponds to
  * `dependencyName` (dep `count` -> `setCount(...)`).
@@ -333,8 +538,54 @@ function getObjectUsagesInHook(
   // rendered path cannot place `?.` markers correctly.
   const pathSegments = new Map<string, PathSegment[]>();
   const visited = new Set<TSESTree.Node>();
+  const guardedPaths = collectGuardedPaths(hookBody, objectName);
   let needsEntireObject = false;
   let isUsed = false;
+
+  /**
+   * The longest prefix of `segments` that a dependency array may evaluate
+   * unconditionally.
+   *
+   * why: the hook body reaches a deep path under guards the array cannot
+   * carry, so the deepest path the body reads is not always a legal dependency.
+   * Truncating at the first unsafe link yields a coarser dependency — the memo
+   * recomputes whenever the parent object's identity changes rather than only
+   * when the leaf does — which can only cost precision, never correctness, and
+   * still delivers the narrowing this rule exists for.
+   */
+  function safePrefixOf(segments: readonly PathSegment[]): PathSegment[] {
+    let limit = segments.length;
+
+    // A link the source reached with `?.` is one the author expects to be
+    // nullish. When the very next link is spelled *without* `?.`, the source
+    // only survives because something outside the expression established the
+    // value — a guard, a narrowing assertion, an invariant. The dependency
+    // array inherits none of it, so the path stops at the optional link.
+    // A trailing optional link (`a.b?.[0]`, `state?.[0]`) is safe as written
+    // and keeps its full rendering.
+    for (let index = 0; index < segments.length - 1; index += 1) {
+      if (segments[index].optional && !segments[index + 1].optional) {
+        limit = index + 1;
+        break;
+      }
+    }
+
+    // A prefix whose dereferenceability a condition established is unusable in
+    // the array for the same reason. The shortest such prefix wins, since it is
+    // the most conservative stopping point.
+    for (let index = 1; index < limit; index += 1) {
+      if (
+        guardedPaths.has(
+          renderPathSegments(objectName, segments.slice(0, index)),
+        )
+      ) {
+        limit = index;
+        break;
+      }
+    }
+
+    return segments.slice(0, limit);
+  }
 
   // Built-in array methods that indicate usage of the entire array
   const ARRAY_METHODS = new Set([
@@ -401,6 +652,37 @@ function getObjectUsagesInHook(
     // Collect all links from leaf to root
     while (current.type === AST_NODE_TYPES.MemberExpression) {
       const memberExpr = current as TSESTree.MemberExpression;
+
+      // A member called through a chain never terminates a dependency path:
+      // depend on the receiver instead.
+      //
+      // why: two reasons converge. A method reached through a chain
+      // (`u.date.toISOString`) is a prototype-shared reference — the same value
+      // for every receiver of that type — so pinning it in the array makes the
+      // hook stop invalidating and serve a stale value forever. And it is the
+      // link that dereferences the receiver, so a receiver whose safety came
+      // from a guard (`if (u.date)`, `u.date!`) throws when the array is
+      // evaluated on a render that never entered the guard.
+      //
+      // Two conditions bound this. The link must be spelled without `?.`: a
+      // fully optional chain (`userData?.date?.toISOString`) short-circuits
+      // instead of throwing, which is exactly the per-link rendering this rule
+      // already gets right. And the receiver must itself be a member path —
+      // where it is the dependency object (`userData?.getName?.()`), falling
+      // back to it would surrender the narrowing entirely, and a function held
+      // directly on a plain dependency object is per-instance state whose
+      // identity legitimately changes; `isMethodMember` decides that case with
+      // the type checker.
+      if (!memberExpr.optional && isCallCallee(memberExpr)) {
+        const receiver = unwrapExpression(memberExpr.object);
+        if (receiver.type === AST_NODE_TYPES.MemberExpression) {
+          const receiverPath = buildAccessPath(receiver);
+          if (receiverPath) {
+            usages.set(receiverPath, memberExpr.range?.[0] || 0);
+          }
+          return null;
+        }
+      }
 
       // Handle computed properties (like array indices)
       if (memberExpr.computed) {
@@ -752,8 +1034,30 @@ function getObjectUsagesInHook(
 
   visit(hookBody);
 
+  // Replace every collected path with the prefix that survives evaluation
+  // outside the hook body. Distinct reads can collapse onto one dependency
+  // (`a.b` and a truncated `a.b.c` are the same entry), so the earliest source
+  // position is kept for the ordering below.
+  const safeUsages = new Map<string, number>();
+  usages.forEach((position, rawPath) => {
+    const segments = pathSegments.get(rawPath);
+    const safeSegments = segments ? safePrefixOf(segments) : undefined;
+    const safePath = safeSegments
+      ? renderPathSegments(objectName, safeSegments)
+      : rawPath;
+    if (safeSegments) {
+      pathSegments.set(safePath, safeSegments);
+    }
+
+    const recorded = safeUsages.get(safePath);
+    safeUsages.set(
+      safePath,
+      recorded === undefined ? position : Math.min(recorded, position),
+    );
+  });
+
   // Process paths and determine which ones to include
-  const paths = Array.from(usages.keys());
+  const paths = Array.from(safeUsages.keys());
   const finalPaths = new Set<string>();
 
   paths.forEach((path) => {
@@ -820,8 +1124,8 @@ function getObjectUsagesInHook(
 
   // Sort paths: longer/more specific paths first, then by optional chaining preference
   const sortedPaths = filteredPaths.sort((a, b) => {
-    const posA = usages.get(a) || 0;
-    const posB = usages.get(b) || 0;
+    const posA = safeUsages.get(a) || 0;
+    const posB = safeUsages.get(b) || 0;
 
     // For paths with the same base, put longer ones first
     const aDepth = a.split('.').length + (a.includes('[') ? 1 : 0);

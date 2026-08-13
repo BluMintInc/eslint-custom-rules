@@ -130,8 +130,13 @@ const optionalComputedFixCases = [
       };
     `,
   },
-  // Mixed chain: optional dot link followed by a plain bracket. The `?.`
-  // marker stays on the dot link and the bracket stays bare.
+  // Mixed chain: optional dot link followed by a plain bracket. The path stops
+  // at the optional link (issue #1985). Emitting `a?.b[0]` was the bug: the
+  // author's `?.` says `a.b` may be absent, and a dependency array is
+  // evaluated eagerly on EVERY render — including renders where the memo is
+  // reused and the body never runs — so the bracket throws where the body
+  // would not. `a?.b` is coarser and cannot throw. `?.` marker placement stays
+  // covered by the two cases below, which emit their brackets in full.
   {
     code: `
       const MyComponent = ({ a }) => {
@@ -141,12 +146,12 @@ const optionalComputedFixCases = [
         return <div>{first}</div>;
       };
     `,
-    errors: [avoid('a', 'a?.b[0], a?.b')],
+    errors: [avoid('a', 'a?.b')],
     output: `
       const MyComponent = ({ a }) => {
         const first = useMemo(() => {
           return a?.b[0];
-        }, [a?.b[0], a?.b]);
+        }, [a?.b]);
         return <div>{first}</div>;
       };
     `,
@@ -1198,6 +1203,53 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
     },
+    // Issue #1985: the truncated dependency the fixer emits is itself accepted,
+    // so `--fix` reaches a fixpoint instead of re-reporting its own output.
+    // Each of these is the exact array the matching invalid case below emits.
+    {
+      code: `
+        const MyComponent = ({ a }: { a: { b?: { c: string } } }) => {
+          const result = useMemo(() => {
+            if (a.b) { return a.b.c; }
+            return 'none';
+          }, [a.b]);
+          return <div>{result}</div>;
+        };
+      `,
+    },
+    {
+      code: `
+        const MyComponent = ({ u }: { u: { date?: Date } }) => {
+          const result = useMemo(() => {
+            if (u.date) { return u.date.toISOString(); }
+            return 'No date';
+          }, [u.date]);
+          return <div>{result}</div>;
+        };
+      `,
+    },
+    {
+      code: `
+        const MyComponent = ({ a }: { a: { b?: { c: { d: string } } } }) => {
+          const result = useMemo(() => {
+            return a?.b instanceof Object ? a?.b.c.d : 'none';
+          }, [a?.b]);
+          return <div>{result}</div>;
+        };
+      `,
+    },
+    // The fully optional chain's own fixpoint: its trailing method segment is
+    // safe to evaluate and must stay accepted.
+    {
+      code: `
+        const MyComponent = ({ userData }: { userData: { date?: Date } }) => {
+          const result = useMemo(() => {
+            return userData?.date?.toISOString() ?? 'No date';
+          }, [userData?.date?.toISOString, userData?.date]);
+          return <div>{result}</div>;
+        };
+      `,
+    },
   ],
   invalid: [
     ...optionalComputedFixCases,
@@ -2037,7 +2089,11 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
     },
-    // Edge case: Optional chaining with instanceof check
+    // Edge case: Optional chaining with instanceof check. The reported shape of
+    // issue #1985: `userData?.date.toISOString` is reachable in the body only
+    // because the `instanceof` narrowed it, and `.toISOString` is a
+    // prototype-shared reference that pins the memo to a constant besides. The
+    // dependency stops at the receiver.
     {
       code: `
         const MyComponent = ({ userData }: { userData: { date?: Date } }) => {
@@ -2047,12 +2103,12 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
           return <div>{result}</div>;
         };
       `,
-      errors: [avoid('userData', 'userData?.date.toISOString, userData?.date')],
+      errors: [avoid('userData', 'userData?.date')],
       output: `
         const MyComponent = ({ userData }: { userData: { date?: Date } }) => {
           const result = useMemo(() => {
             return userData?.date instanceof Date ? userData?.date.toISOString() : 'No date';
-          }, [userData?.date.toISOString, userData?.date]);
+          }, [userData?.date]);
           return <div>{result}</div>;
         };
       `,
@@ -2120,7 +2176,11 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
     },
-    // TS assertion with optional chaining
+    // TS assertion with optional chaining. The path stops at the optional link
+    // (issue #1985): the body reads `.id` only because `as Profile` asserts
+    // away the nullishness the author's own `?.` declared, and a type
+    // assertion has no runtime effect at all. The dependency array carries
+    // neither the assertion nor the body's laziness.
     {
       code: `
         const MyComponent = ({ userData }) => {
@@ -2129,12 +2189,12 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
           }, [userData]);
         };
       `,
-      errors: [avoid('userData', 'userData?.profile.id, userData?.profile')],
+      errors: [avoid('userData', 'userData?.profile')],
       output: `
         const MyComponent = ({ userData }) => {
           useCallback(() => {
             console.log((userData?.profile as Profile).id);
-          }, [userData?.profile.id, userData?.profile]);
+          }, [userData?.profile]);
         };
       `,
     },
@@ -2370,6 +2430,368 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
             return 'Hello ' + user.name;
           }, [user.name, trigger]);
           return <div>{greeting}</div>;
+        };
+      `,
+    },
+    // Issue #1985 — a dependency array is an array literal, so every element is
+    // evaluated eagerly on every render, outside the `if`, the `&&`, the
+    // ternary and the `!` that made the deep access safe inside the hook body.
+    // Extending a dependency path through such a link turns guarded code into
+    // an unconditional TypeError (and a TS18048 under strictNullChecks). The
+    // path therefore stops at the guarded link: coarser, never incorrect.
+    //
+    // Truthiness guard via `if`.
+    {
+      code: `
+        const MyComponent = ({ a }: { a: { b?: { c: string } } }) => {
+          const result = useMemo(() => {
+            if (a.b) { return a.b.c; }
+            return 'none';
+          }, [a]);
+          return <div>{result}</div>;
+        };
+      `,
+      errors: [avoid('a', 'a.b')],
+      output: `
+        const MyComponent = ({ a }: { a: { b?: { c: string } } }) => {
+          const result = useMemo(() => {
+            if (a.b) { return a.b.c; }
+            return 'none';
+          }, [a.b]);
+          return <div>{result}</div>;
+        };
+      `,
+    },
+    // Truthiness guard via `&&`: the left operand decides whether the right
+    // one runs at all, and the array reproduces neither operand's order.
+    {
+      code: `
+        const MyComponent = ({ a }: { a: { b?: { c: string } } }) => {
+          const result = useMemo(() => {
+            return a.b && a.b.c;
+          }, [a]);
+          return <div>{result}</div>;
+        };
+      `,
+      errors: [avoid('a', 'a.b')],
+      output: `
+        const MyComponent = ({ a }: { a: { b?: { c: string } } }) => {
+          const result = useMemo(() => {
+            return a.b && a.b.c;
+          }, [a.b]);
+          return <div>{result}</div>;
+        };
+      `,
+    },
+    // Truthiness guard via an early return.
+    {
+      code: `
+        const MyComponent = ({ a }: { a: { b?: { c: string } } }) => {
+          const result = useMemo(() => {
+            if (!a.b) { return 'none'; }
+            return a.b.c;
+          }, [a]);
+          return <div>{result}</div>;
+        };
+      `,
+      errors: [avoid('a', 'a.b')],
+      output: `
+        const MyComponent = ({ a }: { a: { b?: { c: string } } }) => {
+          const result = useMemo(() => {
+            if (!a.b) { return 'none'; }
+            return a.b.c;
+          }, [a.b]);
+          return <div>{result}</div>;
+        };
+      `,
+    },
+    // Truthiness guard via a ternary.
+    {
+      code: `
+        const MyComponent = ({ a }: { a: { b?: { c: string } } }) => {
+          const result = useMemo(() => {
+            return a.b ? a.b.c : 'none';
+          }, [a]);
+          return <div>{result}</div>;
+        };
+      `,
+      errors: [avoid('a', 'a.b')],
+      output: `
+        const MyComponent = ({ a }: { a: { b?: { c: string } } }) => {
+          const result = useMemo(() => {
+            return a.b ? a.b.c : 'none';
+          }, [a.b]);
+          return <div>{result}</div>;
+        };
+      `,
+    },
+    // Guard via `typeof`.
+    {
+      code: `
+        const MyComponent = ({ a }: { a: { b?: { c: string } } }) => {
+          const result = useMemo(() => {
+            return typeof a.b === 'object' ? a.b.c : 'none';
+          }, [a]);
+          return <div>{result}</div>;
+        };
+      `,
+      errors: [avoid('a', 'a.b')],
+      output: `
+        const MyComponent = ({ a }: { a: { b?: { c: string } } }) => {
+          const result = useMemo(() => {
+            return typeof a.b === 'object' ? a.b.c : 'none';
+          }, [a.b]);
+          return <div>{result}</div>;
+        };
+      `,
+    },
+    // A guarded receiver whose called member is a prototype method: the
+    // dependency stops at the receiver on both counts. Depending on
+    // `u.date.toISOString` would dereference the guarded value AND pin a
+    // constant — `Date.prototype.toISOString` is the same reference for every
+    // date, so the memo would never invalidate again.
+    {
+      code: `
+        const MyComponent = ({ u }: { u: { date?: Date } }) => {
+          const result = useMemo(() => {
+            if (u.date) { return u.date.toISOString(); }
+            return 'No date';
+          }, [u]);
+          return <div>{result}</div>;
+        };
+      `,
+      errors: [avoid('u', 'u.date')],
+      output: `
+        const MyComponent = ({ u }: { u: { date?: Date } }) => {
+          const result = useMemo(() => {
+            if (u.date) { return u.date.toISOString(); }
+            return 'No date';
+          }, [u.date]);
+          return <div>{result}</div>;
+        };
+      `,
+    },
+    // A non-null assertion is the author's guard, and it exists only in the
+    // type system. Before the fix this row emitted `u.date.toISOString` with no
+    // shorter entry beside it, so there was nothing to fall back to.
+    {
+      code: `
+        const MyComponent = ({ u }: { u: { date?: Date } }) => {
+          const result = useMemo(() => {
+            return u.date!.toISOString();
+          }, [u]);
+          return <div>{result}</div>;
+        };
+      `,
+      errors: [avoid('u', 'u.date')],
+      output: `
+        const MyComponent = ({ u }: { u: { date?: Date } }) => {
+          const result = useMemo(() => {
+            return u.date!.toISOString();
+          }, [u.date]);
+          return <div>{result}</div>;
+        };
+      `,
+    },
+    // A non-null assertion in front of a plain property, with no call
+    // involved: the same signal, reached through the path rather than a callee.
+    {
+      code: `
+        const MyComponent = ({ a }: { a: { b?: { c: string } } }) => {
+          const result = useMemo(() => {
+            return a.b!.c;
+          }, [a]);
+          return <div>{result}</div>;
+        };
+      `,
+      errors: [avoid('a', 'a.b')],
+      output: `
+        const MyComponent = ({ a }: { a: { b?: { c: string } } }) => {
+          const result = useMemo(() => {
+            return a.b!.c;
+          }, [a.b]);
+          return <div>{result}</div>;
+        };
+      `,
+    },
+    // An `instanceof` narrowing over an optional link, reading a property of
+    // the narrowed value.
+    {
+      code: `
+        const MyComponent = ({ a }: { a: { list?: string[] } }) => {
+          const result = useMemo(() => {
+            return a?.list instanceof Array ? a?.list.length : 0;
+          }, [a]);
+          return <div>{result}</div>;
+        };
+      `,
+      errors: [avoid('a', 'a?.list')],
+      output: `
+        const MyComponent = ({ a }: { a: { list?: string[] } }) => {
+          const result = useMemo(() => {
+            return a?.list instanceof Array ? a?.list.length : 0;
+          }, [a?.list]);
+          return <div>{result}</div>;
+        };
+      `,
+    },
+    // Two non-optional links after an optional one: truncation happens at the
+    // FIRST unsafe link, not the last.
+    {
+      code: `
+        const MyComponent = ({ a }: { a: { b?: { c: { d: string } } } }) => {
+          const result = useMemo(() => {
+            return a?.b instanceof Object ? a?.b.c.d : 'none';
+          }, [a]);
+          return <div>{result}</div>;
+        };
+      `,
+      errors: [avoid('a', 'a?.b')],
+      output: `
+        const MyComponent = ({ a }: { a: { b?: { c: { d: string } } } }) => {
+          const result = useMemo(() => {
+            return a?.b instanceof Object ? a?.b.c.d : 'none';
+          }, [a?.b]);
+          return <div>{result}</div>;
+        };
+      `,
+    },
+    // A called member on a chained receiver is dropped even where no guard
+    // narrowed it: `Date.prototype.toISOString` is one shared value, so
+    // depending on it would freeze the memo forever.
+    {
+      code: `
+        const MyComponent = ({ u }: { u: { date: Date } }) => {
+          const result = useMemo(() => {
+            return u.date.toISOString();
+          }, [u]);
+          return <div>{result}</div>;
+        };
+      `,
+      errors: [avoid('u', 'u.date')],
+      output: `
+        const MyComponent = ({ u }: { u: { date: Date } }) => {
+          const result = useMemo(() => {
+            return u.date.toISOString();
+          }, [u.date]);
+          return <div>{result}</div>;
+        };
+      `,
+    },
+    // Negative control for the guard signal: the guard names a SIBLING path, so
+    // the read path keeps every link. Without this, "truncate everything under
+    // any condition" would be indistinguishable from the fix.
+    {
+      code: `
+        const MyComponent = ({ a }: { a: { enabled?: boolean; config: { value: string } } }) => {
+          const result = useMemo(() => {
+            if (a.enabled) { return a.config.value; }
+            return 'none';
+          }, [a]);
+          return <div>{result}</div>;
+        };
+      `,
+      errors: [avoid('a', 'a.config.value, a.enabled')],
+      output: `
+        const MyComponent = ({ a }: { a: { enabled?: boolean; config: { value: string } } }) => {
+          const result = useMemo(() => {
+            if (a.enabled) { return a.config.value; }
+            return 'none';
+          }, [a.config.value, a.enabled]);
+          return <div>{result}</div>;
+        };
+      `,
+    },
+    // Negative control: a condition establishes something about its OWN
+    // outermost link only. `if (a.b.c)` dereferences `a.b` unconditionally, so
+    // it must not truncate anything at `a.b`.
+    {
+      code: `
+        const MyComponent = ({ a }: { a: { b: { c?: string } } }) => {
+          const result = useMemo(() => {
+            if (a.b.c) { return a.b.c; }
+            return 'none';
+          }, [a]);
+          return <div>{result}</div>;
+        };
+      `,
+      errors: [avoid('a', 'a.b.c')],
+      output: `
+        const MyComponent = ({ a }: { a: { b: { c?: string } } }) => {
+          const result = useMemo(() => {
+            if (a.b.c) { return a.b.c; }
+            return 'none';
+          }, [a.b.c]);
+          return <div>{result}</div>;
+        };
+      `,
+    },
+    // Negative control: an unguarded deep path is untouched. Truncating this
+    // one would gut the rule's whole purpose.
+    {
+      code: `
+        const MyComponent = ({ a }: { a: { b: { c: { d: string } } } }) => {
+          const result = useMemo(() => {
+            return a.b.c.d;
+          }, [a]);
+          return <div>{result}</div>;
+        };
+      `,
+      errors: [avoid('a', 'a.b.c.d')],
+      output: `
+        const MyComponent = ({ a }: { a: { b: { c: { d: string } } } }) => {
+          const result = useMemo(() => {
+            return a.b.c.d;
+          }, [a.b.c.d]);
+          return <div>{result}</div>;
+        };
+      `,
+    },
+    // Negative control for the callee signal: a chain spelled fully optional
+    // short-circuits instead of throwing, so its per-link rendering survives
+    // intact — including the trailing method segment. This is the #1521-era
+    // behaviour issue #1985 must not regress.
+    {
+      code: `
+        const MyComponent = ({ userData }: { userData: { date?: Date } }) => {
+          const result = useMemo(() => {
+            return userData?.date?.toISOString() ?? 'No date';
+          }, [userData]);
+          return <div>{result}</div>;
+        };
+      `,
+      errors: [
+        avoid('userData', 'userData?.date?.toISOString, userData?.date'),
+      ],
+      output: `
+        const MyComponent = ({ userData }: { userData: { date?: Date } }) => {
+          const result = useMemo(() => {
+            return userData?.date?.toISOString() ?? 'No date';
+          }, [userData?.date?.toISOString, userData?.date]);
+          return <div>{result}</div>;
+        };
+      `,
+    },
+    // Negative control: a function-valued data property held directly on the
+    // dependency object still narrows. Falling back to the receiver here would
+    // surrender the narrowing entirely, and such a property is per-instance
+    // state whose identity legitimately changes.
+    {
+      code: `
+        const MyComponent = ({ userData }: { userData: { getName?: () => string } }) => {
+          const name = useMemo(() => {
+            return userData?.getName?.() ?? 'anon';
+          }, [userData]);
+          return <div>{name}</div>;
+        };
+      `,
+      errors: [avoid('userData', 'userData?.getName')],
+      output: `
+        const MyComponent = ({ userData }: { userData: { getName?: () => string } }) => {
+          const name = useMemo(() => {
+            return userData?.getName?.() ?? 'anon';
+          }, [userData?.getName]);
+          return <div>{name}</div>;
         };
       `,
     },
