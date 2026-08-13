@@ -1049,6 +1049,217 @@ const gamma = () => {
   },
 );
 
+ruleTesterJsx.run(
+  'vertically-group-related-functions (demote-below-eager-reference guard)',
+  verticallyGroupRelatedFunctions,
+  {
+    valid: [],
+    invalid: [
+      {
+        // The callers-first reorder wants renderSettled above renderProbe, but
+        // the only reachable rewrite carries the helper `buildHit` below the
+        // pinned `const CHAMPION = buildHit(...)` — a module-scope TDZ read.
+        // The emitted file would parse and type-check yet throw
+        // `ReferenceError: Cannot access 'buildHit' before initialization` at
+        // import, killing every test in the module. The misorder is still
+        // reported; only the load-breaking autofix is withheld (output null,
+        // not a valid case — declining the fix does not silence the report).
+        code: `
+const buildHit = (id: string) => {
+  return { id };
+};
+
+const CHAMPION = buildHit('champion');
+
+const renderProbe = () => {
+  return render(CHAMPION);
+};
+
+const renderSettled = () => {
+  return renderProbe();
+};
+`,
+        errors: [{ messageId: 'misorderedFunction' }],
+        output: null,
+      },
+      {
+        // The eager reference need not be an initializer: a bare top-level
+        // call statement reads its argument at module evaluation too, so
+        // demoting `buildHit` below it breaks the module just the same.
+        code: `
+const buildHit = (id: string) => {
+  return { id };
+};
+
+registerAll(buildHit);
+
+const renderProbe = () => {
+  return render();
+};
+
+const renderSettled = () => {
+  return renderProbe();
+};
+`,
+        errors: [{ messageId: 'misorderedFunction' }],
+        output: null,
+      },
+      {
+        // An IIFE inside the pinned initializer runs during module evaluation,
+        // so its body's reads are eager even though they sit inside a function
+        // expression.
+        code: `
+const buildHit = (id: string) => {
+  return { id };
+};
+
+const CHAMPION = (() => buildHit('champion'))();
+
+const renderProbe = () => {
+  return render(CHAMPION);
+};
+
+const renderSettled = () => {
+  return renderProbe();
+};
+`,
+        errors: [{ messageId: 'misorderedFunction' }],
+        output: null,
+      },
+      {
+        // `export default buildHit;` is a pinned statement that reads the
+        // binding at module evaluation, so the demotion is declined for the
+        // same reason as the initializer case.
+        code: `
+const buildHit = (id: string) => {
+  return { id };
+};
+
+export default buildHit;
+
+const renderProbe = () => {
+  return render();
+};
+
+const renderSettled = () => {
+  return renderProbe();
+};
+`,
+        errors: [{ messageId: 'misorderedFunction' }],
+        output: null,
+      },
+      {
+        // Guard must not over-trigger: a function DECLARATION hoists, so
+        // carrying it below its module-scope caller leaves the module loadable
+        // and the normal reorder still applies.
+        code: `
+function buildHit(id: string) {
+  return { id };
+}
+
+const CHAMPION = buildHit('champion');
+
+const renderProbe = () => {
+  return CHAMPION;
+};
+
+const renderSettled = () => {
+  return renderProbe();
+};
+`,
+        errors: [{ messageId: 'misorderedFunction' }],
+        output: `
+const renderSettled = () => {
+  return renderProbe();
+};
+
+const CHAMPION = buildHit('champion');
+
+const renderProbe = () => {
+  return CHAMPION;
+};
+
+function buildHit(id: string) {
+  return { id };
+}
+`,
+      },
+      {
+        // Guard must not over-trigger: the pinned statement only references the
+        // helper inside a closure, which is deferred to call time — by then the
+        // demoted `const` is initialized.
+        code: `
+const buildHit = (id: string) => {
+  return { id };
+};
+
+const registry = { get: () => buildHit('champion') };
+
+const renderProbe = () => {
+  return registry.get();
+};
+
+const renderSettled = () => {
+  return renderProbe();
+};
+`,
+        errors: [{ messageId: 'misorderedFunction' }],
+        output: `
+const renderSettled = () => {
+  return renderProbe();
+};
+
+const registry = { get: () => buildHit('champion') };
+
+const renderProbe = () => {
+  return registry.get();
+};
+
+const buildHit = (id: string) => {
+  return { id };
+};
+`,
+      },
+      {
+        // Guard must not over-trigger: a type-space mention
+        // (`ReturnType<typeof buildHit>`) is erased at runtime and reads
+        // nothing at module evaluation, so the reorder still applies.
+        code: `
+const buildHit = (id: string) => {
+  return { id };
+};
+
+const CHAMPION: ReturnType<typeof buildHit> = { id: 'champion' };
+
+const renderProbe = () => {
+  return CHAMPION;
+};
+
+const renderSettled = () => {
+  return renderProbe();
+};
+`,
+        errors: [{ messageId: 'misorderedFunction' }],
+        output: `
+const renderSettled = () => {
+  return renderProbe();
+};
+
+const CHAMPION: ReturnType<typeof buildHit> = { id: 'champion' };
+
+const renderProbe = () => {
+  return CHAMPION;
+};
+
+const buildHit = (id: string) => {
+  return { id };
+};
+`,
+      },
+    ],
+  },
+);
+
 afterAll(() => {
   expect(consoleWarnSpy).toHaveBeenCalled();
   consoleWarnSpy.mockRestore();

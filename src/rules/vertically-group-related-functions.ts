@@ -605,6 +605,135 @@ function collectReferencedNames(node: TSESTree.Node): Set<string> {
   return names;
 }
 
+// Type-space shells whose contents are erased at runtime. A reference inside
+// one (`const x: ReturnType<typeof buildHit> = …`) never reads the binding at
+// module evaluation, so it must not count as an eager reference — counting it
+// would withhold autofixes that are perfectly safe to apply.
+const TYPE_SPACE_NODE_TYPES = new Set([
+  'TSTypeAnnotation',
+  'TSTypeParameterInstantiation',
+  'TSTypeParameterDeclaration',
+  'TSTypeAliasDeclaration',
+  'TSInterfaceDeclaration',
+  'TSTypeQuery',
+  'TSDeclareFunction',
+]);
+
+// Names a statement reads at MODULE EVALUATION time. A read inside a function
+// body is deferred to call time and constrains nothing — except when that
+// function is an immediately invoked callee, which runs during evaluation. The
+// distinction is the whole point of this rule: callers referencing helpers
+// inside their bodies is the safe pattern being enforced, while an initializer
+// calling a helper runs the moment the module loads.
+function collectEagerlyReferencedNames(node: TSESTree.Node): Set<string> {
+  const names = new Set<string>();
+
+  const visit = (
+    current: TSESTree.Node | null | undefined,
+    parent: TSESTree.Node | null,
+  ) => {
+    if (!current || !ASTHelpers.isNode(current)) {
+      return;
+    }
+
+    if (TYPE_SPACE_NODE_TYPES.has(current.type)) {
+      return;
+    }
+
+    // An `as`/`satisfies` wrapper evaluates only its expression; the type side
+    // is erased.
+    if (
+      current.type === 'TSAsExpression' ||
+      (current.type as string) === 'TSSatisfiesExpression'
+    ) {
+      visit((current as TSESTree.TSAsExpression).expression, current);
+      return;
+    }
+
+    if (
+      current.type === 'FunctionDeclaration' ||
+      current.type === 'FunctionExpression' ||
+      current.type === 'ArrowFunctionExpression'
+    ) {
+      // Deferred to call time — unless this function is the callee of the call
+      // being visited, which the CallExpression case enters directly.
+      return;
+    }
+
+    if (
+      current.type === 'CallExpression' &&
+      (current.callee.type === 'ArrowFunctionExpression' ||
+        current.callee.type === 'FunctionExpression')
+    ) {
+      // An IIFE's body runs during module evaluation, so its reads are eager.
+      visit(current.callee.body, current.callee);
+      current.callee.params.forEach((param) => visit(param, current.callee));
+      current.arguments.forEach((argument) => visit(argument, current));
+      return;
+    }
+
+    if (
+      current.type === 'ClassDeclaration' ||
+      current.type === 'ClassExpression'
+    ) {
+      // A class's heritage clause, computed member keys, static initializers,
+      // and static blocks all run at evaluation; method bodies and instance
+      // property values wait for construction.
+      visit(current.superClass, current);
+      current.body.body.forEach((member) => {
+        if (member.type === 'StaticBlock') {
+          member.body.forEach((statement) => visit(statement, member));
+          return;
+        }
+        if ('computed' in member && member.computed && 'key' in member) {
+          visit(member.key, member);
+        }
+        if (
+          member.type === 'PropertyDefinition' &&
+          member.static &&
+          member.value
+        ) {
+          visit(member.value, member);
+        }
+      });
+      return;
+    }
+
+    if (current.type === 'Identifier') {
+      const isMemberProperty =
+        parent?.type === 'MemberExpression' &&
+        parent.property === current &&
+        !parent.computed;
+      const isObjectKey =
+        parent?.type === 'Property' &&
+        parent.key === current &&
+        !parent.computed;
+      if (!isMemberProperty && !isObjectKey) {
+        names.add(current.name);
+      }
+    }
+
+    Object.values(current).forEach((value) => {
+      if (!value || value === current || (current as any).parent === value) {
+        return;
+      }
+      if (Array.isArray(value)) {
+        value.forEach((child) => {
+          if (ASTHelpers.isNode(child)) {
+            visit(child, current);
+          }
+        });
+      } else if (ASTHelpers.isNode(value)) {
+        visit(value, current);
+      }
+    });
+  };
+
+  visit(node, null);
+
+  return names;
+}
+
 // Names bound by an interleaved VALUE declaration (const/let/var) — but not by a
 // reorderable function. Hoisting a function above a value binding it references
 // is a genuine runtime declare-before-use. Type aliases are tracked separately
@@ -756,6 +885,58 @@ function reorderHoistsFunctionAboveDependency(
       statement.declaration?.type === 'TSTypeAliasDeclaration'
     ) {
       declaredTypeNames.add(statement.declaration.id.name);
+    }
+  }
+
+  return false;
+}
+
+// Decline (return true) any reorder that would place a const/let/var-declared
+// function BELOW an interleaved statement that reads it at module evaluation
+// time. The fixer pins interleaved statements and swaps functions among their
+// own slots, so a helper `const` can be carried past its own module-scope
+// caller (`const CHAMPION = buildHit(…)`) — the emitted file parses and
+// type-checks but throws `ReferenceError: Cannot access '…' before
+// initialization` the moment anything imports it, and `--fix` reports nothing
+// about the file it just broke. Function declarations hoist, so demoting one
+// past an eager reference stays loadable and is not declined. This is the
+// mirror of reorderHoistsFunctionAboveDependency: that guard protects a moved
+// function from losing a dependency ABOVE it; this one protects a pinned
+// statement from losing its dependency BELOW it.
+function reorderDemotesDeclarationBelowEagerReference(
+  regionStatements: TSESTree.Statement[],
+  functionStatements: Set<FunctionStatementNode>,
+  expectedOrderInfos: FunctionInfo[],
+): boolean {
+  const variableDeclaredNames = new Set<string>();
+  expectedOrderInfos.forEach((info) => {
+    const declaration =
+      info.statementNode.type === 'ExportNamedDeclaration'
+        ? info.statementNode.declaration
+        : info.statementNode;
+    if (declaration?.type === 'VariableDeclaration') {
+      variableDeclaredNames.add(info.name);
+    }
+  });
+  if (variableDeclaredNames.size === 0) {
+    return false;
+  }
+
+  const placedNames = new Set<string>();
+  let slotCursor = 0;
+  for (const statement of regionStatements) {
+    if (functionStatements.has(statement as FunctionStatementNode)) {
+      const occupant = expectedOrderInfos[slotCursor];
+      slotCursor += 1;
+      if (occupant) {
+        placedNames.add(occupant.name);
+      }
+      continue;
+    }
+    for (const name of collectEagerlyReferencedNames(statement)) {
+      if (variableDeclaredNames.has(name) && !placedNames.has(name)) {
+        return true;
+      }
     }
   }
 
@@ -1028,6 +1209,20 @@ export const verticallyGroupRelatedFunctions: TSESLint.RuleModule<
             // harmful, non-converging autofix is suppressed.
             if (
               reorderHoistsFunctionAboveDependency(
+                slice as TSESTree.Statement[],
+                functionStatements,
+                expectedOrderInfos,
+              )
+            ) {
+              return null;
+            }
+
+            // The mirror hazard: a const-declared helper carried below a pinned
+            // statement that calls it at module evaluation. The emitted file
+            // would throw at import time, so the rewrite is withheld; the
+            // misorderedFunction report still fires.
+            if (
+              reorderDemotesDeclarationBelowEagerReference(
                 slice as TSESTree.Statement[],
                 functionStatements,
                 expectedOrderInfos,
