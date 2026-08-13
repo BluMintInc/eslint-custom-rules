@@ -313,12 +313,26 @@ const [b] = useRouterState({ key: laundered });
 [`prefer-global-router-state-key`](./prefer-global-router-state-key.md) answers
 identically, since both rules resolve a key variable through the same map.
 
-One shape is reported although the operand is provably the key: a `||=` or `??=`
-onto a variable declared **without** an initializer always assigns, because the
-variable is `undefined`. A declaration with no initializer records nothing, so
-the key resolves to no entry and both rules fall through to reporting an
-unresolved identifier. Tracked as #2001; write `const key = QUERY_KEY_X;`
-instead, which is what that spelling means.
+One shape is the exception, because there the compound assignment is not
+conditional at all: a `||=` or `??=` onto a variable that still holds
+`undefined` — `let key;` or `let key = undefined;` — always assigns, since
+`undefined` is both falsy and nullish. The operand is followed there.
+
+```typescript
+import { QUERY_KEY_PLAYBACK_ID } from 'src/util/routing/queryKeys';
+
+let key;
+key ||= QUERY_KEY_PLAYBACK_ID;            // ✅ always assigns, so this IS the key
+const [c] = useRouterState({ key });
+```
+
+That holds only while it stays provable, so the exception is bounded to a single
+declaration with a single assignment to it. A second assignment anywhere puts a
+prior value back in play and the key reports again. `+=` is never followed, as
+it concatenates onto `undefined` and yields neither operand. The operand is
+resolved and then validated like any other key, so `key ||= 'playback-id'` on an
+uninitialized variable still reports — the exception is about *which node* the
+key resolves to, not about waiving the check.
 
 ## Valid Import Sources
 
