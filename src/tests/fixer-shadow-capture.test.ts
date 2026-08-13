@@ -17,6 +17,8 @@ const plugin = require('..') as {
 };
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const tsParser = require('@typescript-eslint/parser');
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const ts = require('typescript');
 
 const PREFIX = '@blumintinc/blumint/';
 
@@ -43,6 +45,11 @@ const PREFIX = '@blumintinc/blumint/';
  * did until #1732 — dropped every case a suite assembles by interpolation and
  * stripped the configuration from the ones it kept, which is how a rule could
  * be listed among 69 with no trigger while nothing of it had been probed.
+ *
+ * A fixture written flat has no function block to shadow into, so a rule whose
+ * corpus happens to be flat asks this guard nothing. `runNested` below wraps
+ * each such fixture and re-asks, which is what distinguishes a rule that CANNOT
+ * pose the question from a corpus that merely does not (#1998).
  */
 
 /**
@@ -250,21 +257,47 @@ const nameCounts = (ast: any) => {
   return m;
 };
 
+/** Every identifier that DECLARES a binding, at any depth. */
+const declarationIdentifiers = (sm: any) => {
+  const ids = new Set<any>();
+  const visit = (scope: any) => {
+    for (const v of scope.variables)
+      for (const id of v.identifiers) ids.add(id);
+    scope.childScopes.forEach(visit);
+  };
+  visit(sm.globalScope);
+  return ids;
+};
+
 /**
  * Uses of `name` resolving to anything other than the module-scope binding.
  *
  * Deliberately not keyed on the injected declaration's offset: the fixer inserts
  * its import above that declaration, shifting it, so any absolute position taken
  * from the pre-fix text is stale in the patched text.
+ *
+ * Two exclusions keep this counting the documented harm rather than everything
+ * that shares a name. Both were needed to clear a false capture on
+ * `no-unnecessary-verb-suffix`, whose fixture declares an inner shadow on
+ * purpose (#1998):
+ *
+ * * **No module-scope binding of `name` means no harm is defined.** The harm is
+ *   an emitted reference resolving to an inner binding INSTEAD of the
+ *   module-scope one; with nothing at module scope there is no intended target
+ *   to miss, and counting every resolving use then charges the fixer for
+ *   bindings the fixture already had.
+ * * **A declaration is not a use.** Counting binding identifiers makes the
+ *   probe's own injected declaration read as a captured reference to itself.
  */
 const capturedCount = (parsed: Parsed, name: string) => {
-  const modVar = moduleScope(parsed.scopeManager as any).variables.find(
-    (v: any) => v.name === name,
-  );
+  const sm = parsed.scopeManager as any;
+  const modVar = moduleScope(sm).variables.find((v: any) => v.name === name);
+  if (!modVar) return 0;
+  const declarations = declarationIdentifiers(sm);
   let n = 0;
   eachRefSite(parsed.ast, (site: any) => {
-    if (site.name !== name) return;
-    const v = resolveAt(parsed.scopeManager as any, name, site.range[0]);
+    if (site.name !== name || declarations.has(site)) return;
+    const v = resolveAt(sm, name, site.range[0]);
     if (v && v !== modVar) n++;
   });
   return n;
@@ -379,7 +412,10 @@ const capturesFor = (rule: string, triggers: Trigger[]) => {
   let probed = 0;
   const seen = new Set<string>();
   for (const t of triggers) {
-    const key = `${t.name}::${t.injectAt}::${t.testCase.code.slice(0, 80)}`;
+    // The whole fixture, not a prefix of it: under the nesting perturbation
+    // below every wrapped variant opens with the same import block and wrapper
+    // head, so a truncated key collapses distinct fixtures into one probe.
+    const key = `${t.name}::${t.injectAt}::${t.testCase.code}`;
     if (seen.has(key)) continue;
     seen.add(key);
 
@@ -436,6 +472,540 @@ const capturesFor = (rule: string, triggers: Trigger[]) => {
   return { captures, probed };
 };
 
+/* ------------------------------------------------------------------ *
+ * The nesting perturbation.
+ *
+ * A rule whose every report sits at module level is parked above with no shadow
+ * put in front of it. That was read as a property of the RULE; for most of the
+ * class it is a property of its FIXTURES, which happen to be written flat. This
+ * arm settles which is which by wrapping each fixture's body in a function and
+ * re-asking. It moved 13 of 21 parked rules off that reason and put 5 of them in
+ * front of a real shadow (#1998). All 5 decline correctly.
+ *
+ * One measured behaviour is deliberately NOT failed here, because it is not a
+ * capture. Under a shadow `enforce-mui-rounded-icons` declines only HALF its
+ * fix: it still rewrites the module path but drops the identifier rename, so
+ * `import NotificationsActiveOutlined from '…/NotificationsActiveRounded'`
+ * survives — valid, and misleadingly named, but nothing it emits resolves to
+ * the shadow, which is the only question this guard answers.
+ * ------------------------------------------------------------------ */
+
+const WRAPPER_NAMES = ['ProbeShell', 'probeBody'];
+
+/**
+ * The wrapper's own block, whichever variant produced it.
+ *
+ * The report-anchored arm cannot reach an import-keyed rule: its report sits on
+ * an `ImportDeclaration`, which the wrap deliberately leaves at module level, so
+ * `enclosingFunctionBody` is null even though the FIX rewrites call sites inside
+ * the wrapper. Standing the shadow in the wrapper block instead is what reaches
+ * `enforce-mui-rounded-icons`.
+ */
+const wrapperBodyOf = (ast: any): any => {
+  for (const stmt of ast.body) {
+    if (stmt.type !== 'VariableDeclaration') continue;
+    const d = stmt.declarations[0];
+    if (!d || !d.id || d.id.name !== 'ProbeShell' || !d.init) continue;
+    if (d.init.type === 'ArrowFunctionExpression') {
+      return d.init.body && d.init.body.type === 'BlockStatement'
+        ? d.init.body
+        : null;
+    }
+    if (d.init.type === 'ClassExpression') {
+      const m = d.init.body.body[0];
+      return m && m.value && m.value.body ? m.value.body : null;
+    }
+  }
+  return null;
+};
+
+/** Same extraction as `triggersFor`, anchoring every shadow in the wrapper. */
+const wrapperTriggersFor = (
+  rule: string,
+  probes: Array<{ testCase: FixtureCase; filename: string }>,
+): Reach => {
+  const reach: Reach = {
+    reported: 0,
+    actionable: 0,
+    enclosed: 0,
+    triggers: [],
+  };
+  for (const { testCase, filename } of probes) {
+    const code = testCase.code;
+    let msgs;
+    try {
+      msgs = linter.verify(code, cfgFor(rule, testCase), { filename });
+    } catch {
+      continue;
+    }
+    const mine = msgs.filter((m: any) => m.ruleId === PREFIX + rule);
+    if (mine.length) reach.reported++;
+    const actionable = mine.filter((m: any) => fixesOf(m).length);
+    if (!actionable.length) continue;
+    reach.actionable++;
+    const beforeParsed = parse(code, filename);
+    if (!beforeParsed) continue;
+    const body = wrapperBodyOf(beforeParsed.ast);
+    if (!body) continue;
+    reach.enclosed++;
+    const beforeCounts = nameCounts(beforeParsed.ast);
+    for (const m of actionable) {
+      for (const fix of fixesOf(m)) {
+        const patchedParsed = parse(applyFix(code, fix), filename);
+        if (!patchedParsed) continue;
+        const modAfter = moduleScope(
+          patchedParsed.scopeManager as any,
+        ).variables.map((v: any) => v.name);
+        for (const [name, n] of nameCounts(patchedParsed.ast)) {
+          if (n <= (beforeCounts.get(name) || 0)) continue;
+          if (!modAfter.includes(name)) continue;
+          reach.triggers.push({
+            testCase,
+            filename,
+            name,
+            injectAt: body.range[0] + 1,
+          });
+        }
+      }
+    }
+  }
+  return reach;
+};
+
+/**
+ * `await` belonging to the region itself, not to a function nested in it.
+ *
+ * The wrapper's own modifier is a rule input, and neither spelling is safe as a
+ * default: a plain wrapper puts top-level `await` where `await` is not an
+ * operator, while a blanket `async` one cannot be a React component, which
+ * silences every component-keyed rule. Choosing per fixture is what keeps the
+ * arm from manufacturing findings out of its own scaffolding.
+ */
+const regionNeedsAsync = (nodes: any[]): boolean => {
+  let found = false;
+  const visit = (n: any) => {
+    if (!n || typeof n.type !== 'string' || found) return;
+    if (n.type === 'AwaitExpression') {
+      found = true;
+      return;
+    }
+    if (n.type === 'ForOfStatement' && n.await) {
+      found = true;
+      return;
+    }
+    if (FN_TYPES.has(n.type)) return;
+    for (const k of Object.keys(n)) {
+      if (k === 'parent') continue;
+      const v = n[k];
+      if (Array.isArray(v)) v.forEach(visit);
+      else if (v && typeof v === 'object' && typeof v.type === 'string') {
+        visit(v);
+      }
+    }
+  };
+  nodes.forEach(visit);
+  return found;
+};
+
+/** Top-level forms illegal inside a function body (TS1184 / TS1235). */
+const isUnmovable = (node: any): boolean => {
+  if (node.declare === true) return true;
+  if (
+    node.type === 'ExportDefaultDeclaration' ||
+    node.type === 'ExportAllDeclaration' ||
+    node.type === 'TSExportAssignment' ||
+    node.type === 'TSImportEqualsDeclaration' ||
+    node.type === 'TSModuleDeclaration'
+  ) {
+    return true;
+  }
+  if (node.type === 'ExportNamedDeclaration') {
+    if (!node.declaration) return true;
+    if (node.declaration.declare === true) return true;
+  }
+  return false;
+};
+
+type WrapVariant = 'arrow' | 'class';
+
+type WrapResult =
+  | {
+      ok: true;
+      flat: string;
+      wrapped: string;
+      /** Byte spans of the inserted scaffolding, so a report ON it is visible. */
+      scaffolding: Array<[number, number]>;
+    }
+  | { ok: false; reason: string };
+
+/**
+ * Strips top-level `export ` (illegal in a function body), keeps imports at
+ * module level, and moves the remaining REGION — sliced as one span, so the
+ * comments between statements survive — into an enclosing block.
+ *
+ * `flat` is the export-stripped but still top-level text, and it is the control
+ * the wrapped variant is compared against: that attributes a report change to
+ * the nesting rather than to the keyword the wrap has to remove.
+ */
+const wrapFixture = (
+  code: string,
+  filename: string,
+  variant: WrapVariant,
+): WrapResult => {
+  if (WRAPPER_NAMES.some((n) => code.includes(n))) {
+    return { ok: false, reason: 'fixture already uses a wrapper name' };
+  }
+  const first = parse(code, filename);
+  if (!first) return { ok: false, reason: 'fixture does not parse' };
+  const body = (first.ast as any).body as any[];
+  if (!body.length) return { ok: false, reason: 'empty fixture' };
+  for (const node of body) {
+    if (isUnmovable(node)) {
+      return { ok: false, reason: `unmovable top-level ${node.type}` };
+    }
+  }
+
+  // Reverse order so each removal leaves the earlier ranges valid.
+  let flat = code;
+  for (let i = body.length - 1; i >= 0; i--) {
+    const node = body[i];
+    if (node.type !== 'ExportNamedDeclaration' || !node.declaration) continue;
+    flat = flat.slice(0, node.range[0]) + flat.slice(node.declaration.range[0]);
+  }
+
+  const stripped = parse(flat, filename);
+  if (!stripped) return { ok: false, reason: 'export strip broke the parse' };
+  const sbody = (stripped.ast as any).body as any[];
+  let lastImportEnd = 0;
+  let sawNonImport = false;
+  for (const node of sbody) {
+    if (node.type === 'ImportDeclaration') {
+      // An import after other statements cannot be hoisted without reordering.
+      if (sawNonImport) {
+        return { ok: false, reason: 'import interleaved with statements' };
+      }
+      lastImportEnd = node.range[1];
+    } else {
+      sawNonImport = true;
+    }
+  }
+  if (!sawNonImport)
+    return { ok: false, reason: 'nothing but imports to wrap' };
+
+  const head = flat.slice(0, lastImportEnd);
+  const region = flat.slice(lastImportEnd);
+  const asyncKeyword = regionNeedsAsync(
+    sbody.filter((n) => n.type !== 'ImportDeclaration'),
+  )
+    ? 'async '
+    : '';
+
+  const prefix =
+    variant === 'arrow'
+      ? `\nconst ProbeShell = ${asyncKeyword}() => {\n`
+      : `\nconst ProbeShell = class {\n  ${asyncKeyword}probeBody() {\n`;
+  const suffix = variant === 'arrow' ? `\n};\n` : `\n  }\n};\n`;
+  const wrapped = `${head}${prefix}${region}${suffix}`;
+
+  return {
+    ok: true,
+    flat,
+    wrapped,
+    scaffolding: [
+      [head.length, head.length + prefix.length],
+      [wrapped.length - suffix.length, wrapped.length],
+    ],
+  };
+};
+
+const idsOf = (msgs: any[], rule: string) =>
+  msgs
+    .filter((m) => m.ruleId === PREFIX + rule)
+    .map((m) => `${m.messageId || m.message}${m.fix ? '+fix' : ''}`)
+    .sort();
+
+const verifyOf = (rule: string, testCase: FixtureCase, filename: string) => {
+  try {
+    return linter.verify(testCase.code, cfgFor(rule, testCase), { filename });
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Validity as a DIFFERENTIAL checker run. A reparse does not see grammar errors
+ * — `declare` in a body is TS1184, a namespace in one is TS1235, and both parse
+ * — so the variant counts as valid only when it introduces no diagnostic CODE
+ * the flat control already carries. An ABSOLUTE count is useless here: fixtures
+ * are full of unresolved names (TS2304), which would reject every variant.
+ */
+const TS_OPTIONS = {
+  target: ts.ScriptTarget.ES2022,
+  jsx: ts.JsxEmit.Preserve,
+  experimentalDecorators: true,
+  skipLibCheck: true,
+  noEmit: true,
+  allowJs: true,
+};
+const baseHost = ts.createCompilerHost(TS_OPTIONS, true);
+/**
+ * Parsing the ~200 lib files dominates every program below and
+ * `createCompilerHost` does not cache across programs. A hand-rolled
+ * `noLib`/`noResolve` host is not the alternative: it leaves the checker
+ * without globals and THROWS rather than returning diagnostics, which would
+ * read as clean.
+ */
+const libCache = new Map<string, any>();
+const cachedLib = (f: string, ...rest: any[]) => {
+  if (libCache.has(f)) return libCache.get(f);
+  const sf = baseHost.getSourceFile(f, ...rest);
+  libCache.set(f, sf);
+  return sf;
+};
+
+const diagnosticCache = new Map<string, Map<number, number>>();
+
+const diagnosticCodesFor = (
+  text: string,
+  filename: string,
+): Map<number, number> => {
+  const name = filename.startsWith('/') ? filename : `/probe/${filename}`;
+  const key = `${name}\n${text}`;
+  const cached = diagnosticCache.get(key);
+  if (cached) return cached;
+  const sourceFile = ts.createSourceFile(
+    name,
+    text,
+    ts.ScriptTarget.ES2022,
+    true,
+    name.endsWith('.tsx')
+      ? ts.ScriptKind.TSX
+      : name.endsWith('.jsx')
+      ? ts.ScriptKind.JSX
+      : name.endsWith('.js')
+      ? ts.ScriptKind.JS
+      : ts.ScriptKind.TS,
+  );
+  const host = Object.create(baseHost);
+  host.getSourceFile = (f: string, ...rest: any[]) =>
+    f === name ? sourceFile : cachedLib(f, ...rest);
+  host.fileExists = (f: string) => f === name || baseHost.fileExists(f);
+  host.readFile = (f: string) => (f === name ? text : baseHost.readFile(f));
+  const program = ts.createProgram({
+    rootNames: [name],
+    options: TS_OPTIONS,
+    host,
+  });
+  if (program.getSourceFile(name) !== sourceFile) {
+    throw new Error(`program lost the probe file ${name}`);
+  }
+  const counts = new Map<number, number>();
+  for (const d of [
+    ...program.getSyntacticDiagnostics(sourceFile),
+    ...program.getSemanticDiagnostics(sourceFile),
+  ]) {
+    counts.set(d.code, (counts.get(d.code) || 0) + 1);
+  }
+  diagnosticCache.set(key, counts);
+  return counts;
+};
+
+/** Counted, never swallowed: an unvalidatable variant is not a valid one. */
+let validationErrors = 0;
+
+const introducedDiagnostics = (
+  base: string,
+  variant: string,
+  filename: string,
+): number[] | null => {
+  try {
+    const baseCodes = diagnosticCodesFor(base, filename);
+    const variantCodes = diagnosticCodesFor(variant, filename);
+    const introduced: number[] = [];
+    for (const [code, n] of variantCodes) {
+      if (n > (baseCodes.get(code) || 0)) introduced.push(code);
+    }
+    return introduced;
+  } catch {
+    validationErrors++;
+    return null;
+  }
+};
+
+type WrapCounters = {
+  /** Fixtures the rule reports on flat; only those can move the enclosure count. */
+  reporting: number;
+  wrappable: number;
+  droppedByExportStrip: number;
+  droppedByWrap: number;
+  droppedReportOnWrapper: number;
+  droppedInvalid: number;
+  droppedUnvalidatable: number;
+  neutral: number;
+  /** Reports on neutral wrapped variants that still anchor inside an import. */
+  importAnchored: number;
+};
+
+type NestedVariant = WrapCounters & {
+  reach: Reach;
+  wrapperReach: Reach;
+  probed: number;
+  captures: Capture[];
+};
+
+const importRangesOf = (ast: any) => {
+  const out: number[][] = [];
+  walkAst(ast, (n) => {
+    if (n.type === 'ImportDeclaration') out.push(n.range);
+  });
+  return out;
+};
+
+const runNestedVariant = (
+  rule: string,
+  variant: WrapVariant,
+  cases: FixtureCase[],
+): NestedVariant => {
+  const out: NestedVariant = {
+    reporting: 0,
+    wrappable: 0,
+    droppedByExportStrip: 0,
+    droppedByWrap: 0,
+    droppedReportOnWrapper: 0,
+    droppedInvalid: 0,
+    droppedUnvalidatable: 0,
+    neutral: 0,
+    importAnchored: 0,
+    reach: { reported: 0, actionable: 0, enclosed: 0, triggers: [] },
+    wrapperReach: { reported: 0, actionable: 0, enclosed: 0, triggers: [] },
+    probed: 0,
+    captures: [],
+  };
+  const probes: Array<{ testCase: FixtureCase; filename: string }> = [];
+
+  for (const testCase of cases) {
+    const filename = defaultFilenameFor(testCase);
+    const baseMsgs = verifyOf(rule, testCase, filename);
+    if (!baseMsgs) continue;
+    const baseIds = idsOf(baseMsgs, rule);
+    if (!baseIds.length) continue;
+    out.reporting++;
+
+    const wrap = wrapFixture(testCase.code, filename, variant);
+    if (!wrap.ok) continue;
+    out.wrappable++;
+
+    const flatCase: FixtureCase = { ...testCase, code: wrap.flat };
+    const flatMsgs = verifyOf(rule, flatCase, filename);
+    if (!flatMsgs || idsOf(flatMsgs, rule).join('|') !== baseIds.join('|')) {
+      out.droppedByExportStrip++;
+      continue;
+    }
+
+    const wrappedCase: FixtureCase = { ...testCase, code: wrap.wrapped };
+    const wrappedMsgs = verifyOf(rule, wrappedCase, filename);
+    if (
+      !wrappedMsgs ||
+      idsOf(wrappedMsgs, rule).join('|') !== baseIds.join('|')
+    ) {
+      out.droppedByWrap++;
+      continue;
+    }
+    const mine = wrappedMsgs.filter((m: any) => m.ruleId === PREFIX + rule);
+    /**
+     * A matching messageId multiset is NOT neutrality. On 44 `global-const-style`
+     * fixtures it matched exactly while the SUBJECT had swapped: the rule lost
+     * its report on the fixture's own const (the wrap took it out of module
+     * scope) and gained one renaming `ProbeShell` itself, one in and one out.
+     * Both gates, or the control certifies its own contamination (#1998).
+     */
+    if (
+      mine.some((m: any) => {
+        const off = offsetOf(wrap.wrapped, m.line, m.column);
+        return wrap.scaffolding.some(([a, b]) => off >= a && off < b);
+      })
+    ) {
+      out.droppedReportOnWrapper++;
+      continue;
+    }
+
+    const introduced = introducedDiagnostics(wrap.flat, wrap.wrapped, filename);
+    // `null` is "could not validate", which is not "valid": counted at its own
+    // skip so it can never read as zero from downstream.
+    if (introduced === null) {
+      out.droppedUnvalidatable++;
+      continue;
+    }
+    if (introduced.length) {
+      out.droppedInvalid++;
+      continue;
+    }
+
+    out.neutral++;
+    const wrappedParsed = parse(wrap.wrapped, filename);
+    if (wrappedParsed) {
+      const ranges = importRangesOf(wrappedParsed.ast);
+      for (const m of mine) {
+        const off = offsetOf(wrap.wrapped, m.line, m.column);
+        if (ranges.some(([a, b]) => off >= a && off < b)) out.importAnchored++;
+      }
+    }
+    probes.push({ testCase: wrappedCase, filename });
+  }
+
+  out.reach = triggersFor(rule, probes);
+  out.wrapperReach = wrapperTriggersFor(rule, probes);
+  const anchored = capturesFor(rule, out.reach.triggers);
+  const wrapped = capturesFor(rule, out.wrapperReach.triggers);
+  out.probed = anchored.probed + wrapped.probed;
+  out.captures = [...anchored.captures, ...wrapped.captures];
+  return out;
+};
+
+const WRAP_VARIANTS: WrapVariant[] = ['arrow', 'class'];
+
+type Nested = {
+  byVariant: Record<string, NestedVariant>;
+  wrappable: number;
+  neutral: number;
+  dropped: number;
+  enclosed: number;
+  importAnchored: number;
+  triggers: number;
+  probed: number;
+  captures: Capture[];
+};
+
+const runNested = (rule: string, cases: FixtureCase[]): Nested => {
+  const byVariant: Record<string, NestedVariant> = {};
+  for (const variant of WRAP_VARIANTS) {
+    byVariant[variant] = runNestedVariant(rule, variant, cases);
+  }
+  const all = Object.values(byVariant);
+  const sum = (pick: (v: NestedVariant) => number) =>
+    all.reduce((a, v) => a + pick(v), 0);
+  return {
+    byVariant,
+    wrappable: sum((v) => v.wrappable),
+    neutral: sum((v) => v.neutral),
+    dropped: sum(
+      (v) =>
+        v.droppedByExportStrip +
+        v.droppedByWrap +
+        v.droppedReportOnWrapper +
+        v.droppedInvalid +
+        v.droppedUnvalidatable,
+    ),
+    enclosed: sum((v) => v.reach.enclosed),
+    importAnchored: sum((v) => v.importAnchored),
+    triggers: sum(
+      (v) => v.reach.triggers.length + v.wrapperReach.triggers.length,
+    ),
+    probed: sum((v) => v.probed),
+    captures: all.flatMap((v) => v.captures),
+  };
+};
+
 const corpus = harvestFixtureCorpus();
 
 const transformingRules = Object.keys(plugin.rules)
@@ -452,6 +1022,8 @@ type RuleResult = {
   reach: Reach;
   probed: number;
   captures: Capture[];
+  /** Only for a rule the flat pass parks with no enclosure; see `runNested`. */
+  nested: Nested | null;
 };
 
 const results = new Map<string, RuleResult>();
@@ -494,21 +1066,62 @@ for (const rule of transformingRules) {
     );
   }
   const { captures, probed } = capturesFor(rule, reach.triggers);
+  /**
+   * The nesting perturbation runs for exactly the class it settles: a rule that
+   * transforms something but whose every report sits outside any function
+   * block. Scoping it that way is what keeps it derived rather than listed — a
+   * rule that later falls into the class is perturbed without being named —
+   * and holds the cost to the ~21 rules that can learn anything from it.
+   */
+  const nested =
+    reach.actionable > 0 && reach.enclosed === 0
+      ? runNested(rule, cases)
+      : null;
   results.set(rule, {
     cases: cases.length,
     nonTypeScript: declared.length - cases.length,
     reach,
-    probed,
-    captures,
+    probed: probed + (nested ? nested.probed : 0),
+    captures: [...captures, ...(nested ? nested.captures : [])],
+    nested,
   });
 }
 
 const totalProbed = [...results.values()].reduce((a, r) => a + r.probed, 0);
 const totalTriggers = [...results.values()].reduce(
-  (a, r) => a + r.reach.triggers.length,
+  (a, r) => a + r.reach.triggers.length + (r.nested ? r.nested.triggers : 0),
   0,
 );
 const rulesProbed = [...results.values()].filter((r) => r.probed > 0).length;
+
+const nestedResults = [...results.values()]
+  .map((r) => r.nested)
+  .filter((n): n is Nested => n !== null);
+const nestedVariants = nestedResults.flatMap((n) => Object.values(n.byVariant));
+const nestSum = (pick: (n: Nested) => number) =>
+  nestedResults.reduce((a, n) => a + pick(n), 0);
+const nestedTotals = {
+  rules: nestedResults.length,
+  neutral: nestSum((n) => n.neutral),
+  dropped: nestSum((n) => n.dropped),
+  /** Rules the wrap gives a function block at the report site. */
+  enclosureGained: nestedResults.filter((n) => n.enclosed > 0).length,
+  probedRules: nestedResults.filter((n) => n.probed > 0).length,
+  droppedByExportStrip: nestedVariants.reduce(
+    (a, v) => a + v.droppedByExportStrip,
+    0,
+  ),
+  droppedByWrap: nestedVariants.reduce((a, v) => a + v.droppedByWrap, 0),
+  droppedReportOnWrapper: nestedVariants.reduce(
+    (a, v) => a + v.droppedReportOnWrapper,
+    0,
+  ),
+  droppedInvalid: nestedVariants.reduce((a, v) => a + v.droppedInvalid, 0),
+  droppedUnvalidatable: nestedVariants.reduce(
+    (a, v) => a + v.droppedUnvalidatable,
+    0,
+  ),
+};
 
 /**
  * Why a rule's transforms were never put in front of a shadow. Derived from the
@@ -530,8 +1143,25 @@ const REASONS = {
     'is measurably silent under this harness, so it reports nothing here',
   neverReports: 'never reports on any of its own fixtures',
   noTransform: 'reports on its own fixtures but offers no fix or suggestion',
+  /**
+   * The four below split a single `noEnclosingBlock` that had covered 21 rules
+   * (#1998). "No function block encloses the report" is a fact about the
+   * FIXTURES for most of that class — they are simply written flat — and the
+   * nesting perturbation separates the two readings by wrapping each fixture and
+   * re-asking. 14 of the 21 moved off it: 13 gain a block once nested, and
+   * `enforce-mui-rounded-icons` is reached by the wrapper-anchored arm without
+   * gaining one. Of the 7 that remain, only `enforce-unique-cursor-headers`
+   * still answers with the original reason; the other 6 name a sharper
+   * obstruction that the flat pass could not distinguish from it.
+   */
+  noWrappableBody:
+    'reports on no fixture with a wrappable body — each is imports-only, or a top-level form illegal inside a function',
+  moduleScopeKeyed:
+    'is keyed on module scope, so wrapping its fixture changes its answer and no nested variant is neutral',
+  importAnchoredReport:
+    'anchors its report on an import, which stays at module level however its fixture is nested, so no shadow can stand',
   noEnclosingBlock:
-    'reports only where no function block encloses the site, so no shadow can stand',
+    'reports outside every function block even once its fixture is nested, so no shadow can stand',
   noModuleBoundReference:
     'emits no new reference to a module-scope-bound name, so no shadow can capture one',
   shadowNeverLanded:
@@ -542,7 +1172,7 @@ type Reason = typeof REASONS[keyof typeof REASONS];
 
 /** Only meaningful for a rule with no probe; the branches narrow toward one. */
 const unprobedReasonFor = (rule: string): Reason => {
-  const { cases, nonTypeScript, reach } = results.get(rule)!;
+  const { cases, nonTypeScript, reach, nested } = results.get(rule)!;
   if (cases === 0) {
     return nonTypeScript > 0 ? REASONS.nonTypeScript : REASONS.noFixtures;
   }
@@ -552,7 +1182,20 @@ const unprobedReasonFor = (rule: string): Reason => {
     if (silentWithoutProgramRuleNames.has(rule)) return REASONS.undrivable;
     return reach.reported === 0 ? REASONS.neverReports : REASONS.noTransform;
   }
-  if (reach.enclosed === 0) return REASONS.noEnclosingBlock;
+  // Flat, nothing encloses the report. The perturbation decides whether that is
+  // the rule speaking or its fixtures, and each branch below is a distinct
+  // measured obstruction rather than a restatement of the same one.
+  if (reach.enclosed === 0 && nested) {
+    if (nested.wrappable === 0) return REASONS.noWrappableBody;
+    if (nested.neutral === 0) return REASONS.moduleScopeKeyed;
+    if (nested.enclosed === 0) {
+      return nested.importAnchored > 0
+        ? REASONS.importAnchoredReport
+        : REASONS.noEnclosingBlock;
+    }
+    if (nested.triggers === 0) return REASONS.noModuleBoundReference;
+    return REASONS.shadowNeverLanded;
+  }
   if (reach.triggers.length === 0) return REASONS.noModuleBoundReference;
   // Triggers existed, so the injection step is the only thing left that can
   // have dropped them.
@@ -594,38 +1237,59 @@ const UNPROBED_RULES: Record<string, Reason> = {
   // accepts, so resolution is identical before and after (#1871).
   'no-usememo-for-pass-by-value': REASONS.noModuleBoundReference,
 
-  // Every report sits outside a function block — at module or class level,
-  // or in a concise arrow body — so there is nowhere to declare a shadow.
-  'enforce-date-ttime': REASONS.noEnclosingBlock,
-  'enforce-dynamic-firebase-imports': REASONS.noEnclosingBlock,
-  'enforce-firestore-rules-get-access': REASONS.noEnclosingBlock,
-  'enforce-m3-sentence-case': REASONS.noEnclosingBlock,
-  // `enforce-memoize-getters` is absent from this class deliberately (#1947):
-  // its corpus carries a class DECLARATION nested in a function whose getter is
-  // reported AND decorated, so one of its reports sits inside a function block
-  // and the probe below drives the rule for real.
-  'enforce-mui-rounded-icons': REASONS.noEnclosingBlock,
-  'enforce-snapshot-state-narrowing': REASONS.noEnclosingBlock,
+  /**
+   * The four classes below were ONE entry, `noEnclosingBlock`, covering all 21
+   * rules whose every report sits outside a function block. The nesting
+   * perturbation settled what each was really saying (#1998): for 13 of them
+   * the flatness belonged to the FIXTURES, which the wrap relocates, and 5 of
+   * those then reach a real shadow and left this list entirely —
+   * `enforce-mui-rounded-icons`, `enforce-snapshot-state-narrowing`,
+   * `prefer-clone-deep`, `prefer-fragment-component` and `prefer-next-dynamic`,
+   * each of which declines correctly under one.
+   *
+   * `enforce-memoize-getters` (#1947) and `require-memoize-jsx-returners`
+   * (#1950) are absent for a different reason again: their corpora carry class
+   * declarations nested in a function whose members are reported AND decorated,
+   * so the flat pass already drives them for real.
+   */
+
+  // Its report anchors on an ImportDeclaration, which the wrap deliberately
+  // leaves at module level, so nesting the fixture cannot enclose it. The fix
+  // still rewrites call sites INSIDE the wrapper, which the wrapper-anchored
+  // arm reaches — for these three it emits no module-bound reference there.
+  'enforce-dynamic-firebase-imports': REASONS.importAnchoredReport,
+  'use-custom-memo': REASONS.importAnchoredReport,
+  'use-custom-router': REASONS.importAnchoredReport,
+
+  // All 7 fixtures it reports on are nothing but an import list: there is no
+  // region to move, so the perturbation has no variant to offer it. Closing
+  // this needs a FIXTURE with a body, not a rewrite of one that has none.
+  'use-custom-link': REASONS.noWrappableBody,
+
+  // Keyed on module scope by design, so the wrap is not neutral for it at all:
+  // every one of its wrapped variants is dropped by a neutrality gate, and a
+  // finding taken from one would be about the probe rather than the rule.
+  'global-const-style': REASONS.moduleScopeKeyed,
+  'prefer-block-comments-for-declarations': REASONS.moduleScopeKeyed,
+
+  // Genuinely anchor-free: `reportMissingHeader` reports at `line 1, column 0`
+  // and the duplicate/split arms report on the file's leading comments, none of
+  // which any wrapper can enclose. This is the one rule of the 21 for which the
+  // original reason survives the perturbation unchanged.
   'enforce-unique-cursor-headers': REASONS.noEnclosingBlock,
-  'global-const-style': REASONS.noEnclosingBlock,
-  'jsdoc-above-field': REASONS.noEnclosingBlock,
-  'no-unnecessary-destructuring': REASONS.noEnclosingBlock,
-  'omit-index-html': REASONS.noEnclosingBlock,
-  'prefer-block-comments-for-declarations': REASONS.noEnclosingBlock,
-  'prefer-clone-deep': REASONS.noEnclosingBlock,
-  'prefer-fragment-component': REASONS.noEnclosingBlock,
-  'prefer-fragment-shorthand': REASONS.noEnclosingBlock,
-  'prefer-getter-over-parameterless-method': REASONS.noEnclosingBlock,
-  'prefer-next-dynamic': REASONS.noEnclosingBlock,
-  // `require-memoize-jsx-returners` is absent from this class deliberately
-  // (#1950): its corpus carries class DECLARATIONS nested in a function and in
-  // a class expression's method whose members are reported AND decorated, so
-  // its reports no longer all sit at class level and the probe below drives the
-  // rule for real.
-  'sync-onwrite-name-func': REASONS.noEnclosingBlock,
-  'use-custom-link': REASONS.noEnclosingBlock,
-  'use-custom-memo': REASONS.noEnclosingBlock,
-  'use-custom-router': REASONS.noEnclosingBlock,
+
+  // Nested, their reports DO land in a function block, and the fix still emits
+  // no reference for a shadow to capture — the same healthy answer as the
+  // majority below, now measured rather than masked by a flat fixture.
+  'enforce-date-ttime': REASONS.noModuleBoundReference,
+  'enforce-firestore-rules-get-access': REASONS.noModuleBoundReference,
+  'enforce-m3-sentence-case': REASONS.noModuleBoundReference,
+  'jsdoc-above-field': REASONS.noModuleBoundReference,
+  'no-unnecessary-destructuring': REASONS.noModuleBoundReference,
+  'omit-index-html': REASONS.noModuleBoundReference,
+  'prefer-fragment-shorthand': REASONS.noModuleBoundReference,
+  'prefer-getter-over-parameterless-method': REASONS.noModuleBoundReference,
+  'sync-onwrite-name-func': REASONS.noModuleBoundReference,
 
   // The healthy majority: these fixers reorder, rename in place, delete a
   // wrapper or rewrite an import specifier, and emit no reference at all.
@@ -706,6 +1370,16 @@ console.log(
       `${totalTriggers} emitted references`,
     `  corpus: ${corpus.totalCases} cases from ${corpus.suitesUsed} suites, ` +
       `${corpus.filesLoaded} files loaded, ${corpus.failures.length} failed`,
+    `  nesting perturbation: ${nestedTotals.rules} rules wrapped, ` +
+      `${nestedTotals.enclosureGained} gain an enclosing block, ` +
+      `${nestedTotals.probedRules} reach a shadow; ` +
+      `${nestedTotals.neutral} variants neutral, ${nestedTotals.dropped} ` +
+      `dropped (strip ${nestedTotals.droppedByExportStrip}, wrap ` +
+      `${nestedTotals.droppedByWrap}, on-wrapper ` +
+      `${nestedTotals.droppedReportOnWrapper}, invalid ` +
+      `${nestedTotals.droppedInvalid}, unvalidatable ` +
+      `${nestedTotals.droppedUnvalidatable}), ${validationErrors} ` +
+      `validation errors`,
     `  unprobed (${
       Object.keys(observedUnprobed).length
     }), each with its reason:`,
@@ -731,8 +1405,53 @@ describe('fixers must not emit a reference an inner shadow captures', () => {
     expect(rulesProbed).toBe(
       transformingRules.length - Object.keys(UNPROBED_RULES).length,
     );
-    expect(totalProbed).toBeGreaterThanOrEqual(400);
+    expect(totalProbed).toBeGreaterThanOrEqual(1300);
     expect(corpus.failures).toEqual([]);
+  });
+
+  /**
+   * The nesting perturbation's own non-vacuity. Its whole contribution is
+   * REACH — it finds no defect today — so nothing downstream would notice it
+   * degrading to zero wrapped fixtures, and the guard would go on passing while
+   * asking 21 rules nothing at all.
+   */
+  it('the nesting perturbation reaches a shadow it could not reach flat', () => {
+    expect(nestedTotals.rules).toBeGreaterThanOrEqual(21);
+    expect(nestedTotals.enclosureGained).toBeGreaterThanOrEqual(13);
+    expect(nestedTotals.probedRules).toBeGreaterThanOrEqual(5);
+    expect(nestedTotals.neutral).toBeGreaterThanOrEqual(980);
+    // An unvalidatable variant is not a valid one. Both zeros are trustworthy
+    // only because the counter sits at its own skip rather than downstream.
+    expect(validationErrors).toBe(0);
+    expect(nestedTotals.droppedUnvalidatable).toBe(0);
+    // Every gate must be observed removing something: a control that never
+    // drops anything is indistinguishable from an absent one.
+    expect(nestedTotals.droppedByExportStrip).toBeGreaterThanOrEqual(16);
+    expect(nestedTotals.droppedByWrap).toBeGreaterThanOrEqual(190);
+    expect(nestedTotals.droppedReportOnWrapper).toBeGreaterThanOrEqual(70);
+    expect(nestedTotals.droppedInvalid).toBeGreaterThanOrEqual(6);
+  });
+
+  /**
+   * Why BOTH wrapper spellings ship, on the rule that proves it.
+   *
+   * Under the arrow wrapper `global-const-style` simply falls silent — its
+   * subject leaves module scope — and the messageId multiset gate catches that.
+   * Under the class wrapper the multiset MATCHES, because the report it loses on
+   * the fixture's own const is replaced one-for-one by a report renaming
+   * `ProbeShell` itself: same shape, different subject. Only the second gate
+   * sees it, and only this variant makes the second gate fire. Ship one variant
+   * and that gate becomes decoration (#1998).
+   */
+  it('keeps both neutrality gates load-bearing, not just the multiset one', () => {
+    const { byVariant } = results.get('global-const-style')!.nested!;
+    expect(byVariant.arrow.droppedByWrap).toBeGreaterThanOrEqual(65);
+    expect(byVariant.arrow.droppedReportOnWrapper).toBe(0);
+    expect(byVariant.class.droppedReportOnWrapper).toBeGreaterThanOrEqual(40);
+    // Neither variant may leave it a usable fixture; a single survivor here
+    // would be one the probe had silently swapped the subject of.
+    expect(byVariant.arrow.neutral).toBe(0);
+    expect(byVariant.class.neutral).toBe(0);
   });
 
   /**
@@ -832,6 +1551,36 @@ const CONTROL_CASE: FixtureCase = {
   bucket: 'valid',
 };
 
+/**
+ * The same two controls again, but written FLAT — deliberately with no function
+ * anywhere, so the report site has nothing enclosing it and the report-anchored
+ * arm cannot reach it at all. Running them through `wrapFixture` is what proves
+ * the perturbation MANUFACTURES the reach it claims to, rather than the 5 newly
+ * probed rules having been reachable all along by some other route.
+ */
+const FLAT_CONTROL_CASE: FixtureCase = {
+  code: "import { x } from './x';\nconst out = render(x);\n",
+  tester: 'ruleTesterTs',
+  language: 'ts',
+  origin: 'planted nesting control',
+  bucket: 'valid',
+};
+
+const nestedControlOutcome = (name: string, variant: WrapVariant) => {
+  const flat = triggersFor(name, [
+    { testCase: FLAT_CONTROL_CASE, filename: 'file.ts' },
+  ]);
+  const wrap = wrapFixture(FLAT_CONTROL_CASE.code, 'file.ts', variant);
+  if (!wrap.ok) throw new Error(`control unwrappable: ${wrap.reason}`);
+  const wrapped = triggersFor(name, [
+    {
+      testCase: { ...FLAT_CONTROL_CASE, code: wrap.wrapped },
+      filename: 'file.ts',
+    },
+  ]);
+  return { flat, wrapped, ...capturesFor(name, wrapped.triggers) };
+};
+
 describe('the shadow-capture detector is load-bearing', () => {
   it.each(SHADOW_CONTROLS.map((c) => [c.name, c.expectCaptures] as const))(
     'control %s yields %s capture(s)',
@@ -845,6 +1594,28 @@ describe('the shadow-capture detector is load-bearing', () => {
       const { captures, probed } = capturesFor(name, reach.triggers);
       expect(probed).toBeGreaterThan(0);
       expect(captures.length).toBe(expectCaptures);
+    },
+  );
+
+  it.each(
+    SHADOW_CONTROLS.flatMap((c) =>
+      (['arrow', 'class'] as WrapVariant[]).map(
+        (v) => [c.name, v, c.expectCaptures] as const,
+      ),
+    ),
+  )(
+    'control %s under the %s wrapper: flat has no enclosure, wrapped yields %s capture(s)',
+    (name, variant, expectCaptures) => {
+      const o = nestedControlOutcome(name, variant);
+      // Flat, the site is at module level and there is nothing to probe.
+      expect(o.flat.enclosed).toBe(0);
+      expect(o.flat.triggers.length).toBe(0);
+      // Wrapped, the same fixture reaches an injection...
+      expect(o.wrapped.enclosed).toBeGreaterThan(0);
+      expect(o.probed).toBeGreaterThan(0);
+      // ...and the detector still tells the two polarities apart there, so the
+      // reach the perturbation adds is reach that can still report a defect.
+      expect(o.captures.length).toBe(expectCaptures);
     },
   );
 
