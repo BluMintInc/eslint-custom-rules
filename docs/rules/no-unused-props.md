@@ -24,6 +24,15 @@ Neither is nesting. A component declared inside another component — directly, 
 a hook callback, or in any block within the body — states its own contract, and
 so does the component holding it. Every level is checked on its own.
 
+Neither is a wrapper. `memo`, `React.memo` and `forwardRef` hand the props
+straight to the function they wrap, so a wrapped component is checked exactly
+like a bare one. That covers nested wrappers (`memo(forwardRef(...))`) and the
+comparator second argument (`memo(Widget, compareDeeply('id'))`). Since
+`require-memo` rewrites components into `memo(...)`, most components reach this
+rule wrapped. A wrapper argument that only names a component
+(`memo(WidgetUnmemoized)`) is answered by the declaration holding the function,
+so each unused prop is reported once rather than once per re-wrapping binding.
+
 ### Examples of **incorrect** code for this rule:
 
 The props type may be carried either by the parameter annotation or by an
@@ -66,6 +75,17 @@ type PanelProps = {
 export function Panel({ title }: PanelProps) {
   return <h1>{title}</h1>;
 }
+```
+
+```tsx
+import { memo } from 'react';
+
+type WidgetProps = {
+  title: string;
+  subtitle: string; // subtitle is declared but never read or forwarded
+};
+
+const Widget = memo(({ title }: WidgetProps) => <h1>{title}</h1>);
 ```
 
 ### Examples of **correct** code for this rule:
@@ -122,6 +142,24 @@ export function Panel({ title, subtitle }: PanelProps) {
     </div>
   );
 }
+```
+
+```tsx
+import { forwardRef, memo } from 'react';
+
+type WidgetProps = {
+  title: string;
+  subtitle: string;
+};
+
+const Widget = memo(
+  forwardRef(({ title, subtitle }: WidgetProps, ref) => (
+    <div ref={ref}>
+      <h1>{title}</h1>
+      <h2>{subtitle}</h2>
+    </div>
+  )),
+);
 ```
 
 ## When Not To Use It

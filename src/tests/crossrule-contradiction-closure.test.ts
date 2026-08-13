@@ -412,6 +412,16 @@ const KNOWN_DIVERGENT: Record<string, Exemption> = {
       'PIPELINE: the fixtures declare `interface` service shapes to carry the method names under test; `--fix` converts all 39.',
     cases: { preferType: 39 },
   },
+  'no-unused-props::enforce-exported-function-types': {
+    reason:
+      'PIPELINE: two fixtures export a component whose in-file `Props` type stays unexported — the props CONTRACT is what they display, and who may import it is beside their point; `--fix` exports the type on both and each ends silent under BOTH rules (measured).',
+    cases: { missingExportedPropsType: 2 },
+  },
+  'no-unused-props::require-memo': {
+    reason:
+      "PIPELINE: the fixtures declare unmemoized components to display the props contract under test; the composed `--fix` wraps 48 of 56 in `memo(...)` and both rules end silent (measured). Reading THROUGH the wrapper is what makes that true of this rule: before #2004 a `memo(...)` initializer matched nothing here, so the sibling's own fix hid the component from it. The remaining 8 are the shapes `require-memo` declines to fix — an `FC`-annotated declarator and a multi-declarator statement, plus their nested twins — and hand-memoizing each (`const C: FC<P> = memo(...)`, `const C = memo(...), LIMIT = 2`) is clean under both (measured, all 8).",
+    cases: { requireMemo: 56 },
+  },
   'optimize-object-boolean-conditions::enforce-boolean-naming-prefixes': {
     reason:
       'INCIDENTAL: the fixtures name a boolean `loading` to display the condition under test; `isLoading` is clean under both (measured).',
