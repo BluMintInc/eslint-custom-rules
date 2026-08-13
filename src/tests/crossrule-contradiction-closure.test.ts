@@ -224,8 +224,8 @@ const KNOWN_DIVERGENT: Record<string, Exemption> = {
   },
   'enforce-exported-function-types::require-memo': {
     reason:
-      'PIPELINE: the fixtures export unmemoized components to exercise the props-type check; `--fix` wraps 10 of 12 in `memo()`, and the `forwardRef`/named-function pair is memoizable by hand.',
-    cases: { requireMemo: 12 },
+      'PIPELINE: the fixtures export unmemoized components to exercise the props-type check; `--fix` wraps 10 of 12 in `memo()`, and the `forwardRef`/named-function pair is memoizable by hand. 12 -> 15 with the #2006 fixtures, which are three spellings of one shape: a component default-exported by NAME (`const Banner = ...; export default Banner;`, its `function Banner` twin, and the named-plus-default pair). They are written unmemoized on purpose — the memoized spelling is the split `require-memo` emits for a default-exported declaration, which the same fix already covers in its own fixtures, so the unwrapped spelling is the control proving the identifier hop does not depend on a wrapper. The composed `--fix` wraps all three in one pass and both rules end silent on every one (measured), and the wrapped result is exactly that split shape, so memoizing them keeps the props check alive rather than trading it away.',
+    cases: { requireMemo: 15 },
   },
   'enforce-firestore-doc-ref-generic::no-explicit-return-type': {
     reason:

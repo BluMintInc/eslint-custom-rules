@@ -671,6 +671,83 @@ ruleTesterJsx.run(
         });
       `,
       },
+      // Valid case: the split default export `require-memo` emits, whose props
+      // type is exported
+      {
+        code: `
+        import { memo } from '../util/memo';
+
+        export type BannerProps = {
+          message: string;
+        };
+
+        const Banner = memo(function BannerUnmemoized({ message }: BannerProps) {
+          return <div>{message}</div>;
+        });
+        export default Banner;
+      `,
+      },
+      // Valid case: the split default export with an imported props type, which
+      // is already available to consumers
+      {
+        code: `
+        import { memo } from '../util/memo';
+        import { BannerProps } from './types';
+
+        const Banner = memo(function BannerUnmemoized({ message }: BannerProps) {
+          return <div>{message}</div>;
+        });
+        export default Banner;
+      `,
+      },
+      // Valid case: a default-exported identifier that names an import, whose
+      // props type is declared in another module
+      {
+        code: `
+        import { Banner } from './Banner';
+
+        export default Banner;
+      `,
+      },
+      // Valid case: the split shape around an imported identifier, which
+      // resolves to no local declaration
+      {
+        code: `
+        import { memo } from '../util/memo';
+        import { BannerUnmemoized } from './BannerUnmemoized';
+
+        const Banner = memo(BannerUnmemoized);
+        export default Banner;
+      `,
+      },
+      // Valid case: the split shape on a lowercase binding, which the
+      // component-name condition excludes exactly as it does for declarations
+      {
+        code: `
+        import { memo } from '../util/memo';
+
+        type ComputeInput = {
+          value: number;
+        };
+
+        const compute = memo(function computeUnmemoized(input: ComputeInput) {
+          return input.value * 2;
+        });
+        export default compute;
+      `,
+      },
+      // Valid case: a default-exported identifier holding no function exposes
+      // no parameter list
+      {
+        code: `
+        type BannerProps = {
+          message: string;
+        };
+
+        const Banner = createBanner<BannerProps>();
+        export default Banner;
+      `,
+      },
     ],
     invalid: [
       // Invalid case: non-exported type with exported function
@@ -1808,6 +1885,244 @@ ruleTesterJsx.run(
             messageId: 'missingExportedPropsType',
             data: { typeName: 'BannerProps' },
           },
+          {
+            messageId: 'missingExportedPropsType',
+            data: { typeName: 'BannerProps' },
+          },
+        ],
+      },
+      // Invalid case: the split default export `require-memo` emits for a
+      // default-exported declaration, spelled as its fixer writes it
+      {
+        code: `
+        import { memo } from '../util/memo';
+
+        type BannerProps = {
+          message: string;
+        };
+
+        const Banner = memo(function BannerUnmemoized({ message }: BannerProps) {
+          return <div>{message}</div>;
+        });
+        export default Banner;
+      `,
+        output: `
+        import { memo } from '../util/memo';
+
+        export type BannerProps = {
+          message: string;
+        };
+
+        const Banner = memo(function BannerUnmemoized({ message }: BannerProps) {
+          return <div>{message}</div>;
+        });
+        export default Banner;
+      `,
+        errors: [
+          {
+            messageId: 'missingExportedPropsType',
+            data: { typeName: 'BannerProps' },
+          },
+        ],
+      },
+      // Invalid case: the split default export around an arrow, where the
+      // default-exported binding is the only name the component has
+      {
+        code: `
+        import { memo } from '../util/memo';
+
+        type BannerProps = {
+          message: string;
+        };
+
+        const Banner = memo(({ message }: BannerProps) => <div>{message}</div>);
+        export default Banner;
+      `,
+        output: `
+        import { memo } from '../util/memo';
+
+        export type BannerProps = {
+          message: string;
+        };
+
+        const Banner = memo(({ message }: BannerProps) => <div>{message}</div>);
+        export default Banner;
+      `,
+        errors: [
+          {
+            messageId: 'missingExportedPropsType',
+            data: { typeName: 'BannerProps' },
+          },
+        ],
+      },
+      // Invalid case: the split default export of nested wrappers, where the
+      // ref parameter stays outside the props contract
+      {
+        code: `
+        import { forwardRef } from 'react';
+        import { memo } from '../util/memo';
+
+        type BannerProps = {
+          message: string;
+        };
+
+        const Banner = memo(
+          forwardRef(function BannerUnmemoized(
+            { message }: BannerProps,
+            ref: Ref<HTMLDivElement>,
+          ) {
+            return <div ref={ref}>{message}</div>;
+          }),
+        );
+        export default Banner;
+      `,
+        output: `
+        import { forwardRef } from 'react';
+        import { memo } from '../util/memo';
+
+        export type BannerProps = {
+          message: string;
+        };
+
+        const Banner = memo(
+          forwardRef(function BannerUnmemoized(
+            { message }: BannerProps,
+            ref: Ref<HTMLDivElement>,
+          ) {
+            return <div ref={ref}>{message}</div>;
+          }),
+        );
+        export default Banner;
+      `,
+        errors: [
+          {
+            messageId: 'missingExportedPropsType',
+            data: { typeName: 'BannerProps' },
+          },
+        ],
+      },
+      // Invalid case: the split default export whose wrapper argument names a
+      // local declaration, which is two hops from the export
+      {
+        code: `
+        import { memo } from '../util/memo';
+
+        type BannerProps = {
+          message: string;
+        };
+
+        function BannerUnmemoized({ message }: BannerProps) {
+          return <div>{message}</div>;
+        }
+
+        const Banner = memo(BannerUnmemoized);
+        export default Banner;
+      `,
+        output: `
+        import { memo } from '../util/memo';
+
+        export type BannerProps = {
+          message: string;
+        };
+
+        function BannerUnmemoized({ message }: BannerProps) {
+          return <div>{message}</div>;
+        }
+
+        const Banner = memo(BannerUnmemoized);
+        export default Banner;
+      `,
+        errors: [
+          {
+            messageId: 'missingExportedPropsType',
+            data: { typeName: 'BannerProps' },
+          },
+        ],
+      },
+      // Invalid case: an unwrapped component default-exported by name, which is
+      // the same program as `export default function Banner(...)`
+      {
+        code: `
+        type BannerProps = {
+          message: string;
+        };
+
+        const Banner = ({ message }: BannerProps) => <div>{message}</div>;
+        export default Banner;
+      `,
+        output: `
+        export type BannerProps = {
+          message: string;
+        };
+
+        const Banner = ({ message }: BannerProps) => <div>{message}</div>;
+        export default Banner;
+      `,
+        errors: [
+          {
+            messageId: 'missingExportedPropsType',
+            data: { typeName: 'BannerProps' },
+          },
+        ],
+      },
+      // Invalid case: a declaration that is both named- and default-exported
+      // reports once, since both paths land on the same annotation
+      {
+        code: `
+        type BannerProps = {
+          message: string;
+        };
+
+        export function Banner({ message }: BannerProps) {
+          return <div>{message}</div>;
+        }
+
+        export default Banner;
+      `,
+        output: `
+        export type BannerProps = {
+          message: string;
+        };
+
+        export function Banner({ message }: BannerProps) {
+          return <div>{message}</div>;
+        }
+
+        export default Banner;
+      `,
+        errors: [
+          {
+            messageId: 'missingExportedPropsType',
+            data: { typeName: 'BannerProps' },
+          },
+        ],
+      },
+      // Invalid case: a component declaration default-exported by name, whose
+      // declaration carries no `export` of its own
+      {
+        code: `
+        type BannerProps = {
+          message: string;
+        };
+
+        function Banner({ message }: BannerProps) {
+          return <div>{message}</div>;
+        }
+
+        export default Banner;
+      `,
+        output: `
+        export type BannerProps = {
+          message: string;
+        };
+
+        function Banner({ message }: BannerProps) {
+          return <div>{message}</div>;
+        }
+
+        export default Banner;
+      `,
+        errors: [
           {
             messageId: 'missingExportedPropsType',
             data: { typeName: 'BannerProps' },

@@ -118,6 +118,52 @@ function unwrapComponentFunction(
   return undefined;
 }
 
+/**
+ * Resolves the component a default export ships.
+ *
+ * `require-memo` cannot rewrite `export default function Banner(props: P)` in
+ * place, since `export default const Banner = memo(...)` is a syntax error, so
+ * it splits the declaration from the export instead:
+ *
+ * ```
+ * const Banner = memo(function BannerUnmemoized(props: P) {...});
+ * export default Banner;
+ * ```
+ *
+ * The exported expression is then a bare identifier, and the component it
+ * stands for is one hop away on a declaration carrying no `export` of its own —
+ * invisible to every other visitor here.
+ *
+ * Following a bare identifier stays confined to the default export, where the
+ * named declaration IS the component this module ships. The named form
+ * `export const Banner = Other` re-exports a value whose props are the other
+ * declaration's concern, and an identifier belonging to another module resolves
+ * to nothing either way.
+ */
+function unwrapDefaultExportComponent(
+  declaration: TSESTree.Node,
+  resolveComponent: ComponentResolver,
+): UnwrappedComponent | undefined {
+  if (declaration.type !== AST_NODE_TYPES.Identifier) {
+    return unwrapComponentFunction(declaration, resolveComponent);
+  }
+
+  // The exported name counts as already followed, so a declaration naming
+  // itself (`const Banner = memo(Banner)`) terminates on the hop back.
+  const component = unwrapComponentFunction(
+    resolveComponent(declaration.name),
+    resolveComponent,
+    false,
+    new Set([declaration.name]),
+  );
+  if (!component) return undefined;
+
+  return {
+    ...component,
+    resolvedName: component.resolvedName ?? declaration.name,
+  };
+}
+
 export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
   name: 'enforce-exported-function-types',
   meta: {
@@ -922,9 +968,10 @@ export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
 
       // `export default memo(function Banner(props: P) {...})` mirrors the
       // `export default function Banner(props: P)` form the declaration
-      // visitors already cover.
+      // visitors already cover, as does `export default Banner` naming either
+      // of them on a separate declaration.
       ExportDefaultDeclaration(node) {
-        const component = unwrapComponentFunction(
+        const component = unwrapDefaultExportComponent(
           node.declaration,
           findModuleScopeDeclaration,
         );
