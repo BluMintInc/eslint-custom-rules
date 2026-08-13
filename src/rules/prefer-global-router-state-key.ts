@@ -170,6 +170,20 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
     // Track re-exports and variable assignments
     const variableAssignments = new Map<string, TSESTree.Node>();
 
+    /**
+     * Names whose declaration leaves them holding `undefined` — `let key;` and
+     * `let key = undefined;` alike. Both falsy and nullish, which is what makes
+     * a later `||=`/`??=` onto one of them assign unconditionally.
+     */
+    const declaredUndefined = new Set<string>();
+
+    /** Declarations and assignments seen per name, to bound the above to the provable case. */
+    const declarationCounts = new Map<string, number>();
+    const assignmentCounts = new Map<string, number>();
+
+    const isUndefinedIdentifier = (node: TSESTree.Node): boolean =>
+      node.type === AST_NODE_TYPES.Identifier && node.name === 'undefined';
+
     const validQueryKeySources = new Set<string>([
       'util/routing/queryKeys',
       'constants',
@@ -574,18 +588,49 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
 
       // Track variable declarations that might derive from query key constants
       VariableDeclarator(node: TSESTree.VariableDeclarator) {
-        if (node.id.type === AST_NODE_TYPES.Identifier && node.init) {
-          variableAssignments.set(node.id.name, node.init);
+        if (node.id.type !== AST_NODE_TYPES.Identifier) return;
+        const { name } = node.id;
+        declarationCounts.set(name, (declarationCounts.get(name) ?? 0) + 1);
+        if (node.init) {
+          variableAssignments.set(name, node.init);
+        }
+        if (!node.init || isUndefinedIdentifier(node.init)) {
+          declaredUndefined.add(name);
         }
       },
 
       // Track assignment expressions
       AssignmentExpression(node: TSESTree.AssignmentExpression) {
+        if (node.left.type !== AST_NODE_TYPES.Identifier) return;
+        const { name } = node.left;
+        const assignmentCount = (assignmentCounts.get(name) ?? 0) + 1;
+        assignmentCounts.set(name, assignmentCount);
+
+        // Only a plain `=` makes the right-hand side the variable's value in
+        // general. A compound assignment leaves the prior value reachable
+        // (`key ||= K` is the old key OR K), so recording the operand would
+        // launder an unapproved key into an approved one.
+        if (node.operator === '=') {
+          variableAssignments.set(name, node.right);
+          return;
+        }
+
+        // The exception is a `||=`/`??=` onto a variable still holding
+        // `undefined`, which is both falsy and nullish: the assignment always
+        // happens, so the operand IS the value. A single declaration and a
+        // single assignment are what keep that provable — a second assignment
+        // anywhere puts a prior value back in play. `+=` is excluded because it
+        // concatenates onto `undefined` and yields neither operand.
+        //
+        // The operand is recorded rather than exempted, so it still has to be
+        // an approved constant to pass.
         if (
-          node.left.type === AST_NODE_TYPES.Identifier &&
-          node.operator === '='
+          (node.operator === '||=' || node.operator === '??=') &&
+          declaredUndefined.has(name) &&
+          declarationCounts.get(name) === 1 &&
+          assignmentCount === 1
         ) {
-          variableAssignments.set(node.left.name, node.right);
+          variableAssignments.set(name, node.right);
         }
       },
 

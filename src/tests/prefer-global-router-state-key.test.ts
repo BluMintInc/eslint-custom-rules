@@ -2399,3 +2399,97 @@ ruleTesterJsx.run(
     })),
   },
 );
+
+// ------------------------------------------------------------------
+// Issue #2001: the mirror of enforce-querykey-ts's undefined-held table.
+//
+// A `||=`/`??=` onto a variable that still holds `undefined` ALWAYS assigns —
+// `undefined` is both falsy and nullish — so the operand provably IS the key.
+// Both rules reported it, which #1999 did not cause: this rule has always
+// reported here, and #1999 brought its sibling into agreement on the
+// conditional cases before this one was settled.
+//
+// Pinning the table on both sides is what keeps the pair from drifting apart
+// again on one side only (#1714, #1832/#1833, #1840/#1842, #1999). The
+// crossrule-contradiction guard measures that directly: fixing one rule alone
+// moved this pair's disagreement from 12 fixtures to 16.
+// ------------------------------------------------------------------
+const undefinedHeldKeyCode = (declaration: string, assignments: string) =>
+  `import { QUERY_KEY_PLAYBACK_ID } from 'src/util/routing/queryKeys';
+function Component() {
+  ${declaration}
+${assignments}
+  const [playbackId] = useRouterState({ key });
+  return <div>{playbackId}</div>;
+}
+`;
+
+ruleTesterJsx.run(
+  'prefer-global-router-state-key',
+  preferGlobalRouterStateKey,
+  {
+    valid: [
+      {
+        name: '`let key;` then `||=` always assigns, so the constant IS the key',
+        filename: '/repo/src/components/Widget.tsx',
+        code: undefinedHeldKeyCode(
+          'let key;',
+          '  key ||= QUERY_KEY_PLAYBACK_ID;',
+        ),
+      },
+      {
+        name: '`let key;` then `??=` always assigns, so the constant IS the key',
+        filename: '/repo/src/components/Widget.tsx',
+        code: undefinedHeldKeyCode(
+          'let key;',
+          '  key ??= QUERY_KEY_PLAYBACK_ID;',
+        ),
+      },
+      {
+        name: 'an explicit `= undefined` initializer holds undefined just the same (`||=`)',
+        filename: '/repo/src/components/Widget.tsx',
+        code: undefinedHeldKeyCode(
+          'let key = undefined;',
+          '  key ||= QUERY_KEY_PLAYBACK_ID;',
+        ),
+      },
+      {
+        name: 'an explicit `= undefined` initializer holds undefined just the same (`??=`)',
+        filename: '/repo/src/components/Widget.tsx',
+        code: undefinedHeldKeyCode(
+          'let key = undefined;',
+          '  key ??= QUERY_KEY_PLAYBACK_ID;',
+        ),
+      },
+    ],
+    invalid: [
+      {
+        name: '`+=` onto undefined concatenates, yielding neither operand',
+        filename: '/repo/src/components/Widget.tsx',
+        code: undefinedHeldKeyCode(
+          'let key;',
+          '  key += QUERY_KEY_PLAYBACK_ID;',
+        ),
+        errors: [{ messageId: 'invalidQueryKeySource' as const }],
+        output: null,
+      },
+      {
+        name: 'a prior `=` puts the unapproved value back in play, so `||=` is conditional again',
+        filename: '/repo/src/components/Widget.tsx',
+        code: undefinedHeldKeyCode(
+          'let key;',
+          "  key = 'playback-id';\n  key ||= QUERY_KEY_PLAYBACK_ID;",
+        ),
+        errors: [{ messageId: 'invalidQueryKeySource' as const }],
+        output: null,
+      },
+      {
+        name: 'the operand is still validated: an unapproved literal reports',
+        filename: '/repo/src/components/Widget.tsx',
+        code: undefinedHeldKeyCode('let key;', "  key ||= 'playback-id';"),
+        errors: [{ messageId: 'invalidQueryKeySource' as const }],
+        output: null,
+      },
+    ],
+  },
+);
