@@ -2,6 +2,7 @@ import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 import { ASTHelpers } from '../utils/ASTHelpers';
 import { createSuppressionChecker } from '../utils/disableDirectives';
+import { encodesTypeMarker } from '../utils/hungarianNaming';
 import {
   importInsertionAnchor,
   insertAtImportAnchor,
@@ -97,9 +98,48 @@ function getLastPropertyName(expr: TSESTree.Expression): string | null {
   return null;
 }
 
+/**
+ * The name used when the base contributes nothing spellable. Free of any type
+ * marker by construction, and the concept the memo actually stands for — the
+ * hash of the dependency's CONTENT, which is what depending on `.length`
+ * failed to track.
+ */
+const BASE_FREE_HASH_NAME = 'contentHash';
+
+function capitalize(name: string): string {
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
+
+/**
+ * Names for the memo binding, in descending order of how much of the base they
+ * keep. `no-hungarian` ships as an error and is NOT fixable, so a name it
+ * rejects turns this fixer's work into a manual rename in a file that was clean
+ * beforehand (#1997) — every candidate is therefore checked against the same
+ * predicate that rule applies, and the first acceptable one wins.
+ *
+ * Which candidate that is follows from what `no-hungarian` rejects:
+ *
+ * - `<base>Hash` reads as the domain concept for almost every base and is the
+ *   preferred spelling.
+ * - A single-letter `b`/`i` base makes `bHash`/`iHash` look like a Hungarian
+ *   type prefix (b=boolean, i=integer) glued to a capital. `hashOf<Base>` says
+ *   the same thing with the base out of the leading position.
+ * - A base that IS a type word or its abbreviation (`obj`, `arr`, `str`,
+ *   `array`, `number`, ...) taints every name that carries it as a segment, so
+ *   no base-preserving candidate can succeed. Dropping the type-coded base is
+ *   exactly the rename `no-hungarian` asks for.
+ */
+function baseDerivedNames(base: string): string[] {
+  return [`${base}Hash`, `hashOf${capitalize(base)}`];
+}
+
 function generateUniqueName(base: string, taken: Set<string>): string {
-  const candidate = `${base}Hash`;
+  const candidate =
+    baseDerivedNames(base).find((name) => !encodesTypeMarker(name)) ??
+    BASE_FREE_HASH_NAME;
   if (!taken.has(candidate)) return candidate;
+  // A numeric suffix disambiguates without reopening the naming question: it
+  // adds no word boundary, so it cannot turn an accepted name into a marker.
   let i = 2;
   while (taken.has(`${candidate}${i}`)) {
     i++;

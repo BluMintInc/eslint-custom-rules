@@ -35,6 +35,24 @@ It auto-fixes by:
 - Replacing the `array.length` expression inside the dependency array with the memoized variable name.
 - Generating unique variable names by appending `Hash` (e.g., `itemsHash`) or `Hash2`, `Hash3`, etc. on conflict.
 
+### Naming the generated hash
+
+The binding is named after the array (or its last property) with a `Hash` suffix
+— `items` → `itemsHash`, `data.items` → `itemsHash`. A numeric suffix
+disambiguates a name already in use (`itemsHash2`).
+
+`<base>Hash` is not always a name the codebase accepts, and
+[`no-hungarian`](./no-hungarian.md) has no fixer, so a rejected name would leave
+a manual rename behind in a file that was clean before `--fix` ran. The fixer
+therefore checks each candidate against that rule's predicate and takes the
+first one it accepts:
+
+| base | emitted name | why |
+| --- | --- | --- |
+| `items`, `a`, `x` | `itemsHash`, `aHash`, `xHash` | the preferred spelling |
+| `b`, `i` | `hashOfB`, `hashOfI` | `bHash`/`iHash` read as the single-letter Hungarian type prefixes (`b` = boolean, `i` = integer), so the base moves out of the leading position |
+| `obj`, `arr`, `str`, `array`, `number`, … | `contentHash` (`contentHash2`, …) | a base that is itself a type word or one of its abbreviations taints every name carrying it as a segment, so the type-coded base is dropped — which is the rename `no-hungarian` asks for |
+
 ### When the fixer bails (report-only)
 
 The fixer only runs when the generated `useMemo` is provably safe at its insertion point. It reports without fixing when:
@@ -131,7 +149,7 @@ This ensures effects re-run whenever array contents change, not just when its le
 ## Warnings & Considerations
 
 - Ensure `stableHash` is available in your project; adjust the generated import path if your helper lives elsewhere.
-- The fixer introduces one memoized hash per array and appends numeric suffixes on conflicts (for example, `itemsHash2`); verify the naming fits your code style.
+- The fixer introduces one memoized hash per array and appends numeric suffixes on conflicts (for example, `itemsHash2`); verify the naming fits your code style. A base that `no-hungarian` would reject in `<base>Hash` position gets an alternative name instead (see [Naming the generated hash](#naming-the-generated-hash)).
 - Keep added `useMemo` calls in hook order; do not move them above conditional hooks to avoid Rules of Hooks violations.
 - If you only care about emptiness, prefer an explicit boolean check in the effect body and locally disable this rule for that dependency array.
 - For large or frequently changing arrays, hashing can be non-trivial—benchmark if this is on a hot path and consider cheaper identity signals when appropriate.
