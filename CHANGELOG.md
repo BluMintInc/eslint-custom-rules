@@ -1,3 +1,15 @@
+## [1.20.148](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.147...v1.20.148) (2026-08-13)
+
+
+### Bug Fixes
+
+* **class-methods-read-top-to-bottom:** follow eager initializer reads through invoked members (closes [#1988](https://github.com/BluMintInc/eslint-custom-rules/issues/1988)) ([3d91a03](https://github.com/BluMintInc/eslint-custom-rules/commit/3d91a03c5965c21a4b0d89ded7bee8ca65c2d07e))
+* **enforce-early-destructuring:** keep a guarded nested destructure in place (closes [#1993](https://github.com/BluMintInc/eslint-custom-rules/issues/1993)) ([8470d19](https://github.com/BluMintInc/eslint-custom-rules/commit/8470d19d762a4834c8e4790d308d29e8ee309398))
+* **no-array-length-in-deps:** withhold the hoist out of a skippable branch (closes [#1992](https://github.com/BluMintInc/eslint-custom-rules/issues/1992)) ([3aa9e7a](https://github.com/BluMintInc/eslint-custom-rules/commit/3aa9e7a7c96f5d0d9e92513dcce7b6d441983e00))
+* **no-entire-object-hook-deps:** stop a dep path at a try or deferred body (closes [#1991](https://github.com/BluMintInc/eslint-custom-rules/issues/1991)) ([94bd398](https://github.com/BluMintInc/eslint-custom-rules/commit/94bd398d4715b699c16dd7da73d9ce1d48682ae1))
+* **parallelize-async-operations:** decline ordered awaits whose later operand dereferences an installed slot (closes [#1989](https://github.com/BluMintInc/eslint-custom-rules/issues/1989)) ([588be13](https://github.com/BluMintInc/eslint-custom-rules/commit/588be13607350106c8c8782a929b2c56a4fe7c70))
+* **prefer-map-over-conditional-dispatch:** decline the hoist across a guard (closes [#1990](https://github.com/BluMintInc/eslint-custom-rules/issues/1990)) ([43cafb6](https://github.com/BluMintInc/eslint-custom-rules/commit/43cafb6eb92c53fcd7ab4eeaec192191e113052e))
+
 ## [1.20.147](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.146...v1.20.147) (2026-08-13)
 
 

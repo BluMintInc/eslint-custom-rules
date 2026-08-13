@@ -1,5 +1,59 @@
 [
   {
+    "version": "1.20.148",
+    "date": "2026-08-13T13:06:17.038Z",
+    "rules": [
+      {
+        "name": "class-methods-read-top-to-bottom",
+        "changeType": "fix",
+        "issues": [
+          1988
+        ],
+        "summary": "follow eager initializer reads through invoked members (closes #1988)"
+      },
+      {
+        "name": "enforce-early-destructuring",
+        "changeType": "fix",
+        "issues": [
+          1993
+        ],
+        "summary": "keep a guarded nested destructure in place (closes #1993)"
+      },
+      {
+        "name": "no-array-length-in-deps",
+        "changeType": "fix",
+        "issues": [
+          1992
+        ],
+        "summary": "withhold the hoist out of a skippable branch (closes #1992)"
+      },
+      {
+        "name": "no-entire-object-hook-deps",
+        "changeType": "fix",
+        "issues": [
+          1991
+        ],
+        "summary": "stop a dep path at a try or deferred body (closes #1991)"
+      },
+      {
+        "name": "parallelize-async-operations",
+        "changeType": "fix",
+        "issues": [
+          1989
+        ],
+        "summary": "decline ordered awaits whose later operand dereferences an installed slot (closes #1989)"
+      },
+      {
+        "name": "prefer-map-over-conditional-dispatch",
+        "changeType": "fix",
+        "issues": [
+          1990
+        ],
+        "summary": "decline the hoist across a guard (closes #1990)"
+      }
+    ]
+  },
+  {
     "version": "1.20.147",
     "date": "2026-08-13T06:24:35.769Z",
     "rules": [
