@@ -1,6 +1,8 @@
 import { Linter, Rule } from 'eslint';
 import { ruleTesterJsx } from '../utils/ruleTester';
 import { noArrayLengthInDeps } from '../rules/no-array-length-in-deps';
+import { noHungarian } from '../rules/no-hungarian';
+import { encodesTypeMarker } from '../utils/hungarianNaming';
 
 ruleTesterJsx.run('no-array-length-in-deps', noArrayLengthInDeps, {
   valid: [
@@ -1233,6 +1235,11 @@ const D = ({ others }) => {
       // Issue #1412: two violations in the SAME hook's deps array are one
       // report, so suppressing the previous hook must still hand both memo
       // declarations and both imports to this survivor.
+      //
+      // Issue #1997: the `b` base takes the `hashOf<Base>` spelling because
+      // `bHash` reads to `no-hungarian` as the single-letter boolean prefix
+      // `b` glued to a capital; `a` keeps `aHash`, since `a` is not one of
+      // that rule's type-prefix letters.
       code: `import { useEffect } from 'react';
 
 const C = ({ items, a, b }) => {
@@ -1255,8 +1262,8 @@ const C = ({ items, a, b }) => {
   // eslint-disable-next-line no-array-length-in-deps
   useEffect(() => { console.log(items); }, [items.length]);
   const aHash = useMemo(() => stableHash(a), [a]);
-  const bHash = useMemo(() => stableHash(b), [b]);
-  useEffect(() => { console.log(a, b); }, [aHash, bHash]);
+  const hashOfB = useMemo(() => stableHash(b), [b]);
+  useEffect(() => { console.log(a, b); }, [aHash, hashOfB]);
   return null;
 };
 `,
@@ -1824,7 +1831,501 @@ const C = ({ items }) => {
 };
 `,
     },
+    // ------------------------------------------------------------------
+    // Issue #1997: the emitted binding must be a name `no-hungarian` accepts.
+    // That rule ships at 'error' and is NOT fixable, so a generated name it
+    // rejects converts this fixer's work into a manual rename in a file that
+    // was clean before `--fix` ran. The rejected shapes are a leading `b`/`i`
+    // before a capital, and any base that is itself a type word or one of its
+    // abbreviations.
+    // ------------------------------------------------------------------
+    {
+      name: 'a single-letter `b` base avoids the Hungarian boolean prefix',
+      code: `import { useEffect } from 'react';
+
+const C = ({ b }) => {
+  useEffect(() => { console.log(b); }, [b.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'b.length' },
+        },
+      ],
+      output: `import { stableHash } from 'functions/src/util/hash/stableHash';
+import { useEffect, useMemo } from 'react';
+
+const C = ({ b }) => {
+  const hashOfB = useMemo(() => stableHash(b), [b]);
+  useEffect(() => { console.log(b); }, [hashOfB]);
+  return null;
+};
+`,
+    },
+    {
+      name: 'a single-letter `i` base avoids the Hungarian integer prefix',
+      code: `import { useEffect } from 'react';
+
+const C = ({ i }) => {
+  useEffect(() => { console.log(i); }, [i.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'i.length' },
+        },
+      ],
+      output: `import { stableHash } from 'functions/src/util/hash/stableHash';
+import { useEffect, useMemo } from 'react';
+
+const C = ({ i }) => {
+  const hashOfI = useMemo(() => stableHash(i), [i]);
+  useEffect(() => { console.log(i); }, [hashOfI]);
+  return null;
+};
+`,
+    },
+    {
+      // Control: `a` is not one of the single-letter type prefixes, so the
+      // preferred `<base>Hash` spelling is kept for short bases too.
+      name: 'a single-letter `a` base keeps aHash',
+      code: `import { useEffect } from 'react';
+
+const C = ({ a }) => {
+  useEffect(() => { console.log(a); }, [a.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'a.length' },
+        },
+      ],
+      output: `import { stableHash } from 'functions/src/util/hash/stableHash';
+import { useEffect, useMemo } from 'react';
+
+const C = ({ a }) => {
+  const aHash = useMemo(() => stableHash(a), [a]);
+  useEffect(() => { console.log(a); }, [aHash]);
+  return null;
+};
+`,
+    },
+    {
+      // Control: same for `x`.
+      name: 'a single-letter `x` base keeps xHash',
+      code: `import { useEffect } from 'react';
+
+const C = ({ x }) => {
+  useEffect(() => { console.log(x); }, [x.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'x.length' },
+        },
+      ],
+      output: `import { stableHash } from 'functions/src/util/hash/stableHash';
+import { useEffect, useMemo } from 'react';
+
+const C = ({ x }) => {
+  const xHash = useMemo(() => stableHash(x), [x]);
+  useEffect(() => { console.log(x); }, [xHash]);
+  return null;
+};
+`,
+    },
+    {
+      // An abbreviation marker taints every name that carries it as a segment
+      // (objHash, hashOfObj, stableObjHash all report), so the base is dropped.
+      name: 'an `obj` base drops the type-coded base entirely',
+      code: `import { useEffect } from 'react';
+
+const C = ({ obj }) => {
+  useEffect(() => { console.log(obj); }, [obj.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'obj.length' },
+        },
+      ],
+      output: `import { stableHash } from 'functions/src/util/hash/stableHash';
+import { useEffect, useMemo } from 'react';
+
+const C = ({ obj }) => {
+  const contentHash = useMemo(() => stableHash(obj), [obj]);
+  useEffect(() => { console.log(obj); }, [contentHash]);
+  return null;
+};
+`,
+    },
+    {
+      name: 'an `arr` base drops the type-coded base entirely',
+      code: `import { useEffect } from 'react';
+
+const C = ({ arr }) => {
+  useEffect(() => { console.log(arr); }, [arr.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'arr.length' },
+        },
+      ],
+      output: `import { stableHash } from 'functions/src/util/hash/stableHash';
+import { useEffect, useMemo } from 'react';
+
+const C = ({ arr }) => {
+  const contentHash = useMemo(() => stableHash(arr), [arr]);
+  useEffect(() => { console.log(arr); }, [contentHash]);
+  return null;
+};
+`,
+    },
+    {
+      // A spelled-out type word is rejected as a leading marker (arrayHash),
+      // and `hashOfArray` trips the trailing-marker arm, so it lands on the
+      // base-free name as well.
+      name: 'an `array` base drops the type-coded base entirely',
+      code: `import { useEffect } from 'react';
+
+const C = ({ array }) => {
+  useEffect(() => { console.log(array); }, [array.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'array.length' },
+        },
+      ],
+      output: `import { stableHash } from 'functions/src/util/hash/stableHash';
+import { useEffect, useMemo } from 'react';
+
+const C = ({ array }) => {
+  const contentHash = useMemo(() => stableHash(array), [array]);
+  useEffect(() => { console.log(array); }, [contentHash]);
+  return null;
+};
+`,
+    },
+    {
+      // A member chain whose LAST property is the type-coded word: the base
+      // text stays `data.obj` in the memo, only the binding name changes.
+      name: 'a member chain ending in `obj` drops the type-coded base',
+      code: `import { useEffect } from 'react';
+
+const C = ({ data }) => {
+  useEffect(() => { console.log(data.obj); }, [data.obj.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'data.obj.length' },
+        },
+      ],
+      output: `import { stableHash } from 'functions/src/util/hash/stableHash';
+import { useEffect, useMemo } from 'react';
+
+const C = ({ data }) => {
+  const contentHash = useMemo(() => stableHash(data.obj), [data.obj]);
+  useEffect(() => { console.log(data.obj); }, [contentHash]);
+  return null;
+};
+`,
+    },
+    {
+      // Two rejected bases in one deps array still get distinct names.
+      name: 'two type-coded bases in one deps array are disambiguated',
+      code: `import { useEffect } from 'react';
+
+const C = ({ obj, arr }) => {
+  useEffect(() => { console.log(obj, arr); }, [obj.length, arr.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'obj.length, arr.length' },
+        },
+      ],
+      output: `import { stableHash } from 'functions/src/util/hash/stableHash';
+import { useEffect, useMemo } from 'react';
+
+const C = ({ obj, arr }) => {
+  const contentHash = useMemo(() => stableHash(obj), [obj]);
+  const contentHash2 = useMemo(() => stableHash(arr), [arr]);
+  useEffect(() => { console.log(obj, arr); }, [contentHash, contentHash2]);
+  return null;
+};
+`,
+    },
+    {
+      // An existing binding of the base-free name pushes the memo to the
+      // numbered variant, exactly as a taken `<base>Hash` does.
+      name: 'an existing contentHash binding forces the numbered variant',
+      code: `import { useEffect } from 'react';
+
+const contentHash = 1;
+const C = ({ obj }) => {
+  useEffect(() => { console.log(obj, contentHash); }, [obj.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'obj.length' },
+        },
+      ],
+      output: `import { stableHash } from 'functions/src/util/hash/stableHash';
+import { useEffect, useMemo } from 'react';
+
+const contentHash = 1;
+const C = ({ obj }) => {
+  const contentHash2 = useMemo(() => stableHash(obj), [obj]);
+  useEffect(() => { console.log(obj, contentHash); }, [contentHash2]);
+  return null;
+};
+`,
+    },
+    {
+      // A rejected base under a configured hash helper keeps the same naming
+      // ladder: the binding name is independent of the helper's name.
+      name: 'the naming ladder is independent of the configured hash helper',
+      options: [
+        {
+          hashImport: { source: 'shared/hash', importName: 'makeHash' },
+        },
+      ],
+      code: `import { useEffect } from 'react';
+
+const C = ({ b }) => {
+  useEffect(() => { console.log(b); }, [b.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'b.length' },
+        },
+      ],
+      output: `import { makeHash } from 'shared/hash';
+import { useEffect, useMemo } from 'react';
+
+const C = ({ b }) => {
+  const hashOfB = useMemo(() => makeHash(b), [b]);
+  useEffect(() => { console.log(b); }, [hashOfB]);
+  return null;
+};
+`,
+    },
   ],
+});
+
+// Issue #1997: RuleTester pins the emitted text but says nothing about whether
+// the REST of the shipped config accepts it. `no-hungarian` is an error rule
+// with no fixer, so a generated binding it rejects leaves a manual rename in a
+// file that was clean before `--fix` ran. These cases run the real fixer and
+// then the real `no-hungarian` over its output, which is how the defect
+// (`bHash` reported, `aHash` and `itemsHash` not) was found.
+describe('no-array-length-in-deps: emitted names clear no-hungarian (issue #1997)', () => {
+  const RULE_ID = '@blumintinc/blumint/no-array-length-in-deps';
+  const HUNGARIAN_ID = '@blumintinc/blumint/no-hungarian';
+
+  const makeLinter = () => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      RULE_ID,
+      noArrayLengthInDeps as unknown as Rule.RuleModule,
+    );
+    linter.defineRule(HUNGARIAN_ID, noHungarian as unknown as Rule.RuleModule);
+    return linter;
+  };
+
+  const PARSER_CONFIG = {
+    parser: '@typescript-eslint/parser',
+    parserOptions: {
+      ecmaVersion: 2020 as const,
+      sourceType: 'module' as const,
+      ecmaFeatures: { jsx: true },
+    },
+  };
+
+  const fix = (code: string) =>
+    makeLinter().verifyAndFix(
+      code,
+      { ...PARSER_CONFIG, rules: { [RULE_ID]: 'error' as const } },
+      'Component.tsx',
+    ).output;
+
+  const hungarianReports = (code: string) =>
+    makeLinter()
+      .verify(
+        code,
+        { ...PARSER_CONFIG, rules: { [HUNGARIAN_ID]: 'error' as const } },
+        'Component.tsx',
+      )
+      .filter((message) => message.ruleId === HUNGARIAN_ID);
+
+  const componentFor = (base: string) => `import { useEffect } from 'react';
+
+const C = ({ ${base} }) => {
+  useEffect(() => { console.log(${base}); }, [${base}.length]);
+  return null;
+};
+`;
+
+  const emittedNameIn = (output: string) =>
+    /const (\w+) = useMemo/.exec(output)?.[1] ?? null;
+
+  // Realistic bases first, then every family the rule's predicate rejects:
+  // the single-letter type prefixes, the abbreviation markers, and the
+  // spelled-out type words.
+  const BASES = [
+    'items',
+    'list',
+    'users',
+    'rows',
+    'data',
+    'entries',
+    'values',
+    'tags',
+    'a',
+    'b',
+    'c',
+    'i',
+    'n',
+    'x',
+    'obj',
+    'arr',
+    'str',
+    'num',
+    'int',
+    'bool',
+    'array',
+    'object',
+    'string',
+    'number',
+    'boolean',
+    'promise',
+    'symbol',
+    'regexp',
+    'bigint',
+  ];
+
+  // The oracle must be able to fire and to stay silent, or "no reports after
+  // the fix" would hold for a broken rule too.
+  it('reports a hand-written bHash and accepts a hand-written itemsHash', () => {
+    expect(
+      hungarianReports(`const bHash = 1;\nexport default bHash;\n`),
+    ).toHaveLength(1);
+    expect(
+      hungarianReports(`const itemsHash = 1;\nexport default itemsHash;\n`),
+    ).toHaveLength(0);
+  });
+
+  it('leaves no-hungarian silent on every fixed output', () => {
+    let fixedCount = 0;
+    let fallbackCount = 0;
+
+    for (const base of BASES) {
+      const input = componentFor(base);
+      // Control: the input is clean, so any report on the output belongs to
+      // the name this fixer invented.
+      expect({ base, before: hungarianReports(input).length }).toEqual({
+        base,
+        before: 0,
+      });
+
+      const output = fix(input);
+      const emitted = emittedNameIn(output);
+      expect({ base, emitted: emitted !== null }).toEqual({
+        base,
+        emitted: true,
+      });
+      fixedCount++;
+      if (emitted !== `${base}Hash`) {
+        fallbackCount++;
+      }
+
+      expect({ base, emitted, after: hungarianReports(output).length }).toEqual(
+        {
+          base,
+          emitted,
+          after: 0,
+        },
+      );
+    }
+
+    expect(fixedCount).toBe(BASES.length);
+    // Non-vacuity: the fallback rungs of the ladder must actually be walked,
+    // or the suite would pass on a fixer that never changed its naming.
+    expect(fallbackCount).toBeGreaterThanOrEqual(15);
+  });
+
+  it('keeps <base>Hash wherever no-hungarian accepts it', () => {
+    for (const base of ['items', 'list', 'users', 'rows', 'data', 'a', 'x']) {
+      expect(emittedNameIn(fix(componentFor(base)))).toBe(`${base}Hash`);
+    }
+  });
+
+  // The fixer consults a mirror of `no-hungarian`'s predicate rather than the
+  // rule itself. This pins the mirror to the real rule over every name the
+  // fixer can emit, so a change to either surfaces here rather than as another
+  // unfixable report in consumer code.
+  it('agrees with no-hungarian on every name the fixer can emit', () => {
+    const capitalize = (name: string) =>
+      name.charAt(0).toUpperCase() + name.slice(1);
+    const candidates = [
+      ...BASES.flatMap((base) => [`${base}Hash`, `hashOf${capitalize(base)}`]),
+      'contentHash',
+      'contentHash2',
+    ];
+
+    let rejected = 0;
+    let accepted = 0;
+    for (const name of candidates) {
+      const reportedByRule =
+        hungarianReports(`const ${name} = 1;\nexport default ${name};\n`)
+          .length > 0;
+      expect({ name, encodesTypeMarker: encodesTypeMarker(name) }).toEqual({
+        name,
+        encodesTypeMarker: reportedByRule,
+      });
+      if (reportedByRule) {
+        rejected++;
+      } else {
+        accepted++;
+      }
+    }
+
+    // Both verdicts must be represented, or the agreement is trivial.
+    expect(rejected).toBeGreaterThanOrEqual(15);
+    expect(accepted).toBeGreaterThanOrEqual(25);
+  });
 });
 
 // Issue #1412: RuleTester applies a single fix pass and never shows the file
