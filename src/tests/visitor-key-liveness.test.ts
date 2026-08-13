@@ -154,12 +154,11 @@ const DEAD_KEYS: Record<string, Record<string, string>> = {
   'enforce-stable-hash-spread-props': {
     'FunctionExpression:exit': REASONS.noFixtureForShape,
   },
-  'prefer-global-router-state-key': {
-    AssignmentExpression: REASONS.noFixtureForShape,
-  },
-  'enforce-querykey-ts': {
-    AssignmentExpression: REASONS.noFixtureForShape,
-  },
+  // `enforce-querykey-ts` and `prefer-global-router-state-key` both sat here on
+  // `noFixtureForShape` until #1999. The absent shape was hiding a real
+  // divergence — one rule recorded a COMPOUND assignment's operand as the
+  // variable's value and the other did not — so both now carry an operator
+  // table and both keys fire.
   'no-res-error-status-in-onrequest': {
     FunctionExpression: REASONS.noFixtureForShape,
   },

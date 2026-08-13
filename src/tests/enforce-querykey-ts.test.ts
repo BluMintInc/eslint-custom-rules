@@ -3400,3 +3400,50 @@ function Component() {
     },
   ],
 });
+
+// ------------------------------------------------------------------
+// Issue #1999: only a plain `=` makes the right-hand side the variable's
+// value. `variableAssignments` is what resolves an identifier key, so
+// recording a COMPOUND assignment's operand launders an unapproved key into
+// an approved one: `key ||= K` leaves the old key reachable and `key += K`
+// provably yields neither operand.
+//
+// Parameterized over the operator so the plain `=` row is the control: it
+// shares every other byte with the compound rows, so a fix that silenced the
+// rule outright would fail here rather than read as agreement.
+//
+// The same table is mirrored in prefer-global-router-state-key.test.ts. The
+// two rules resolve keys through byte-identical maps, and this pair has a
+// standing history of drifting apart on one side only (#1714, #1832/#1833,
+// #1840/#1842), so the contract is pinned on both.
+// ------------------------------------------------------------------
+const LAUNDERING_OPERATORS = ['||=', '??=', '+='] as const;
+
+const assignedKeyCode = (operator: string) =>
+  `import { QUERY_KEY_PLAYBACK_ID } from 'src/util/routing/queryKeys';
+function Component() {
+  let key = 'playback-id';
+  key ${operator} QUERY_KEY_PLAYBACK_ID;
+  const [playbackId] = useRouterState({ key });
+  return <div>{playbackId}</div>;
+}
+`;
+
+ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
+  valid: [
+    {
+      name: 'a plain `=` reassignment to an approved constant IS the key',
+      filename: '/repo/src/components/Widget.tsx',
+      code: assignedKeyCode('='),
+    },
+  ],
+  invalid: LAUNDERING_OPERATORS.map((operator) => ({
+    name: `\`${operator}\` leaves the unapproved key reachable, so it still reports`,
+    filename: '/repo/src/components/Widget.tsx',
+    code: assignedKeyCode(operator),
+    errors: [{ messageId: 'enforceQueryKeyConstant' as const }],
+    // The rule cannot know which branch runs, so it declines to rewrite.
+    // Asserted rather than omitted: an omitted `output` asserts nothing.
+    output: null,
+  })),
+});
