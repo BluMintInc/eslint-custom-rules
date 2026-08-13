@@ -3412,6 +3412,284 @@ function f() {
 `,
       errors: [{ messageId: 'preferMap' }],
     },
+    {
+      // The hoist walk must not cross the braceless if — either insert inside a
+      // guarded position or decline to preferMapManual. Asserting output: null
+      // pins the decline.
+      code: `type Kind = 'a' | 'b';
+declare const kind: Kind;
+declare const box: { a: { v: number }; b: { v: number } } | undefined;
+function f() {
+  if (box) return kind === 'a' ? box.a.v : box.b.v;
+  return 0;
+}`,
+      output: null,
+      errors: [{ messageId: 'preferMapManual' }],
+    },
+    // #1990: the right operand of `&&` runs only for some values of the left,
+    // so a Record hoisted to the enclosing statement dereferences both branch
+    // values unguarded (TS18048 under strict; TypeError when `box` is
+    // undefined).
+    {
+      code: `
+type Kind = 'a' | 'b';
+declare const kind: Kind;
+declare const box: { a: { v: number }; b: { v: number } } | undefined;
+function f() {
+  return box && (kind === 'a' ? box.a.v : box.b.v);
+}
+`,
+      output: null,
+      errors: [{ messageId: 'preferMapManual' }],
+    },
+    // #1990: a braceless loop body. The values are re-read every iteration and
+    // not read at all when the loop never runs, so a single hoisted snapshot
+    // above the loop is neither — it throws on an empty `rows`.
+    {
+      code: `
+type Kind = 'a' | 'b';
+declare const kind: Kind;
+declare const rows: { a: { v: number }; b: { v: number } }[];
+function f() {
+  let total = 0;
+  while (rows.length > 0) total += kind === 'a' ? rows[0].a.v : rows[0].b.v;
+  return total;
+}
+`,
+      output: null,
+      errors: [{ messageId: 'preferMapManual' }],
+    },
+    // #1990: a `typeof`/`!== null` guard whose narrowing is spent through an
+    // assertion. The assertion makes the hoisted text compile in both places,
+    // so the type checker never objects — the failure surfaces only when `raw`
+    // is null and the eager Record dereferences it.
+    {
+      code: `
+type Kind = 'a' | 'b';
+declare const kind: Kind;
+declare const raw: unknown;
+function f() {
+  return (
+    typeof raw === 'object' &&
+    raw !== null &&
+    (kind === 'a' ? (raw as any).a.v : (raw as any).b.v)
+  );
+}
+`,
+      output: null,
+      errors: [{ messageId: 'preferMapManual' }],
+    },
+    // #1990: hoisting out of a `for…of` leaves the loop's own SCOPE, so the
+    // Record reads a binding that does not exist at the insertion point
+    // (TS2304 / ReferenceError) — broken unconditionally, not just for some
+    // inputs.
+    {
+      code: `
+type Kind = 'a' | 'b';
+declare const kind: Kind;
+declare const rows: ({ a: { v: number }; b: { v: number } } | undefined)[];
+function f() {
+  let total = 0;
+  for (const r of rows) if (r) total += kind === 'a' ? r.a.v : r.b.v;
+  return total;
+}
+`,
+      output: null,
+      errors: [{ messageId: 'preferMapManual' }],
+    },
+    // #1990: the same scope escape without the inner guard, so the loop body
+    // itself is the only boundary crossed.
+    {
+      code: `
+type Kind = 'a' | 'b';
+declare const kind: Kind;
+declare const rows: { a: { v: number }; b: { v: number } }[];
+function f() {
+  let total = 0;
+  for (const r of rows) total += kind === 'a' ? r.a.v : r.b.v;
+  return total;
+}
+`,
+      output: null,
+      errors: [{ messageId: 'preferMapManual' }],
+    },
+    // #1990 control: the early-return spelling of the same guard. The ternary
+    // is a statement of the function body, so the hoist lands BELOW the guard
+    // where `box` is still narrowed — the boundary test must not reach this,
+    // or it disables the ternary form's autofix wholesale.
+    {
+      code: `
+type Kind = 'a' | 'b';
+declare const kind: Kind;
+declare const box: { a: { v: number }; b: { v: number } } | undefined;
+function f() {
+  if (!box) return 0;
+  return kind === 'a' ? box.a.v : box.b.v;
+}
+`,
+      output: `
+type Kind = 'a' | 'b';
+declare const kind: Kind;
+declare const box: { a: { v: number }; b: { v: number } } | undefined;
+function f() {
+  if (!box) return 0;
+  const RESULT_BY_KIND: Record<Kind, number> = {
+    a: box.a.v,
+    b: box.b.v,
+  };
+  return RESULT_BY_KIND[kind];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1990 control: the remedy the report-only message names. Braces stop the
+    // hoist walk inside the guarded block, so the Record is written where the
+    // narrowing still holds — the advice is executable, not decorative.
+    {
+      code: `
+type Kind = 'a' | 'b';
+declare const kind: Kind;
+declare const box: { a: { v: number }; b: { v: number } } | undefined;
+function f() {
+  if (box) {
+    return kind === 'a' ? box.a.v : box.b.v;
+  }
+  return 0;
+}
+`,
+      output: `
+type Kind = 'a' | 'b';
+declare const kind: Kind;
+declare const box: { a: { v: number }; b: { v: number } } | undefined;
+function f() {
+  if (box) {
+    const RESULT_BY_KIND: Record<Kind, number> = {
+      a: box.a.v,
+      b: box.b.v,
+    };
+    return RESULT_BY_KIND[kind];
+  }
+  return 0;
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1990 control: an `if` TEST is evaluated exactly once, before control
+    // reaches either branch, so lifting text out of it runs precisely when it
+    // used to. The boundary test asks about the child's POSITION, not the
+    // parent's type.
+    {
+      code: `
+type Kind = 'a' | 'b';
+declare const kind: Kind;
+declare const box: { a: { v: number }; b: { v: number } };
+function f() {
+  if ((kind === 'a' ? box.a.v : box.b.v) > 0) {
+    return 1;
+  }
+  return 0;
+}
+`,
+      output: `
+type Kind = 'a' | 'b';
+declare const kind: Kind;
+declare const box: { a: { v: number }; b: { v: number } };
+function f() {
+  const RESULT_BY_KIND: Record<Kind, number> = {
+    a: box.a.v,
+    b: box.b.v,
+  };
+  if ((RESULT_BY_KIND[kind]) > 0) {
+    return 1;
+  }
+  return 0;
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1990: a braceless classic `for` body is guarded by the loop's test and
+    // scoped to the loop's own `i`, exactly as the `for…of` row is.
+    {
+      code: `
+type Kind = 'a' | 'b';
+declare const kind: Kind;
+declare const rows: { a: { v: number }; b: { v: number } }[];
+function f() {
+  let total = 0;
+  for (let i = 0; i < rows.length; i += 1) total += kind === 'a' ? rows[i].a.v : rows[i].b.v;
+  return total;
+}
+`,
+      output: null,
+      errors: [{ messageId: 'preferMapManual' }],
+    },
+    // #1990 control: a `for…of` right-hand side is evaluated once before the
+    // loop, and the loop binding is not in scope there, so the iterable is as
+    // hoistable as any other expression.
+    {
+      code: `
+type Kind = 'a' | 'b';
+declare const kind: Kind;
+declare const first: string;
+declare const second: string;
+function f() {
+  let total = 0;
+  for (const ch of kind === 'a' ? first : second) {
+    total += ch.length;
+  }
+  return total;
+}
+`,
+      output: `
+type Kind = 'a' | 'b';
+declare const kind: Kind;
+declare const first: string;
+declare const second: string;
+function f() {
+  let total = 0;
+  const RESULT_BY_KIND: Record<Kind, string> = {
+    a: first,
+    b: second,
+  };
+  for (const ch of RESULT_BY_KIND[kind]) {
+    total += ch.length;
+  }
+  return total;
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #1990 control: a classic `for` init runs once, before the loop's own
+    // bindings can be read anywhere else, so it hoists safely.
+    {
+      code: `
+type Kind = 'a' | 'b';
+declare const kind: Kind;
+function f() {
+  let total = 0;
+  for (let i = kind === 'a' ? 0 : 1; i < 3; i += 1) {
+    total += i;
+  }
+  return total;
+}
+`,
+      output: `
+type Kind = 'a' | 'b';
+declare const kind: Kind;
+function f() {
+  let total = 0;
+  const RESULT_BY_KIND: Record<Kind, number> = {
+    a: 0,
+    b: 1,
+  };
+  for (let i = RESULT_BY_KIND[kind]; i < 3; i += 1) {
+    total += i;
+  }
+  return total;
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
   ],
 };
 

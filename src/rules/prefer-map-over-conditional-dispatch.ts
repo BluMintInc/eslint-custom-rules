@@ -955,6 +955,73 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
       );
     }
 
+    /**
+     * Whether stepping from `child` up to `parent` crosses a boundary that
+     * decides WHETHER — or how many times — the child is evaluated, or that
+     * owns bindings the child may read.
+     *
+     * The question is about the child's POSITION, not the parent's type alone:
+     * an `if` test, a `for` init and a `for…of` right-hand side are evaluated
+     * exactly once, before control reaches the construct they head, so text
+     * lifted out of them runs precisely when it used to. A while/do-while test
+     * is re-evaluated per iteration, so it is a boundary like the bodies are.
+     */
+    function crossingGuardsEvaluation(
+      child: TSESTree.Node,
+      parent: TSESTree.Node,
+    ): boolean {
+      switch (parent.type) {
+        case AST_NODE_TYPES.IfStatement:
+          return parent.test !== child;
+        case AST_NODE_TYPES.WhileStatement:
+        case AST_NODE_TYPES.DoWhileStatement:
+          return true;
+        case AST_NODE_TYPES.ForStatement:
+          return parent.init !== child;
+        case AST_NODE_TYPES.ForInStatement:
+        case AST_NODE_TYPES.ForOfStatement:
+          return parent.right !== child;
+        case AST_NODE_TYPES.LogicalExpression:
+          // `&&`/`||`/`??` evaluate the right operand only for some values of
+          // the left; the left operand always runs.
+          return parent.right === child;
+        case AST_NODE_TYPES.ConditionalExpression:
+          return parent.test !== child;
+        default:
+          return false;
+      }
+    }
+
+    /**
+     * Whether the ternary form's hoist would carry the branch values across a
+     * guard that decides whether they are evaluated, or out of a scope that
+     * owns bindings they read.
+     *
+     * The hoist walk treats a braceless body as transparent — it stops only at
+     * a `BlockStatement`/`Program`/`SwitchCase` — so `if (box) return kind ===
+     * 'a' ? box.a.v : box.b.v;` lands the `Record` ABOVE the guard and
+     * dereferences both values with the narrowing left behind (#1990). Braces
+     * are what make the hoist safe: with them the walk stops inside the guarded
+     * block, where the values are still narrowed and every loop binding is
+     * still in scope, so the boundary test also cures the scope violation that
+     * hoisting out of `for (const r of rows)` produces (TS2304).
+     *
+     * Nothing else sees this: the branch values are ordinary member reads, so
+     * `EAGER_UNSAFE_NODES` passes them, and `isNarrowingExempt` inspects only
+     * narrowing by the discriminant's own root, never narrowing applied by a
+     * surrounding statement.
+     */
+    function hoistCrossesGuard(node: TSESTree.Node): boolean {
+      let child: TSESTree.Node = node;
+      while (child.parent && !CONTAINER_TYPES.has(child.parent.type)) {
+        if (crossingGuardsEvaluation(child, child.parent)) {
+          return true;
+        }
+        child = child.parent;
+      }
+      return false;
+    }
+
     // ---- Name derivation ----------------------------------------------------
 
     function toUpperSnake(name: string): string {
@@ -1302,6 +1369,7 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
       eagerSafe: boolean;
       canPlaceFix: boolean;
       hoistEscapesClass: boolean;
+      hoistCrossesGuard: boolean;
       inStatementList: boolean;
       commentSafe: boolean;
       derivation: NameDerivation | null;
@@ -1320,6 +1388,9 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
       }
       if (flags.hoistEscapesClass) {
         return 'the Record would hoist outside the class body, where the branch values’ `this`/`#private` reads do not resolve; extract it manually inside the class';
+      }
+      if (flags.hoistCrossesGuard) {
+        return 'the Record would hoist above the guard or loop that decides whether the branch values are evaluated, dropping their narrowing and any binding the guard scopes; add braces around the branch — or lift the guarded expression into its own statement — then convert';
       }
       if (!flags.inStatementList) {
         return 'the dispatch is the whole body of a braceless branch, where a declaration is not allowed; add braces around it, then convert';
@@ -1353,6 +1424,10 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
       const hoistEscapesClass =
         form === 'expr' && hoistLeavesClassBody(node, contributingValues);
 
+      // Only the ternary hoists; every other form is replaced where it stands,
+      // so no guard can be crossed.
+      const crossesGuard = form === 'expr' && hoistCrossesGuard(node);
+
       // Every non-ternary form replaces the construct with a declaration plus a
       // statement, which needs a statement LIST to land in. As the sole body of
       // a braceless `if`/`else`/loop the construct sits where exactly one
@@ -1372,6 +1447,7 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
         eagerSafe &&
         canPlaceFix &&
         !hoistEscapesClass &&
+        !crossesGuard &&
         inStatementList &&
         !commentBlocked
       ) {
@@ -1389,6 +1465,7 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
               eagerSafe,
               canPlaceFix,
               hoistEscapesClass,
+              hoistCrossesGuard: crossesGuard,
               inStatementList,
               commentSafe: !commentBlocked,
               derivation,
