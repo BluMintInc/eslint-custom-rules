@@ -1,3 +1,14 @@
+## [1.20.150](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.149...v1.20.150) (2026-08-13)
+
+
+### Bug Fixes
+
+* **enforce-exported-function-types:** drop 28 inert empty-bodied selectors (closes [#2000](https://github.com/BluMintInc/eslint-custom-rules/issues/2000)) ([d3464c7](https://github.com/BluMintInc/eslint-custom-rules/commit/d3464c77dab4d93640a7251f504789e6b4591924))
+* **enforce-querykey-ts:** follow a `||=`/`??=` onto an undefined key ([#2001](https://github.com/BluMintInc/eslint-custom-rules/issues/2001)) ([c40e3df](https://github.com/BluMintInc/eslint-custom-rules/commit/c40e3dfbaf0f9219a3eac352123062d4dd3e9ddc))
+* **enforce-querykey-ts:** guard variable tracking on a plain `=` assignment (closes [#1999](https://github.com/BluMintInc/eslint-custom-rules/issues/1999)) ([97e5276](https://github.com/BluMintInc/eslint-custom-rules/commit/97e5276a1bd29bd2b22914cde3205843c2de6323))
+* **no-type-assertion-returns:** drop the inert empty CallExpression handler (closes [#2002](https://github.com/BluMintInc/eslint-custom-rules/issues/2002)) ([0add9a7](https://github.com/BluMintInc/eslint-custom-rules/commit/0add9a79dee2a0654bf98298c04a5dabc30c6713)), closes [#2000](https://github.com/BluMintInc/eslint-custom-rules/issues/2000)
+* **prefer-global-router-state-key:** follow a `||=`/`??=` onto an undefined key (closes [#2001](https://github.com/BluMintInc/eslint-custom-rules/issues/2001)) ([9033026](https://github.com/BluMintInc/eslint-custom-rules/commit/903302653368fe20b1954b3a16f70e26d9cc94bb)), closes [#1999](https://github.com/BluMintInc/eslint-custom-rules/issues/1999)
+
 ## [1.20.149](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.148...v1.20.149) (2026-08-13)
 
 
