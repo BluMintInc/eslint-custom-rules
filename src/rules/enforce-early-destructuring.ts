@@ -1037,6 +1037,187 @@ function hasPriorConditionalGuard(
     );
 }
 
+/**
+ * Statement forms that can skip the declaration nested beneath them, so a
+ * declaration inside one is not reached on every pass through the callback.
+ * `finally` is folded in with the rest of `try`: the distinction costs a branch
+ * and buys back a shape nobody writes.
+ */
+const CONDITIONAL_CONTAINERS = new Set<string>([
+  AST_NODE_TYPES.IfStatement,
+  AST_NODE_TYPES.TryStatement,
+  AST_NODE_TYPES.SwitchStatement,
+  AST_NODE_TYPES.SwitchCase,
+  AST_NODE_TYPES.ForStatement,
+  AST_NODE_TYPES.ForInStatement,
+  AST_NODE_TYPES.ForOfStatement,
+  AST_NODE_TYPES.WhileStatement,
+  AST_NODE_TYPES.DoWhileStatement,
+]);
+
+/**
+ * Whether the pattern binds anything below its own root. Only the root gets the
+ * synthesized `?? {}` rescue; a nested pattern is re-emitted verbatim because a
+ * synthesized `= {}` under it would be checked against every binding beneath it
+ * (see formatPropertyText). So a nested pattern dereferences an intermediate
+ * that nothing in the hoisted text guards.
+ */
+function patternBindsBeneathRoot(pattern: TSESTree.ObjectPattern): boolean {
+  const stack: TSESTree.Node[] = [...pattern.properties];
+
+  while (stack.length) {
+    const current = stack.pop();
+    if (!current) continue;
+
+    if (
+      current.type === AST_NODE_TYPES.ObjectPattern ||
+      current.type === AST_NODE_TYPES.ArrayPattern
+    ) {
+      return true;
+    }
+
+    if (current.type === AST_NODE_TYPES.Property) {
+      stack.push(current.value);
+      continue;
+    }
+
+    if (current.type === AST_NODE_TYPES.RestElement) {
+      stack.push(current.argument);
+      continue;
+    }
+
+    // A default's right-hand side is an expression, never a binding site, so
+    // only the left of an assignment pattern can hide a further pattern.
+    if (current.type === AST_NODE_TYPES.AssignmentPattern) {
+      stack.push(current.left);
+    }
+  }
+
+  return false;
+}
+
+function containsTerminatingStatement(
+  node: TSESTree.Node,
+  visitorKeys: Record<string, string[]>,
+): boolean {
+  const stack: TSESTree.Node[] = [node];
+
+  while (stack.length) {
+    const current = stack.pop();
+    if (!current) continue;
+
+    // A `return` belonging to a nested function exits that function, not the
+    // block the declaration sits in, so it guards nothing here.
+    if (current !== node && isAnyFunctionLikeNode(current)) {
+      continue;
+    }
+
+    if (
+      current.type === AST_NODE_TYPES.ReturnStatement ||
+      current.type === AST_NODE_TYPES.ThrowStatement ||
+      current.type === AST_NODE_TYPES.BreakStatement ||
+      current.type === AST_NODE_TYPES.ContinueStatement
+    ) {
+      return true;
+    }
+
+    const keys = visitorKeys[current.type] ?? [];
+    for (const key of keys) {
+      const value = (current as unknown as Record<string, unknown>)[key];
+      if (Array.isArray(value)) {
+        for (const child of value) {
+          if (child && typeof child === 'object') {
+            stack.push(child as TSESTree.Node);
+          }
+        }
+      } else if (value && typeof value === 'object') {
+        stack.push(value as TSESTree.Node);
+      }
+    }
+  }
+
+  return false;
+}
+
+function isEarlyExitGuard(
+  statement: TSESTree.Statement,
+  visitorKeys: Record<string, string[]>,
+): boolean {
+  return (
+    statement.type === AST_NODE_TYPES.IfStatement &&
+    containsTerminatingStatement(statement, visitorKeys)
+  );
+}
+
+/**
+ * Whether some conditional between the declaration and the callback body decides
+ * that the declaration runs at all — either a container that can skip it, or an
+ * earlier sibling that can leave the block before reaching it.
+ *
+ * Only the span up to the callback matters: the hoist lands immediately before
+ * the statement holding the hook call, so it keeps every conditional wrapping
+ * the hook itself and escapes exactly the ones inside the callback.
+ */
+function isConditionallyReached(
+  node: TSESTree.Node,
+  callback: (TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression) & {
+    body: TSESTree.BlockStatement;
+  },
+  visitorKeys: Record<string, string[]>,
+): boolean {
+  let current: TSESTree.Node = node;
+
+  while (current !== callback.body) {
+    const parent = current.parent as TSESTree.Node | undefined;
+    if (!parent) return false;
+
+    if (CONDITIONAL_CONTAINERS.has(parent.type)) {
+      return true;
+    }
+
+    if (parent.type === AST_NODE_TYPES.BlockStatement) {
+      const index = parent.body.indexOf(current as TSESTree.Statement);
+      if (
+        index > 0 &&
+        parent.body
+          .slice(0, index)
+          .some((statement) => isEarlyExitGuard(statement, visitorKeys))
+      ) {
+        return true;
+      }
+    }
+
+    current = parent;
+  }
+
+  return false;
+}
+
+/**
+ * A nested destructure whose execution a guard controls stays put, whatever the
+ * guard tests. `hasPriorConditionalGuard` and `isTypeNarrowingContext` recognise
+ * only a guard naming the destructured object, which misses the ubiquitous
+ * `if (ready)` / `if (!isLoaded) return;` / `try` spellings that license the
+ * dereference without mentioning it. Hoisting past one of those evaluates the
+ * nested pattern on every render, where `?? {}` covers the root and leaves the
+ * intermediate to throw.
+ *
+ * The flat case keeps hoisting: there the `?? {}` rescue is the whole pattern.
+ */
+function isGuardedNestedDestructure(
+  declaration: TSESTree.VariableDeclaration,
+  pattern: TSESTree.ObjectPattern,
+  callback: (TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression) & {
+    body: TSESTree.BlockStatement;
+  },
+  visitorKeys: Record<string, string[]>,
+): boolean {
+  return (
+    patternBindsBeneathRoot(pattern) &&
+    isConditionallyReached(declaration, callback, visitorKeys)
+  );
+}
+
 function isIdentifierReference(node: TSESTree.Identifier): boolean {
   const parent = node.parent;
   if (!parent) return true;
@@ -1116,7 +1297,13 @@ function buildDestructuringGroups(
           const baseName = getBaseIdentifier(declarator.init);
           if (
             hasPriorConditionalGuard(current, baseName, visitorKeys) ||
-            isTypeNarrowingContext(current, baseName, visitorKeys)
+            isTypeNarrowingContext(current, baseName, visitorKeys) ||
+            isGuardedNestedDestructure(
+              current,
+              declarator.id,
+              callback,
+              visitorKeys,
+            )
           ) {
             continue;
           }
