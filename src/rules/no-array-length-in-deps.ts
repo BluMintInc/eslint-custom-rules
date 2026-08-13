@@ -170,6 +170,101 @@ function findInsertionPoint(
 }
 
 /**
+ * Whether an optional link sits at or below `expr` on its member/call spine,
+ * making everything further right in the chain unreachable when that link is
+ * nullish. `a?.b.run(x)` short-circuits at `a?.b`, so the optional flag the
+ * check needs is not the outer call's own.
+ */
+function hasOptionalLink(expr: TSESTree.Node): boolean {
+  let current: TSESTree.Node | undefined = expr;
+  while (current) {
+    switch (current.type) {
+      case AST_NODE_TYPES.MemberExpression:
+        if (current.optional) return true;
+        current = current.object;
+        break;
+      case AST_NODE_TYPES.CallExpression:
+        if (current.optional) return true;
+        current = current.callee;
+        break;
+      case AST_NODE_TYPES.ChainExpression:
+      case AST_NODE_TYPES.TSNonNullExpression:
+        current = current.expression;
+        break;
+      default:
+        return false;
+    }
+  }
+  return false;
+}
+
+/**
+ * Whether `child` sits in a position of `parent` that control flow may skip.
+ * Positions evaluated regardless of the branch taken — an `if` test, a `&&`
+ * left operand, a `switch` discriminant, a `do` body, an optional chain's
+ * object spine — are excluded, since hoisting above them preserves evaluation.
+ */
+function isSkippableBranch(
+  child: TSESTree.Node,
+  parent: TSESTree.Node,
+): boolean {
+  switch (parent.type) {
+    case AST_NODE_TYPES.IfStatement:
+    case AST_NODE_TYPES.ConditionalExpression:
+      return parent.consequent === child || parent.alternate === child;
+    case AST_NODE_TYPES.LogicalExpression:
+      return parent.right === child;
+    case AST_NODE_TYPES.SwitchStatement:
+      return parent.discriminant !== child;
+    // A case's test and body are both reached only once the switch selects it.
+    case AST_NODE_TYPES.SwitchCase:
+      return true;
+    // A loop body may run zero times; a `do` body always runs once, so it is
+    // not listed here.
+    case AST_NODE_TYPES.WhileStatement:
+    case AST_NODE_TYPES.ForStatement:
+    case AST_NODE_TYPES.ForInStatement:
+    case AST_NODE_TYPES.ForOfStatement:
+      return parent.body === child;
+    // Arguments and computed keys of an optional chain go unevaluated when the
+    // chain short-circuits, so they guard their subtree exactly as an `if` does.
+    case AST_NODE_TYPES.MemberExpression:
+      return parent.object !== child && hasOptionalLink(parent);
+    case AST_NODE_TYPES.CallExpression:
+      return parent.callee !== child && hasOptionalLink(parent);
+    default:
+      return false;
+  }
+}
+
+/**
+ * Whether the climb from the hook call to the insertion statement escapes a
+ * position that control flow may skip. A guard that wraps the hook without a
+ * block of its own gives the climb no in-branch statement position, so the memo
+ * lands above the guard while its dependency array `[<base>]` dereferences the
+ * guarded value on every render — turning code that does not throw into code
+ * that does. The dereference was safe only because of the surrounding
+ * narrowing, which the hoisted position no longer enjoys, so the fix is
+ * withheld and the report stands alone. A braced guard needs no bail: the
+ * insertion block is then the guarded block itself.
+ */
+function crossesConditionalGuard(
+  node: TSESTree.CallExpression,
+  insertion: InsertionPoint,
+): boolean {
+  let current: TSESTree.Node = node;
+  while (current !== insertion.statement) {
+    const parent = current.parent as TSESTree.Node | undefined;
+    // An insertion statement absent from the hook's ancestor chain contradicts
+    // how it was derived; decline rather than guess at the geometry.
+    if (!parent) return true;
+    if (isSkippableBranch(current, parent)) return true;
+    current = parent;
+  }
+  return false;
+}
+
+/**
  * Collects the identifiers a hoisted `stableHash(<base>)` expression would
  * read: the root object of the member chain plus any computed keys. Property
  * names are not variable references. Returns false for shapes that cannot be
@@ -632,6 +727,7 @@ export const noArrayLengthInDeps = createRule<Options, MessageIds>({
 
             const insertion = findInsertionPoint(node);
             if (!insertion) return null;
+            if (crossesConditionalGuard(node, insertion)) return null;
             for (const { member } of lengthDeps) {
               if (
                 !isBaseSafeToHoist(
