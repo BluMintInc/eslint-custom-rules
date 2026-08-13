@@ -249,7 +249,7 @@ const KNOWN_DIVERGENT: Record<string, Exemption> = {
   },
   'enforce-memoize-async::no-explicit-return-type': {
     reason:
-      "PIPELINE: the fixtures annotate an inferable `Promise<T>` return; `--fix` strips 13 of 14 and the decorator requirement is unaffected. Was 13 — the #1975 fixture pinning that a `Promise<Transaction>` RETURN type still reports joined the identical class. Its annotation is load-bearing rather than incidental: the fixture is the negative control proving the transaction carve-out reads PARAMETERS, where the attempt-scoped handle actually arrives, and not the return type, which describes a handle the method produces. So no spelling drops it. `verifyAndFix` with both rules converges on `@Memoize() public async open()` with zero messages remaining (measured), stripping the annotation while leaving the decorator requirement the fixture asserts.",
+      'PIPELINE: the fixtures annotate an inferable `Promise<T>` return; `--fix` strips 13 of 14 and the decorator requirement is unaffected. Was 13 — the #1975 fixture pinning that a `Promise<Transaction>` RETURN type still reports joined the identical class. Its annotation is load-bearing rather than incidental: the fixture is the negative control proving the transaction carve-out reads PARAMETERS, where the attempt-scoped handle actually arrives, and not the return type, which describes a handle the method produces. So no spelling drops it. `verifyAndFix` with both rules converges on `@Memoize() public async open()` with zero messages remaining (measured), stripping the annotation while leaving the decorator requirement the fixture asserts.',
     cases: { noExplicitReturnTypeInferable: 14 },
   },
   'enforce-memoize-getters::enforce-dynamic-imports': {
@@ -451,6 +451,11 @@ const KNOWN_DIVERGENT: Record<string, Exemption> = {
     reason:
       "INCIDENTAL: one fixed output asserts `as Pair`, which the literal rule does not accept in place of `as const`; writing `as const` is clean under both (measured). 1 -> 5 is the #1908 widening: the four narrowing-pick carve-outs (#1642 annotation, #1643 `Readonly` unwrap, #1644 sibling-module hop, #1769 lexically nested type) gained a FunctionDeclaration twin, and a declaration must spell its target `return { a, b };` where the arrow twin spells it `=> ({ a, b })`. The sibling registers only a `ReturnStatement` visitor (its own `DETECTION_EXEMPT` entry, #1795), so the concise arrow is structurally invisible to it and the block-bodied twin is not — the disagreement is about the block body, not about either rule's subject. `return { a, b } as const;` leaves both silent on all four (measured), and this rule's `unwrapTransparent` reads the pick through that assertion unchanged, so the carve-out still holds in the satisfying spelling.",
     cases: { enforceAsConst: 5 },
+  },
+  'prefer-use-base62-id::require-memo': {
+    reason:
+      "PIPELINE: two fixtures declare an unmemoized component to display the NON-EMPTY `useMemo` deps carve-out, where memoization is beside their point; the composed `--fix` wraps both in `memo(...)` and both rules end silent (measured, both). Reading THROUGH the wrapper is what makes that silence the carve-out rather than blindness: before #2005 a `memo(...)` initializer defeated `isComponentOrHook` and every handler here bailed, so the sibling's own fix hid the component from this rule. The pair joins this list because #2005 names `require-memo` in this rule's source; the disagreement itself predates that mention.",
+    cases: { requireMemo: 2 },
   },
   'prefer-usecallback-over-usememo-for-functions::use-latest-callback': {
     reason:

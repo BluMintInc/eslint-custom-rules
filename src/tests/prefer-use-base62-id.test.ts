@@ -443,6 +443,65 @@ export function useMyHook() {
 }
 `,
     },
+
+    // 28. A memo-wrapped component already on `useBase62Id` is the target state,
+    // so seeing through the wrapper must not invent a finding.
+    {
+      filename: IN_SCOPE_FILE,
+      code: `
+import { memo } from 'react';
+import { useBase62Id } from 'src/hooks/useBase62Id';
+const ExamplePanel = memo(() => {
+  const placementId = useBase62Id();
+  return <div id={placementId}>Hello</div>;
+});
+`,
+    },
+
+    // 29. The climb answers with the OUTER binding's name, so a wrapper cannot
+    // launder a non-component into one: this binding is neither PascalCase nor a
+    // hook name, and stays exempt exactly as its unwrapped spelling does.
+    {
+      filename: IN_SCOPE_FILE,
+      code: `
+import { memo, useState } from 'react';
+import { uuidv4Base62 } from 'functions/src/util/uuidv4Base62';
+const buildSessionId = memo(() => {
+  const [sessionId] = useState(() => uuidv4Base62());
+  return sessionId;
+});
+`,
+    },
+
+    // 30. Only the first argument carries the component. A comparator passed as
+    // `memo`'s second argument runs per comparison, so an ID minted inside it is
+    // per-operation and not a stable component ID.
+    {
+      filename: IN_SCOPE_FILE,
+      code: `
+import { memo } from 'react';
+import { uuidv4Base62 } from 'functions/src/util/uuidv4Base62';
+const ExamplePanel = memo(ExamplePanelUnmemoized, (prev, next) => {
+  const traceId = uuidv4Base62();
+  logComparison(traceId, prev, next);
+  return prev.id === next.id;
+});
+`,
+    },
+
+    // 31. Only the wrappers `require-memo` emits are climbed. An arbitrary
+    // callee is no evidence of component-hood — its argument is as likely a
+    // callback, where a per-operation ID is the point — so it stays a boundary.
+    {
+      filename: IN_SCOPE_FILE,
+      code: `
+import { uuidv4Base62 } from 'functions/src/util/uuidv4Base62';
+const SessionRunner = createRunner(() => {
+  const operationId = uuidv4Base62();
+  return operationId;
+});
+`,
+    },
   ],
 
   invalid: [
@@ -960,6 +1019,200 @@ import { uuidv4Base62 } from 'functions/src/util/uuidv4Base62';
 export function useMyHook() {
   return useRef(uuidv4Base62());
 }
+`,
+      errors: [{ messageId: 'preferUseBase62IdHook' }],
+    },
+
+    // 37. `memo(...)` is the shape `require-memo` autofixes a component INTO, so
+    // the wrapper may not hide the hydration hazard from this rule (#2005).
+    {
+      filename: IN_SCOPE_FILE,
+      code: `
+import { memo, useState } from 'react';
+import { uuidv4Base62 } from 'functions/src/util/uuidv4Base62';
+const ExamplePanel = memo(({ existingId }) => {
+  const [placementId] = useState(() => existingId ?? uuidv4Base62());
+  return <div id={placementId}>Hello</div>;
+});
+`,
+      errors: [{ messageId: 'preferUseBase62IdHook' }],
+    },
+
+    // 38. The same for the useRef handler.
+    {
+      filename: IN_SCOPE_FILE,
+      code: `
+import { memo, useRef } from 'react';
+import { uuidv4Base62 } from 'functions/src/util/uuidv4Base62';
+const ExamplePanel = memo(() => {
+  const idRef = useRef(uuidv4Base62());
+  return <div id={idRef.current}>Hello</div>;
+});
+`,
+      errors: [{ messageId: 'preferUseBase62IdHook' }],
+    },
+
+    // 39. …and for the empty-deps useMemo handler.
+    {
+      filename: IN_SCOPE_FILE,
+      code: `
+import { memo, useMemo } from 'react';
+import { uuidv4Base62 } from 'functions/src/util/uuidv4Base62';
+const ExamplePanel = memo(() => {
+  const stableId = useMemo(() => uuidv4Base62(), []);
+  return <div id={stableId}>Hello</div>;
+});
+`,
+      errors: [{ messageId: 'preferUseBase62IdUseMemo' }],
+    },
+
+    // 40. …and for a bare call at the wrapped component's top level.
+    {
+      filename: IN_SCOPE_FILE,
+      code: `
+import { memo } from 'react';
+import { uuidv4Base62 } from 'functions/src/util/uuidv4Base62';
+const ExamplePanel = memo(() => {
+  const placementId = uuidv4Base62();
+  return <div id={placementId}>Hello</div>;
+});
+`,
+      errors: [{ messageId: 'preferUseBase62IdTopLevel' }],
+    },
+
+    // 41. The namespaced callee `React.memo` names the same wrapper.
+    {
+      filename: IN_SCOPE_FILE,
+      code: `
+import React, { useState } from 'react';
+import { uuidv4Base62 } from 'functions/src/util/uuidv4Base62';
+const ExamplePanel = React.memo(() => {
+  const [placementId] = useState(() => uuidv4Base62());
+  return <div id={placementId}>Hello</div>;
+});
+`,
+      errors: [{ messageId: 'preferUseBase62IdHook' }],
+    },
+
+    // 42. `forwardRef` is the wrapper `require-memo` pairs with `memo` whenever
+    // a ref is forwarded.
+    {
+      filename: IN_SCOPE_FILE,
+      code: `
+import { forwardRef, useState } from 'react';
+import { uuidv4Base62 } from 'functions/src/util/uuidv4Base62';
+const ExamplePanel = forwardRef((props, ref) => {
+  const [placementId] = useState(() => uuidv4Base62());
+  return <div id={placementId} ref={ref}>Hello</div>;
+});
+`,
+      errors: [{ messageId: 'preferUseBase62IdHook' }],
+    },
+
+    // 43. Nested wrappers peel one after the other.
+    {
+      filename: IN_SCOPE_FILE,
+      code: `
+import { forwardRef, memo, useState } from 'react';
+import { uuidv4Base62 } from 'functions/src/util/uuidv4Base62';
+const ExamplePanel = memo(
+  forwardRef((props, ref) => {
+    const [placementId] = useState(() => uuidv4Base62());
+    return <div id={placementId} ref={ref}>Hello</div>;
+  }),
+);
+`,
+      errors: [{ messageId: 'preferUseBase62IdHook' }],
+    },
+
+    // 44. The comparator `memo-compare-deeply-complex-props` adds as a second
+    // argument leaves the component in first position.
+    {
+      filename: IN_SCOPE_FILE,
+      code: `
+import { useState } from 'react';
+import { compareDeeply, memo } from 'src/util/memo';
+import { uuidv4Base62 } from 'functions/src/util/uuidv4Base62';
+const ExamplePanel = memo(({ existingId }) => {
+  const [placementId] = useState(() => uuidv4Base62());
+  return <div id={placementId} data-existing={existingId}>Hello</div>;
+}, compareDeeply('existingId'));
+`,
+      errors: [{ messageId: 'preferUseBase62IdHook' }],
+    },
+
+    // 45. `memo?.(...)` parses as a ChainExpression around the call, so the
+    // wrapper sits one node deeper than the plain spelling.
+    {
+      filename: IN_SCOPE_FILE,
+      parserOptions: { ecmaVersion: 2020 },
+      code: `
+import { memo, useState } from 'react';
+import { uuidv4Base62 } from 'functions/src/util/uuidv4Base62';
+const ExamplePanel = memo?.(() => {
+  const [placementId] = useState(() => uuidv4Base62());
+  return <div id={placementId}>Hello</div>;
+});
+`,
+      errors: [{ messageId: 'preferUseBase62IdHook' }],
+    },
+
+    // 46. The same for an optional member callee, `React?.memo(...)`.
+    {
+      filename: IN_SCOPE_FILE,
+      parserOptions: { ecmaVersion: 2020 },
+      code: `
+import React, { useState } from 'react';
+import { uuidv4Base62 } from 'functions/src/util/uuidv4Base62';
+const ExamplePanel = React?.memo(() => {
+  const [placementId] = useState(() => uuidv4Base62());
+  return <div id={placementId}>Hello</div>;
+});
+`,
+      errors: [{ messageId: 'preferUseBase62IdHook' }],
+    },
+
+    // 47. The function-expression spelling `require-memo` emits when it rewrites
+    // a function declaration.
+    {
+      filename: IN_SCOPE_FILE,
+      code: `
+import { memo, useState } from 'react';
+import { uuidv4Base62 } from 'functions/src/util/uuidv4Base62';
+const ExamplePanel = memo(function ExamplePanelUnmemoized() {
+  const [placementId] = useState(() => uuidv4Base62());
+  return <div id={placementId}>Hello</div>;
+});
+`,
+      errors: [{ messageId: 'preferUseBase62IdHook' }],
+    },
+
+    // 48. A type-only wrapper may sit OUTSIDE the memo call, between it and the
+    // declarator, so the climb has to look through both kinds of wrapper.
+    {
+      filename: IN_SCOPE_FILE,
+      code: `
+import { FC, memo, useState } from 'react';
+import { uuidv4Base62 } from 'functions/src/util/uuidv4Base62';
+const ExamplePanel = memo(() => {
+  const [placementId] = useState(() => uuidv4Base62());
+  return <div id={placementId}>Hello</div>;
+}) as FC;
+`,
+      errors: [{ messageId: 'preferUseBase62IdHook' }],
+    },
+
+    // 49. A memo-wrapped custom hook is reached by the hook-name half of the
+    // same predicate.
+    {
+      filename: IN_SCOPE_HOOK,
+      code: `
+import { memo, useRef } from 'react';
+import { uuidv4Base62 } from 'functions/src/util/uuidv4Base62';
+export const useExampleId = memo(() => {
+  const idRef = useRef(uuidv4Base62());
+  return idRef.current;
+});
 `,
       errors: [{ messageId: 'preferUseBase62IdHook' }],
     },

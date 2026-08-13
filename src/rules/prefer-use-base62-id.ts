@@ -51,6 +51,42 @@ function isPascalCase(name: string): boolean {
 }
 
 /**
+ * Wrappers that exist purely at the type level: they leave the wrapped
+ * expression's runtime value untouched, so a value wrapped in them is still the
+ * value the enclosing declarator binds.
+ */
+const TYPE_ONLY_WRAPPERS = new Set<AST_NODE_TYPES>([
+  AST_NODE_TYPES.TSAsExpression,
+  AST_NODE_TYPES.TSSatisfiesExpression,
+  AST_NODE_TYPES.TSNonNullExpression,
+  AST_NODE_TYPES.TSTypeAssertion,
+]);
+
+/**
+ * `require-memo` rewrites `const Widget = (props) => ...` into
+ * `const Widget = memo(...)`, and pairs that wrapper with `forwardRef` whenever
+ * a ref is forwarded, so a component's function reaches this rule behind a
+ * wrapper CALL at least as often as it sits directly under its declarator.
+ * Climbing them is what keeps the recommended config's own autofix from hiding
+ * the component from every handler here (#2005).
+ */
+const COMPONENT_WRAPPERS = new Set(['memo', 'forwardRef']);
+
+function isComponentWrapperCallee(callee: TSESTree.Node): boolean {
+  if (callee.type === AST_NODE_TYPES.Identifier) {
+    return COMPONENT_WRAPPERS.has(callee.name);
+  }
+  if (
+    callee.type === AST_NODE_TYPES.MemberExpression &&
+    !callee.computed &&
+    callee.property.type === AST_NODE_TYPES.Identifier
+  ) {
+    return COMPONENT_WRAPPERS.has(callee.property.name);
+  }
+  return false;
+}
+
+/**
  * Checks whether a node is a React component or hook function.
  * Hooks: function whose name starts with "use" followed by an uppercase letter.
  * Components: function with a PascalCase name.
@@ -68,15 +104,64 @@ function isComponentOrHook(
 
   // FunctionExpression or ArrowFunctionExpression assigned to a variable:
   // const MyComponent = () => {} or const useHook = () => {}
-  const parent = node.parent;
-  if (parent?.type === AST_NODE_TYPES.VariableDeclarator) {
-    const id = parent.id;
+  const declarator = getBindingDeclarator(node);
+  if (declarator) {
+    const id = declarator.id;
     if (id.type === AST_NODE_TYPES.Identifier) {
       return isPascalCase(id.name) || isHookName(id.name);
     }
   }
 
   return false;
+}
+
+/**
+ * The declarator whose binding names the given function, seen through the
+ * wrappers that may stand between the two, or undefined when the function is
+ * not bound by a declarator at all.
+ *
+ * Only the FIRST argument of a wrapper is followed: a wrapper's remaining
+ * arguments are comparators (`memo(Widget, compareDeeply('id'))`), which run per
+ * comparison rather than per render and are no part of the component. Wrappers
+ * nest (`memo(forwardRef(fn))`), so the climb loops.
+ */
+function getBindingDeclarator(
+  node: TSESTree.Node,
+): TSESTree.VariableDeclarator | undefined {
+  let child: TSESTree.Node = node;
+  let current: TSESTree.Node | undefined = node.parent;
+
+  while (current) {
+    // A type-only wrapper may sit on either side of the call, as in
+    // `const Widget = memo(fn) as FC`, and changes nothing at runtime.
+    // ESTree wraps `memo?.(fn)` and `React?.memo(fn)` in a ChainExpression, so
+    // an optionally-called wrapper sits one node deeper than the plain
+    // spelling.
+    if (
+      TYPE_ONLY_WRAPPERS.has(current.type) ||
+      current.type === AST_NODE_TYPES.ChainExpression
+    ) {
+      child = current;
+      current = current.parent;
+      continue;
+    }
+
+    if (
+      current.type === AST_NODE_TYPES.CallExpression &&
+      isComponentWrapperCallee(current.callee) &&
+      current.arguments[0] === child
+    ) {
+      child = current;
+      current = current.parent;
+      continue;
+    }
+
+    break;
+  }
+
+  return current?.type === AST_NODE_TYPES.VariableDeclarator
+    ? current
+    : undefined;
 }
 
 /**
@@ -171,18 +256,6 @@ function hasEmptyDepsArray(callNode: TSESTree.CallExpression): boolean {
     deps.type === AST_NODE_TYPES.ArrayExpression && deps.elements.length === 0
   );
 }
-
-/**
- * Wrappers that exist purely at the type level: they leave the wrapped
- * expression's runtime value untouched, so a value wrapped in them is still the
- * value the enclosing declarator binds.
- */
-const TYPE_ONLY_WRAPPERS = new Set<AST_NODE_TYPES>([
-  AST_NODE_TYPES.TSAsExpression,
-  AST_NODE_TYPES.TSSatisfiesExpression,
-  AST_NODE_TYPES.TSNonNullExpression,
-  AST_NODE_TYPES.TSTypeAssertion,
-]);
 
 /**
  * Returns the nearest ancestor that carries runtime meaning, skipping the
