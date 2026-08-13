@@ -469,6 +469,35 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
     const INSTANCE_RECEIVER_KEY = 'this';
 
     /**
+     * Strips the wrappers that punctuate an expression without changing which
+     * value it denotes, so one path is recognized however it is spelled
+     * (`a.b`, `a?.b`, `a!.b`, `(a as T).b`).
+     */
+    function unwrapExpression(node: TSESTree.Node): TSESTree.Node {
+      let current: TSESTree.Node = node;
+      while (
+        current.type === AST_NODE_TYPES.ChainExpression ||
+        current.type === AST_NODE_TYPES.TSNonNullExpression ||
+        current.type === AST_NODE_TYPES.TSAsExpression
+      ) {
+        current = current.expression;
+      }
+      return current;
+    }
+
+    /**
+     * Walks a member chain down to the expression it is rooted at: the binding,
+     * the instance, or whatever else the chain starts from.
+     */
+    function getPathRoot(node: TSESTree.Node): TSESTree.Node {
+      let root = unwrapExpression(node);
+      while (root.type === AST_NODE_TYPES.MemberExpression) {
+        root = unwrapExpression(root.object);
+      }
+      return root;
+    }
+
+    /**
      * Builds a stable textual key for the object a method is invoked on, so two
      * awaits can be compared for "same receiver" by string equality.
      *
@@ -656,6 +685,134 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
     }
 
     /**
+     * A path an expression requires to already hold an object, paired with the
+     * expression that path is rooted at.
+     */
+    type DereferencedPath = {
+      key: string;
+      root: TSESTree.Node;
+    };
+
+    /**
+     * Collects the member paths an expression DEREFERENCES: the object of a
+     * member access that is itself a member access, keyed the same way a
+     * receiver is.
+     *
+     * Depth is what makes the path a REQUIREMENT rather than a mere read.
+     * Evaluating `store.data.id` demands that `store.data` already hold an
+     * object, and throws when it does not; evaluating `store.data` demands
+     * nothing, since an unfilled slot yields `undefined` and passing `undefined`
+     * onward is silent. Only the former can turn the Promise.all rewrite into a
+     * crash, so only the former mints a key here.
+     *
+     * The traversal stops at function boundaries, the opposite of
+     * getInstancePathKeys: the hazard is eager evaluation at array-literal
+     * construction, and a path inside a callback handed to the operation is
+     * dereferenced when that callback runs, which the rewrite does not move.
+     *
+     * The root node travels with the key because the two questions the barrier
+     * asks of a path -- which slot it names, and where its root is bound -- are
+     * answered by different things.
+     */
+    function getDereferencedPaths(node: TSESTree.Node): DereferencedPath[] {
+      const paths: DereferencedPath[] = [];
+
+      const visit = (current: TSESTree.Node): void => {
+        if (current.type === AST_NODE_TYPES.MemberExpression) {
+          const object = unwrapExpression(current.object);
+          if (object.type === AST_NODE_TYPES.MemberExpression) {
+            const key = getReceiverKey(object);
+            if (key !== null) {
+              paths.push({ key, root: getPathRoot(object) });
+            }
+          }
+        }
+
+        if (FUNCTION_BOUNDARY_TYPES.has(current.type)) {
+          return;
+        }
+
+        for (const key in current) {
+          if (key === 'parent' || key === 'range' || key === 'loc') continue;
+
+          const child = (current as any)[key];
+          if (!child || typeof child !== 'object') continue;
+
+          if (Array.isArray(child)) {
+            for (const item of child) {
+              if (item && typeof item === 'object' && 'type' in item) {
+                visit(item as TSESTree.Node);
+              }
+            }
+          } else if ('type' in child) {
+            visit(child as TSESTree.Node);
+          }
+        }
+      };
+
+      visit(node);
+      return paths;
+    }
+
+    /**
+     * Reports whether a path is rooted at state an opaque call could reach
+     * without ever being handed it: a module-scope binding (a module-level
+     * `const`, or an import), or a name that resolves nowhere and is therefore
+     * an implicit global.
+     *
+     * A function-local root fails the test. A parameter or a local `const` is
+     * not visible to a callee that receives neither, so a bare-identifier call
+     * cannot rebind it, and reading a slot beneath it after that call is not the
+     * hazard this barrier answers.
+     *
+     * The instance fails it too: `this` names an object a free function was not
+     * given, so an instance path can only be written through code the run
+     * itself shows -- which the closure-write barrier already reads.
+     */
+    function isAmbientlyReachableRoot(
+      path: string,
+      root: TSESTree.Node,
+      declaredNames: Set<string>,
+    ): boolean {
+      if (root.type !== AST_NODE_TYPES.Identifier) {
+        return false;
+      }
+      if (isInstancePathKey(path) || declaredNames.has(root.name)) {
+        return false;
+      }
+
+      const variable = ASTHelpers.findVariableInScope(
+        ASTHelpers.getScope(context, root),
+        root.name,
+      );
+      if (!variable) {
+        return true;
+      }
+
+      return (
+        variable.scope.type === TSESLint.Scope.ScopeType.module ||
+        variable.scope.type === TSESLint.Scope.ScopeType.global
+      );
+    }
+
+    /**
+     * Reports whether an awaited expression is a call through a bare identifier
+     * (`hydrate()`, `initAnalytics()`), the one callee shape that names no
+     * receiver at all. Such a call's effects are reachable only through the
+     * module scope it closes over, so nothing in the run describes what it
+     * touches. Handles optional-call ChainExpressions.
+     */
+    function hasBareIdentifierCallee(
+      awaitExpr: TSESTree.AwaitExpression,
+    ): boolean {
+      const argument = unwrapExpression(awaitExpr.argument);
+      return (
+        argument.type === AST_NODE_TYPES.CallExpression &&
+        unwrapExpression(argument.callee).type === AST_NODE_TYPES.Identifier
+      );
+    }
+
+    /**
      * Extracts the receiver key of an awaited *named-method* call: the key of
      * the `object` of a `MemberExpression` callee, when the accessed member is
      * a named method -- either a non-computed property (`versionRef.set(...)`)
@@ -697,6 +854,129 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
       }
 
       return getReceiverKey(callee.object);
+    }
+
+    /**
+     * Finds the function a class declares for a member name, searching the
+     * class body that encloses a node. Both spellings of a method-valued member
+     * qualify: a `MethodDefinition` and a `PropertyDefinition` initialized with
+     * a function.
+     *
+     * The NEAREST enclosing class body is the one searched. A method reached
+     * through `super` resolves against a base class, and an inner class shadows
+     * an outer one, so the answer can name a function other than the one that
+     * actually runs -- but the caller only ever ADDS the resolved body's writes
+     * to the writes it already sees, so a wrong answer can only introduce a
+     * barrier, the direction this rule's trade-off prefers.
+     */
+    function findClassMethodFunction(
+      node: TSESTree.Node,
+      memberName: string,
+    ): TSESTree.Node | null {
+      let current: TSESTree.Node | undefined = node;
+      while (current && current.type !== AST_NODE_TYPES.ClassBody) {
+        current = current.parent as TSESTree.Node | undefined;
+      }
+      if (!current) {
+        return null;
+      }
+
+      for (const member of current.body) {
+        if (
+          member.type !== AST_NODE_TYPES.MethodDefinition &&
+          member.type !== AST_NODE_TYPES.PropertyDefinition
+        ) {
+          continue;
+        }
+        if (member.computed) {
+          continue;
+        }
+
+        const key = member.key;
+        const name =
+          key.type === AST_NODE_TYPES.PrivateIdentifier
+            ? `#${key.name}`
+            : key.type === AST_NODE_TYPES.Identifier
+            ? key.name
+            : null;
+        if (name !== memberName) {
+          continue;
+        }
+
+        const value = member.value;
+        if (value && FUNCTION_BOUNDARY_TYPES.has(value.type)) {
+          return value;
+        }
+      }
+
+      return null;
+    }
+
+    /**
+     * Resolves an awaited call to the function this file DECLARES for its
+     * callee: a hoisted `function` declaration, a binding initialized with a
+     * function, or a method of the enclosing class reached through
+     * `this`/`super`.
+     *
+     * The body is where an operation's ordering constraint usually lives.
+     * `await hydrate()` discards its result and mentions nothing it touches, so
+     * every barrier keyed on the run's own text reads it as independent, while
+     * the body assigns the very state the next await dereferences. Reading the
+     * body turns that guess into a fact wherever the file supplies one.
+     *
+     * Only one level is followed, so a write reached through a helper's own
+     * helper stays invisible. A callee that resolves nowhere -- an import, a
+     * parameter, a method on some other object -- yields null and leaves the
+     * syntactic barriers to answer for it.
+     */
+    function resolveCalleeFunction(
+      awaitExpr: TSESTree.AwaitExpression,
+    ): TSESTree.Node | null {
+      const argument = unwrapExpression(awaitExpr.argument);
+      if (argument.type !== AST_NODE_TYPES.CallExpression) {
+        return null;
+      }
+
+      const callee = unwrapExpression(argument.callee);
+      if (callee.type === AST_NODE_TYPES.Identifier) {
+        const variable = ASTHelpers.findVariableInScope(
+          ASTHelpers.getScope(context, callee),
+          callee.name,
+        );
+        if (!variable) {
+          return null;
+        }
+        for (const definition of variable.defs) {
+          const declaration = definition.node;
+          if (declaration.type === AST_NODE_TYPES.FunctionDeclaration) {
+            return declaration;
+          }
+          if (
+            declaration.type === AST_NODE_TYPES.VariableDeclarator &&
+            declaration.init &&
+            FUNCTION_BOUNDARY_TYPES.has(declaration.init.type)
+          ) {
+            return declaration.init;
+          }
+        }
+        return null;
+      }
+
+      if (callee.type !== AST_NODE_TYPES.MemberExpression) {
+        return null;
+      }
+      const object = unwrapExpression(callee.object);
+      if (
+        object.type !== AST_NODE_TYPES.ThisExpression &&
+        object.type !== AST_NODE_TYPES.Super
+      ) {
+        return null;
+      }
+
+      const memberName = getMemberSegment(callee);
+      return memberName === null
+        ? null
+        : findClassMethodFunction(awaitExpr, memberName);
     }
 
     /**
@@ -1423,11 +1703,32 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
       // a write to `this.alpha` leaves a later `this.beta` parallelizable while
       // a write to `this.state` still blocks a later `this.state.mutator`.
       // (#1924)
+      //
+      // A write inside the awaited call's own BODY reaches the enclosing scope
+      // exactly as a write inside a callback does -- `await hydrate()`, where
+      // `hydrate` assigns `store.state`, publishes that slot by the time it
+      // settles. The body is not part of the awaited expression, so the
+      // traversal above cannot see it; wherever the file declares the callee,
+      // its writes are read from there and joined to the ones spelled out in
+      // the run. (#1989)
       const assignedState = awaitNodes.map((node) => {
         const awaitExpr = getAwaitExpression(node);
-        return awaitExpr
-          ? getAssignedState(awaitExpr.argument)
-          : { names: new Set<string>(), instancePaths: new Set<string>() };
+        if (!awaitExpr) {
+          return { names: new Set<string>(), instancePaths: new Set<string>() };
+        }
+        const written = getAssignedState(awaitExpr.argument);
+        const calleeFunction = resolveCalleeFunction(awaitExpr);
+        if (!calleeFunction) {
+          return written;
+        }
+        const calleeWritten = getAssignedState(calleeFunction);
+        return {
+          names: new Set([...written.names, ...calleeWritten.names]),
+          instancePaths: new Set([
+            ...written.instancePaths,
+            ...calleeWritten.instancePaths,
+          ]),
+        };
       });
       const readInstancePaths = awaitNodes.map((node) => {
         const awaitExpr = getAwaitExpression(node);
@@ -1474,6 +1775,81 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
         const awaitExpr = getAwaitExpression(awaitNodes[i]);
         if (awaitExpr && isFoldAccumulatorAwait(awaitExpr)) {
           return true;
+        }
+      }
+
+      // 12. Deferred-dereference barrier. A statement AFTER an await occupies a
+      // deferred position: it is evaluated only once the preceding promise
+      // settles. The rewrite splices its awaited operand into a `Promise.all`
+      // ARRAY LITERAL, whose elements evaluate eagerly at construction. Any slot
+      // the later operand must dereference is therefore read BEFORE the earlier
+      // operation runs, so a slot that operation installs is read while still
+      // `undefined` and the element throws a TypeError -- code that returned a
+      // value before the fix crashes after it. The two awaits are genuinely
+      // ordered, so the run is not a latency mistake and the rule declines to
+      // report it rather than merely declining the fix. (#1989)
+      //
+      // The write itself is invisible: it happens inside the awaited call's own
+      // BODY, so no value flows out of the await, no variable is declared, and
+      // no assignment appears anywhere the closure-write barrier looks. What the
+      // run does show is REACH -- whether the earlier operation could have
+      // installed the slot at all -- and only a discarded-result await qualifies
+      // as the writer, since a captured result is a value dependency the
+      // identifier comparison already sees.
+      //
+      // Reach comes in two shapes, and only these two, so that sibling slots
+      // under a shared namespace (`api.users.getAll()` then
+      // `api.posts.getRecent()`) stay parallelizable:
+      //
+      //   (a) The earlier call is invoked ON a receiver that CONTAINS the slot
+      //       (`this.connect()` then `this.client.send()`, `store.load()` then
+      //       `send(store.data.id)`). A method can fill any slot beneath its own
+      //       receiver, which is what makes such a pair ordered. This widens the
+      //       shared-receiver barrier from equality to containment: barrier 7
+      //       compares two receivers, whereas here the earlier receiver is
+      //       compared against a path the later operand merely reads.
+      //
+      //   (b) The earlier call goes through a bare identifier (`hydrate()`,
+      //       `initAnalytics()`) and the slot hangs off module-scope state. Such
+      //       a call names no receiver, so the run says nothing about what it
+      //       touches, while module-scope state is reachable from inside it
+      //       without ever being passed in. Function-local roots and instance
+      //       paths are excluded: a free function handed neither cannot rebind
+      //       them, so writes that reach them are visible in the run and belong
+      //       to the closure-write barrier.
+      const dereferencedPaths = awaitNodes.map((node) => {
+        const awaitExpr = getAwaitExpression(node);
+        return awaitExpr ? getDereferencedPaths(awaitExpr.argument) : [];
+      });
+      for (let i = 1; i < awaitNodes.length; i++) {
+        const paths = dereferencedPaths[i];
+        if (paths.length === 0) continue;
+
+        for (let j = 0; j < i; j++) {
+          if (awaitNodes[j].type !== AST_NODE_TYPES.ExpressionStatement) {
+            continue;
+          }
+          const priorExpr = getAwaitExpression(awaitNodes[j]);
+          if (!priorExpr) continue;
+
+          const priorReceiver = receiverKeys[j];
+          for (const path of paths) {
+            if (
+              priorReceiver !== null &&
+              (path.key === priorReceiver ||
+                path.key.startsWith(`${priorReceiver}.`))
+            ) {
+              return true;
+            }
+
+            if (
+              priorReceiver === null &&
+              hasBareIdentifierCallee(priorExpr) &&
+              isAmbientlyReachableRoot(path.key, path.root, variableNames)
+            ) {
+              return true;
+            }
+          }
         }
       }
 
