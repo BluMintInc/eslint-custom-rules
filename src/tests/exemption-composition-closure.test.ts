@@ -33,11 +33,27 @@
  * (see `harvestRuleTesterCases`). They are the right corpus precisely because a
  * `valid` list is written to sit on the rule's carve-out boundaries — which is
  * where a sibling fixer strips a carrier. The docs blocks do not go there.
+ *
+ * Every case is built through `fixtureCorpus`, which fixes the two ways this
+ * corpus silently shrank (#1984). Both are invisible from the outside, because
+ * findings are filtered by `ruleId` and an unparsed fixture reports nothing:
+ *   - The filename comes from `defaultFilenameFor`, i.e. from the CODE. Chosen
+ *     from the TESTER instead, 106 valid cases across 7 rules were a fatal parse.
+ *   - Every tester's language is carried, not just TypeScript. Dropping the
+ *     others cost `no-unpinned-dependencies` and
+ *     `enforce-typescript-markdown-code-blocks` their entire corpus, and both
+ *     ship `recommended: 'error'` with `fixable: 'code'`.
  */
 import { Linter, Rule } from 'eslint';
-import * as tsParser from '@typescript-eslint/parser';
 import {
+  defaultFilenameFor,
+  defineCorpusParsers,
+  FixtureBucket,
+  FixtureLanguage,
   harvestOnce,
+  LANGUAGE_BY_TESTER,
+  parserKeyFor,
+  parserOptionsFor,
   silentWithoutProgramRuleNames,
   suggestionEditsOf,
   suggestionRuleNames,
@@ -76,7 +92,7 @@ for (const [id, severity] of Object.entries(plugin.configs.recommended.rules)) {
 }
 
 const linter = new Linter();
-linter.defineParser('ts', tsParser as never);
+defineCorpusParsers(linter);
 for (const [name, rule] of Object.entries(plugin.rules)) {
   linter.defineRule(PREFIX + name, rule as never);
 }
@@ -199,18 +215,19 @@ linter.defineRule(
   ),
 );
 
+/**
+ * The parser and options are read from the CASE, not fixed to TypeScript: a
+ * JSON or Markdown fixture handed to `@typescript-eslint/parser` is a fatal
+ * parse, and every consumer here filters by `ruleId`, so that fatal is
+ * indistinguishable from the rule staying silent (#1860).
+ */
 const configFor = (
   rules: Record<string, unknown>,
-  parserOptions: unknown,
+  testCase: ValidCase,
 ): Linter.Config =>
   ({
-    parser: 'ts',
-    parserOptions: {
-      ecmaVersion: 2022,
-      sourceType: 'module',
-      ecmaFeatures: { jsx: true },
-      ...(parserOptions as object | null),
-    },
+    parser: parserKeyFor(testCase),
+    parserOptions: parserOptionsFor(testCase),
     rules,
   } as unknown as Linter.Config);
 
@@ -218,7 +235,13 @@ type ValidCase = {
   code: string;
   filename: string;
   options?: readonly unknown[];
-  parserOptions?: unknown;
+  parserOptions?: Record<string, unknown>;
+  /** Which shared tester declared it, which fixes the parser. */
+  tester: string;
+  /** The tester's language, so the matching parser is selected. */
+  language: FixtureLanguage;
+  /** Only `valid` cases: a case the rule reports on has no exemption to lose. */
+  bucket: FixtureBucket;
   /** Declaring suite, so a finding is reproducible by hand. */
   origin: string;
 };
@@ -237,14 +260,10 @@ for (const [name, rule] of Object.entries(plugin.rules)) {
 
 const harvested = harvestOnce();
 
-/**
- * The JSON and markdown testers parse a different language entirely, so their
- * fixtures cannot be linted by the TypeScript parser this config uses.
- */
-const TS_TESTERS = new Set(['ruleTesterTs', 'ruleTesterJsx']);
-
 const casesByRule = new Map<string, ValidCase[]>();
 const suitesDropped: string[] = [];
+/** Languages the corpus actually carries, asserted below against the drop. */
+const languagesSeen = new Set<string>();
 
 for (const suite of harvested.suites) {
   const name = ruleNameByIdentity.get(suite.rule);
@@ -252,11 +271,11 @@ for (const suite of harvested.suites) {
     suitesDropped.push(`${suite.file}::${suite.name}`);
     continue;
   }
-  if (!TS_TESTERS.has(suite.tester)) continue;
   if (silentWithoutProgramRuleNames.has(name)) continue;
   // A rule absent from the recommended config is never composed with the others.
   if (!(PREFIX + name in FIX_CONFIG)) continue;
 
+  const language = LANGUAGE_BY_TESTER[suite.tester] ?? 'ts';
   const bucket = casesByRule.get(name) || [];
   for (const raw of suite.valid) {
     const testCase = (typeof raw === 'string' ? { code: raw } : raw) as
@@ -264,14 +283,26 @@ for (const suite of harvested.suites) {
       | null
       | undefined;
     if (!testCase || typeof testCase.code !== 'string') continue;
-    bucket.push({
+    const probed = {
       code: testCase.code,
-      filename:
-        testCase.filename ||
-        (suite.tester === 'ruleTesterJsx' ? 'x.tsx' : 'x.ts'),
       options: testCase.options,
       parserOptions: testCase.parserOptions,
+      tester: suite.tester,
+      language,
+      bucket: 'valid' as const,
       origin: `src/tests/${suite.file}`,
+    };
+    languagesSeen.add(language);
+    bucket.push({
+      ...probed,
+      /**
+       * `defaultFilenameFor`, not a tester-derived `x.ts`/`x.tsx`. The tester
+       * does not determine the extension a fixture parses under: 106 valid
+       * cases across 7 rules hold JSX under `ruleTesterTs`, and a `.ts` name
+       * forces `ScriptKind.TS`, making each one a FATAL parse that this guard
+       * counted as `skippedFatal` and moved past in silence.
+       */
+      filename: testCase.filename || defaultFilenameFor(probed as never),
     });
   }
   casesByRule.set(name, bucket);
@@ -327,7 +358,7 @@ const verify = (
   testCase: ValidCase,
 ) => {
   try {
-    return linter.verify(code, configFor(rules, testCase.parserOptions), {
+    return linter.verify(code, configFor(rules, testCase), {
       filename: testCase.filename,
     });
   } catch {
@@ -366,7 +397,7 @@ function attributeCulprits(
     try {
       fixedAlone = linter.verifyAndFix(
         testCase.code,
-        configFor({ [candidateId]: severity }, testCase.parserOptions),
+        configFor({ [candidateId]: severity }, testCase),
         { filename: testCase.filename },
       );
     } catch {
@@ -469,7 +500,7 @@ function collectFindings(): Finding[] {
       try {
         fixed = linter.verifyAndFix(
           testCase.code,
-          configFor(fixRules, testCase.parserOptions),
+          configFor(fixRules, testCase),
           { filename: testCase.filename },
         );
       } catch {
@@ -551,6 +582,10 @@ const observedUnreachedCulprits = Object.fromEntries(
  */
 console.log(
   [
+    `[exemption-composition] corpus: ${stats.considered} considered, ` +
+      `${stats.controlSilent} silent, ${stats.rewritten} rewritten, ` +
+      `${stats.skippedFatal} skipped as fatal; languages ` +
+      `${[...languagesSeen].sort().join('/')}`,
     `[exemption-composition] suggestion channel: ${stats.suggestionsApplied} ` +
       `suggestion(s) applied over ${stats.controlSilent} silent fixture(s)`,
     ...suggestionRuleNames.map(
@@ -658,7 +693,6 @@ export const EXEMPTION_DESTROYED_BASELINE: Record<string, string> = {
    */
   'no-entire-object-hook-deps -> enforce-global-constants':
     'the culprit deletes an unread `useMemo` dependency (its documented behaviour), emptying the array, which is precisely the shape the victim exists to report; neither rule is outside its remit, so the composition needs a product decision (#1884)',
-
 };
 
 const observedPairs = new Set(findings.map(pairKey));
@@ -761,14 +795,46 @@ describe('the exemption closure guard is load-bearing', () => {
   });
 
   it('reaches enough silent fixtures, and actually rewrites them', () => {
-    // 5,954 at the time of writing.
-    expect(stats.considered).toBeGreaterThanOrEqual(5500);
+    // 8,153 at the time of writing. The floors sit just under the measurement
+    // rather than far below it: the previous 5,500/5,400/1,500 had decayed into
+    // 32% slack, which is more than enough room to absorb the entire corpus
+    // loss this guard exists to notice.
+    expect(stats.considered).toBeGreaterThanOrEqual(8000);
     // A case the rule already reports on cannot lose an exemption, so the
-    // silent subset is the real corpus (5,856).
-    expect(stats.controlSilent).toBeGreaterThanOrEqual(5400);
+    // silent subset is the real corpus (8,095).
+    expect(stats.controlSilent).toBeGreaterThanOrEqual(7900);
     // And the config's `--fix` must actually rewrite a large share of them
-    // (1,728), or step 2 is a no-op and every result is vacuous.
-    expect(stats.rewritten).toBeGreaterThanOrEqual(1500);
+    // (3,083), or step 2 is a no-op and every result is vacuous.
+    expect(stats.rewritten).toBeGreaterThanOrEqual(2900);
+  });
+
+  it('loses no case to a filename the harness itself chose', () => {
+    /**
+     * A fatal parse is indistinguishable from silence once messages are
+     * filtered by `ruleId`, so every case counted here contributed a false
+     * clean. Deriving the extension from the TESTER (`x.ts`/`x.tsx`) rather
+     * than from the CODE did that to 106 valid cases across 7 rules, each
+     * holding JSX under `ruleTesterTs`: a `.ts` name forces `ScriptKind.TS`,
+     * making the fixture unparseable. Asserting ZERO, not a ceiling, is what
+     * makes the next such case a failure instead of a rounding error.
+     */
+    expect(stats.skippedFatal).toBe(0);
+  });
+
+  it("carries every tester's language, not only TypeScript", () => {
+    /**
+     * Dropping the non-TS testers cost two registered rules their ENTIRE
+     * corpus. Both ship `recommended: 'error'` with `fixable: 'code'`, so both
+     * rewrite consumer code while contributing nothing to this axis (#1860).
+     */
+    expect([...languagesSeen].sort()).toEqual(['json', 'markdown', 'ts']);
+    const nonTsRules = [
+      'no-unpinned-dependencies',
+      'enforce-typescript-markdown-code-blocks',
+    ];
+    expect(
+      nonTsRules.filter((rule) => !(casesByRule.get(rule) || []).length),
+    ).toEqual([]);
   });
 
   /**
@@ -780,7 +846,9 @@ describe('the exemption closure guard is load-bearing', () => {
   it('accounts for every suggestion-bearing rule, unreached ones by reason', () => {
     expect(suggestionRuleNames.length).toBeGreaterThanOrEqual(7);
     expect(observedUnreachedCulprits).toEqual(UNREACHED_SUGGESTION_CULPRITS);
-    expect(stats.suggestionsApplied).toBeGreaterThanOrEqual(40);
+    // Measured: 83 applied. At the 40 this replaced, half the channel could
+    // vanish while the suite stayed green.
+    expect(stats.suggestionsApplied).toBeGreaterThanOrEqual(80);
   });
 
   it('detects a destroyed exemption (positive control)', () => {
@@ -792,6 +860,9 @@ describe('the exemption closure guard is load-bearing', () => {
     const planted: ValidCase = {
       code: "export const apiUrl = 'https://api.example.com';\n",
       filename: 'src/config/settings.dynamic.ts',
+      tester: 'ruleTesterTs',
+      language: 'ts',
+      bucket: 'valid',
       origin: 'planted control',
     };
     const victim = 'no-static-constants-in-dynamic-files';
@@ -801,7 +872,7 @@ describe('the exemption closure guard is load-bearing', () => {
     expect(verify(planted.code, solo, planted)).toEqual([]);
     const fixed = linter.verifyAndFix(
       planted.code,
-      configFor(withCulprit, planted.parserOptions),
+      configFor(withCulprit, planted),
       { filename: planted.filename },
     );
     expect(fixed.output).not.toBe(planted.code);
@@ -821,6 +892,9 @@ describe('the exemption closure guard is load-bearing', () => {
     const planted: ValidCase = {
       code: "export const apiUrl = 'https://api.example.com';\n",
       filename: 'src/config/settings.dynamic.ts',
+      tester: 'ruleTesterTs',
+      language: 'ts',
+      bucket: 'valid',
       origin: 'planted control',
     };
     const victim = 'no-static-constants-in-dynamic-files';
@@ -828,7 +902,7 @@ describe('the exemption closure guard is load-bearing', () => {
 
     const fixed = linter.verifyAndFix(
       planted.code,
-      configFor(FIX_CONFIG, planted.parserOptions),
+      configFor(FIX_CONFIG, planted),
       { filename: planted.filename },
     );
     expect(fixed.output).toContain('apiUrl');
@@ -842,6 +916,9 @@ describe('the exemption closure guard is load-bearing', () => {
     const planted: ValidCase = {
       code: "export const apiUrl = 'https://api.example.com';\n",
       filename: 'src/config/settings.dynamic.ts',
+      tester: 'ruleTesterTs',
+      language: 'ts',
+      bucket: 'valid',
       origin: 'planted control',
     };
     const victim = 'no-static-constants-in-dynamic-files';
@@ -852,7 +929,7 @@ describe('the exemption closure guard is load-bearing', () => {
     // about the suggestion channel specifically.
     const fixed = linter.verifyAndFix(
       planted.code,
-      configFor({ [CONTROL_SUGGESTER_ID]: 'error' }, planted.parserOptions),
+      configFor({ [CONTROL_SUGGESTER_ID]: 'error' }, planted),
       { filename: planted.filename },
     );
     expect(fixed.output).toBe(planted.code);
@@ -872,6 +949,9 @@ describe('the exemption closure guard is load-bearing', () => {
     const planted: ValidCase = {
       code: "export const apiUrl = 'https://api.example.com';\n",
       filename: 'src/config/settings.dynamic.ts',
+      tester: 'ruleTesterTs',
+      language: 'ts',
+      bucket: 'valid',
       origin: 'planted control',
     };
     const victim = 'no-static-constants-in-dynamic-files';
@@ -894,13 +974,16 @@ describe('the exemption closure guard is load-bearing', () => {
     const inert: ValidCase = {
       code: 'export const alreadyFine = 1;\n',
       filename: 'src/util/helper.ts',
+      tester: 'ruleTesterTs',
+      language: 'ts',
+      bucket: 'valid',
       origin: 'planted control',
     };
     const victim = 'no-static-constants-in-dynamic-files';
     const solo = soloRules(victim, inert);
     const fixed = linter.verifyAndFix(
       inert.code,
-      configFor(FIX_CONFIG, inert.parserOptions),
+      configFor(FIX_CONFIG, inert),
       { filename: inert.filename },
     );
     expect((verify(fixed.output, solo, inert) || []).length).toBe(0);

@@ -139,15 +139,33 @@ const nameByRule = new Map(
 );
 ```
 
-`src/tests/exemption-composition-closure.test.ts` is the reference consumer —
-copy its shape and its exclusion, both of which are now correct.
+**Build the corpus with `src/utils/fixtureCorpus.ts`, never by hand.** It exports
+`defineCorpusParsers`, `parserKeyFor`, `parserOptionsFor`, `defaultFilenameFor`
+and `LANGUAGE_BY_TESTER` precisely so a guard cannot reintroduce the two silent
+losses below. Four guards hand-rolled it anyway and each inherited both — every
+one of them importing `fixtureCorpus` for its *other* helpers, so "does it import
+the helper?" certified all four clean (#1984). `fixture-corpus-accounting.test.ts`
+fails the build on the banned spellings, so a fifth cannot happen quietly.
+
+`src/tests/exemption-composition-closure.test.ts` is the reference consumer.
 `src/tests/comment-fix-fidelity.test.ts` and
 `src/tests/export-surface-integrity.test.ts` are the other two worked examples.
 
-Three constraints are load-bearing — read those files before writing another:
+Four constraints are load-bearing — read those files before writing another:
 
 * **Match rules by object identity**, not by the name passed to `run`. Name-keyed
   matching silently drops every suite with a display name.
+* **Take the filename from `defaultFilenameFor`, never from the TESTER.** A
+  fixture's extension is a property of its CODE. `x.ts`/`x.tsx` chosen by tester
+  made **106 valid cases across 7 rules** a fatal parse — they hold JSX under
+  `ruleTesterTs`, and a `.ts` path forces `ScriptKind.TS`, which
+  `ecmaFeatures.jsx: true` does **not** override. Every consumer filters messages
+  by `ruleId`, so a fatal parse is indistinguishable from the rule staying silent
+  (#1984, and #1859 before it). For the same reason, carry the non-TS testers via
+  `LANGUAGE_BY_TESTER` rather than dropping them: `no-unpinned-dependencies` and
+  `enforce-typescript-markdown-code-blocks` declare only under `ruleTesterJson` /
+  `ruleTesterMarkdown`, and both ship `recommended: 'error'` with
+  `fixable: 'code'` (#1860).
 * **Exclude only `silentWithoutProgramRuleNames`** — rules MEASURED to report
   nothing under a bare `Linter`, and so able to contribute only a false clean.
   Do **not** exclude `typeAwareRuleNames` (every rule mentioning
@@ -165,7 +183,10 @@ Three constraints are load-bearing — read those files before writing another:
 * **Assert non-vacuity.** Floors on cases considered, controls that stayed
   silent, and inputs actually rewritten — plus a planted positive *and* negative
   control. A composition guard whose corpus trips nothing passes forever while
-  asserting nothing.
+  asserting nothing. Assert what the guard SKIPS too: a fatal-parse counter that
+  no `expect` reads discards cases in silence, which is how 106 of them went
+  unnoticed. And keep a floor just under its measured value — the floors that hid
+  #1984 sat at 5,500 against an actual 8,141.
 
 ### ASTHelpers Class
 
