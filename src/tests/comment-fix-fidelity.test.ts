@@ -392,6 +392,13 @@ const stats = {
   skippedFatal: 0,
   skippedNoSignature: 0,
   skippedFatalSuggestion: 0,
+  /**
+   * Reported lines discarded by {@link SITE_CAP} and so never perturbed.
+   * Asserted ZERO below for the same reason as the skips above: an unprobed
+   * site reads exactly like a faithful one, so a cap that silently starts
+   * biting would look like a clean pass (#1996).
+   */
+  droppedSites: 0,
   /** Comparisons per language; a total would let TypeScript hide the rest. */
   comparisonsByLanguage: { ts: 0, json: 0, markdown: 0 } as Record<
     FixtureLanguage,
@@ -434,9 +441,19 @@ const fixOf = (
 };
 
 /**
+ * Perturbation sites per case. The cap is a runtime bound on the slowest suite
+ * here — it keeps one many-error fixture from dominating the run — and is kept
+ * for that reason. What it must not be is SILENT: every line it discards is a
+ * site the guard never probes, which is indistinguishable from a site that
+ * passed. So the drop is counted and asserted zero, and the cap sits above the
+ * measured maximum (5 distinct reported lines, over 4,587 cases) rather than at
+ * it, leaving headroom before the assertion starts failing (#1996).
+ */
+const SITE_CAP = 8;
+
+/**
  * The provably comment-only variants of one source. Reported lines are where a
- * transform edits, so they are where a rebuilt span shows up; the cap keeps one
- * many-error fixture from dominating the run.
+ * transform edits, so they are where a rebuilt span shows up.
  */
 function buildVariants(
   tc: InvalidCase,
@@ -454,13 +471,15 @@ function buildVariants(
     variants.push({ kind, text });
   };
 
-  const reportedLines = [
+  const distinctLines = [
     ...new Set(
       messages
         .map((message) => message.line)
         .filter((line): line is number => Number.isInteger(line)),
     ),
-  ].slice(0, 4);
+  ];
+  const reportedLines = distinctLines.slice(0, SITE_CAP);
+  stats.droppedSites += distinctLines.length - reportedLines.length;
 
   for (const marker of MARKERS_BY_LANGUAGE[tc.language]) {
     addVariant(`LEADING_${marker.kind}`, `${marker.text}\n${code}`);
@@ -733,7 +752,8 @@ console.log(
         .join(' ')}`,
     `[comment-fix-fidelity] skipped: ${stats.skippedFatal} fatal, ` +
       `${stats.skippedNoSignature} unsignable, ` +
-      `${stats.skippedFatalSuggestion} fatal on the suggestion corpus`,
+      `${stats.skippedFatalSuggestion} fatal on the suggestion corpus, ` +
+      `${stats.droppedSites} site(s) past the cap of ${SITE_CAP}`,
   ].join('\n'),
 );
 
@@ -1056,6 +1076,14 @@ describe('the comment fidelity guard is load-bearing', () => {
     expect(stats.skippedFatal).toBe(0);
     expect(stats.skippedNoSignature).toBe(0);
     expect(stats.skippedFatalSuggestion).toBe(0);
+    /**
+     * A site past the cap is never perturbed, and an unprobed site reads exactly
+     * like a faithful one — the same false clean as a fatal parse, arriving by
+     * truncation instead. Asserting ZERO rather than a ceiling is what turns a
+     * rule that starts reporting per-occurrence into a failure here instead of a
+     * silent loss of coverage (#1996).
+     */
+    expect(stats.droppedSites).toBe(0);
   });
 
   /**
