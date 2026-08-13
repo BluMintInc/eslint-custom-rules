@@ -112,6 +112,24 @@ behind without changing when it runs, so the reorder is left to the author.
 Where one statement declares several function-like bindings, only the first is
 ordered, since the rest cannot move independently of it.
 
+## Module-scope callers of a moved helper
+
+The reorder pins non-function statements in place and swaps functions among
+their own slots. When a pinned statement reads a `const`-declared helper at
+module evaluation time — an initializer such as
+`const CHAMPION = buildHit('champion')`, a bare top-level call, an IIFE, or an
+`export default` of the binding — carrying that helper below the pinned
+statement would emit a file that parses and type-checks yet throws
+`ReferenceError: Cannot access '…' before initialization` the moment anything
+imports it.
+
+The autofix is withheld for such a file; the misorder is still reported and the
+reorder is left to the author. References inside function bodies stay deferred
+to call time and never withhold the fix — callers reading helpers from their
+bodies is exactly the shape this rule enforces — and demoting a hoisted
+`function` declaration past its module-scope caller stays loadable, so it is
+not declined either.
+
 ## Shebang files
 
 A `#!` shebang belongs to the file rather than to the statement beneath it, so

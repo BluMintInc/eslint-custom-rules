@@ -1116,6 +1116,15 @@ const FIX_EXEMPT: Record<string, string> = {
   // exempted for above.
   'no-array-length-in-deps':
     'the memo declaration needs a statement position an expression body does not have',
+  // The reorder pins non-function statements and swaps functions among their
+  // slots, so a helper can be carried below a pinned module-scope caller
+  // (`const CHAMPION = buildHit(...)`). A `function` declaration hoists and the
+  // demoted module still loads, so the fix applies; a `const` arrow demoted the
+  // same way throws `ReferenceError` at import, so
+  // reorderDemotesDeclarationBelowEagerReference withholds it (#1983). The
+  // asymmetry IS the hoisting difference between the two spellings.
+  'vertically-group-related-functions':
+    'a hoisted declaration may be demoted past its module-scope caller; a const binding may not',
 };
 
 /**
