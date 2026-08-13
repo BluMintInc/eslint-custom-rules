@@ -875,7 +875,14 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
       },
 
       AssignmentExpression(node: TSESTree.AssignmentExpression) {
-        if (node.left.type === AST_NODE_TYPES.Identifier && node.right) {
+        // Only a plain `=` makes the right-hand side the variable's value. A
+        // compound assignment leaves the prior value reachable (`key ||= K` is
+        // the old key OR K) or provably in play (`key += K`), so recording the
+        // operand would launder an unapproved key into an approved one.
+        if (
+          node.left.type === AST_NODE_TYPES.Identifier &&
+          node.operator === '='
+        ) {
           variableAssignments.set(node.left.name, node.right);
         }
       },

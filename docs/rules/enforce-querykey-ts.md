@@ -18,6 +18,7 @@ As BluMint transitions to centralized router state management with the new query
 1. **Ensures that key parameters** are imported from `src/util/routing/queryKeys.ts` and use the `QUERY_KEY_*` constants
 1. **Accepts an approved re-export** of those constants — the `constants` barrel re-exports queryKeys.ts, so a `QUERY_KEY_*` taken from it is the same constant under a shorter path
 1. **Allows for computed values or variables** that are derived from the imported constants
+1. **Follows a plain `=` reassignment** to the value it assigns, but not a compound one (`||=`, `??=`, `+=`), whose result still depends on the variable's prior value
 1. **Allows a key produced by a call**, since a return value is opaque to a syntactic check
 1. **Provides auto-fix suggestions** when possible to replace string literals with appropriate constant imports
 
@@ -76,6 +77,15 @@ function Component() {
 // A type written onto an invalid key changes nothing about it
 function Component() {
   const [value] = useRouterState({ key: 'playback-id' as const });
+  return <div>{value}</div>;
+}
+
+// A compound assignment leaves the unapproved key reachable
+import { QUERY_KEY_PLAYBACK_ID } from 'src/util/routing/queryKeys';
+function Component() {
+  let key = 'playback-id';
+  key ||= QUERY_KEY_PLAYBACK_ID;
+  const [value] = useRouterState({ key });
   return <div>{value}</div>;
 }
 ```
@@ -180,6 +190,16 @@ function ComponentWithAssertedKey() {
   const [session] = useRouterState({ key: QUERY_KEY_SESSION satisfies string });
   return <div>{session}</div>;
 }
+
+// A plain `=` reassignment makes the constant the key
+import { QUERY_KEY_PLAYBACK_ID } from 'src/util/routing/queryKeys';
+
+function ComponentWithReassignedKey() {
+  let key = 'playback-id';
+  key = QUERY_KEY_PLAYBACK_ID;
+  const [playbackId] = useRouterState({ key });
+  return <div>{playbackId}</div>;
+}
 ```
 
 ## Edge Cases Handled
@@ -268,6 +288,37 @@ This holds wherever the assertion sits — on the key itself, on an operand of a
 concatenation or a ternary, on an interpolated expression, or stacked several
 deep — and it holds for a key reached through a variable, whose initializer
 carries the assertion.
+
+### 6. Reassignment through an assignment expression
+
+A variable's key is read from what was last assigned to it, so a plain `=`
+reassignment is followed to its right-hand side. A **compound** assignment is
+not: `key ||= QUERY_KEY_X` and `key ??= QUERY_KEY_X` leave the prior key
+reachable whenever it is truthy (or non-nullish), and `key += QUERY_KEY_X`
+yields neither operand. Treating the operand as the key would let an unapproved
+key be laundered into an approved one, so those keep reporting.
+
+```typescript
+import { QUERY_KEY_PLAYBACK_ID } from 'src/util/routing/queryKeys';
+
+let approved = 'playback-id';
+approved = QUERY_KEY_PLAYBACK_ID;         // ✅ the constant is the key
+const [a] = useRouterState({ key: approved });
+
+let laundered = 'playback-id';
+laundered ||= QUERY_KEY_PLAYBACK_ID;      // ❌ still 'playback-id' when truthy
+const [b] = useRouterState({ key: laundered });
+```
+
+[`prefer-global-router-state-key`](./prefer-global-router-state-key.md) answers
+identically, since both rules resolve a key variable through the same map.
+
+One shape is reported although the operand is provably the key: a `||=` or `??=`
+onto a variable declared **without** an initializer always assigns, because the
+variable is `undefined`. A declaration with no initializer records nothing, so
+the key resolves to no entry and both rules fall through to reporting an
+unresolved identifier. Tracked as #2001; write `const key = QUERY_KEY_X;`
+instead, which is what that spelling means.
 
 ## Valid Import Sources
 

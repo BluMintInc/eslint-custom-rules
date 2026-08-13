@@ -2354,3 +2354,48 @@ function Component() {
     ],
   },
 );
+
+// ------------------------------------------------------------------
+// Issue #1999: the mirror of enforce-querykey-ts's assignment-operator table.
+//
+// This rule already guards on `node.operator === '='`; its sibling did not,
+// and the two resolve identifier keys through byte-identical
+// `variableAssignments` maps. Neither rule's corpus held a single
+// AssignmentExpression fixture, which is why the divergence stayed invisible
+// (both keys sat on `noFixtureForShape` in visitor-key-liveness). Pinning the
+// contract on the already-correct side is what stops the next fix to either
+// rule from re-opening the gap on this one.
+// ------------------------------------------------------------------
+const LAUNDERING_OPERATORS = ['||=', '??=', '+='] as const;
+
+const assignedKeyCode = (operator: string) =>
+  `import { QUERY_KEY_PLAYBACK_ID } from 'src/util/routing/queryKeys';
+function Component() {
+  let key = 'playback-id';
+  key ${operator} QUERY_KEY_PLAYBACK_ID;
+  const [playbackId] = useRouterState({ key });
+  return <div>{playbackId}</div>;
+}
+`;
+
+ruleTesterJsx.run(
+  'prefer-global-router-state-key',
+  preferGlobalRouterStateKey,
+  {
+    valid: [
+      {
+        name: 'a plain `=` reassignment to an approved constant IS the key',
+        filename: '/repo/src/components/Widget.tsx',
+        code: assignedKeyCode('='),
+      },
+    ],
+    invalid: LAUNDERING_OPERATORS.map((operator) => ({
+      name: `\`${operator}\` leaves the unapproved key reachable, so it still reports`,
+      filename: '/repo/src/components/Widget.tsx',
+      code: assignedKeyCode(operator),
+      errors: [{ messageId: 'invalidQueryKeySource' as const }],
+      // Declined rather than rewritten: which branch runs is not knowable.
+      output: null,
+    })),
+  },
+);
