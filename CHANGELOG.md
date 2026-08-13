@@ -1,3 +1,10 @@
+## [1.20.149](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.148...v1.20.149) (2026-08-13)
+
+
+### Bug Fixes
+
+* **no-array-length-in-deps:** emit a hash name no-hungarian accepts (closes [#1997](https://github.com/BluMintInc/eslint-custom-rules/issues/1997)) ([d287e2e](https://github.com/BluMintInc/eslint-custom-rules/commit/d287e2e5cdbebd851473563747bb3e974215b7e9))
+
 ## [1.20.148](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.147...v1.20.148) (2026-08-13)
 
 
