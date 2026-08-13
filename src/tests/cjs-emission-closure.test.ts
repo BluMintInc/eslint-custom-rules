@@ -35,14 +35,27 @@
  * `await` and only the evaluation step, inside the CommonJS module wrapper,
  * throws. The check is therefore syntactic, over the closed set of constructs
  * that require an ES module.
+ *
+ * All three corpora carry every tester's language and derive a fixture's
+ * filename from its CODE, through `src/utils/fixtureCorpus`. Both are corpus
+ * losses this guard has already paid for: dropping the non-TS testers cost two
+ * `recommended: 'error'`, `fixable: 'code'` rules their entire corpus (#1860),
+ * and a tester-derived `x.ts` made 41 fixtures a fatal parse that
+ * `verifyAndFix` reported as an untouched file — indistinguishable from a
+ * config that correctly changed nothing.
  */
 import { Linter, Rule } from 'eslint';
 import * as tsParser from '@typescript-eslint/parser';
 import {
   FixtureCase,
+  FixtureLanguage,
+  LANGUAGE_BY_TESTER,
   defaultFilenameFor,
+  defineCorpusParsers,
   harvestFixtureCorpus,
   harvestOnce,
+  parserKeyFor,
+  parserOptionsFor,
   severityWithOptions,
   silentWithoutProgramRuleNames,
   suggestionEditsOf,
@@ -119,14 +132,28 @@ function esmOnlyModuleScope(ast: any): string[] {
   return found;
 }
 
-/** `null` marks unparseable input, which is a different (already-guarded) axis. */
+/**
+ * `null` marks unparseable input, which is a different (already-guarded) axis.
+ *
+ * Both JSX modes are tried, because neither is more permissive than the other:
+ * `ScriptKind.TSX` rejects the angle-bracket assertion `<T>expr` and
+ * `ScriptKind.TS` rejects JSX. Judging a snippet by one mode alone turns every
+ * fixture written in the other into a `null` the callers skip in silence, which
+ * is the same false clean a tester-derived filename produces one layer down.
+ */
 function analyze(source: string): string[] | null {
-  try {
-    const { ast } = tsParser.parseForESLint(source, PARSE_OPTIONS as any);
-    return esmOnlyModuleScope(ast);
-  } catch {
-    return null;
+  for (const jsx of [true, false]) {
+    try {
+      const { ast } = tsParser.parseForESLint(source, {
+        ...PARSE_OPTIONS,
+        ecmaFeatures: { jsx },
+      } as any);
+      return esmOnlyModuleScope(ast);
+    } catch {
+      continue;
+    }
   }
+  return null;
 }
 
 /** Rule name by OBJECT IDENTITY: ~100 suites pass a display name that is not a
@@ -143,8 +170,22 @@ for (const [name, rule] of Object.entries(plugin.rules)) {
  */
 const harvested = harvestOnce();
 
-/** JSON and markdown fixtures are a different language; the TS parser cannot read them. */
-const TS_TESTERS = new Set(['ruleTesterTs', 'ruleTesterJsx']);
+/**
+ * A suite's language, from the tester that declared it.
+ *
+ * Every corpus below admits all three. Dropping the non-TS testers — which is
+ * what this guard did, on the premise that "the TS parser cannot read them" —
+ * cost two registered rules their ENTIRE corpus: `no-unpinned-dependencies`
+ * declares only under `ruleTesterJson` and
+ * `enforce-typescript-markdown-code-blocks` only under `ruleTesterMarkdown`, and
+ * both ship `recommended: 'error'` with `fixable: 'code'`, so both rewrite
+ * consumer code while contributing nothing here (#1860). The premise is also
+ * false as stated: corpus A never parses under a rule's parser at all — it is
+ * text analysis — and corpus B selects the parser per case, so neither needs the
+ * drop.
+ */
+const languageOf = (tester: string): FixtureLanguage =>
+  LANGUAGE_BY_TESTER[tester] ?? 'ts';
 
 // ---------------------------------------------------------------------------
 // Corpus A — declared fixture outputs
@@ -166,7 +207,25 @@ const outputStats = {
   suggestionOutputsAnalyzed: 0,
   rulesWithOutput: new Set<string>(),
   rulesWithSuggestionOutput: new Set<string>(),
-  inputUnparseable: 0,
+  /**
+   * Every skip is a fixture judged by nothing, so each is counted and pinned.
+   * Split by language because the two are different facts: a TypeScript
+   * fixture the detector cannot read is a hole, while a Markdown document that
+   * is not also valid TypeScript is simply what Markdown is.
+   */
+  tsInputUnparseable: 0,
+  nonTsInputUnparseable: 0,
+  outputUnparseable: 0,
+  /** The languages the corpus carries, asserted exactly rather than by floor. */
+  languages: new Set<string>(),
+  /**
+   * What the non-TS testers contribute, which the tester drop cost entirely.
+   * `nonTsOutputsAnalyzed` is the load-bearing half: an admitted fixture the
+   * detector never reads is coverage on paper only.
+   */
+  nonTsOutputs: 0,
+  nonTsOutputsAnalyzed: 0,
+  nonTsRulesWithOutput: new Set<string>(),
 };
 
 const outputFindings: OutputFinding[] = [];
@@ -205,17 +264,22 @@ const outputsOf = (testCase: any): DeclaredOutput[] => {
 };
 
 for (const suite of harvested.suites) {
-  if (!TS_TESTERS.has(suite.tester)) continue;
   const name = ruleNameByIdentity.get(suite.rule);
   if (!name) continue;
+  const language = languageOf(suite.tester);
 
   for (const raw of suite.invalid) {
     const testCase = raw as any;
     if (!testCase || typeof testCase.code !== 'string') continue;
     outputStats.casesConsidered++;
+    outputStats.languages.add(language);
 
     const outs = outputsOf(testCase);
     if (outs.length === 0) continue;
+    if (language !== 'ts') {
+      outputStats.nonTsOutputs += outs.length;
+      outputStats.nonTsRulesWithOutput.add(name);
+    }
     if (outs.some((one) => one.channel === 'fix')) {
       outputStats.rulesWithOutput.add(name);
     }
@@ -225,15 +289,20 @@ for (const suite of harvested.suites) {
 
     const before = analyze(testCase.code);
     if (before === null) {
-      outputStats.inputUnparseable++;
+      if (language === 'ts') outputStats.tsInputUnparseable++;
+      else outputStats.nonTsInputUnparseable++;
       continue;
     }
 
     for (const out of outs) {
       outputStats.outputsAnalyzed++;
+      if (language !== 'ts') outputStats.nonTsOutputsAnalyzed++;
       if (out.channel === 'suggestion') outputStats.suggestionOutputsAnalyzed++;
       const after = analyze(out.text);
-      if (after === null) continue;
+      if (after === null) {
+        outputStats.outputUnparseable++;
+        continue;
+      }
       if (after.length > before.length) {
         outputFindings.push({
           rule: name,
@@ -267,7 +336,7 @@ for (const [id, severity] of Object.entries(plugin.configs.recommended.rules)) {
 }
 
 const linter = new Linter();
-linter.defineParser('ts', tsParser as never);
+defineCorpusParsers(linter);
 for (const [name, rule] of Object.entries(plugin.rules)) {
   linter.defineRule(PREFIX + name, rule as never);
 }
@@ -387,25 +456,36 @@ linter.defineRule(
   ),
 );
 
+/**
+ * The minimum a case must carry to be linted: enough to pick its parser.
+ * `FixtureCase` satisfies it, so corpus B and corpus C share one config builder.
+ */
+type ProbedCase = {
+  code: string;
+  parserOptions?: Record<string, unknown>;
+  tester: string;
+  language: FixtureLanguage;
+};
+
+/**
+ * The parser and its options are read from the CASE, never fixed to TypeScript:
+ * a JSON or Markdown fixture handed to `@typescript-eslint/parser` is a fatal
+ * parse, and this guard filters lint output by nothing but `fixed`/`ruleId`, so
+ * that fatal is indistinguishable from every fixer leaving the file alone
+ * (#1860).
+ */
 const configFor = (
   rules: Record<string, unknown>,
-  parserOptions?: unknown,
+  testCase: ProbedCase,
 ): Linter.Config =>
   ({
-    parser: 'ts',
-    parserOptions: {
-      ecmaVersion: 2022,
-      sourceType: 'module',
-      ecmaFeatures: { jsx: true },
-      ...(parserOptions as object | null),
-    },
+    parser: parserKeyFor(testCase as FixtureCase),
+    parserOptions: parserOptionsFor(testCase as FixtureCase),
     rules,
   } as unknown as Linter.Config);
 
-type ComposedCase = {
-  code: string;
+type ComposedCase = ProbedCase & {
   filename: string;
-  parserOptions?: unknown;
   origin: string;
 };
 
@@ -416,21 +496,46 @@ type ComposedCase = {
  */
 const RELEVANT = /\bimport\b|\bawait\b/;
 
+/**
+ * Fixtures reaching the relevance filter, and the ones it admits, per language.
+ *
+ * Every fixture reaches this accounting, so "no JSON case is linted here" is a
+ * measured consequence of the filter — no JSON fixture contains the token
+ * `import` or `await` — rather than a tester drop nobody can see. A non-TS
+ * fixture that does mention one is carried like any other.
+ */
+const composedSeen: Record<string, number> = {};
+const composedCarried: Record<string, number> = {};
+
 const composedCases: ComposedCase[] = [];
 for (const suite of harvested.suites) {
-  if (!TS_TESTERS.has(suite.tester)) continue;
   const name = ruleNameByIdentity.get(suite.rule);
   if (!name) continue;
+  const language = languageOf(suite.tester);
 
-  const defaultFile = suite.tester === 'ruleTesterJsx' ? 'x.tsx' : 'x.ts';
   const push = (raw: unknown) => {
     const testCase = (typeof raw === 'string' ? { code: raw } : raw) as any;
     if (!testCase || typeof testCase.code !== 'string') return;
+    composedSeen[language] = (composedSeen[language] || 0) + 1;
     if (!RELEVANT.test(testCase.code)) return;
-    composedCases.push({
+    composedCarried[language] = (composedCarried[language] || 0) + 1;
+    const probed: ProbedCase = {
       code: testCase.code,
-      filename: testCase.filename || defaultFile,
       parserOptions: testCase.parserOptions,
+      tester: suite.tester,
+      language,
+    };
+    composedCases.push({
+      ...probed,
+      /**
+       * `defaultFilenameFor`, not a tester-derived `x.ts`/`x.tsx`. A tester does
+       * not determine the extension a fixture parses under: 39 fixtures in
+       * `no-margin-properties` alone hold JSX under `ruleTesterTs`, and a `.ts`
+       * name forces `ScriptKind.TS`, making each one a FATAL parse — measured at
+       * 41 cases here, every one of which `verifyAndFix` reported as simply
+       * unfixed and this guard counted as clean.
+       */
+      filename: testCase.filename || defaultFilenameFor(probed as FixtureCase),
       origin: `src/tests/${suite.file}`,
     });
   };
@@ -447,7 +552,21 @@ type ComposedFinding = {
   after: string;
 };
 
-const composedStats = { considered: 0, rewritten: 0 };
+const composedStats = {
+  considered: 0,
+  rewritten: 0,
+  /**
+   * A case ESLint could not parse under the filename and parser this harness
+   * chose for it. `verifyAndFix` reports it as `fixed: false` and an untouched
+   * output — exactly what a config that legitimately changes nothing looks like
+   * — so each one is a case judged by nothing and counted as clean. Asserted at
+   * ZERO below, since a ceiling would let the next one hide inside it.
+   */
+  parseFatal: 0,
+  /** Inputs and outputs the detector itself cannot read, likewise unjudged. */
+  inputUnanalyzable: 0,
+  outputUnanalyzable: 0,
+};
 const composedFindings: ComposedFinding[] = [];
 
 /** Co-occurrence is not attribution: replay each fixer alone to name the culprit. */
@@ -458,7 +577,7 @@ function attributeCulprits(testCase: ComposedCase, baseline: number): string[] {
     try {
       alone = linter.verifyAndFix(
         testCase.code,
-        configFor({ [id]: severity }, testCase.parserOptions),
+        configFor({ [id]: severity }, testCase),
         { filename: testCase.filename },
       );
     } catch {
@@ -472,16 +591,41 @@ function attributeCulprits(testCase: ComposedCase, baseline: number): string[] {
   return culprits;
 }
 
+/**
+ * Whether ESLint can parse the case at all, under the very parser, options and
+ * filename the fix pass uses. Run with no rules, so the answer is about the
+ * input and nothing else — a fatal produced later by a fixer's own output is
+ * `fixer-convergence`'s axis, not this one.
+ */
+const parsesUnderHarness = (testCase: ComposedCase): boolean => {
+  try {
+    return !linter
+      .verify(testCase.code, configFor({}, testCase), {
+        filename: testCase.filename,
+      })
+      .some((message) => message.fatal);
+  } catch {
+    return false;
+  }
+};
+
 for (const testCase of composedCases) {
   composedStats.considered++;
+  if (!parsesUnderHarness(testCase)) {
+    composedStats.parseFatal++;
+    continue;
+  }
   const before = analyze(testCase.code);
-  if (before === null) continue;
+  if (before === null) {
+    composedStats.inputUnanalyzable++;
+    continue;
+  }
 
   let fixed;
   try {
     fixed = linter.verifyAndFix(
       testCase.code,
-      configFor(FIX_CONFIG, testCase.parserOptions),
+      configFor(FIX_CONFIG, testCase),
       { filename: testCase.filename },
     );
   } catch {
@@ -491,7 +635,10 @@ for (const testCase of composedCases) {
   composedStats.rewritten++;
 
   const after = analyze(fixed.output);
-  if (after === null) continue;
+  if (after === null) {
+    composedStats.outputUnanalyzable++;
+    continue;
+  }
   if (after.length <= before.length) continue;
 
   composedFindings.push({
@@ -539,10 +686,7 @@ function probeSuggestions(
   try {
     messages = linter.verify(
       testCase.code,
-      configFor(
-        { [id]: severityWithOptions(testCase) },
-        testCase.parserOptions,
-      ),
+      configFor({ [id]: severityWithOptions(testCase) }, testCase),
       { filename },
     );
   } catch {
@@ -596,11 +740,26 @@ const totalSuggestionsApplied = [...suggestionStats.values()].reduce(
 );
 
 /**
- * Printed per rule, not merely asserted in aggregate: a rule contributing zero
- * accepted suggestions was not tested on this channel, and a total hides that.
+ * Printed per corpus and per rule, not merely asserted in aggregate: a corpus
+ * that quietly shrank and a rule contributing zero accepted suggestions both
+ * read as "clean" from the findings count alone.
  */
 console.log(
   [
+    `[cjs-emission] corpus A: ${outputStats.casesConsidered} invalid case(s), ` +
+      `${outputStats.outputsAnalyzed} declared output(s) across ` +
+      `${outputStats.rulesWithOutput.size} rule(s); ` +
+      `${outputStats.nonTsOutputs} from non-TS testers; unparseable ` +
+      `${outputStats.tsInputUnparseable} TS input(s)/` +
+      `${outputStats.nonTsInputUnparseable} non-TS input(s)/` +
+      `${outputStats.outputUnparseable} output(s); languages ` +
+      `${[...outputStats.languages].sort().join('/')}`,
+    `[cjs-emission] corpus B: ${composedStats.considered} considered, ` +
+      `${composedStats.rewritten} rewritten, ${composedStats.parseFatal} fatal, ` +
+      `${composedStats.inputUnanalyzable} input(s)/` +
+      `${composedStats.outputUnanalyzable} output(s) unanalyzable; ` +
+      `seen ${JSON.stringify(composedSeen)}, carried ` +
+      `${JSON.stringify(composedCarried)}`,
     `[cjs-emission] suggestion channel: ${totalSuggestionsApplied} suggestion(s) ` +
       `applied across ${suggestionRuleNames.length} rule(s)`,
     ...suggestionRuleNames.map(
@@ -715,17 +874,90 @@ describe('the CJS emission guard is load-bearing', () => {
   });
 
   it('analyses enough declared outputs across enough rules', () => {
-    // 6,422 invalid cases and 2,560 declared outputs across 83 rules at the
-    // time of writing; a collapsed corpus would still report zero findings.
-    expect(outputStats.casesConsidered).toBeGreaterThanOrEqual(6000);
-    expect(outputStats.outputsAnalyzed).toBeGreaterThanOrEqual(2300);
-    expect(outputStats.rulesWithOutput.size).toBeGreaterThanOrEqual(75);
+    // Measured: 8,333 invalid cases and 3,724 declared outputs across 84 rules.
+    // The floors sit just under that rather than far below it — the previous
+    // 6,000/2,300/75 had decayed into 28% slack, which is more room than the
+    // entire corpus loss this guard exists to notice would have needed to hide.
+    expect(outputStats.casesConsidered).toBeGreaterThanOrEqual(8300);
+    expect(outputStats.outputsAnalyzed).toBeGreaterThanOrEqual(3700);
+    expect(outputStats.rulesWithOutput.size).toBeGreaterThanOrEqual(83);
     // Declared SUGGESTION outputs are their own population (139 across 6 rules
     // when this channel was added), and were read by nothing before #1733.
-    expect(outputStats.suggestionOutputsAnalyzed).toBeGreaterThanOrEqual(120);
+    expect(outputStats.suggestionOutputsAnalyzed).toBeGreaterThanOrEqual(135);
     expect(outputStats.rulesWithSuggestionOutput.size).toBeGreaterThanOrEqual(
-      5,
+      6,
     );
+  });
+
+  it("carries every tester's language, not only TypeScript", () => {
+    /**
+     * Dropping the non-TS testers cost two registered rules their ENTIRE
+     * corpus. Both ship `recommended: 'error'` with `fixable: 'code'`, so both
+     * rewrite consumer code while contributing nothing here (#1860).
+     *
+     * Corpus A never needed the drop in the first place: it is text analysis,
+     * not a lint, so no parser is selected for a case and no filename is
+     * invented for one. Measured, the two rules contribute 14 declared outputs,
+     * of which the detector reads the 10 whose input is also valid TypeScript —
+     * a Markdown document is often both, since a fenced block is a template
+     * literal. Admission without that second number would be paper coverage.
+     */
+    expect([...outputStats.languages].sort()).toEqual([
+      'json',
+      'markdown',
+      'ts',
+    ]);
+    expect([...outputStats.nonTsRulesWithOutput].sort()).toEqual([
+      'enforce-typescript-markdown-code-blocks',
+      'no-unpinned-dependencies',
+    ]);
+    expect(outputStats.nonTsOutputs).toBeGreaterThanOrEqual(14);
+    expect(outputStats.nonTsOutputsAnalyzed).toBeGreaterThanOrEqual(10);
+  });
+
+  it("leaves no fixture unjudged by the harness's own filename or parse mode", () => {
+    /**
+     * A case ESLint cannot parse comes back from `verifyAndFix` as `fixed:
+     * false` with its input unchanged — the same shape as a config that
+     * correctly left the file alone — so every one of these was counted as
+     * clean. Deriving the extension from the TESTER did that to 41 cases here
+     * (39 of them `no-margin-properties` fixtures holding JSX under
+     * `ruleTesterTs`, where a `.ts` name forces `ScriptKind.TS`). Asserting
+     * ZERO, not a ceiling, is what makes the next one a failure rather than a
+     * rounding error.
+     */
+    expect(composedStats.parseFatal).toBe(0);
+    /**
+     * The detector's own blind spot, held to the same standard: judging a
+     * snippet under one JSX mode alone made 21 TypeScript fixtures `null` — the
+     * state both corpora skip in silence — until `analyze` began trying both.
+     */
+    expect(composedStats.inputUnanalyzable).toBe(0);
+    expect(outputStats.tsInputUnparseable).toBe(0);
+  });
+
+  it('accounts for every fixture the relevance filter withholds', () => {
+    /**
+     * `RELEVANT` is the only thing that keeps a fixture out of corpus B, and it
+     * is a property of the CODE (does it mention `import` or `await`), not of
+     * the tester that declared it. Asserting that all three languages reach the
+     * filter is what distinguishes "no JSON fixture mentions `import`" —
+     * measured, and the reason corpus B carries TypeScript only — from the
+     * tester drop that used to produce the same number invisibly.
+     */
+    expect(Object.keys(composedSeen).sort()).toEqual([
+      'json',
+      'markdown',
+      'ts',
+    ]);
+    // Measured: 7 JSON and 21 Markdown fixtures reach the filter, and none
+    // mentions `import` or `await`, so corpus B carries TypeScript alone.
+    expect(composedSeen.json).toBeGreaterThanOrEqual(7);
+    expect(composedSeen.markdown).toBeGreaterThanOrEqual(20);
+    // Nothing is lost between collection and linting.
+    expect(
+      Object.values(composedCarried).reduce((sum, count) => sum + count, 0),
+    ).toBe(composedStats.considered);
   });
 
   /**
@@ -768,6 +1000,7 @@ describe('the CJS emission guard is load-bearing', () => {
     const planted: FixtureCase = {
       code: "import { getFirestore } from 'control-target/firestore';\nexport const db = getFirestore();\n",
       tester: 'ruleTesterTs',
+      language: 'ts',
       origin: 'planted control',
       bucket: 'invalid',
     };
@@ -789,6 +1022,7 @@ describe('the CJS emission guard is load-bearing', () => {
     const planted: FixtureCase = {
       code: "import { getFirestore } from 'control-safe/firestore';\nexport const db = getFirestore();\n",
       tester: 'ruleTesterTs',
+      language: 'ts',
       origin: 'planted control',
       bucket: 'invalid',
     };
@@ -803,32 +1037,36 @@ describe('the CJS emission guard is load-bearing', () => {
 
   it('actually rewrites a large share of the composed corpus', () => {
     // Step B is vacuous unless the config genuinely fixes these fixtures.
-    expect(composedStats.considered).toBeGreaterThanOrEqual(1500);
-    expect(composedStats.rewritten).toBeGreaterThanOrEqual(300);
+    // Measured: 4,970 considered and 2,573 rewritten. The previous 1,500/300
+    // floors sat at a third and an eighth of that, enough slack to absorb the
+    // corpus loss this guard exists to notice several times over.
+    expect(composedStats.considered).toBeGreaterThanOrEqual(4900);
+    expect(composedStats.rewritten).toBeGreaterThanOrEqual(2500);
   });
 
   it('detects a module-scope await (positive control)', () => {
-    const planted = [
-      "import { getFirestore } from 'control-target/firestore';",
-      'export const db = getFirestore();',
-    ].join('\n');
+    const planted: ComposedCase = {
+      code: [
+        "import { getFirestore } from 'control-target/firestore';",
+        'export const db = getFirestore();',
+      ].join('\n'),
+      filename: 'x.ts',
+      tester: 'ruleTesterTs',
+      language: 'ts',
+      origin: 'planted control',
+    };
 
-    expect(analyze(planted)).toEqual([]);
+    expect(analyze(planted.code)).toEqual([]);
 
     const fixed = linter.verifyAndFix(
-      planted,
-      configFor({ ...FIX_CONFIG, [CONTROL_DYNAMIC_ID]: 'error' }),
-      { filename: 'x.ts' },
+      planted.code,
+      configFor({ ...FIX_CONFIG, [CONTROL_DYNAMIC_ID]: 'error' }, planted),
+      { filename: planted.filename },
     );
     expect(fixed.output).toContain('await import(');
     const constructs = analyze(fixed.output);
     expect(constructs && constructs.length).toBeGreaterThan(0);
-    expect(
-      attributeCulprits(
-        { code: planted, filename: 'x.ts', origin: 'planted control' },
-        0,
-      ),
-    ).toEqual([]);
+    expect(attributeCulprits(planted, 0)).toEqual([]);
   });
 
   it('holds the shipped config responsible for the same shape (control)', () => {
@@ -836,13 +1074,21 @@ describe('the CJS emission guard is load-bearing', () => {
     // `--fix` with its static import intact. This is what makes the planted
     // culprit a statement about the detector rather than a way to skip the
     // config.
-    const planted = [
-      "import { getFirestore } from 'control-target/firestore';",
-      'export const db = getFirestore();',
-    ].join('\n');
-    const fixed = linter.verifyAndFix(planted, configFor(FIX_CONFIG), {
+    const planted: ComposedCase = {
+      code: [
+        "import { getFirestore } from 'control-target/firestore';",
+        'export const db = getFirestore();',
+      ].join('\n'),
       filename: 'x.ts',
-    });
+      tester: 'ruleTesterTs',
+      language: 'ts',
+      origin: 'planted control',
+    };
+    const fixed = linter.verifyAndFix(
+      planted.code,
+      configFor(FIX_CONFIG, planted),
+      { filename: planted.filename },
+    );
     expect(analyze(fixed.output)).toEqual([]);
   });
 

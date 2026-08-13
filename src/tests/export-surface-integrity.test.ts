@@ -36,6 +36,7 @@ import {
   defaultFilenameFor,
   harvestFixtureCorpus,
   harvestOnce,
+  LANGUAGE_BY_TESTER,
   silentWithoutProgramRuleNames,
   suggestionEditsOf,
   suggestionRuleNames,
@@ -127,6 +128,14 @@ const EXPORTABLE = new Set([
 ]);
 
 /**
+ * Cases discarded because they did not PARSE, kept apart from the ones that
+ * simply declare nothing exportable. Folding the two together is what let 163
+ * fixtures leave this corpus unnoticed: both return `null` from the injector,
+ * and only the second is a legitimate skip (#1984).
+ */
+const parseFailures: string[] = [];
+
+/**
  * Splice `export ` before each top-level declaration that lacks it, then
  * re-parse: an injection that does not parse is discarded rather than counted,
  * so a malformed splice cannot masquerade as a rule that declined.
@@ -134,6 +143,7 @@ const EXPORTABLE = new Set([
 const injectExports = (code: string, jsx: boolean): string | null => {
   const ast = parse(code, jsx);
   if (!ast) {
+    parseFailures.push(`${jsx ? 'tsx' : 'ts'}: ${code.slice(0, 60)}`);
     return null;
   }
   const starts = (ast.body as any[])
@@ -391,6 +401,8 @@ const removalKey = (removal: Removal) =>
 const harvested = harvestOnce();
 
 const removals: Removal[] = [];
+/** Suites skipped for parsing another language, asserted by name below. */
+const nonTsExcluded = new Set<string>();
 let considered = 0;
 let injected = 0;
 let rewritten = 0;
@@ -415,7 +427,19 @@ for (const suite of harvested.suites) {
   if (!rule?.meta?.fixable) {
     continue;
   }
-  const jsx = suite.tester !== 'ruleTesterTs';
+  const language = LANGUAGE_BY_TESTER[suite.tester] ?? 'ts';
+  /**
+   * `export ` spliced before a declaration is a TypeScript construct, so the
+   * JSON and Markdown fixtures have no export surface to injure and are
+   * excluded BY NAME rather than dropped in silence. Handing them to the TS
+   * parser instead — which `jsx = tester !== 'ruleTesterTs'` did — makes every
+   * one a fatal parse that `injectExports` returns `null` for, indistinguishable
+   * from a fixture that simply declares nothing exportable (#1984).
+   */
+  if (language !== 'ts') {
+    nonTsExcluded.add(`${ruleName} (${suite.tester})`);
+    continue;
+  }
   const ruleId = PREFIX + ruleName;
 
   for (const kind of ['valid', 'invalid'] as const) {
@@ -425,6 +449,20 @@ for (const suite of harvested.suites) {
         continue;
       }
       considered++;
+      /**
+       * JSX-ness is a property of the CODE, not of the tester that declared it:
+       * 106 valid cases hold JSX under `ruleTesterTs`, and a non-JSX parse of
+       * one is fatal. `defaultFilenameFor` picks the extension the code parses
+       * under, and the flag is read back off it so the two cannot disagree.
+       */
+      const filename =
+        testCase.filename ||
+        defaultFilenameFor({
+          code: testCase.code,
+          tester: suite.tester,
+          language,
+        } as never);
+      const jsx = filename.endsWith('x');
       const exported = injectExports(testCase.code, jsx);
       if (!exported) {
         continue;
@@ -434,7 +472,7 @@ for (const suite of harvested.suites) {
         ruleId,
         exported,
         jsx,
-        testCase.filename || (jsx ? 'file.tsx' : 'file.ts'),
+        filename,
         testCase.options,
       );
       if (!outcome || !outcome.rewritten) {
@@ -468,7 +506,13 @@ let suggestionSubstrates = 0;
 for (const ruleName of suggestionRuleNames) {
   const ruleId = PREFIX + ruleName;
   for (const testCase of corpus.byRule.get(ruleName) || []) {
-    const jsx = testCase.tester !== 'ruleTesterTs';
+    if (testCase.language !== 'ts') {
+      nonTsExcluded.add(`${ruleName} (${testCase.tester})`);
+      continue;
+    }
+    // Read off the filename this case is linted under, so the parse flag and
+    // the path cannot disagree about whether the fixture holds JSX.
+    const jsx = defaultFilenameFor(testCase).endsWith('x');
     /**
      * Injection manufactures an export surface; a fixture that already has one
      * needs none. Without the second half this channel would be empty for the
@@ -571,11 +615,41 @@ describe('the export-surface guard is load-bearing', () => {
 
   it('injects exports into a large corpus and actually rewrites it', () => {
     // Floors, not equalities: fixtures move. A silent collapse of any of these
-    // to zero is how this gate would pass while asserting nothing.
-    expect(considered).toBeGreaterThan(4000);
-    expect(injected).toBeGreaterThan(3000);
+    // to zero is how this gate would pass while asserting nothing. Measured
+    // 7,859 considered / 5,815 injected / 2,384 rewritten. The floors sit just
+    // under that: left far below, a floor absorbs exactly the corpus loss this
+    // gate exists to notice.
+    expect(considered).toBeGreaterThan(7500);
+    expect(injected).toBeGreaterThan(5500);
     expect(rewritten).toBeGreaterThan(1000);
     expect(rulesExercised.size).toBeGreaterThan(50);
+  });
+
+  it('discards no case to a parse it chose wrong', () => {
+    /**
+     * A fixture that never parsed is not a fixture the rule declined on, but
+     * both leave this corpus the same way. Deriving JSX-ness from the TESTER
+     * rather than the CODE discarded 163 cases here; asserting ZERO is what
+     * makes the next one a failure rather than a rounding error.
+     */
+    expect(parseFailures.slice(0, 5)).toEqual([]);
+  });
+
+  it('excludes the non-TS testers by name, not by a silent misparse', () => {
+    /**
+     * `export ` is a TypeScript splice, so a JSON or Markdown fixture has no
+     * export surface to injure — but it must be excluded deliberately. Fed to
+     * the TS parser as `.tsx`, each was a fatal parse counted as "nothing to
+     * inject". Naming them keeps the exclusion reviewable.
+     */
+    expect([...nonTsExcluded].sort()).toEqual([
+      'enforce-typescript-markdown-code-blocks (ruleTesterMarkdown)',
+      'no-unpinned-dependencies (ruleTesterJson)',
+      // A TypeScript rule's own robustness fixture, asserting it stays silent
+      // when handed a `package.json`. Listed rather than filtered out: an
+      // exclusion is only reviewable if every member is named.
+      'prefer-nullish-coalescing-boolean-props (ruleTesterJson)',
+    ]);
   });
 
   it('detects a removed export name (positive control)', () => {

@@ -26,17 +26,31 @@
  * Neutrality is PROVEN, not assumed: a variant is used only when its non-comment
  * token stream is byte-identical to the original's. Without that guard a marker
  * landing inside a template literal or JSX text manufactures findings.
+ *
+ * The corpus spans every tester, and both the parser and the marker are chosen
+ * per case from `fixtureCorpus`. A guard that keeps a local TypeScript-only
+ * tester set drops the two `error`-severity fixable rules that declare under
+ * `ruleTesterJson` and `ruleTesterMarkdown`, and one that names a fixture's file
+ * after its tester turns every JSX fixture declared under `ruleTesterTs` into a
+ * fatal parse — which, once messages are filtered by `ruleId`, is
+ * indistinguishable from the fixer behaving (#1860, #1984).
  */
 import { Linter } from 'eslint';
 import * as tsParser from '@typescript-eslint/parser';
+import * as jsoncParser from 'jsonc-eslint-parser';
 import {
   defaultFilenameFor,
+  defineCorpusParsers,
   harvestFixtureCorpus,
   harvestOnce,
+  LANGUAGE_BY_TESTER,
+  parserKeyFor,
+  parserOptionsFor,
   silentWithoutProgramRuleNames,
   suggestionEditsOf,
   suggestionRuleNames,
 } from '../utils/fixtureCorpus';
+import type { FixtureLanguage } from '../utils/fixtureCorpus';
 
 /* eslint-disable @typescript-eslint/no-var-requires */
 const plugin = require('../index') as {
@@ -69,30 +83,30 @@ const FIXABLE_RULES = new Set(
 );
 
 const linter = new Linter();
-linter.defineParser('ts', tsParser as never);
+defineCorpusParsers(linter);
 for (const [name, rule] of Object.entries(plugin.rules)) {
   linter.defineRule(PREFIX + name, rule as never);
 }
 
+/**
+ * The parser and its options come from the CASE, never from a constant: a JSON
+ * or Markdown fixture handed to `@typescript-eslint/parser` is a fatal parse,
+ * and since every consumer here filters messages by `ruleId`, that fatal is
+ * indistinguishable from the rule staying silent (#1860, #1984).
+ */
 const configFor = (
   rules: Record<string, unknown>,
-  parserOptions: unknown,
+  testCase: InvalidCase,
 ): Linter.Config =>
   ({
-    parser: 'ts',
-    parserOptions: {
-      ecmaVersion: 2022,
-      sourceType: 'module',
-      ecmaFeatures: { jsx: true },
-      ...(parserOptions as object | null),
-    },
+    parser: parserKeyFor(testCase as never),
+    parserOptions: parserOptionsFor(testCase as never),
     rules,
   } as unknown as Linter.Config);
 
 const parseOptions = {
   ecmaVersion: 2022,
   sourceType: 'module',
-  ecmaFeatures: { jsx: true },
   loc: true,
   range: true,
   comment: true,
@@ -100,40 +114,117 @@ const parseOptions = {
 } as const;
 
 /**
- * Signature of the non-comment token stream. Two sources sharing a signature
- * differ only in comments and whitespace, so any difference in what a fixer
- * writes between them is the fixer's fault rather than a reaction to changed
- * code. `null` means the text does not parse, which is itself a finding when the
- * unperturbed baseline did.
+ * Whether the oracle below reads a snippet as JSX, decided by the same thing the
+ * linter decides it by: the FILENAME. `@typescript-eslint/parser` maps a `.ts`
+ * path to `ScriptKind.TS`, which `ecmaFeatures.jsx: true` does not override, and
+ * maps everything else that is not plainly TypeScript to a JSX-bearing kind. An
+ * oracle fixed at `jsx: true` therefore disagrees with the linter on every `.ts`
+ * fixture holding an angle-bracket assertion — 25 of them, each read as "does
+ * not parse" and dropped before it was ever compared.
  */
-const tokenSignature = (text: string): string | null => {
+const readsAsJsx = (filename: string) => !/\.[mc]?ts$/i.test(filename);
+
+/** The comment-insensitive shape of a source, plus the comments it carries. */
+type Trivia = { signature: string; comments: string[] };
+
+const tsTrivia = (text: string, filename: string): Trivia | null => {
   try {
-    const ast = tsParser.parse(text, parseOptions as never) as {
+    const ast = tsParser.parse(text, {
+      ...parseOptions,
+      ecmaFeatures: { jsx: readsAsJsx(filename) },
+    } as never) as {
       tokens?: { type: string; value: string }[];
+      comments?: { value: string }[];
     };
     if (!ast.tokens) return null;
-    return ast.tokens.map((token) => `${token.type} ${token.value}`).join('');
+    return {
+      signature: ast.tokens
+        .map((token) => `${token.type} ${token.value}`)
+        .join(''),
+      comments: (ast.comments || []).map((comment) => comment.value),
+    };
   } catch {
     return null;
   }
 };
 
-const commentsOf = (text: string): string[] | null => {
+const jsonTrivia = (text: string): Trivia | null => {
   try {
-    const ast = tsParser.parse(text, parseOptions as never) as {
-      comments?: { value: string }[];
+    const { ast } = jsoncParser.parseForESLint(text, { ecmaVersion: 2020 });
+    return {
+      signature: (ast.tokens || [])
+        .map((token) => `${token.type} ${token.value}`)
+        .join(''),
+      comments: (ast.comments || []).map((comment) => comment.value),
     };
-    return (ast.comments || []).map((comment) => comment.value);
   } catch {
     return null;
   }
 };
+
+const HTML_COMMENT = /<!--([\s\S]*?)-->/g;
+/** A comment occupying a line by itself, indentation aside. */
+const HTML_COMMENT_LINE = /^[\t ]*<!--[\s\S]*?-->[\t ]*$/;
+
+/**
+ * Markdown carries its trivia in the text, not in a parse: `markdown-eslint-parser`
+ * hands ESLint an empty `Program` and leaves the document in `mdCode`, so there
+ * is no token stream to compare and a parser-derived signature would be the
+ * empty string for every input — making every perturbation look neutral.
+ *
+ * The signature is therefore the document with WHOLE-LINE comments removed, and
+ * nothing else. Markdown has no inert inline comment: a comment sharing a line
+ * with content changes that line's text, and for a fence rule it changes the
+ * meaning outright — appending one to an opening fence turns it into a language
+ * label. Leaving that residue in the signature is what makes such a variant fail
+ * the neutrality check instead of manufacturing a divergence.
+ */
+const markdownTrivia = (text: string): Trivia => ({
+  signature: text
+    .split('\n')
+    .filter((line) => !HTML_COMMENT_LINE.test(line))
+    .join('\n'),
+  comments: [...text.matchAll(HTML_COMMENT)].map((match) => match[1]),
+});
+
+const triviaOf = (
+  text: string,
+  language: FixtureLanguage,
+  filename: string,
+): Trivia | null => {
+  if (language === 'json') return jsonTrivia(text);
+  if (language === 'markdown') return markdownTrivia(text);
+  return tsTrivia(text, filename);
+};
+
+/**
+ * Signature of the comment-insensitive shape of a source. Two sources sharing a
+ * signature differ only in comments and whitespace, so any difference in what a
+ * fixer writes between them is the fixer's fault rather than a reaction to
+ * changed code. `null` means the text does not parse, which is itself a finding
+ * when the unperturbed baseline did.
+ */
+const tokenSignature = (
+  text: string,
+  language: FixtureLanguage,
+  filename: string,
+): string | null => triviaOf(text, language, filename)?.signature ?? null;
+
+const commentsOf = (
+  text: string,
+  language: FixtureLanguage,
+  filename: string,
+): string[] | null => triviaOf(text, language, filename)?.comments ?? null;
 
 type InvalidCase = {
   code: string;
   filename: string;
   options?: readonly unknown[];
-  parserOptions?: unknown;
+  parserOptions?: Record<string, unknown>;
+  /** Which shared tester declared it, which fixes the parser. */
+  tester: string;
+  /** The tester's language, so the matching parser and marker are selected. */
+  language: FixtureLanguage;
   origin: string;
 };
 
@@ -154,26 +245,45 @@ for (const [name, rule] of Object.entries(plugin.rules)) {
  * re-executes) and would silently empty whichever corpus asked for it second.
  */
 const harvested = harvestOnce();
-const TS_TESTERS = new Set(['ruleTesterTs', 'ruleTesterJsx']);
 
 const casesByRule = new Map<string, InvalidCase[]>();
+/** Languages the corpus actually carries, asserted below against the drop. */
+const languagesSeen = new Set<FixtureLanguage>();
+
+/**
+ * Every tester contributes, and the filename comes from the CODE.
+ *
+ * Restricting this loop to the TypeScript testers cost two registered rules
+ * their entire corpus — `no-unpinned-dependencies` declares only under
+ * `ruleTesterJson`, `enforce-typescript-markdown-code-blocks` only under
+ * `ruleTesterMarkdown` — while both ship `recommended: 'error'` with
+ * `fixable: 'code'`, so both rewrite consumer code untested on this axis
+ * (#1860). Deriving the extension from the TESTER lost 14 more: a fixture
+ * holding JSX under `ruleTesterTs` is a FATAL parse as `x.ts`, and a fatal is
+ * indistinguishable from a silent rule once messages are filtered by `ruleId`
+ * (#1984).
+ */
 for (const suite of harvested.suites) {
   const name = ruleNameByIdentity.get(suite.rule);
   if (!name || !FIXABLE_RULES.has(name)) continue;
-  if (!TS_TESTERS.has(suite.tester)) continue;
 
+  const language = LANGUAGE_BY_TESTER[suite.tester] ?? 'ts';
   const bucket = casesByRule.get(name) || [];
   for (const raw of suite.invalid) {
     const testCase = raw as Partial<InvalidCase> | null | undefined;
     if (!testCase || typeof testCase.code !== 'string') continue;
-    bucket.push({
+    const probed = {
       code: testCase.code,
-      filename:
-        testCase.filename ||
-        (suite.tester === 'ruleTesterJsx' ? 'x.tsx' : 'x.ts'),
       options: testCase.options,
       parserOptions: testCase.parserOptions,
+      tester: suite.tester,
+      language,
       origin: `src/tests/${suite.file}`,
+    };
+    languagesSeen.add(language);
+    bucket.push({
+      ...probed,
+      filename: testCase.filename || defaultFilenameFor(probed as never),
     });
   }
   casesByRule.set(name, bucket);
@@ -181,6 +291,7 @@ for (const suite of harvested.suites) {
 
 const BLOCK_MARKER = '/* fidelity */';
 const LINE_MARKER = '// fidelity';
+const HTML_MARKER = '<!-- fidelity -->';
 const MARKER_TEXT = 'fidelity';
 
 /**
@@ -189,6 +300,25 @@ const MARKER_TEXT = 'fidelity';
  * lines, which is the severe half of the class.
  */
 type Variant = { kind: string; text: string };
+
+/**
+ * The marker must be a comment in the fixture's OWN language, or the probe stops
+ * asking about comments. `// fidelity` in Markdown is a paragraph of literal
+ * text: the fixer preserves it, the comment scan finds no comment carrying it,
+ * and the guard reads a `COMMENT_LOST` that never happened. JSONC accepts both
+ * JavaScript shapes, so the JSON arm keeps the pair.
+ */
+const MARKERS_BY_LANGUAGE: Record<FixtureLanguage, Variant[]> = {
+  ts: [
+    { kind: 'BLOCK', text: BLOCK_MARKER },
+    { kind: 'LINE', text: LINE_MARKER },
+  ],
+  json: [
+    { kind: 'BLOCK', text: BLOCK_MARKER },
+    { kind: 'LINE', text: LINE_MARKER },
+  ],
+  markdown: [{ kind: 'HTML', text: HTML_MARKER }],
+};
 
 function insertLineBefore(
   text: string,
@@ -253,6 +383,20 @@ const stats = {
    * not this one, so those pairs are dropped rather than judged here.
    */
   suggestionShapeMismatch: 0,
+  /**
+   * Cases dropped before they proved anything, each asserted to be ZERO below.
+   * A fatal parse reads exactly like a silent rule once messages are filtered by
+   * `ruleId`, and an unsignable snippet is skipped before the comparison runs,
+   * so an uncounted — or counted but unasserted — skip is a false clean (#1984).
+   */
+  skippedFatal: 0,
+  skippedNoSignature: 0,
+  skippedFatalSuggestion: 0,
+  /** Comparisons per language; a total would let TypeScript hide the rest. */
+  comparisonsByLanguage: { ts: 0, json: 0, markdown: 0 } as Record<
+    FixtureLanguage,
+    number
+  >,
 };
 
 const soloRules = (name: string, testCase: InvalidCase) => ({
@@ -267,11 +411,9 @@ const verify = (
   tc: InvalidCase,
 ) => {
   try {
-    return linter
-      .verify(code, configFor(rules, tc.parserOptions), {
-        filename: tc.filename,
-      })
-      .filter((message) => !message.fatal);
+    return linter.verify(code, configFor(rules, tc), {
+      filename: tc.filename,
+    });
   } catch {
     return null;
   }
@@ -283,7 +425,7 @@ const fixOf = (
   tc: InvalidCase,
 ) => {
   try {
-    return linter.verifyAndFix(code, configFor(rules, tc.parserOptions), {
+    return linter.verifyAndFix(code, configFor(rules, tc), {
       filename: tc.filename,
     });
   } catch {
@@ -297,21 +439,20 @@ const fixOf = (
  * many-error fixture from dominating the run.
  */
 function buildVariants(
-  code: string,
+  tc: InvalidCase,
   signature: string,
   messages: { line?: number }[],
 ): Variant[] {
+  const code = tc.code;
   const variants: Variant[] = [];
   const addVariant = (kind: string, text: string | null) => {
     if (text === null) return;
-    if (tokenSignature(text) !== signature) {
+    if (tokenSignature(text, tc.language, tc.filename) !== signature) {
       stats.rejectedNonNeutral++;
       return;
     }
     variants.push({ kind, text });
   };
-  addVariant('LEADING_BLOCK', `${BLOCK_MARKER}\n${code}`);
-  addVariant('LEADING_LINE', `${LINE_MARKER}\n${code}`);
 
   const reportedLines = [
     ...new Set(
@@ -320,11 +461,19 @@ function buildVariants(
         .filter((line): line is number => Number.isInteger(line)),
     ),
   ].slice(0, 4);
-  for (const line of reportedLines) {
-    addVariant('BLOCK_ABOVE', insertLineBefore(code, line, BLOCK_MARKER));
-    addVariant('LINE_ABOVE', insertLineBefore(code, line, LINE_MARKER));
-    addVariant('TRAILING_BLOCK', appendTrailing(code, line, BLOCK_MARKER));
-    addVariant('TRAILING_LINE', appendTrailing(code, line, LINE_MARKER));
+
+  for (const marker of MARKERS_BY_LANGUAGE[tc.language]) {
+    addVariant(`LEADING_${marker.kind}`, `${marker.text}\n${code}`);
+    for (const line of reportedLines) {
+      addVariant(
+        `${marker.kind}_ABOVE`,
+        insertLineBefore(code, line, marker.text),
+      );
+      addVariant(
+        `TRAILING_${marker.kind}`,
+        appendTrailing(code, line, marker.text),
+      );
+    }
   }
   return variants;
 }
@@ -337,26 +486,39 @@ function compareCase(rule: string, tc: InvalidCase, into: Finding[]): void {
   stats.considered++;
   const solo = soloRules(rule, tc);
 
-  const signature = tokenSignature(tc.code);
-  if (signature === null) return;
+  const signature = tokenSignature(tc.code, tc.language, tc.filename);
+  if (signature === null) {
+    stats.skippedNoSignature++;
+    return;
+  }
 
   const base = verify(tc.code, solo, tc);
-  if (!base || base.length === 0) return;
+  if (!base) return;
+  if (base.some((message) => message.fatal)) {
+    stats.skippedFatal++;
+    return;
+  }
+  if (base.length === 0) return;
   stats.reported++;
 
   const baseFix = fixOf(tc.code, solo, tc);
   if (!baseFix) return;
-  const baseSignature = tokenSignature(baseFix.output);
+  const baseSignature = tokenSignature(
+    baseFix.output,
+    tc.language,
+    tc.filename,
+  );
   // An unparseable baseline output is a different axis (`fixer-convergence`).
   if (baseSignature === null) return;
   if (baseFix.fixed) stats.baselineFixed++;
 
-  const variants = buildVariants(tc.code, signature, base);
+  const variants = buildVariants(tc, signature, base);
 
   for (const variant of variants) {
     const variantFix = fixOf(variant.text, solo, tc);
     if (!variantFix) continue;
     stats.comparisons++;
+    stats.comparisonsByLanguage[tc.language]++;
     stats.rulesCompared.add(rule);
 
     const record = (kind: Finding['kind']) =>
@@ -372,7 +534,11 @@ function compareCase(rule: string, tc: InvalidCase, into: Finding[]): void {
         variantOutput: variantFix.output,
       });
 
-    const variantSignature = tokenSignature(variantFix.output);
+    const variantSignature = tokenSignature(
+      variantFix.output,
+      tc.language,
+      tc.filename,
+    );
     if (variantSignature === null) {
       record('PARSE_BREAK');
       continue;
@@ -388,7 +554,8 @@ function compareCase(rule: string, tc: InvalidCase, into: Finding[]): void {
       record('COMMENT_LOST');
       continue;
     }
-    const comments = commentsOf(variantFix.output) || [];
+    const comments =
+      commentsOf(variantFix.output, tc.language, tc.filename) || [];
     if (!comments.some((comment) => comment.includes(MARKER_TEXT))) {
       // Survives as text but is no longer a comment: it was absorbed into a
       // string or into another comment's body.
@@ -418,15 +585,23 @@ function compareSuggestions(
   const id = PREFIX + rule;
   const solo = soloRules(rule, tc);
 
-  const signature = tokenSignature(tc.code);
-  if (signature === null) return;
+  const signature = tokenSignature(tc.code, tc.language, tc.filename);
+  if (signature === null) {
+    stats.skippedNoSignature++;
+    return;
+  }
 
   const base = verify(tc.code, solo, tc);
-  if (!base || base.length === 0) return;
+  if (!base) return;
+  if (base.some((message) => message.fatal)) {
+    stats.skippedFatalSuggestion++;
+    return;
+  }
+  if (base.length === 0) return;
   const baseEdits = suggestionEditsOf(tc.code, base, id);
   if (baseEdits.length === 0) return;
 
-  for (const variant of buildVariants(tc.code, signature, base)) {
+  for (const variant of buildVariants(tc, signature, base)) {
     const variantMessages = verify(variant.text, solo, tc);
     if (!variantMessages) continue;
     const variantEdits = suggestionEditsOf(variant.text, variantMessages, id);
@@ -456,10 +631,18 @@ function compareSuggestions(
           variantOutput: variantEdit.output,
         });
 
-      const baseSignature = tokenSignature(baseEdit.output);
+      const baseSignature = tokenSignature(
+        baseEdit.output,
+        tc.language,
+        tc.filename,
+      );
       // An unparseable baseline output is `fixer-convergence`'s axis.
       if (baseSignature === null) return;
-      const variantSignature = tokenSignature(variantEdit.output);
+      const variantSignature = tokenSignature(
+        variantEdit.output,
+        tc.language,
+        tc.filename,
+      );
       if (variantSignature === null) {
         record('SUGGESTION_PARSE_BREAK');
         return;
@@ -472,7 +655,8 @@ function compareSuggestions(
         record('SUGGESTION_COMMENT_LOST');
         return;
       }
-      const comments = commentsOf(variantEdit.output) || [];
+      const comments =
+        commentsOf(variantEdit.output, tc.language, tc.filename) || [];
       if (!comments.some((comment) => comment.includes(MARKER_TEXT))) {
         record('SUGGESTION_COMMENT_LOST');
       }
@@ -499,6 +683,8 @@ const suggestionCasesByRule = new Map<string, InvalidCase[]>(
       filename: defaultFilenameFor(testCase),
       options: testCase.options,
       parserOptions: testCase.parserOptions,
+      tester: testCase.tester,
+      language: testCase.language,
       origin: `src/tests/${testCase.origin}`,
     })),
   ]),
@@ -516,6 +702,40 @@ function collectFindings(): Finding[] {
 }
 
 const findings = collectFindings();
+
+/** Corpus size per language, so a language's absence is visible, not inferred. */
+const casesByLanguage = [...casesByRule.values()].reduce((counts, cases) => {
+  for (const testCase of cases) {
+    counts[testCase.language] = (counts[testCase.language] || 0) + 1;
+  }
+  return counts;
+}, {} as Record<string, number>);
+
+/**
+ * Printed, not merely asserted: the skip counts are how this guard loses a case
+ * in silence, and a number nobody reads is a number nobody notices moving.
+ */
+console.log(
+  [
+    `[comment-fix-fidelity] corpus: ${stats.considered} case(s) over ` +
+      `${casesByRule.size} rule(s); languages ` +
+      `${[...languagesSeen]
+        .sort()
+        .map((language) => `${language}=${casesByLanguage[language] || 0}`)
+        .join(' ')}`,
+    `[comment-fix-fidelity] fix channel: ${stats.reported} reported, ` +
+      `${stats.baselineFixed} fixed, ${stats.comparisons} comparison(s) over ` +
+      `${stats.rulesCompared.size} rule(s), ` +
+      `${stats.rejectedNonNeutral} perturbation(s) rejected as non-neutral; ` +
+      `per language ` +
+      `${Object.entries(stats.comparisonsByLanguage)
+        .map(([language, count]) => `${language}=${count}`)
+        .join(' ')}`,
+    `[comment-fix-fidelity] skipped: ${stats.skippedFatal} fatal, ` +
+      `${stats.skippedNoSignature} unsignable, ` +
+      `${stats.skippedFatalSuggestion} fatal on the suggestion corpus`,
+  ].join('\n'),
+);
 
 /**
  * Printed per rule, not merely asserted in aggregate: a rule contributing zero
@@ -765,18 +985,77 @@ describe('the comment fidelity guard is load-bearing', () => {
 
   it('covers the fixable rule population', () => {
     // Guards the denominator: a high ratio over a collapsed rule set would still
-    // look healthy.
-    expect(FIXABLE_RULES.size).toBeGreaterThanOrEqual(60);
-    expect(casesByRule.size).toBeGreaterThanOrEqual(55);
-    expect(stats.rulesCompared.size).toBeGreaterThanOrEqual(55);
+    // look healthy. 84 of the 194 registered rules ship `meta.fixable`.
+    expect(FIXABLE_RULES.size).toBeGreaterThanOrEqual(80);
+    /**
+     * Closed by EQUALITY rather than by a floor. A fixable rule with no case —
+     * or with cases that never reach a comparison — is unprobed while the run
+     * reads as clean, which is precisely the state the two non-TypeScript rules
+     * sat in for as long as the corpus was TypeScript-only (#1860, #1984). All
+     * 84 contribute both.
+     */
+    expect(
+      [...FIXABLE_RULES].filter(
+        (rule) => !(casesByRule.get(rule) || []).length,
+      ),
+    ).toEqual([]);
+    expect(
+      [...FIXABLE_RULES].filter((rule) => !stats.rulesCompared.has(rule)),
+    ).toEqual([]);
   });
 
   it('reaches enough reported fixtures, and actually fixes them', () => {
-    expect(stats.considered).toBeGreaterThanOrEqual(1500);
-    expect(stats.reported).toBeGreaterThanOrEqual(1200);
+    // The floors sit just under the measurement — 4,617 considered, all 4,617
+    // reporting, 3,539 fixed, 30,091 comparisons — rather than far below it.
+    // The previous 1,500/1,200/1,000/5,000 had decayed to a third of the real
+    // corpus, which is more slack than the entire loss this guard exists to
+    // notice.
+    expect(stats.considered).toBeGreaterThanOrEqual(4600);
+    expect(stats.reported).toBeGreaterThanOrEqual(4550);
     // If the baseline never fixes anything there is no transform to compare.
-    expect(stats.baselineFixed).toBeGreaterThanOrEqual(1000);
-    expect(stats.comparisons).toBeGreaterThanOrEqual(5000);
+    expect(stats.baselineFixed).toBeGreaterThanOrEqual(3500);
+    expect(stats.comparisons).toBeGreaterThanOrEqual(29500);
+  });
+
+  it("carries every tester's language, not only TypeScript", () => {
+    /**
+     * Dropping the non-TS testers cost two registered rules their ENTIRE
+     * corpus. Both ship `recommended: 'error'` with `fixable: 'code'`, so both
+     * rewrite consumer code while contributing nothing to this axis (#1860).
+     */
+    expect([...languagesSeen].sort()).toEqual(['json', 'markdown', 'ts']);
+    const nonTsRules = [
+      'no-unpinned-dependencies',
+      'enforce-typescript-markdown-code-blocks',
+    ];
+    expect(
+      nonTsRules.filter((rule) => !(casesByRule.get(rule) || []).length),
+    ).toEqual([]);
+    // Cases alone prove nothing: a language whose every perturbation is
+    // rejected, or whose rule never reports, contributes no COMPARISON and the
+    // guard would pass over it exactly as it did when the corpus was TS-only.
+    expect(nonTsRules.filter((rule) => !stats.rulesCompared.has(rule))).toEqual(
+      [],
+    );
+    // 5 JSON cases yield 34 comparisons; 11 Markdown cases yield 24, the
+    // trailing-marker variant of each being rejected as non-neutral because
+    // Markdown has no inert inline comment.
+    expect(stats.comparisonsByLanguage.json).toBeGreaterThanOrEqual(30);
+    expect(stats.comparisonsByLanguage.markdown).toBeGreaterThanOrEqual(20);
+  });
+
+  it('loses no case to a filename or a parser the harness itself chose', () => {
+    /**
+     * A fatal parse is indistinguishable from silence once messages are filtered
+     * by `ruleId`, so every case counted here contributed a false clean.
+     * Deriving the extension from the TESTER did that to 14 fixtures holding
+     * JSX under `ruleTesterTs`, and an oracle fixed at `jsx: true` dropped 25
+     * more that hold an angle-bracket assertion. Asserting ZERO, not a ceiling,
+     * is what makes the next such case a failure instead of a rounding error.
+     */
+    expect(stats.skippedFatal).toBe(0);
+    expect(stats.skippedNoSignature).toBe(0);
+    expect(stats.skippedFatalSuggestion).toBe(0);
   });
 
   /**
@@ -803,6 +1082,8 @@ describe('the comment fidelity guard is load-bearing', () => {
     const planted: InvalidCase = {
       code: 'rebuildMe(\n  1,\n);\n',
       filename: 'x.ts',
+      tester: 'ruleTesterTs',
+      language: 'ts',
       origin: 'planted control',
     };
     const found: Finding[] = [];
@@ -816,6 +1097,8 @@ describe('the comment fidelity guard is load-bearing', () => {
     const planted: InvalidCase = {
       code: 'const renameMe = 1;\n',
       filename: 'x.ts',
+      tester: 'ruleTesterTs',
+      language: 'ts',
       origin: 'planted control',
     };
     const before = stats.suggestionComparisons;
@@ -832,8 +1115,31 @@ describe('the comment fidelity guard is load-bearing', () => {
     // in a template literal or JSX text changes the code and must be discarded.
     expect(stats.rejectedNonNeutral).toBeGreaterThan(0);
     const inTemplate = 'const s = `\nhello\n`;';
-    expect(tokenSignature(inTemplate)).not.toBe(
-      tokenSignature(insertLineBefore(inTemplate, 2, BLOCK_MARKER) as string),
+    expect(tokenSignature(inTemplate, 'ts', 'x.ts')).not.toBe(
+      tokenSignature(
+        insertLineBefore(inTemplate, 2, BLOCK_MARKER) as string,
+        'ts',
+        'x.ts',
+      ),
+    );
+    // Markdown has no inert inline comment: appending one to an opening fence
+    // turns it into a language label, which is why the signature keeps the
+    // residue rather than stripping comments wherever they appear.
+    const fence = '```\nconst example = 1;\n```';
+    expect(tokenSignature(fence, 'markdown', 'docs/example.md')).not.toBe(
+      tokenSignature(
+        appendTrailing(fence, 1, HTML_MARKER) as string,
+        'markdown',
+        'docs/example.md',
+      ),
+    );
+    // And a whole-line one is inert, or the Markdown arm would compare nothing.
+    expect(tokenSignature(fence, 'markdown', 'docs/example.md')).toBe(
+      tokenSignature(
+        insertLineBefore(fence, 1, HTML_MARKER) as string,
+        'markdown',
+        'docs/example.md',
+      ),
     );
   });
 
@@ -879,15 +1185,19 @@ describe('the comment fidelity guard is load-bearing', () => {
     const planted: InvalidCase = {
       code: 'rebuildMe(\n  1,\n);\n',
       filename: 'x.ts',
+      tester: 'ruleTesterTs',
+      language: 'ts',
       origin: 'planted control',
     };
     const rules = { '__control__/rebuild': 'error' };
-    const baseOut = linter.verifyAndFix(planted.code, configFor(rules, null), {
-      filename: planted.filename,
-    });
+    const baseOut = linter.verifyAndFix(
+      planted.code,
+      configFor(rules, planted),
+      { filename: planted.filename },
+    );
     const variantOut = linter.verifyAndFix(
       'rebuildMe(\n  /* fidelity */ 1,\n);\n',
-      configFor(rules, null),
+      configFor(rules, planted),
       { filename: planted.filename },
     );
     expect(baseOut.fixed).toBe(true);
@@ -925,23 +1235,28 @@ describe('the comment fidelity guard is load-bearing', () => {
       },
     } as never);
 
+    const planted: InvalidCase = {
+      code: 'const renameMe = 1;\n',
+      filename: 'x.ts',
+      tester: 'ruleTesterTs',
+      language: 'ts',
+      origin: 'planted control',
+    };
     const rules = { '__control__/inplace': 'error' };
     const baseOut = linter.verifyAndFix(
-      'const renameMe = 1;\n',
-      configFor(rules, null),
-      {
-        filename: 'x.ts',
-      },
+      planted.code,
+      configFor(rules, planted),
+      { filename: planted.filename },
     );
     const variantOut = linter.verifyAndFix(
       'const renameMe = 1; // fidelity\n',
-      configFor(rules, null),
-      { filename: 'x.ts' },
+      configFor(rules, planted),
+      { filename: planted.filename },
     );
     expect(baseOut.fixed).toBe(true);
     expect(variantOut.output).toContain(MARKER_TEXT);
-    expect(tokenSignature(variantOut.output)).toBe(
-      tokenSignature(baseOut.output),
+    expect(tokenSignature(variantOut.output, 'ts', planted.filename)).toBe(
+      tokenSignature(baseOut.output, 'ts', planted.filename),
     );
   });
 });

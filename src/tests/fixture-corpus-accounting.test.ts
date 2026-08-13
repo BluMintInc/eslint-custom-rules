@@ -306,6 +306,108 @@ describe('fixture corpus accounting', () => {
       );
     expect(offenders).toEqual([]);
   });
+
+  /**
+   * The closures above certify the SHARED corpus, which is no protection for a
+   * guard that harvests raw and builds its own. Four did, and each reproduced
+   * both defects the helper exists to prevent: a local `TS_TESTERS` set that
+   * dropped two `error`-severity fixable rules outright, and a filename derived
+   * from the TESTER, under which 269 fixtures were a fatal parse read as silence
+   * (#1984). Every one of the four imported `fixtureCorpus` — for other helpers
+   * — so "does it import the helper?" certified them all clean. The check has to
+   * be per CONCERN, and static, because the damage is invisible at runtime.
+   */
+  it('lets no harvesting guard hand-roll what fixtureCorpus owns', () => {
+    const testsDir = path.join(__dirname);
+    /**
+     * Scanned against CODE, not prose: a guard that documents the spelling it
+     * replaced would otherwise report itself forever. Block comments go, and
+     * line comments only when they own the whole line — a `//` inside a string
+     * literal must not truncate the code after it, which would hide a real
+     * violation on that line.
+     */
+    const stripComments = (source: string) =>
+      source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+    const BANNED = [
+      {
+        pattern: /const\s+TS_TESTERS\s*=\s*new Set/,
+        why: 'declares a local TS_TESTERS instead of reading LANGUAGE_BY_TESTER, which silently drops every non-TypeScript suite',
+      },
+      {
+        pattern: /'x\.tsx'\s*:\s*'x\.ts'|"x\.tsx"\s*:\s*"x\.ts"/,
+        why: "derives a fixture's extension from its TESTER; use defaultFilenameFor, which derives it from the CODE",
+      },
+      {
+        pattern: /\btester\s*!==\s*'ruleTesterTs'/,
+        why: 'decides JSX-ness from the TESTER; a `.ts` path forces ScriptKind.TS and `ecmaFeatures.jsx` does not override it, so every JSX fixture under ruleTesterTs is a fatal parse',
+      },
+    ];
+    const scanned: string[] = [];
+    const offenders = fs
+      .readdirSync(testsDir)
+      .filter((file) => file.endsWith('.test.ts'))
+      // This guard names the banned spellings, so it necessarily contains them.
+      .filter((file) => file !== path.basename(__filename))
+      .flatMap((file) => {
+        const source = fs.readFileSync(path.join(testsDir, file), 'utf8');
+        if (
+          !/harvestFixtureCorpus|harvestOnce|harvestRuleTesterCases/.test(
+            source,
+          )
+        ) {
+          return [];
+        }
+        scanned.push(file);
+        return BANNED.filter(({ pattern }) =>
+          pattern.test(stripComments(source)),
+        ).map(({ why }) => `${file} ${why}`);
+      });
+    expect(offenders).toEqual([]);
+
+    /**
+     * The harvest-identifier filter selects what gets scanned, so it is itself a
+     * silent-loss surface: rename the harvest helper and it matches nothing,
+     * leaving this closure asserting `[] === []` over an empty set forever. 25
+     * guards match at the time of writing; the floor holds well under that so
+     * ordinary churn does not trip it, but a collapsed filter does. The four
+     * that carried #1984 must each be covered by name — they are the reason
+     * this exists, and a filter that stopped reaching them is the one failure
+     * this test cannot be allowed to survive.
+     */
+    expect(scanned.length).toBeGreaterThanOrEqual(20);
+    expect(
+      [
+        'exemption-composition-closure.test.ts',
+        'comment-fix-fidelity.test.ts',
+        'cjs-emission-closure.test.ts',
+        'export-surface-integrity.test.ts',
+      ].filter((file) => !scanned.includes(file)),
+    ).toEqual([]);
+
+    /**
+     * Positive control: the detector must fire on the exact source it forbids.
+     * Without it a typo'd regex reports zero offenders forever, which is the
+     * same false clean this test exists to end.
+     */
+    const planted = [
+      "const TS_TESTERS = new Set(['ruleTesterTs']);",
+      "filename: f || (suite.tester === 'ruleTesterJsx' ? 'x.tsx' : 'x.ts'),",
+      "const jsx = suite.tester !== 'ruleTesterTs';",
+    ];
+    expect(
+      planted.map(
+        (source) => BANNED.filter(({ pattern }) => pattern.test(source)).length,
+      ),
+    ).toEqual([1, 1, 1]);
+    // Negative control: correct usage must not trip any of them.
+    expect(
+      BANNED.filter(({ pattern }) =>
+        pattern.test(
+          'const filename = testCase.filename || defaultFilenameFor(testCase);',
+        ),
+      ),
+    ).toEqual([]);
+  });
 });
 
 describe('every declared tester contributes to the corpus', () => {
