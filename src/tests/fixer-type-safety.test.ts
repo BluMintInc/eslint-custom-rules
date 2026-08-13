@@ -39,6 +39,14 @@ const PREFIX = '@blumintinc/blumint/';
  * program defines. What must hold is that the fixed text carries no diagnostic
  * the input did not already carry.
  *
+ * That differential is run under TWO compilers, `strict: false` and
+ * `strict: true` (see `MODES`). The single loose program this used to run was
+ * blind to everything `strictNullChecks` decides, which is a large share of
+ * what a fixer can break — #1985 is a fixer hoisting a guard-protected
+ * dereference out of its guard, and the guard was green throughout. Findings
+ * are unioned across modes and each pair is asserted under whichever modes
+ * accept its own input.
+ *
  * A SUGGESTION emits code into the same file under the same compiler, so it can
  * break the build in exactly the same way; `meta.fixable` alone made every
  * suggestion-only rule invisible here (#1601). The one difference is how the
@@ -397,14 +405,46 @@ declare const module: any;
 const VIRTUAL_DIR = '/virtual-fixer-corpus';
 
 /**
+ * The corpus is compiled under BOTH strictness settings, because each one is
+ * blind to a class the other sees and neither is "the" consumer's config.
+ *
+ * `strict: false` was the only mode until #1985, and it switches off
+ * `strictNullChecks` — so every TS18048/TS2532/null-assignability diagnostic
+ * was unobservable here. `no-entire-object-hook-deps` was hoisting a
+ * guard-protected dereference into a dependency array, where it is evaluated
+ * unconditionally and throws `TypeError`; the type-level shadow of that defect
+ * is a TS18048 this guard could not see, and it stayed green through it.
+ * `tsconfig.json` sets `strict: true` + `strictNullChecks: true`, so the loose
+ * mode was not even modelling this repo, let alone agora.
+ *
+ * Running strict ALONE would have been a regression of its own: 36 pairs across
+ * 6 rules have inputs that type-check only under the loose mode, and
+ * `baselineCompiles` would have held every one of them out. Both modes run, a
+ * pair is asserted where its own input compiles, and the findings are unioned —
+ * so neither mode's coverage is paid for with the other's.
+ *
+ * `noImplicitAny: false` is deliberately kept in both: `tsconfig.json` sets
+ * exactly that, so it is a match rather than a divergence.
+ */
+const MODES = [
+  { key: 'default', strict: false },
+  { key: 'strict', strict: true },
+] as const;
+
+type ModeKey = typeof MODES[number]['key'];
+
+/**
  * Compiling every snippet separately would build one program per pair and cost
  * a lib load each time. The corpus is flat and every file is its own module, so
  * one program per side is equivalent and ~500x cheaper.
  */
-const compileCorpus = (files: Array<{ name: string; text: string }>) => {
+const compileCorpus = (
+  files: Array<{ name: string; text: string }>,
+  strict: boolean,
+) => {
   const options: ts.CompilerOptions = {
     noEmit: true,
-    strict: false,
+    strict,
     noImplicitAny: false,
     target: ts.ScriptTarget.ES2022,
     module: ts.ModuleKind.ESNext,
@@ -821,6 +861,64 @@ const CONTROLS: Array<{
     },
   },
   {
+    name: 'control-strict-null-break',
+    /**
+     * The non-vacuity assertion for the strict mode, and the reason this pair
+     * of controls exists at all: `s.length` on a `string | null` is a diagnostic
+     * ONLY under `strictNullChecks`, so nothing but a live strict program can
+     * flag it. Drop the strict mode — or let `strict` drift back to `false` —
+     * and this control fails instead of the guard quietly returning to the blind
+     * spot that let #1985 through.
+     */
+    code: 'export const len = (s: string | null) => (s === null ? 0 : s.length);\n',
+    expectFlagged: true,
+    rule: {
+      meta: {
+        type: 'problem',
+        fixable: 'code',
+        schema: [],
+        messages: { m: 'x' },
+      },
+      create(context: any) {
+        return {
+          ConditionalExpression(node: any) {
+            context.report({
+              node,
+              messageId: 'm',
+              fix: (f: any) => f.replaceText(node, 's.length'),
+            });
+          },
+        };
+      },
+    },
+  },
+  {
+    name: 'control-strict-null-safe',
+    // Polarity for the mode above. Strict adds a whole diagnostic class, so it
+    // needs its own proof that it does not simply flag every fix it sees.
+    code: 'export const size = (s: string | null) => (s === null ? 0 : s.length);\n',
+    expectFlagged: false,
+    rule: {
+      meta: {
+        type: 'problem',
+        fixable: 'code',
+        schema: [],
+        messages: { m: 'x' },
+      },
+      create(context: any) {
+        return {
+          ConditionalExpression(node: any) {
+            context.report({
+              node,
+              messageId: 'm',
+              fix: (f: any) => f.replaceText(node, "(s ?? '').length"),
+            });
+          },
+        };
+      },
+    },
+  },
+  {
     name: 'control-suggestion-type-break',
     /**
      * The suggestion channel needs its own planted defect: `verifyAndFix`
@@ -1197,18 +1295,53 @@ for (const control of CONTROLS) {
 }
 
 const allPairs = [...pairs, ...suggestionPairs, ...controlPairs];
-const beforeDiagnostics = compileCorpus(
-  allPairs.map((p) => ({ name: p.name, text: p.before })),
-);
-const afterDiagnostics = compileCorpus(
-  allPairs.map((p) => ({ name: p.name, text: p.after })),
-);
+const diagnosticsByMode = new Map<
+  ModeKey,
+  { before: Map<string, string[]>; after: Map<string, string[]> }
+>();
+for (const mode of MODES) {
+  diagnosticsByMode.set(mode.key, {
+    before: compileCorpus(
+      allPairs.map((p) => ({ name: p.name, text: p.before })),
+      mode.strict,
+    ),
+    after: compileCorpus(
+      allPairs.map((p) => ({ name: p.name, text: p.after })),
+      mode.strict,
+    ),
+  });
+}
 
-const introducedFor = (pair: Pair) =>
-  introducedDiagnostics(
-    beforeDiagnostics.get(pair.name) || [],
-    afterDiagnostics.get(pair.name) || [],
-  );
+const diagnosticsIn = (mode: ModeKey) => diagnosticsByMode.get(mode)!;
+
+/**
+ * Per mode, never pooled: `introducedDiagnostics`' artifact filter is anchored
+ * to the start of a diagnostic string, so a mode label may not be prefixed
+ * before that filter runs, and a diagnostic the loose mode never emits must not
+ * cancel one the strict mode does.
+ */
+const introducedByMode = (pair: Pair) =>
+  MODES.filter((mode) => baselineCompilesIn(pair, mode.key)).map((mode) => ({
+    mode: mode.key,
+    added: introducedDiagnostics(
+      diagnosticsIn(mode.key).before.get(pair.name) || [],
+      diagnosticsIn(mode.key).after.get(pair.name) || [],
+    ),
+  }));
+
+/**
+ * Deduped across modes: the same defect surfaces under both whenever the input
+ * compiles under both, and counting it twice would double every baseline.
+ */
+const introducedFor = (pair: Pair) => [
+  ...new Set(introducedByMode(pair).flatMap((entry) => entry.added)),
+];
+
+/** The modes that actually witnessed a finding, for the failure message. */
+const witnessesFor = (pair: Pair) =>
+  introducedByMode(pair)
+    .filter((entry) => entry.added.length)
+    .map((entry) => entry.mode);
 
 /**
  * The claim being tested is that an autofix does not turn *compiling* code into
@@ -1229,10 +1362,38 @@ const introducedFor = (pair: Pair) =>
  * full of identifiers no program defines; excluding those would leave nearly
  * nothing, and the artifact filter above already handles them in the diff.
  */
-const baselineCompiles = (pair: Pair) =>
-  (beforeDiagnostics.get(pair.name) || []).every(
+const baselineCompilesIn = (pair: Pair, mode: ModeKey) =>
+  (diagnosticsIn(mode).before.get(pair.name) || []).every(
     (diagnostic) => missingNameOf(diagnostic) !== null,
   );
+
+/**
+ * Asserted where SOME mode has a compiling input. A pair whose input is
+ * ill-typed under strict but fine under the loose mode is still a real baseline
+ * for the loose mode, and vice versa; requiring both would discard the 36 pairs
+ * that only the loose mode can carry, and requiring only strict would discard
+ * them too. `introducedByMode` re-checks per mode, so a mode whose baseline is
+ * broken never contributes a diagnostic.
+ */
+const baselineCompiles = (pair: Pair) =>
+  MODES.some((mode) => baselineCompilesIn(pair, mode.key));
+
+/**
+ * Why a rule ended up uncovered. Reported with the mode that produced it: "held
+ * out for an ill-typed input" reads as a fixture problem, and under two modes
+ * the reader's next question is always which compiler rejected it.
+ */
+const exampleIllTypedDiagnostic = (rulePairs: Pair[]) => {
+  for (const mode of MODES) {
+    for (const pair of rulePairs) {
+      const found = (diagnosticsIn(mode.key).before.get(pair.name) || []).find(
+        (diagnostic) => !missingNameOf(diagnostic),
+      );
+      if (found) return `[${mode.key}] ${found}`;
+    }
+  }
+  return null;
+};
 
 const assertedPairs = pairs.filter(baselineCompiles);
 const assertedByRule = new Set(assertedPairs.map((pair) => pair.rule));
@@ -1248,9 +1409,7 @@ for (const rule of fixableRules) {
   detail.set(
     rule,
     `all ${rulePairs.length} fix pairs, e.g. ${
-      rulePairs
-        .flatMap((pair) => beforeDiagnostics.get(pair.name) || [])
-        .find((diagnostic) => !missingNameOf(diagnostic)) || 'unknown'
+      exampleIllTypedDiagnostic(rulePairs) || 'unknown'
     }`,
   );
 }
@@ -1282,8 +1441,19 @@ const findingKey = (finding: Pair & { added: string[] }) =>
  *
  * Prefer fixing over listing.
  */
-const TYPE_UNSAFE_BASELINE: Record<string, { pairs: number; note: string }> =
-  {};
+const TYPE_UNSAFE_BASELINE: Record<string, { pairs: number; note: string }> = {
+  'prefer-spread-over-reassembly TS2698': {
+    pairs: 2,
+    note:
+      "#1986. Both pairs are the rule's own #1642 regressions, whose receiver " +
+      'is an empty array literal — `never[]` under strictNullChecks, and ' +
+      '`{ ...props }` on `never` is TS2698. The rule fires here by design: it ' +
+      'reports exactly when the element type is UNRESOLVABLE, and telling ' +
+      '"unresolvable" apart from "resolvably never" needs the checker, which ' +
+      'is unavailable without parserOptions.project. Awaiting the design call ' +
+      'on the issue; pinned at 2 so a third instance still fails.',
+  },
+};
 
 const baselinedCounts = new Map<string, number>();
 for (const findings of findingsByRule.values()) {
@@ -1307,9 +1477,7 @@ for (const rule of suggestionRules) {
   detail.set(
     `suggestion:${rule}`,
     `all ${rulePairs.length} suggestion pairs, e.g. ${
-      rulePairs
-        .flatMap((pair) => beforeDiagnostics.get(pair.name) || [])
-        .find((diagnostic) => !missingNameOf(diagnostic)) || 'unknown'
+      exampleIllTypedDiagnostic(rulePairs) || 'unknown'
     }`,
   );
 }
@@ -1336,6 +1504,9 @@ const controlOutcomes = controlPairs.map((pair) => ({
 const report = (finding: Pair & { added: string[] }, channel = 'after --fix') =>
   [
     `introduced: ${finding.added.join(' | ')}`,
+    // Which compiler saw it: a strict-only finding is triaged differently from
+    // one both modes agree on, and the reader cannot tell them apart otherwise.
+    `witnessed under: ${witnessesFor(finding).join(', ')}`,
     `src/tests/${finding.origin} as ${finding.filename}`,
     '--- input (compiles) ---',
     finding.before,
@@ -1424,9 +1595,20 @@ console.log(
     `  ${nonTypeScriptDropped} case(s) dropped for not being TypeScript`,
     `  ${
       pairs.length - assertedPairs.length
-    } pair(s) held out for an input that does not type-check, in ${
+    } pair(s) held out for an input that does not type-check under ANY mode, in ${
       heldOutByRule.length
     } covered rule(s) [held/total]: ${heldOutByRule.join(', ') || 'none'}`,
+    // Per mode, so the cost of running both is visible rather than asserted.
+    // A mode that stopped contributing baselines would show up here as a
+    // collapsed count long before it showed up as a missing finding.
+    ...MODES.map((mode) => {
+      const held = pairs.filter(
+        (pair) => !baselineCompilesIn(pair, mode.key),
+      ).length;
+      return `    mode ${mode.key} (strict: ${mode.strict}): ${
+        pairs.length - held
+      } of ${pairs.length} fix pairs have a compiling input`;
+    }),
     `  suggestion channel: asserted ${assertedSuggestionPairs.length} of ${suggestionPairs.length} pairs across ${assertedSuggestionRules.size} of ${suggestionRules.length} suggestion-emitting rules`,
     ...Object.entries(observedUncoveredSuggestions).map(
       ([rule, reason]) =>
