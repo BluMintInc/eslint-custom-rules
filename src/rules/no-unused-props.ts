@@ -10,6 +10,73 @@ const PAREN_TYPE =
   (AST_NODE_TYPES as unknown as Record<string, string>).TSParenthesizedType ??
   'TSParenthesizedType';
 
+/**
+ * `require-memo` rewrites `const Widget = (props: WidgetProps) => ...` into
+ * `const Widget = memo(...)`, and pairs that wrapper with `forwardRef` whenever
+ * a ref is forwarded, so a component declarator's initializer is a wrapper CALL
+ * at least as often as it is a function. Peeling them is what keeps the
+ * recommended config's own autofix from hiding the component from this rule
+ * (#2004).
+ */
+const COMPONENT_WRAPPERS = new Set(['memo', 'forwardRef']);
+
+const isComponentWrapperCallee = (callee: TSESTree.Node): boolean => {
+  if (callee.type === AST_NODE_TYPES.Identifier) {
+    return COMPONENT_WRAPPERS.has(callee.name);
+  }
+  if (
+    callee.type === AST_NODE_TYPES.MemberExpression &&
+    !callee.computed &&
+    callee.property.type === AST_NODE_TYPES.Identifier
+  ) {
+    return COMPONENT_WRAPPERS.has(callee.property.name);
+  }
+  return false;
+};
+
+/**
+ * The function that receives the props behind any nesting of component
+ * wrappers (`memo(forwardRef(fn))`), or `null` when no function is reachable.
+ * Only the first argument is followed: a wrapper's remaining arguments are
+ * comparators (`memo(fn, compareDeeply('used'))`), never the component.
+ *
+ * An argument that merely NAMES a function (`memo(WidgetUnmemoized)`) is left
+ * alone, unlike in `enforce-exported-function-types`. That name belongs to a
+ * declarator of its own, which reaches this rule on its own and reports against
+ * the same props-type member; following the binding would report every unused
+ * prop once per binding that re-wraps the component.
+ */
+const unwrapComponentFunction = (
+  node: TSESTree.Node | null | undefined,
+): TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression | null => {
+  if (!node) {
+    return null;
+  }
+  // ESTree wraps `memo?.(fn)` and `React?.memo(fn)` in a ChainExpression, so an
+  // optionally-called wrapper sits one node deeper than the plain spelling.
+  if (node.type === AST_NODE_TYPES.ChainExpression) {
+    return unwrapComponentFunction(node.expression);
+  }
+  if (
+    node.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+    node.type === AST_NODE_TYPES.FunctionExpression
+  ) {
+    return node;
+  }
+  if (
+    node.type === AST_NODE_TYPES.CallExpression &&
+    isComponentWrapperCallee(node.callee)
+  ) {
+    const [firstArgument] = node.arguments;
+    // A spread argument (`memo(...candidates)`) hides which value is wrapped.
+    if (!firstArgument || firstArgument.type === AST_NODE_TYPES.SpreadElement) {
+      return null;
+    }
+    return unwrapComponentFunction(firstArgument);
+  }
+  return null;
+};
+
 export const noUnusedProps = createRule({
   name: 'no-unused-props',
   meta: {
@@ -699,18 +766,19 @@ export const noUnusedProps = createRule({
      * holds no props-typed function. Each declarator answers on its own: this
      * rule reports a member of a props type and rewrites nothing, so a sibling
      * binding in the same statement has no bearing on the verdict (#1890).
+     *
+     * The props come from the wrapped function's own parameter, so a wrapper
+     * changes nothing about the verdict — only about how far in the function
+     * sits. The declarator's binding still supplies any FC-shaped annotation.
      */
     const componentUsageOfDeclarator = (
       declaration: TSESTree.VariableDeclarator,
     ): ComponentUsage | null => {
-      const { init } = declaration;
-      if (
-        init?.type !== AST_NODE_TYPES.ArrowFunctionExpression &&
-        init?.type !== AST_NODE_TYPES.FunctionExpression
-      ) {
+      const fn = unwrapComponentFunction(declaration.init);
+      if (!fn) {
         return null;
       }
-      return componentUsageOfFunction(init, declaration.id);
+      return componentUsageOfFunction(fn, declaration.id);
     };
 
     return {

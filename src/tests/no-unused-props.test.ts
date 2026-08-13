@@ -1070,6 +1070,100 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
         sourceType: 'module',
       },
     },
+    // A memo-wrapped component consuming every prop: peeling the wrapper must
+    // not invent a finding (#2004).
+    {
+      code: `
+        import { memo } from 'react';
+        type BadgeProps = { label: string; count: number };
+        const Badge = memo(({ label, count }: BadgeProps) => (
+          <span>{label}{count}</span>
+        ));
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // A rest element inside a wrapper forwards the remaining props, exactly as
+    // it does for the unwrapped spelling.
+    {
+      code: `
+        import { memo } from 'react';
+        type RowProps = { id: string; first: string; second: string };
+        const Row = memo(({ id, ...rest }: RowProps) => <div id={id} {...rest} />);
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // `forwardRef` around a component that reads every prop stays clean.
+    {
+      code: `
+        import { forwardRef } from 'react';
+        type FieldProps = { value: string; onChange: () => void };
+        const Field = forwardRef(({ value, onChange }: FieldProps, ref) => (
+          <input ref={ref} value={value} onChange={onChange} />
+        ));
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // A wrapper call carrying no argument holds no component to answer for.
+    {
+      code: `
+        import { memo } from 'react';
+        type WidgetProps = { used: string; unused: string };
+        const Widget = memo();
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // A spread argument hides which value reaches the wrapper, so no props type
+    // can be attributed to it.
+    {
+      code: `
+        import { memo } from 'react';
+        type WidgetProps = { used: string; unused: string };
+        const candidates = [({ used }: WidgetProps) => <div>{used}</div>];
+        const Widget = memo(...candidates);
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // A call that is not a component wrapper reaches the props of no component;
+    // the callback below consumes what it declares either way.
+    {
+      code: `
+        import { useCallback } from 'react';
+        type SubmitProps = { value: string };
+        const submit = useCallback(({ value }: SubmitProps) => value, []);
+        const view = <div onClick={submit} />;
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
   ],
   invalid: [
     {
@@ -2653,6 +2747,285 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
           data: { propName: 'unused' },
           type: AST_NODE_TYPES.Identifier,
         },
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unused' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // `memo(...)` is the shape `require-memo` autofixes a component INTO, so a
+    // wrapper may not hide the props type from this rule (#2004).
+    {
+      code: `
+        import { memo } from 'react';
+        type WidgetProps = { used: string; unused: string };
+        const Widget = memo(({ used }: WidgetProps) => <div>{used}</div>);
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unused' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // The function-expression spelling `require-memo` emits when it rewrites a
+    // function declaration.
+    {
+      code: `
+        import { memo } from 'react';
+        type WidgetProps = { used: string; unused: string };
+        const Widget = memo(function WidgetUnmemoized({ used }: WidgetProps) {
+          return <div>{used}</div>;
+        });
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unused' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // The namespaced callee `React.memo` names the same wrapper.
+    {
+      code: `
+        import React from 'react';
+        type WidgetProps = { used: string; unused: string };
+        const Widget = React.memo(({ used }: WidgetProps) => <div>{used}</div>);
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unused' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // `forwardRef` passes the props as its first parameter, so the props type
+    // resolves from the same position as an unwrapped component's.
+    {
+      code: `
+        import { forwardRef } from 'react';
+        type FieldProps = { value: string; placeholder: string };
+        const Field = forwardRef(({ value }: FieldProps, ref) => (
+          <input ref={ref} value={value} />
+        ));
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'placeholder' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // Nested wrappers peel one after the other.
+    {
+      code: `
+        import { forwardRef, memo } from 'react';
+        type FieldProps = { value: string; placeholder: string };
+        const Field = memo(
+          forwardRef(({ value }: FieldProps, ref) => <input ref={ref} value={value} />),
+        );
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'placeholder' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // The comparator `memo-compare-deeply-complex-props` adds as a second
+    // argument leaves the component in first position.
+    {
+      code: `
+        import { compareDeeply, memo } from 'src/util/memo';
+        type WidgetProps = { used: string; unused: string };
+        const Widget = memo(
+          ({ used }: WidgetProps) => <div>{used}</div>,
+          compareDeeply('used'),
+        );
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unused' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // The split shape `require-memo` leaves behind for a default-exported
+    // function declaration: the component is declared, then exported.
+    {
+      code: `
+        import { memo } from 'react';
+        type PageProps = { used: string; unused: string };
+        const Page = memo(function PageUnmemoized({ used }: PageProps) {
+          return <div>{used}</div>;
+        });
+        export default Page;
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unused' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // An identifier parameter under a wrapper still resolves through the body
+    // destructuring scan.
+    {
+      code: `
+        import { memo } from 'react';
+        type PanelProps = { header: string; body: string };
+        const Panel = memo((props: PanelProps) => {
+          const { header } = props;
+          return <h1>{header}</h1>;
+        });
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'body' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // The props type may live on the DECLARATOR under a wrapper too: the
+    // annotation is read from the binding, the props from the wrapped function.
+    {
+      code: `
+        import { memo } from 'react';
+        import { FC } from 'react';
+        type CardProps = { title: string; footer: string };
+        const Card: FC<CardProps> = memo(({ title }) => <h1>{title}</h1>);
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'footer' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // `memo?.(...)` parses as a ChainExpression around the call, so the wrapper
+    // sits one node deeper than the plain spelling.
+    {
+      code: `
+        import { memo } from 'react';
+        type WidgetProps = { used: string; unused: string };
+        const Widget = memo?.(({ used }: WidgetProps) => <div>{used}</div>);
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unused' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2020,
+        sourceType: 'module',
+      },
+    },
+    // The same for an optional member callee, `React?.memo(...)`.
+    {
+      code: `
+        import React from 'react';
+        type WidgetProps = { used: string; unused: string };
+        const Widget = React?.memo(({ used }: WidgetProps) => <div>{used}</div>);
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unused' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2020,
+        sourceType: 'module',
+      },
+    },
+    // A wrapper argument that merely NAMES a component is left to the
+    // declaration that holds the function: the prop is reported once, not once
+    // per binding that re-wraps it.
+    {
+      code: `
+        import { memo } from 'react';
+        type WidgetProps = { used: string; unused: string };
+        const WidgetUnmemoized = ({ used }: WidgetProps) => <div>{used}</div>;
+        const Widget = memo(WidgetUnmemoized);
+      `,
+      errors: [
         {
           messageId: 'unusedProp',
           data: { propName: 'unused' },
