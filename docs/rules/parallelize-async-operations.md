@@ -16,7 +16,8 @@ The rule reports when all of these are true:
 - The file is not a **test file** (`.test.*`, `.spec.*`, or under `__tests__/` / `__mocks__/`), whose awaits encode ordering rather than latency.
 - Two or more awaits or await-based variable declarations appear consecutively.
 - Later awaits do not reference identifiers **declared** by earlier awaits (direct identifier reference-based dependency check).
-- Later awaits do not read an identifier — or an **instance slot** (`this.mutator`) — that an earlier await **writes from inside a callback** (`mutator = new Mutator(tx)` in a transaction body), a data dependency that flows through the closure rather than through the await's value.
+- Later awaits do not read an identifier — or an **instance slot** (`this.mutator`) — that an earlier await **writes from inside a callback** (`mutator = new Mutator(tx)` in a transaction body), a data dependency that flows through the closure rather than through the await's value. Where this file declares the awaited callee, the writes in **its own body** count the same way: `await hydrate()` publishes whatever `hydrate` assigns, even though nothing flows out of the await.
+- No later awaited operand **dereferences a slot** an earlier discarded-result await could have installed. Depth is what makes this a hazard: evaluating `store.data.id` requires `store.data` to already hold an object and throws when it does not, while `store.data` alone merely yields `undefined`.
 - Later awaits do not share "coordinator" identifiers (like `batchManager`, `transaction`, or `collector`) with earlier awaits.
 - The awaited calls do not invoke methods on the **same receiver** (e.g. `ref.set(...)` then `ref.get()`, or `this.load()` then `this.read()`), which can carry a read-after-write / write-after-write ordering dependency on that shared object.
 - No later discarded-result await reads as a **state refetch/refresh** (`refresh*`, `reload*`, `refetch*`, `revalidate*`, `resync*`, `sync*`), which re-observes state a preceding await may have mutated.
@@ -184,6 +185,31 @@ class VersionStore {
 The `#` is part of the member's identity, so `#svc` and `svc`—two members a class can declare at once—remain distinct receivers and are still parallelized, and a write to `this.#alpha` still leaves a later read of `this.#beta` parallelizable.
 
 Receivers that differ, or whose identity varies per evaluation, are still flagged: a distinct member (`api.users.get()` vs `api.posts.get()`, `super.users.read()` vs `this.posts.read()`), a bare binding paired with the instance (`svc.read()` vs `super.read()`), a fresh chain per call (`db.collection(a).get()` vs `db.collection(b).get()`), or a numeric/dynamic index (`operations[0]()` vs `operations[1]()`) selects a different target each time. Two pure reads on one receiver are conservatively kept sequential as well, since a shared receiver can hold hidden state (for example a paginated cursor)—the worst case is a missed parallelization, which is safer than reordering a real dependency.
+
+### ✅ Correct (a slot the earlier operation installs)
+
+A statement after an `await` occupies a **deferred** position: it is evaluated only once the preceding promise settles. `Promise.all([...])` destroys that, because an array literal evaluates every element eagerly, left to right, at construction. So a slot the later operand has to dereference is read before the earlier operation has run, and code that returned a value throws a `TypeError` instead.
+
+```typescript
+const store: { state?: { id: number } } = {};
+
+async function hydrate() {
+  await sleep(1);
+  store.state = { id: 7 };
+}
+
+async function run() {
+  await hydrate(); // installs store.state
+  await report(store.state.id); // reading it eagerly would throw
+}
+```
+
+The write is invisible to every barrier keyed on the run's own text: it happens inside `hydrate`'s body, so no value leaves the await, no variable is declared, and no assignment appears next to either call. Where this file declares the callee, its body is read directly. Where it does not — an import, a parameter — what the run still shows is **reach**, and only two shapes of it count, so that sibling slots under a shared namespace (`api.users.getAll()` then `api.posts.getRecent()`) stay parallelizable:
+
+- The earlier call is invoked on a receiver that **contains** the slot (`this.connect()` then `this.client.send(...)`, or `store.load()` then `send(store.data.id)`). A method can fill any slot beneath its own receiver. This widens the shared-receiver rule above from equality to containment.
+- The earlier call goes through a **bare identifier** (`hydrate()`, `initAnalytics()`) and the slot hangs off module-scope state. Such a call names no receiver, so the run says nothing about what it touches, while module-scope state is reachable from inside it without ever being passed in. Function-local roots and instance paths are excluded: a free function handed neither cannot rebind them.
+
+Only a **discarded-result** await counts as the writer — a captured result is a value dependency the identifier comparison already catches. Because the two awaits are genuinely ordered, the rule declines to **report** here rather than merely declining the fix.
 
 ### ✅ Correct (refetch/refresh ordering)
 

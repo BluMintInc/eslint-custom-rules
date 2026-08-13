@@ -4427,3 +4427,274 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
     },
   ],
 });
+
+// ----------------------------------------------------------------------
+// Deferred-dereference barrier. A statement after an await runs only once the
+// preceding promise settles; an array element evaluates at construction. A
+// later operand that dereferences a slot the earlier operation installs is
+// therefore read while still undefined, and every one of these shapes went
+// from returning a value to throwing a TypeError under --fix. The awaits are
+// ordered, so the rule declines to report them at all rather than merely
+// declining the fix. (#1989)
+// ----------------------------------------------------------------------
+ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
+  valid: [
+    // The first await's body installs the state the second operand dereferences.
+    // Ordered awaits; parallelizing evaluates store.state.id before hydrate() settles.
+    `const store: { state?: { id: number } } = {};
+async function hydrate() {
+  await sleep(1);
+  store.state = { id: 7 };
+}
+async function run() {
+  await hydrate();
+  await report(store.state.id);
+}`,
+    // The same shape with the installer declared nowhere in the file, which is
+    // how an imported helper reads. Nothing resolves, so the barrier rests
+    // entirely on reach: a bare-identifier call names no receiver, and
+    // `store` is module-scope state such a call can touch without being handed
+    // it.
+    `
+async function run() {
+  await hydrate();
+  await report(store.state.id);
+}
+`,
+    // The analytics spelling of the same reach: the installer is resolvable and
+    // assigns the slot the later operand walks through.
+    `
+const analytics: { instance?: { name: string } } = {};
+async function initAnalytics() {
+  await connect();
+  analytics.instance = { name: 'web' };
+}
+async function run() {
+  await initAnalytics();
+  await logEvent(analytics.instance.name);
+}
+`,
+    // ... and with neither name declared in the file.
+    `
+async function run() {
+  await initAnalytics();
+  await logEvent(analytics.instance.name);
+}
+`,
+    // A method fills any slot beneath its own receiver, so a discarded-result
+    // call on `store` orders every later dereference of a path under `store` --
+    // even though the second callee is a bare identifier, which leaves the
+    // shared-receiver barrier with nothing to compare.
+    `
+async function run(store) {
+  await store.load();
+  await send(store.data.id);
+}
+`,
+    // The instance spelling: `this.connect()` installs `this.client`, so
+    // reading `this.client.send` eagerly throws. The receivers differ (`this`
+    // versus `this.client`), so equality-based receiver matching sees nothing.
+    `
+class Session {
+  private client?: { send(text: string): Promise<void> };
+  private async connect() {
+    await handshake();
+    this.client = makeClient();
+  }
+  public async run() {
+    await this.connect();
+    await this.client!.send('hi');
+  }
+}
+`,
+    // The same class shape with `connect` inherited rather than declared here,
+    // so no body is available and containment of the receiver in the read path
+    // is the whole answer.
+    `
+class RemoteSession extends BaseSession {
+  public async run() {
+    await this.connect();
+    await this.client.send('hi');
+  }
+}
+`,
+    // A resolvable body settles a case reach alone cannot: the result is
+    // CAPTURED, so no discarded-result await precedes the read, and the read is
+    // a single hop, so it dereferences nothing. `signIn` assigning `session` is
+    // what makes the pair ordered, and the file declares `signIn`.
+    `
+const session: { token?: string } = {};
+async function signIn() {
+  await authenticate();
+  session.token = 'abc';
+}
+async function run() {
+  const attempts = await signIn();
+  await post(session.token);
+  return attempts;
+}
+`,
+    // A method-valued class property resolves exactly as a method does.
+    `
+class Loader {
+  private data?: { id: number };
+  private load = async () => {
+    await fetchAll();
+    this.data = { id: 1 };
+  };
+  public async run() {
+    const count = await this.load();
+    await emit(this.data);
+    return count;
+  }
+}
+`,
+    // The issue's negative control, held so the fix cannot be credited for a
+    // silence that predates it: the declared-variable path already orders this
+    // pair, because `user` flows out of the first await and into the second.
+    `
+async function run() {
+  const user = await fetchUser();
+  await send(user.profile.id);
+}
+`,
+  ],
+  invalid: [
+    // Non-vacuity control: the plainest independent pair still reports and
+    // still fixes. A dereference barrier that swallowed this one would have
+    // disabled the rule rather than narrowed it.
+    {
+      code: `
+async function run() {
+  await operation1();
+  await operation2();
+}
+`,
+      errors: [error(2)],
+      output: `
+async function run() {
+  await Promise.all([
+    operation1(),
+    operation2()
+  ]);
+}
+`,
+    },
+    // Sibling slots under a shared namespace stay parallelizable. `api.users`
+    // does not contain `api.posts`, so the earlier call reaches nothing the
+    // later one walks through -- the containment test is what keeps this pair
+    // reportable while `store.load()` then `store.data.id` is not.
+    {
+      code: `
+async function run() {
+  await api.users.getAll();
+  await api.posts.getRecent();
+}
+`,
+      errors: [error(2)],
+      output: `
+async function run() {
+  await Promise.all([
+    api.users.getAll(),
+    api.posts.getRecent()
+  ]);
+}
+`,
+    },
+    // A function-local root is out of an opaque call's reach: `start()` is
+    // handed neither `config` nor anything holding it, so it cannot install
+    // `config.api`. Reach is what the barrier keys on, so this pair reports.
+    {
+      code: `
+async function run() {
+  const config = buildConfig();
+  await start();
+  await send(config.api.key);
+}
+`,
+      errors: [error(2)],
+      output: `
+async function run() {
+  const config = buildConfig();
+  await Promise.all([
+    start(),
+    send(config.api.key)
+  ]);
+}
+`,
+    },
+    // Reading a slot is not dereferencing one: an unfilled `payload.id` yields
+    // undefined rather than throwing, so a single hop off module state carries
+    // no crash and stays reportable. The barrier engages on the hop that must
+    // already hold an object.
+    {
+      code: `
+async function run() {
+  await warmCache();
+  await send(payload.id);
+}
+`,
+      errors: [error(2)],
+      output: `
+async function run() {
+  await Promise.all([
+    warmCache(),
+    send(payload.id)
+  ]);
+}
+`,
+    },
+    // A path dereferenced inside a CALLBACK is not evaluated when the array
+    // literal is built -- it runs when the operation invokes the callback --
+    // so it is not the hazard and the pair still parallelizes.
+    {
+      code: `
+async function run() {
+  await warmCache();
+  await withRetry(() => send(payload.data.id));
+}
+`,
+      errors: [error(2)],
+      output: `
+async function run() {
+  await Promise.all([
+    warmCache(),
+    withRetry(() => send(payload.data.id))
+  ]);
+}
+`,
+    },
+    // A resolved body that writes a DISJOINT slot leaves the pair independent,
+    // so reading the callee's body narrows rather than blankets: `signIn`
+    // assigns `session`, which the later await never mentions.
+    {
+      code: `
+const session: { token?: string } = {};
+async function signIn() {
+  await authenticate();
+  session.token = 'abc';
+}
+async function run() {
+  const attempts = await signIn();
+  await post(telemetry);
+  return attempts;
+}
+`,
+      errors: [error(2)],
+      output: `
+const session: { token?: string } = {};
+async function signIn() {
+  await authenticate();
+  session.token = 'abc';
+}
+async function run() {
+  const [attempts, ] = await Promise.all([
+    signIn(),
+    post(telemetry)
+  ]);
+  return attempts;
+}
+`,
+    },
+  ],
+});
