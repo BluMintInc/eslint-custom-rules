@@ -62,6 +62,31 @@ namespace alias of `queryKeys.ts` still has to name a `QUERY_KEY_*` export
 the same spellings the same way, so no key source is one rule's allowance and
 the other's violation.
 
+A reassignment is followed the same way, to whichever node provably holds the
+key. A plain `=` makes its right-hand side the value. A compound assignment
+normally does not, since `key ||= QUERY_KEY_X` leaves the prior key reachable
+whenever it is truthy (`??=`: non-nullish) and `key += QUERY_KEY_X` yields
+neither operand — following those would launder an unapproved key into an
+approved one. The exception is a `||=`/`??=` onto a variable that still holds
+`undefined`, from `let key;` or `let key = undefined;`: `undefined` is both
+falsy and nullish, so the assignment always happens and the operand *is* the
+key.
+
+```tsx
+// Allowed: undefined is falsy and nullish, so this always assigns
+let key;
+key ||= QUERY_KEY_PLAYBACK_ID;
+const [playbackId] = useRouterState({ key });
+```
+
+That exception holds only while it stays provable, so it is bounded to a single
+declaration with a single assignment to it; a second assignment anywhere puts a
+prior value back in play and the key reports again. The operand is resolved and
+then validated like any other key, so `key ||= 'playback-id'` still reports.
+`enforce-querykey-ts` answers identically — the two rules resolve a key variable
+through the same map, and this pair is pinned in agreement by a shared fixture
+table on both sides.
+
 An assertion is read through for the same reason, whether the key reaches
 `useRouterState` through a variable or is written straight into the call:
 `key as string`, `key satisfies string`, `key!` and `<string>key` restate a type
