@@ -1047,6 +1047,68 @@ export class Repro {
   public b = (() => this.#a)();
 }`,
       },
+      // A method an initializer calls runs during construction, so the fields
+      // that method reads are read as eagerly as the initializer's own reads:
+      // hoisting `derived` above `base` makes `new Repro()` throw.
+      {
+        code: `export class Repro {
+  private readonly base = { n: 1 };
+  public readonly derived = this.compute();
+  private compute() {
+    return this.base.n + 1;
+  }
+}`,
+      },
+      // The accessor spelling reads the same field through the same eager call.
+      {
+        code: `export class Repro {
+  private readonly base = { n: 1 };
+  public readonly derived = this.doubled;
+  private get doubled() {
+    return this.base.n * 2;
+  }
+}`,
+      },
+      // Under the ECMA `#` spelling the hoisted read throws outright rather
+      // than yielding `undefined`.
+      {
+        code: `export class Repro {
+  #base = { n: 1 };
+  public derived = this.compute();
+  private compute() {
+    return this.#base.n;
+  }
+}`,
+      },
+      // A field holding an arrow runs that arrow's body at the call site, so an
+      // initializer invoking it reads whatever the arrow reads.
+      {
+        code: `export class Repro {
+  private readonly base = { n: 1 };
+  public readonly makeIt = () => this.base.n;
+  public readonly derived = this.makeIt();
+}`,
+      },
+      // A read inside a callback the invoked body runs (`Array#map` calls it
+      // before returning) is no less eager than one written inline.
+      {
+        code: `export class Repro {
+  private readonly bases = [{ n: 1 }];
+  private readonly offset = 1;
+  public readonly derived = this.compute();
+  private compute() {
+    return this.bases.map((b) => b.n + this.offset);
+  }
+}`,
+      },
+      // A read of a member this class does not declare cannot be placed by the
+      // sort, so the layout cannot be certified: decline instead of guessing.
+      {
+        code: `export class Repro extends Base {
+  private readonly local = 1;
+  public readonly derived = this.inherited;
+}`,
+      },
     ],
     invalid: [
       {
@@ -1828,6 +1890,57 @@ class Grouped {
 
   public foo() {
     return 2;
+  }
+}`,
+        errors: [{ messageId: 'classMethodsReadTopToBottom' }],
+      },
+      // The transitive read is satisfied by the proposed order: `base` still
+      // precedes `derived`, so the helper may move below both. Chasing reads
+      // through a call must not decline an order that holds.
+      {
+        code: `export class Repro {
+  public readonly base = { n: 1 };
+
+  private compute() {
+    return this.base.n + 1;
+  }
+
+  public readonly derived = this.compute();
+}`,
+        output: `export class Repro {
+  public readonly base = { n: 1 };
+
+  public readonly derived = this.compute();
+
+  private compute() {
+    return this.base.n + 1;
+  }
+}`,
+        errors: [{ messageId: 'classMethodsReadTopToBottom' }],
+      },
+      // A method reaching only other methods adds no field constraint, so the
+      // initializer that calls it still moves to the top.
+      {
+        code: `export class Repro {
+  #helper() {
+    return this.#inner();
+  }
+
+  #inner() {
+    return 1;
+  }
+
+  public a = this.#helper();
+}`,
+        output: `export class Repro {
+  public a = this.#helper();
+
+  #helper() {
+    return this.#inner();
+  }
+
+  #inner() {
+    return 1;
   }
 }`,
         errors: [{ messageId: 'classMethodsReadTopToBottom' }],

@@ -13,10 +13,87 @@ import { ASTHelpers } from '../utils/ASTHelpers';
 const getMemberName = classMemberNameOf;
 
 /**
+ * The class members each member reads once its own body executes, keyed by
+ * member name. A method (or accessor) contributes its whole body; a field
+ * holding a function contributes that function's body, since `this.f()` runs it
+ * with the instance bound.
+ *
+ * An initializer that invokes such a member runs that body during
+ * construction, which makes those reads exactly as eager as the initializer's
+ * own — the syntactic eager-read scan stops at the call and cannot see them.
+ */
+function readsWhenInvokedOf(
+  node: TSESTree.ClassBody,
+  className: string,
+): Map<string, string[]> {
+  const readsByMember = new Map<string, string[]>();
+  for (const member of node.body) {
+    const name = getMemberName(member);
+    if (name === null) {
+      continue;
+    }
+    // The constructor is unreachable from an initializer — field initializers
+    // run inside it — so its body constrains nothing.
+    if (member.type === 'MethodDefinition' && member.kind !== 'constructor') {
+      readsByMember.set(
+        name,
+        ASTHelpers.classMemberNamesReferenced(member, className),
+      );
+      continue;
+    }
+    if (
+      member.type === 'PropertyDefinition' &&
+      (member.value?.type === 'ArrowFunctionExpression' ||
+        member.value?.type === 'FunctionExpression')
+    ) {
+      // The function's body is passed rather than the function itself, because
+      // a `function` expression called as `this.f()` binds `this` to the
+      // instance even though the node type otherwise rebinds it.
+      readsByMember.set(
+        name,
+        ASTHelpers.classMemberNamesReferenced(member.value.body, className),
+      );
+    }
+  }
+  return readsByMember;
+}
+
+/**
+ * Every member name an initializer reads during construction, following each
+ * invoked member into what its own body reads until the set stops growing.
+ *
+ * The closure is deliberately blind to whether a named member is called or
+ * merely referenced: treating a bare reference as an invocation only adds
+ * constraints, and an extra constraint costs a declined reorder while a missing
+ * one ships a class that throws at construction.
+ */
+function eagerReadClosureOf(
+  initializer: TSESTree.Node,
+  className: string,
+  readsWhenInvoked: Map<string, string[]>,
+): string[] {
+  const reached = new Set<string>();
+  const pending = ASTHelpers.classMemberNamesReadEagerly(
+    initializer,
+    className,
+  );
+  while (pending.length > 0) {
+    const name = pending.pop() as string;
+    if (reached.has(name)) {
+      continue;
+    }
+    reached.add(name);
+    pending.push(...(readsWhenInvoked.get(name) || []));
+  }
+  return [...reached];
+}
+
+/**
  * Whether the proposed order still declares every field above the initializer
  * that reads it. Only field-to-field reads constrain the layout: methods (and
  * private methods) are installed before any initializer runs, so relocating one
- * is unobservable.
+ * is unobservable — but a field read reached THROUGH such a method still
+ * constrains it, because the call happens while the initializer runs.
  */
 function initializerReadsPrecedeDeclarations(
   node: TSESTree.ClassBody,
@@ -25,6 +102,7 @@ function initializerReadsPrecedeDeclarations(
   className: string,
 ): boolean {
   const positionOf = new Map(sortedOrder.map((name, index) => [name, index]));
+  const readsWhenInvoked = readsWhenInvokedOf(node, className);
   return node.body.every((member) => {
     if (member.type !== 'PropertyDefinition' || !member.value) {
       return true;
@@ -32,13 +110,24 @@ function initializerReadsPrecedeDeclarations(
     const reader = getMemberName(member);
     const readerPosition = reader === null ? undefined : positionOf.get(reader);
     if (readerPosition === undefined) {
-      return true;
+      // An initializer the sorted order cannot place is one whose reads cannot
+      // be compared against it, so no order can be certified safe.
+      return false;
     }
-    return ASTHelpers.classMemberNamesReadEagerly(member.value, className)
-      .filter((name) => graph[name]?.type === 'property' && name !== reader)
+    return eagerReadClosureOf(member.value, className, readsWhenInvoked)
+      .filter((name) => name !== reader)
       .every((name) => {
+        const target = graph[name];
+        // A read the sort cannot place — inherited, mixed in, or a constructor
+        // parameter property — leaves the layout uncertifiable.
+        if (!target) {
+          return false;
+        }
+        if (target.type !== 'property') {
+          return true;
+        }
         const readPosition = positionOf.get(name);
-        return readPosition === undefined || readPosition < readerPosition;
+        return readPosition !== undefined && readPosition < readerPosition;
       });
   });
 }

@@ -440,20 +440,30 @@ export class ASTHelpers {
     graph: Graph,
     className: string,
   ): string[] {
-    const dependencies: string[] = [];
-    this.collectClassMemberReferences(node, className, true, dependencies);
+    return this.classMemberNamesReferenced(node, className).filter((dep) => {
+      // Only include dependencies that exist exactly in the graph
+      // This prevents substring matches (e.g., 'nextMatches' vs 'nextMatchesWithResults')
+      return graph?.[dep] !== undefined && graph?.[dep]?.type !== 'property';
+    });
+  }
 
-    return [
-      ...new Set(
-        dependencies.filter((dep) => {
-          // Only include dependencies that exist exactly in the graph
-          // This prevents substring matches (e.g., 'nextMatches' vs 'nextMatchesWithResults')
-          return (
-            graph?.[dep] !== undefined && graph?.[dep]?.type !== 'property'
-          );
-        }),
-      ),
-    ];
+  /**
+   * Every class member a node reaches through `this.<member>` (or
+   * `<ClassName>.<member>`), fields included and unfiltered by any graph.
+   *
+   * Whatever a member's body reads, it reads as soon as that body runs, so a
+   * caller deciding whether an invocation is order-sensitive needs the field
+   * reads that `classMethodDependenciesOf` drops. A read nested in a callback
+   * counts: `arr.map((x) => this.field)` runs the callback before the
+   * enclosing body returns.
+   */
+  public static classMemberNamesReferenced(
+    node: TSESTree.Node | null,
+    className: string,
+  ): string[] {
+    const references: string[] = [];
+    this.collectClassMemberReferences(node, className, true, references);
+    return [...new Set(references)];
   }
 
   /**

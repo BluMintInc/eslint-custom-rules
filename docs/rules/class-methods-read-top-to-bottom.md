@@ -88,7 +88,21 @@ class Repro {
 }
 ```
 
-is offered. A read inside an arrow function is deferred to call time (`public handler = () => this.#config;`) and a method—including a private one—is installed before any initializer runs, so neither constrains the layout.
+is offered. A read inside an arrow function is deferred to call time (`public handler = () => this.#config;`), and a method—including a private one—is installed before any initializer runs, so neither constrains the layout on its own.
+
+Calling a member from an initializer runs that member's body during construction, so the fields it reads are read just as eagerly as the initializer's own reads. Those reads are followed transitively, which is why no reordering of
+
+```typescript
+class Repro {
+  private readonly base = { n: 1 };
+  public readonly derived = this.compute(); // ℹ️ compute() reads base, so base stays above derived
+  private compute() {
+    return this.base.n + 1;
+  }
+}
+```
+
+is offered either—the same holds for a getter (`this.doubled`) and for a field holding an arrow that the initializer invokes (`this.makeIt()`). A read of a member the class does not declare (an inherited field, a constructor parameter property) cannot be placed by the sort, so the class is left untouched rather than reordered on an assumption.
 
 The rewrite also preserves the class body's existing whitespace: the newline and indentation after `{`, the blank lines separating members, and the newline before `}` are all carried over verbatim rather than collapsed. Each member keeps its own leading comments, so documentation travels with the member it describes.
 
