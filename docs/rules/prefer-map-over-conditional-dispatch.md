@@ -237,6 +237,22 @@ report-only message (`preferMapManual`) explaining why and suggesting the shape:
   in. A construct that is the entire body of a braceless branch
   (`if (cond) switch (x) { ... }`) sits where a lexical declaration is not
   allowed at all (TS1156); it reports, and the fix waits for braces.
+- **The hoist stays inside its guard.** A braceless body is not a statement
+  list, so a ternary written as one hoists its `Record` past the construct that
+  guards it: `if (box) return kind === 'a' ? box.a.v : box.b.v;` would place the
+  `Record` **above** the `if`, dereferencing both branch values with the
+  narrowing that made them safe left behind (TS18048 under `strict`, and a
+  `TypeError` at run time when `box` is `undefined`). The same walk leaves a
+  loop's own scope, so `for (const r of rows) total += kind === 'a' ? r.a.v :
+  r.b.v;` would read `r` where no `r` is declared (TS2304). The fix is therefore
+  skipped whenever reaching the insertion point crosses something that decides
+  **whether** — or **how often** — the ternary runs: a braceless `if` branch,
+  any loop body, a `while`/`do…while` test, the right operand of `&&`/`||`/`??`,
+  or an arm of an enclosing ternary. Adding braces around the branch stops the
+  hoist inside the guarded block, where the values are still narrowed and every
+  loop binding is still in scope, and the fix then applies. Positions evaluated
+  exactly once before the construct they head — an `if` test, a `for` init, a
+  `for…of` right-hand side — guard nothing and still hoist.
 - **A printable, in-scope annotation.** The `Record<D, V>` value type is
   synthesized from the checker's printed types. Union members in function,
   constructor, or conditional notation are parenthesized, as TypeScript
@@ -387,6 +403,18 @@ async function search() {
     case 'algolia': return await fetchFromAlgolia(query);
     case 'firestore': return await fetchFromFirestore(query);
   }
+}
+
+type Kind = 'a' | 'b';
+declare const kind: Kind;
+declare const box: { a: { v: number }; b: { v: number } } | undefined;
+
+// Ternary as the body of a braceless guard — report-only, because the Record
+// would hoist above the `if` and dereference both values unguarded. Add braces
+// around the branch and the same dispatch autofixes inside the guard.
+function read() {
+  if (box) return kind === 'a' ? box.a.v : box.b.v;
+  return 0;
 }
 ```
 
