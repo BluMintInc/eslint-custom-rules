@@ -1253,17 +1253,29 @@ const UNPROBED_RULES: Record<string, Reason> = {
    * so the flat pass already drives them for real.
    */
 
-  // Its report anchors on an ImportDeclaration, which the wrap deliberately
-  // leaves at module level, so nesting the fixture cannot enclose it. The fix
-  // still rewrites call sites INSIDE the wrapper, which the wrapper-anchored
-  // arm reaches — for these three it emits no module-bound reference there.
+  /**
+   * Their report anchors on an ImportDeclaration, which the wrap deliberately
+   * leaves at module level, so nesting the fixture cannot enclose it.
+   *
+   * #1998 proposed closing this with a FIXTURE addition — a body for the
+   * wrapper-anchored arm to reach. Reading the four fixers settles it instead:
+   * none of them can pose this question at any fixture shape, so there is
+   * nothing to close. `use-custom-link`, `use-custom-memo` and
+   * `use-custom-router` rewrite only the ImportDeclaration and re-emit the
+   * EXISTING local name (`localName`, `useRouter as <local>`, `buildImport` over
+   * the surviving specifiers), so every use resolves exactly where it did and no
+   * new reference exists to capture. `enforce-dynamic-firebase-imports` moves
+   * the binding the other way — into a function body as
+   * `const { … } = await import(…)` — so after its fix the name is not
+   * module-scope-bound at all, which is the precondition for the harm.
+   */
   'enforce-dynamic-firebase-imports': REASONS.importAnchoredReport,
   'use-custom-memo': REASONS.importAnchoredReport,
   'use-custom-router': REASONS.importAnchoredReport,
 
-  // All 7 fixtures it reports on are nothing but an import list: there is no
-  // region to move, so the perturbation has no variant to offer it. Closing
-  // this needs a FIXTURE with a body, not a rewrite of one that has none.
+  // All 7 fixtures it reports on are nothing but an import list, so there is no
+  // region to move. Same conclusion as the three above: its fix preserves the
+  // local name, so a fixture with a body would add reach but not a question.
   'use-custom-link': REASONS.noWrappableBody,
 
   // Keyed on module scope by design, so the wrap is not neutral for it at all:
@@ -1616,6 +1628,33 @@ describe('the shadow-capture detector is load-bearing', () => {
       // ...and the detector still tells the two polarities apart there, so the
       // reach the perturbation adds is reach that can still report a defect.
       expect(o.captures.length).toBe(expectCaptures);
+    },
+  );
+
+  /**
+   * The whole nested pipeline, end to end, on a rule with a PLANTED defect.
+   *
+   * The test above drives `triggersFor`/`capturesFor` directly, which leaves
+   * `runNested` itself — the two neutrality gates, the checker differential, the
+   * report- and wrapper-anchored arms and their aggregation — exercised only
+   * over the shipped rules, every one of which is clean. A `runNested` that
+   * returned no captures at all would therefore pass every assertion in this
+   * file. This is the only test that would notice, and it is the one that makes
+   * the merge into `results.captures` load-bearing rather than decorative.
+   */
+  it.each(SHADOW_CONTROLS.map((c) => [c.name, c.expectCaptures] as const))(
+    'the nested pipeline carries control %s through to %s capture(s)',
+    (name, expectCaptures) => {
+      const nested = runNested(name, [FLAT_CONTROL_CASE]);
+      // Both wrapper variants must survive both gates, or the zero below would
+      // mean "nothing was asked" rather than "nothing was found".
+      expect(nested.wrappable).toBe(2);
+      expect(nested.neutral).toBe(2);
+      expect(nested.dropped).toBe(0);
+      expect(nested.enclosed).toBeGreaterThan(0);
+      expect(nested.probed).toBeGreaterThan(0);
+      expect(nested.captures.length).toBeGreaterThanOrEqual(expectCaptures);
+      if (expectCaptures === 0) expect(nested.captures).toEqual([]);
     },
   );
 

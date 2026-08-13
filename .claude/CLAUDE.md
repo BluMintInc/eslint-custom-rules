@@ -188,6 +188,31 @@ Four constraints are load-bearing — read those files before writing another:
   unnoticed. And keep a floor just under its measured value — the floors that hid
   #1984 sat at 5,500 against an actual 8,141.
 
+**If a guard PERTURBS the fixture rather than reading it, the rewrite needs its
+own controls — three of them.** A skip reason is often a property of the
+fixtures, not of the rule: `fixer-shadow-capture` parked 21 rules on "no function
+block encloses the report" when 13 of them simply had flat fixtures (#1998).
+Wrapping the body settles it, but the wrapper is itself a rule input:
+
+* **Neutrality, gated TWO ways.** Lint the bare wrapper and require the rule's
+  reports unchanged — then *also* require that no report lands in an inserted
+  scaffolding span. A messageId multiset alone is not enough: on 44
+  `global-const-style` fixtures it matched exactly while the SUBJECT had swapped
+  to the probe's own scaffolding (the rule renamed `ProbeShell`), one report in
+  and one out. Carry both, or the control certifies its own contamination.
+* **Validity as a DIFFERENTIAL `ts.Program` check.** A reparse misses grammar
+  errors (`declare` in a body is TS1184), and an absolute diagnostic count
+  rejects everything, since fixtures are full of unresolved names. Accept a
+  variant only when it introduces no diagnostic CODE the unwrapped control
+  already carries.
+* **A modifier chosen per fixture.** A plain wrapper breaks top-level `await`;
+  a blanket `async` one cannot be a React component and silenced 104 fixtures of
+  a component-keyed rule. Emit `async` only when the region itself awaits.
+
+Ship every wrapper spelling whose gate you rely on: the second neutrality gate
+fires only under the class-expression wrapper, so shipping the arrow one alone
+would leave it present but never firing — indistinguishable from absent.
+
 ### ASTHelpers Class
 
 The `ASTHelpers` class in `src/utils/ASTHelpers.ts` provides common AST operations:
