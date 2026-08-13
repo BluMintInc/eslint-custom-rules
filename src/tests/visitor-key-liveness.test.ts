@@ -75,18 +75,22 @@ const REASONS = {
  * stale licence. That is what keeps this from decaying into a blanket amnesty
  * the way a one-directional allowlist does.
  *
- * `enforce-exported-function-types` accounts for 22 of the 38: it registers a
- * LADDER of selectors enumerating TSQualifiedName nesting depths one through
- * five, under both a `FunctionDeclaration` and an arrow `VariableDeclarator`
- * (18 rungs), plus 4 return-type rungs. Every one matches a source built for
- * it — `export function Foo(p: A.B) {}` drives the depth-1 rung, `A.B.C.D.E.F`
- * the depth-5, `export function Foo(): Bar {}` a return-type rung — but the
- * rule's fixtures never type an uppercase-named function with a qualified name.
+ * All 14 are bare node types (`SwitchStatement`, `MethodDefinition`,
+ * `FunctionExpression`, `JSXFragment`, the `For*` family), which are matchable
+ * by construction: the rule returned the key, so the only question was whether
+ * a fixture carries that node, and none does. Each is retireable by writing
+ * one — a fixture is the whole remedy.
  *
- * The remaining 16 are bare node types (`SwitchStatement`, `MethodDefinition`,
- * `AssignmentExpression`, `FunctionExpression`, `JSXFragment`), which are
- * matchable by construction: the rule returned the key, so the only question
- * was whether a fixture carries that node, and none does.
+ * That property is what makes an entry legitimate here, and it is worth
+ * stating because this baseline once held 22 entries that lacked it.
+ * `enforce-exported-function-types` registered a ladder of 28 selectors whose
+ * handler bodies were all empty, under a comment claiming they skipped React
+ * components. Registering a selector only SUBSCRIBES — an empty handler cannot
+ * report, fix, or mutate rule state — so no fixture could ever have retired
+ * those entries, and writing the qualified-name sources this comment used to
+ * advertise would have changed zero behaviour. They were deleted with the
+ * handlers in #2000. Before adding an entry, check that its handler does
+ * something; a dead key whose body is empty is a deletion, not a baseline.
  */
 const DEAD_KEYS: Record<string, Record<string, string>> = {
   'prefer-block-comments-for-declarations': {
@@ -104,52 +108,6 @@ const DEAD_KEYS: Record<string, Record<string, string>> = {
     'ForInStatement:exit': REASONS.noFixtureForShape,
     ForOfStatement: REASONS.noFixtureForShape,
     'ForOfStatement:exit': REASONS.noFixtureForShape,
-  },
-  'enforce-exported-function-types': {
-    'FunctionDeclaration[id.name=/^[A-Z]/] > TSTypeAnnotation':
-      REASONS.noFixtureForShape,
-    'FunctionDeclaration[id.name=/^[A-Z]/] > TSTypeAnnotation > TSTypeReference':
-      REASONS.noFixtureForShape,
-    'VariableDeclarator[id.name=/^[A-Z]/] > ArrowFunctionExpression > TSTypeAnnotation':
-      REASONS.noFixtureForShape,
-    'VariableDeclarator[id.name=/^[A-Z]/] > ArrowFunctionExpression > TSTypeAnnotation > TSTypeReference':
-      REASONS.noFixtureForShape,
-    'FunctionDeclaration[id.name=/^[A-Z]/] > Identifier[typeAnnotation] > TSTypeAnnotation > TSTypeReference > TSQualifiedName':
-      REASONS.noFixtureForShape,
-    'VariableDeclarator[id.name=/^[A-Z]/] > ArrowFunctionExpression > Identifier[typeAnnotation] > TSTypeAnnotation > TSTypeReference > TSQualifiedName':
-      REASONS.noFixtureForShape,
-    'FunctionDeclaration[id.name=/^[A-Z]/] > Identifier[typeAnnotation] > TSTypeAnnotation > TSTypeReference > TSQualifiedName > Identifier':
-      REASONS.noFixtureForShape,
-    'VariableDeclarator[id.name=/^[A-Z]/] > ArrowFunctionExpression > Identifier[typeAnnotation] > TSTypeAnnotation > TSTypeReference > TSQualifiedName > Identifier':
-      REASONS.noFixtureForShape,
-    'FunctionDeclaration[id.name=/^[A-Z]/] > Identifier[typeAnnotation] > TSTypeAnnotation > TSTypeReference > TSQualifiedName > TSQualifiedName':
-      REASONS.noFixtureForShape,
-    'VariableDeclarator[id.name=/^[A-Z]/] > ArrowFunctionExpression > Identifier[typeAnnotation] > TSTypeAnnotation > TSTypeReference > TSQualifiedName > TSQualifiedName':
-      REASONS.noFixtureForShape,
-    'FunctionDeclaration[id.name=/^[A-Z]/] > Identifier[typeAnnotation] > TSTypeAnnotation > TSTypeReference > TSQualifiedName > TSQualifiedName > Identifier':
-      REASONS.noFixtureForShape,
-    'VariableDeclarator[id.name=/^[A-Z]/] > ArrowFunctionExpression > Identifier[typeAnnotation] > TSTypeAnnotation > TSTypeReference > TSQualifiedName > TSQualifiedName > Identifier':
-      REASONS.noFixtureForShape,
-    'FunctionDeclaration[id.name=/^[A-Z]/] > Identifier[typeAnnotation] > TSTypeAnnotation > TSTypeReference > TSQualifiedName > TSQualifiedName > TSQualifiedName':
-      REASONS.noFixtureForShape,
-    'VariableDeclarator[id.name=/^[A-Z]/] > ArrowFunctionExpression > Identifier[typeAnnotation] > TSTypeAnnotation > TSTypeReference > TSQualifiedName > TSQualifiedName > TSQualifiedName':
-      REASONS.noFixtureForShape,
-    'FunctionDeclaration[id.name=/^[A-Z]/] > Identifier[typeAnnotation] > TSTypeAnnotation > TSTypeReference > TSQualifiedName > TSQualifiedName > TSQualifiedName > Identifier':
-      REASONS.noFixtureForShape,
-    'VariableDeclarator[id.name=/^[A-Z]/] > ArrowFunctionExpression > Identifier[typeAnnotation] > TSTypeAnnotation > TSTypeReference > TSQualifiedName > TSQualifiedName > TSQualifiedName > Identifier':
-      REASONS.noFixtureForShape,
-    'FunctionDeclaration[id.name=/^[A-Z]/] > Identifier[typeAnnotation] > TSTypeAnnotation > TSTypeReference > TSQualifiedName > TSQualifiedName > TSQualifiedName > TSQualifiedName':
-      REASONS.noFixtureForShape,
-    'VariableDeclarator[id.name=/^[A-Z]/] > ArrowFunctionExpression > Identifier[typeAnnotation] > TSTypeAnnotation > TSTypeReference > TSQualifiedName > TSQualifiedName > TSQualifiedName > TSQualifiedName':
-      REASONS.noFixtureForShape,
-    'FunctionDeclaration[id.name=/^[A-Z]/] > Identifier[typeAnnotation] > TSTypeAnnotation > TSTypeReference > TSQualifiedName > TSQualifiedName > TSQualifiedName > TSQualifiedName > Identifier':
-      REASONS.noFixtureForShape,
-    'VariableDeclarator[id.name=/^[A-Z]/] > ArrowFunctionExpression > Identifier[typeAnnotation] > TSTypeAnnotation > TSTypeReference > TSQualifiedName > TSQualifiedName > TSQualifiedName > TSQualifiedName > Identifier':
-      REASONS.noFixtureForShape,
-    'FunctionDeclaration[id.name=/^[A-Z]/] > Identifier[typeAnnotation] > TSTypeAnnotation > TSTypeReference > TSQualifiedName > TSQualifiedName > TSQualifiedName > TSQualifiedName > TSQualifiedName':
-      REASONS.noFixtureForShape,
-    'VariableDeclarator[id.name=/^[A-Z]/] > ArrowFunctionExpression > Identifier[typeAnnotation] > TSTypeAnnotation > TSTypeReference > TSQualifiedName > TSQualifiedName > TSQualifiedName > TSQualifiedName > TSQualifiedName':
-      REASONS.noFixtureForShape,
   },
   'enforce-stable-hash-spread-props': {
     'FunctionExpression:exit': REASONS.noFixtureForShape,
