@@ -2370,3 +2370,279 @@ const C = ({ items }) => {
     },
   ],
 });
+
+// ------------------------------------------------------------------
+// Issue #1992: the memo declaration lands before the statement the climb from
+// the hook reaches, so a guard that wraps the hook without a block of its own
+// is left behind. The emitted `[<base>]` dependency array then dereferences
+// the guarded value on every render, rewriting code that does not throw into
+// code that does. Each escaping shape must report without fixing.
+//
+// The fixing cases below are the controls: they prove the bail is keyed on
+// escaping a skippable position rather than on the mere presence of a
+// conditional, so it cannot pass by disabling the fixer wholesale.
+// ------------------------------------------------------------------
+ruleTesterJsx.run('no-array-length-in-deps', noArrayLengthInDeps, {
+  valid: [],
+  invalid: [
+    {
+      name: 'declines when a braceless if guards the hook',
+      code: `
+const C = ({ data }) => {
+  if (data) useEffect(() => { process(data.items); }, [data.items.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'data.items.length' },
+        },
+      ],
+      output: null,
+    },
+    {
+      name: 'declines when a && short-circuit guards the hook',
+      code: `
+const C = ({ data }) => {
+  data && useEffect(() => { process(data.items); }, [data.items.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'data.items.length' },
+        },
+      ],
+      output: null,
+    },
+    {
+      name: 'declines when a ternary in a declarator guards the hook',
+      code: `
+const C = ({ data }) => {
+  const v = data ? useMemo(() => data.items.join(''), [data.items.length]) : null;
+  return v;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'data.items.length' },
+        },
+      ],
+      output: null,
+    },
+    {
+      // The braceless-switch-case bail above rejects a case-local `const` on
+      // the scope question. A parameter-rooted path passes that question, so
+      // only the skipped-branch check keeps the hoist out of the switch.
+      name: 'declines when a braceless switch case guards the hook',
+      code: `
+const C = ({ state }) => {
+  switch (state.status) {
+    case 'loaded':
+      useEffect(() => { process(state.data.items); }, [state.data.items.length]);
+      break;
+  }
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'state.data.items.length' },
+        },
+      ],
+      output: null,
+    },
+    {
+      name: 'declines when a typeof narrowing guards the hook',
+      code: `
+const C = ({ data }) => {
+  if (typeof data === 'object' && data !== null) useEffect(() => { process(data.items); }, [data.items.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'data.items.length' },
+        },
+      ],
+      output: null,
+    },
+    {
+      // A loop body runs zero times when its test never holds, so hoisting
+      // above it adds a dereference the input never performs.
+      name: 'declines when a braceless loop body holds the hook',
+      code: `
+const C = ({ data }) => {
+  while (data) useEffect(() => { process(data.items); }, [data.items.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'data.items.length' },
+        },
+      ],
+      output: null,
+    },
+    {
+      // An optional chain guards its arguments exactly as an `if` guards its
+      // consequent: `data?.run(...)` evaluates neither when `data` is nullish.
+      name: 'declines when an optional chain short-circuits around the hook',
+      code: `
+const C = ({ data }) => {
+  data?.run(useMemo(() => data.items.join(''), [data.items.length]));
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'data.items.length' },
+        },
+      ],
+      output: null,
+    },
+    {
+      // Control: a braced guard gives the climb a statement position inside
+      // the guarded block, so the memo stays under the narrowing and fixes.
+      name: 'still fixes inside a braced if block',
+      code: `
+const C = ({ data }) => {
+  if (data) {
+    useEffect(() => { process(data.items); }, [data.items.length]);
+  }
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'data.items.length' },
+        },
+      ],
+      output: `import { useMemo } from 'react';
+import { stableHash } from 'functions/src/util/hash/stableHash';
+
+const C = ({ data }) => {
+  if (data) {
+    const itemsHash = useMemo(() => stableHash(data.items), [data.items]);
+    useEffect(() => { process(data.items); }, [itemsHash]);
+  }
+  return null;
+};
+`,
+    },
+    {
+      // Control: an early return narrows the statements that follow it, and
+      // the memo lands among them rather than above the guard.
+      name: 'still fixes after an early return guard',
+      code: `
+const C = ({ data }) => {
+  if (!data) return null;
+  useEffect(() => { process(data.items); }, [data.items.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'data.items.length' },
+        },
+      ],
+      output: `import { useMemo } from 'react';
+import { stableHash } from 'functions/src/util/hash/stableHash';
+
+const C = ({ data }) => {
+  if (!data) return null;
+  const itemsHash = useMemo(() => stableHash(data.items), [data.items]);
+  useEffect(() => { process(data.items); }, [itemsHash]);
+  return null;
+};
+`,
+    },
+    {
+      // Control: an `if` test evaluates before the branch is chosen, so a hook
+      // there is unconditional and the hoist preserves evaluation.
+      name: 'still fixes a hook called in an if test',
+      code: `
+const C = ({ items }) => {
+  if (useMemo(() => items.join(''), [items.length])) return null;
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length' },
+        },
+      ],
+      output: `import { useMemo } from 'react';
+import { stableHash } from 'functions/src/util/hash/stableHash';
+
+const C = ({ items }) => {
+  const itemsHash = useMemo(() => stableHash(items), [items]);
+  if (useMemo(() => items.join(''), [itemsHash])) return null;
+  return null;
+};
+`,
+    },
+    {
+      // Control: the left operand of && is what decides the short-circuit, so
+      // it always evaluates.
+      name: 'still fixes a hook in the left operand of &&',
+      code: `
+const C = ({ items }) => {
+  const v = useMemo(() => items.join(''), [items.length]) && 'x';
+  return v;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length' },
+        },
+      ],
+      output: `import { useMemo } from 'react';
+import { stableHash } from 'functions/src/util/hash/stableHash';
+
+const C = ({ items }) => {
+  const itemsHash = useMemo(() => stableHash(items), [items]);
+  const v = useMemo(() => items.join(''), [itemsHash]) && 'x';
+  return v;
+};
+`,
+    },
+    {
+      // Control: a `do` body always runs once, so it is not a skippable
+      // position and the loop arm must not claim it.
+      name: 'still fixes a braceless do-while body',
+      code: `
+const C = ({ items }) => {
+  do useEffect(() => { process(items); }, [items.length]); while (false);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length' },
+        },
+      ],
+      output: `import { useMemo } from 'react';
+import { stableHash } from 'functions/src/util/hash/stableHash';
+
+const C = ({ items }) => {
+  const itemsHash = useMemo(() => stableHash(items), [items]);
+  do useEffect(() => { process(items); }, [itemsHash]); while (false);
+  return null;
+};
+`,
+    },
+  ],
+});

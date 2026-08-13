@@ -42,9 +42,49 @@ The fixer only runs when the generated `useMemo` is provably safe at its inserti
 - The hook call sits at module scope or in an expression-bodied arrow — there is no legal statement position for a `useMemo` declaration.
 - The array (or any variable the memoized expression reads) is not resolvable to a declaration visible at the insertion point — e.g. an ambient global, or a binding scoped to a block the insertion point does not share.
 - The array is declared after the hook statement, where the hoisted read would hit the temporal dead zone.
+- The hook sits in a position control flow may skip, with no block between it and that guard (see below).
 - Either `useMemo` or the hash helper name already resolves to something else at the hook call (see below).
 
 In those cases, memoize the hash manually in the appropriate scope.
+
+### When a guard has no block of its own
+
+The memo is spliced immediately before the statement holding the hook, inside
+the nearest enclosing block. A guard that wraps the hook *without* braces has no
+statement position inside itself, so that insertion point sits **outside** the
+guard — and the emitted `[<array>]` dependency array dereferences the guarded
+value on every render. The fix is withheld rather than rewrite code that does
+not throw into code that does:
+
+```tsx
+const C = ({ data }) => {
+  // reported, left untouched by --fix: hoisting `stableHash(data.items)` above
+  // the `if` would throw whenever `data` is undefined
+  if (data) useEffect(() => { process(data.items); }, [data.items.length]);
+  return null;
+};
+```
+
+The same applies to every position a guard may skip: a `&&`/`||`/`??` right
+operand, either arm of a ternary, a braceless `switch` case, a braceless loop
+body, and the arguments of an optional call (`data?.run(...)`).
+
+A guard that *does* own a block gives the memo a home under the narrowing, so
+those keep their fix:
+
+```tsx
+const C = ({ data }) => {
+  if (data) {
+    const itemsHash = useMemo(() => stableHash(data.items), [data.items]);
+    useEffect(() => { process(data.items); }, [itemsHash]);
+  }
+  return null;
+};
+```
+
+An early return is equally fixable — the memo lands among the statements the
+return already narrows. So are positions that run regardless of the branch
+taken, such as an `if` test or the left operand of `&&`.
 
 ### When a name the fix needs is already taken
 
