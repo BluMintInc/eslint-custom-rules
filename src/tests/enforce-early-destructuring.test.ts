@@ -1097,6 +1097,112 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
   ],
 });
 
+// Issue #1993: only a guard NAMING the destructured object used to hold the
+// hoist back, so the ubiquitous `if (ready)` / `if (!isLoaded) return;` / `try`
+// spellings were invisible. The synthesized `?? {}` rescues the ROOT alone — a
+// nested pattern is re-emitted verbatim (#1523) — so a nested destructure
+// hoisted past such a guard dereferences an undefined intermediate on every
+// render, from the component body, before the effect is even queued.
+ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
+  valid: [
+    // The destructure is licensed by a guard on an UNRELATED boolean; hoisting a
+    // nested pattern above it dereferences user.profile unguarded on every render.
+    `const MyComponent = ({ user, ready }) => {
+  useEffect(() => {
+    if (ready) {
+      const { profile: { name, age } } = user;
+      renderProfile(name, age);
+    }
+  }, [user, ready]);
+};`,
+    // An early return on an unrelated boolean guards the statements after it just
+    // as an enclosing `if` guards the statements inside it.
+    `const MyComponent = ({ user, ready }) => {
+  useEffect(() => {
+    if (!ready) return;
+    const { profile: { name, age } } = user;
+    renderProfile(name, age);
+  }, [user, ready]);
+};`,
+    // Depth beyond two loses the same way: every level below the root is
+    // re-emitted with no rescue of its own.
+    `const MyComponent = ({ user, isLoaded }) => {
+  useEffect(() => {
+    if (isLoaded) {
+      const { profile: { address: { city } } } = user;
+      renderCity(city);
+    }
+  }, [user, isLoaded]);
+};`,
+    // A non-null assertion is the author's claim about the guarded branch, not
+    // about the component body the hoist would move the read into.
+    `const MyComponent = ({ cfg, ready }: { cfg?: Config; ready: boolean }) => {
+  useEffect(() => {
+    if (ready) {
+      const { a: { b } } = cfg!;
+      use(b);
+    }
+  }, [cfg, ready]);
+};`,
+    // `try` licenses the dereference by catching it; hoisting moves the read out
+    // from under the handler that made it safe.
+    `const MyComponent = ({ user }) => {
+  useEffect(() => {
+    try {
+      const { profile: { name } } = user;
+      renderProfile(name);
+    } catch {
+      fallback();
+    }
+  }, [user]);
+};`,
+  ],
+  invalid: [
+    // Boundary control: the FLAT pattern under the same unrelated guard keeps
+    // hoisting. `?? {}` rescues a nullish root, so there is nothing left below it
+    // to dereference — declining here would disable the rule's main arm instead
+    // of fixing the nested one.
+    {
+      name: 'hoists a flat pattern out from under an unrelated guard',
+      code: `const MyComponent = ({ user, ready }) => {
+  useEffect(() => {
+    if (ready) {
+      const { name } = user;
+      renderName(name);
+    }
+  }, [user, ready]);
+};`,
+      output: `const MyComponent = ({ user, ready }) => {
+  const { name } = user ?? {};
+  useEffect(() => {
+    if (ready) {
+      renderName(name);
+    }
+  }, [ready, name]);
+};`,
+      errors: [{ messageId: 'hoistDestructuring' }],
+    },
+    // A nested pattern reached on every pass through the callback still hoists:
+    // the decline is keyed on the guard, not on the shape alone.
+    {
+      name: 'hoists a nested pattern that no guard controls',
+      code: `const MyComponent = ({ user }) => {
+  useEffect(() => {
+    const { profile: { name, age } } = user;
+    renderProfile(name, age);
+  }, [user]);
+};`,
+      output: `const MyComponent = ({ user }) => {
+  const { profile: { name, age } } = user ?? {};
+  useEffect(() => {
+    renderProfile(name, age);
+  }, [name, age]);
+};`,
+      errors: [{ messageId: 'hoistDestructuring' }],
+    },
+  ],
+});
+
 // Issue #1956: the hoist was anchored to the start of the LINE holding the hook
 // call rather than to the call itself. Those offsets coincide only while the
 // call opens its line; when the component body is written on one line the line
@@ -1109,40 +1215,40 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
 // rewrote. So the oracle is a CHECKER DIFFERENTIAL — diagnostics on the output
 // minus diagnostics the input already carried — and not a re-lint, which cannot
 // see an unresolved identifier.
+const RULE_ID = '@blumintinc/blumint/enforce-early-destructuring';
+const FILENAME = 'Component.tsx';
+
+const createLinter = () => {
+  const linter = new Linter();
+  linter.defineParser(
+    '@typescript-eslint/parser',
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    require('@typescript-eslint/parser'),
+  );
+  linter.defineRule(
+    RULE_ID,
+    enforceEarlyDestructuring as unknown as Rule.RuleModule,
+  );
+  return linter;
+};
+
+const LINT_CONFIG = {
+  parser: '@typescript-eslint/parser',
+  parserOptions: {
+    ecmaVersion: 2022 as const,
+    sourceType: 'module' as const,
+    ecmaFeatures: { jsx: true },
+  },
+  rules: { [RULE_ID]: 'error' as const },
+};
+
+const fix = (code: string) =>
+  createLinter().verifyAndFix(code, LINT_CONFIG, FILENAME);
+
+const verify = (code: string) =>
+  createLinter().verify(code, LINT_CONFIG, FILENAME);
+
 describe('enforce-early-destructuring: the hoist stays in scope wherever the hook sits (issue #1956)', () => {
-  const RULE_ID = '@blumintinc/blumint/enforce-early-destructuring';
-  const FILENAME = 'Component.tsx';
-
-  const createLinter = () => {
-    const linter = new Linter();
-    linter.defineParser(
-      '@typescript-eslint/parser',
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      require('@typescript-eslint/parser'),
-    );
-    linter.defineRule(
-      RULE_ID,
-      enforceEarlyDestructuring as unknown as Rule.RuleModule,
-    );
-    return linter;
-  };
-
-  const LINT_CONFIG = {
-    parser: '@typescript-eslint/parser',
-    parserOptions: {
-      ecmaVersion: 2022 as const,
-      sourceType: 'module' as const,
-      ecmaFeatures: { jsx: true },
-    },
-    rules: { [RULE_ID]: 'error' as const },
-  };
-
-  const fix = (code: string) =>
-    createLinter().verifyAndFix(code, LINT_CONFIG, FILENAME);
-
-  const verify = (code: string) =>
-    createLinter().verify(code, LINT_CONFIG, FILENAME);
-
   // Declaring the helpers keeps the baseline clean, so any diagnostic the
   // differential reports is attributable to the hoist and not to the fixture
   // referencing globals a bare program has never heard of.
@@ -1230,7 +1336,8 @@ describe('enforce-early-destructuring: the hoist stays in scope wherever the hoo
 `;
     // The own-line branch is byte-identical to the pre-fix behaviour, which is
     // what makes the anchoring change safe for every existing fixture.
-    expect(expectHoistStaysInScope(code)).toBe(`const MyComponent = ({ value }) => {
+    expect(expectHoistStaysInScope(code))
+      .toBe(`const MyComponent = ({ value }) => {
   const { current } = value ?? {};
   useLayoutEffect(() => {
     doSomething(current);
@@ -1284,5 +1391,211 @@ describe('enforce-early-destructuring: the hoist stays in scope wherever the hoo
     const result = fix(code);
     expect(result.fixed).toBe(false);
     expect(result.output).toBe(code);
+  });
+});
+
+// Issue #1993: this residue is invisible to every static instrument. The hoisted
+// output re-lints clean and compiles clean — the non-null-assertion arm even
+// under `strict: true` — so the checker differential the #1956 block relies on
+// reports nothing here. EXECUTION is the oracle: under a React-shaped stub where
+// effects run after the component body, the guarded input never destructures
+// while the guard is false, while the hoisted spelling dereferences an
+// intermediate that `?? {}` does not reach, from the body, on every render.
+describe('enforce-early-destructuring: an unrelated guard licenses a nested destructure (issue #1993)', () => {
+  const STUBS = [
+    'const effects = [];',
+    'const useEffect = (effect) => effects.push(effect);',
+    'const renderProfile = () => undefined;',
+    'const renderName = () => undefined;',
+    'const renderCity = () => undefined;',
+    'const use = () => undefined;',
+    'const fallback = () => undefined;',
+  ].join('\n');
+
+  /** The error a render — body first, then the queued effects — throws, if any. */
+  const renderError = (
+    source: string,
+    props: Record<string, unknown>,
+  ): Error | null => {
+    const compiled = ts.transpileModule(source, {
+      compilerOptions: {
+        target: ts.ScriptTarget.ES2020,
+        module: ts.ModuleKind.ESNext,
+      },
+    }).outputText;
+    const program = `${STUBS}\n${compiled}\nMyComponent(props);\neffects.forEach((effect) => effect());`;
+    try {
+      // eslint-disable-next-line no-new-func
+      new Function('props', program)(props);
+      return null;
+    } catch (error) {
+      return error as Error;
+    }
+  };
+
+  type Arm = {
+    label: string;
+    input: string;
+    props: Record<string, unknown>;
+    // Verbatim output of the pre-fix fixer, kept as a planted positive control
+    // so a regression cannot pass this block silently.
+    hoisted: string;
+    missing: string;
+  };
+
+  const ARMS: Arm[] = [
+    {
+      label: 'an enclosing guard on an unrelated boolean',
+      props: { user: {}, ready: false },
+      missing: 'name',
+      input: `const MyComponent = ({ user, ready }) => {
+  useEffect(() => {
+    if (ready) {
+      const { profile: { name, age } } = user;
+      renderProfile(name, age);
+    }
+  }, [user, ready]);
+};
+`,
+      hoisted: `const MyComponent = ({ user, ready }) => {
+  const { profile: { name, age } } = user ?? {};
+  useEffect(() => {
+    if (ready) {
+      renderProfile(name, age);
+    }
+  }, [ready, name, age]);
+};
+`,
+    },
+    {
+      label: 'an early return on an unrelated boolean',
+      props: { user: {}, ready: false },
+      missing: 'name',
+      input: `const MyComponent = ({ user, ready }) => {
+  useEffect(() => {
+    if (!ready) return;
+    const { profile: { name, age } } = user;
+    renderProfile(name, age);
+  }, [user, ready]);
+};
+`,
+      hoisted: `const MyComponent = ({ user, ready }) => {
+  const { profile: { name, age } } = user ?? {};
+  useEffect(() => {
+    if (!ready) return;
+    renderProfile(name, age);
+  }, [ready, name, age]);
+};
+`,
+    },
+    {
+      label: 'a three-deep pattern behind a loading flag',
+      props: { user: { profile: {} }, isLoaded: false },
+      missing: 'city',
+      input: `const MyComponent = ({ user, isLoaded }) => {
+  useEffect(() => {
+    if (isLoaded) {
+      const { profile: { address: { city } } } = user;
+      renderCity(city);
+    }
+  }, [user, isLoaded]);
+};
+`,
+      hoisted: `const MyComponent = ({ user, isLoaded }) => {
+  const { profile: { address: { city } } } = user ?? {};
+  useEffect(() => {
+    if (isLoaded) {
+      renderCity(city);
+    }
+  }, [isLoaded, city]);
+};
+`,
+    },
+    {
+      label: 'a non-null assertion asserted about the guarded branch',
+      props: { cfg: undefined, ready: false },
+      missing: 'b',
+      input: `const MyComponent = ({ cfg, ready }: { cfg?: Config; ready: boolean }) => {
+  useEffect(() => {
+    if (ready) {
+      const { a: { b } } = cfg!;
+      use(b);
+    }
+  }, [cfg, ready]);
+};
+`,
+      hoisted: `const MyComponent = ({ cfg, ready }: { cfg?: Config; ready: boolean }) => {
+  const { a: { b } } = cfg! ?? {};
+  useEffect(() => {
+    if (ready) {
+      use(b);
+    }
+  }, [ready, b]);
+};
+`,
+    },
+    {
+      label: 'a try block whose handler is the guard',
+      props: { user: {} },
+      missing: 'name',
+      input: `const MyComponent = ({ user }) => {
+  useEffect(() => {
+    try {
+      const { profile: { name } } = user;
+      renderProfile(name);
+    } catch {
+      fallback();
+    }
+  }, [user]);
+};
+`,
+      hoisted: `const MyComponent = ({ user }) => {
+  const { profile: { name } } = user ?? {};
+  useEffect(() => {
+    try {
+      renderProfile(name);
+    } catch {
+      fallback();
+    }
+  }, [name]);
+};
+`,
+    },
+  ];
+
+  it.each(ARMS.map((arm) => [arm.label, arm] as const))(
+    'leaves the destructure under %s alone',
+    (_label, arm) => {
+      expect(renderError(arm.input, arm.props)).toBeNull();
+      expect(verify(arm.input)).toHaveLength(0);
+      expect(fix(arm.input).fixed).toBe(false);
+
+      const thrown = renderError(arm.hoisted, arm.props);
+      expect(thrown).toBeInstanceOf(TypeError);
+      expect(thrown?.message).toContain(
+        `Cannot read properties of undefined (reading '${arm.missing}')`,
+      );
+    },
+  );
+
+  it('keeps hoisting the flat pattern under the same guard (boundary control)', () => {
+    const input = `const MyComponent = ({ user, ready }) => {
+  useEffect(() => {
+    if (ready) {
+      const { name } = user;
+      renderName(name);
+    }
+  }, [user, ready]);
+};
+`;
+    const props = { user: {}, ready: false };
+    expect(renderError(input, props)).toBeNull();
+
+    const result = fix(input);
+    expect(result.fixed).toBe(true);
+    expect(result.output).toContain('const { name } = user ?? {};');
+    // `?? {}` rescues the root, and a flat pattern binds nothing below it, so the
+    // hoisted read survives the same props that break every nested arm above.
+    expect(renderError(result.output, props)).toBeNull();
   });
 });
