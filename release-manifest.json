@@ -1,5 +1,43 @@
 [
   {
+    "version": "1.20.146",
+    "date": "2026-08-13T00:14:52.842Z",
+    "rules": [
+      {
+        "name": "enforce-memoize-async",
+        "changeType": "fix",
+        "issues": [
+          1975
+        ],
+        "summary": "exempt methods taking part in a transaction (closes #1975)"
+      },
+      {
+        "name": "prefer-use-deep-compare-memo",
+        "changeType": "fix",
+        "issues": [
+          1979
+        ],
+        "summary": "stop promoting primitive deps via member access (closes #1979)"
+      },
+      {
+        "name": "prevent-children-clobber",
+        "changeType": "fix",
+        "issues": [
+          1980
+        ],
+        "summary": "widen the syntactic exemption beyond Omit<> (closes #1980)"
+      },
+      {
+        "name": "vertically-group-related-functions",
+        "changeType": "fix",
+        "issues": [
+          1983
+        ],
+        "summary": "decline reorders that demote a helper below its module-scope caller (closes #1983)"
+      }
+    ]
+  },
+  {
     "version": "1.20.145",
     "date": "2026-08-12T16:05:12.174Z",
     "rules": [

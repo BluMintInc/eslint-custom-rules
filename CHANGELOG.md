@@ -1,3 +1,13 @@
+## [1.20.146](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.145...v1.20.146) (2026-08-13)
+
+
+### Bug Fixes
+
+* **enforce-memoize-async:** exempt methods taking part in a transaction (closes [#1975](https://github.com/BluMintInc/eslint-custom-rules/issues/1975)) ([5881239](https://github.com/BluMintInc/eslint-custom-rules/commit/5881239100c796340547380b1a919e4f488c8603))
+* **prefer-use-deep-compare-memo:** stop promoting primitive deps via member access (closes [#1979](https://github.com/BluMintInc/eslint-custom-rules/issues/1979)) ([da31680](https://github.com/BluMintInc/eslint-custom-rules/commit/da3168091a1f330db3c2af2ad4e3f109f496e2f1))
+* **prevent-children-clobber:** widen the syntactic exemption beyond Omit<> (closes [#1980](https://github.com/BluMintInc/eslint-custom-rules/issues/1980)) ([8dc5cfe](https://github.com/BluMintInc/eslint-custom-rules/commit/8dc5cfe0ca298df6713a9762fa4b438865516dc2))
+* **vertically-group-related-functions:** decline reorders that demote a helper below its module-scope caller (closes [#1983](https://github.com/BluMintInc/eslint-custom-rules/issues/1983)) ([b6dad3a](https://github.com/BluMintInc/eslint-custom-rules/commit/b6dad3ae6623a825b8db452a993df6fdb35e3ce8))
+
 ## [1.20.145](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.144...v1.20.145) (2026-08-12)
 
 
