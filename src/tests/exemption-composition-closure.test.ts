@@ -846,7 +846,9 @@ describe('the exemption closure guard is load-bearing', () => {
   it('accounts for every suggestion-bearing rule, unreached ones by reason', () => {
     expect(suggestionRuleNames.length).toBeGreaterThanOrEqual(7);
     expect(observedUnreachedCulprits).toEqual(UNREACHED_SUGGESTION_CULPRITS);
-    expect(stats.suggestionsApplied).toBeGreaterThanOrEqual(40);
+    // Measured: 83 applied. At the 40 this replaced, half the channel could
+    // vanish while the suite stayed green.
+    expect(stats.suggestionsApplied).toBeGreaterThanOrEqual(80);
   });
 
   it('detects a destroyed exemption (positive control)', () => {

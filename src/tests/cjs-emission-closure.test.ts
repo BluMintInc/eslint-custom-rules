@@ -665,6 +665,15 @@ type SuggestionFinding = {
 };
 
 /**
+ * Corpus C's skip ledger, held to the same zero as the other two corpora: a
+ * suggestion fixture that goes fatal or unanalyzable under the harness's own
+ * filename leaves this corpus invisibly otherwise, since the per-rule floor
+ * below only requires one survivor per rule. Its sibling in
+ * comment-fix-fidelity (`skippedFatalSuggestion`) counts and pins exactly this.
+ */
+const suggestionSkips = { inputUnanalyzable: 0, fatal: 0, verifyThrew: 0 };
+
+/**
  * The state a user reaches by accepting one suggestion, judged the same way a
  * fix output is.
  *
@@ -680,7 +689,10 @@ function probeSuggestions(
 ): { applied: number; findings: SuggestionFinding[] } {
   const id = PREFIX + rule;
   const before = analyze(testCase.code);
-  if (before === null) return { applied: 0, findings: [] };
+  if (before === null) {
+    suggestionSkips.inputUnanalyzable++;
+    return { applied: 0, findings: [] };
+  }
 
   let messages: Linter.LintMessage[];
   try {
@@ -690,10 +702,13 @@ function probeSuggestions(
       { filename },
     );
   } catch {
+    suggestionSkips.verifyThrew++;
     return { applied: 0, findings: [] };
   }
-  if (messages.some((message) => message.fatal))
+  if (messages.some((message) => message.fatal)) {
+    suggestionSkips.fatal++;
     return { applied: 0, findings: [] };
+  }
 
   const findings: SuggestionFinding[] = [];
   let applied = 0;
@@ -761,7 +776,8 @@ console.log(
       `seen ${JSON.stringify(composedSeen)}, carried ` +
       `${JSON.stringify(composedCarried)}`,
     `[cjs-emission] suggestion channel: ${totalSuggestionsApplied} suggestion(s) ` +
-      `applied across ${suggestionRuleNames.length} rule(s)`,
+      `applied across ${suggestionRuleNames.length} rule(s); skips ` +
+      `${JSON.stringify(suggestionSkips)}`,
     ...suggestionRuleNames.map(
       (rule) => `    ${rule}: ${suggestionStats.get(rule) || 0} applied`,
     ),
@@ -860,14 +876,18 @@ describe('no fixer emits ESM-only syntax a CommonJS transform rejects', () => {
 describe('the CJS emission guard is load-bearing', () => {
   it('harvests the suite without losing it', () => {
     expect(harvested.filesLoaded).toBeGreaterThanOrEqual(250);
-    expect(Object.keys(FIX_CONFIG).length).toBeGreaterThan(100);
+    // Measured: 190 rules compose. At the >100 this replaced, 89 could fall
+    // out of the composed --fix while the suite stayed green.
+    expect(Object.keys(FIX_CONFIG).length).toBeGreaterThanOrEqual(185);
     // The type-aware rules this guard once dropped for no stated reason must
     // now compose like any other, or the coverage the lift bought is silently
-    // handed back.
+    // handed back. 15 of the 16 ship in recommended (`enforce-date-ttime` is
+    // deliberately absent from it); a floor of 5 would readmit the drop for
+    // 10 of them.
     const typeAwareInConfig = [...typeAwareRuleNames].filter(
       (name) => PREFIX + name in plugin.configs.recommended.rules,
     );
-    expect(typeAwareInConfig.length).toBeGreaterThan(5);
+    expect(typeAwareInConfig.length).toBeGreaterThanOrEqual(15);
     expect(
       typeAwareInConfig.filter((name) => !(PREFIX + name in FIX_CONFIG)),
     ).toEqual([]);
@@ -934,6 +954,33 @@ describe('the CJS emission guard is load-bearing', () => {
      */
     expect(composedStats.inputUnanalyzable).toBe(0);
     expect(outputStats.tsInputUnparseable).toBe(0);
+    /**
+     * The OUTPUT side of the same standard. `outputsAnalyzed` and `rewritten`
+     * both increment BEFORE their `analyze` call, so their floors are
+     * satisfiable by outputs the detector never read — these two counters are
+     * the only record of that, and each was printed but read by no expect.
+     */
+    expect(outputStats.outputUnparseable).toBe(0);
+    expect(composedStats.outputUnanalyzable).toBe(0);
+    /**
+     * The non-TS split, pinned exactly rather than at zero: a JSON or Markdown
+     * fixture whose code is not also valid TypeScript is what those languages
+     * are, not a hole. The 4 are the gap between the 14 non-TS declared
+     * outputs and the 10 whose input the detector reads — exact, so the next
+     * one is a conscious bump instead of quiet attrition.
+     */
+    expect(outputStats.nonTsInputUnparseable).toBe(4);
+    /**
+     * Corpus C, held to the same zero: its early returns were the one place a
+     * fixture could still leave a corpus uncounted, since the aggregate floor
+     * below carries a few applications of headroom and the per-rule closure
+     * only requires one survivor per rule.
+     */
+    expect(suggestionSkips).toEqual({
+      inputUnanalyzable: 0,
+      fatal: 0,
+      verifyThrew: 0,
+    });
   });
 
   it('accounts for every fixture the relevance filter withholds', () => {
@@ -991,7 +1038,10 @@ describe('the CJS emission guard is load-bearing', () => {
         (rule) => (suggestionStats.get(rule) || 0) < 1,
       ),
     ).toEqual([]);
-    expect(totalSuggestionsApplied).toBeGreaterThanOrEqual(250);
+    // Measured: 299 applied. The floor sits just under it, and the skip
+    // ledger pinned at zero above closes the headroom a dropped fixture
+    // would otherwise hide in.
+    expect(totalSuggestionsApplied).toBeGreaterThanOrEqual(295);
   });
 
   it('detects a module-scope await inside a SUGGESTION (positive control)', () => {

@@ -1073,7 +1073,18 @@ describe('the comment fidelity guard is load-bearing', () => {
         (rule) => (suggestionComparedByRule.get(rule) || 0) < 1,
       ),
     ).toEqual([]);
-    expect(stats.suggestionComparisons).toBeGreaterThanOrEqual(500);
+    // Measured: 1,928 comparisons. At the 500 this replaced, 74% of the
+    // channel could vanish while the suite stayed green — proportionally more
+    // slack than the floors that hid #1984 carried.
+    expect(stats.suggestionComparisons).toBeGreaterThanOrEqual(1900);
+    /**
+     * The drop channel for a variant whose suggestion list stops lining up
+     * with its base case's: each routed case is a comparison that silently
+     * never happens, and the floor above absorbs the first 28 alone. The
+     * variants are neutrality-checked, so a shape change is a finding, not
+     * noise — zero today, and the next one must be a conscious bump.
+     */
+    expect(stats.suggestionShapeMismatch).toBe(0);
   });
 
   it('detects a suggestion that rebuilds a span (positive control)', () => {
