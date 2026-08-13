@@ -30,6 +30,27 @@ Such a member is a reference to the **prototype's** function, which is one share
 
 A **function-valued data property** is different and still narrows. `userData.getName`, where the type is `{ getName?: () => string }`, is per-instance state: it genuinely changes when the object carrying it is rebuilt, so depending on it is both narrower and correct.
 
+### Guarded paths stop at the guard
+
+A dependency array is an array literal, so **every element is evaluated eagerly on every render** — outside the `if`, the `&&`, the ternary, the `instanceof` or the `!` assertion that made a deep access safe inside the hook body, and on renders where the memo is reused and the body never runs. A dependency path therefore stops at any link whose dereferenceability only a guard established:
+
+| The body reads | The dependency becomes |
+| --- | --- |
+| `if (a.b) { return a.b.c; }` | `a.b` |
+| `return a.b && a.b.c;` | `a.b` |
+| `if (!a.b) return; ... a.b.c` | `a.b` |
+| `return a.b!.c;` | `a.b` |
+| `return a?.b instanceof Object ? a?.b.c.d : 'x';` | `a?.b` |
+| `return a?.items[0];` | `a?.items` |
+
+The last two rows are the same rule read through optional chaining: a link the source reached with `?.` is one you expect to be nullish, so a link spelled **without** `?.` right after it survives only because of something the array cannot carry.
+
+A chain spelled optional all the way through is unaffected — `userData?.date?.toISOString()` short-circuits instead of throwing, and still narrows to `userData?.date?.toISOString`. So do a trailing optional bracket (`a.b?.[0]`, `state?.[0]`) and any path with no guard over it (`a.b.c.d` stays `a.b.c.d`).
+
+The shorter dependency is **coarser, never incorrect**: the hook recomputes whenever the parent object's identity changes rather than only when the leaf does, which can cost a recompute but never yields a stale value — and it still delivers the narrowing away from the whole object.
+
+A **called member never terminates a path** either: `u.date.toISOString()` depends on `u.date`. Beyond dereferencing the guarded receiver, `Date.prototype.toISOString` is one shared value for every date, so pinning it would stop the hook from ever invalidating — the same reasoning as the method carve-out above. A function held directly on the dependency object (`userData?.getName?.()`) still narrows, since falling back to the receiver there would surrender the narrowing entirely.
+
 ### Unread dependencies on `useEffect`
 
 An effect runs for its side effects rather than to produce a value, so a dependency the body never reads is normally deliberate: it is a **re-run trigger** for React's reset-on-scope-change pattern ("when the scope identified by these values changes, reset the derived state"). Deleting such a trigger keeps the code compiling while silently stopping the reset, so the rule leaves it alone.
@@ -170,9 +191,23 @@ function Bucketed({
 }
 ```
 
+`toISOString` is reached only inside the `instanceof` narrowing, and the array has no narrowing. The dependency stops at the receiver:
+
+```typescript
+function Stamp({ userData }: { userData: { date?: Date } }) {
+  const result = useMemo(() => {
+    return userData?.date instanceof Date
+      ? userData?.date.toISOString()
+      : 'No date';
+  }, [userData?.date]);
+  return <div>{result}</div>;
+}
+```
+
 ## Auto-fix
 
 - Rewrites your dependency arrays to list the specific fields your hook reads.
+- Stops a rewritten path at any link whose safety comes from a guard, a non-null assertion, or a preceding `?.`, so `--fix` never turns guarded code into a `TypeError` on the next render.
 - Removes dependencies you keep in a `useMemo`/`useCallback` array but never use.
 - Removes an unread `useEffect` dependency only when the effect also calls its corresponding setter, so deliberate re-run triggers survive `--fix`.
 - Never removes an entry from an array you manage by hand with a `react-hooks/exhaustive-deps` suppression, on any of the three hooks.
