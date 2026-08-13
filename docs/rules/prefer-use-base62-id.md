@@ -30,6 +30,22 @@ Detects `uuidv4Base62()` combined with `useState`, `useRef`, or `useMemo` for st
 
 The rule only tracks `uuidv4Base62` when it is imported by name from a module path ending in `uuidv4Base62`, and only inside a component or hook body — a locally defined function of the same name, or a call at module top level, is not flagged. Each example below therefore carries its own import and component wrapper.
 
+### Memoized components
+
+`memo`, `React.memo` and `forwardRef` stand between a component's function and
+the binding that names it, so the name deciding component-hood is the one the
+declarator binds — `const ExamplePanel = memo(() => ...)` is the same component
+as `const ExamplePanel = () => ...` and is flagged identically. Nested wrappers
+(`memo(forwardRef(...))`), the optional spellings (`memo?.(...)`,
+`React?.memo(...)`) and a type assertion on either side of the call are all read
+through. Since `require-memo` rewrites components into `memo(...)`, most
+components reach this rule wrapped.
+
+Only the first argument is followed. A comparator passed as `memo`'s second
+argument (`memo(ExamplePanel, compareDeeply('id'))`) runs per comparison, so an
+ID minted there is per-operation and stays exempt — as does any other call that
+is not one of these wrappers, whose argument is as likely a callback.
+
 ### Examples
 
 #### Incorrect
@@ -54,6 +70,19 @@ const ExamplePanel = () => {
 
   return <div id={placementId} data-x={id} ref={idRef} key={stableId} />;
 };
+```
+
+```tsx
+// File: src/components/example/ExamplePanel.tsx
+import { memo, useState } from 'react';
+import { uuidv4Base62 } from 'functions/src/util/uuidv4Base62';
+
+// The memo wrapper `require-memo` emits changes nothing: the ID is still minted
+// once per mount and still mismatches between server and client
+const ExamplePanel = memo(({ existingId }) => {
+  const [placementId] = useState(() => existingId ?? uuidv4Base62());
+  return <div id={placementId}>Hello</div>;
+});
 ```
 
 #### Correct
@@ -90,6 +119,17 @@ const ExamplePanel = ({ prefix, file, submit, upload }) => {
     </form>
   );
 };
+```
+
+```tsx
+// File: src/components/example/ExamplePanel.tsx
+import { memo } from 'react';
+import { useBase62Id } from 'src/hooks/useBase62Id';
+
+const ExamplePanel = memo(() => {
+  const placementId = useBase62Id();
+  return <div id={placementId}>Hello</div>;
+});
 ```
 
 ## Options
