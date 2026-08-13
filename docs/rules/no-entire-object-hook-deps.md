@@ -49,6 +49,21 @@ A chain spelled optional all the way through is unaffected — `userData?.date?.
 
 The shorter dependency is **coarser, never incorrect**: the hook recomputes whenever the parent object's identity changes rather than only when the leaf does, which can cost a recompute but never yields a stale value — and it still delivers the narrowing away from the whole object.
 
+### Protected and deferred reads stop too
+
+A condition is not the only licence a hook body can hold for a deep dereference. A `catch` **swallows** the very `TypeError` such a dereference raises, and a body the hook does not run — the function `useCallback` hands back, a callback passed to `map`, an inner `async` function — may not run at all on the render whose dependency array is being evaluated. Neither licence reaches the array, so a path resting on one stops at the last link the array can evaluate on its own:
+
+| The body reads | The dependency becomes |
+| --- | --- |
+| `try { log(user.profile.email); } catch {}` | `user.profile` |
+| `useCallback(() => send(data.user.id), [data])` | `data.user` |
+| `rows.map(() => user.profile.email)` | `user.profile` |
+| `catch (e) { log(user.profile.email); }` | `user.profile` |
+
+The first link is kept whatever the position, because dereferencing the dependency object is what the array already does. Further links are kept only where they are spelled `?.`, which short-circuits instead of throwing: `try { return a.b?.c?.d; } catch {}` keeps `a.b?.c?.d`.
+
+The distinction is whether the hook itself runs the code, not where the code sits. A `useEffect` or `useMemo` body runs, so `useEffect(() => { log(a.b.c.d); }, [a])` still narrows to `a.b.c.d` — an array that throws there is an array whose hook body would have thrown anyway. A `try`/`finally` with no handler re-raises, so its block licenses nothing either.
+
 A **called member never terminates a path** either: `u.date.toISOString()` depends on `u.date`. Beyond dereferencing the guarded receiver, `Date.prototype.toISOString` is one shared value for every date, so pinning it would stop the hook from ever invalidating — the same reasoning as the method carve-out above. A function held directly on the dependency object (`userData?.getName?.()`) still narrows, since falling back to the receiver there would surrender the narrowing entirely.
 
 ### Unread dependencies on `useEffect`
@@ -207,7 +222,7 @@ function Stamp({ userData }: { userData: { date?: Date } }) {
 ## Auto-fix
 
 - Rewrites your dependency arrays to list the specific fields your hook reads.
-- Stops a rewritten path at any link whose safety comes from a guard, a non-null assertion, or a preceding `?.`, so `--fix` never turns guarded code into a `TypeError` on the next render.
+- Stops a rewritten path at any link whose safety comes from a guard, a non-null assertion, a preceding `?.`, an enclosing `catch`, or a body the hook does not run, so `--fix` never turns code that survives into a `TypeError` on the next render.
 - Removes dependencies you keep in a `useMemo`/`useCallback` array but never use.
 - Removes an unread `useEffect` dependency only when the effect also calls its corresponding setter, so deliberate re-run triggers survive `--fix`.
 - Never removes an entry from an array you manage by hand with a `react-hooks/exhaustive-deps` suppression, on any of the three hooks.

@@ -1315,7 +1315,12 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
     },
-    // Nested field access
+    // Nested field access. `useCallback` hands its body back rather than
+    // running it, so the deep dereference happens whenever the consumer invokes
+    // the result — possibly never, possibly only once the data has arrived —
+    // while the array is evaluated on every render. The dependency therefore
+    // stops at the receiver (issue #1991); the narrowing away from the entire
+    // object survives.
     {
       code: `
         const MyComponent = ({ user }: { user: { address: { city: string } } }) => {
@@ -1325,12 +1330,12 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
           return <button onClick={showAddress}>Show Address</button>;
         };
       `,
-      errors: [avoid('user', 'user.address.city')],
+      errors: [avoid('user', 'user.address')],
       output: `
         const MyComponent = ({ user }: { user: { address: { city: string } } }) => {
           const showAddress = useCallback(() => {
             console.log(user.address.city);
-          }, [user.address.city]);
+          }, [user.address]);
           return <button onClick={showAddress}>Show Address</button>;
         };
       `,
@@ -2792,6 +2797,203 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
             return userData?.getName?.() ?? 'anon';
           }, [userData?.getName]);
           return <div>{name}</div>;
+        };
+      `,
+    },
+    // Issue #1991 — a condition is not the only licence a hook body holds. A
+    // `catch` swallows the very TypeError a deep dereference raises, and a body
+    // that runs later may not run at all on the render whose array is being
+    // evaluated. Neither licence travels into the array, so a path resting on
+    // one stops exactly where a guarded path does.
+    //
+    // The reported shape: with `user = {}` the input never throws, while the
+    // untruncated array throws while React evaluates it, outside the `try`.
+    {
+      code: `
+        const MyComponent = ({ user }) => {
+          useEffect(() => {
+            try { console.log(user.profile.email); } catch (e) {}
+          }, [user]);
+        };
+      `,
+      errors: [avoid('user', 'user.profile')],
+      output: `
+        const MyComponent = ({ user }) => {
+          useEffect(() => {
+            try { console.log(user.profile.email); } catch (e) {}
+          }, [user.profile]);
+        };
+      `,
+    },
+    // The `useCallback` arm: the body runs on invocation, the array on every
+    // render.
+    {
+      code: `
+        const MyComponent = ({ data }: { data: { user?: { id: string } } }) => {
+          const submit = useCallback(() => {
+            send(data.user.id);
+          }, [data]);
+          return <button onClick={submit}>Send</button>;
+        };
+      `,
+      errors: [avoid('data', 'data.user')],
+      output: `
+        const MyComponent = ({ data }: { data: { user?: { id: string } } }) => {
+          const submit = useCallback(() => {
+            send(data.user.id);
+          }, [data.user]);
+          return <button onClick={submit}>Send</button>;
+        };
+      `,
+    },
+    // The inner-callback arm: a `useMemo` body is eager, but the callback it
+    // hands to `map` runs once per element — never, over an empty list.
+    {
+      code: `
+        const MyComponent = ({ user, rows }: { user: { profile?: { email: string } }; rows: string[] }) => {
+          const emails = useMemo(() => {
+            return rows.map(() => user.profile.email);
+          }, [user, rows]);
+          return <div>{emails}</div>;
+        };
+      `,
+      errors: [avoid('user', 'user.profile')],
+      output: `
+        const MyComponent = ({ user, rows }: { user: { profile?: { email: string } }; rows: string[] }) => {
+          const emails = useMemo(() => {
+            return rows.map(() => user.profile.email);
+          }, [user.profile, rows]);
+          return <div>{emails}</div>;
+        };
+      `,
+    },
+    // A `catch` body runs only if something threw, so it establishes nothing
+    // about the render evaluating the array either.
+    {
+      code: `
+        const MyComponent = ({ user }: { user: { profile?: { email: string } } }) => {
+          useEffect(() => {
+            try { risky(); } catch (e) { console.log(user.profile.email); }
+          }, [user]);
+        };
+      `,
+      errors: [avoid('user', 'user.profile')],
+      output: `
+        const MyComponent = ({ user }: { user: { profile?: { email: string } } }) => {
+          useEffect(() => {
+            try { risky(); } catch (e) { console.log(user.profile.email); }
+          }, [user.profile]);
+        };
+      `,
+    },
+    // An inner function declaration is deferred for the same reason as a
+    // callback expression, and the licence reaches every link below the first
+    // whichever hook holds it.
+    {
+      code: `
+        const MyComponent = ({ user }: { user: { profile?: { contact?: { email: string } } } }) => {
+          useEffect(() => {
+            function notify() {
+              console.log(user.profile.contact.email);
+            }
+            notify();
+          }, [user]);
+        };
+      `,
+      errors: [avoid('user', 'user.profile')],
+      output: `
+        const MyComponent = ({ user }: { user: { profile?: { contact?: { email: string } } } }) => {
+          useEffect(() => {
+            function notify() {
+              console.log(user.profile.contact.email);
+            }
+            notify();
+          }, [user.profile]);
+        };
+      `,
+    },
+    // Negative control for the deferred arm: a `useEffect` body runs, so a deep
+    // path it reads eagerly keeps every link. Scoping the deferral to "any hook
+    // body" instead of "a body the hook does not run" would truncate this one
+    // and cost the rule its whole point.
+    {
+      code: `
+        const MyComponent = ({ a }: { a: { b: { c: { d: string } } } }) => {
+          useEffect(() => {
+            console.log(a.b.c.d);
+          }, [a]);
+        };
+      `,
+      errors: [avoid('a', 'a.b.c.d')],
+      output: `
+        const MyComponent = ({ a }: { a: { b: { c: { d: string } } } }) => {
+          useEffect(() => {
+            console.log(a.b.c.d);
+          }, [a.b.c.d]);
+        };
+      `,
+    },
+    // Negative control for the `try` arm: a `try`/`finally` with no handler
+    // re-raises, so the block swallows nothing and the path is untouched.
+    {
+      code: `
+        const MyComponent = ({ a }: { a: { b: { c: string } } }) => {
+          const result = useMemo(() => {
+            try { return a.b.c; } finally { done(); }
+          }, [a]);
+          return <div>{result}</div>;
+        };
+      `,
+      errors: [avoid('a', 'a.b.c')],
+      output: `
+        const MyComponent = ({ a }: { a: { b: { c: string } } }) => {
+          const result = useMemo(() => {
+            try { return a.b.c; } finally { done(); }
+          }, [a.b.c]);
+          return <div>{result}</div>;
+        };
+      `,
+    },
+    // Negative control: an optional link short-circuits rather than throwing,
+    // so it survives evaluation outside the `try` and extends the dependency
+    // past the first link.
+    {
+      code: `
+        const MyComponent = ({ a }: { a: { b: { c?: { d: string } } } }) => {
+          const result = useMemo(() => {
+            try { return a.b?.c?.d; } catch (e) { return 'none'; }
+          }, [a]);
+          return <div>{result}</div>;
+        };
+      `,
+      errors: [avoid('a', 'a.b?.c?.d, a.b?.c')],
+      output: `
+        const MyComponent = ({ a }: { a: { b: { c?: { d: string } } } }) => {
+          const result = useMemo(() => {
+            try { return a.b?.c?.d; } catch (e) { return 'none'; }
+          }, [a.b?.c?.d, a.b?.c]);
+          return <div>{result}</div>;
+        };
+      `,
+    },
+    // Negative control: a single-link path is what the array already
+    // dereferences, so no deferred position can shorten it further.
+    {
+      code: `
+        const MyComponent = ({ user }: { user: { name: string } }) => {
+          const greet = useCallback(() => {
+            try { console.log(user.name); } catch (e) {}
+          }, [user]);
+          return <button onClick={greet}>Greet</button>;
+        };
+      `,
+      errors: [avoid('user', 'user.name')],
+      output: `
+        const MyComponent = ({ user }: { user: { name: string } }) => {
+          const greet = useCallback(() => {
+            try { console.log(user.name); } catch (e) {}
+          }, [user.name]);
+          return <button onClick={greet}>Greet</button>;
         };
       `,
     },

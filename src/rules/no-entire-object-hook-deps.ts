@@ -23,6 +23,17 @@ const HOOK_NAMES = new Set(['useEffect', 'useCallback', 'useMemo']);
  */
 const EFFECT_HOOK_NAMES = new Set(['useEffect']);
 
+/**
+ * Hooks that do not run their callback: they hand it back as a value, so the
+ * body executes only if — and when — the consumer invokes it.
+ *
+ * why: the dependency array is evaluated on every render, while such a body may
+ * never run at all, or run only once the data it reads has arrived. A path the
+ * body dereferences is therefore not licensed to appear in the array; see
+ * `collectGuardedPaths`.
+ */
+const DEFERRED_BODY_HOOK_NAMES = new Set(['useCallback']);
+
 function isHookCall(node: TSESTree.CallExpression): boolean {
   const callee = node.callee;
   return (
@@ -35,6 +46,14 @@ function isEffectHookCall(node: TSESTree.CallExpression): boolean {
   return (
     callee.type === AST_NODE_TYPES.Identifier &&
     EFFECT_HOOK_NAMES.has(callee.name)
+  );
+}
+
+function isDeferredBodyHookCall(node: TSESTree.CallExpression): boolean {
+  const callee = node.callee;
+  return (
+    callee.type === AST_NODE_TYPES.Identifier &&
+    DEFERRED_BODY_HOOK_NAMES.has(callee.name)
   );
 }
 
@@ -316,8 +335,8 @@ function isCallCallee(node: TSESTree.MemberExpression): boolean {
 }
 
 /**
- * Renders `node`'s access path when the chain is rooted at `objectName`, or
- * null when it is rooted elsewhere or holds a link with no stable rendering.
+ * The links of `node`'s access path when the chain is rooted at `objectName`,
+ * or null when it is rooted elsewhere or holds a link with no stable rendering.
  *
  * why: guard collection asks a different question than `buildAccessPath` —
  * "which value did this condition establish something about?" rather than
@@ -325,10 +344,10 @@ function isCallCallee(node: TSESTree.MemberExpression): boolean {
  * function's narrowing policy (method carve-outs, whole-object escalation) nor
  * its side effects on the usage set.
  */
-function renderMemberPathIfRootedAt(
+function memberPathSegmentsIfRootedAt(
   node: TSESTree.MemberExpression,
   objectName: string,
-): string | null {
+): PathSegment[] | null {
   const segments: PathSegment[] = [];
   let current: TSESTree.Node = node;
 
@@ -376,7 +395,33 @@ function renderMemberPathIfRootedAt(
   ) {
     return null;
   }
-  return renderPathSegments(objectName, segments);
+  return segments;
+}
+
+function renderMemberPathIfRootedAt(
+  node: TSESTree.MemberExpression,
+  objectName: string,
+): string | null {
+  const segments = memberPathSegmentsIfRootedAt(node, objectName);
+  return segments ? renderPathSegments(objectName, segments) : null;
+}
+
+/**
+ * How many links of `segments` a dependency array may evaluate on a render that
+ * never reaches the position the path was read in.
+ *
+ * why: the array already dereferences the dependency object, so its first link
+ * is as safe as the entry it replaces. Every further link dereferences a value
+ * whose existence only the skipped position established, unless it is spelled
+ * `?.` — an optional link short-circuits instead of throwing and so extends the
+ * prefix.
+ */
+function eagerlyReachableLength(segments: readonly PathSegment[]): number {
+  let length = 1;
+  while (length < segments.length && segments[length].optional) {
+    length += 1;
+  }
+  return length;
 }
 
 /**
@@ -390,17 +435,27 @@ function renderMemberPathIfRootedAt(
  * unconditional `TypeError`. The paths collected here mark where a path must
  * stop; see `safePrefixOf`.
  *
+ * A condition is not the only licence a body can hold. A `try`/`catch` swallows
+ * the very `TypeError` a deep dereference raises, and a body that runs later —
+ * an inner callback, the function a `useCallback` hands back — may not run at
+ * all on the render whose array is being evaluated. Neither licence travels
+ * into the array, so both stop a path exactly as a condition does.
+ *
  * The collection is deliberately over-broad — it accepts any member path
  * appearing anywhere in a condition, not only one that provably governs the
  * access. Over-collecting costs a coarser dependency (the memo recomputes more
  * often than strictly needed); under-collecting is the crash.
+ *
+ * `bodyIsDeferred` says the hook itself never runs the body it was handed.
  */
 function collectGuardedPaths(
   hookBody: TSESTree.Node,
   objectName: string,
+  bodyIsDeferred: boolean,
 ): Set<string> {
   const guarded = new Set<string>();
   const visited = new Set<TSESTree.Node>();
+  const deferredVisited = new Set<TSESTree.Node>();
 
   function markConditionPaths(node: TSESTree.Node | null | undefined): void {
     if (!node) return;
@@ -421,6 +476,39 @@ function collectGuardedPaths(
     }
 
     forEachChildNode(node, markConditionPaths);
+  }
+
+  /**
+   * Records where every path read inside a position the array cannot reach —
+   * a protected `try` block, a body that runs later — has to stop.
+   *
+   * Unlike a condition, such a position licenses the whole dereference chain
+   * rather than one link of it, so the stopping point is derived from the path
+   * itself: everything the array can evaluate on its own is kept, and the first
+   * link that would have to trust the skipped code ends it.
+   */
+  function markDeferredPaths(node: TSESTree.Node | null | undefined): void {
+    if (!node || deferredVisited.has(node)) return;
+    deferredVisited.add(node);
+
+    if (node.type === AST_NODE_TYPES.MemberExpression) {
+      const segments = memberPathSegmentsIfRootedAt(node, objectName);
+      if (segments) {
+        const reachable = eagerlyReachableLength(segments);
+        if (reachable < segments.length) {
+          guarded.add(
+            renderPathSegments(objectName, segments.slice(0, reachable)),
+          );
+        }
+        // A computed key can still hold a read of its own.
+        if (node.computed) {
+          markDeferredPaths(node.property);
+        }
+        return;
+      }
+    }
+
+    forEachChildNode(node, markDeferredPaths);
   }
 
   function walk(node: TSESTree.Node): void {
@@ -462,11 +550,36 @@ function collectGuardedPaths(
       if (asserted.type === AST_NODE_TYPES.MemberExpression) {
         markConditionPaths(asserted);
       }
+    } else if (node.type === AST_NODE_TYPES.TryStatement) {
+      // A `catch` is a licence to dereference: the author writes the deep
+      // access knowing the TypeError it can raise is swallowed. The array
+      // evaluates the same access outside the `try`, where the throw is
+      // uncaught, so the path stops before the link the `catch` covers.
+      //
+      // The handler is what makes the difference: a `try`/`finally` with no
+      // handler re-raises, so its block reads like ordinary code. The handler's
+      // own body is deferred instead — it runs only if something threw.
+      if (node.handler) {
+        markDeferredPaths(node.block);
+        markDeferredPaths(node.handler.body);
+      }
+    } else if (
+      node.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+      node.type === AST_NODE_TYPES.FunctionExpression ||
+      node.type === AST_NODE_TYPES.FunctionDeclaration
+    ) {
+      // An inner callback runs on someone else's schedule — an event, a
+      // resolved promise, an iteration over an array that may be empty — so a
+      // path it reads says nothing about the render evaluating the array.
+      markDeferredPaths(node.body);
     }
 
     forEachChildNode(node, walk);
   }
 
+  if (bodyIsDeferred) {
+    markDeferredPaths(hookBody);
+  }
   walk(hookBody);
   return guarded;
 }
@@ -531,6 +644,7 @@ function getObjectUsagesInHook(
   hookBody: TSESTree.Node,
   objectName: string,
   typeInfo?: TypeInfo,
+  bodyIsDeferred = false,
 ): { usages: Set<string>; needsEntireObject: boolean; notUsed: boolean } {
   const usages = new Map<string, number>(); // Track usage and its position
   // why: derived dependency paths (first-optional intermediate, array base)
@@ -538,7 +652,11 @@ function getObjectUsagesInHook(
   // rendered path cannot place `?.` markers correctly.
   const pathSegments = new Map<string, PathSegment[]>();
   const visited = new Set<TSESTree.Node>();
-  const guardedPaths = collectGuardedPaths(hookBody, objectName);
+  const guardedPaths = collectGuardedPaths(
+    hookBody,
+    objectName,
+    bodyIsDeferred,
+  );
   let needsEntireObject = false;
   let isUsed = false;
 
@@ -1297,6 +1415,7 @@ export const noEntireObjectHookDeps = createRule<[], MessageIds>({
             | TSESTree.FunctionExpression
         ).body;
         const isEffect = isEffectHookCall(node);
+        const bodyIsDeferred = isDeferredBodyHookCall(node);
         const manuallyManagedDeps = hasManuallyManagedDeps(node);
 
         // Check each dependency in the array
@@ -1327,6 +1446,7 @@ export const noEntireObjectHookDeps = createRule<[], MessageIds>({
               callbackBody,
               objectName,
               dependencyTypeInfo,
+              bodyIsDeferred,
             );
 
             // If the object is not used at all, suggest removing it
