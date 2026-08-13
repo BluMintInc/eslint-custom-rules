@@ -469,11 +469,6 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
         }
       },
 
-      // Check for array methods with type assertions
-      CallExpression() {
-        // Skip this check as we'll handle it in the TSAsExpression and TSTypeAssertion handlers
-      },
-
       // Check for type assertions in expressions
       TSAsExpression(node) {
         // Allow 'as const' assertions if configured
