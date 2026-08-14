@@ -89,6 +89,131 @@ function memberNameOf(key: TSESTree.Node): MemberName | undefined {
   return undefined;
 }
 
+const EQUALITY_OPERATORS = new Set<TSESTree.BinaryExpression['operator']>([
+  '===',
+  '!==',
+  '==',
+  '!=',
+]);
+
+/**
+ * The text of a literal string, written either way round: `'string'` and
+ * `` `string` `` assert the same thing about the operand beside them.
+ */
+function stringLiteralValueOf(node: TSESTree.Node): string | undefined {
+  if (node.type === AST_NODE_TYPES.Literal && typeof node.value === 'string') {
+    return node.value;
+  }
+
+  if (
+    node.type === AST_NODE_TYPES.TemplateLiteral &&
+    node.expressions.length === 0 &&
+    node.quasis.length === 1
+  ) {
+    return node.quasis[0].value.cooked;
+  }
+
+  return undefined;
+}
+
+/**
+ * The operand an equality comparison holds opposite `operand`, so operand
+ * order carries no meaning: `typeof x === 'string'` and
+ * `'string' === typeof x` are the same assertion.
+ */
+function comparedAgainst(
+  comparison: TSESTree.BinaryExpression,
+  operand: TSESTree.Node,
+): TSESTree.Node | undefined {
+  if (!EQUALITY_OPERATORS.has(comparison.operator)) return undefined;
+  if (comparison.left === operand) return comparison.right;
+  if (comparison.right === operand) return comparison.left;
+  return undefined;
+}
+
+/**
+ * The outermost node standing for the same value, so a contradiction written
+ * around `verdict!` or `verdict as string` is a contradiction about
+ * `verdict`.
+ */
+function passthroughValueOf(node: TSESTree.Node): TSESTree.Node {
+  let current = node;
+  while (current.parent) {
+    const { parent } = current;
+    const wraps =
+      (parent.type === AST_NODE_TYPES.TSNonNullExpression ||
+        parent.type === AST_NODE_TYPES.TSAsExpression ||
+        parent.type === AST_NODE_TYPES.TSSatisfiesExpression ||
+        parent.type === AST_NODE_TYPES.TSTypeAssertion ||
+        parent.type === AST_NODE_TYPES.ChainExpression) &&
+      (parent as unknown as { expression?: TSESTree.Node }).expression ===
+        current;
+
+    if (!wraps) break;
+    current = parent;
+  }
+  return current;
+}
+
+/** `Error`, `TypeError` and any `…Error` class take a string message. */
+function isErrorConstructor(callee: TSESTree.Node): boolean {
+  if (callee.type === AST_NODE_TYPES.Identifier) {
+    return callee.name.endsWith('Error');
+  }
+
+  if (callee.type === AST_NODE_TYPES.MemberExpression) {
+    const member = memberNameOf(callee.property);
+    return !!member && member.name.endsWith('Error');
+  }
+
+  return false;
+}
+
+/**
+ * Whether this reference uses the value in a way a boolean could not be
+ * used, which disproves a booleanness read off a name.
+ */
+function referenceContradictsBoolean(reference: TSESTree.Node): boolean {
+  const value = passthroughValueOf(reference);
+  const { parent } = value;
+  if (!parent) return false;
+
+  // `typeof verdict === 'string'`. A tag of `'boolean'` AFFIRMS the boolean
+  // reading whichever equality operator carries it — `!== 'boolean'` is how
+  // a boolean guard is spelled — so only some other tag contradicts.
+  if (
+    parent.type === AST_NODE_TYPES.UnaryExpression &&
+    parent.operator === 'typeof' &&
+    parent.argument === value
+  ) {
+    const comparison = parent.parent;
+    if (comparison?.type !== AST_NODE_TYPES.BinaryExpression) return false;
+
+    const other = comparedAgainst(comparison, parent);
+    const tag = other ? stringLiteralValueOf(other) : undefined;
+    return tag !== undefined && tag !== 'boolean';
+  }
+
+  // `verdict === 'occupied'` — a value compared with a string is not a
+  // boolean, since no boolean is ever equal to one.
+  if (parent.type === AST_NODE_TYPES.BinaryExpression) {
+    const other = comparedAgainst(parent, value);
+    return !!other && stringLiteralValueOf(other) !== undefined;
+  }
+
+  // `throw new Error(verdict)` — the message parameter is a string, so the
+  // binding carries the failure reason rather than a verdict flag.
+  if (
+    parent.type === AST_NODE_TYPES.NewExpression &&
+    parent.arguments[0] === value &&
+    isErrorConstructor(parent.callee)
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
 export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
   name: 'enforce-boolean-naming-prefixes',
   meta: {
@@ -1240,6 +1365,90 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
     }
 
     /**
+     * Whether the only evidence that a binding holds a boolean is a NAME.
+     *
+     * `calleeReturnEvaluation` answers "does this callee demonstrably return a
+     * non-boolean?"; its 'indeterminate' verdict is the case where the callee's
+     * body is out of reach (an import, a parameter, a value read off a builder
+     * chain) and the callee's `is`/`has`/`can` prefix is all that is left. A
+     * boolean-sounding property (`state.isValid`) is the same kind of evidence.
+     *
+     * Everything else — an explicit `: boolean` annotation, a boolean literal, a
+     * comparison or negation, a `Boolean()` coercion, a resolvable declaration
+     * whose return classifies as boolean — is evidence about the VALUE, which no
+     * use site is allowed to outrank.
+     */
+    function booleanEvidenceIsNameOnly(
+      declarator: TSESTree.VariableDeclarator,
+    ): boolean {
+      if (
+        declarator.id.type !== AST_NODE_TYPES.Identifier ||
+        hasBooleanTypeAnnotation(declarator.id) ||
+        !declarator.init
+      ) {
+        return false;
+      }
+
+      const restsOnName = (expression: TSESTree.Expression): boolean => {
+        const value = unwrapChainExpression(expression);
+
+        // A property name is the whole of the evidence in
+        // `isLikelyBooleanByMemberExpression`, the only path that reads one.
+        if (value.type === AST_NODE_TYPES.MemberExpression) {
+          return true;
+        }
+
+        if (
+          value.type === AST_NODE_TYPES.CallExpression &&
+          value.callee.type === AST_NODE_TYPES.Identifier
+        ) {
+          return (
+            !isGlobalBooleanCall(value) &&
+            calleeReturnEvaluation(value.callee.name) === 'indeterminate'
+          );
+        }
+
+        // `isFoo(x) || fallback` reaches booleanness through its left operand.
+        if (
+          value.type === AST_NODE_TYPES.LogicalExpression &&
+          value.operator === '||'
+        ) {
+          return restsOnName(value.left);
+        }
+
+        return false;
+      };
+
+      return restsOnName(declarator.init);
+    }
+
+    /**
+     * Whether any use of the binding contradicts booleanness.
+     *
+     * Validator families built on `ValidatorPipeline` return `true | string` —
+     * `true` for a pass, the failure message for a fail — while
+     * `enforce-is-prefix-validators` requires the validator itself to be
+     * `is`-prefixed. Inferring the result's booleanness from that mandated
+     * prefix makes the two rules unsatisfiable together, so a use site that
+     * reads the value as a string settles it against the name.
+     *
+     * References come from the scope manager, never from matching the name as
+     * text: a contradiction must belong to THIS binding, not to a shadowing
+     * inner one, a sibling scope's binding, or an unrelated same-named value.
+     */
+    function useSiteContradictsBoolean(
+      declarator: TSESTree.VariableDeclarator,
+    ): boolean {
+      return context
+        .getDeclaredVariables(declarator)
+        .some((variable) =>
+          variable.references.some((reference) =>
+            referenceContradictsBoolean(reference.identifier),
+          ),
+        );
+    }
+
+    /**
      * Check if a variable is used in a while loop condition and is likely a DOM element or tree node
      * This helps identify variables like 'parent', 'element', 'node', etc. that are used
      * in while loops for DOM/tree traversal and are not boolean values
@@ -1669,6 +1878,17 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           (AST_NODE_TYPES.TSBooleanKeyword as any)
       ) {
         isBooleanVar = true;
+      }
+
+      // A booleanness read off a name loses to a use site that treats the value
+      // as something else, which is what keeps this rule satisfiable alongside
+      // `enforce-is-prefix-validators` for `true | string` validator verdicts.
+      if (
+        isBooleanVar &&
+        booleanEvidenceIsNameOnly(node) &&
+        useSiteContradictsBoolean(node)
+      ) {
+        return;
       }
 
       if (isBooleanVar && !hasApprovedPrefix(variableName)) {
