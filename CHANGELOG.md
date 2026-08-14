@@ -1,3 +1,14 @@
+## [1.20.151](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.150...v1.20.151) (2026-08-14)
+
+
+### Bug Fixes
+
+* **enforce-exported-function-types:** follow a default-exported identifier to its local memo() declaration (closes [#2006](https://github.com/BluMintInc/eslint-custom-rules/issues/2006)) ([001d129](https://github.com/BluMintInc/eslint-custom-rules/commit/001d1298aa91a4a7c8f3038d32729d3fb588dc51))
+* **enforce-firestore-doc-ref-generic:** require an ancestor assertion to state a document schema (closes [#2007](https://github.com/BluMintInc/eslint-custom-rules/issues/2007)) ([fd0eb73](https://github.com/BluMintInc/eslint-custom-rules/commit/fd0eb7332a950d611d96dc1b77c5141ec370b390))
+* **no-redundant-usecallback-wrapper:** treat a module-level function as a stable delegate (closes [#2008](https://github.com/BluMintInc/eslint-custom-rules/issues/2008)) ([87aae47](https://github.com/BluMintInc/eslint-custom-rules/commit/87aae4732d28344442de60b3f0185691e44838fe))
+* **no-unused-props:** see through memo/forwardRef wrappers require-memo emits (closes [#2004](https://github.com/BluMintInc/eslint-custom-rules/issues/2004)) ([095b5cc](https://github.com/BluMintInc/eslint-custom-rules/commit/095b5cc367914ad71719c3a2e0c50642c3cec5ae))
+* **prefer-use-base62-id:** climb wrapper calls so memo() no longer hides a component (closes [#2005](https://github.com/BluMintInc/eslint-custom-rules/issues/2005)) ([c8ea11b](https://github.com/BluMintInc/eslint-custom-rules/commit/c8ea11bbcd6086d255a279f5c0d1e75b78ba6ced))
+
 ## [1.20.150](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.149...v1.20.150) (2026-08-13)
 
 

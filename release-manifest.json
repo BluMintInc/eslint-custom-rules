@@ -1,5 +1,51 @@
 [
   {
+    "version": "1.20.151",
+    "date": "2026-08-14T02:27:13.012Z",
+    "rules": [
+      {
+        "name": "enforce-exported-function-types",
+        "changeType": "fix",
+        "issues": [
+          2006
+        ],
+        "summary": "follow a default-exported identifier to its local memo() declaration (closes #2006)"
+      },
+      {
+        "name": "enforce-firestore-doc-ref-generic",
+        "changeType": "fix",
+        "issues": [
+          2007
+        ],
+        "summary": "require an ancestor assertion to state a document schema (closes #2007)"
+      },
+      {
+        "name": "no-redundant-usecallback-wrapper",
+        "changeType": "fix",
+        "issues": [
+          2008
+        ],
+        "summary": "treat a module-level function as a stable delegate (closes #2008)"
+      },
+      {
+        "name": "no-unused-props",
+        "changeType": "fix",
+        "issues": [
+          2004
+        ],
+        "summary": "see through memo/forwardRef wrappers require-memo emits (closes #2004)"
+      },
+      {
+        "name": "prefer-use-base62-id",
+        "changeType": "fix",
+        "issues": [
+          2005
+        ],
+        "summary": "climb wrapper calls so memo() no longer hides a component (closes #2005)"
+      }
+    ]
+  },
+  {
     "version": "1.20.150",
     "date": "2026-08-13T19:12:01.840Z",
     "rules": [
