@@ -254,8 +254,8 @@ const KNOWN_DIVERGENT: Record<string, Exemption> = {
   },
   'enforce-memoize-async::no-explicit-return-type': {
     reason:
-      'PIPELINE: the fixtures annotate an inferable `Promise<T>` return; `--fix` strips 13 of 14 and the decorator requirement is unaffected. Was 13 — the #1975 fixture pinning that a `Promise<Transaction>` RETURN type still reports joined the identical class. Its annotation is load-bearing rather than incidental: the fixture is the negative control proving the transaction carve-out reads PARAMETERS, where the attempt-scoped handle actually arrives, and not the return type, which describes a handle the method produces. So no spelling drops it. `verifyAndFix` with both rules converges on `@Memoize() public async open()` with zero messages remaining (measured), stripping the annotation while leaving the decorator requirement the fixture asserts.',
-    cases: { noExplicitReturnTypeInferable: 14 },
+      'PIPELINE: the fixtures annotate an inferable `Promise<T>` return; `--fix` strips 8 of 9 and the decorator requirement is unaffected. Was 13 — the #1975 fixture pinning that a `Promise<Transaction>` RETURN type still reports joined the identical class. Its annotation is load-bearing rather than incidental: the fixture is the negative control proving the transaction carve-out reads PARAMETERS, where the attempt-scoped handle actually arrives, and not the return type, which describes a handle the method produces. So no spelling drops it. `verifyAndFix` with both rules converges on `@Memoize() public async open()` with zero messages remaining (measured), stripping the annotation while leaving the decorator requirement the fixture asserts. 14 -> 9 because the #2014 FIX LANDED: five of these fixtures declare `function Log(): MethodDecorator { return () => {}; }` beside the decorated member under test, and that annotation is what makes `@Log()` legal at the decoration site — stripping it left every `@Log()` use as TS1329 — so the reporter declines on decorator factories and those five leave the disagreement rather than moving. The nine that remain are the inferable `Promise<T>` returns this entry always described; the composed `--fix` clears eight of them and leaves `class Example<T> { @Memoize() public async load(): Promise<T> ... }`, whose annotation names a type PARAMETER the fixer will not strand (measured).',
+    cases: { noExplicitReturnTypeInferable: 9 },
   },
   'enforce-memoize-getters::enforce-dynamic-imports': {
     reason:
@@ -364,13 +364,13 @@ const KNOWN_DIVERGENT: Record<string, Exemption> = {
   },
   'no-explicit-return-type::enforce-memoize-async': {
     reason:
-      'PIPELINE: the fixtures declare an async class method beside the annotation under test; `--fix` adds the `@Memoize()` decorator on all 3.',
-    cases: { requireMemoize: 3 },
+      "PIPELINE: the fixtures declare an async class method beside the annotation under test; `--fix` adds the `@Memoize()` decorator on all 3. 3 -> 4 with the #2014 reproduction, whose class holds an async `compute()` beside the decorator factory under test; the composed `--fix` adds `@Memoize()` above the existing `@Log()` and converges with zero messages remaining, leaving the factory's `: MethodDecorator` annotation — the thing the fixture pins — intact (measured).",
+    cases: { requireMemoize: 4 },
   },
   'no-explicit-return-type::enforce-verb-noun-naming': {
     reason:
-      'INCIDENTAL: the fixtures name functions with bare nouns (`factorial`) to display the return annotation under test; a verb phrase (`computeFactorial`) is clean under both (measured).',
-    cases: { functionVerbPhrase: 24 },
+      'INCIDENTAL: the fixtures name functions with bare nouns (`factorial`) to display the return annotation under test; a verb phrase (`computeFactorial`) is clean under both (measured). 24 -> 26 with the #2014 decorator fixtures, on that same footing: one names an arrow factory `Injectable` for the decoration site it feeds (`createInjectable` is clean under both, measured), and the other is the stripped output of the scope-resolution control, whose enclosing function is named `outer` exactly as the mutual-recursion fixtures already counted here name theirs — the objection is to `outer`, not to the decorator, and `buildMemoizer` is clean under both (measured).',
+    cases: { functionVerbPhrase: 26 },
   },
   'no-explicit-return-type::prefer-type-over-interface': {
     reason:

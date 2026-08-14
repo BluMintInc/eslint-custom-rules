@@ -991,6 +991,125 @@ function declaresVoidResult(returnType: TSESTree.TSTypeAnnotation): boolean {
   );
 }
 
+// TypeScript's built-in decorator signatures. A factory annotated with one of
+// these is the one shape where the annotation is WIDER than what inference
+// produces rather than a restatement of it: `MethodDecorator` accepts three
+// parameters, the returned closure typically declares none, and a decoration
+// site requires the declared arity. Stripping the annotation therefore turns
+// every `@Factory()` use into TS1329 (#2014).
+const DECORATOR_TYPE_NAMES = new Set([
+  'ClassDecorator',
+  'MethodDecorator',
+  'ParameterDecorator',
+  'PropertyDecorator',
+]);
+
+/**
+ * The identifier a type name resolves to. A qualified name (`ts.MethodDecorator`)
+ * denotes the type its right-most segment names, so that segment is what decides
+ * — a substring test over the printed annotation would equally match
+ * `MyMethodDecoratorConfig`, which is an unrelated user type.
+ */
+function rightmostTypeName(typeName: TSESTree.EntityName): string | undefined {
+  if (typeName.type === AST_NODE_TYPES.Identifier) {
+    return typeName.name;
+  }
+
+  if (typeName.type === AST_NODE_TYPES.TSQualifiedName) {
+    return rightmostTypeName(typeName.right);
+  }
+
+  return undefined;
+}
+
+function namesDecoratorType(annotation: TSESTree.TypeNode): boolean {
+  if (annotation.type === AST_NODE_TYPES.TSTypeReference) {
+    const name = rightmostTypeName(annotation.typeName);
+    return name !== undefined && DECORATOR_TYPE_NAMES.has(name);
+  }
+
+  // A factory usable in more than one position (`ClassDecorator &
+  // MethodDecorator`) still owes every decoration site the declared shape.
+  if (
+    annotation.type === AST_NODE_TYPES.TSUnionType ||
+    annotation.type === AST_NODE_TYPES.TSIntersectionType
+  ) {
+    return annotation.types.some(namesDecoratorType);
+  }
+
+  return false;
+}
+
+/**
+ * The identifier a CALLED decorator invokes: `Log` for `@Log()` and `@Log()()`.
+ *
+ * Only a called decorator identifies a factory, and only a factory's return type
+ * is what the decoration site consumes. A bare `@Log` names the decorator
+ * itself, whose annotation restates the value it returns exactly as inference
+ * would — so it stays reportable rather than being silenced by proximity to a
+ * decorator.
+ *
+ * An owner-qualified decorator (`@registry.log()`) names a property rather than
+ * a binding, and matching it by property name alone would silence the rule on
+ * every unrelated method of the same name, so it yields nothing.
+ */
+function decoratorFactoryIdentifier(
+  expression: TSESTree.Node,
+): TSESTree.Node | undefined {
+  if (expression.type !== AST_NODE_TYPES.CallExpression) return undefined;
+
+  const callee = expression.callee;
+  if (callee.type === AST_NODE_TYPES.Identifier) {
+    return callee;
+  }
+
+  return decoratorFactoryIdentifier(callee);
+}
+
+/**
+ * The declarations invoked by a decorator in this file.
+ *
+ * This catches the factory whose annotation is a user-defined decorator type
+ * (`type Cached = (t: object, k: string, d: PropertyDescriptor) => void`), which
+ * no name test can recognise. Each identifier is resolved through the scope
+ * manager rather than compared by name, so a same-named binding elsewhere in the
+ * file cannot silence the rule on a function no decorator actually reaches.
+ */
+function decoratorReferencedDeclarations(
+  source: TSESLint.SourceCode,
+  visitorKeys: VisitorKeys,
+): Set<TSESTree.Node> {
+  const heads = new Set<TSESTree.Node>();
+  const stack: TSESTree.Node[] = [source.ast];
+
+  while (stack.length > 0) {
+    const current = stack.pop() as TSESTree.Node;
+
+    if (current.type === AST_NODE_TYPES.Decorator) {
+      const head = decoratorFactoryIdentifier(current.expression);
+      if (head) {
+        heads.add(head);
+      }
+    }
+
+    pushChildren(current, visitorKeys, stack);
+  }
+
+  const declarations = new Set<TSESTree.Node>();
+  if (heads.size === 0) return declarations;
+
+  for (const scope of source.scopeManager?.scopes ?? []) {
+    for (const reference of scope.references) {
+      if (!heads.has(reference.identifier)) continue;
+      for (const definition of reference.resolved?.defs ?? []) {
+        declarations.add(definition.node);
+      }
+    }
+  }
+
+  return declarations;
+}
+
 /**
  * An annotation waiting to be reported. Reports are held until the whole file
  * has been walked because whether one annotation's fix may unbind an import
@@ -1304,6 +1423,50 @@ export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
       // self-reference has already failed to explain.
       const participatesInReturnCycle = createReturnCycleResolver(visitorKeys);
 
+      // Decorators are visited after the functions they name — a class body is
+      // walked long after the top-level factory it decorates with — so the
+      // answer is computed from the whole tree rather than accumulated during
+      // the walk, and memoised because most files hold no decorator at all.
+      let decoratedDeclarations: Set<TSESTree.Node> | undefined;
+      const declarationsNamedByDecorators = (): Set<TSESTree.Node> => {
+        decoratedDeclarations ??= decoratorReferencedDeclarations(
+          sourceCode,
+          visitorKeys,
+        );
+        return decoratedDeclarations;
+      };
+
+      /**
+       * True when the annotation is what makes the function usable in a
+       * decorator position. TypeScript infers the concrete closure the factory
+       * returns — `() => void` for `return () => {};` — which declares fewer
+       * parameters than a decoration site passes, so removing the annotation
+       * turns every `@Factory()` use into TS1329 (#2014).
+       *
+       * The question is answered syntactically. A `RuleTester` fixture carries
+       * no `parserOptions.project`, so a type-based answer would be untestable
+       * and would silently no-op wherever consumers lint without a program.
+       */
+      function isDecoratorFactory(
+        node: TSESTree.Node,
+        returnType: TSESTree.TSTypeAnnotation,
+      ): boolean {
+        if (namesDecoratorType(returnType.typeAnnotation)) return true;
+
+        const declarations = declarationsNamedByDecorators();
+        if (declarations.size === 0) return false;
+
+        if (declarations.has(node)) return true;
+
+        // `const Log = (): Cached => ...` is bound by its declarator, which is
+        // what a decorator's identifier resolves to.
+        const parent = node.parent;
+        return (
+          parent?.type === AST_NODE_TYPES.VariableDeclarator &&
+          declarations.has(parent)
+        );
+      }
+
       /**
        * True when TypeScript cannot infer the return type because the function
        * is referenced from within its own return expression (TS7023). Removing
@@ -1470,6 +1633,7 @@ export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
             isTypeGuardFunction(node) ||
             isReadonlyWideningReturnType(returnType) ||
             isAllowedVoidReturnType(returnType) ||
+            isDecoratorFactory(node, returnType) ||
             (mergedOptions.allowRecursiveFunctions &&
               isRecursiveFunction(node)) ||
             isReturnTypeRequiredByRecursion(node)
@@ -1492,6 +1656,7 @@ export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
             isTypeGuardFunction(node) ||
             isReadonlyWideningReturnType(returnType) ||
             isAllowedVoidReturnType(returnType) ||
+            isDecoratorFactory(node, returnType) ||
             (mergedOptions.allowRecursiveFunctions &&
               isRecursiveFunction(node)) ||
             isReturnTypeRequiredByRecursion(node)
@@ -1510,6 +1675,7 @@ export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
             isTypeGuardFunction(node) ||
             isReadonlyWideningReturnType(returnType) ||
             isAllowedVoidReturnType(returnType) ||
+            isDecoratorFactory(node, returnType) ||
             isReturnTypeRequiredByRecursion(node)
           ) {
             return;
@@ -1544,6 +1710,7 @@ export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
             isTypeGuardFunction(node.value) ||
             isReadonlyWideningReturnType(returnType) ||
             isAllowedVoidReturnType(returnType) ||
+            isDecoratorFactory(node, returnType) ||
             (mergedOptions.allowAbstractMethodSignatures &&
               isInterfaceOrAbstractMethodSignature(node)) ||
             isReturnTypeRequiredByRecursion(node)

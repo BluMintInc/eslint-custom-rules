@@ -3,6 +3,7 @@ import { mkdtempSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { Linter, Rule } from 'eslint';
+import * as ts from 'typescript';
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import * as tsParser from '@typescript-eslint/parser';
 import { ruleTesterTs } from '../utils/ruleTester';
@@ -545,6 +546,17 @@ ruleTesterTs.run('no-explicit-return-type', noExplicitReturnType, {
       filename: 'deleteUser.f.ts',
       options: [{ allowFirestoreFunctionFiles: true }],
     },
+
+    // valid — the annotation is load-bearing at the decoration site
+    `function Log(): MethodDecorator {
+  return () => {};
+}
+class E {
+  @Log()
+  async compute() {
+    return 1;
+  }
+}`,
   ],
   invalid: [
     // Basic function with explicit return type
@@ -4175,6 +4187,581 @@ export function factory() {
       ],
     },
   ],
+});
+
+// A decorator factory's return-type annotation is the one shape where the
+// annotation is WIDER than what inference produces rather than a restatement of
+// it (#2014). `MethodDecorator` declares three parameters, `return () => {}`
+// infers `() => void`, and a decoration site passes what the declared signature
+// promises — so stripping the annotation turns every `@Factory()` use into
+// TS1329. The question is answered syntactically, from the annotation's own
+// name and from the decorators the file writes, because a `RuleTester` fixture
+// carries no `parserOptions.project` and a type-based answer would silently
+// no-op.
+ruleTesterTs.run('no-explicit-return-type', noExplicitReturnType, {
+  valid: [
+    // Each of TypeScript's four built-in decorator signatures.
+    `
+function Cache(): ClassDecorator {
+  return () => {};
+}
+@Cache()
+class Registry {}
+`,
+    `
+function Track(): PropertyDecorator {
+  return () => {};
+}
+class Metrics {
+  @Track()
+  hits = 0;
+}
+`,
+    `
+function Inject(): ParameterDecorator {
+  return () => {};
+}
+class Service {
+  constructor(@Inject() dependency: unknown) {}
+}
+`,
+    // The arrow spelling of the same factory.
+    `
+const Log = (): MethodDecorator => {
+  return () => {};
+};
+class E {
+  @Log()
+  compute() {
+    return 1;
+  }
+}
+`,
+    // The concise-bodied arrow spelling, whose annotation sits inside the
+    // restricted production the fixer otherwise rewrites.
+    'const Log = (): MethodDecorator => () => {};',
+    // The function-expression spelling, anonymous and named.
+    `
+const Log = function (): MethodDecorator {
+  return () => {};
+};
+`,
+    `
+const Log = function log(): ClassDecorator {
+  return () => {};
+};
+`,
+    // A qualified annotation names the type its right-most segment names, so a
+    // namespace-imported decorator type is the same carve-out.
+    `
+function Log(): ts.MethodDecorator {
+  return () => {};
+}
+`,
+    `
+function Log(): lib.ts.ClassDecorator {
+  return () => {};
+}
+`,
+    // A generic factory: the type parameter changes nothing about the position
+    // the returned value has to satisfy.
+    `
+function Log<T>(): MethodDecorator {
+  return () => {};
+}
+`,
+    `
+function Log<T extends object>(config: T): PropertyDecorator {
+  return () => config;
+}
+`,
+    // A factory usable in more than one position still owes every site the
+    // declared shape.
+    `
+function Log(): ClassDecorator | MethodDecorator {
+  return () => {};
+}
+`,
+    `
+function Log(): ClassDecorator & MethodDecorator {
+  return () => {};
+}
+`,
+    // A factory reached through a class, static and instance.
+    `
+class Decorators {
+  static log(): MethodDecorator {
+    return () => {};
+  }
+}
+`,
+    `
+class Decorators {
+  public log(): PropertyDecorator {
+    return () => {};
+  }
+}
+`,
+    // A factory reached through an object literal.
+    `
+const decorators = {
+  log(): MethodDecorator {
+    return () => {};
+  },
+};
+`,
+    // The annotation alone decides: a factory exported for another file to
+    // decorate with has no decoration site here.
+    `
+export function Log(): MethodDecorator {
+  return () => {};
+}
+`,
+    // The secondary guard: a factory annotated with a user-defined decorator
+    // type, which no name test can recognise, is exempt because a decorator in
+    // this file calls it.
+    `
+type Cached = (target: object, key: string, descriptor: PropertyDescriptor) => void;
+function Memoize(): Cached {
+  return () => {};
+}
+class Store {
+  @Memoize()
+  read() {
+    return 1;
+  }
+}
+`,
+    // The same, in the arrow spelling and as a class decorator.
+    `
+type Constructed = (target: new (...args: unknown[]) => object) => void;
+const Injectable = (): Constructed => {
+  return () => {};
+};
+@Injectable()
+class Service {}
+`,
+    // A curried factory: `@Log()()` calls the outer factory too.
+    `
+type Applied = (target: object, key: string) => void;
+function Log(): () => Applied {
+  return () => () => {};
+}
+class E {
+  @Log()()
+  compute() {
+    return 1;
+  }
+}
+`,
+    // A factory whose decoration site is a parameter.
+    `
+type Injected = (target: object, key: string | undefined, index: number) => void;
+function Inject(token: string): Injected {
+  return () => {};
+}
+class Service {
+  constructor(@Inject('db') database: unknown) {}
+}
+`,
+    // Nothing to strip: a factory with no annotation is unaffected by either
+    // guard, and the rule stays silent for the reason it always did.
+    `
+function Log() {
+  return () => {};
+}
+class E {
+  @Log()
+  compute() {
+    return 1;
+  }
+}
+`,
+  ],
+  invalid: [
+    // A user type whose name merely CONTAINS a decorator type name is an
+    // unrelated type: the guard matches the resolved right-most identifier, not
+    // a substring of the printed annotation.
+    {
+      code: `
+function buildConfig(): MyMethodDecoratorConfig {
+  return config;
+}
+`,
+      output: `
+function buildConfig() {
+  return config;
+}
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'function "buildConfig"' },
+        },
+      ],
+    },
+    {
+      code: `
+function buildConfig(): MethodDecoratorOptions {
+  return config;
+}
+`,
+      output: `
+function buildConfig() {
+  return config;
+}
+`,
+      errors: [{ messageId: 'noExplicitReturnTypeInferable' }],
+    },
+    // A VALUE named after a decorator type is not an annotation naming one.
+    {
+      code: `
+const MethodDecorator = { name: 'log' };
+function pickName(): string {
+  return MethodDecorator.name;
+}
+`,
+      output: `
+const MethodDecorator = { name: 'log' };
+function pickName() {
+  return MethodDecorator.name;
+}
+`,
+      errors: [{ messageId: 'noExplicitReturnTypeInferable' }],
+    },
+    // `typeof X` queries a value's type rather than naming the decorator type,
+    // and inference reproduces it exactly.
+    {
+      code: `
+const MethodDecorator = () => {};
+function pick(): typeof MethodDecorator {
+  return MethodDecorator;
+}
+`,
+      output: `
+const MethodDecorator = () => {};
+function pick() {
+  return MethodDecorator;
+}
+`,
+      errors: [{ messageId: 'noExplicitReturnTypeInferable' }],
+    },
+    // The guard reads the annotation, not the function's own name.
+    {
+      code: `
+function MethodDecorator(): number {
+  return 1;
+}
+`,
+      output: `
+function MethodDecorator() {
+  return 1;
+}
+`,
+      errors: [{ messageId: 'noExplicitReturnTypeInferable' }],
+    },
+    // An ordinary function returning a function is the shape the carve-out most
+    // resembles, and it stays reported: nothing about a decoration site
+    // constrains it.
+    {
+      code: `
+function makeAdder(base: number): (value: number) => number {
+  return (value: number) => value + base;
+}
+`,
+      output: `
+function makeAdder(base: number) {
+  return (value: number) => value + base;
+}
+`,
+      errors: [{ messageId: 'noExplicitReturnTypeInferable' }],
+    },
+    // A BARE decorator names the decorator itself, not a factory. Its
+    // annotation restates what inference produces, so proximity to a decorator
+    // does not buy it an exemption.
+    {
+      code: `
+function Freeze<T extends Function>(target: T): T {
+  Object.freeze(target);
+  return target;
+}
+@Freeze
+class Widget {}
+`,
+      output: `
+function Freeze<T extends Function>(target: T) {
+  Object.freeze(target);
+  return target;
+}
+@Freeze
+class Widget {}
+`,
+      errors: [{ messageId: 'noExplicitReturnTypeInferable' }],
+    },
+    // The exemption is per function, not per file: a file containing a
+    // decorator factory keeps every report its other functions earn.
+    {
+      code: `
+function Log(): MethodDecorator {
+  return () => {};
+}
+function describeLog(): string {
+  return 'log';
+}
+`,
+      output: `
+function Log(): MethodDecorator {
+  return () => {};
+}
+function describeLog() {
+  return 'log';
+}
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'function "describeLog"' },
+        },
+      ],
+    },
+    // A same-named binding elsewhere cannot silence a function no decorator
+    // reaches: the secondary guard resolves the decorator's identifier through
+    // the scope manager rather than comparing names.
+    {
+      code: `
+function outer() {
+  function Memoize(): () => void {
+    return () => {};
+  }
+  return Memoize;
+}
+class Store {
+  @Memoize()
+  read() {
+    return 1;
+  }
+}
+`,
+      output: `
+function outer() {
+  function Memoize() {
+    return () => {};
+  }
+  return Memoize;
+}
+class Store {
+  @Memoize()
+  read() {
+    return 1;
+  }
+}
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'function "Memoize"' },
+        },
+      ],
+    },
+  ],
+});
+
+/**
+ * The decorator carve-out's oracle is the COMPILER, not the rule: what makes
+ * the annotation load-bearing is a diagnostic at the decoration SITE, several
+ * lines from the annotation the fixer deletes and invisible to every report the
+ * rule emits. Both forms therefore go through `tsc` with the settings this
+ * plugin's consumers compile under, so "no fix emitted" is pinned to the
+ * difference between a compiling file and TS1329.
+ */
+describe('no-explicit-return-type decorator factories', () => {
+  const RULE_ID = '@blumintinc/blumint/no-explicit-return-type';
+  const VIRTUAL_DIR = '/virtual-decorator-factory';
+
+  const fixWith = (code: string) => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      RULE_ID,
+      noExplicitReturnType as unknown as Rule.RuleModule,
+    );
+    return linter.verifyAndFix(
+      code,
+      {
+        parser: '@typescript-eslint/parser',
+        parserOptions: {
+          ecmaVersion: 2022 as const,
+          sourceType: 'module' as const,
+        },
+        rules: { [RULE_ID]: 'error' },
+      },
+      'x.ts',
+    );
+  };
+
+  /**
+   * The diagnostic codes each snippet draws, compiled as one program because a
+   * program per snippet pays for a lib load per snippet.
+   */
+  const compile = (snippets: Record<string, string>): Map<string, string[]> => {
+    const options: ts.CompilerOptions = {
+      noEmit: true,
+      strict: true,
+      target: ts.ScriptTarget.ES2022,
+      module: ts.ModuleKind.ESNext,
+      moduleResolution: ts.ModuleResolutionKind.NodeJs,
+      skipLibCheck: true,
+      types: [],
+      experimentalDecorators: true,
+    };
+
+    const sources = new Map(
+      Object.entries(snippets).map(([label, text]) => [
+        `${VIRTUAL_DIR}/${label}.ts`,
+        text,
+      ]),
+    );
+
+    const host = ts.createCompilerHost(options, true);
+    const getSourceFileFromDisk = host.getSourceFile.bind(host);
+    host.getSourceFile = (fileName, languageVersion, onError, shouldCreate) => {
+      const text = sources.get(fileName);
+      return text === undefined
+        ? getSourceFileFromDisk(
+            fileName,
+            languageVersion,
+            onError,
+            shouldCreate,
+          )
+        : ts.createSourceFile(
+            fileName,
+            text,
+            languageVersion,
+            true,
+            ts.ScriptKind.TS,
+          );
+    };
+    const fileExistsOnDisk = host.fileExists.bind(host);
+    host.fileExists = (fileName) =>
+      sources.has(fileName) || fileExistsOnDisk(fileName);
+    const readFileFromDisk = host.readFile.bind(host);
+    host.readFile = (fileName) =>
+      sources.has(fileName)
+        ? sources.get(fileName)
+        : readFileFromDisk(fileName);
+
+    const program = ts.createProgram([...sources.keys()], options, host);
+    const byLabel = new Map<string, string[]>();
+    for (const [fileName] of sources) {
+      const sourceFile = program.getSourceFile(fileName) as ts.SourceFile;
+      const label = fileName.slice(VIRTUAL_DIR.length + 1).replace(/\.ts$/, '');
+      byLabel.set(
+        label,
+        [
+          ...program.getSyntacticDiagnostics(sourceFile),
+          ...program.getSemanticDiagnostics(sourceFile),
+        ].map((diagnostic) => `TS${diagnostic.code}`),
+      );
+    }
+    return byLabel;
+  };
+
+  const FACTORY = `function Log(): MethodDecorator {
+  return () => {};
+}
+
+class E {
+  @Log()
+  async compute() {
+    return 1;
+  }
+}
+
+export { E };
+`;
+
+  const STRIPPED = FACTORY.replace(': MethodDecorator', '');
+
+  // The shape the carve-out must NOT reach: a function returning a function
+  // that no decoration site consumes. Its annotation is a restatement, and both
+  // forms compile.
+  const PLAIN_FACTORY = `function makeAdder(base: number): (value: number) => number {
+  return (value: number) => value + base;
+}
+
+export { makeAdder };
+`;
+
+  it('leaves a decorator factory byte-identical under --fix', () => {
+    const { output, fixed } = fixWith(FACTORY);
+
+    expect(fixed).toBe(false);
+    expect(output).toBe(FACTORY);
+    // The annotation's survival is the property under test, not a side effect.
+    expect(output).toContain(': MethodDecorator');
+  });
+
+  it('breaks the decoration site once the annotation is gone', () => {
+    const diagnostics = compile({
+      annotated: FACTORY,
+      stripped: STRIPPED,
+      plain: PLAIN_FACTORY,
+      plainStripped: PLAIN_FACTORY.replace(': (value: number) => number', ''),
+    });
+
+    // The reported break, at the decoration site rather than the annotation.
+    expect(diagnostics.get('stripped')).toContain('TS1329');
+    // Both controls: the exempt form compiles, and so does the strip of a
+    // function the carve-out has no business reaching — otherwise "declines on
+    // decorator factories" could just mean "declines on functions returning
+    // functions".
+    expect(diagnostics.get('annotated')).toEqual([]);
+    expect(diagnostics.get('plain')).toEqual([]);
+    expect(diagnostics.get('plainStripped')).toEqual([]);
+  });
+
+  it('still strips a function no decorator uses', () => {
+    const { output, fixed } = fixWith(PLAIN_FACTORY);
+
+    expect(fixed).toBe(true);
+    expect(output).toBe(
+      PLAIN_FACTORY.replace(': (value: number) => number', ''),
+    );
+    // Converged: re-running the fixer finds nothing left to change.
+    expect(fixWith(output).output).toBe(output);
+  });
+
+  // The user-defined decorator type the name test cannot see, end to end.
+  it('leaves a factory a decorator in the file calls byte-identical', () => {
+    const source = `type Cached = (
+  target: object,
+  key: string,
+  descriptor: PropertyDescriptor,
+) => void;
+
+function Memoize(): Cached {
+  return () => {};
+}
+
+class Store {
+  @Memoize()
+  read() {
+    return 1;
+  }
+}
+
+export { Store };
+`;
+    const { output, fixed } = fixWith(source);
+
+    expect(fixed).toBe(false);
+    expect(output).toBe(source);
+    expect(compile({ aliased: source }).get('aliased')).toEqual([]);
+  });
 });
 
 /**

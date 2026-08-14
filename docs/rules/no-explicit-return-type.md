@@ -81,6 +81,31 @@ So by default (`allowVoidReturnTypes`) the rule leaves these annotations alone o
 
 Signature-only declarations are outside this allowance: an interface method, an abstract method or a `declare function` has no body to infer from, so its annotation is mandatory rather than redundant, it is reported only when its own `allow*` option is turned off, and no fixer ever strips it.
 
+### Decorator factories: the annotation is what makes the factory usable
+
+A function whose return value is applied as a decorator is the one shape where the annotation is **wider** than what inference produces rather than a restatement of it. `MethodDecorator` declares three parameters; `return () => {};` infers `() => void`. A decoration site passes what the declared signature promises, so removing the annotation is not meaning-preserving — every use of the factory becomes `TS1329: 'Log()' accepts too few arguments to be used as a decorator here`:
+
+```ts
+// Not reported: the annotation is load-bearing at the decoration site.
+function Log(): MethodDecorator {
+  return () => {};
+}
+
+class Reporter {
+  @Log()
+  compute() {
+    return 1;
+  }
+}
+```
+
+The question is answered syntactically, since a decorator factory is recognisable without type information:
+
+- The annotation names one of TypeScript's decorator types — `ClassDecorator`, `MethodDecorator`, `PropertyDecorator`, `ParameterDecorator` — including through a qualified name (`ts.MethodDecorator`) and as a member of a union or intersection. The match is on the resolved right-most identifier, so an unrelated user type such as `MyMethodDecoratorConfig` is still reported.
+- Or a decorator in the same file **calls** the function: `@Memoize()` exempts the `Memoize` its identifier resolves to, which covers a factory annotated with a user-defined decorator type that no name can identify. The identifier is resolved through scope analysis, so a same-named binding elsewhere cannot silence a function no decorator reaches.
+
+A **bare** `@Freeze` names the decorator itself rather than a factory, and such a function's annotation restates exactly what inference produces, so it stays reported.
+
 ### The fix takes the bindings it strands with it
 
 An annotation is often the only thing in a file that names its type. Deleting it on its own leaves the binding that type came from — an import specifier, a local `type` alias — bound to nothing, so a file that linted clean fails `no-unused-vars` afterwards, and a build with `noUnusedLocals` fails outright. Because the rule's own report is resolved by the fix, nothing re-reports the debt.
@@ -170,6 +195,7 @@ Limitations, all of which err toward silence or toward the status quo:
 - Mutual recursion is resolved syntactically, by name through the scope chain. A pair linked through a value this rule cannot follow — a re-export, a property of an imported object, a dynamically keyed lookup — is still reported.
 - Annotating *either* member of a mutually recursive pair is enough for TypeScript; the rule exempts both rather than picking one.
 - A function with no resolvable name (an anonymous callback) cannot be self-referential by name, so it is always reported.
+- A decorator factory is recognised syntactically. A factory annotated with a user-defined decorator type and used only in another file matches neither guard, so it is still reported; an owner-qualified decoration site (`@registry.log()`) names a property rather than a binding, and matching it by property name would silence the rule on every unrelated method of that name, so it is not matched either.
 - An annotation whose removal would strand a declaration the fixer cannot delete is reported without a fix rather than fixed halfway.
 
 ### The fix carries the comments the annotation was sitting among
