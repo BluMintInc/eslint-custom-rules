@@ -73,12 +73,21 @@ const configWith = (
     rules,
   } as Linter.Config);
 
+/**
+ * Reports per messageId, COUNTED rather than collected into a set.
+ *
+ * A set answers "does this messageId still appear at all", which a fixture
+ * carrying several violations of one kind can satisfy while most of them go
+ * dark. `enforce-firestore-doc-ref-generic` lost 2 of 3 `missingGeneric`
+ * reports to an `as const` and this guard stayed green, because the third
+ * report kept the messageId present on both sides (#2007, #2010).
+ */
 const reportsOf = (
   rule: string,
   code: string,
   testCase: FixtureCase,
   filename: string,
-): Set<string> | null => {
+): Map<string, number> | null => {
   const id = PREFIX + rule;
   let messages: Linter.LintMessage[];
   try {
@@ -92,11 +101,15 @@ const reportsOf = (
   }
   // A fatal parse reports nothing else, so it would read as rule silence.
   if (messages.some((m) => m.fatal)) return null;
-  return new Set(
-    messages
-      .filter((m) => m.ruleId === id)
-      .map((m) => m.messageId || m.message),
-  );
+  const counts = new Map<string, number>();
+  for (const message of messages) {
+    // Filtered by `ruleId` first: a rule-not-found error reads as both silence
+    // and inflation if it reaches the counter.
+    if (message.ruleId !== id) continue;
+    const key = message.messageId || message.message;
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  return counts;
 };
 
 const culpritRules = () => {
@@ -167,7 +180,9 @@ const probeCase = (rule: string, testCase: FixtureCase): ProbeResult => {
   if (!after) return { ...blank(), reported: true, asserted: true };
 
   const base = { reported: true, asserted: true };
-  const lost = [...before].filter((id) => !after.has(id));
+  const lost = [...before.entries()]
+    .filter(([id, count]) => count > (after.get(id) || 0))
+    .map(([id]) => id);
   if (!lost.length) return { ...base, findings: [], rewritten: 1 };
 
   /**
@@ -183,7 +198,12 @@ const probeCase = (rule: string, testCase: FixtureCase): ProbeResult => {
     ...base,
     rewritten: 1,
     findings: lost
-      .filter((messageId) => restored.has(messageId))
+      // Restored means the count RECOVERS once the assertion goes, not merely
+      // that the messageId reappears — the same partial-loss blindness.
+      .filter(
+        (messageId) =>
+          (restored.get(messageId) || 0) > (after.get(messageId) || 0),
+      )
       .map((messageId) => ({
         rule,
         messageId,
@@ -531,6 +551,36 @@ const CONTROLS = [
       },
     },
   },
+  {
+    /**
+     * The PARTIAL loss, which is the granularity this guard reads at.
+     *
+     * Same blind classifier as the first control, driven over a fixture with
+     * two subjects where the assertion only reaches one. Both reports carry the
+     * same messageId, so a set-differencing comparison sees `{m}` on both sides
+     * and finds nothing — which is exactly how a rule losing 2 of its 3 reports
+     * stayed green here (#2007, #2010). Only a count catches it.
+     */
+    name: 'control-asconst-partial',
+    expect: true,
+    code:
+      'export const styles = { margin: 8 };\n' +
+      'export function build() {\n' +
+      '  const local = { padding: 4 };\n' +
+      '  return local;\n' +
+      '}\n',
+    rule: {
+      meta: { type: 'problem', schema: [], messages: { m: 'no margin' } },
+      create(context: any) {
+        return {
+          VariableDeclarator(node: any) {
+            if (node.init?.type !== 'ObjectExpression') return;
+            context.report({ node, messageId: 'm' });
+          },
+        };
+      },
+    },
+  },
 ] as const;
 
 for (const control of CONTROLS) {
@@ -540,12 +590,12 @@ for (const control of CONTROLS) {
 /** A module-scope object constant, which `global-const-style` rewrites. */
 const CONTROL_CODE = 'export const styles = { margin: 8 };\n';
 
-const controlCase: FixtureCase = {
-  code: CONTROL_CODE,
+const controlCaseFor = (code: string): FixtureCase => ({
+  code,
   tester: 'ruleTesterTs',
   origin: 'planted control',
   bucket: 'invalid',
-};
+});
 
 console.log(
   [
@@ -689,13 +739,37 @@ describe("a sibling fixer's assertion must not silence a rule", () => {
 });
 
 describe('the detector is load-bearing', () => {
-  it.each(CONTROLS.map((c) => [c.name, c.expect] as const))(
-    'control %s yields %s',
-    (name, expected) => {
-      const result = probeCase(name, controlCase);
-      // A control the probe never actually rewrote would prove nothing.
-      expect(result.rewritten).toBe(1);
-      expect(result.findings.length > 0).toBe(expected);
-    },
-  );
+  it.each(
+    CONTROLS.map(
+      (c) =>
+        [c.name, c.expect, ('code' in c && c.code) || CONTROL_CODE] as const,
+    ),
+  )('control %s yields %s', (name, expected, code) => {
+    const result = probeCase(name, controlCaseFor(code));
+    // A control the probe never actually rewrote would prove nothing.
+    expect(result.rewritten).toBe(1);
+    expect(result.findings.length > 0).toBe(expected);
+  });
+
+  /**
+   * The partial control must be partial. If the assertion happened to reach
+   * BOTH of its subjects the row above would still pass, but it would be
+   * re-testing the total-loss case the first control already covers, and the
+   * counting granularity this guard now reads at would go unexercised.
+   */
+  it('loses only part of the partial control, which a set comparison cannot see', () => {
+    const partial = CONTROLS.find((c) => c.name === 'control-asconst-partial')!;
+    const code = ('code' in partial && partial.code) || CONTROL_CODE;
+    const testCase = controlCaseFor(code);
+    const filename = defaultFilenameFor(testCase);
+    const before = reportsOf(partial.name, code, testCase, filename)!;
+    const rewritten = afterCulpritFix(testCase, filename)!;
+    const after = reportsOf(partial.name, rewritten, testCase, filename)!;
+
+    expect(before.get('m')).toBe(2);
+    expect(after.get('m')).toBe(1);
+    // The messageId survives on both sides, so set-differencing finds nothing —
+    // the exact blindness this change removes.
+    expect([...before.keys()].filter((id) => !after.has(id))).toEqual([]);
+  });
 });
