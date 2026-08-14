@@ -375,6 +375,14 @@ const UNDRIVEN: Record<string, UndrivenCause> = {
   'enforce-transform-memoization': 'noAssertionAdded',
   'enforce-typescript-markdown-code-blocks': 'noTsFixture',
   'fast-deep-equal-over-microdiff': 'noAssertionAdded',
+  /**
+   * Its corpus is almost entirely `const arr = []; arr.push(x)`, and
+   * `global-const-style` — the only culprit that reached it — declines the
+   * assertion on a binding that is mutated later, because `as const` types the
+   * value `readonly` and the rewrite was turning those fixtures into TS2339
+   * (#2013). No assertion lands on a fixture this rule reports on any more.
+   */
+  'flatten-push-calls': 'noAssertionAdded',
   'generic-starts-with-t': 'noAssertionAdded',
   'key-only-outermost-element': 'noAssertionAdded',
   'memo-compare-deeply-complex-props': 'noAssertionAdded',
