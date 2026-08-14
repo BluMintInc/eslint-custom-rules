@@ -102,6 +102,13 @@ faithfully:
   no overrides argument).
 - A flagged literal whose partial copy is not reachable as a direct property
   value, so no faithful `cloneDeep` call can replace it.
+- A literal carrying a `const` assertion, for example
+  `const result = { ...a, nested: { ...a.nested, value: 42 } } as const;`. A
+  `const` assertion applies only to a literal, so leaving it on the emitted call
+  is TS1355. Other assertions are legal on a call expression and keep their fix:
+  `as Foo` and `satisfies Foo` on the literal, and `as const` on an *enclosing*
+  literal such as `{ key: { ...a, nested: { ...a.nested, value: 42 } } } as const`,
+  where the rewrite happens inside and the assertion still has a literal.
 
 Defensive spellings of the base path are recognized and dropped safely:
 `...(base?.x ?? {})`, `...base.x!` and `...base['x']` all mirror `base.x`. Array,

@@ -34,6 +34,47 @@ function isCloneDeepModule(source: string): boolean {
   );
 }
 
+function isConstAssertion(node: TSESTree.Node): boolean {
+  return (
+    node.type === AST_NODE_TYPES.TSAsExpression &&
+    node.typeAnnotation.type === AST_NODE_TYPES.TSTypeReference &&
+    node.typeAnnotation.typeName.type === AST_NODE_TYPES.Identifier &&
+    node.typeAnnotation.typeName.name === 'const'
+  );
+}
+
+/**
+ * A `const` assertion is legal only on a literal, so leaving one wrapped around
+ * the emitted `cloneDeep(...)` call yields TS1355 and turns a compiling file
+ * into a broken one (#2011). The fix is declined there rather than absorbing
+ * the assertion, which is the conservative reading of a `const` the author
+ * asked for on a value this rule replaces.
+ *
+ * The whole assertion chain is walked because each of its links still applies
+ * to the emitted call: `as Foo as const`, `satisfies Foo as const` and
+ * `! as const` are TS1355 just the same. The walk stops at the first parent
+ * that is not an assertion, which keeps `as const` on an ENCLOSING literal
+ * fixable — that assertion still has a literal to apply to.
+ *
+ * Only a `const` assertion is disqualifying: `as Foo` and `satisfies Foo` are
+ * legal on a call expression and keep their fix.
+ */
+function isConstAsserted(node: TSESTree.Node): boolean {
+  let current: TSESTree.Node | undefined = node.parent;
+  while (
+    current &&
+    (current.type === AST_NODE_TYPES.TSAsExpression ||
+      current.type === AST_NODE_TYPES.TSSatisfiesExpression ||
+      current.type === AST_NODE_TYPES.TSNonNullExpression)
+  ) {
+    if (isConstAssertion(current)) {
+      return true;
+    }
+    current = current.parent;
+  }
+  return false;
+}
+
 export const preferCloneDeep = createRule<[], MessageIds>({
   name: 'prefer-clone-deep',
   meta: {
@@ -551,6 +592,9 @@ export const preferCloneDeep = createRule<[], MessageIds>({
                 }
 
                 for (const target of targets) {
+                  if (isConstAsserted(target)) {
+                    return null;
+                  }
                   const call = buildCloneDeepCall(target);
                   if (call === null) {
                     return null;

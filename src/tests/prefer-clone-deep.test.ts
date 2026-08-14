@@ -906,5 +906,147 @@ const merged = cloneDeep(base, {
   }
 } as const);`,
     },
+    // Regression #2011: a `const` assertion is legal only on a literal, so
+    // wrapping it around the emitted call is TS1355 and turns a compiling file
+    // into a broken one. The report stands; the fix is declined.
+    {
+      code: `${CLONE_DEEP_IMPORT}
+const result = {
+  ...baseObj,
+  data: {
+    ...baseObj.data,
+    nested: {
+      ...baseObj.data.nested,
+      value: 42
+    }
+  }
+} as const;`,
+      errors: [expectPreferCloneDeepError],
+      output: null,
+    },
+    // Regression #2011: the assertion is declined wherever it sits relative to
+    // the literal, so the single-line spelling is declined too.
+    {
+      code: `${CLONE_DEEP_IMPORT}
+const result = { ...a, nested: { ...a.nested, value: 42 } } as const;`,
+      errors: [expectPreferCloneDeepError],
+      output: null,
+    },
+    // Regression #2011: the declaration kind does not change the hazard.
+    {
+      code: `${CLONE_DEEP_IMPORT}
+let result = { ...a, b: { ...a.b, c: 1 } } as const;`,
+      errors: [expectPreferCloneDeepError],
+      output: null,
+    },
+    {
+      code: `${CLONE_DEEP_IMPORT}
+var result = { ...a, b: { ...a.b, c: 1 } } as const;`,
+      errors: [expectPreferCloneDeepError],
+      output: null,
+    },
+    // Regression #2011: a returned literal carries the same assertion.
+    {
+      code: `${CLONE_DEEP_IMPORT}
+function build() {
+  return { ...a, b: { ...a.b, c: 1 } } as const;
+}`,
+      errors: [expectPreferCloneDeepError],
+      output: null,
+    },
+    // Regression #2011: parentheses are not AST nodes, so the assertion is
+    // still the literal's parent and is still declined.
+    {
+      code: `${CLONE_DEEP_IMPORT}
+const result = ({ ...a, b: { ...a.b, c: 1 } } as const);`,
+      errors: [expectPreferCloneDeepError],
+      output: null,
+    },
+    // Regression #2011: the rewritten literal is the inner one here, and it is
+    // the operand of the assertion, so the fix is declined.
+    {
+      code: `${CLONE_DEEP_IMPORT}
+const result = { key: ({ ...a, nested: { ...a.nested, value: 42 } } as const) };`,
+      errors: [expectPreferCloneDeepError],
+      output: null,
+    },
+    // Regression #2011: every assertion in the chain still applies to the
+    // emitted call, so a `const` assertion behind another assertion is TS1355
+    // just the same.
+    {
+      code: `${CLONE_DEEP_IMPORT}
+const result = { ...a, b: { ...a.b, c: 1 } } as Foo as const;`,
+      errors: [expectPreferCloneDeepError],
+      output: null,
+    },
+    {
+      code: `${CLONE_DEEP_IMPORT}
+const result = { ...a, b: { ...a.b, c: 1 } } satisfies Foo as const;`,
+      errors: [expectPreferCloneDeepError],
+      output: null,
+    },
+    // Regression #2011: `as Foo` is legal on a call expression, so it keeps its
+    // fix — declining it would be a regression.
+    {
+      code: `${CLONE_DEEP_IMPORT}
+const result = { ...a, nested: { ...a.nested, value: 42 } } as Foo;`,
+      errors: [expectPreferCloneDeepError],
+      output: `${CLONE_DEEP_IMPORT}
+const result = cloneDeep(a, {
+  nested: {
+    value: 42
+  }
+} as const) as Foo;`,
+    },
+    // Regression #2011: so is `satisfies Foo`.
+    {
+      code: `${CLONE_DEEP_IMPORT}
+const result = { ...a, nested: { ...a.nested, value: 42 } } satisfies Foo;`,
+      errors: [expectPreferCloneDeepError],
+      output: `${CLONE_DEEP_IMPORT}
+const result = cloneDeep(a, {
+  nested: {
+    value: 42
+  }
+} as const) satisfies Foo;`,
+    },
+    // Regression #2011: an assertion on an ENCLOSING literal survives the
+    // rewrite legally, because it still applies to an object literal. The
+    // rewritten literal is the inner one, which carries no assertion.
+    {
+      code: `${CLONE_DEEP_IMPORT}
+const result = { key: { ...a, nested: { ...a.nested, value: 42 } } } as const;`,
+      errors: [expectPreferCloneDeepError],
+      output: `${CLONE_DEEP_IMPORT}
+const result = { key: cloneDeep(a, {
+  nested: {
+    value: 42
+  }
+} as const) } as const;`,
+    },
+    // Regression #2011 control: the deeply nested shape from the issue with no
+    // outer assertion still fixes normally.
+    {
+      code: `${CLONE_DEEP_IMPORT}
+const result = {
+  ...baseObj,
+  data: {
+    ...baseObj.data,
+    nested: {
+      ...baseObj.data.nested,
+      value: 42
+    }
+  }
+};`,
+      errors: [expectPreferCloneDeepError],
+      output: `${CLONE_DEEP_IMPORT}
+const result = cloneDeep(baseObj, {
+  data: {
+    nested: {
+      value: 42
+    }
+  }
+} as const);`,
+    },
   ],
 });
