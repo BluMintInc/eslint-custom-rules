@@ -398,7 +398,7 @@ The import is resolved as follows:
 | Everywhere else | `src/util/routing/queryKeys` | The root tsconfig `paths` and the Jest `moduleNameMapper` both map `src/*`. |
 
   The `../` count comes from the linted file's own depth below the root that owns its `src/` segment, so `src/index.tsx` imports `./util/routing/queryKeys` and a sibling in `src/util/routing/` imports `./queryKeys`. An `@/`-aliased specifier is never emitted: that alias is declared in no tsconfig, bundler or Jest config, so it resolves nowhere.
-* **Several keys in one file** — every substituted constant lands in a single import.
+* **Several keys in one file** — every substitution carries the import for its own key, and the keys converge on one import across the passes `eslint --fix` makes: the first fix opens the import, and each later one extends it with its own specifier. Each fix therefore stands on its own. A fix that left its import to a sibling's fix would strand its constant the moment that sibling lost a range conflict to another rule, which is how a `--fix` run emitted an undefined identifier (#2012). The cost of the guarantee is that two such fixes both reach for the import declaration, so a single pass applies one of them.
 
 The fix is declined (the violation is still reported, but nothing is rewritten) when:
 
@@ -410,7 +410,7 @@ Note: the fix is gated on the key's **value**, not on the notation that spells i
 
 ### Interaction with inline disable comments
 
-The single import is attached to the fix of the first violation that is **not** suppressed by an inline `eslint-disable` directive, and it names only the constants the surviving substitutions use. Suppressing one key therefore neither strands the other rewritten keys without an import nor leaves an unused specifier behind:
+A violation suppressed by an inline `eslint-disable` directive is rewritten by nothing, so it contributes no specifier: the import names only the constants the surviving substitutions use. Suppressing one key therefore neither strands the other rewritten keys without an import nor leaves an unused specifier behind:
 
 ```tsx
 function MatchComponent() {
