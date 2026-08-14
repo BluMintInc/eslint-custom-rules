@@ -125,6 +125,51 @@ function producesFunction(factory: TSESTree.Node | undefined): boolean {
   return isFunctionLiteral(unwrapValueExpression(only.argument));
 }
 
+/**
+ * Whether the binding is declared where the program evaluates it exactly once.
+ *
+ * A function's identity is fixed by the execution of its declaration, so what
+ * makes one a stable callback is not the function but the scope holding it.
+ * Only a module-level declaration answers yes: the scope chain reaches the
+ * `Program` without crossing a function, so nothing between the declaration and
+ * a render re-runs it. A function declared in a component body — or in any
+ * nested block of one, or in a custom hook — is a *fresh* function on every
+ * render, and there the wrapper is the only thing stabilizing it.
+ *
+ * Module-level blocks and loop bodies qualify: they run before any render, and
+ * each closure a loop creates captures the one binding it was created with.
+ */
+function isEvaluatedOnce(scope: TSESLint.Scope.Scope): boolean {
+  return scope.variableScope.block.type === AST_NODE_TYPES.Program;
+}
+
+/**
+ * Whether anything assigns to the binding after its declaration.
+ *
+ * The `const` keyword already rules this out for a declarator, but a function
+ * declaration binds a writable name, and the question the proof needs is about
+ * writes rather than about a keyword. Asking it of the resolved variable keeps
+ * one answer for every declaration form.
+ */
+function isNeverReassigned(variable: TSESLint.Scope.Variable): boolean {
+  return variable.references.every(
+    (reference) => !reference.isWrite() || reference.init === true,
+  );
+}
+
+/**
+ * Whether the binding holds one function for the program's lifetime.
+ *
+ * The two questions are asked of the *binding* rather than of the syntax that
+ * introduced it, so a `const` arrow and the `function` declaration it is one
+ * rewrite away from answer alike. A proof that changed with the spelling would
+ * either withhold the report from half the codebase or bless code it flags in
+ * the other half.
+ */
+function isProgramLifetimeFunction(variable: TSESLint.Scope.Variable): boolean {
+  return isEvaluatedOnce(variable.scope) && isNeverReassigned(variable);
+}
+
 function isHookLikeName(name: string): boolean {
   return name.startsWith('use');
 }
@@ -318,7 +363,7 @@ export const noRedundantUseCallbackWrapper = createRule<Options, MessageIds>({
 
     /**
      * Whether the binding this identifier resolves to holds a callback whose
-     * memoization is visible in this very file.
+     * stability is visible in this very file.
      *
      * `memoizedHookNames` exists for callbacks whose stability only the consumer
      * knows about. A `const` initialized from `useCallback`, `useLatestCallback`
@@ -327,6 +372,10 @@ export const noRedundantUseCallbackWrapper = createRule<Options, MessageIds>({
      * redundant and the rule reports it under the default options — without
      * which the rule can report nothing at all in a config that does not set
      * `memoizedHookNames`.
+     *
+     * A module-level function is the same proof without the call: a memoizing
+     * hook exists to give a function one identity across renders, and a
+     * declaration the program evaluates once already has one.
      *
      * The binding is resolved through scope analysis rather than matched by
      * name, because a name set cannot tell the memoized `inner` of one component
@@ -345,6 +394,11 @@ export const noRedundantUseCallbackWrapper = createRule<Options, MessageIds>({
         return false;
       }
       const declarator = variable.defs[0].node;
+      // A function declaration binds the function itself, so the binding's
+      // lifetime settles it outright — there is no initializer to read.
+      if (declarator.type === AST_NODE_TYPES.FunctionDeclaration) {
+        return isProgramLifetimeFunction(variable);
+      }
       if (
         declarator.type !== AST_NODE_TYPES.VariableDeclarator ||
         declarator.id.type !== AST_NODE_TYPES.Identifier ||
@@ -370,6 +424,16 @@ export const noRedundantUseCallbackWrapper = createRule<Options, MessageIds>({
         return false;
       }
       const init = unwrapValueExpression(declarator.init);
+      // A function literal needs no memoizing call to be stable: it is created
+      // once by its declaration, so a module-level one holds a single identity
+      // for the program's lifetime — at least as stable as anything `useMemo`
+      // or `useCallback` hands back, and stable for the same reason. The
+      // conservative stance stays in force for *calls*: `memoize(fn)` is an
+      // unknown function whose result the rule cannot reason about, whatever it
+      // returns, and hoisting such a call to module scope does not change that.
+      if (isFunctionLiteral(init)) {
+        return isProgramLifetimeFunction(variable);
+      }
       if (init.type !== AST_NODE_TYPES.CallExpression) {
         return false;
       }

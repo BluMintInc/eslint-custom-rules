@@ -20,6 +20,14 @@ The rule reports `useCallback` when it only forwards a callback that was already
 
 Memoization that is visible in the same file needs no configuration. A `const` initialized from `useCallback`, `useLatestCallback`, or a `useMemo` whose factory hands back a function literal holds a callback this rule can prove is already stable, so re-wrapping it is reported under the default options. The binding is resolved through scope analysis rather than matched by name, so the memoized `handleSelect` of one component never vouches for the `handleSelect` prop of another. `useMemo` memoizes any value, so its result counts as a memoized *callback* only when the factory demonstrably produces a function — a factory returning a call result, a conditional, or a value assembled across several statements proves nothing and is left alone.
 
+### A module-level function is already stable
+
+A function needs no memoizing call to hold one identity: it is created by the execution of its declaration. What decides stability is therefore the *scope*, not the syntax. A function declared at module level — `const inner = () => doThing();`, `const inner = function () {};` or `function inner() {}` — is evaluated once for the program's lifetime, so wrapping it is reported on exactly the same terms as re-wrapping a `useCallback` result. This is also where [`no-empty-dependency-use-callbacks`](no-empty-dependency-use-callbacks.md) leaves a callback it hoists out of a component, so the two rules agree on the code the first one writes.
+
+The same question answers *no* inside a component: a function declared in the render body is a fresh function on every render, and there the wrapper is the only thing giving it a stable identity. The rule stays silent for it. A binding anything assigns to is left alone as well, and so is an import — the rule reads one file, and nothing in it shows what the exporting module bound.
+
+The exemption is for functions, not for the values calls return. `const inner = memoize(() => doThing())` proves nothing whatever it returns, at module level exactly as inside a component: `memoize` is an unknown call, and the rule prefers a false negative to guessing.
+
 Everything else needs `memoizedHookNames` (or `assumeAllUseAreMemoized`): the stability of a callback a hook or context hands out is knowledge this rule cannot read out of the file it is linting.
 
 `useLatestCallback` counts as a memoization wrapper too, and is reported on exactly the same terms. It is the spelling [`use-latest-callback`](use-latest-callback.md) — enabled in the same `recommended` config, and fixable — rewrites every `useCallback(fn, deps)` into, so a wrapper around an already stable callback survives that rewrite unchanged: `useLatestCallback(() => signIn())` still allocates a fresh arrow on every render around a callback the hook already keeps stable. The local binding is resolved from the `use-latest-callback` module rather than matched by name, because that rule's fixer names its import with `freeImportName` and emits `useLatestCallback2` when `useLatestCallback` is already taken. Both the default and named specifier forms are recognized, under any local alias.
@@ -88,10 +96,27 @@ function SignInButton() {
 The examples naming `useAuthSubmit`/`useUserContext` declare `assumeAllUseAreMemoized: true` for the same reason the invalid ones below do: nothing in those files proves those hooks return memoized callbacks, so without the option the rule would never reach the logic they exist to demonstrate. Each wrapper there is allowed *despite* the callback being recognized as memoized. The examples built on `useCallback`/`useMemo` need no options, because the memoization is in the source.
 
 ```tsx
-// A locally declared arrow is a fresh function on every render, so the wrapper
-// is what gives it a stable identity
-const fn = () => doThing();
-const outer = useCallback(fn, [fn]);
+// An arrow declared in the render body is a fresh function on every render, so
+// the wrapper is what gives it a stable identity
+function Row() {
+  const fn = () => doThing();
+  const outer = useCallback(fn, [fn]);
+  return <Button onClick={outer} />;
+}
+```
+
+```tsx
+// A call is not a function literal: `memoize` is unknown, so its result proves
+// nothing about stability wherever it is declared
+const inner = memoize(() => doThing());
+const outer = useCallback(inner, [inner]);
+```
+
+```tsx
+// An imported callback carries no in-file proof either
+import { inner } from './inner';
+
+const outer = useCallback(inner, [inner]);
 ```
 
 ```tsx
@@ -200,6 +225,31 @@ import useLatestCallback from 'use-latest-callback';
 
 const inner = useLatestCallback(() => doThing());
 const outer = useLatestCallback(() => inner());
+```
+
+```tsx
+// ✖ A module-level function literal holds one identity for the program's
+// lifetime, so the wrapper adds no stability — this is the shape
+// no-empty-dependency-use-callbacks hoists out of a component
+const inner = () => doThing();
+
+function Row() {
+  const outer = useCallback(inner, [inner]);
+  return <Button onClick={outer} />;
+}
+```
+
+```tsx
+// ✖ The function-declaration spelling of the same delegate: the scope decides,
+// not the syntax
+function inner() {
+  doThing();
+}
+
+function Row() {
+  const outer = useCallback(() => inner(), [inner]);
+  return <Button onClick={outer} />;
+}
 ```
 
 `useAuthSubmit` and `useSomething` are only treated as returning memoized callbacks once the rule is told so. Each example below therefore declares `assumeAllUseAreMemoized: true`; naming the hooks in `memoizedHookNames` produces the same reports.
@@ -320,6 +370,7 @@ among its specifiers.
 - Identifies callbacks destructured from hook results, and callbacks a hook returns directly.
 - Answers alike whichever body the wrapper's function is spelled with: a concise arrow, a block body returning the delegate, a block body calling it, or a function expression.
 - Reports re-wrapping of a callback memoized in the same file (`useCallback`, `useLatestCallback`, or a `useMemo` yielding a function literal) without any configuration, since that memoization is proven in-source.
+- Reports re-wrapping of a module-level function — `const` arrow, `const` function expression, or `function` declaration alike — because its identity is fixed by a declaration the program evaluates once. A function declared inside a component or a hook is a fresh function on every render and is left alone, as is a binding anything assigns to and an import the rule cannot follow.
 - Resolves such a binding through scope analysis, so a shadowing parameter or a same-named prop in another component is not mistaken for the memoized one.
 - Leaves a `let` binding alone: it can be reassigned, so the value read at the wrapper need not be the one the memoizing call produced.
 - Leaves a wrapper that reads the binding it is initializing alone, rather than collapsing it to `const x = x`.

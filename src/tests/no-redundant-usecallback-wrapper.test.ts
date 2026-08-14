@@ -505,23 +505,6 @@ function C({ onDone }) {
       { assumeAllUseAreMemoized: boolean },
     ],
   },
-  // A module-level function is not a hook result either, whichever body the
-  // wrapper is spelled with.
-  {
-    code: `import { useCallback } from 'react';
-
-function doThing() {}
-
-function C() {
-  const handle = useCallback(() => {
-    doThing();
-  }, []);
-  return <button onClick={handle}/>;
-}`,
-    options: [{ assumeAllUseAreMemoized: true }] as [
-      { assumeAllUseAreMemoized: boolean },
-    ],
-  },
   // A hook-named call whose result is never a callback is still only tracked as
   // a value, so calling a plain local binding stays untouched.
   {
@@ -747,6 +730,34 @@ function C() {
 ];
 
 const invalid = [
+  // A module-level function is stable for the program's lifetime, so the
+  // wrapper adds no stability it lacks — whichever body the wrapper is spelled
+  // with, and whether the function is declared or bound to a `const`. The
+  // option does not widen anything here: `doThing` is not hook-named, and the
+  // prop fixture above still holds `assumeAllUseAreMemoized` to hook results.
+  {
+    code: `import { useCallback } from 'react';
+
+function doThing() {}
+
+function C() {
+  const handle = useCallback(() => {
+    doThing();
+  }, []);
+  return <button onClick={handle}/>;
+}`,
+    options: [{ assumeAllUseAreMemoized: true }] as [
+      { assumeAllUseAreMemoized: boolean },
+    ],
+    errors: [redundantError('doThing')],
+    output: `
+function doThing() {}
+
+function C() {
+  const handle = doThing;
+  return <button onClick={handle}/>;
+}`,
+  },
   // Direct pass-through of memoized function identifier
   {
     code: `import { useCallback } from 'react';
@@ -1675,6 +1686,99 @@ const C = () => {
   return outer;
 };`,
       },
+      // A function literal is stable only where its declaration is not
+      // re-executed between renders. A hook body runs on every render of every
+      // component calling it, so `inner` is a fresh function each time and the
+      // wrapper is the only thing stabilizing it.
+      {
+        code: `import { useCallback } from 'react';
+const useThing = () => {
+  const inner = () => doThing();
+  const outer = useCallback(inner, [inner]);
+  return outer;
+};`,
+      },
+      // A block nested in the component body re-executes with the body, so a
+      // literal declared there is no more stable than one at its top level.
+      {
+        code: `import { useCallback } from 'react';
+const C = ({ flag }) => {
+  if (flag) {
+    const inner = () => doThing();
+    return useCallback(inner, [inner]);
+  }
+  return undefined;
+};`,
+      },
+      // A rebindable module-scope binding breaks the proof for a literal
+      // exactly as it does for a memoizing call.
+      {
+        code: `import { useCallback } from 'react';
+let inner = () => doThing();
+inner = somethingElse;
+const C = () => {
+  const outer = useCallback(inner, [inner]);
+  return outer;
+};`,
+      },
+      // An imported callback resolves to an import binding rather than a
+      // declarator, and the rule reads one file: nothing here shows what the
+      // exporting module bound, so an import stays exempt.
+      {
+        code: `import { useCallback } from 'react';
+import { inner } from './inner';
+const C = () => {
+  const outer = useCallback(inner, [inner]);
+  return outer;
+};`,
+      },
+      // Hoisting the non-memoizing initializer to module scope does not make it
+      // provable: the literal exemption is for literals, and `memoize` remains
+      // an unknown call whatever it returns.
+      {
+        code: `import { useCallback } from 'react';
+const inner = memoize(() => doThing());
+const C = () => {
+  const outer = useCallback(inner, [inner]);
+  return outer;
+};`,
+      },
+      // Supplying an argument keeps the wrapper load-bearing for a module-scope
+      // literal too.
+      {
+        code: `import { useCallback } from 'react';
+const inner = (id) => doThing(id);
+const C = ({ userId }) => {
+  const outer = useCallback(() => inner(userId), [inner, userId]);
+  return outer;
+};`,
+      },
+      // The scope answer does not change with the spelling: a function declared
+      // inside the component is redeclared on every render, so the wrapper is
+      // what stabilizes it.
+      {
+        code: `import { useCallback } from 'react';
+const C = () => {
+  function inner() {
+    doThing();
+  }
+  const outer = useCallback(inner, [inner]);
+  return outer;
+};`,
+      },
+      // A function declaration binds a writable name, so an assignment breaks
+      // the proof even without a rebindable declaration keyword.
+      {
+        code: `import { useCallback } from 'react';
+function inner() {
+  doThing();
+}
+inner = somethingElse;
+const C = () => {
+  const outer = useCallback(inner, [inner]);
+  return outer;
+};`,
+      },
     ],
     invalid: [
       // Locally visible memoization needs no configuration: the memoizing call
@@ -1925,6 +2029,137 @@ const C = () => {
         output: `import { useCallback } from 'react';
 const C = () => {
   const first = useCallback(() => doThing(), []);
+  const second = first;
+  const third = second;
+  return third;
+};`,
+      },
+      // A module-scope function literal is created once for the program, so it
+      // is at least as stable as anything a memoizing call returns. This is the
+      // shape `no-empty-dependency-use-callbacks` writes when it hoists
+      // `const inner = useCallback(() => doThing(), [])` out of the component.
+      {
+        code: `import { useCallback } from 'react';
+const inner = () => doThing();
+const C = () => {
+  const outer = useCallback(inner, [inner]);
+  return outer;
+};`,
+        errors: [redundantError('inner')],
+        output: `const inner = () => doThing();
+const C = () => {
+  const outer = inner;
+  return outer;
+};`,
+      },
+      // The function-expression spelling of the same declaration.
+      {
+        code: `import { useCallback } from 'react';
+const inner = function () {
+  doThing();
+};
+const C = () => {
+  const outer = useCallback(() => inner(), [inner]);
+  return outer;
+};`,
+        errors: [redundantError('inner')],
+        output: `const inner = function () {
+  doThing();
+};
+const C = () => {
+  const outer = inner;
+  return outer;
+};`,
+      },
+      // A block-bodied arrow declared at module scope, wrapped by a block-bodied
+      // wrapper.
+      {
+        code: `import { useCallback } from 'react';
+const inner = () => {
+  doThing();
+};
+const C = () => {
+  const outer = useCallback(() => {
+    return inner();
+  }, [inner]);
+  return outer;
+};`,
+        errors: [redundantError('inner')],
+        output: `const inner = () => {
+  doThing();
+};
+const C = () => {
+  const outer = inner;
+  return outer;
+};`,
+      },
+      // The wrapper spelling this config's own fixer writes reports the module
+      // -scope literal too.
+      {
+        code: `import useLatestCallback from 'use-latest-callback';
+const inner = () => doThing();
+const C = () => {
+  const outer = useLatestCallback(inner);
+  return outer;
+};`,
+        errors: [redundantError('inner', 'useLatestCallback')],
+        output: `const inner = () => doThing();
+const C = () => {
+  const outer = inner;
+  return outer;
+};`,
+      },
+      // A cast carries no runtime value here either.
+      {
+        code: `import { useCallback } from 'react';
+type Handler = () => void;
+const inner = (() => doThing()) as Handler;
+const C = () => {
+  const outer = useCallback(inner, [inner]);
+  return outer;
+};`,
+        errors: [redundantError('inner')],
+        output: `type Handler = () => void;
+const inner = (() => doThing()) as Handler;
+const C = () => {
+  const outer = inner;
+  return outer;
+};`,
+      },
+      // The function-declaration spelling of the module-scope delegate: what
+      // makes it stable is the scope, not the syntax, so it reports alike.
+      {
+        code: `import { useCallback } from 'react';
+function inner() {
+  doThing();
+}
+const C = () => {
+  const outer = useCallback(inner, [inner]);
+  return outer;
+};`,
+        errors: [redundantError('inner')],
+        output: `function inner() {
+  doThing();
+}
+const C = () => {
+  const outer = inner;
+  return outer;
+};`,
+      },
+      // The chain above after the hoist: the delegate the sibling fixer moved
+      // out still proves its wrapper redundant, so both layers report rather
+      // than only the one reading a memoizing call.
+      {
+        code: `import { useCallback } from 'react';
+const first = () => doThing();
+const C = () => {
+  const second = useCallback(first, [first]);
+  const third = useCallback(() => second(), [second]);
+  return third;
+};`,
+        errors: [redundantError('first'), redundantError('second')],
+        output: `const first = () => doThing();
+const C = () => {
   const second = first;
   const third = second;
   return third;
@@ -2473,7 +2708,7 @@ describe('arrow-body spelling parity', () => {
       label: 'module-level function',
       setup: '',
       delegate: 'doThing()',
-      reports: false,
+      reports: true,
     },
     {
       label: 'hook result invoked with an argument',
