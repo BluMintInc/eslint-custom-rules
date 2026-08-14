@@ -1,3 +1,11 @@
+## [1.20.152](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.151...v1.20.152) (2026-08-14)
+
+
+### Bug Fixes
+
+* **enforce-querykey-ts:** carry each key's import on its own fix (closes [#2012](https://github.com/BluMintInc/eslint-custom-rules/issues/2012)) ([627086d](https://github.com/BluMintInc/eslint-custom-rules/commit/627086d80dd5ec87ec9330638097b2cf44c7cb82))
+* **prefer-clone-deep:** decline the fix under a const assertion (closes [#2011](https://github.com/BluMintInc/eslint-custom-rules/issues/2011)) ([9d5e61e](https://github.com/BluMintInc/eslint-custom-rules/commit/9d5e61efcaf5daf63307899d2823f72b11062684))
+
 ## [1.20.151](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.150...v1.20.151) (2026-08-14)
 
 

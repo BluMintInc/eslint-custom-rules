@@ -1,5 +1,27 @@
 [
   {
+    "version": "1.20.152",
+    "date": "2026-08-14T10:28:08.765Z",
+    "rules": [
+      {
+        "name": "enforce-querykey-ts",
+        "changeType": "fix",
+        "issues": [
+          2012
+        ],
+        "summary": "carry each key's import on its own fix (closes #2012)"
+      },
+      {
+        "name": "prefer-clone-deep",
+        "changeType": "fix",
+        "issues": [
+          2011
+        ],
+        "summary": "decline the fix under a const assertion (closes #2011)"
+      }
+    ]
+  },
+  {
     "version": "1.20.151",
     "date": "2026-08-14T02:27:13.012Z",
     "rules": [
