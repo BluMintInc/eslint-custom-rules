@@ -12,6 +12,7 @@ This rule requires every Firestore `DocumentReference`, `CollectionReference`, a
 - Calls on an already typed `CollectionReference<T>` may omit the generic on `collectionRef.doc(...)` because the collection supplies the document shape. This holds whether the collection is chained (`db.collection<T>('x').doc('y')`) or first stored in a `const`.
 - An optional link anywhere in the receiver (`db?.collection<T>('x')`) is looked through. It changes the reference's nullability, not its schema: the type is `CollectionReference<T> | undefined`, still carrying `T`, so the derived `doc(...)` inherits a shape and needs no generic. The inverse holds too — `db?.collection('x')` supplies nothing and is reported exactly as `db.collection('x')` is.
 - Resolving a stored collection is deliberately shallow: only a `const` whose initializer is a `collection<T>(...)` call, whose annotation is `CollectionReference<T>`, or which asserts that type is followed, and only one hop. An alias of an alias, a `let`, a parameter, or an import cannot be proven typed, so `doc(...)` on those still requires its own generic.
+- A type assertion counts when it states a document schema — when the asserted type names `DocumentReference`, `CollectionReference`, `CollectionGroup`, or `Query` at any depth. An assertion that names none of them, `as const` above all, states nothing about the reference and does not silence the report. See [What a type assertion states](#what-a-type-assertion-states).
 - A class member reached as `this.member` or `this.member()` is resolved through its return type annotation when it has one, and otherwise through the expression it returns. See [Where the schema evidence must live](#where-the-schema-evidence-must-live).
 - Both privacy spellings are resolved the same way. `this.#member` reads the schema its `#member` declaration states exactly as `this.member` reads `private member`'s, for a property, a method and a getter alike. The spelling still identifies the member, though: `#settings` and a sibling public `settings` are two different members that may hold different schemas, so each is answered from its own declaration.
 - A return type annotation states the schema whichever function spelling carries it — a declaration, a function expression, an arrow with a block body or with a concise one, a class method, a getter, or an object-literal member — and on every return path, not only a `return` written directly in the function body. What it does not cover is a reference the function never hands back: a reference built and stored inside an annotated function is described by nothing and is still reported.
@@ -158,6 +159,37 @@ const getUserId = (): string => {
 };
 ```
 
+## What a type assertion states
+
+An assertion supplies the schema when the type it asserts names a Firestore reference — `db.collection('users') as CollectionReference<User>` is as complete a statement as the annotation `const usersCollection: CollectionReference<User> = ...`. What earns the exemption is the type named, not the assertion's position: an assertion types the references inside the literal it wraps, so `[db.collection('a'), db.collection('b')] as CollectionReference<User>[]` and `{ users: db.collection('users') } as Record<string, CollectionReference<User>>` both state the schema several type nodes away from the call. `Query` counts alongside the three reference types because `.where(...)` narrows a collection to it while keeping the same document generic. A local alias is resolved first, so `type UsersCollection = CollectionReference<User>` states what it stands for.
+
+`as const` states no type at all. It preserves whatever the expression already infers to and adds `readonly`, so a reference under one keeps the loose `DocumentData` schema this rule exists to reject:
+
+```ts
+// Reported: `as const` freezes the array, it does not type the references.
+const COLLECTIONS = [db.collection('users'), db.collection('posts')] as const;
+
+// Silent: the asserted type names the reference type and carries the schema.
+const TYPED_COLLECTIONS = [
+  db.collection('users'),
+  db.collection('posts'),
+] as CollectionReference<User>[];
+```
+
+This distinction is load-bearing rather than pedantic. `global-const-style` ships in the same `recommended` config and is fixable, and its fix appends exactly ` as const` to a module-scope literal. Crediting any assertion in the enclosing chain would let one `eslint --fix` pass silence every reference inside that literal without changing a byte of the violation.
+
+The same question decides a receiver. `.doc(...)` inherits the schema from a collection asserted as `CollectionReference<T>` — asking for a generic there is uncompilable, since `CollectionReference<T>.doc(path)` declares zero type parameters — while a receiver asserted to something that states no schema hands none on:
+
+```ts
+// Silent: the receiver states `Mapping`, and `.doc()` inherits it.
+const mappingRef = (
+  matchRef.collection('mappings') as CollectionReference<Mapping>
+).doc(matchId);
+
+// Reported: `any` states no schema, so the document reference has none.
+const untypedRef = (matchRef.collection('mappings') as any).doc(matchId);
+```
+
 ## Compat Firestore from `@firebase/rules-unit-testing`
 
 `RulesTestContext.firestore()` returns the compat (v8-style) `Firestore`, whose `doc`, `collection`, and `collectionGroup` declare **zero** type parameters. Supplying a generic there is `error TS2558: Expected 0 type arguments, but got 1`, so on that surface every fix this rule suggests is uncompilable. Security-rules tests therefore get an exemption: a `doc`/`collection`/`collectionGroup` call whose receiver traces syntactically back to a value from `@firebase/rules-unit-testing` is not reported.
@@ -242,6 +274,9 @@ const sharedProfileDocRef: DocumentReference<SharedProfile> = db.doc('users/789'
 // Overriding a typed collection with an unsafe generic
 const customerCollection = db.collection<UserProfile>('customers');
 const unsafeCustomerDoc = customerCollection.doc<any>('cust123');
+
+// A const assertion freezes the literal without typing what is inside it
+const ROOT_COLLECTIONS = [db.collection('users'), db.collection('posts')] as const;
 ```
 
 ### Examples of correct code
@@ -280,6 +315,17 @@ const userWithBaseDoc: DocumentReference<UserWithBase> = db.doc('users/123');
 // A return annotation counts on an arrow exactly as it does on a declaration
 const getUserDoc = (id: string): DocumentReference<UserData> =>
   db.collection('users').doc(id);
+
+// An assertion naming the reference type states the schema at any depth
+const rootCollections = [
+  db.collection('users'),
+  db.collection('posts'),
+] as CollectionReference<UserData>[];
+
+// So does an assertion on the receiver the document reference is built from
+const memberDoc = (
+  db.collection('members') as CollectionReference<UserData>
+).doc('123');
 
 // An ECMA-private member states the schema exactly as a `private` one does
 class UserService {

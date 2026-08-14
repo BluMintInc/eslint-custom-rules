@@ -2206,6 +2206,98 @@ ruleTesterTs.run(
         }
       `,
       },
+      /**
+       * The boundary the #2007 narrowing must not cross: an assertion that
+       * names a Firestore reference type states the schema wherever it sits,
+       * so distance is not what disqualifies `as const` — naming no reference
+       * type is. Every spelling below keeps its exemption.
+       */
+      {
+        code: `
+        interface User {
+          name: string;
+        }
+        const usersCollections = [
+          db.collection('users'),
+          db.collection('admins'),
+        ] as CollectionReference<User>[];
+      `,
+      },
+      {
+        code: `
+        interface User {
+          name: string;
+        }
+        const collections = {
+          users: db.collection('users'),
+        } as Record<string, CollectionReference<User>>;
+      `,
+      },
+      {
+        code: `
+        interface User {
+          name: string;
+        }
+        const userRef = db.doc('users/123') as unknown as DocumentReference<User>;
+      `,
+      },
+      {
+        code: `
+        interface User {
+          name: string;
+        }
+        const userRef = db.collection('users').doc('123') as FirebaseFirestore.DocumentReference<User>;
+      `,
+      },
+      // A local alias for the reference type states the same schema the type it
+      // stands for does, so the assertion is resolved before it is judged.
+      {
+        code: `
+        interface User {
+          name: string;
+        }
+        type UsersCollection = CollectionReference<User>;
+        const usersCollection = db.collection('users') as UsersCollection;
+      `,
+      },
+      // `Query` carries the same document generic as the reference types it is
+      // the supertype of, so asserting to it states the schema too.
+      {
+        code: `
+        interface User {
+          name: string;
+        }
+        const activeUsers = db.collection('users') as Query<User>;
+      `,
+      },
+      /**
+       * An assertion on the receiver states the schema `.doc()` inherits, so
+       * asking for a generic there is uncompilable: `CollectionReference<T>
+       * .doc(path)` declares zero type parameters. The exemption has to come
+       * from the receiver, not from an enclosing annotation that happens to
+       * cover the statement — once `as const` stops standing in for one, that
+       * cover is gone.
+       */
+      {
+        code: `
+        interface Mapping {
+          placement: number;
+        }
+        const priorMappingRef = (
+          matchRef.collection('mappings') as CollectionReference<Mapping>
+        ).doc(matchId);
+      `,
+      },
+      {
+        code: `
+        interface Mapping {
+          placement: number;
+        }
+        const REFS = [
+          (matchRef.collection('mappings') as CollectionReference<Mapping>).doc(matchId),
+        ] as const;
+      `,
+      },
     ],
     invalid: [
       /**
@@ -3663,6 +3755,91 @@ ruleTesterTs.run(
           missingGenericError('CollectionReference'),
           missingGenericError('DocumentReference'),
         ],
+      },
+      /**
+       * A const assertion states no type (#2007). `as const` keeps the
+       * operand's own inferred type and only makes it readonly, so every
+       * reference beneath one still carries the loose `DocumentData` schema
+       * this rule exists to reject — the violation is byte-for-byte
+       * unrepaired. `global-const-style` ships `error` in the same recommended
+       * config and is fixable, and its fix appends exactly this assertion to a
+       * module-scope literal, so an exemption keyed on the mere presence of an
+       * ancestor assertion lets one `eslint --fix` pass silence the rule.
+       */
+      {
+        code: `const COLLECTIONS = [db.collection('users'), db.collection('posts')] as const;`,
+        errors: [
+          missingGenericError('CollectionReference'),
+          missingGenericError('CollectionReference'),
+        ],
+      },
+      {
+        code: `
+        const COLLECTIONS = {
+          users: db.collection('users'),
+          posts: db.collection('posts'),
+        } as const;
+      `,
+        errors: [
+          missingGenericError('CollectionReference'),
+          missingGenericError('CollectionReference'),
+        ],
+      },
+      // The minimal repro: the const assertion is the call's own parent, which
+      // is why proximity cannot be what distinguishes a typing assertion.
+      {
+        code: `const usersCollection = db.collection('users') as const;`,
+        errors: [missingGenericError('CollectionReference')],
+      },
+      {
+        code: `const userDoc = db.doc('users/123') as const;`,
+        errors: [missingGenericError('DocumentReference')],
+      },
+      // A `.doc()` call nested inside an asserted literal
+      {
+        code: `const REFS = { user: db.collection('users').doc('123') } as const;`,
+        errors: [missingGenericError('DocumentReference')],
+      },
+      // Three levels of literal between the call and the assertion
+      {
+        code: `
+        const CONFIG = {
+          firestore: {
+            collections: [db.collection('users')],
+          },
+        } as const;
+      `,
+        errors: [missingGenericError('CollectionReference')],
+      },
+      // `as const` on the declarator whose initializer holds the call, with the
+      // reference reached through a nested arrow rather than a literal
+      {
+        code: `
+        const HANDLERS = {
+          load: (id: string) => db.collection('users').doc(id),
+        } as const;
+      `,
+        errors: [missingGenericError('DocumentReference')],
+      },
+      {
+        code: `const GROUPS = [db.collectionGroup('comments')] as const;`,
+        errors: [missingGenericError('CollectionGroup')],
+      },
+      // An assertion naming no Firestore reference type states nothing about
+      // the document schema either, so it earns no exemption.
+      {
+        code: `const refs = [db.collection('users')] as unknown[];`,
+        errors: [missingGenericError('CollectionReference')],
+      },
+      {
+        code: `const paths = [db.collection('users').doc('1').path] as string[];`,
+        errors: [missingGenericError('DocumentReference')],
+      },
+      // The receiver exemption is bounded by the same question: an assertion
+      // that states no schema hands none to the `.doc()` built on it.
+      {
+        code: `const ref = (matchRef.collection('mappings') as any).doc(matchId);`,
+        errors: [missingGenericError('DocumentReference')],
       },
     ],
   },
