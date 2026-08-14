@@ -23,7 +23,25 @@ const REFERENCE_TYPE_NAMES = new Set([
 
 /**
  * The final segment of a type reference's name, so `FirebaseFirestore.
- * DocumentReference` is recognized as the same type as `DocumentReference`.
+ * DocumentReference` is read as the same name as `DocumentReference`.
+ */
+const rightmostTypeName = (
+  typeName: TSESTree.EntityName,
+): string | undefined => {
+  if (typeName.type === AST_NODE_TYPES.Identifier) {
+    return typeName.name;
+  }
+  if (
+    typeName.type === AST_NODE_TYPES.TSQualifiedName &&
+    typeName.right.type === AST_NODE_TYPES.Identifier
+  ) {
+    return typeName.right.name;
+  }
+  return undefined;
+};
+
+/**
+ * The reference type a name states, matched on that final segment.
  *
  * The rightmost segment is the right granularity because the namespace is
  * arbitrary — `FirebaseFirestore.`, `admin.firestore.` and any
@@ -34,18 +52,77 @@ const REFERENCE_TYPE_NAMES = new Set([
 const referenceTypeNameOf = (
   typeName: TSESTree.EntityName,
 ): string | undefined => {
-  if (typeName.type === AST_NODE_TYPES.Identifier) {
-    return REFERENCE_TYPE_NAMES.has(typeName.name) ? typeName.name : undefined;
+  const name = rightmostTypeName(typeName);
+  return name && REFERENCE_TYPE_NAMES.has(name) ? name : undefined;
+};
+
+/**
+ * The type names an assertion can state that carry a document-shape generic.
+ *
+ * `Query` joins the three reference types here alone: `.where(...)` narrows a
+ * collection to it while keeping the document generic, so `as Query<User>`
+ * states the schema exactly as `as CollectionReference<User>` does. It is not a
+ * reference type the rule reports on, which is why it is not in
+ * `REFERENCE_TYPE_NAMES`.
+ */
+const SCHEMA_TYPE_NAMES = new Set([...REFERENCE_TYPE_NAMES, 'Query']);
+
+/**
+ * The name a type reference or an interface heritage clause states, whichever
+ * spelling names it, so `FirebaseFirestore.DocumentReference` and
+ * `DocumentReference` are read as the same type.
+ */
+const namedTypeOf = (node: TSESTree.Node): string | undefined => {
+  if (node.type === AST_NODE_TYPES.TSTypeReference) {
+    return rightmostTypeName(node.typeName);
   }
-  if (
-    typeName.type === AST_NODE_TYPES.TSQualifiedName &&
-    typeName.right.type === AST_NODE_TYPES.Identifier &&
-    REFERENCE_TYPE_NAMES.has(typeName.right.name)
-  ) {
-    return typeName.right.name;
+  if (node.type === AST_NODE_TYPES.TSInterfaceHeritage) {
+    const { expression } = node;
+    if (expression.type === AST_NODE_TYPES.Identifier) {
+      return expression.name;
+    }
+    if (
+      expression.type === AST_NODE_TYPES.MemberExpression &&
+      expression.property.type === AST_NODE_TYPES.Identifier
+    ) {
+      return expression.property.name;
+    }
   }
   return undefined;
 };
+
+/**
+ * The child nodes of a node, read generically so that every type syntax — an
+ * array, a union, a tuple, a mapped or conditional type — is traversed without
+ * enumerating the kinds one by one. `parent` is skipped because following it
+ * walks back out of the subtree and never terminates.
+ */
+const childNodesOf = (node: TSESTree.Node): TSESTree.Node[] => {
+  const children: TSESTree.Node[] = [];
+  for (const [key, value] of Object.entries(node)) {
+    if (key === 'parent') {
+      continue;
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        if (ASTHelpers.isNode(item)) {
+          children.push(item);
+        }
+      }
+    } else if (ASTHelpers.isNode(value)) {
+      children.push(value);
+    }
+  }
+  return children;
+};
+
+/** The type nodes a declaration states about the type it declares. */
+const statedTypeNodesOf = (
+  declaration: NamedTypeDeclaration,
+): TSESTree.Node[] =>
+  declaration.type === AST_NODE_TYPES.TSTypeAliasDeclaration
+    ? [declaration.typeAnnotation]
+    : declaration.extends ?? [];
 
 /**
  * The expression an optional link wraps, so a receiver spelled with `?.` is
@@ -192,6 +269,71 @@ function declarationOfType(
     }
     return undefined;
   });
+}
+
+/**
+ * Whether an asserted type states a Firestore reference surface, and so
+ * describes the document schema of the expression it is applied to.
+ *
+ * The presence of an assertion is not evidence on its own. `as const` states no
+ * type at all — it preserves whatever the operand already infers to and adds
+ * `readonly` — so every reference beneath one keeps the loose `DocumentData`
+ * schema this rule exists to reject, byte for byte. `global-const-style` ships
+ * `error` in the same recommended config and is fixable, and its fix appends
+ * exactly that assertion to a module-scope literal, so crediting any ancestor
+ * assertion lets one `eslint --fix` pass silence the rule without repairing
+ * anything (#2007).
+ *
+ * The search is structural rather than positional, because an assertion types
+ * the references inside a literal it wraps: `[db.collection('a')] as
+ * CollectionReference<T>[]` and `{...} as Record<string, CollectionReference<T>>`
+ * both state the schema from several type nodes away. Proximity therefore
+ * cannot be the test — the minimal repro, `db.collection('x') as const`, has the
+ * assertion as the call's own parent.
+ *
+ * A name that resolves to a declaration in the file is followed, since an alias
+ * states what it stands for. Both declaration spellings are read for the reason
+ * `declaredMembersOf` reads both: `prefer-type-over-interface` ships in the same
+ * config and is fixable, so an interface and the alias it becomes have to answer
+ * alike.
+ */
+function statesDocumentSchema(
+  node: TSESTree.Node,
+  visited: Set<NamedTypeDeclaration>,
+): boolean {
+  const name = namedTypeOf(node);
+  if (name) {
+    if (SCHEMA_TYPE_NAMES.has(name)) {
+      return true;
+    }
+    if (declaredTypeStatesDocumentSchema(node, name, visited)) {
+      return true;
+    }
+  }
+
+  return childNodesOf(node).some((child) =>
+    statesDocumentSchema(child, visited),
+  );
+}
+
+/**
+ * The declaration set doubles as the recursion guard, so a self-referential
+ * alias such as `type Loop = Loop[]` terminates instead of exhausting the stack.
+ */
+function declaredTypeStatesDocumentSchema(
+  reference: TSESTree.Node,
+  name: string,
+  visited: Set<NamedTypeDeclaration>,
+): boolean {
+  const declaration = declarationOfType(reference, name);
+  if (!declaration || visited.has(declaration)) {
+    return false;
+  }
+  visited.add(declaration);
+
+  return statedTypeNodesOf(declaration).some((stated) =>
+    statesDocumentSchema(stated, visited),
+  );
 }
 
 /**
@@ -412,8 +554,14 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
       let previous: TSESTree.Node | undefined;
       let current: TSESTree.Node | undefined = node;
       while (current) {
-        // Type assertions using 'as' keyword
-        if (current.type === AST_NODE_TYPES.TSAsExpression) {
+        // Type assertions using 'as' keyword, credited only when the asserted
+        // type states the document schema. A non-stating assertion does not end
+        // the walk: `db.doc(p) as unknown as DocumentReference<User>` reaches
+        // the stating one an assertion further out.
+        if (
+          current.type === AST_NODE_TYPES.TSAsExpression &&
+          statesDocumentSchema(current.typeAnnotation, new Set())
+        ) {
           nodeCache.set(node, true);
           return true;
         }
@@ -538,7 +686,16 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
 
       let result = false;
 
-      if (
+      // A receiver reached through an assertion states its schema exactly as an
+      // annotated binding does, and `isTypedCollectionInitializer` already reads
+      // the same spelling one hop later. Without this, the receiver in
+      // `(matchRef.collection('m') as CollectionReference<T>).doc(id)` looks
+      // untyped and `.doc()` draws a report whose only remedy — `doc<T>(id)` —
+      // does not compile, since `CollectionReference<T>.doc` declares zero type
+      // parameters.
+      if (node.type === AST_NODE_TYPES.TSAsExpression) {
+        result = hasCollectionReferenceType(node.typeAnnotation);
+      } else if (
         node.type === AST_NODE_TYPES.CallExpression &&
         node.callee.type === AST_NODE_TYPES.MemberExpression &&
         node.callee.property.type === AST_NODE_TYPES.Identifier &&
