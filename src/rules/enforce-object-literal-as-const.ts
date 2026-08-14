@@ -239,19 +239,33 @@ export const enforceObjectLiteralAsConst = createRule({
     }
 
     /**
-     * `as const` turns an array literal into a readonly *tuple*, which TS4104
-     * refuses to assign to a mutable array or tuple. Where the annotation says
-     * the value must be mutable, appending `as const` breaks the build, and no
-     * edit at the literal can satisfy the rule — honouring it would mean
-     * rewriting the signature, a call the author has to make. So the rule stays
-     * silent rather than reporting something the developer cannot act on
-     * (#1526).
+     * `as const` turns an array literal into a fixed-length readonly *tuple*,
+     * strictly narrower than the mutable array the literal otherwise gets. Two
+     * separate breakages follow from that narrowing, and neither is visible at
+     * the literal:
+     *
+     * - Where the enclosing signature declares a mutable array or tuple, TS4104
+     *   refuses the assignment, so appending `as const` breaks the build. No
+     *   edit at the literal satisfies the rule — honouring it means rewriting
+     *   the signature, a call the author has to make (#1526).
+     * - Where the signature is inferred, the frozen arity becomes part of the
+     *   return type and every caller inherits it: `.length` narrows to a literal
+     *   number (TS2367 against any other length), `.includes` narrows its
+     *   parameter to the element union — `never` for `[]` — (TS2345), and the
+     *   value stops satisfying a mutable `T[]` parameter. The break lands in a
+     *   different function than the one edited, and the callers are beyond what
+     *   the rule can see (#2015).
+     *
+     * So an array literal is left alone unless the enclosing signature states a
+     * type that accepts a readonly tuple. An annotation the rule cannot resolve
+     * still counts as accepting, per `acceptsReadonlyArray`: the annotation, not
+     * the literal, is what callers read, so the arity never escapes.
      *
      * Object literals are unaffected: `readonly` property modifiers do not
      * enter assignability, so `{ a: 1 } as const` still satisfies a mutable
-     * `{ a: number }`.
+     * `{ a: number }`, and freezing one fixes no arity.
      */
-    function conflictsWithDeclaredType(
+    function freezingArrayIsUnsafe(
       literal: TSESTree.Node,
       ancestors: TSESTree.Node[],
     ): boolean {
@@ -259,8 +273,10 @@ export const enforceObjectLiteralAsConst = createRule({
         return false;
       }
       const enclosingFunction = enclosingFunctionOf(ancestors);
-      if (!enclosingFunction) {
-        return false;
+      // With no declared return type in view, the inferred tuple is what the
+      // callers get.
+      if (!enclosingFunction || !declaredReturnTypeOf(enclosingFunction)) {
+        return true;
       }
       const returnedValueType = returnedValueTypeOf(enclosingFunction);
       return !!returnedValueType && !acceptsReadonlyArray(returnedValueType);
@@ -346,10 +362,10 @@ export const enforceObjectLiteralAsConst = createRule({
           return;
         }
 
-        // Skip arrays the enclosing signature declares mutable: `as const`
-        // cannot compile there and the developer cannot act on the report
-        // (#1526)
-        if (conflictsWithDeclaredType(literal, ancestors)) {
+        // Skip arrays whose enclosing signature does not accept the readonly
+        // tuple `as const` produces — declared mutable (#1526) or inferred, in
+        // which case the frozen arity reaches every caller (#2015)
+        if (freezingArrayIsUnsafe(literal, ancestors)) {
           return;
         }
 

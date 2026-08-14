@@ -417,8 +417,18 @@ const UNDRIVEN: Record<string, UndrivenCause> = {
   'parallelize-loop-awaits': 'noAssertionAdded',
   'prefer-batch-operations': 'noAssertionAdded',
   'prefer-fragment-shorthand': 'noAssertionAdded',
+  /**
+   * The two rules below lost their only asserting culprit to #2015. Their
+   * fixtures return ARRAY literals from unannotated functions (`return [cb,
+   * config];`, `return [1, 2, 3];`), which `enforce-object-literal-as-const`
+   * used to freeze; it declines that shape now, because the frozen arity
+   * becomes part of the inferred return type and breaks the callers. No other
+   * culprit reaches a fixture either rule reports on, so `asserted` measures 0.
+   */
+  'prefer-getter-over-parameterless-method': 'noAssertionAdded',
   'prefer-type-over-interface': 'noAssertionAdded',
   'prefer-use-theme': 'noAssertionAdded',
+  'prefer-usecallback-over-usememo-for-functions': 'noAssertionAdded',
   'prefer-usememo-over-useeffect-usestate': 'noAssertionAdded',
   'prevent-children-clobber': 'noAssertionAdded',
   'react-usememo-should-be-component': 'noAssertionAdded',
