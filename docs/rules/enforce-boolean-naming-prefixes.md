@@ -256,6 +256,47 @@ const run = shouldRun(1); // → rename to shouldRun / isRunning
 
   Property reads are the exception: property names are only enforced under [`enforceForPropertySignatures`](#enforceforpropertysignatures), so an unprefixed property may legitimately hold a boolean and the callee's name keeps its say (`function canRead(source: { flag: unknown }) { return source.flag; }` leaves `const readOutcome = canRead(input);` flagged).
 
+#### Use sites that contradict the callee's name
+
+When the callee's declaration is out of reach — an import, a parameter, a value
+read off a builder chain — its `is`/`has`/`can` prefix is the only evidence left,
+and a use site that treats the value as something other than a boolean outranks
+it. The report is declined for the binding whose use contradicts it.
+
+This is what keeps the rule satisfiable alongside
+[`enforce-is-prefix-validators`](./enforce-is-prefix-validators.md). A
+`ValidatorPipeline` validator returns `true | string` — `true` for a pass, the
+failure message for a fail — while `enforce-is-prefix-validators` requires that
+validator to be `is`-prefixed. Inferring the result's booleanness from that
+mandated prefix leaves the consumer with no spelling satisfying both rules:
+renaming the result asserts a boolean contract the value does not have, and the
+next line disproves it.
+
+```ts
+// Not flagged — the use site reads the verdict as a string.
+const isCoordinationCode = ValidatorPipeline.start(isNotEmpty)
+  .add(isTrimmed).combinedValidator;
+
+export const assertCoordinationCode = (value: string) => {
+  const verdict = isCoordinationCode(value);
+  if (typeof verdict === 'string') {
+    throw new Error(verdict);
+  }
+};
+```
+
+The contradictions read, in either operand order:
+
+- `typeof binding === 'string'`, and any other tag under any equality operator. A tag of `'boolean'` affirms booleanness instead, including `typeof binding !== 'boolean'`, which is how a boolean guard is spelled.
+- the binding compared with a string literal (`binding === 'too short'`).
+- the binding passed as the message of an `Error` — `throw new Error(binding)`, or any `…Error` class.
+
+Three limits keep this from swallowing true positives:
+
+- References come from the scope manager, never from matching the name as text, so a contradiction must belong to *this* binding. A shadowing inner binding, a sibling scope's binding of the same name, and an unrelated similarly-named value each keep their own verdict. A contradiction in a nested block or in an arrow declared in the same scope does reach the binding, because those references resolve to it.
+- Only a booleanness read off a **name** can be outranked — an unresolvable boolean-prefixed callee, or a boolean-sounding property. Evidence about the value itself always wins: an explicit `: boolean` annotation, a boolean literal, a comparison or negation, a `Boolean()` coercion, and a callee whose reachable declaration classifies as boolean all stay flagged even where a use site contradicts them (that code is a type error, not a naming question).
+- The contradiction must be at a use site. A validator's *shape* alone changes nothing, so `const completed = isTaskFinished();` with nothing contradicting it anywhere stays flagged.
+
 #### Optional chaining in an initializer
 
 An optional link (`user?.isLoggedIn`, `canDelete?.('x')`) is read through, so a

@@ -381,6 +381,132 @@ const flag = Boolean?.(state);`,
       }
     }
     `,
+
+      // A `ValidatorPipeline` verdict is `true | string`, and
+      // `enforce-is-prefix-validators` mandates the `is` prefix on the validator
+      // that produces it, so reading booleanness off that prefix makes the two
+      // rules unsatisfiable together. A use site treating the value as a string
+      // settles it against the name. (Issue #2016, verbatim report.)
+      {
+        code: `
+    const isCoordinationCode = ValidatorPipeline.start(isNotEmpty)
+      .add(isTrimmed).combinedValidator;
+
+    export const assertCoordinationCode = (value) => {
+      const verdict = isCoordinationCode(value);
+      if (typeof verdict === 'string') {
+        throw new Error(verdict);
+      }
+    };
+  `,
+        // EXPECTED: no report — \`verdict\` is \`true | string\`, not a boolean.
+        // ACTUAL: "Boolean variable \\"verdict\\" is missing a common approved boolean prefix"
+      },
+
+      // A direct call to an `is`-prefixed validator carries the same
+      // contradiction without any builder chain in the way, and the callee's
+      // body is as far out of reach here as it is behind the chain.
+      `const validation = isPercentage(input);
+if (typeof validation === 'string') {
+  throw new Error(validation);
+}`,
+
+      // `!==` reads the same value the same way: the branch that survives the
+      // check is the one where the verdict is not a string.
+      `const outcome = isBestOfValid(value);
+if (typeof outcome !== 'string') {
+  accept();
+}`,
+
+      // Operand order carries no meaning.
+      `const outcome = isIntegerInRange(value);
+if ('string' === typeof outcome) {
+  reject(outcome);
+}`,
+
+      // Any `typeof` tag other than 'boolean' contradicts, not only 'string'.
+      `const outcome = isPositiveInteger(value);
+if (typeof outcome === 'number') {
+  reject(outcome);
+}`,
+
+      // A template literal spells the same tag.
+      `const outcome = isIntegerPercentage(value);
+if (typeof outcome === \`string\`) {
+  reject(outcome);
+}`,
+
+      // Loose equality is the same assertion about the tag.
+      `const outcome = isTrimmed(value);
+if (typeof outcome == 'string') {
+  reject(outcome);
+}`,
+
+      // The `Error` message parameter is a string, so passing the verdict to it
+      // contradicts booleanness on its own.
+      `const outcome = isNotEmpty(value);
+if (outcome !== true) {
+  throw new Error(outcome);
+}`,
+
+      // Any `…Error` class takes the same message parameter.
+      `const outcome = isNotEmpty(value);
+if (outcome !== true) {
+  throw new ValidationError(outcome);
+}`,
+
+      // A pass-through wrapper around the reference does not hide the use.
+      `const outcome = isNotEmpty(value);
+throw new Error(outcome as string);`,
+
+      // Comparing the value with a string literal, in either order.
+      `const outcome = isCoordinationCode(value);
+if (outcome === 'too short') {
+  reject();
+}`,
+      `const outcome = isCoordinationCode(value);
+if ('too short' !== outcome) {
+  accept();
+}`,
+
+      // The contradiction may sit in a nested block, or in an arrow declared in
+      // the same scope: the scope manager resolves both references to this
+      // binding.
+      `const outcome = isCoordinationCode(value);
+if (shouldReport) {
+  if (typeof outcome === 'string') {
+    throw new Error(outcome);
+  }
+}`,
+      `const outcome = isCoordinationCode(value);
+const report = () => {
+  if (typeof outcome === 'string') {
+    throw new Error(outcome);
+  }
+};`,
+
+      // A boolean-sounding property is a name too, so a use site outranks it.
+      `const outcome = validator.isValid;
+if (typeof outcome === 'string') {
+  throw new Error(outcome);
+}`,
+
+      // The left operand of a fallback reaches booleanness through the same
+      // callee name, so the contradiction reaches it too.
+      `const outcome = isNotEmpty(value) || isTrimmed(value);
+if (typeof outcome === 'string') {
+  throw new Error(outcome);
+}`,
+
+      // A validator whose body is reachable is settled by its own declaration,
+      // with no use site needed: the `true`/message branches classify as
+      // non-boolean, which is the declaration-first rule the callee-name
+      // heuristic already defers to. Spelled without a return annotation
+      // because that is the convention which leaves the verdict's type
+      // invisible to the rule in the first place.
+      `const isTrimmedValue = (value: string) =>
+  value.trim() === value ? true : 'untrimmed';
+const outcome = isTrimmedValue(input);`,
     ],
     invalid: [
       // Variables without proper boolean prefixes
@@ -1318,6 +1444,229 @@ const flag = Boolean?.(state);`,
             type: 'method',
             name: 'accountLocked',
             capitalizedName: 'AccountLocked',
+            prefixes: defaultPrefixes,
+          }),
+        ],
+      },
+
+      // Over-decline controls for the #2016 carve-out. The rule's worth is its
+      // true positives, so every one of these must survive it.
+
+      // A result of an `is`-prefixed callee with nothing contradicting it
+      // anywhere still reports: the carve-out needs a use site, not a shape.
+      {
+        code: `const completed = isTaskFinished();
+if (completed) {
+  celebrate();
+}`,
+        errors: [
+          buildError({
+            type: 'variable',
+            name: 'completed',
+            capitalizedName: 'Completed',
+            prefixes: defaultPrefixes,
+          }),
+        ],
+      },
+
+      // A `typeof` tag of 'boolean' affirms booleanness rather than
+      // contradicting it, under either equality operator.
+      {
+        code: `const completed = isTaskFinished();
+if (typeof completed === 'boolean') {
+  celebrate();
+}`,
+        errors: [
+          buildError({
+            type: 'variable',
+            name: 'completed',
+            capitalizedName: 'Completed',
+            prefixes: defaultPrefixes,
+          }),
+        ],
+      },
+      {
+        code: `const completed = isTaskFinished();
+if (typeof completed !== 'boolean') {
+  throw new Error('expected a flag');
+}`,
+        errors: [
+          buildError({
+            type: 'variable',
+            name: 'completed',
+            capitalizedName: 'Completed',
+            prefixes: defaultPrefixes,
+          }),
+        ],
+      },
+
+      // Comparing with a boolean literal is not a contradiction.
+      {
+        code: `const completed = isTaskFinished();
+if (completed === true) {
+  celebrate();
+}`,
+        errors: [
+          buildError({
+            type: 'variable',
+            name: 'completed',
+            capitalizedName: 'Completed',
+            prefixes: defaultPrefixes,
+          }),
+        ],
+      },
+
+      // The contradiction belongs to a DIFFERENT binding whose name merely
+      // looks alike, so it cannot excuse this one.
+      {
+        code: `const verdict = isCoordinationCode(value);
+const verdictMessage = getMessage(value);
+if (typeof verdictMessage === 'string') {
+  throw new Error(verdictMessage);
+}`,
+        errors: [
+          buildError({
+            type: 'variable',
+            name: 'verdict',
+            capitalizedName: 'Verdict',
+            prefixes: defaultPrefixes,
+          }),
+        ],
+      },
+
+      // A contradiction in a sibling scope does not enclose this use.
+      {
+        code: `function readCode(value: string) {
+  const verdict = isCoordinationCode(value);
+  return verdict;
+}
+function assertCode(value: string) {
+  const verdict = isCoordinationCode(value);
+  if (typeof verdict === 'string') {
+    throw new Error(verdict);
+  }
+}`,
+        errors: [
+          buildError({
+            type: 'variable',
+            name: 'verdict',
+            capitalizedName: 'Verdict',
+            prefixes: defaultPrefixes,
+          }),
+        ],
+      },
+
+      // A shadowing inner binding takes its own contradiction with it; the
+      // outer binding keeps its report.
+      {
+        code: `const verdict = isCoordinationCode(value);
+const check = (input: string) => {
+  const verdict = isCoordinationCode(input);
+  if (typeof verdict === 'string') {
+    throw new Error(verdict);
+  }
+};`,
+        errors: [
+          buildError({
+            type: 'variable',
+            name: 'verdict',
+            capitalizedName: 'Verdict',
+            prefixes: defaultPrefixes,
+          }),
+        ],
+      },
+
+      // An explicit `boolean` annotation is evidence about the value, which no
+      // use site may outrank.
+      {
+        code: `const completed: boolean = isTaskFinished();
+if (typeof completed === 'string') {
+  throw new Error(completed);
+}`,
+        errors: [
+          buildError({
+            type: 'variable',
+            name: 'completed',
+            capitalizedName: 'Completed',
+            prefixes: defaultPrefixes,
+          }),
+        ],
+      },
+
+      // So is a boolean literal initializer.
+      {
+        code: `let completed = false;
+if (typeof completed === 'string') {
+  throw new Error(completed);
+}`,
+        errors: [
+          buildError({
+            type: 'variable',
+            name: 'completed',
+            capitalizedName: 'Completed',
+            prefixes: defaultPrefixes,
+          }),
+        ],
+      },
+
+      // And so is a `Boolean()` coercion, whose callee name plays no part.
+      {
+        code: `const completed = Boolean(value);
+if (typeof completed === 'string') {
+  throw new Error(completed);
+}`,
+        errors: [
+          buildError({
+            type: 'variable',
+            name: 'completed',
+            capitalizedName: 'Completed',
+            prefixes: defaultPrefixes,
+          }),
+        ],
+      },
+
+      // A callee that resolves to a demonstrably boolean body settles the
+      // question at the declaration, ahead of any use site.
+      {
+        code: `const isEmpty = (value: string) => value.length === 0;
+const empty = isEmpty(input);
+if (typeof empty === 'string') {
+  throw new Error(empty);
+}`,
+        errors: [
+          buildError({
+            type: 'variable',
+            name: 'empty',
+            capitalizedName: 'Empty',
+            prefixes: defaultPrefixes,
+          }),
+        ],
+      },
+
+      // The binding is not the message parameter, so `new Error` says nothing
+      // about it.
+      {
+        code: `const completed = isTaskFinished();
+throw new Error('failed', { cause: completed });`,
+        errors: [
+          buildError({
+            type: 'variable',
+            name: 'completed',
+            capitalizedName: 'Completed',
+            prefixes: defaultPrefixes,
+          }),
+        ],
+      },
+
+      // A constructor that is not an error class takes no string message.
+      {
+        code: `const completed = isTaskFinished();
+const wrapper = new Wrapper(completed);`,
+        errors: [
+          buildError({
+            type: 'variable',
+            name: 'completed',
+            capitalizedName: 'Completed',
             prefixes: defaultPrefixes,
           }),
         ],

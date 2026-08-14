@@ -207,6 +207,11 @@ const KNOWN_DIVERGENT: Record<string, Exemption> = {
       'PIPELINE: the fixtures annotate an inferable return only to display the boolean under test; `--fix` strips it on 46 of 51 and the prefix check reads the name either way. Two joined with #1935 — `#isLocked(): boolean` and its `private isLocked(): boolean` isolation control — and both are that same shape: the owner detects a boolean METHOD only through the annotation, so dropping it would not satisfy both rules but make the fixture vacuous, and the composed `--fix` strips it on both (measured) leaving them silent under both rules.',
     cases: { noExplicitReturnTypeInferable: 51 },
   },
+  'enforce-is-prefix-validators::enforce-boolean-naming-prefixes': {
+    reason:
+      'INCIDENTAL: the owner\'s "Boolean literal constant" control, `export const FEATURE_ENABLED = true;`, exists to show that a non-function declaration inside a validators file is not a validator, and the sibling objects only to its name. `export const IS_FEATURE_ENABLED = true;` is silent under BOTH rules (measured) and is still a boolean literal constant, so the control keeps its meaning. The pair joins this list because the #2016 carve-out names `enforce-is-prefix-validators` in this rule\'s source: that rule mandates the `is` prefix on validators whose verdict is `true | string`, which is exactly the prefix the carve-out stops reading as a boolean contract on the result. The disagreement itself predates the mention.',
+    cases: { missingBooleanPrefix: 1 },
+  },
   'no-inline-component-prop::global-const-style': {
     reason:
       'PIPELINE: the module-scope wrapper fixtures declare plain `const` bindings to exercise the allowModuleScopeFactories carve-out, without regard to naming or `as const`; `--fix` supplies both and converges with ZERO residual reports (measured), and the component check reads the object identically through `unwrapExpression`. Surviving that converged spelling is exactly what #1864 fixed.',
