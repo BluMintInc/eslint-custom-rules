@@ -7,6 +7,7 @@ import {
   anchor,
   TS_CANDIDATES,
   TSX_CANDIDATES,
+  LINTABLE_LANGS,
   Block,
 } from '../utils/docsFixtures';
 
@@ -127,8 +128,16 @@ const PINNED: Record<string, { rules: string[]; note: string }> = {
   },
 };
 
+/**
+ * Correct-polarity fences holding lintable TypeScript. The language filter is
+ * not cosmetic: a ```text fence illustrating a directory layout would otherwise
+ * be counted as a block that failed to parse, which inflates the skip count
+ * this guard asserts on and hides a block that skipped for a real reason.
+ */
 const correctBlocksOf = (markdown: string): Block[] =>
-  extractBlocks(markdown).filter((block) => block.polarity === 'correct');
+  extractBlocks(markdown).filter(
+    (block) => block.polarity === 'correct' && LINTABLE_LANGS.has(block.lang),
+  );
 
 type Violation = {
   page: string;
