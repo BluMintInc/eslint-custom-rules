@@ -289,8 +289,8 @@ const KNOWN_DIVERGENT: Record<string, Exemption> = {
   },
   'enforce-querykey-ts::prefer-global-router-state-key': {
     reason:
-      'HANDOFF: the fixtures feed `useRouterState` degenerate keys (empty and `-` templates) to pin the query-key parser; the sibling owns "the key must come from the global module", and an imported `QUERY_KEY_*` constant is clean under both (measured).',
-    cases: { invalidQueryKeySource: 12, preferGlobalRouterStateKey: 15 },
+      'HANDOFF: the fixtures feed `useRouterState` degenerate keys (empty and `-` templates) to pin the query-key parser; the sibling owns "the key must come from the global module", and an imported `QUERY_KEY_*` constant is clean under both (measured). `preferGlobalRouterStateKey` 15 -> 24 is that same handoff read one pass earlier, not a new disagreement: each substitution carries the import for its own key, so two of them contend for the import declaration and the single `RuleTester` pass an `output` records rewrites one key and leaves the rest quoted (#2012). Exactly 9 `output` fixtures therefore still hold a bare key their `code` held, which the sibling reports precisely as it reports that `code`; the tenth already held one behind an inline disable and was counted before. The composed `--fix` finishes them across passes, which is why the pair\'s residual count is unmoved.',
+    cases: { invalidQueryKeySource: 12, preferGlobalRouterStateKey: 24 },
   },
   'enforce-react-type-naming::global-const-style': {
     reason:

@@ -219,21 +219,20 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
     const sourceCode = context.getSourceCode();
 
     /**
-     * Reports are buffered until the whole file has been walked so the fixer can
-     * put every substituted constant into a single import instead of racing
-     * per-violation insertions that overlap and get dropped.
+     * Reports are buffered until the whole file has been walked so each fix is
+     * planned against the file's complete import picture: what a substituted
+     * constant resolves to, and whether the fix has to bring an import with it,
+     * are questions about the whole file rather than about the text above the
+     * violation.
      */
     const pendingReports: PendingReport[] = [];
 
     /**
-     * The queryKeys import rides on one violation's fix, which makes that
-     * violation the file's import carrier. ESLint collects fixes before it
-     * applies inline disable directives, so a suppressed carrier takes the
-     * import down with it while the surviving substitutions still land —
-     * leaving the file referencing constants nothing imports (#1410).
-     * Resolving suppression here keeps a suppressed violation out of the plan
-     * entirely: it neither claims the carrier slot nor contributes a specifier
-     * to the import, which would otherwise be imported and never used.
+     * A violation the author has waived with an inline disable directive is
+     * left out of the fix plan, so no constant is resolved for it and no import
+     * is written for it (#1410). This is the decision ESLint reaches anyway
+     * when it discards a suppressed message together with its fix, taken one
+     * step earlier where the rule can see it.
      */
     const isReportSuppressed = createSuppressionChecker(context);
 
@@ -402,12 +401,15 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
     }
 
     /**
-     * Make the substituted constants resolve: extend the file's queryKeys import
+     * Make a substituted constant resolve: extend the file's queryKeys import
      * when there is one to extend, otherwise add a fresh import statement.
+     *
+     * The caller asks for this only where the constant binds to nothing, so the
+     * emitted specifier is never a duplicate of one the file already has.
      */
     function buildImportFix(
       fixer: TSESLint.RuleFixer,
-      constants: string[],
+      constant: string,
     ): TSESLint.RuleFix | null {
       const importDeclarations = importDeclarationsOf();
       const queryKeysDeclarations = queryKeysDeclarationsOf();
@@ -422,10 +424,7 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
           isValueImportSpecifier,
         );
         const lastSpecifier = namedSpecifiers[namedSpecifiers.length - 1];
-        return fixer.insertTextAfter(
-          lastSpecifier,
-          constants.map((constant) => `, ${constant}`).join(''),
-        );
+        return fixer.insertTextAfter(lastSpecifier, `, ${constant}`);
       }
 
       // A namespace or type-only queryKeys import cannot take named value
@@ -434,9 +433,7 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
       if (source === null) {
         return null;
       }
-      const importText = `import { ${constants.join(
-        ', ',
-      )} } from '${source}';\n`;
+      const importText = `import { ${constant} } from '${source}';\n`;
 
       const anchor = importInsertionAnchor(sourceCode);
       if (importDeclarations.length) {
@@ -477,7 +474,6 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
         PendingReport,
         { name: string; state: BindingState }
       >();
-      const missingConstants: string[] = [];
       const canImport = importSourceOf() !== null;
 
       // The location handed to `context.report` below is what ESLint matches a
@@ -500,23 +496,7 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
           continue;
         }
         resolutions.set(report, { name, state });
-        if (state === 'missing' && !missingConstants.includes(name)) {
-          missingConstants.push(name);
-        }
       }
-
-      // The first applied substitution carries the import for every other one:
-      // its fix range then starts at the top of the file and ends before the
-      // remaining literals, so no two fixes of this rule overlap in a pass.
-      // Suppressed reports are skipped so the slot falls to a survivor.
-      const importCarrier = pendingReports.find((report) => {
-        const resolution = resolutions.get(report);
-        return (
-          !suppressed.has(report) &&
-          resolution !== undefined &&
-          resolution.state !== 'conflict'
-        );
-      });
 
       // Suppressed violations are still reported: ESLint discards them, and
       // reporting keeps the user's directive "used" so that
@@ -540,8 +520,20 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
             const fixes = [
               fixer.replaceText(substitution.keyNode, resolution.name),
             ];
-            if (report === importCarrier && missingConstants.length > 0) {
-              const importFix = buildImportFix(fixer, missingConstants);
+            // Every fix stands on its own: the one that writes a constant is
+            // the one that imports it. Concentrating the file's imports into a
+            // single carrier fix made every other fix depend on that one being
+            // applied, and ESLint drops a fix whose range overlaps a fix it has
+            // already taken from another rule — so the carrier lost that race
+            // while the literal-only fixes still landed, leaving the file
+            // naming an identifier nothing imports (#2012).
+            //
+            // Two such fixes both reach for the import declaration, so within a
+            // pass they overlap and ESLint applies one of them. That converges:
+            // the unapplied violation is re-reported on the next pass and its
+            // constant then binds to, or extends, the import that landed.
+            if (resolution.state === 'missing') {
+              const importFix = buildImportFix(fixer, resolution.name);
               if (!importFix) {
                 return null;
               }

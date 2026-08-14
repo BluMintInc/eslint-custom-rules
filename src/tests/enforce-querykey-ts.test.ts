@@ -1,6 +1,7 @@
 import { Linter, Rule } from 'eslint';
 import { ruleTesterJsx } from '../utils/ruleTester';
 import { enforceQueryKeyTs } from '../rules/enforce-querykey-ts';
+import { preferGlobalRouterStateKey } from '../rules/prefer-global-router-state-key';
 
 /**
  * One static key in two spellings, and the single fixed state both must reach.
@@ -1294,8 +1295,13 @@ function Component() {
         { messageId: 'enforceQueryKeyImport' },
         { messageId: 'enforceQueryKeyImport' },
       ],
-      // One import collects both substituted constants in a single pass.
-      output: `import { QUERY_KEY_MATCH_VIEW, QUERY_KEY_TOURNAMENT_VIEW } from 'src/util/routing/queryKeys';
+      // Each substitution brings its own import, so both fixes reach for the
+      // same import declaration and ESLint takes one of them per pass. The
+      // second key is substituted on the next pass, which the `Linter` suites
+      // below assert; a fix that skipped its own import to fit alongside its
+      // sibling would strand a constant the moment that sibling lost a race
+      // (#2012).
+      output: `import { QUERY_KEY_MATCH_VIEW } from 'src/util/routing/queryKeys';
 
         function MatchComponent() {
           const [value] = useRouterState({ key: QUERY_KEY_MATCH_VIEW });
@@ -1303,7 +1309,7 @@ function Component() {
         }
 
         function TournamentComponent() {
-          const [value] = useRouterState({ key: QUERY_KEY_TOURNAMENT_VIEW });
+          const [value] = useRouterState({ key: 'tournament-view' });
           return <div>{value}</div>;
         }
       `,
@@ -1322,11 +1328,11 @@ function Component() {
         { messageId: 'enforceQueryKeyImport' },
         { messageId: 'enforceQueryKeyImport' },
       ],
-      output: `import { QUERY_KEY_MATCH_DETAILS, QUERY_KEY_TOURNAMENT_DETAILS } from 'src/util/routing/queryKeys';
+      output: `import { QUERY_KEY_MATCH_DETAILS } from 'src/util/routing/queryKeys';
 
         function useCustomRouterState(id) {
           const [matchValue] = useRouterState({ key: QUERY_KEY_MATCH_DETAILS });
-          const [tournamentValue] = useRouterState({ key: QUERY_KEY_TOURNAMENT_DETAILS });
+          const [tournamentValue] = useRouterState({ key: 'tournament-details' });
           return { match: matchValue, tournament: tournamentValue };
         }
       `,
@@ -1460,12 +1466,12 @@ function Component() {
         { messageId: 'enforceQueryKeyImport' },
         { messageId: 'enforceQueryKeyImport' },
       ],
-      output: `import { QUERY_KEY_SECTION_SUBSECTION, QUERY_KEY_USER_PROFILE_SETTINGS, QUERY_KEY_APP_MODULE_COMPONENT } from 'src/util/routing/queryKeys';
+      output: `import { QUERY_KEY_SECTION_SUBSECTION } from 'src/util/routing/queryKeys';
 
         function Component() {
           const [value1] = useRouterState({ key: QUERY_KEY_SECTION_SUBSECTION });
-          const [value2] = useRouterState({ key: QUERY_KEY_USER_PROFILE_SETTINGS });
-          const [value3] = useRouterState({ key: QUERY_KEY_APP_MODULE_COMPONENT });
+          const [value2] = useRouterState({ key: 'user:profile:settings' });
+          const [value3] = useRouterState({ key: 'app/module/component' });
           return <div>{value1} {value2} {value3}</div>;
         }
       `,
@@ -1583,12 +1589,12 @@ function Component() {
         { messageId: 'enforceQueryKeyImport' },
         { messageId: 'enforceQueryKeyImport' },
       ],
-      output: `import { QUERY_KEY_USER_PROFILE, QUERY_KEY_SECTION_DETAILS, QUERY_KEY_APP_MODULE } from 'src/util/routing/queryKeys';
+      output: `import { QUERY_KEY_USER_PROFILE } from 'src/util/routing/queryKeys';
 
         function Component() {
           const [value1] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
-          const [value2] = useRouterState({ key: QUERY_KEY_SECTION_DETAILS });
-          const [value3] = useRouterState({ key: QUERY_KEY_APP_MODULE });
+          const [value2] = useRouterState({ key: 'section#details' });
+          const [value3] = useRouterState({ key: 'app$module' });
           return <div>{value1} {value2} {value3}</div>;
         }
       `,
@@ -1738,9 +1744,11 @@ function Component() {
       output: null,
     },
 
-    // 29. Regression #1365: two violations converge on ONE import carrying both
-    // specifiers. RuleTester applies a single pass, so this also proves the two
-    // fixes do not overlap and get dropped.
+    // 29. Regression #1365/#2012: each violation's fix carries the import for
+    // its own key, so the two fixes contend for the import declaration and
+    // ESLint takes one per pass. RuleTester applies a single pass; the
+    // convergence onto ONE import across passes is asserted in the `Linter`
+    // suite ('converges several violations onto a single import').
     {
       code: `function A() {
   const [a] = useRouterState({ key: 'match-view' });
@@ -1755,7 +1763,7 @@ function B() {
         { messageId: 'enforceQueryKeyImport' },
         { messageId: 'enforceQueryKeyImport' },
       ],
-      output: `import { QUERY_KEY_MATCH_VIEW, QUERY_KEY_TOURNAMENT_VIEW } from 'src/util/routing/queryKeys';
+      output: `import { QUERY_KEY_MATCH_VIEW } from 'src/util/routing/queryKeys';
 
 function A() {
   const [a] = useRouterState({ key: QUERY_KEY_MATCH_VIEW });
@@ -1763,13 +1771,15 @@ function A() {
 }
 
 function B() {
-  const [b] = useRouterState({ key: QUERY_KEY_TOURNAMENT_VIEW });
+  const [b] = useRouterState({ key: 'tournament-view' });
   return b;
 }`,
     },
 
     // 30. Regression #1365: the same literal twice needs the constant imported
-    // once, not once per violation.
+    // once, not once per violation. The second violation resolves against the
+    // import the first one brought, so the next pass rewrites it with no
+    // second specifier ('the same key twice converges on one specifier').
     {
       code: `function A() {
   const [a] = useRouterState({ key: 'match-view' });
@@ -1792,7 +1802,7 @@ function A() {
 }
 
 function B() {
-  const [b] = useRouterState({ key: QUERY_KEY_MATCH_VIEW });
+  const [b] = useRouterState({ key: 'match-view' });
   return b;
 }`,
     },
@@ -2218,13 +2228,13 @@ export const useProfileKey = () => {
         { messageId: 'enforceQueryKeyImport' },
         { messageId: 'enforceQueryKeyImport' },
       ],
-      output: `import { QUERY_KEY_MATCH_VIEW, QUERY_KEY_TEAM_VIEW } from 'src/util/routing/queryKeys';
+      output: `import { QUERY_KEY_MATCH_VIEW } from 'src/util/routing/queryKeys';
 
         function Component() {
           const [match] = useRouterState({ key: QUERY_KEY_MATCH_VIEW });
           // eslint-disable-next-line enforce-querykey-ts
           const [tournament] = useRouterState({ key: 'tournament-view' });
-          const [team] = useRouterState({ key: QUERY_KEY_TEAM_VIEW });
+          const [team] = useRouterState({ key: 'team-view' });
           return <div>{match}{tournament}{team}</div>;
         }
       `,
@@ -2271,12 +2281,12 @@ export const useProfileKey = () => {
         { messageId: 'enforceQueryKeyImport' },
         { messageId: 'enforceQueryKeyImport' },
       ],
-      output: `import { QUERY_KEY_MATCH_VIEW, QUERY_KEY_TOURNAMENT_VIEW } from 'src/util/routing/queryKeys';
+      output: `import { QUERY_KEY_MATCH_VIEW } from 'src/util/routing/queryKeys';
 
         function Component() {
           // eslint-disable-next-line no-console
           const [match] = useRouterState({ key: QUERY_KEY_MATCH_VIEW });
-          const [tournament] = useRouterState({ key: QUERY_KEY_TOURNAMENT_VIEW });
+          const [tournament] = useRouterState({ key: 'tournament-view' });
           return <div>{match}{tournament}</div>;
         }
       `,
@@ -2477,8 +2487,10 @@ function Component() {
       output: ESCAPED_KEY_FIXED,
     },
 
-    // 65. Two spellings, one import: the substitution and the import carrier
-    // work the same whichever spelling holds the key.
+    // 65. Two spellings, one import: the substitution and its import work the
+    // same whichever spelling holds the key. A pass takes one of the two
+    // contending fixes; that both spellings reach the same import is asserted
+    // across passes in the `Linter` suite.
     {
       name: 'a template key and a quoted key share one emitted import',
       code: `function Component() {
@@ -2490,11 +2502,11 @@ function Component() {
         { messageId: 'enforceQueryKeyImport' },
         { messageId: 'enforceQueryKeyImport' },
       ],
-      output: `import { QUERY_KEY_MATCH_VIEW, QUERY_KEY_TOURNAMENT_VIEW } from 'src/util/routing/queryKeys';
+      output: `import { QUERY_KEY_MATCH_VIEW } from 'src/util/routing/queryKeys';
 
 function Component() {
   const [match] = useRouterState({ key: QUERY_KEY_MATCH_VIEW });
-  const [tournament] = useRouterState({ key: QUERY_KEY_TOURNAMENT_VIEW });
+  const [tournament] = useRouterState({ key: 'tournament-view' });
   return [match, tournament];
 }`,
     },
@@ -2934,9 +2946,10 @@ function Component() {
 `,
     },
 
-    // 123. Two asserted keys in one file: both are rewritten and one import
-    // collects both constants, so the widening reaches the buffered plan
-    // rather than only the first report.
+    // 123. Two asserted keys in one file: the widening reaches every report
+    // rather than only the first, which a pass shows by rewriting the first
+    // asserted key and re-reporting the second. Both reaching one shared import
+    // is asserted across passes in the `Linter` suite.
     {
       name: 'two asserted keys share a single injected import',
       filename: '/repo/src/components/Widget.tsx',
@@ -2950,11 +2963,11 @@ function Component() {
         { messageId: 'enforceQueryKeyImport' },
         { messageId: 'enforceQueryKeyImport' },
       ],
-      output: `import { QUERY_KEY_PLAYBACK_ID, QUERY_KEY_STREAM_VIEW } from '../util/routing/queryKeys';
+      output: `import { QUERY_KEY_PLAYBACK_ID } from '../util/routing/queryKeys';
 
 function Component() {
   const [a] = useRouterState({ key: QUERY_KEY_PLAYBACK_ID });
-  const [b] = useRouterState({ key: QUERY_KEY_STREAM_VIEW });
+  const [b] = useRouterState({ key: \`stream-view\` satisfies string });
   return [a, b];
 }
 `,
@@ -3074,6 +3087,76 @@ export const useProfileKey = () => {
   const [settings] = useRouterState({ key: QUERY_KEY_USER_SETTINGS });
   return [profile, settings];
 };`);
+    expect(remaining).toHaveLength(0);
+  });
+
+  // Each violation's fix brings its own import, so the two fixes contend for
+  // the import declaration and only one lands per pass. What must survive that
+  // is the end state: one import, one specifier per distinct key.
+  it('the same key twice converges on one specifier', () => {
+    const { output, remaining } = lint(`function A() {
+  const [a] = useRouterState({ key: 'match-view' });
+  return a;
+}
+
+function B() {
+  const [b] = useRouterState({ key: 'match-view' });
+  return b;
+}`);
+
+    expect(output)
+      .toBe(`import { QUERY_KEY_MATCH_VIEW } from 'src/util/routing/queryKeys';
+
+function A() {
+  const [a] = useRouterState({ key: QUERY_KEY_MATCH_VIEW });
+  return a;
+}
+
+function B() {
+  const [b] = useRouterState({ key: QUERY_KEY_MATCH_VIEW });
+  return b;
+}`);
+    expect(remaining).toHaveLength(0);
+  });
+
+  it('a template key and a quoted key reach one shared import', () => {
+    const { output, remaining } = lint(`function Component() {
+  const [match] = useRouterState({ key: \`match-view\` });
+  const [tournament] = useRouterState({ key: 'tournament-view' });
+  return [match, tournament];
+}`);
+
+    expect(output)
+      .toBe(`import { QUERY_KEY_MATCH_VIEW, QUERY_KEY_TOURNAMENT_VIEW } from 'src/util/routing/queryKeys';
+
+function Component() {
+  const [match] = useRouterState({ key: QUERY_KEY_MATCH_VIEW });
+  const [tournament] = useRouterState({ key: QUERY_KEY_TOURNAMENT_VIEW });
+  return [match, tournament];
+}`);
+    expect(remaining).toHaveLength(0);
+  });
+
+  it('two asserted keys reach one shared import', () => {
+    const { output, remaining } = lint(
+      `function Component() {
+  const [a] = useRouterState({ key: 'playback-id' as const });
+  const [b] = useRouterState({ key: \`stream-view\` satisfies string });
+  return [a, b];
+}
+`,
+      '/repo/src/components/Widget.tsx',
+    );
+
+    expect(output)
+      .toBe(`import { QUERY_KEY_PLAYBACK_ID, QUERY_KEY_STREAM_VIEW } from '../util/routing/queryKeys';
+
+function Component() {
+  const [a] = useRouterState({ key: QUERY_KEY_PLAYBACK_ID });
+  const [b] = useRouterState({ key: QUERY_KEY_STREAM_VIEW });
+  return [a, b];
+}
+`);
     expect(remaining).toHaveLength(0);
   });
 
@@ -3483,12 +3566,18 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
     {
       name: '`let key;` then `||=` always assigns, so the constant IS the key',
       filename: '/repo/src/components/Widget.tsx',
-      code: undefinedHeldKeyCode('let key;', '  key ||= QUERY_KEY_PLAYBACK_ID;'),
+      code: undefinedHeldKeyCode(
+        'let key;',
+        '  key ||= QUERY_KEY_PLAYBACK_ID;',
+      ),
     },
     {
       name: '`let key;` then `??=` always assigns, so the constant IS the key',
       filename: '/repo/src/components/Widget.tsx',
-      code: undefinedHeldKeyCode('let key;', '  key ??= QUERY_KEY_PLAYBACK_ID;'),
+      code: undefinedHeldKeyCode(
+        'let key;',
+        '  key ??= QUERY_KEY_PLAYBACK_ID;',
+      ),
     },
     {
       name: 'an explicit `= undefined` initializer holds undefined just the same (`||=`)',
@@ -3533,4 +3622,136 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
       output: null,
     },
   ],
+});
+
+// ------------------------------------------------------------------
+// Issue #2012: a fix that substitutes a constant must bring that constant's
+// import with it. Concentrating every import into one report's fix made the
+// other fixes dependent on that one surviving conflict resolution, which a
+// competing fixer defeats: the literal-only fixes still land and the file ends
+// up naming an identifier nothing imports (TS2304).
+//
+// `RuleTester`'s `output` cannot see this. It applies the whole fix set with
+// only this rule enabled, where nothing competes, so the dependency it rests on
+// always holds. Both assertions below therefore drive `Linter` directly: one
+// applies each fix ALONE, the other runs the composed pair.
+// ------------------------------------------------------------------
+describe('enforce-querykey-ts: every fix carries its own import (issue #2012)', () => {
+  const RULE_ID = '@blumintinc/blumint/enforce-querykey-ts';
+  const SIBLING_ID = '@blumintinc/blumint/prefer-global-router-state-key';
+  const FILENAME = 'react.tsx';
+
+  /** Two keys, neither imported: the second is the one that gets stranded. */
+  const REPRODUCTION = `function MatchComponent() {
+  const [value] = useRouterState({ key: 'match-view' });
+  return <div>{value}</div>;
+}
+
+function TournamentComponent() {
+  const [value] = useRouterState({ key: 'tournament-view' });
+  return <div>{value}</div>;
+}
+`;
+
+  const makeLinter = () => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(RULE_ID, enforceQueryKeyTs as unknown as Rule.RuleModule);
+    linter.defineRule(
+      SIBLING_ID,
+      preferGlobalRouterStateKey as unknown as Rule.RuleModule,
+    );
+    return linter;
+  };
+
+  const configFor = (ruleIds: string[]) => ({
+    parser: '@typescript-eslint/parser',
+    parserOptions: {
+      ecmaVersion: 2020 as const,
+      sourceType: 'module' as const,
+      ecmaFeatures: { jsx: true },
+    },
+    rules: Object.fromEntries(ruleIds.map((id) => [id, 'error' as const])),
+  });
+
+  /**
+   * Kept independent of the helper the #1410 suite carries so this guard cannot
+   * inherit a blind spot from it.
+   */
+  const importedNamesOf = (code: string) =>
+    new Set(
+      [...code.matchAll(/import\s*\{([^}]*)\}\s*from\s*'[^']*'/g)]
+        .flatMap(([, specifiers]) => specifiers.split(','))
+        .map(
+          (specifier) =>
+            specifier
+              .trim()
+              .split(/\s+as\s+/)
+              .pop() ?? '',
+        )
+        .filter((name) => name !== ''),
+    );
+
+  /** The defect's signature: a substituted constant with no import behind it. */
+  const strandedConstantsIn = (code: string) => {
+    const imported = importedNamesOf(code);
+    return [...new Set(code.match(/QUERY_KEY_[A-Z0-9_]*/g) ?? [])].filter(
+      (used) => !imported.has(used),
+    );
+  };
+
+  /** Applying one fix in isolation, exactly as ESLint splices a lone fix in. */
+  const applyFix = (code: string, fix: Rule.Fix) =>
+    `${code.slice(0, fix.range[0])}${fix.text}${code.slice(fix.range[1])}`;
+
+  it('the oracle sees a stranded constant (control)', () => {
+    expect(
+      strandedConstantsIn(`const key = QUERY_KEY_TOURNAMENT_VIEW;`),
+    ).toEqual(['QUERY_KEY_TOURNAMENT_VIEW']);
+    expect(
+      strandedConstantsIn(
+        `import { QUERY_KEY_TOURNAMENT_VIEW } from 'src/util/routing/queryKeys';
+const key = QUERY_KEY_TOURNAMENT_VIEW;`,
+      ),
+    ).toEqual([]);
+  });
+
+  it('applies each fix alone without stranding its own constant', () => {
+    const linter = makeLinter();
+    const config = configFor([RULE_ID]);
+    const messages = linter.verify(REPRODUCTION, config, FILENAME);
+    // Filtered by `ruleId` first: a rule-not-found error would otherwise read
+    // as this rule's own report.
+    const fixes = messages
+      .filter((message) => message.ruleId === RULE_ID && message.fix)
+      .map((message) => message.fix as Rule.Fix);
+
+    // Non-vacuity: both violations must offer a fix, or "every fix is
+    // self-sufficient" would be satisfied by offering fewer of them.
+    expect(
+      messages.filter((message) => message.ruleId === RULE_ID),
+    ).toHaveLength(2);
+    expect(fixes).toHaveLength(2);
+
+    for (const fix of fixes) {
+      const applied = applyFix(REPRODUCTION, fix);
+      expect(applied).not.toBe(REPRODUCTION);
+      expect(strandedConstantsIn(applied)).toEqual([]);
+    }
+  });
+
+  it('strands nothing when composed with prefer-global-router-state-key', () => {
+    const linter = makeLinter();
+    const config = configFor([RULE_ID, SIBLING_ID]);
+    const { output } = linter.verifyAndFix(REPRODUCTION, config, FILENAME);
+
+    expect(strandedConstantsIn(output)).toEqual([]);
+    expect(output).toContain('key: QUERY_KEY_MATCH_VIEW');
+    expect(output).toContain('key: QUERY_KEY_TOURNAMENT_VIEW');
+    expect(linter.verify(output, config, FILENAME)).toHaveLength(0);
+  });
 });
