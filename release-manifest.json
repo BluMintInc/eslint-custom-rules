@@ -1,5 +1,43 @@
 [
   {
+    "version": "1.20.153",
+    "date": "2026-08-14T20:21:23.691Z",
+    "rules": [
+      {
+        "name": "enforce-boolean-naming-prefixes",
+        "changeType": "fix",
+        "issues": [
+          2016
+        ],
+        "summary": "decline when the use site contradicts the callee's name (closes #2016)"
+      },
+      {
+        "name": "enforce-object-literal-as-const",
+        "changeType": "fix",
+        "issues": [
+          2015
+        ],
+        "summary": "keep an unannotated returned array unfrozen (closes #2015)"
+      },
+      {
+        "name": "global-const-style",
+        "changeType": "fix",
+        "issues": [
+          2013
+        ],
+        "summary": "decline the as const when the binding is mutated later (closes #2013)"
+      },
+      {
+        "name": "no-explicit-return-type",
+        "changeType": "fix",
+        "issues": [
+          2014
+        ],
+        "summary": "keep a decorator factory's annotation (closes #2014)"
+      }
+    ]
+  },
+  {
     "version": "1.20.152",
     "date": "2026-08-14T10:28:08.765Z",
     "rules": [

@@ -1,3 +1,13 @@
+## [1.20.153](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.152...v1.20.153) (2026-08-14)
+
+
+### Bug Fixes
+
+* **enforce-boolean-naming-prefixes:** decline when the use site contradicts the callee's name (closes [#2016](https://github.com/BluMintInc/eslint-custom-rules/issues/2016)) ([4375724](https://github.com/BluMintInc/eslint-custom-rules/commit/4375724fd671509da5680c7c3e0ba40c21788c4e)), closes [#1346](https://github.com/BluMintInc/eslint-custom-rules/issues/1346)
+* **enforce-object-literal-as-const:** keep an unannotated returned array unfrozen (closes [#2015](https://github.com/BluMintInc/eslint-custom-rules/issues/2015)) ([5a0ee39](https://github.com/BluMintInc/eslint-custom-rules/commit/5a0ee39f6a484038e491b501651a69e9e0ab04a5))
+* **global-const-style:** decline the as const when the binding is mutated later (closes [#2013](https://github.com/BluMintInc/eslint-custom-rules/issues/2013)) ([667a7e8](https://github.com/BluMintInc/eslint-custom-rules/commit/667a7e884426b9a41fa26fe0d99feb3c8e4aab7b))
+* **no-explicit-return-type:** keep a decorator factory's annotation (closes [#2014](https://github.com/BluMintInc/eslint-custom-rules/issues/2014)) ([685501a](https://github.com/BluMintInc/eslint-custom-rules/commit/685501ad680ef063049974c1d6df550ffeea4f78))
+
 ## [1.20.152](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.151...v1.20.152) (2026-08-14)
 
 
