@@ -136,6 +136,162 @@ const isFunctionValue = (node: TSESTree.Node): boolean =>
   node.type === AST_NODE_TYPES.ArrowFunctionExpression ||
   node.type === AST_NODE_TYPES.FunctionExpression;
 
+// `as const` does more than pin literal types: it makes the value deeply
+// `readonly`. A binding that is written through after its declaration therefore
+// cannot carry the assertion at all — appending it turns compiling code into
+// `TS2339: Property 'push' does not exist on type 'readonly []'` for an array
+// and `TS2540: Cannot assign to 'a' because it is a read-only property` for an
+// object (Issue #2013). These are the built-in methods that mutate their
+// receiver rather than returning a fresh value, so a call to one of them is a
+// write even though no assignment target names the binding.
+const MUTATING_METHOD_NAMES = new Set([
+  'push',
+  'pop',
+  'shift',
+  'unshift',
+  'splice',
+  'sort',
+  'reverse',
+  'fill',
+  'copyWithin',
+]);
+
+/**
+ * Climbs out of the wrappers that denote the same value as `node` — type
+ * wrappers (`(X as any).push()`, `X!.push()`) and the `ChainExpression` an
+ * optional access hangs on the outside of the whole chain (`delete X?.a`). The
+ * role a node plays in its statement is decided by the outermost such wrapper,
+ * so a classifier that reads `node.parent` directly answers for the wrapper
+ * instead of the access.
+ */
+const outermostValueOf = (node: TSESTree.Node): TSESTree.Node => {
+  let current = node;
+  for (;;) {
+    const parent: TSESTree.Node | undefined = current.parent;
+    if (
+      parent &&
+      ((isValueWrapper(parent) && parent.expression === current) ||
+        (parent.type === AST_NODE_TYPES.ChainExpression &&
+          parent.expression === current))
+    ) {
+      current = parent;
+      continue;
+    }
+    return current;
+  }
+};
+
+/**
+ * The outermost property-access path rooted at `identifier`: `X` in `X.a.b`
+ * yields the `X.a.b` member expression. Returns `null` when the identifier is
+ * not the base of any access, which is every reference that merely reads the
+ * binding as a value — `other.push(X)` passes it as an ARGUMENT, so the
+ * mutation happens to `other`, not to `X`.
+ *
+ * The climb stops at the first parent that is not a member access on the
+ * current node, so `X.map(f).push(1)` yields `X.map`: the mutated receiver
+ * there is the array `map` returned, not `X`.
+ */
+const accessPathOf = (
+  identifier: TSESTree.Node,
+): TSESTree.MemberExpression | null => {
+  let current: TSESTree.Node = outermostValueOf(identifier);
+  let path: TSESTree.MemberExpression | null = null;
+
+  for (;;) {
+    const parent: TSESTree.Node | undefined = current.parent;
+    if (
+      !parent ||
+      parent.type !== AST_NODE_TYPES.MemberExpression ||
+      parent.object !== current
+    ) {
+      return path;
+    }
+    path = parent;
+    current = outermostValueOf(parent);
+  }
+};
+
+/** The property name an access reads, for `X.push` and `X['push']` alike. */
+const accessedPropertyName = (
+  path: TSESTree.MemberExpression,
+): string | null => {
+  if (!path.computed && path.property.type === AST_NODE_TYPES.Identifier) {
+    return path.property.name;
+  }
+  if (
+    path.computed &&
+    path.property.type === AST_NODE_TYPES.Literal &&
+    typeof path.property.value === 'string'
+  ) {
+    return path.property.value;
+  }
+  return null;
+};
+
+const isMutatingMethodCall = (path: TSESTree.MemberExpression): boolean => {
+  const propertyName = accessedPropertyName(path);
+  if (propertyName === null || !MUTATING_METHOD_NAMES.has(propertyName)) {
+    return false;
+  }
+  const callee = outermostValueOf(path);
+  return (
+    callee.parent?.type === AST_NODE_TYPES.CallExpression &&
+    callee.parent.callee === callee
+  );
+};
+
+/**
+ * Whether `node` sits in a position that writes to it: the left of an
+ * assignment (plain or compound), the operand of `++`/`--` or `delete`, the
+ * loop variable of `for…in`/`for…of`, or a slot in a destructuring assignment
+ * target (`[X.a] = […]`, `({ p: X.a } = …)`).
+ */
+const isWriteTarget = (node: TSESTree.Node): boolean => {
+  const value = outermostValueOf(node);
+  const parent = value.parent;
+
+  if (!parent) {
+    return false;
+  }
+
+  switch (parent.type) {
+    case AST_NODE_TYPES.AssignmentExpression:
+      return parent.left === value;
+    case AST_NODE_TYPES.UpdateExpression:
+      return parent.argument === value;
+    case AST_NODE_TYPES.UnaryExpression:
+      return parent.operator === 'delete' && parent.argument === value;
+    case AST_NODE_TYPES.ForInStatement:
+    case AST_NODE_TYPES.ForOfStatement:
+      return parent.left === value;
+    // Destructuring targets nest, so the answer belongs to the pattern's own
+    // position. The same node types appear in ObjectExpression/ArrayExpression
+    // VALUES, where the recursion reaches a non-assignment parent and stops.
+    case AST_NODE_TYPES.ArrayPattern:
+    case AST_NODE_TYPES.ObjectPattern:
+    case AST_NODE_TYPES.Property:
+    case AST_NODE_TYPES.RestElement:
+    case AST_NODE_TYPES.AssignmentPattern:
+      return isWriteTarget(parent);
+    default:
+      return false;
+  }
+};
+
+/**
+ * Whether the binding is written through anywhere in the file. Answered from
+ * the scope manager's reference list rather than a textual search for the
+ * name, so a same-named binding in another scope (`const arr` shadowed inside a
+ * callback) contributes nothing, and a same-named method on an unrelated
+ * receiver (`other.push(1)`) is never even visited.
+ */
+const isBindingMutated = (variable: TSESLint.Scope.Variable): boolean =>
+  variable.references.some((reference) => {
+    const path = accessPathOf(reference.identifier);
+    return path !== null && (isMutatingMethodCall(path) || isWriteTarget(path));
+  });
+
 /**
  * Walks the scope chain upward from `scope` (inclusive) and reports whether
  * `targetName` is bound anywhere between `scope` and `stopScope` (inclusive).
@@ -456,11 +612,26 @@ export default createRule<[], MessageIds>({
               ) {
                 return false;
               }
-              return (
-                target.type === AST_NODE_TYPES.Literal ||
-                target.type === AST_NODE_TYPES.ArrayExpression ||
-                target.type === AST_NODE_TYPES.ObjectExpression
-              );
+              if (
+                target.type !== AST_NODE_TYPES.Literal &&
+                target.type !== AST_NODE_TYPES.ArrayExpression &&
+                target.type !== AST_NODE_TYPES.ObjectExpression
+              ) {
+                return false;
+              }
+
+              // A binding that is mutated later can never take the assertion:
+              // `as const` types the value `readonly`, so the appended text
+              // turns working code into TS2339/TS2540 (Issue #2013). The
+              // report is withheld rather than merely the fix, on the same
+              // terms as the `null`/boolean carve-out above — a violation no
+              // legal edit can clear is not a violation. The rename is a
+              // separate concern and still applies.
+              const declaredVariable = context
+                .getDeclaredVariables(declaration)
+                .find((variable) => variable.name === name);
+
+              return !declaredVariable || !isBindingMutated(declaredVariable);
             };
 
             if (shouldHaveAsConst(init)) {

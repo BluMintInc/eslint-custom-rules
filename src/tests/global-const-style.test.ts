@@ -550,6 +550,33 @@ ruleTesterTs.run('global-const-style', rule, {
       `,
       filename: 'test.ts',
     },
+    // Issue #2013: a binding that is written through carries no `as const`
+    // demand at all — the assertion types the value `readonly`, so the only
+    // edit the message asks for is one that stops the file compiling. Spelled
+    // UPPER_SNAKE_CASE already, these leave the rule with nothing to say.
+    {
+      code: 'const ITEMS = [];\nITEMS.push(1);\n',
+      filename: 'test.ts',
+    },
+    {
+      code: 'const CONFIG = { a: 1 };\nCONFIG.a = 2;\n',
+      filename: 'test.ts',
+    },
+    {
+      code: 'const ITEMS = [];\ndelete ITEMS[0];\n',
+      filename: 'test.ts',
+    },
+    // Issue #2013: the write may sit in any scope the binding reaches, so a
+    // mutation from inside a callback counts exactly like a top-level one.
+    {
+      code: [
+        'const ITEMS = [];',
+        'export const collect = (value) => {',
+        '  ITEMS.push(value);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
   ],
   invalid: [
     // Issue #1257: the reserved-export exemption only suppresses the unsafe
@@ -1534,6 +1561,430 @@ ruleTesterTs.run('global-const-style', rule, {
         },
       ],
       output: `const HTTP2_SERVER = { a: 1 } as const;\nexport const useIt = () => HTTP2_SERVER;\n`,
+    },
+    // Issue #2013: a mutated binding is renamed but NOT frozen — `as const`
+    // makes the type `readonly`, so the appended assertion turns compiling
+    // code into TS2339/TS2540.
+    {
+      code: 'const arr = [];\narr.push(1);\n',
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'upperSnakeCase',
+          data: { name: 'arr', suggestedName: 'ARR' },
+        },
+      ],
+      output: 'const ARR = [];\nARR.push(1);\n',
+    },
+    {
+      code: 'const cfg = { a: 1 };\ncfg.a = 2;\n',
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'upperSnakeCase',
+          data: { name: 'cfg', suggestedName: 'CFG' },
+        },
+      ],
+      output: 'const CFG = { a: 1 };\nCFG.a = 2;\n',
+    },
+    // Issue #2013: every mutator that writes its receiver, one case each. A
+    // set-membership test is only as good as the members it is asked about,
+    // and each of these is a live `TS2339` under the appended assertion.
+    ...[
+      'pop()',
+      'shift()',
+      'unshift(1)',
+      'splice(0, 1)',
+      'sort()',
+      'reverse()',
+      'fill(0)',
+      'copyWithin(0, 1)',
+    ].map((call) => ({
+      code: `const items = [1, 2];\nitems.${call};\n`,
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'upperSnakeCase' as const,
+          data: { name: 'items', suggestedName: 'ITEMS' },
+        },
+      ],
+      output: `const ITEMS = [1, 2];\nITEMS.${call};\n`,
+    })),
+    // Issue #2013: element assignment on an array literal.
+    {
+      code: 'const items = [1, 2];\nitems[0] = 3;\n',
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'upperSnakeCase',
+          data: { name: 'items', suggestedName: 'ITEMS' },
+        },
+      ],
+      output: 'const ITEMS = [1, 2];\nITEMS[0] = 3;\n',
+    },
+    // Issue #2013: a computed member assignment on an object literal.
+    {
+      code: `const cfg = { a: 1 };\ncfg['a'] = 2;\n`,
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'upperSnakeCase',
+          data: { name: 'cfg', suggestedName: 'CFG' },
+        },
+      ],
+      output: `const CFG = { a: 1 };\nCFG['a'] = 2;\n`,
+    },
+    // Issue #2013: compound assignment reads AND writes, so it breaks under a
+    // `readonly` property exactly like the plain form.
+    {
+      code: 'const counters = { count: 0 };\ncounters.count += 1;\n',
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'upperSnakeCase',
+          data: { name: 'counters', suggestedName: 'COUNTERS' },
+        },
+      ],
+      output: 'const COUNTERS = { count: 0 };\nCOUNTERS.count += 1;\n',
+    },
+    // Issue #2013: `++` writes through the member without an assignment node.
+    {
+      code: 'const counters = { count: 0 };\ncounters.count++;\n',
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'upperSnakeCase',
+          data: { name: 'counters', suggestedName: 'COUNTERS' },
+        },
+      ],
+      output: 'const COUNTERS = { count: 0 };\nCOUNTERS.count++;\n',
+    },
+    // Issue #2013: `delete` removes a property, which `readonly` forbids.
+    {
+      code: 'const cfg = { a: 1 };\ndelete cfg.a;\n',
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'upperSnakeCase',
+          data: { name: 'cfg', suggestedName: 'CFG' },
+        },
+      ],
+      output: 'const CFG = { a: 1 };\ndelete CFG.a;\n',
+    },
+    // Issue #2013: `as const` is DEEP, so a write anywhere along the access
+    // path breaks — the classifier reads the whole path, not its first step.
+    {
+      code: 'const cfg = { a: { b: 1 } };\ncfg.a.b = 2;\n',
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'upperSnakeCase',
+          data: { name: 'cfg', suggestedName: 'CFG' },
+        },
+      ],
+      output: 'const CFG = { a: { b: 1 } };\nCFG.a.b = 2;\n',
+    },
+    // Issue #2013: a mutator invoked on a nested member of the frozen value.
+    {
+      code: 'const cfg = { items: [] };\ncfg.items.push(1);\n',
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'upperSnakeCase',
+          data: { name: 'cfg', suggestedName: 'CFG' },
+        },
+      ],
+      output: 'const CFG = { items: [] };\nCFG.items.push(1);\n',
+    },
+    // Issue #2013: the write may sit in a nested scope. The reference list
+    // from the scope manager crosses function boundaries, so it is seen.
+    {
+      code: [
+        'const items = [];',
+        'export const collect = (value) => {',
+        '  items.push(value);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'upperSnakeCase',
+          data: { name: 'items', suggestedName: 'ITEMS' },
+        },
+      ],
+      output: [
+        'const ITEMS = [];',
+        'export const collect = (value) => {',
+        '  ITEMS.push(value);',
+        '};',
+      ].join('\n'),
+    },
+    // Issue #2013: type syntax around the receiver does not change who is
+    // mutated — `X!.push()` and `(X as any).push()` write `X` all the same.
+    {
+      code: 'const items = [];\nitems!.push(1);\n',
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'upperSnakeCase',
+          data: { name: 'items', suggestedName: 'ITEMS' },
+        },
+      ],
+      output: 'const ITEMS = [];\nITEMS!.push(1);\n',
+    },
+    {
+      code: 'const items = [];\n(items as any).push(1);\n',
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'upperSnakeCase',
+          data: { name: 'items', suggestedName: 'ITEMS' },
+        },
+      ],
+      output: 'const ITEMS = [];\n(ITEMS as any).push(1);\n',
+    },
+    // Issue #2013: an optional call is still a call on the same receiver.
+    {
+      code: 'const items = [];\nitems?.push(1);\n',
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'upperSnakeCase',
+          data: { name: 'items', suggestedName: 'ITEMS' },
+        },
+      ],
+      output: 'const ITEMS = [];\nITEMS?.push(1);\n',
+    },
+    // Issue #2013: a mutator reached through a computed string key.
+    {
+      code: `const items = [];\nitems['push'](1);\n`,
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'upperSnakeCase',
+          data: { name: 'items', suggestedName: 'ITEMS' },
+        },
+      ],
+      output: `const ITEMS = [];\nITEMS['push'](1);\n`,
+    },
+    // Issue #2013: a destructuring assignment whose target is a member of the
+    // binding writes it, though no member sits directly left of the `=`.
+    {
+      code: 'const cfg = { a: 1 };\n[cfg.a] = [2];\n',
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'upperSnakeCase',
+          data: { name: 'cfg', suggestedName: 'CFG' },
+        },
+      ],
+      output: 'const CFG = { a: 1 };\n[CFG.a] = [2];\n',
+    },
+    {
+      code: 'const cfg = { a: 1 };\n({ p: cfg.a } = source);\n',
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'upperSnakeCase',
+          data: { name: 'cfg', suggestedName: 'CFG' },
+        },
+      ],
+      output: 'const CFG = { a: 1 };\n({ p: CFG.a } = source);\n',
+    },
+    // Issue #2013: a `for…of` loop variable is an assignment target too.
+    {
+      code: 'const cfg = { a: 1 };\nfor (cfg.a of [1, 2]) {}\n',
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'upperSnakeCase',
+          data: { name: 'cfg', suggestedName: 'CFG' },
+        },
+      ],
+      output: 'const CFG = { a: 1 };\nfor (CFG.a of [1, 2]) {}\n',
+    },
+    // Issue #2013: the carve-out withholds only the assertion. An EXPORTED
+    // mutated binding keeps its rename report, whose fix is declined for the
+    // unrelated cross-file reason — `output: null` pins that the decline is
+    // the export guard's, not a second effect of this one.
+    {
+      code: 'export const items = [];\nitems.push(1);\n',
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'upperSnakeCase',
+          data: { name: 'items', suggestedName: 'ITEMS' },
+        },
+      ],
+      output: null,
+    },
+    // Issue #2013 control: the carve-out is keyed on the binding, so an
+    // untouched constant declared beside a mutated one is still frozen. The
+    // frozen one is declared FIRST because a rename fix spans from the
+    // declaration id to its last reference, and an `as const` fix landing
+    // inside that span loses the single RuleTester pass to it.
+    {
+      code: 'const frozen = [1];\nconst mutated = [];\nmutated.push(1);\n',
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'frozen', valueKind: 'an array literal' },
+        },
+        {
+          messageId: 'upperSnakeCase',
+          data: { name: 'frozen', suggestedName: 'FROZEN' },
+        },
+        {
+          messageId: 'upperSnakeCase',
+          data: { name: 'mutated', suggestedName: 'MUTATED' },
+        },
+      ],
+      output:
+        'const FROZEN = [1] as const;\nconst MUTATED = [];\nMUTATED.push(1);\n',
+    },
+    // Issue #2013 controls: the mutation carve-out must not swallow bindings
+    // that are merely NEAR a mutation. Each is spelled UPPER_SNAKE_CASE so the
+    // rename arm stays silent and the surviving `as const` report — and its
+    // applied fix — is unambiguously this arm's.
+    //
+    // A binding passed as an ARGUMENT to a mutator is not the receiver:
+    // `other.push(ITEMS)` mutates `other`.
+    {
+      code: 'const ITEMS = [1];\nother.push(ITEMS);\n',
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'ITEMS', valueKind: 'an array literal' },
+        },
+      ],
+      output: 'const ITEMS = [1] as const;\nother.push(ITEMS);\n',
+    },
+    // A same-named mutator on an unrelated receiver never reaches this
+    // binding's reference list at all. The call sits inside a function because
+    // a module-scope statement that depends on nothing above it is
+    // `logical-top-to-bottom-grouping`'s `moveSideEffect`, and a fixture this
+    // rule blesses must not be one a sibling rule reports.
+    {
+      code: 'const ITEMS = [1];\nexport const send = () => other.push(1);\n',
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'ITEMS', valueKind: 'an array literal' },
+        },
+      ],
+      output:
+        'const ITEMS = [1] as const;\nexport const send = () => other.push(1);\n',
+    },
+    // A shadowing binding of the same name that IS mutated belongs to another
+    // variable. Resolving references through the scope manager — rather than
+    // searching the text for the name — is what keeps this constant frozen.
+    {
+      code: [
+        'const ITEMS = [1];',
+        'export const build = () => {',
+        '  const items = [];',
+        '  items.push(2);',
+        '  return items;',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'ITEMS', valueKind: 'an array literal' },
+        },
+      ],
+      output: [
+        'const ITEMS = [1] as const;',
+        'export const build = () => {',
+        '  const items = [];',
+        '  items.push(2);',
+        '  return items;',
+        '};',
+      ].join('\n'),
+    },
+    // Read-only methods return a new value and leave the receiver alone.
+    {
+      code: 'const ITEMS = [1];\nexport const doubled = () => ITEMS.map((x) => x * 2);\n',
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'ITEMS', valueKind: 'an array literal' },
+        },
+      ],
+      output:
+        'const ITEMS = [1] as const;\nexport const doubled = () => ITEMS.map((x) => x * 2);\n',
+    },
+    {
+      code: 'const ITEMS = [1];\nexport const hasOne = () => ITEMS.includes(1);\n',
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'ITEMS', valueKind: 'an array literal' },
+        },
+      ],
+      output:
+        'const ITEMS = [1] as const;\nexport const hasOne = () => ITEMS.includes(1);\n',
+    },
+    // Reading a member, and appearing on the RIGHT of an assignment, are not
+    // writes.
+    {
+      code: 'const CFG = { a: 1 };\nother.a = CFG.a;\n',
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'CFG', valueKind: 'an object literal' },
+        },
+      ],
+      output: 'const CFG = { a: 1 } as const;\nother.a = CFG.a;\n',
+    },
+    // A mutator called on the RESULT of a read-only method mutates that fresh
+    // array, so the access path stops at the intervening call.
+    {
+      code: 'const ITEMS = [1];\nexport const sorted = () => ITEMS.slice().sort();\n',
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'ITEMS', valueKind: 'an array literal' },
+        },
+      ],
+      output:
+        'const ITEMS = [1] as const;\nexport const sorted = () => ITEMS.slice().sort();\n',
+    },
+    // A member of the constant used as a default parameter value is read, not
+    // written, though the pattern node types match a destructuring target.
+    {
+      code: 'const CFG = { a: 1 };\nexport const read = (value = CFG.a) => value;\n',
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'CFG', valueKind: 'an object literal' },
+        },
+      ],
+      output:
+        'const CFG = { a: 1 } as const;\nexport const read = (value = CFG.a) => value;\n',
+    },
+    // A member of the constant sitting in an object LITERAL shares its node
+    // types with an object PATTERN, so the write classifier must decide by
+    // position rather than by node type.
+    {
+      code: 'const CFG = { a: 1 };\nsend({ p: CFG.a });\n',
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'CFG', valueKind: 'an object literal' },
+        },
+      ],
+      output: 'const CFG = { a: 1 } as const;\nsend({ p: CFG.a });\n',
     },
   ],
 });

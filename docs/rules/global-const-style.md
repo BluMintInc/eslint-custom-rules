@@ -137,6 +137,51 @@ const PHONE_PROVIDER = {
 The `UPPER_SNAKE_CASE` half of the rule is unaffected and still applies to these
 declarations.
 
+### Constants that are mutated later
+
+`as const` does more than pin literal types — it makes the value deeply
+`readonly`. A constant that is written through after its declaration therefore
+cannot carry the assertion at all, so the `as const` half of the rule stays
+silent for it:
+
+```ts
+// Renamed to ITEMS, but never frozen: `ITEMS.push(1)` on a `readonly []` is
+// TS2339 (Property 'push' does not exist on type 'readonly []').
+const items = [];
+items.push(1);
+
+// Renamed to CONFIG, but never frozen: TS2540 (Cannot assign to 'a' because it
+// is a read-only property).
+const config = { a: 1 };
+config.a = 2;
+```
+
+A write is an assignment to a member or element of the binding (`X.a = …`,
+`X[0] = …`, `X.count += 1`, `X.count++`), a `delete` of one of its properties,
+or a call to a method that mutates its receiver — `push`, `pop`, `shift`,
+`unshift`, `splice`, `sort`, `reverse`, `fill`, `copyWithin`. The whole access
+path counts, because the assertion is deep: `X.items.push(1)` breaks just as
+`X.push(1)` does.
+
+The binding's writes are found through the scope manager, so only references
+that resolve to this declaration count. A same-named method on another receiver
+(`other.push(1)`), the constant passed as an argument to one (`other.push(X)`),
+a read-only method (`X.map(…)`, `X.includes(…)`) and a same-named binding
+shadowed in an inner scope all leave the assertion in place:
+
+```ts
+// Still flagged for `as const` — nothing writes through ITEMS.
+const ITEMS = [1];
+other.push(ITEMS);
+export const doubled = () => ITEMS.map((x) => x * 2);
+```
+
+The `UPPER_SNAKE_CASE` half of the rule is a separate concern and still applies:
+a mutated constant is renamed, just not frozen. To get the assertion as well,
+build the value without mutating it — spread the pieces into one literal, or
+derive it with `map`/`filter`/`concat`, each of which returns a fresh array
+instead of writing the constant.
+
 ### Next.js reserved exports
 
 Next.js recognizes certain exports by their literal identifier (`config`,
