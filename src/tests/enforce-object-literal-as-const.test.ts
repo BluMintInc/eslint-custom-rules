@@ -422,6 +422,171 @@ ruleTesterJsx.run(
         const names: string[] = ['a', 'b'];
       `,
       },
+      // valid — no return annotation, so the array's arity must not be frozen
+      `function diff(a, b) {
+  return [{ a, b }];
+}
+function isSame(a, b) {
+  return diff(a, b).length === 0;
+}`,
+      // Valid case (#2015, second reported shape): freezing the empty array makes
+      // the union's tuple branch `readonly []`, whose element type is `never`, so
+      // the consumer's `.includes` argument stops type-checking (TS2345)
+      {
+        code: `
+        function pickNames(flag: boolean, names: string[]) {
+          if (flag) {
+            return [];
+          }
+          return names;
+        }
+        function hasName(flag: boolean, names: string[], name: string) {
+          return pickNames(flag, names).includes(name);
+        }
+      `,
+      },
+      // Valid case: an unannotated function returning a bare array literal. The
+      // inferred return type carries the frozen arity to every caller, and the
+      // rule cannot see them (#2015).
+      {
+        code: `
+        function getNames() {
+          return ['a', 'b'];
+        }
+      `,
+      },
+      // Valid case: an unannotated function returning an array of object
+      // literals — the array is the returned literal, so the arity decline
+      // applies whatever the elements are (#2015)
+      {
+        code: `
+        function getRows() {
+          return [{ id: 1 }, { id: 2 }];
+        }
+      `,
+      },
+      // Valid case: an unannotated empty array. `[] as const` is `readonly []`,
+      // the narrowest arity of all (#2015).
+      {
+        code: `
+        function getEmptyArray() {
+          return [];
+        }
+      `,
+      },
+      // Valid case: an unannotated arrow function body (#2015)
+      {
+        code: `
+        const getItems = () => {
+          return [a, b, c];
+        };
+      `,
+      },
+      // Valid case: an unannotated function expression (#2015)
+      {
+        code: `
+        const getItems = function() {
+          return ['a', 'b'];
+        };
+      `,
+      },
+      // Valid case: an unannotated method — a class body declares no return type
+      // for it either (#2015)
+      {
+        code: `
+        class NameService {
+          getNames() {
+            return ['a', 'b'];
+          }
+        }
+      `,
+      },
+      // Valid case: an unannotated async function. The caller awaits the same
+      // frozen tuple (#2015).
+      {
+        code: `
+        async function getNames() {
+          return ['a', 'b'];
+        }
+      `,
+      },
+      // Valid case: an unannotated generator's `return` value reaches callers
+      // through `IteratorResult`, arity included (#2015)
+      {
+        code: `
+        function* generateNames() {
+          yield 1;
+          return ['a', 'b'];
+        }
+      `,
+      },
+      // Valid case: a concise arrow body returning an array literal. The rule
+      // inspects `return` arguments only, so this spelling is not detected at
+      // all — pinned to keep the #2015 decline from being read as the reason
+      // (the detection gap is #1795).
+      {
+        code: `
+        const getItems = () => [{ id: 1 }, { id: 2 }];
+      `,
+      },
+      // Valid case: a concise arrow body returning a parenthesised object
+      // literal is likewise undetected (#1795) — the #2015 decline is scoped to
+      // arrays and changes nothing here
+      {
+        code: `
+        const getConfig = () => ({ a: 1 });
+      `,
+      },
+      // Valid case: an object literal in a variable declaration is not a return,
+      // so no `as const` is demanded and the array decline is irrelevant
+      {
+        code: `
+        const config = { foo: 'bar', items: ['a', 'b'] };
+      `,
+      },
+      // Valid case: an array returned from a hook callback stays exempt through
+      // the hook path, which the #2015 decline neither needs nor disturbs
+      {
+        code: `
+        const rows = useMemo(() => {
+          return [{ id: 1 }];
+        }, []);
+      `,
+      },
+      // Valid case: a class property arrow declared without a function type
+      // annotation infers its return type the same way a function does (#2015)
+      {
+        code: `
+        class NameService {
+          getNames = () => {
+            return ['a', 'b'];
+          };
+        }
+      `,
+      },
+      // Valid case: an object literal's shorthand method carries no annotation
+      // either (#2015)
+      {
+        code: `
+        const service = {
+          getNames() {
+            return ['a', 'b'];
+          }
+        };
+      `,
+      },
+      // Valid case: the `return` belongs to the unannotated callback, not to the
+      // annotated function around it — the decline follows the nearest enclosing
+      // signature, as the #1526 guard already does (#2015)
+      {
+        code: `
+        function getGroups(): readonly string[][] {
+          return sources.map((source) => {
+            return [source.id, source.name];
+          });
+        }
+      `,
+      },
     ]),
     invalid: withParserOptions(parserOptions, [
       // Invalid case: array literal without 'as const'
@@ -476,31 +641,34 @@ ruleTesterJsx.run(
         }
       `,
       },
-      // Invalid case: array with multiple elements
+      // Invalid case: array with multiple elements, in a signature that accepts
+      // the readonly tuple
       {
         code: `
-        function getItems() {
+        function getItems(): readonly unknown[] {
           return [a, b, c];
         }
       `,
         errors: [{ messageId: 'enforceAsConst' }],
         output: `
-        function getItems() {
+        function getItems(): readonly unknown[] {
           return [a, b, c] as const;
         }
       `,
       },
       // Invalid case: identifier-element array outside a hook is still flagged —
-      // the exemption is scoped to hook callbacks (#1324)
+      // the exemption is scoped to hook callbacks (#1324). The readonly
+      // annotation keeps the arity inside the declared contract, so the #2015
+      // decline does not apply and the #1324 boundary is what is under test.
       {
         code: `
-        function getHits() {
+        function getHits(): readonly Hit[] {
           return [ANY_GAME_HIT];
         }
       `,
         errors: [{ messageId: 'enforceAsConst' }],
         output: `
-        function getHits() {
+        function getHits(): readonly Hit[] {
           return [ANY_GAME_HIT] as const;
         }
       `,
@@ -530,10 +698,12 @@ ruleTesterJsx.run(
         errors: [{ messageId: 'enforceAsConst' }],
         output: null,
       },
-      // Invalid case: array literal with another type assertion is declined too
+      // Invalid case: array literal with another type assertion is declined too.
+      // The readonly annotation keeps the array out of the #2015 decline, so the
+      // reported-but-unfixed assertion path is what is exercised here.
       {
         code: `
-        function getPair() {
+        function getPair(): readonly [Group, GroupRef] {
           return [group, groupRef] as SomePair;
         }
       `,
@@ -566,13 +736,13 @@ ruleTesterJsx.run(
       // itself, not one nested inside it
       {
         code: `
-        function getItems() {
+        function getItems(): readonly unknown[] {
           return [{ foo: 'bar' } as SomeType, other];
         }
       `,
         errors: [{ messageId: 'enforceAsConst' }],
         output: `
-        function getItems() {
+        function getItems(): readonly unknown[] {
           return [{ foo: 'bar' } as SomeType, other] as const;
         }
       `,
@@ -640,16 +810,18 @@ ruleTesterJsx.run(
         }
       `,
       },
-      // Invalid case: empty array
+      // Invalid case: empty array in a signature that accepts a readonly tuple.
+      // Unannotated, `[] as const` is `readonly []`, whose element type is
+      // `never` — the #2015 shape that breaks a caller's `.includes` (TS2345).
       {
         code: `
-        function getEmptyArray() {
+        function getEmptyArray(): readonly string[] {
           return [];
         }
       `,
         errors: [{ messageId: 'enforceAsConst' }],
         output: `
-        function getEmptyArray() {
+        function getEmptyArray(): readonly string[] {
           return [] as const;
         }
       `,
@@ -711,13 +883,13 @@ ruleTesterJsx.run(
       // Invalid case: array with null elements
       {
         code: `
-        function getArrayWithNull() {
+        function getArrayWithNull(): readonly unknown[] {
           return [a, null, c];
         }
       `,
         errors: [{ messageId: 'enforceAsConst' }],
         output: `
-        function getArrayWithNull() {
+        function getArrayWithNull(): readonly unknown[] {
           return [a, null, c] as const;
         }
       `,
@@ -957,7 +1129,7 @@ ruleTesterJsx.run(
       // Invalid case: with multiline array
       {
         code: `
-        function getItems() {
+        function getItems(): readonly string[] {
           return [
             'item1',
             'item2',
@@ -967,7 +1139,7 @@ ruleTesterJsx.run(
       `,
         errors: [{ messageId: 'enforceAsConst' }],
         output: `
-        function getItems() {
+        function getItems(): readonly string[] {
           return [
             'item1',
             'item2',
@@ -1086,17 +1258,126 @@ ruleTesterJsx.run(
         };
       `,
       },
-      // Invalid case (control for #1526): an unannotated array literal still
-      // fixes. If this stops fixing, the decline was scoped too widely.
+      // Invalid case (control for #1526): an array literal the signature spells
+      // `readonly` still fixes. If this stops fixing, a decline was scoped too
+      // widely — #1526 covers only the mutable spellings and #2015 only the
+      // signatures that declare nothing.
       {
         code: `
-        function getNames() {
+        function getFlags(): readonly boolean[] {
+          return [true, false];
+        }
+      `,
+        errors: [{ messageId: 'enforceAsConst' }],
+        output: `
+        function getFlags(): readonly boolean[] {
+          return [true, false] as const;
+        }
+      `,
+      },
+      // Invalid case (control for #2015): an unannotated function returning an
+      // OBJECT literal is the rule's main purpose and must keep reporting and
+      // fixing — the arity decline is scoped to array literals
+      {
+        code: `
+        function getSettings() {
+          return { theme: 'dark', fontSize: 16 };
+        }
+      `,
+        errors: [{ messageId: 'enforceAsConst' }],
+        output: `
+        function getSettings() {
+          return { theme: 'dark', fontSize: 16 } as const;
+        }
+      `,
+      },
+      // Invalid case (control for #2015): the returned literal is an object whose
+      // property value is an array. The subject is the outer object, so the
+      // array decline does not reach it.
+      {
+        code: `
+        function getMenu() {
+          return { items: ['a', 'b'], label: 'Menu' };
+        }
+      `,
+        errors: [{ messageId: 'enforceAsConst' }],
+        output: `
+        function getMenu() {
+          return { items: ['a', 'b'], label: 'Menu' } as const;
+        }
+      `,
+      },
+      // Invalid case (control for #2015): a nested object literal inside an
+      // unannotated returned object still takes the fix on the outer literal
+      {
+        code: `
+        function getProfile() {
+          return { user: { name: 'John' } };
+        }
+      `,
+        errors: [{ messageId: 'enforceAsConst' }],
+        output: `
+        function getProfile() {
+          return { user: { name: 'John' } } as const;
+        }
+      `,
+      },
+      // Invalid case (control for #2015): a function whose branches return both
+      // shapes. The object branch is reported and fixed; the array branch is
+      // declined, so exactly one error lands.
+      {
+        code: `
+        function getPayload(flag) {
+          if (flag) {
+            return ['a', 'b'];
+          }
+          return { name: 'a' };
+        }
+      `,
+        errors: [{ messageId: 'enforceAsConst' }],
+        output: `
+        function getPayload(flag) {
+          if (flag) {
+            return ['a', 'b'];
+          }
+          return { name: 'a' } as const;
+        }
+      `,
+      },
+      // Invalid case: the nearest enclosing signature is the callback's own
+      // readonly annotation, so the array is fixed even though the function
+      // around it declares nothing (#2015)
+      {
+        code: `
+        function getGroups() {
+          return sources.map((source): readonly string[] => {
+            return [source.id, source.name];
+          });
+        }
+      `,
+        errors: [{ messageId: 'enforceAsConst' }],
+        output: `
+        function getGroups() {
+          return sources.map((source): readonly string[] => {
+            return [source.id, source.name] as const;
+          });
+        }
+      `,
+      },
+      // Invalid case (composition with #1526): an annotation the rule cannot
+      // resolve counts as accepting, and the #2015 decline does not swallow it —
+      // the declared name, not the literal's arity, is what callers read
+      {
+        code: `
+        type Names = readonly string[];
+        function getNames(): Names {
           return ['a', 'b'];
         }
       `,
         errors: [{ messageId: 'enforceAsConst' }],
         output: `
-        function getNames() {
+        type Names = readonly string[];
+        function getNames(): Names {
           return ['a', 'b'] as const;
         }
       `,

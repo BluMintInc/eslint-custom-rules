@@ -8,7 +8,7 @@
 
 An object or array literal returned from a function is widened by TypeScript: `return { role: 'admin' }` infers `{ role: string }`, and `return [group, groupRef]` infers `(GroupInfo | DocumentReference<GroupInfo>)[]` rather than the tuple the caller destructures. Marking the literal `as const` keeps the literal types and the tuple shape, and makes the returned value readonly so callers cannot mutate a value the producer treats as constant.
 
-This rule reports object and array literals returned directly from a function and auto-fixes by appending `as const`. One reported shape is deliberately left unfixed — see [A literal that already carries an assertion](#a-literal-that-already-carries-an-assertion).
+This rule reports object and array literals returned directly from a function and auto-fixes by appending `as const`. An **array** literal is reported only where the enclosing signature states a type that accepts a readonly tuple — see [An array literal the signature does not accept as readonly](#an-array-literal-the-signature-does-not-accept-as-readonly). One reported shape is deliberately left unfixed — see [A literal that already carries an assertion](#a-literal-that-already-carries-an-assertion).
 
 ## Rule Details
 
@@ -21,9 +21,11 @@ A `return` statement is reported when all of the following hold:
 
 Arrays returned from a React hook callback (`useMemo`, `useCallback`, or any `use*` hook) are also exempt, whatever their elements. These are memoized prop and data lists that flow into mutable or `readonly` array parameters downstream, and freezing them into readonly tuples produced false positives (see issues #511 and #1324). An **object** literal returned from a hook callback is still reported.
 
-### An array literal the signature declares mutable
+### An array literal the signature does not accept as readonly
 
-An **array** literal is also exempt where the enclosing signature spells its type as a mutable array or tuple:
+`as const` makes an array literal a readonly *tuple* of fixed length — strictly narrower than the array the literal is otherwise given, in both mutability and arity. An **array** literal is therefore reported only where the enclosing signature states a type that accepts a readonly tuple. Two positions are exempt.
+
+#### The signature declares a mutable array
 
 ```ts
 function getNames(): string[] {
@@ -31,9 +33,25 @@ function getNames(): string[] {
 }
 ```
 
-`as const` makes an array literal a readonly *tuple*, and TypeScript rejects that against a mutable target: `TS4104: The type 'readonly ["a", "b"]' is 'readonly' and cannot be assigned to the mutable type 'string[]'`. Appending it here would turn compiling code into code that does not compile (issue #1526).
+TypeScript rejects a readonly tuple against a mutable target: `TS4104: The type 'readonly ["a", "b"]' is 'readonly' and cannot be assigned to the mutable type 'string[]'`. Appending `as const` here turns compiling code into code that does not compile (issue #1526).
 
-The rule stays **silent** rather than reporting without a fix. Nothing the author can do at the literal satisfies the rule — honouring it means widening the signature to `readonly string[]`, which changes the function's contract and every call site that mutates the result. A finding no local edit can resolve is noise, and noise on a file is what blocks the rule's adoption.
+#### The signature declares nothing
+
+```ts
+function diff(a, b) {
+  return [{ a, b }]; // not reported
+}
+
+function isSame(a, b) {
+  return diff(a, b).length === 0;
+}
+```
+
+With no annotation, the frozen arity becomes part of the *inferred* return type and every caller inherits it. `diff` returns a one-element tuple once its literal is frozen, so `.length` has the literal type `1` and the comparison fails to compile: `TS2367: This comparison appears to be unintentional because the types '1' and '0' have no overlap`. The same narrowing breaks `.includes` (the element type of `readonly []` is `never`, so passing a `string` raises `TS2345`), `.push`, and any assignment into a mutable `T[]` parameter.
+
+The damage lands in a **different function** from the one edited, and the rule reads a single file's syntax — the callers are beyond what it can see, so it cannot judge which of them the arity change breaks (issue #2015). Annotating the signature with a `readonly` type states the contract explicitly and brings the literal back into scope for the rule.
+
+In both positions the rule stays **silent** rather than reporting without a fix. Nothing the author can do at the literal satisfies the rule — honouring it means changing the function's contract and every call site that depends on the array's length or mutability. A finding no local edit can resolve is noise, and noise on a file is what blocks the rule's adoption.
 
 The declared type is read syntactically, from wherever it is written for the enclosing function:
 
@@ -43,11 +61,13 @@ The declared type is read syntactically, from wherever it is written for the enc
 
 For an `async` function the awaited type is used (`Promise<string[]>` is a mutable array position), and for a generator the second type argument is (`Generator<number, string[], void>`).
 
-A `readonly` spelling accepts the readonly tuple, so those positions are reported and fixed as usual: `readonly string[]`, `ReadonlyArray<string>`, `readonly [string, number]`, `Promise<readonly string[]>`, and any union with a `readonly` member. Only the mutable spellings — `T[]`, `[A, B]`, `Array<T>` — and unions in which no member accepts a readonly tuple (`string[] | undefined`) are exempt. An unannotated function is reported: with no declared type there is nothing for the readonly tuple to conflict with.
+A `readonly` spelling accepts the readonly tuple, so those positions are reported and fixed as usual: `readonly string[]`, `ReadonlyArray<string>`, `readonly [string, number]`, `Promise<readonly string[]>`, and any union with a `readonly` member. The mutable spellings — `T[]`, `[A, B]`, `Array<T>` — and unions in which no member accepts a readonly tuple (`string[] | undefined`) are exempt.
 
-Where the declared type is a name the rule cannot resolve (a type alias, an interface, an imported type), it is treated as accepting, and a callback's contextual type coming from the callee's parameter list is not resolved at all. `as const` is still appended in those positions.
+The signature that counts is the nearest enclosing one, so a `return` inside a callback is judged against that callback's annotation rather than the surrounding function's.
 
-**Object** literals are unaffected by any of this. `readonly` property modifiers do not enter assignability, so `{ name: 'a' } as const` still satisfies a mutable `{ name: string }` — a `Config` return annotation is reported and fixed exactly as an unannotated one is.
+Where the declared type is a name the rule cannot resolve (a type alias, an interface, an imported type), it is treated as accepting, and a callback's contextual type coming from the callee's parameter list is not resolved at all. `as const` is still appended in those positions: what callers read there is the declared name, so the literal's arity never escapes into their view.
+
+**Object** literals are unaffected by any of this. `readonly` property modifiers do not enter assignability, so `{ name: 'a' } as const` still satisfies a mutable `{ name: string }`, and an object literal has no arity for the assertion to fix. A `Config` return annotation and an absent annotation are both reported and fixed.
 
 ### A literal that already carries an assertion
 
@@ -70,8 +90,11 @@ function getConfig() {
 ```
 
 ```ts
-function fetchAssertGroup(groupId: string) {
-  return [group, groupRef];
+// The signature accepts a readonly tuple, so the array literal is reported
+function fetchGroupRefs(
+  groupId: string,
+): readonly DocumentReference<GroupInfo>[] {
+  return [groupRef, parentRef];
 }
 ```
 
@@ -91,8 +114,9 @@ const config = useMemo(() => {
 ```
 
 ```ts
-// An identifier-element array outside a hook callback is reported
-function getHits() {
+// An identifier-element array outside a hook callback is reported, the
+// annotation keeping it out of the arity carve-out
+function getHits(): readonly Hit[] {
   return [ANY_GAME_HIT];
 }
 ```
@@ -109,7 +133,7 @@ function getData() {
 ```ts
 // The assertion sits on an array element, not on the returned literal, so this
 // is reported AND fixed — to `[{ foo: 'bar' } as SomeType, other] as const`
-function getItems() {
+function getItems(): readonly unknown[] {
   return [{ foo: 'bar' } as SomeType, other];
 }
 ```
@@ -180,6 +204,28 @@ function getNames(): string[] {
 const getNames: () => string[] = () => {
   return ['a', 'b'];
 };
+```
+
+```ts
+// The signature declares nothing, so freezing the array would hand its arity to
+// every caller: `diff` would return a one-element tuple and this comparison
+// would stop compiling (TS2367)
+function diff(a: number, b: number) {
+  return [{ a, b }];
+}
+
+function isSame(a: number, b: number) {
+  return diff(a, b).length === 0;
+}
+```
+
+```ts
+// An object literal in the same position is reported and fixed: freezing one
+// adds `readonly` property modifiers, which assignability ignores, and leaves
+// no arity for a caller to trip over
+function getConfig() {
+  return { foo: 'bar' } as const;
+}
 ```
 
 ```ts

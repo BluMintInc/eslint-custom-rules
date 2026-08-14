@@ -329,8 +329,8 @@ const KNOWN_DIVERGENT: Record<string, Exemption> = {
   },
   'logical-top-to-bottom-grouping::enforce-object-literal-as-const': {
     reason:
-      'PIPELINE: the fixtures pin statement ORDER and their object literals lack `as const`, which `--fix` supplies on all 3.',
-    cases: { enforceAsConst: 3 },
+      'PIPELINE: the fixtures pin statement ORDER and their literals lack `as const`, which `--fix` supplies. 3 -> 1 is the #2015 fix landing: two of the three returned an ARRAY from an unannotated function, where `as const` freezes the arity into the inferred return type and breaks the callers, so the sibling declines those. The remaining object literal is unaffected.',
+    cases: { enforceAsConst: 1 },
   },
   'logical-top-to-bottom-grouping::global-const-style': {
     reason:

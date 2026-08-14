@@ -295,7 +295,6 @@ const UNDRIVEN: Record<string, UndrivenCause> = {
   'enforce-m3-sentence-case::member': 'noSite',
   'enforce-mui-rounded-icons::call': 'silentBothSides',
   'enforce-mui-rounded-icons::member': 'silentBothSides',
-  'enforce-object-literal-as-const::member': 'silentBothSides',
   'enforce-serializable-params::call': 'noSite',
   'enforce-serializable-params::member': 'noSite',
   'enforce-singular-type-names::call': 'noSite',
