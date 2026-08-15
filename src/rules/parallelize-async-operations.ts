@@ -1391,8 +1391,57 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
     }
 
     /**
+     * Records the instance slot a method call MUTATES THROUGH ITS RECEIVER.
+     * `this.accumulated.set(doc, 1)` publishes to `this.accumulated` exactly as
+     * `this.accumulated = next` does, but it is a CallExpression rather than an
+     * assignment, so the assignment-shaped visit below never sees it. A sweep
+     * that fills an accumulator through the accumulator's own API then reads as
+     * writing nothing, a later await that reads that slot is classified
+     * independent, and the rewrite runs the read against the still-empty
+     * accumulator. (#2017)
+     *
+     * ANY method invoked on the slot counts, rather than a list of known
+     * mutators. The receiver is already the unit barrier 7 treats as ordered,
+     * and a domain `append`/`record`/`write` mutates its receiver exactly as
+     * `set` does, so naming a subset would leave the same silent reorder
+     * reachable under a different spelling. Over-recording a pure
+     * `this.cache.size()` costs only a missed parallelization, which is the
+     * trade this rule takes everywhere.
+     *
+     * Only calls in DEFERRED position qualify -- those the traversal reaches by
+     * crossing into a callback or a resolved callee body. A call spelled in the
+     * operand's own text already carries a receiver key, so barriers 7 and 12
+     * order it with carve-outs calibrated against exactly this: they return no
+     * key for a call-produced receiver (`this.realtimeDb.ref(pathA).remove()`)
+     * or a varying subscript (`this.handlers[0].read()`), which is what keeps
+     * two argument-disambiguated operations on one handle parallelizable.
+     * Recording those same calls here would mint a write on the shared prefix
+     * and silently override that calibration. Behind a callback no receiver key
+     * exists at the operand level at all, so nothing is overridden -- that is
+     * the blind spot, and its whole extent.
+     *
+     * The BARE instance (`this.storeAll()`) is excluded for the same reason:
+     * recording it would mint a wildcard write overlapping every slot, turning
+     * the precise treatment those barriers give it into a blanket one.
+     */
+    function collectMutatedReceiver(
+      call: TSESTree.CallExpression,
+      targets: AssignmentTargets,
+    ): void {
+      const callee = unwrapExpression(call.callee);
+      if (callee.type !== AST_NODE_TYPES.MemberExpression) {
+        return;
+      }
+      const receiverPath = getInstancePathKey(callee.object);
+      if (receiverPath !== null && receiverPath !== INSTANCE_RECEIVER_KEY) {
+        targets.instancePaths.push(receiverPath);
+      }
+    }
+
+    /**
      * Collects the state an awaited expression WRITES: the identifier names it
-     * assigns, and the instance paths (`this.mutator`) it assigns. (#1924)
+     * assigns, and the instance paths (`this.mutator`) it assigns or mutates
+     * through a method call. (#1924, #2017)
      *
      * The traversal deliberately crosses function boundaries, which is the
      * opposite of what containsSuspendingAwait needs: the write that matters
@@ -1411,7 +1460,7 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
     } {
       const targets: AssignmentTargets = { identifiers: [], instancePaths: [] };
 
-      const visit = (current: TSESTree.Node): void => {
+      const visit = (current: TSESTree.Node, deferred: boolean): void => {
         if (current.type === AST_NODE_TYPES.AssignmentExpression) {
           collectAssignmentTarget(current.left, targets);
         } else if (current.type === AST_NODE_TYPES.UpdateExpression) {
@@ -1424,7 +1473,12 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
           // `for (captured of items)` assigns an existing binding on every
           // iteration; only the declaration form introduces a fresh local.
           collectAssignmentTarget(current.left, targets);
+        } else if (deferred && current.type === AST_NODE_TYPES.CallExpression) {
+          collectMutatedReceiver(current, targets);
         }
+
+        const childrenDeferred =
+          deferred || FUNCTION_BOUNDARY_TYPES.has(current.type);
 
         for (const key in current) {
           if (key === 'parent' || key === 'range' || key === 'loc') continue;
@@ -1435,16 +1489,19 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
           if (Array.isArray(child)) {
             for (const item of child) {
               if (item && typeof item === 'object' && 'type' in item) {
-                visit(item as TSESTree.Node);
+                visit(item as TSESTree.Node, childrenDeferred);
               }
             }
           } else if ('type' in child) {
-            visit(child as TSESTree.Node);
+            visit(child as TSESTree.Node, childrenDeferred);
           }
         }
       };
 
-      visit(node);
+      // A resolved callee body is itself deferred relative to the run, and
+      // entering it crosses its own function boundary, so the flag lifts here
+      // exactly as it does for a callback. (#1989, #2017)
+      visit(node, false);
 
       const names = new Set<string>();
       for (const target of targets.identifiers) {
@@ -1730,11 +1787,26 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
           ]),
         };
       });
+      //
+      // The READ side resolves the callee body for the same reason the write
+      // side does, and the omission was the other half of #2017: `await
+      // this.storeAll()` spells only the slot `this.storeAll`, so a preceding
+      // write to `this.accumulated` -- the slot `storeAll` actually reads --
+      // compares as disjoint and the pair parallelizes. Reading the resolved
+      // body restores the edge. An unresolvable callee (inherited, computed,
+      // imported) yields null and leaves the operand keyed on its own text, as
+      // before.
       const readInstancePaths = awaitNodes.map((node) => {
         const awaitExpr = getAwaitExpression(node);
-        return awaitExpr
-          ? getInstancePathKeys(awaitExpr.argument)
-          : new Set<string>();
+        if (!awaitExpr) {
+          return new Set<string>();
+        }
+        const read = getInstancePathKeys(awaitExpr.argument);
+        const calleeFunction = resolveCalleeFunction(awaitExpr);
+        if (!calleeFunction) {
+          return read;
+        }
+        return new Set([...read, ...getInstancePathKeys(calleeFunction)]);
       });
       for (let i = 1; i < awaitNodes.length; i++) {
         const currentIds = allIdentifiers[i];
