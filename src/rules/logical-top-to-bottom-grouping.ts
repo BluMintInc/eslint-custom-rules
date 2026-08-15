@@ -2731,6 +2731,57 @@ function moveSegment(
   return next;
 }
 
+const LINE_TERMINATORS = new Set(['\n', '\r', '\u2028', '\u2029']);
+
+/**
+ * Whether text appended to `text` would start on a fresh line.
+ *
+ * Trailing spaces and tabs are skipped: a segment ends with the indentation that
+ * belonged to whatever followed it, and that indentation still leaves an appended
+ * segment on a line of its own.
+ */
+function endsWithLineTerminator(text: string): boolean {
+  let cursor = text.length - 1;
+  while (cursor >= 0 && (text[cursor] === ' ' || text[cursor] === '\t')) {
+    cursor -= 1;
+  }
+  return cursor >= 0 && LINE_TERMINATORS.has(text[cursor]);
+}
+
+/**
+ * The line break the source itself uses, so a separator restored below matches its
+ * neighbours instead of mixing endings into a CRLF file.
+ */
+function lineBreakOf(text: string): string {
+  const index = text.indexOf('\n');
+  return index > 0 && text[index - 1] === '\r' ? '\r\n' : '\n';
+}
+
+/**
+ * Concatenates reordered segments, restoring the statement separation the source
+ * carried positionally.
+ *
+ * A segment runs up to where the next one began, so it normally already ends with the
+ * line break that separated them. Two do not: the block's last segment stops at `}` or
+ * at the end of the file, and a statement sharing a line with its predecessor never had
+ * a break in front of it. Once a reordering moves such a segment away from the end,
+ * appending the next segment directly runs two statements together — and where the
+ * first ends in a `//` comment that is not a formatting blemish, since the appended
+ * statement becomes comment text and vanishes from the program (#2023).
+ *
+ * Only the joins are separated. Nothing is appended after the final segment, whose
+ * successor is the untouched text outside the replaced range.
+ */
+function joinSegments(segments: string[], lineBreak: string): string {
+  return segments.reduce(
+    (text, segment, index) =>
+      index === 0 || endsWithLineTerminator(text)
+        ? text + segment
+        : text + lineBreak + segment,
+    '',
+  );
+}
+
 /**
  * Emits an entire reordering as one fix by permuting the block's text segments.
  *
@@ -2765,7 +2816,10 @@ function buildReorderFix(
 
   return fixer.replaceTextRange(
     [bounds[first], bounds[last + 1]],
-    reordered.slice(first, last + 1).join(''),
+    joinSegments(
+      reordered.slice(first, last + 1),
+      lineBreakOf(sourceCode.getText()),
+    ),
   );
 }
 

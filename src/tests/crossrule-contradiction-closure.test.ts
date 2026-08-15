@@ -339,8 +339,8 @@ const KNOWN_DIVERGENT: Record<string, Exemption> = {
   },
   'logical-top-to-bottom-grouping::global-const-style': {
     reason:
-      'PIPELINE: the fixtures pin statement ORDER and name their module-scope consts lowercase incidentally; `--fix` supplies `as const`/SCREAMING_SNAKE on 51 of 65, the rest by hand.',
-    cases: { asConst: 51, upperSnakeCase: 65 },
+      "PIPELINE: the fixtures pin statement ORDER and name their module-scope consts lowercase incidentally; `--fix` supplies `as const`/SCREAMING_SNAKE on 53 of 67, the rest by hand. 51/65 -> 53/67 is the pair of fixtures #2023 added, whose blessed text leaves `const name = 'elementAt';` at module scope: each draws both complaints, and composing the two fixers settles it to `const NAME = 'elementAt' as const;` under the statement it derives from, clean under both (measured). That same composition measured clean before the #2023 join fix too — by appending the declaration onto a trailing `//` comment, which deleted it.",
+    cases: { asConst: 53, upperSnakeCase: 67 },
   },
   'logical-top-to-bottom-grouping::parallelize-async-operations': {
     reason:
