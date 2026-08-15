@@ -1,3 +1,11 @@
+## [1.20.156](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.155...v1.20.156) (2026-08-15)
+
+
+### Bug Fixes
+
+* **logical-top-to-bottom-grouping:** separate reordered statements so a relocated one cannot land inside a trailing // comment (closes [#2023](https://github.com/BluMintInc/eslint-custom-rules/issues/2023)) ([0394c46](https://github.com/BluMintInc/eslint-custom-rules/commit/0394c464c68c17355d576df676e1a02fa68e7656))
+* **prefer-nullish-coalescing-boolean-props:** carry the comments stranded between the operands instead of deleting them (closes [#2024](https://github.com/BluMintInc/eslint-custom-rules/issues/2024)) ([f632a26](https://github.com/BluMintInc/eslint-custom-rules/commit/f632a26d330c7ee12beff6893530756d328e5681))
+
 ## [1.20.155](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.154...v1.20.155) (2026-08-15)
 
 
