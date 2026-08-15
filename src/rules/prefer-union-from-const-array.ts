@@ -53,6 +53,52 @@ function isStringLiteralType(
 }
 
 /**
+ * A declaration file is ambient in its entirety, so a declaration in one is
+ * subject to the ambient restriction even without an explicit `declare`.
+ */
+const DECLARATION_FILE = /\.d\.[cm]?ts$/i;
+
+/**
+ * An ambient context accepts only a string, numeric or literal-enum `const`
+ * initializer (TS1254), so the derived `as const` array cannot be emitted there
+ * at all — `as const` or not, an array literal is rejected. Declining is the
+ * remedy rather than a different rewrite, because no legal rewrite exists in
+ * that position: the rule asks for importable runtime values and an ambient
+ * declaration is precisely the promise that no runtime value is emitted.
+ *
+ * `declare` on the OUTERMOST module declaration makes every level nested below
+ * it ambient too, so the whole ancestor chain is walked rather than just the
+ * enclosing block. A module named by a string literal (`module 'x' {}`) and a
+ * `global {}` augmentation are ambient by construction, with or without the
+ * modifier.
+ */
+function isInAmbientContext(node: TSESTree.Node, filename: string): boolean {
+  if (DECLARATION_FILE.test(filename)) {
+    return true;
+  }
+  if (
+    node.type === AST_NODE_TYPES.TSTypeAliasDeclaration &&
+    node.declare === true
+  ) {
+    return true;
+  }
+  let current: TSESTree.Node | undefined = node.parent;
+  while (current) {
+    if (current.type === AST_NODE_TYPES.TSModuleDeclaration) {
+      if (
+        current.declare === true ||
+        current.global === true ||
+        current.id.type === AST_NODE_TYPES.Literal
+      ) {
+        return true;
+      }
+    }
+    current = current.parent;
+  }
+  return false;
+}
+
+/**
  * Walk the scope chain upward collecting declared variable names. Used to skip
  * the autofix (report-only) when the derived `{TYPE}_VALUES` name is already
  * bound, so the fix never shadows or duplicates an existing identifier.
@@ -186,6 +232,10 @@ export const preferUnionFromConstArray = createRule<Options, MessageIds>({
         // (number, null, undefined, string, template literal, type reference)
         // disqualifies the whole union.
         if (!members.every(isStringLiteralType)) {
+          return;
+        }
+
+        if (isInAmbientContext(node, context.getFilename())) {
           return;
         }
 

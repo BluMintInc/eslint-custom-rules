@@ -1266,16 +1266,9 @@ const findingKey = (finding: Finding) =>
  *
  * Prefer fixing over listing. Each entry here is listed rather than fixed for
  * one reason only: a fix belongs in its own branch, since one rule per commit
- * is a hard repo invariant and all four already carry an issue.
+ * is a hard repo invariant and each already carries an issue.
  */
 const TYPE_UNSAFE_BASELINE: Record<string, { pairs: number; note: string }> = {
-  'prefer-union-from-const-array TS1254': {
-    pairs: 1,
-    note:
-      '#2020. Emits a `const` array initializer into an ambient `declare ' +
-      'namespace`, where an initializer is not allowed. Reached from ' +
-      'no-firestore-object-arrays.',
-  },
   'require-image-optimized TS2739': {
     pairs: 1,
     note:

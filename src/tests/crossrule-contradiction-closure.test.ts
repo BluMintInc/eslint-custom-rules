@@ -384,8 +384,8 @@ const KNOWN_DIVERGENT: Record<string, Exemption> = {
   },
   'no-firestore-object-arrays::prefer-union-from-const-array': {
     reason:
-      'CO-DESIGNED: `no-firestore-object-arrays` recognizes `(typeof VALUES)[number]` precisely because that is what this sibling autofixes toward, and says so in its own source; `--fix` converges on all 5.',
-    cases: { preferDerivedUnion: 5 },
+      'CO-DESIGNED: `no-firestore-object-arrays` recognizes `(typeof VALUES)[number]` precisely because that is what this sibling autofixes toward, and says so in its own source; `--fix` converges on all 4. 5 -> 4 is the #2020 fix landing, a defect removed rather than detection lost: the departed fixture holds its alias inside a `declare namespace`, where TS1254 rejects any `const` array initializer, so the sibling declines a rewrite it had no legal spelling for. The remaining four are ordinary module-scope aliases and still converge.',
+    cases: { preferDerivedUnion: 4 },
   },
   'no-margin-properties::global-const-style': {
     reason:

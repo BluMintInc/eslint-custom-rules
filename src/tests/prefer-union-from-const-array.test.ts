@@ -50,6 +50,74 @@ type Direction = (typeof DIRECTION_VALUES)[number];`,
     `type Shape = Circle | Square;`,
     // Intersection type — not a union
     `type Combined = A & B;`,
+    // REPRO #2020: an ambient `declare namespace` admits no const initializer
+    // (TS1254), so there is no valid rewrite to offer.
+    `declare namespace NS { export type Role = 'owner' | 'member' }
+export type T = { roles: NS.Role[]; list: Array<NS.Role> };`,
+    // #2020: same, over several lines and without the export modifier
+    `declare namespace Access {
+  type Role = 'owner' | 'member';
+}`,
+    // #2020: an inner namespace inherits ambience from the outer `declare`,
+    // which only the OUTERMOST declaration carries
+    `declare namespace Access {
+  namespace Team {
+    type Role = 'owner' | 'member';
+  }
+}`,
+    // #2020: ambience survives any depth of nesting
+    `declare namespace A {
+  namespace B {
+    namespace C {
+      type Role = 'owner' | 'member';
+    }
+  }
+}`,
+    // #2020: `export declare namespace` carries the modifier on the module
+    // declaration, one level under the export
+    `export declare namespace NS {
+  type Role = 'owner' | 'member';
+}`,
+    // #2020: a module augmentation is ambient
+    `declare module 'stream-chat' {
+  type Role = 'owner' | 'member';
+}`,
+    // #2020: a namespace nested inside an ambient module augmentation
+    `declare module 'stream-chat' {
+  namespace Team {
+    type Role = 'owner' | 'member';
+  }
+}`,
+    // #2020: a global augmentation block is ambient
+    `export {};
+declare global {
+  type Role = 'owner' | 'member';
+}`,
+    // #2020: `declare` on the alias itself promises no runtime emit, and the
+    // derived array is the runtime emit
+    `declare type Role = 'owner' | 'member';`,
+    // #2020: every declaration in a `.d.ts` is ambient even with no `declare`
+    // keyword anywhere in sight
+    {
+      code: `export type Role = 'owner' | 'member';`,
+      filename: 'src/types/roles.d.ts',
+    },
+    // #2020: including one nested in a plain namespace
+    {
+      code: `namespace Access {
+  type Role = 'owner' | 'member';
+}`,
+      filename: 'src/types/roles.d.ts',
+    },
+    // #2020: the `.d.mts`/`.d.cts` declaration-file spellings are ambient too
+    {
+      code: `export type Role = 'owner' | 'member';`,
+      filename: 'src/types/roles.d.mts',
+    },
+    {
+      code: `export type Role = 'owner' | 'member';`,
+      filename: 'src/types/roles.d.cts',
+    },
   ],
   invalid: [
     // Motivating real case: exactly two members, exported (export mirroring)
@@ -500,6 +568,67 @@ export function getPasswordFailures(
   }
   return passwordFailures;
 }`,
+      errors: [{ messageId: 'preferDerivedUnion' }],
+    },
+    // #2020 counterpart: a plain `namespace` in a `.ts` file is NOT ambient, so
+    // a const array is legal there and the union is still rewritten.
+    {
+      code: `namespace Access {
+  type Role = 'owner' | 'member';
+}`,
+      output: `namespace Access {
+  const ROLE_VALUES = ['owner', 'member'] as const;
+  type Role = (typeof ROLE_VALUES)[number];
+}`,
+      errors: [{ messageId: 'preferDerivedUnion' }],
+    },
+    // #2020 counterpart: nested plain namespaces stay non-ambient
+    {
+      code: `namespace Access {
+  namespace Team {
+    type Role = 'owner' | 'member';
+  }
+}`,
+      output: `namespace Access {
+  namespace Team {
+    const ROLE_VALUES = ['owner', 'member'] as const;
+    type Role = (typeof ROLE_VALUES)[number];
+  }
+}`,
+      errors: [{ messageId: 'preferDerivedUnion' }],
+    },
+    // #2020 counterpart: an alias OUTSIDE the ambient block is still rewritten,
+    // so the carve-out is keyed on the alias's own ancestry, not on the file
+    // containing a `declare` anywhere.
+    {
+      code: `declare namespace NS {
+  type Ignored = 'x' | 'y';
+}
+type Role = 'owner' | 'member';`,
+      output: `declare namespace NS {
+  type Ignored = 'x' | 'y';
+}
+const ROLE_VALUES = ['owner', 'member'] as const;
+type Role = (typeof ROLE_VALUES)[number];`,
+      errors: [{ messageId: 'preferDerivedUnion' }],
+    },
+    // #2020 counterpart: an ambient VALUE declaration elsewhere in the file
+    // does not make the module scope ambient.
+    {
+      code: `declare const version: string;
+type Role = 'owner' | 'member';`,
+      output: `declare const version: string;
+const ROLE_VALUES = ['owner', 'member'] as const;
+type Role = (typeof ROLE_VALUES)[number];`,
+      errors: [{ messageId: 'preferDerivedUnion' }],
+    },
+    // #2020 counterpart: an ordinary `.ts` file whose name merely resembles a
+    // declaration file is a normal module.
+    {
+      code: `export type Role = 'owner' | 'member';`,
+      filename: 'src/types/roles.ts',
+      output: `export const ROLE_VALUES = ['owner', 'member'] as const;
+export type Role = (typeof ROLE_VALUES)[number];`,
       errors: [{ messageId: 'preferDerivedUnion' }],
     },
     // Duplicate array + union pair: union still flagged, but fix SKIPPED
