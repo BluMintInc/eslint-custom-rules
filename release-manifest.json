@@ -1,5 +1,43 @@
 [
   {
+    "version": "1.20.155",
+    "date": "2026-08-15T14:21:55.491Z",
+    "rules": [
+      {
+        "name": "class-methods-read-top-to-bottom",
+        "changeType": "fix",
+        "issues": [
+          2022
+        ],
+        "summary": "pin a # field by every read of it, not just this.#x (closes #2022)"
+      },
+      {
+        "name": "no-explicit-return-type",
+        "changeType": "fix",
+        "issues": [
+          2019
+        ],
+        "summary": "spare the implementation signature of an overload set (closes #2019)"
+      },
+      {
+        "name": "prefer-union-from-const-array",
+        "changeType": "fix",
+        "issues": [
+          2020
+        ],
+        "summary": "decline in an ambient context, where no const array is legal (closes #2020)"
+      },
+      {
+        "name": "require-image-optimized",
+        "changeType": "fix",
+        "issues": [
+          2021
+        ],
+        "summary": "exempt the img inside ImageOptimized's own definition (closes #2021)"
+      }
+    ]
+  },
+  {
     "version": "1.20.154",
     "date": "2026-08-15T03:47:51.570Z",
     "rules": [

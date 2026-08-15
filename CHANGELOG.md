@@ -1,3 +1,13 @@
+## [1.20.155](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.154...v1.20.155) (2026-08-15)
+
+
+### Bug Fixes
+
+* **class-methods-read-top-to-bottom:** pin a # field by every read of it, not just this.#x (closes [#2022](https://github.com/BluMintInc/eslint-custom-rules/issues/2022)) ([86c65b5](https://github.com/BluMintInc/eslint-custom-rules/commit/86c65b5292de1fdd9e8c7df81ab664632e575db3)), closes [p.#tier](https://github.com/p./issues/tier)
+* **no-explicit-return-type:** spare the implementation signature of an overload set (closes [#2019](https://github.com/BluMintInc/eslint-custom-rules/issues/2019)) ([666fb57](https://github.com/BluMintInc/eslint-custom-rules/commit/666fb5700ac01f5fc3571d41605be83008f2893e)), closes [#1771](https://github.com/BluMintInc/eslint-custom-rules/issues/1771) [#2018](https://github.com/BluMintInc/eslint-custom-rules/issues/2018)
+* **prefer-union-from-const-array:** decline in an ambient context, where no const array is legal (closes [#2020](https://github.com/BluMintInc/eslint-custom-rules/issues/2020)) ([526752a](https://github.com/BluMintInc/eslint-custom-rules/commit/526752aaf29c579b508a4c689d121b0b2ac44510)), closes [#2018](https://github.com/BluMintInc/eslint-custom-rules/issues/2018)
+* **require-image-optimized:** exempt the img inside ImageOptimized's own definition (closes [#2021](https://github.com/BluMintInc/eslint-custom-rules/issues/2021)) ([deb9a50](https://github.com/BluMintInc/eslint-custom-rules/commit/deb9a50bbae4d98e5d9a5e3a81f510706587df1a))
+
 ## [1.20.154](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.153...v1.20.154) (2026-08-15)
 
 
