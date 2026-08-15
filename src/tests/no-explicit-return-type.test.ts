@@ -155,6 +155,132 @@ ruleTesterTs.run('no-explicit-return-type', noExplicitReturnType, {
       declare function convert(input: number): string;
     `,
 
+    // The IMPLEMENTATION signature of an overload set carries the type every
+    // overload above it is checked against, so it is not a restatement of the
+    // body. Stripping it infers `void` here and makes the `: string` overload
+    // TS2394 (issue #2019).
+    `
+      function get(): void;
+      function get(param: string): string;
+      function get(param?: string): void | string {}
+    `,
+    `
+      function processData(_isStrict: true): string;
+      function processData(_isStrict: false): number;
+      function processData(_isStrict: boolean): string | number {
+        return _isStrict ? 'strict' : 42;
+      }
+    `,
+    // An overload set may export every member
+    `
+      export function convert(input: string): number;
+      export function convert(input: number): string;
+      export function convert(input: string | number): number | string {
+        return input as never;
+      }
+    `,
+    // A single signature plus its implementation is already an overload set:
+    // the signature's annotation is mandatory and the implementation's is what
+    // that signature is checked against.
+    `
+      function convert(input: string): number;
+      function convert(input: unknown): number {
+        return Number(input);
+      }
+    `,
+    // An overload set inside a function body, a bare block or a `switch` case
+    // binds its name exactly as a top-level one does, so depth cannot decide
+    // whether the set exists.
+    `
+      function createConverter() {
+        function convert(value: string): number;
+        function convert(value: number): string;
+        function convert(value: string | number): number | string {
+          return value as never;
+        }
+        return convert;
+      }
+    `,
+    `
+      {
+        function convert(value: string): number;
+        function convert(value: number): string;
+        function convert(value: string | number): number | string {
+          return value as never;
+        }
+      }
+    `,
+    `
+      switch (kind) {
+        case 'a': {
+          function convert(value: string): number;
+          function convert(value: number): string;
+          function convert(value: string | number): number | string {
+            return value as never;
+          }
+          break;
+        }
+      }
+    `,
+    // A namespace body is a statement container too
+    `
+      namespace Conversions {
+        export function convert(input: string): number;
+        export function convert(input: number): string;
+        export function convert(input: string | number): number | string {
+          return input as never;
+        }
+      }
+    `,
+    // Class methods overload the same way, and their body-less members are the
+    // signatures.
+    `
+      class Converter {
+        convert(input: string): number;
+        convert(input: number): string;
+        convert(input: string | number): number | string {
+          return input as never;
+        }
+      }
+    `,
+    `
+      class Converter {
+        static convert(input: string): number;
+        static convert(input: number): string;
+        static convert(input: string | number): number | string {
+          return input as never;
+        }
+      }
+    `,
+    `
+      class Converter {
+        #convert(input: string): number;
+        #convert(input: number): string;
+        #convert(input: string | number): number | string {
+          return input as never;
+        }
+      }
+    `,
+    `
+      class Converter {
+        'convert'(input: string): number;
+        'convert'(input: number): string;
+        'convert'(input: string | number): number | string {
+          return input as never;
+        }
+      }
+    `,
+    // A class expression declares the same members as a declaration
+    `
+      const Converter = class {
+        convert(input: string): number;
+        convert(input: number): string;
+        convert(input: string | number): number | string {
+          return input as never;
+        }
+      };
+    `,
+
     // String literal overloads should still be treated as overloads when disabled
     {
       code: `
@@ -820,6 +946,158 @@ class E {
         },
       ],
       output: null,
+    },
+
+    // An overload set cannot span containers, so a same-named function in a
+    // DIFFERENT scope neither joins the set nor inherits its exemption.
+    {
+      code: `
+        function createConverter() {
+          function convert(input: string): number;
+          function convert(input: string | number): number {
+            return Number(input);
+          }
+          return convert;
+        }
+        function convert(input: string): number {
+          return Number(input);
+        }
+      `,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'function "convert"' },
+        },
+      ],
+      output: `
+        function createConverter() {
+          function convert(input: string): number;
+          function convert(input: string | number): number {
+            return Number(input);
+          }
+          return convert;
+        }
+        function convert(input: string) {
+          return Number(input);
+        }
+      `,
+    },
+    // A static overload set says nothing about the instance method that spells
+    // the same name.
+    {
+      code: `
+        class Converter {
+          static convert(input: string): number;
+          static convert(input: string | number): number {
+            return Number(input);
+          }
+          convert(input: string): number {
+            return Number(input);
+          }
+        }
+      `,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'class method "convert"' },
+        },
+      ],
+      output: `
+        class Converter {
+          static convert(input: string): number;
+          static convert(input: string | number): number {
+            return Number(input);
+          }
+          convert(input: string) {
+            return Number(input);
+          }
+        }
+      `,
+    },
+    // A lone function with a body overloads nothing
+    {
+      code: 'function convert(input: string): number { return Number(input); }',
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'function "convert"' },
+        },
+      ],
+      output: 'function convert(input: string) { return Number(input); }',
+    },
+    // The implementation's annotation is load-bearing regardless of how the
+    // overload allowance is configured: no option may request a fix that fails
+    // to compile. The option reaches the declaration-only signatures, whose
+    // reports carry no fixer, so the implementation is left untouched.
+    {
+      code: `
+        function convert(input: string): number;
+        function convert(input: number): string;
+        function convert(input: string | number): number | string {
+          return input as never;
+        }
+      `,
+      options: [{ allowOverloadedFunctions: false }],
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeNonInferable',
+          data: { functionKind: 'function "convert"' },
+        },
+        {
+          messageId: 'noExplicitReturnTypeNonInferable',
+          data: { functionKind: 'function "convert"' },
+        },
+      ],
+      output: null,
+    },
+    // Class-method overload signatures report once the overload allowance is
+    // off, and never carry a fixer: they have no body to infer from.
+    {
+      code: `
+        class Converter {
+          convert(input: string): number;
+          convert(input: number): string;
+          convert(input: string | number): number | string {
+            return input as never;
+          }
+        }
+      `,
+      options: [{ allowOverloadedFunctions: false }],
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeNonInferable',
+          data: { functionKind: 'class method "convert"' },
+        },
+        {
+          messageId: 'noExplicitReturnTypeNonInferable',
+          data: { functionKind: 'class method "convert"' },
+        },
+      ],
+      output: null,
+    },
+    // A computed key names nothing resolvable, so the method joins no overload
+    // set and stays reportable.
+    {
+      code: `
+        class Converter {
+          [key](input: string): number {
+            return Number(input);
+          }
+        }
+      `,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'class method' },
+        },
+      ],
+      output: `
+        class Converter {
+          [key](input: string) {
+            return Number(input);
+          }
+        }
+      `,
     },
 
     // Declared functions have no body to infer from
@@ -4574,6 +4852,74 @@ class Store {
  * plugin's consumers compile under, so "no fix emitted" is pinned to the
  * difference between a compiling file and TS1329.
  */
+/**
+ * The diagnostic codes each snippet draws, compiled as one program because a
+ * program per snippet pays for a lib load per snippet.
+ *
+ * A carve-out on this rule exists because a strip fails to COMPILE, which the
+ * rule's own reports cannot see — the fix resolves them, so nothing re-reports
+ * the damage. `tsc` is the only oracle that answers it.
+ */
+function compileSnippets(
+  virtualDir: string,
+  snippets: Record<string, string>,
+  extraOptions: ts.CompilerOptions = {},
+): Map<string, string[]> {
+  const options: ts.CompilerOptions = {
+    noEmit: true,
+    strict: true,
+    target: ts.ScriptTarget.ES2022,
+    module: ts.ModuleKind.ESNext,
+    moduleResolution: ts.ModuleResolutionKind.NodeJs,
+    skipLibCheck: true,
+    types: [],
+    ...extraOptions,
+  };
+
+  const sources = new Map(
+    Object.entries(snippets).map(([label, text]) => [
+      `${virtualDir}/${label}.ts`,
+      text,
+    ]),
+  );
+
+  const host = ts.createCompilerHost(options, true);
+  const getSourceFileFromDisk = host.getSourceFile.bind(host);
+  host.getSourceFile = (fileName, languageVersion, onError, shouldCreate) => {
+    const text = sources.get(fileName);
+    return text === undefined
+      ? getSourceFileFromDisk(fileName, languageVersion, onError, shouldCreate)
+      : ts.createSourceFile(
+          fileName,
+          text,
+          languageVersion,
+          true,
+          ts.ScriptKind.TS,
+        );
+  };
+  const fileExistsOnDisk = host.fileExists.bind(host);
+  host.fileExists = (fileName) =>
+    sources.has(fileName) || fileExistsOnDisk(fileName);
+  const readFileFromDisk = host.readFile.bind(host);
+  host.readFile = (fileName) =>
+    sources.has(fileName) ? sources.get(fileName) : readFileFromDisk(fileName);
+
+  const program = ts.createProgram([...sources.keys()], options, host);
+  const byLabel = new Map<string, string[]>();
+  for (const [fileName] of sources) {
+    const sourceFile = program.getSourceFile(fileName) as ts.SourceFile;
+    const label = fileName.slice(virtualDir.length + 1).replace(/\.ts$/, '');
+    byLabel.set(
+      label,
+      [
+        ...program.getSyntacticDiagnostics(sourceFile),
+        ...program.getSemanticDiagnostics(sourceFile),
+      ].map((diagnostic) => `TS${diagnostic.code}`),
+    );
+  }
+  return byLabel;
+}
+
 describe('no-explicit-return-type decorator factories', () => {
   const RULE_ID = '@blumintinc/blumint/no-explicit-return-type';
   const VIRTUAL_DIR = '/virtual-decorator-factory';
@@ -4603,72 +4949,8 @@ describe('no-explicit-return-type decorator factories', () => {
     );
   };
 
-  /**
-   * The diagnostic codes each snippet draws, compiled as one program because a
-   * program per snippet pays for a lib load per snippet.
-   */
-  const compile = (snippets: Record<string, string>): Map<string, string[]> => {
-    const options: ts.CompilerOptions = {
-      noEmit: true,
-      strict: true,
-      target: ts.ScriptTarget.ES2022,
-      module: ts.ModuleKind.ESNext,
-      moduleResolution: ts.ModuleResolutionKind.NodeJs,
-      skipLibCheck: true,
-      types: [],
-      experimentalDecorators: true,
-    };
-
-    const sources = new Map(
-      Object.entries(snippets).map(([label, text]) => [
-        `${VIRTUAL_DIR}/${label}.ts`,
-        text,
-      ]),
-    );
-
-    const host = ts.createCompilerHost(options, true);
-    const getSourceFileFromDisk = host.getSourceFile.bind(host);
-    host.getSourceFile = (fileName, languageVersion, onError, shouldCreate) => {
-      const text = sources.get(fileName);
-      return text === undefined
-        ? getSourceFileFromDisk(
-            fileName,
-            languageVersion,
-            onError,
-            shouldCreate,
-          )
-        : ts.createSourceFile(
-            fileName,
-            text,
-            languageVersion,
-            true,
-            ts.ScriptKind.TS,
-          );
-    };
-    const fileExistsOnDisk = host.fileExists.bind(host);
-    host.fileExists = (fileName) =>
-      sources.has(fileName) || fileExistsOnDisk(fileName);
-    const readFileFromDisk = host.readFile.bind(host);
-    host.readFile = (fileName) =>
-      sources.has(fileName)
-        ? sources.get(fileName)
-        : readFileFromDisk(fileName);
-
-    const program = ts.createProgram([...sources.keys()], options, host);
-    const byLabel = new Map<string, string[]>();
-    for (const [fileName] of sources) {
-      const sourceFile = program.getSourceFile(fileName) as ts.SourceFile;
-      const label = fileName.slice(VIRTUAL_DIR.length + 1).replace(/\.ts$/, '');
-      byLabel.set(
-        label,
-        [
-          ...program.getSyntacticDiagnostics(sourceFile),
-          ...program.getSemanticDiagnostics(sourceFile),
-        ].map((diagnostic) => `TS${diagnostic.code}`),
-      );
-    }
-    return byLabel;
-  };
+  const compile = (snippets: Record<string, string>) =>
+    compileSnippets(VIRTUAL_DIR, snippets, { experimentalDecorators: true });
 
   const FACTORY = `function Log(): MethodDecorator {
   return () => {};
@@ -4761,6 +5043,142 @@ export { Store };
     expect(fixed).toBe(false);
     expect(output).toBe(source);
     expect(compile({ aliased: source }).get('aliased')).toEqual([]);
+  });
+});
+
+describe('no-explicit-return-type overload implementations', () => {
+  const RULE_ID = '@blumintinc/blumint/no-explicit-return-type';
+  const VIRTUAL_DIR = '/virtual-overload-implementation';
+
+  const fixWith = (code: string) => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      RULE_ID,
+      noExplicitReturnType as unknown as Rule.RuleModule,
+    );
+    return linter.verifyAndFix(
+      code,
+      {
+        parser: '@typescript-eslint/parser',
+        parserOptions: {
+          ecmaVersion: 2022 as const,
+          sourceType: 'module' as const,
+        },
+        rules: { [RULE_ID]: 'error' },
+      },
+      'x.ts',
+    );
+  };
+
+  const compile = (snippets: Record<string, string>) =>
+    compileSnippets(VIRTUAL_DIR, snippets);
+
+  const OVERLOADED = `function get(): void;
+function get(param: string): string;
+function get(param?: string): void | string {}
+
+export { get };
+`;
+
+  const OVERLOADED_METHOD = `class Reader {
+  read(): void;
+  read(key: string): string;
+  read(key?: string): void | string {}
+}
+
+export { Reader };
+`;
+
+  // The shape the carve-out must NOT reach: a lone function whose annotation
+  // restates what its body returns. Both forms compile, so "declines on
+  // overload implementations" cannot degrade into "declines on functions".
+  const PLAIN = `function convert(input: string): number {
+  return Number(input);
+}
+
+export { convert };
+`;
+
+  it('leaves an overload implementation byte-identical under --fix', () => {
+    const { output, fixed } = fixWith(OVERLOADED);
+
+    expect(fixed).toBe(false);
+    expect(output).toBe(OVERLOADED);
+    // The annotation's survival is the property under test, not a side effect.
+    expect(output).toContain(': void | string');
+  });
+
+  it('leaves an overloaded class method byte-identical under --fix', () => {
+    const { output, fixed } = fixWith(OVERLOADED_METHOD);
+
+    expect(fixed).toBe(false);
+    expect(output).toBe(OVERLOADED_METHOD);
+    expect(output).toContain('read(key?: string): void | string');
+  });
+
+  it('breaks the overloads above it once the annotation is gone', () => {
+    const diagnostics = compile({
+      annotated: OVERLOADED,
+      stripped: OVERLOADED.replace(': void | string', ''),
+      annotatedMethod: OVERLOADED_METHOD,
+      strippedMethod: OVERLOADED_METHOD.replace(
+        'read(key?: string): void | string',
+        'read(key?: string)',
+      ),
+      plain: PLAIN,
+      plainStripped: PLAIN.replace(': number', ''),
+    });
+
+    // The reported break, at the overload signature rather than at the strip.
+    expect(diagnostics.get('stripped')).toContain('TS2394');
+    expect(diagnostics.get('strippedMethod')).toContain('TS2394');
+    // Controls: the exempt forms compile, and so does the strip of a function
+    // the carve-out has no business reaching.
+    expect(diagnostics.get('annotated')).toEqual([]);
+    expect(diagnostics.get('annotatedMethod')).toEqual([]);
+    expect(diagnostics.get('plain')).toEqual([]);
+    expect(diagnostics.get('plainStripped')).toEqual([]);
+  });
+
+  it('still strips a function that overloads nothing', () => {
+    const { output, fixed } = fixWith(PLAIN);
+
+    expect(fixed).toBe(true);
+    expect(output).toBe(PLAIN.replace(': number', ''));
+    // Converged: re-running the fixer finds nothing left to change.
+    expect(fixWith(output).output).toBe(output);
+  });
+
+  // An overload set cannot span containers, so the exemption must not follow
+  // the NAME out of the scope that declares the set.
+  it('still strips a same-named function in another scope', () => {
+    const source = `function outer() {
+  function convert(input: string): number;
+  function convert(input: unknown): number {
+    return Number(input);
+  }
+  return convert;
+}
+
+function convert(input: string): number {
+  return Number(input);
+}
+
+export { outer, convert };
+`;
+    const { output, fixed } = fixWith(source);
+
+    expect(fixed).toBe(true);
+    // The nested overload set survives; only the unrelated top-level function
+    // loses its annotation.
+    expect(output).toContain('function convert(input: unknown): number {');
+    expect(output).toContain('function convert(input: string) {');
+    expect(compile({ scoped: output }).get('scoped')).toEqual([]);
   });
 });
 

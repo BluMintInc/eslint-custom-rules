@@ -1092,6 +1092,15 @@ const DETECTION_EXEMPT: Record<string, string> = {
   // the identical arrow — a human-labeled design call.
   'prefer-settings-object':
     'ignoreVariadicFunctions exempts declarations only, tracked as #1857',
+  // The #2019 carve-out spares the IMPLEMENTATION of an overload set, and an
+  // overload set has no arrow spelling: `function f(a: string): number;` above
+  // `const f = (a) => ...` is not an implementation of that signature but a
+  // duplicate binding beside an unimplemented one (TS2391 + TS2300). The
+  // respelling therefore yields a different program rather than the same
+  // function spelled another way, and on that program the annotation really is
+  // the restatement the rule reports. Asymmetry by construction, not blindness.
+  'no-explicit-return-type':
+    'an overload implementation has no arrow spelling, #2019',
 };
 
 /**

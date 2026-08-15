@@ -106,6 +106,33 @@ The question is answered syntactically, since a decorator factory is recognisabl
 
 A **bare** `@Freeze` names the decorator itself rather than a factory, and such a function's annotation restates exactly what inference produces, so it stays reported.
 
+### Overload implementations: the annotation is what the overloads are checked against
+
+TypeScript checks each overload signature against the **implementation signature**, not against the body. The implementation's annotation is therefore not a restatement of what the body returns — it is the type the overloads above it are measured against. Removing it makes TypeScript infer the body's own type, which need not accept those overloads:
+
+```ts
+// Not reported: stripping `: void | string` infers `void`, and the `: string`
+// overload above it becomes TS2394: This overload signature is not compatible
+// with its implementation signature.
+function get(): void;
+function get(param: string): string;
+function get(param?: string): void | string {}
+```
+
+An overload set is read from the statement list that directly holds it, so the same silence applies at any depth — a function body, a bare block, a `switch` case, a `namespace` or the module — and to class methods, whose body-less members are the signatures:
+
+```ts
+class Reader {
+  read(): void;
+  read(key: string): string;
+  read(key?: string): void | string {}
+}
+```
+
+An overload set cannot span containers, so the exemption does not follow the name out of the scope that declares the set: a same-named function in a sibling or enclosing scope overloads nothing and is still reported. `static read` and `read` are likewise different members that merely spell the same name.
+
+This carve-out is not governed by `allowOverloadedFunctions`. That option decides whether the declaration-only signatures are reported, and those reports carry no fixer; here the report would ship a fix that does not compile, which no option may ask for.
+
 ### The fix takes the bindings it strands with it
 
 An annotation is often the only thing in a file that names its type. Deleting it on its own leaves the binding that type came from — an import specifier, a local `type` alias — bound to nothing, so a file that linted clean fails `no-unused-vars` afterwards, and a build with `noUnusedLocals` fails outright. Because the rule's own report is resolved by the fix, nothing re-reports the debt.
@@ -311,6 +338,14 @@ type Converter = {
   convert(input: number): string;
 };
 
+// The implementation signature of an overload set: the overloads above it are
+// checked against this annotation, so removing it is TS2394
+function parse(source: string): number;
+function parse(source: number): string;
+function parse(source: string | number): number | string {
+  return typeof source === 'string' ? Number(source) : String(source);
+}
+
 // Recursion: without the annotation this is TS7023, so it is kept
 const countdown = (n: number): number => {
   if (n <= 0) {
@@ -388,6 +423,8 @@ When set to `true` (default), allows explicit return types on recursive function
 When set to `true` (default), allows explicit return types on overloaded functions. This is useful for function overloads where the return type might not be obvious from the implementation.
 
 Overloaded method signatures are recognised by their sibling members, in an interface body (`interface X { f(a: string): void; f(a: number): void }`) and in a type literal (`type X = { f(a: string): void; f(a: number): void }`) alike. See [Interfaces and type literals are treated identically](#interfaces-and-type-literals-are-treated-identically).
+
+This option reaches the declaration-only signatures — interface and type-literal members, `declare function` declarations, and body-less class members — whose reports carry no fixer. The **implementation** of an overload set is exempt either way, because its annotation is what those signatures are checked against; see [Overload implementations: the annotation is what the overloads are checked against](#overload-implementations-the-annotation-is-what-the-overloads-are-checked-against).
 
 ### `allowInterfaceMethodSignatures`
 

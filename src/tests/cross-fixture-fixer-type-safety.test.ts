@@ -1269,13 +1269,6 @@ const findingKey = (finding: Finding) =>
  * is a hard repo invariant and all four already carry an issue.
  */
 const TYPE_UNSAFE_BASELINE: Record<string, { pairs: number; note: string }> = {
-  'no-explicit-return-type TS2394': {
-    pairs: 3,
-    note:
-      '#2019. Strips the return type of an overload IMPLEMENTATION signature, ' +
-      'which must stay compatible with the overloads above it. Reached from ' +
-      'enforce-boolean-naming-prefixes (2) and semantic-function-prefixes (1).',
-  },
   'prefer-union-from-const-array TS1254': {
     pairs: 1,
     note:
