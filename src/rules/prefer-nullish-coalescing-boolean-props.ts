@@ -8,6 +8,13 @@ import {
 } from '@typescript-eslint/utils';
 import * as ts from 'typescript';
 import { createRule } from '../utils/createRule';
+import {
+  ReplacementSegment,
+  joinSegmentBody,
+  joinSegments,
+  requiresLineBreakAfter,
+  requiresOwnLine,
+} from '../utils/replacementSegments';
 
 type MessageIds = 'preferNullishCoalescing';
 
@@ -681,6 +688,93 @@ function needsSelfParens(
   return !isParenthesized(node, sourceCode);
 }
 
+/**
+ * Comments the rewrite would delete.
+ *
+ * The fix rebuilds the whole expression from `getText` of each operand, so every
+ * comment written inside the node but outside both operand ranges has no anchor
+ * in the replacement: the trivia around the `||` operator, and anything sitting
+ * inside source-level parentheses that the rebuild discards. Comments nested
+ * within an operand travel with that operand's own text and are never stranded.
+ */
+function strandedComments(
+  node: TSESTree.LogicalExpression,
+  sourceCode: Readonly<TSESLint.SourceCode>,
+): TSESTree.Comment[] {
+  const enclosedBy = (operand: TSESTree.Node) => (comment: TSESTree.Comment) =>
+    comment.range[0] >= operand.range[0] &&
+    comment.range[1] <= operand.range[1];
+  const inLeft = enclosedBy(node.left);
+  const inRight = enclosedBy(node.right);
+  return sourceCode
+    .getCommentsInside(node)
+    .filter((comment) => !inLeft(comment) && !inRight(comment));
+}
+
+/**
+ * The stranded comments split by the position they were written in, so each one
+ * is re-emitted on the same side of the operator its author put it on. A comment
+ * is a token and cannot straddle an operand or the operator, so the four groups
+ * partition them exactly.
+ */
+type StrandedGroups = {
+  leading: TSESTree.Comment[];
+  beforeOperator: TSESTree.Comment[];
+  afterOperator: TSESTree.Comment[];
+  trailing: TSESTree.Comment[];
+};
+
+function groupStrandedComments(
+  node: TSESTree.LogicalExpression,
+  sourceCode: Readonly<TSESLint.SourceCode>,
+): StrandedGroups {
+  const operator = sourceCode.getTokenAfter(node.left, {
+    filter: (token) =>
+      token.type === AST_TOKEN_TYPES.Punctuator && token.value === '||',
+  });
+  const groups: StrandedGroups = {
+    leading: [],
+    beforeOperator: [],
+    afterOperator: [],
+    trailing: [],
+  };
+  for (const comment of strandedComments(node, sourceCode)) {
+    if (comment.range[1] <= node.left.range[0]) {
+      groups.leading.push(comment);
+    } else if (comment.range[0] >= node.right.range[1]) {
+      groups.trailing.push(comment);
+    } else if (operator && comment.range[1] <= operator.range[0]) {
+      groups.beforeOperator.push(comment);
+    } else {
+      groups.afterOperator.push(comment);
+    }
+  }
+  return groups;
+}
+
+/**
+ * `return`, `throw` and `yield` forbid a LineTerminator between themselves and
+ * their operand, so a carried comment that demands its own line cannot sit
+ * between one of them and the rewritten expression: a line comment there ends
+ * the statement through ASI, and so does a block comment carrying a line
+ * terminator, which the grammar reads AS a LineTerminator (#1963). Such a
+ * comment rides ahead of the keyword instead.
+ *
+ * The keyword token is the anchor rather than the start of its line because an
+ * insertion point immediately before a token is always a token boundary, while a
+ * line start can fall inside a multi-line template literal and would be written
+ * into the template's text.
+ */
+const RESTRICTED_KEYWORDS = new Set(['return', 'throw', 'yield']);
+
+function restrictedKeywordBefore(
+  node: TSESTree.LogicalExpression,
+  sourceCode: Readonly<TSESLint.SourceCode>,
+): TSESTree.Token | null {
+  const before = sourceCode.getTokenBefore(node);
+  return before && RESTRICTED_KEYWORDS.has(before.value) ? before : null;
+}
+
 export const preferNullishCoalescingBooleanProps = createRule<[], MessageIds>({
   name: 'prefer-nullish-coalescing-boolean-props',
   meta: {
@@ -738,16 +832,88 @@ export const preferNullishCoalescingBooleanProps = createRule<[], MessageIds>({
                 right: rightText,
               },
               fix(fixer) {
-                const replacement = `${parenthesizeLogical(
-                  leftText,
-                  node.left,
-                )} ?? ${parenthesizeLogical(rightText, node.right)}`;
-                return fixer.replaceText(
+                const groups = groupStrandedComments(node, sourceCode);
+                // Whether the replacement is parenthesized is decided by the
+                // expression's context exactly as it is without comments:
+                // parentheses are tokens, so letting a carried comment add them
+                // would make the comment change the emitted program.
+                const selfParens = needsSelfParens(node, sourceCode);
+                const text = sourceCode.getText();
+                const toSegment = (
+                  comment: TSESTree.Comment,
+                ): ReplacementSegment => ({
+                  text: text.slice(comment.range[0], comment.range[1]),
+                  breakAfter: requiresLineBreakAfter(comment),
+                });
+                // A carried comment's only anchor is the line the expression
+                // opens on, which can start mid-line.
+                const startLine =
+                  sourceCode.lines[node.loc.start.line - 1] ?? '';
+                const indent = /^[\t ]*/.exec(startLine)?.[0] ?? '';
+
+                // Inside parentheses a newline can never trigger ASI, so every
+                // comment can ride within the replacement on a line of its own.
+                // Without them, a leading comment that demands its own line
+                // moves ahead of a restricted keyword when one governs the
+                // expression; everywhere else a line break before the
+                // expression is inert.
+                const keyword = selfParens
+                  ? null
+                  : restrictedKeywordBefore(node, sourceCode);
+                const hoisted = keyword
+                  ? groups.leading.filter(requiresOwnLine)
+                  : [];
+                const segments: ReplacementSegment[] = [
+                  ...groups.leading
+                    .filter((comment) => !hoisted.includes(comment))
+                    .map(toSegment),
+                  {
+                    text: parenthesizeLogical(leftText, node.left),
+                    breakAfter: false,
+                  },
+                  ...groups.beforeOperator.map(toSegment),
+                  { text: '??', breakAfter: false },
+                  ...groups.afterOperator.map(toSegment),
+                  {
+                    text: parenthesizeLogical(rightText, node.right),
+                    breakAfter: false,
+                  },
+                  ...groups.trailing.map(toSegment),
+                ];
+
+                if (selfParens) {
+                  return fixer.replaceText(
+                    node,
+                    joinSegments(segments, indent),
+                  );
+                }
+
+                const body = joinSegmentBody(segments, indent);
+                const trailing = segments[segments.length - 1].breakAfter
+                  ? `\n${indent}`
+                  : '';
+                const replacement = fixer.replaceText(
                   node,
-                  needsSelfParens(node, sourceCode)
-                    ? `(${replacement})`
-                    : replacement,
+                  `${body}${trailing}`,
                 );
+                if (!keyword || hoisted.length === 0) {
+                  return replacement;
+                }
+                return [
+                  fixer.insertTextBefore(
+                    keyword,
+                    hoisted
+                      .map(
+                        (comment) =>
+                          `${text.slice(
+                            comment.range[0],
+                            comment.range[1],
+                          )}\n${indent}`,
+                      )
+                      .join(''),
+                  ),
+                  replacement,
+                ];
               },
             });
           }
