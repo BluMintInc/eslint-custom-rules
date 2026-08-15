@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.154",
+    "date": "2026-08-15T03:47:51.570Z",
+    "rules": [
+      {
+        "name": "parallelize-async-operations",
+        "changeType": "fix",
+        "issues": [
+          2017
+        ],
+        "summary": "order callback-deferred instance mutations against later reads (closes #2017)"
+      }
+    ]
+  },
+  {
     "version": "1.20.153",
     "date": "2026-08-14T20:21:23.691Z",
     "rules": [

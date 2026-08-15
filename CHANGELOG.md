@@ -1,3 +1,10 @@
+## [1.20.154](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.153...v1.20.154) (2026-08-15)
+
+
+### Bug Fixes
+
+* **parallelize-async-operations:** order callback-deferred instance mutations against later reads (closes [#2017](https://github.com/BluMintInc/eslint-custom-rules/issues/2017)) ([722c98d](https://github.com/BluMintInc/eslint-custom-rules/commit/722c98dbf74e0195c77b7411dab861ac613b3a69))
+
 ## [1.20.153](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.152...v1.20.153) (2026-08-14)
 
 
