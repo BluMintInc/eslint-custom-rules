@@ -38,12 +38,36 @@ The rule fires when **all** of the following hold:
 4. **Every** member is a string-literal type. Any other member kind (number,
    `null`, `undefined`, `string`, a template-literal type, or a type reference)
    disqualifies the whole union.
+5. The alias does **not** sit in an ambient context (see
+   [Ambient contexts](#ambient-contexts)).
 
 The rule is a pure AST rule — it uses no type information. As a deliberate
 consequence, it only sees a `TSUnionType` written **directly** as the alias's
 right-hand side. Aliases that merely *evaluate* to a literal union at the type
 level (indexed access into a generated type, a re-exported third-party union,
 etc.) contain no syntactic `TSUnionType` and are exempt by construction.
+
+### Ambient contexts
+
+An ambient context accepts only a string, numeric, or literal-enum `const`
+initializer: an array literal there is `TS1254: A 'const' initializer in an
+ambient context must be a string or numeric literal or literal enum reference`,
+with or without `as const`. The derived form therefore cannot be written in that
+position at all, so the rule declines to report rather than offering a fix that
+does not compile. The exempt contexts are:
+
+- A `declare namespace X {}`, `declare module 'x' {}`, or `declare global {}`
+  block, at any nesting depth. Ambience is inherited, and only the **outermost**
+  declaration carries the `declare` modifier, so an alias several namespaces deep
+  inside one is exempt too.
+- An alias carrying the modifier itself (`declare type X = 'a' | 'b'`), which is
+  the promise that the declaration emits nothing at runtime — and the derived
+  array is exactly a runtime emit.
+- Any declaration in a declaration file (`.d.ts`, `.d.mts`, `.d.cts`), which is
+  ambient in its entirety even where no `declare` keyword appears.
+
+A plain `namespace X {}` in a `.ts` file is **not** ambient — a `const` array is
+legal there — so an alias inside one is still reported and fixed.
 
 ### Incorrect
 
@@ -58,6 +82,11 @@ type StatusLiteral = 'active' | 'inactive';
 // Prop unions that mirror an MUI variant set still fire — a locally re-typed
 // union drifts independently of MUI
 type ButtonVariant = 'contained' | 'outlined' | 'text';
+
+// A plain namespace is not an ambient context, so the derived form is legal
+namespace Access {
+  type Role = 'owner' | 'member';
+}
 ```
 
 ### Correct
@@ -80,6 +109,25 @@ type Loose = 'exact' | string;
 type Environment = NodeJS.ProcessEnv['NODE_ENV'];
 import type { ChannelType } from 'stream-chat';
 type ChatChannelKind = ChannelType;
+
+// Ambient contexts reject a const array initializer (TS1254), so there is no
+// derived form to write
+declare namespace Access {
+  type Role = 'owner' | 'member';
+}
+declare module 'stream-chat' {
+  namespace Team {
+    type Role = 'owner' | 'member';
+  }
+}
+```
+
+Every declaration in a declaration file is ambient, exempting the alias below
+even though no `declare` keyword appears:
+
+```ts
+// File: src/types/roles.d.ts
+export type Role = 'owner' | 'member';
 ```
 
 ## Options
