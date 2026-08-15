@@ -1730,6 +1730,44 @@ use(threshold);
         { messageId: 'moveSideEffect' },
       ],
     },
+    /**
+     * A file whose last line carries no terminator — no trailing newline, so the
+     * block's final segment ends mid-line. Relocating the last statement away from
+     * the end used to append the next segment straight onto that line, and the `//`
+     * comment ending it swallowed the relocated statement whole: `const name` became
+     * comment text and its binding left the program under `--fix` (#2023).
+     */
+    {
+      code: `function elementAt(arr: number[], index: number) {
+  return arr[index];
+}
+const name = 'elementAt';
+const first = elementAt([10, 20, 30], 0); // trailing`,
+      output: `function elementAt(arr: number[], index: number) {
+  return arr[index];
+}
+const first = elementAt([10, 20, 30], 0); // trailing
+const name = 'elementAt';
+`,
+      errors: [{ messageId: 'groupDerived' }],
+    },
+    // The same missing separator without a comment to hide it: the relocated
+    // statement survives, but only as a second statement crammed onto the line
+    // above. One defect, two faces — both settled by the join.
+    {
+      code: `function elementAt(arr: number[], index: number) {
+  return arr[index];
+}
+const name = 'elementAt';
+const first = elementAt([10, 20, 30], 0);`,
+      output: `function elementAt(arr: number[], index: number) {
+  return arr[index];
+}
+const first = elementAt([10, 20, 30], 0);
+const name = 'elementAt';
+`,
+      errors: [{ messageId: 'groupDerived' }],
+    },
   ],
 });
 
@@ -1902,6 +1940,14 @@ const unrelated = 1;
 const detail = base.value; // derived note
 `;
 
+  // The same shape minus the file's final newline, which is what the fixture above
+  // still has: a `Program`'s last segment runs to the end of the TEXT, so a trailing
+  // newline hands it the very terminator whose absence is the defect. Without one the
+  // relocated statement used to land inside the comment (#2023).
+  const TRAILING_COMMENT_LAST_NO_EOL = `const base = getBase();
+const unrelated = 1;
+const detail = base.value; // derived note`;
+
   // Exported declarations are movable and crossable (#1762), so the reordering
   // permutes segments that each open with an `export` keyword. Splitting one from
   // its declaration would leave text that no longer parses, which a fixpoint run
@@ -1968,6 +2014,10 @@ export const derived = other.value;
     ['interleaved fixtures', INTERLEAVED_FIXTURES],
     ['trailing comments', TRAILING_COMMENTS],
     ['a trailing comment on the last statement', TRAILING_COMMENT_LAST],
+    [
+      'a trailing comment on an unterminated last line',
+      TRAILING_COMMENT_LAST_NO_EOL,
+    ],
     ['exported declarations', EXPORTED_CHAIN],
   ])('settles %s in a single fix pass', (_label, code) => {
     const result = fixToFixpoint(code);
@@ -2020,6 +2070,19 @@ const filler = 2; /* note B */
 
   it('relocates the block’s last statement without joining its comment', () => {
     const result = fixToFixpoint(TRAILING_COMMENT_LAST);
+
+    expect(result.pendingFixes).toBe(0);
+    expect(result.text).toBe(`const base = getBase();
+const detail = base.value; // derived note
+const unrelated = 1;
+`);
+  });
+
+  // The statement that follows the relocated one has to survive as live code:
+  // appended to a line ending in `//` it becomes comment text, and the program that
+  // loses the binding still parses and still lints clean (#2023).
+  it('keeps the statement after it out of that comment', () => {
+    const result = fixToFixpoint(TRAILING_COMMENT_LAST_NO_EOL);
 
     expect(result.pendingFixes).toBe(0);
     expect(result.text).toBe(`const base = getBase();
@@ -2092,6 +2155,10 @@ use(mockFetch, mockRefs);
     ['interleaved fixtures', INTERLEAVED_FIXTURES],
     ['trailing comments', TRAILING_COMMENTS],
     ['a trailing comment on the last statement', TRAILING_COMMENT_LAST],
+    [
+      'a trailing comment on an unterminated last line',
+      TRAILING_COMMENT_LAST_NO_EOL,
+    ],
     ['exported declarations', EXPORTED_CHAIN],
   ])('reaches an idempotent fixpoint for %s', (_label, code) => {
     const { text } = fixToFixpoint(code);
