@@ -1109,6 +1109,47 @@ export class Repro {
   public readonly derived = this.inherited;
 }`,
       },
+      // A `#name` resolves lexically, so it names the same field whatever value
+      // it is read through: a static initializer reaching the field through
+      // another instance of the class constrains the layout exactly as
+      // `this.#tier` would. Hoisting the initializer above the declaration is
+      // TS2729 and a runtime throw (#2022).
+      {
+        code: `declare const p: Pricing;
+export class Pricing {
+  readonly #tier!: Tier;
+  static label = p.#tier === 'free' ? 'Free' : 'Pro';
+}`,
+      },
+      // The same read written as a lookup rather than a conditional.
+      {
+        code: `declare const p: Pricing;
+export class Pricing {
+  readonly #tier!: Tier;
+  static label = LABELS[p.#tier];
+}`,
+      },
+      // A `#` field ranks with `private` and so sorts below a public field; the
+      // public reader must still stay under the declaration it reads.
+      {
+        code: `declare const o: Repro;
+export class Repro {
+  #secret = 1;
+  public label = o.#secret;
+}`,
+      },
+      // The read reaches the field through an invoked method, which runs while
+      // the initializer does.
+      {
+        code: `declare const o: Repro;
+export class Repro {
+  #secret = 1;
+  public label = this.read();
+  read() {
+    return o.#secret;
+  }
+}`,
+      },
     ],
     invalid: [
       {
@@ -1941,6 +1982,55 @@ class Grouped {
 
   #inner() {
     return 1;
+  }
+}`,
+        errors: [{ messageId: 'classMethodsReadTopToBottom' }],
+      },
+      // A `#` METHOD read through another value constrains nothing: methods are
+      // installed before any initializer runs, so the reorder still happens.
+      {
+        code: `declare const o: Repro;
+export class Repro {
+  private b = o.#calc();
+  public a = 1;
+  #calc() {
+    return 2;
+  }
+}`,
+        output: `declare const o: Repro;
+export class Repro {
+  public a = 1;
+  private b = o.#calc();
+  #calc() {
+    return 2;
+  }
+}`,
+        errors: [{ messageId: 'classMethodsReadTopToBottom' }],
+      },
+      // A nested class body SHADOWS the private names it declares, so `Inner`'s
+      // `#q` is not a read of anything `Outer` declares and leaves Outer's own
+      // fields free to sort.
+      {
+        code: `export class Outer {
+  private z = this.m();
+  public y = 1;
+  m() {
+    class Inner {
+      #q = 1;
+      r = this.#q;
+    }
+    return Inner;
+  }
+}`,
+        output: `export class Outer {
+  public y = 1;
+  private z = this.m();
+  m() {
+    class Inner {
+      #q = 1;
+      r = this.#q;
+    }
+    return Inner;
   }
 }`,
         errors: [{ messageId: 'classMethodsReadTopToBottom' }],
