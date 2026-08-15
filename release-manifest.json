@@ -1,5 +1,27 @@
 [
   {
+    "version": "1.20.156",
+    "date": "2026-08-15T18:39:54.919Z",
+    "rules": [
+      {
+        "name": "logical-top-to-bottom-grouping",
+        "changeType": "fix",
+        "issues": [
+          2023
+        ],
+        "summary": "separate reordered statements so a relocated one cannot land inside a trailing // comment (closes #2023)"
+      },
+      {
+        "name": "prefer-nullish-coalescing-boolean-props",
+        "changeType": "fix",
+        "issues": [
+          2024
+        ],
+        "summary": "carry the comments stranded between the operands instead of deleting them (closes #2024)"
+      }
+    ]
+  },
+  {
     "version": "1.20.155",
     "date": "2026-08-15T14:21:55.491Z",
     "rules": [
