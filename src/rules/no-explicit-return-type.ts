@@ -16,6 +16,7 @@ import {
   BOUND_UNPROVABLE,
   declarationOf,
   resolveInEnclosingScopes,
+  statementsOf,
 } from '../utils/lexicalScope';
 import {
   Edit,
@@ -801,52 +802,196 @@ function isOverloadedFunction(node: TSESTree.Node): boolean {
   return false;
 }
 
+/**
+ * The statement list that directly holds `node`, looking through `export`.
+ *
+ * Overload signatures and their implementation are siblings of one statement
+ * list — an overload set cannot span containers — so this is the only list worth
+ * reading. Walking outward instead would let a same-named function in an
+ * enclosing scope answer for one it cannot overload.
+ */
+function siblingStatementsOf(
+  node: TSESTree.Node,
+): readonly TSESTree.Node[] | undefined {
+  const parent = node.parent;
+  if (!parent) return undefined;
+
+  const container =
+    parent.type === AST_NODE_TYPES.ExportNamedDeclaration ||
+    parent.type === AST_NODE_TYPES.ExportDefaultDeclaration
+      ? parent.parent
+      : parent;
+
+  return container ? statementsOf(container) : undefined;
+}
+
+type OverloadSet = { signatures: number; implementations: number };
+
+const EMPTY_OVERLOAD_SET: OverloadSet = { signatures: 0, implementations: 0 };
+
+/**
+ * How many declaration-only signatures and how many implementations the
+ * container holding `node` declares under `node`'s own name, `node` included.
+ *
+ * Every statement container is read, not just `Program` and `TSModuleBlock`: a
+ * function body, a bare block and a `switch` case each bind a name just as
+ * effectively, so reading only the top level makes the DEPTH of an overload set
+ * decide whether it exists (the same defect as #1771).
+ */
+function overloadSetOf(
+  node: TSESTree.FunctionDeclaration | TSESTree.TSDeclareFunction,
+): OverloadSet {
+  const functionName = node.id?.name;
+  if (!functionName) return EMPTY_OVERLOAD_SET;
+
+  const statements = siblingStatementsOf(node);
+  if (!statements) return EMPTY_OVERLOAD_SET;
+
+  let signatures = 0;
+  let implementations = 0;
+
+  for (const statement of statements) {
+    // `export function f(...)` is the same declaration one AST node deeper, and
+    // an overload set may export some of its members and not others.
+    const declaration = declarationOf(statement);
+
+    if (
+      declaration.type !== AST_NODE_TYPES.TSDeclareFunction &&
+      declaration.type !== AST_NODE_TYPES.FunctionDeclaration
+    ) {
+      continue;
+    }
+
+    if (declaration.id?.name !== functionName) continue;
+
+    if (
+      declaration.type === AST_NODE_TYPES.TSDeclareFunction ||
+      !declaration.body
+    ) {
+      signatures += 1;
+    } else {
+      implementations += 1;
+    }
+  }
+
+  return { signatures, implementations };
+}
+
+/**
+ * True when `node` is the IMPLEMENTATION of an overload set — a function with a
+ * body whose container also declares the same name as one or more
+ * declaration-only signatures.
+ *
+ * Its annotation is not a restatement of what the body returns: TypeScript
+ * checks each overload signature against the IMPLEMENTATION SIGNATURE, so the
+ * annotation is what the overloads are measured against. Inference yields the
+ * body's own type, which need not accept them — stripping `: void | string`
+ * from `function get(param?: string): void | string {}` infers `void` and makes
+ * the `: string` overload above it TS2394 (#2019).
+ *
+ * This carve-out ignores `allowOverloadedFunctions`. That option governs the
+ * declaration-only signatures, whose annotations are mandatory but carry no
+ * fixer, so reporting them costs nothing but a message. Here the report ships a
+ * fix that does not compile, which no option may ask for.
+ */
+function isOverloadImplementation(node: TSESTree.FunctionDeclaration): boolean {
+  if (!node.body) return false;
+  return overloadSetOf(node).signatures > 0;
+}
+
+/**
+ * True when `node` is a declaration-only signature that belongs to an overload
+ * set: another signature declares the same name, or an implementation below it
+ * does. A lone `declare function f(): number;` overloads nothing, so it stays
+ * reportable.
+ */
 function isOverloadedTsDeclareFunction(
   node: TSESTree.TSDeclareFunction,
 ): boolean {
-  const functionName = node.id?.name;
-  if (!functionName) return false;
+  const { signatures, implementations } = overloadSetOf(node);
+  return signatures > 1 || implementations > 0;
+}
 
-  let container: TSESTree.Node | undefined = node.parent as
-    | TSESTree.Node
-    | undefined;
+/**
+ * A method's identity inside its class body. Overloads agree on all three
+ * components; `static f` and `f` merely spell the same name, and a computed key
+ * names nothing resolvable, so it yields nothing. The separator keeps a private
+ * `#log` from colliding with a string key `'#log'`.
+ */
+function methodIdentityOf(node: ClassMethodDefinition): string | undefined {
+  if (node.computed) return undefined;
 
-  while (container) {
-    if (
-      container.type === AST_NODE_TYPES.Program ||
-      container.type === AST_NODE_TYPES.TSModuleBlock
-    ) {
-      const declarations = container.body
-        .map((statement) => {
-          if (statement.type === AST_NODE_TYPES.TSDeclareFunction) {
-            return statement;
-          }
-
-          if (
-            statement.type === AST_NODE_TYPES.ExportNamedDeclaration &&
-            statement.declaration?.type === AST_NODE_TYPES.TSDeclareFunction
-          ) {
-            return statement.declaration;
-          }
-
-          return undefined;
-        })
-        .filter(
-          (
-            value,
-          ): value is TSESTree.TSDeclareFunction & {
-            id: TSESTree.Identifier;
-          } => Boolean(value?.id?.name),
-        )
-        .filter((decl) => decl.id.name === functionName);
-
-      return declarations.length > 1;
-    }
-
-    container = container.parent as TSESTree.Node | undefined;
+  if (node.key.type === AST_NODE_TYPES.PrivateIdentifier) {
+    return `${node.static}\u0000private\u0000${node.key.name}`;
   }
 
-  return false;
+  if (
+    node.key.type !== AST_NODE_TYPES.Identifier &&
+    node.key.type !== AST_NODE_TYPES.Literal
+  ) {
+    return undefined;
+  }
+
+  const name = getNameFromIdentifierOrLiteral(node.key);
+  return name === undefined
+    ? undefined
+    : `${node.static}\u0000public\u0000${name}`;
+}
+
+/**
+ * The overload set a class method belongs to, counted over the members of its
+ * own class body. A member without a body is an overload signature
+ * (`TSEmptyBodyFunctionExpression`); the one member with a body is the
+ * implementation.
+ */
+function classOverloadSetOf(node: TSESTree.MethodDefinition): OverloadSet {
+  const identity = methodIdentityOf(node);
+  const classBody = node.parent;
+  if (!identity || classBody?.type !== AST_NODE_TYPES.ClassBody) {
+    return EMPTY_OVERLOAD_SET;
+  }
+
+  let signatures = 0;
+  let implementations = 0;
+
+  for (const member of classBody.body) {
+    if (member.type !== AST_NODE_TYPES.MethodDefinition) continue;
+    if (methodIdentityOf(member) !== identity) continue;
+
+    if (member.value.body) {
+      implementations += 1;
+    } else {
+      signatures += 1;
+    }
+  }
+
+  return { signatures, implementations };
+}
+
+/**
+ * True when the method is the implementation of an overloaded class method, for
+ * the reason {@link isOverloadImplementation} gives — a class overload set is
+ * checked exactly as a function one is (#2019).
+ */
+function isOverloadImplementationMethod(
+  node: TSESTree.MethodDefinition,
+): boolean {
+  if (!node.value.body) return false;
+  return classOverloadSetOf(node).signatures > 0;
+}
+
+/**
+ * True when the method is a declaration-only overload signature. A body-less
+ * method is legal only as part of an overload set, so it is exempt whenever the
+ * set holds anything else at all.
+ */
+function isOverloadedClassMethodSignature(
+  node: TSESTree.MethodDefinition,
+): boolean {
+  if (node.value.body) return false;
+
+  const { signatures, implementations } = classOverloadSetOf(node);
+  return signatures > 1 || implementations > 0;
 }
 
 function isInterfaceOrAbstractMethodSignature(node: TSESTree.Node): boolean {
@@ -1634,6 +1779,7 @@ export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
             isReadonlyWideningReturnType(returnType) ||
             isAllowedVoidReturnType(returnType) ||
             isDecoratorFactory(node, returnType) ||
+            isOverloadImplementation(node) ||
             (mergedOptions.allowRecursiveFunctions &&
               isRecursiveFunction(node)) ||
             isReturnTypeRequiredByRecursion(node)
@@ -1711,6 +1857,9 @@ export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
             isReadonlyWideningReturnType(returnType) ||
             isAllowedVoidReturnType(returnType) ||
             isDecoratorFactory(node, returnType) ||
+            isOverloadImplementationMethod(node) ||
+            (mergedOptions.allowOverloadedFunctions &&
+              isOverloadedClassMethodSignature(node)) ||
             (mergedOptions.allowAbstractMethodSignatures &&
               isInterfaceOrAbstractMethodSignature(node)) ||
             isReturnTypeRequiredByRecursion(node)
