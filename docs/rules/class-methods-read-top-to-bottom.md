@@ -104,6 +104,18 @@ class Repro {
 
 is offered either—the same holds for a getter (`this.doubled`) and for a field holding an arrow that the initializer invokes (`this.makeIt()`). A read of a member the class does not declare (an inherited field, a constructor parameter property) cannot be placed by the sort, so the class is left untouched rather than reordered on an assumption.
 
+A `#` field is pinned by every read of it, not only the ones written through `this` or the class name. An ECMA private name resolves lexically—it is a syntax error unless a class body enclosing the reference declares it—so `other.#tier` names the very same field `this.#tier` does, and reaches it just as eagerly. No reordering of
+
+```typescript
+declare const p: Pricing;
+class Pricing {
+  readonly #tier!: Tier;
+  static label = p.#tier === 'free' ? 'Free' : 'Pro'; // ℹ️ reading #tier through p pins it above label
+}
+```
+
+is offered, because hoisting the static initializer above the declaration is `TS2729: Property '#tier' is used before its initialization`—and a throw at class-definition time. A nested class body shadows the private names it declares, so an inner class's own `#q` constrains that class's layout and not the enclosing one.
+
 The rewrite also preserves the class body's existing whitespace: the newline and indentation after `{`, the blank lines separating members, and the newline before `}` are all carried over verbatim rather than collapsed. Each member keeps its own leading comments, so documentation travels with the member it describes.
 
 Blank lines are preserved positionally—the gap between the first and second member stays between the first and second member, whatever ends up in those slots. This keeps a body's visual rhythm and its total blank-line count intact. Preserving them matters because Prettier keeps existing blank lines but never inserts new ones, so a blank line the autofix deleted could not be restored by reformatting.

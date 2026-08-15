@@ -1268,15 +1268,8 @@ const findingKey = (finding: Finding) =>
  * one reason only: a fix belongs in its own branch, since one rule per commit
  * is a hard repo invariant and each already carries an issue.
  */
-const TYPE_UNSAFE_BASELINE: Record<string, { pairs: number; note: string }> = {
-  'class-methods-read-top-to-bottom TS2729': {
-    pairs: 2,
-    note:
-      '#2022. Reorders a static initializer above the private `#` field it ' +
-      'reads, so the field is used before its initialization. Reached from ' +
-      'prefer-map-over-conditional-dispatch.',
-  },
-};
+const TYPE_UNSAFE_BASELINE: Record<string, { pairs: number; note: string }> =
+  {};
 
 const baselinedCounts = new Map<string, number>();
 for (const finding of findings) {

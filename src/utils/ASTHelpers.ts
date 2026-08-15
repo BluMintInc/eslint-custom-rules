@@ -605,7 +605,16 @@ export class ASTHelpers {
       case 'ClassExpression': {
         // Traversal continues so `<ClassName>.<member>` statics stay visible,
         // but `this` no longer denotes the graphed instance.
-        this.walkChildNodes(node, className, false, dependencies);
+        const nested: string[] = [];
+        this.walkChildNodes(node, className, false, nested);
+        // A nested class body SHADOWS the private names it declares: its `#q`
+        // is a member of that class, distinct from an enclosing class's `#q`,
+        // so reads of it constrain the nested layout rather than this one.
+        // Private names the nested class does not declare still resolve
+        // outward, so only the declared ones are dropped. Filtering as the
+        // recursion unwinds composes across any depth of nesting.
+        const shadowed = this.privateNamesDeclaredBy(node);
+        dependencies.push(...nested.filter((name) => !shadowed.has(name)));
         return;
       }
 
@@ -642,6 +651,19 @@ export class ASTHelpers {
   ): string | null {
     const { object, property, computed } = node as any;
 
+    // A `#name` resolves LEXICALLY: it is a syntax error unless a class body
+    // enclosing the reference declares it, so the receiver it is read through
+    // cannot change which member it names. `other.#helper` and `this.#helper`
+    // reach the same member, which is why this branch precedes the receiver
+    // test that the dotted spellings need. Requiring `this`/<ClassName> here
+    // dropped the read a static initializer makes through another value of
+    // the same class, and with it the constraint that keeps the field's
+    // declaration above its reader (#2022). The `#` is part of the name so
+    // `#helper` and `helper` stay distinct members.
+    if (!computed && property?.type === 'PrivateIdentifier') {
+      return `#${property.name}`;
+    }
+
     const readsInstance =
       object?.type === 'ThisExpression' && isThisTheInstance;
     // An anonymous class expression has an empty name, which no identifier
@@ -655,12 +677,6 @@ export class ASTHelpers {
     if (!computed && property?.type === 'Identifier') {
       return property.name;
     }
-    // `this.#helper` names a member as precisely as `this.helper` does, and it
-    // is the only spelling available for an ECMA private member. The `#` is
-    // part of the name so `#helper` and `helper` stay distinct members.
-    if (!computed && property?.type === 'PrivateIdentifier') {
-      return `#${property.name}`;
-    }
     // `this['helper']` names the member as precisely as `this.helper` does,
     // whereas `this[key]` names one only at runtime.
     if (
@@ -671,6 +687,26 @@ export class ASTHelpers {
       return property.value;
     }
     return null;
+  }
+
+  /**
+   * The ECMA private names a class body declares, spelled as the graph spells
+   * them. A private name is scoped to the body that declares it, so this set
+   * is what an enclosing class must not mistake for its own members.
+   */
+  private static privateNamesDeclaredBy(node: TSESTree.Node): Set<string> {
+    const names = new Set<string>();
+    const members = (node as any).body?.body;
+    if (!Array.isArray(members)) {
+      return names;
+    }
+    for (const member of members) {
+      const key = member?.key;
+      if (key?.type === 'PrivateIdentifier') {
+        names.add(`#${key.name}`);
+      }
+    }
+    return names;
   }
 
   private static walkChildNodes(
