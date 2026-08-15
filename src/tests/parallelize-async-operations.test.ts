@@ -4698,3 +4698,251 @@ async function run() {
     },
   ],
 });
+
+// ----------------------------------------------------------------------
+// Callback-deferred instance mutation. A sweep whose instance write happens
+// inside a callback handed to a FREE function has no receiver key at the
+// operand level, so the shared-receiver and deferred-dereference barriers see
+// nothing to order. Two spellings were invisible: a mutation expressed as a
+// method call on the slot (`this.accumulated.set(...)`, which is a
+// CallExpression rather than an assignment), and a read expressed as a method
+// call on the instance (`this.writeAll()`, which spells only the slot
+// `this.writeAll` and never the slot its body actually reads). Either alone
+// left the pair classified independent, and the autofix then ran the write
+// phase against an empty accumulator -- silently, since the sweep still
+// resolves and reports success. (#2017)
+// ----------------------------------------------------------------------
+ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
+  valid: [
+    // The reported shape: a mutating method call inside the callback, read back
+    // through a method whose body names the slot.
+    `
+class Backfiller {
+  private readonly accumulated = new Map<string, number>();
+  public async run() {
+    await forEachPage(async (docs) => {
+      for (const doc of docs) {
+        this.accumulated.set(doc, 1);
+      }
+    });
+    const written = await this.writeAll();
+    return written;
+  }
+  private async writeAll() {
+    return this.accumulated.size;
+  }
+}
+`,
+    // Mutating call in the callback, read directly on the same slot. Isolates
+    // the write half: the read needs no callee resolution here.
+    `
+class C {
+  private readonly acc = new Map<string, number>();
+  async run() {
+    await eachPage(async (d) => { this.acc.set(d, 1); });
+    await this.acc.take();
+  }
+}
+`,
+    // Plain assignment in the callback, read back through a method body.
+    // Isolates the read half: the write was already recognized.
+    `
+class C {
+  private acc: unknown;
+  async run() {
+    await eachPage(async (d) => { this.acc = d; });
+    await this.storeAll();
+  }
+  async storeAll() {
+    return this.acc;
+  }
+}
+`,
+    // A mutator other than `set`. The barrier keys on the receiver slot, not on
+    // a list of known mutator names, so a domain mutator behaves identically.
+    `
+class C {
+  private readonly rows: string[] = [];
+  async run() {
+    await eachPage(async (d) => { this.rows.push(d); });
+    await this.storeAll();
+  }
+  async storeAll() {
+    return this.rows.length;
+  }
+}
+`,
+    // The write sits two frames deep, inside a callback of the callback.
+    `
+class C {
+  private readonly acc = new Map<string, number>();
+  async run() {
+    await eachPage(async (docs) => {
+      docs.forEach((d) => { this.acc.set(d, 1); });
+    });
+    await this.storeAll();
+  }
+  async storeAll() {
+    return this.acc.size;
+  }
+}
+`,
+    // A non-arrow callback rebinds `this`, so the path is attributed to the
+    // enclosing instance even though it may belong to another object. That can
+    // only add a barrier, never remove one.
+    `
+class C {
+  private readonly acc = new Map<string, number>();
+  async run() {
+    await eachPage(async function (d) { this.acc.set(d, 1); });
+    await this.storeAll();
+  }
+  async storeAll() {
+    return this.acc.size;
+  }
+}
+`,
+    // An unrelated await between the write and the read still orders the run:
+    // the barrier compares every later operand against every earlier one.
+    `
+class C {
+  private readonly acc = new Map<string, number>();
+  async run() {
+    await eachPage(async (d) => { this.acc.set(d, 1); });
+    await unrelated();
+    await this.storeAll();
+  }
+  async storeAll() {
+    return this.acc.size;
+  }
+}
+`,
+  ],
+  invalid: [
+    // Disjoint slots stay parallelizable: the callback mutates `this.alpha`
+    // while the later operand reads `this.beta`. Guards the barrier against
+    // collapsing to "any callback touching the instance orders everything".
+    {
+      code: `
+class C {
+  private alpha = new Map<string, number>();
+  private beta: any;
+  async run() {
+    await eachPage(async (d) => { this.alpha.set(d, 1); });
+    await this.beta.take();
+  }
+}
+`,
+      errors: [error(2)],
+      output: `
+class C {
+  private alpha = new Map<string, number>();
+  private beta: any;
+  async run() {
+    await Promise.all([
+      eachPage(async (d) => { this.alpha.set(d, 1); }),
+      this.beta.take()
+    ]);
+  }
+}
+`,
+    },
+    // The callback mutates a LOCAL, not instance state, so the later read of
+    // `this.acc` observes nothing the sweep produces.
+    {
+      code: `
+class C {
+  private readonly acc = new Map<string, number>();
+  async run(src: Map<string, number>) {
+    await eachPage(async (d) => { src.set(d, 1); });
+    await this.storeAll();
+  }
+  async storeAll() {
+    return this.acc.size;
+  }
+}
+`,
+      errors: [error(2)],
+      output: `
+class C {
+  private readonly acc = new Map<string, number>();
+  async run(src: Map<string, number>) {
+    await Promise.all([
+      eachPage(async (d) => { src.set(d, 1); }),
+      this.storeAll()
+    ]);
+  }
+  async storeAll() {
+    return this.acc.size;
+  }
+}
+`,
+    },
+    // A resolved method body that reads a slot nothing earlier writes. Guards
+    // the new read-side resolution against ordering every pair whose later
+    // operand happens to touch instance state.
+    {
+      code: `
+class C {
+  private readonly acc = new Map<string, number>();
+  async run() {
+    await eachPage(async (d) => { d.take(); });
+    await this.storeAll();
+  }
+  async storeAll() {
+    return this.acc.size;
+  }
+}
+`,
+      errors: [error(2)],
+      output: `
+class C {
+  private readonly acc = new Map<string, number>();
+  async run() {
+    await Promise.all([
+      eachPage(async (d) => { d.take(); }),
+      this.storeAll()
+    ]);
+  }
+  async storeAll() {
+    return this.acc.size;
+  }
+}
+`,
+    },
+    // A mutating call in the operand's OWN text is not deferred. Array elements
+    // evaluate left to right, so a synchronous mutation there completes before
+    // the next element is built and no read can observe it early. Keeping this
+    // reportable is what preserves the argument-disambiguated handle cases
+    // (`this.handlers[0].read()`, `this.realtimeDb.ref(p).remove()`).
+    {
+      code: `
+class C {
+  private readonly acc = new Map<string, number>();
+  async run() {
+    await this.acc.set('a', 1);
+    await this.storeAll();
+  }
+  async storeAll() {
+    return this.acc.size;
+  }
+}
+`,
+      errors: [error(2)],
+      output: `
+class C {
+  private readonly acc = new Map<string, number>();
+  async run() {
+    await Promise.all([
+      this.acc.set('a', 1),
+      this.storeAll()
+    ]);
+  }
+  async storeAll() {
+    return this.acc.size;
+  }
+}
+`,
+    },
+  ],
+});

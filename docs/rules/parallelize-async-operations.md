@@ -16,7 +16,7 @@ The rule reports when all of these are true:
 - The file is not a **test file** (`.test.*`, `.spec.*`, or under `__tests__/` / `__mocks__/`), whose awaits encode ordering rather than latency.
 - Two or more awaits or await-based variable declarations appear consecutively.
 - Later awaits do not reference identifiers **declared** by earlier awaits (direct identifier reference-based dependency check).
-- Later awaits do not read an identifier — or an **instance slot** (`this.mutator`) — that an earlier await **writes from inside a callback** (`mutator = new Mutator(tx)` in a transaction body), a data dependency that flows through the closure rather than through the await's value. Where this file declares the awaited callee, the writes in **its own body** count the same way: `await hydrate()` publishes whatever `hydrate` assigns, even though nothing flows out of the await.
+- Later awaits do not read an identifier — or an **instance slot** (`this.mutator`) — that an earlier await **writes from inside a callback** (`mutator = new Mutator(tx)` in a transaction body), a data dependency that flows through the closure rather than through the await's value. Where this file declares the awaited callee, the writes in **its own body** count the same way: `await hydrate()` publishes whatever `hydrate` assigns, even though nothing flows out of the await — and so do the slots that body **reads**, so `await this.writeAll()` is ordered against a write to the slot `writeAll` reads. A deferred mutation reaching a slot through its own API (`this.accumulated.set(...)` inside the callback) is a write to that slot as much as an assignment is.
 - No later awaited operand **dereferences a slot** an earlier discarded-result await could have installed. Depth is what makes this a hazard: evaluating `store.data.id` requires `store.data` to already hold an object and throws when it does not, while `store.data` alone merely yields `undefined`.
 - Later awaits do not share "coordinator" identifiers (like `batchManager`, `transaction`, or `collector`) with earlier awaits.
 - The awaited calls do not invoke methods on the **same receiver** (e.g. `ref.set(...)` then `ref.get()`, or `this.load()` then `this.read()`), which can carry a read-after-write / write-after-write ordering dependency on that shared object.
@@ -90,6 +90,31 @@ class TeamExit {
 The path is matched slot by slot, which is what keeps genuinely independent instance work parallelizable: a callback that writes `this.alpha` does **not** block a later await reading `this.beta`, and it does not block a later await reading a same-spelled *local* `alpha` either. A write and a read that overlap on the path do block each other in both directions — writing `this.state` blocks a later `this.state.mutator` (the container was replaced), and writing `this.state.mutator` blocks a later `this.state.persist()` (the method can read the slot). Two sibling slots under a shared container (`this.state.alpha` and `this.state.beta`) consequently fuse: reaching either one evaluates `this.state`, and the rule answers that ambiguity with a barrier, since a missed parallelization is a safe no-op while a silent reorder is not. A dynamic segment (`this.mutators[i] = m`) is tracked by its longest fixed prefix, `this.mutators`, for the same reason.
 
 Writes rooted at a plain binding keep their **root object** treatment described above: `ctx.mutator = m` is a write to `ctx`, so any later await mentioning `ctx` is blocked regardless of which slot it reads.
+
+Both halves of that comparison read through one more frame than the operand spells, because a sweep-then-write pair usually spells neither half directly:
+
+```typescript
+class Backfiller {
+  private readonly accumulated = new Map<string, number>();
+
+  async run() {
+    await forEachPage(async (docs) => {
+      for (const doc of docs) {
+        this.accumulated.set(doc, 1);
+      }
+    });
+    await this.writeAll();
+  }
+
+  private async writeAll() {
+    return this.accumulated.size;
+  }
+}
+```
+
+On the **write** side, a mutation reaching the slot through its own API (`this.accumulated.set(...)`) is a call rather than an assignment, so it counts as a write to the receiver slot. Any method on the slot counts, not a list of known mutator names — a domain `append` or `record` mutates its receiver exactly as `set` does. On the **read** side, `await this.writeAll()` spells only the slot `this.writeAll`; where this file declares that method, the slots its **body** reads are counted too, mirroring the callee-body resolution the write side already performs. Either half alone leaves the pair looking independent, and the rewrite then starts the write phase against a still-empty accumulator — silently, since the sweep resolves normally and reports success.
+
+Only mutations in **deferred** position count this way — those inside a callback, or inside a resolved callee body. A call spelled in the operand's own text is already ordered by the shared-receiver and deferred-dereference barriers below, whose carve-outs for a call-produced receiver (`this.db.ref(pathA).remove()`) or a varying subscript (`this.handlers[0].read()`) are what keep two argument-disambiguated operations on one handle parallelizable. Such a call is also not the hazard: array elements evaluate left to right, so a synchronous mutation there completes before the next element is even constructed. Behind a callback the mutation is scheduled rather than performed, which is precisely what the later operand would race.
 
 ### ✅ Correct (shared coordinator dependency)
 
