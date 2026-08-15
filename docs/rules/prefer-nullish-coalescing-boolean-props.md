@@ -22,6 +22,20 @@ This rule keeps logical OR (`||`) available inside boolean contexts (JSX boolean
 
 **Long `||` chains convert one link per pass**: the links of `a || b || c` overlap, so a single `--fix` pass rewrites the innermost link and parenthesizes it (`(a ?? b) || c`) to keep the half-converted chain parseable. The remaining links are reported again and convert on subsequent passes, which `eslint --fix` runs automatically.
 
+**Comments between the operands are carried, not dropped**: the fix rebuilds the expression from each operand's text, so a comment written around the operator — or inside parentheses the rebuild discards — has no operand to travel with. Each one is re-emitted on the side of the operator its author put it on:
+
+```ts
+// Before
+const uid = primary.id || // fall back for legacy documents
+            secondary.id;
+
+// After `--fix`
+const uid = primary.id ?? // fall back for legacy documents
+            secondary.id;
+```
+
+A comment that must occupy its own line gets one, and where the expression follows `return`, `throw` or `yield` — which forbid a line terminator before their operand — such a comment is hoisted ahead of the keyword instead, so the fix cannot change the program through ASI. Whether the result is parenthesized is decided by the surrounding expression exactly as it is without comments, so a comment never adds or removes parentheses.
+
 ### Examples of correct code
 
 Boolean props keep logical OR:

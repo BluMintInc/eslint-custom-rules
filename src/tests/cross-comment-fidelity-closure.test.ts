@@ -41,6 +41,18 @@
  * 12 `<rule> :: <kind>` groups (18 once split by arm), 819 of them cross, every
  * one already listed — not assumed from the own-corpus run.
  *
+ * The IN-NODE reason carried by every `COMMENT_LOST` entry was then audited
+ * against the CROSS population specifically, since that reason ("the marker sits
+ * inside a node the fixer replaces wholesale") was originally verified only on
+ * each rule's own fixtures. Tracking the marker's offset against the ranges the
+ * fixer actually applied put 900 of 902 `COMMENT_LOST` cases inside an applied
+ * range — including all 656 cross cases of `use-latest-callback`, the largest
+ * group here. The 2 that scored outside are both `enforce-unique-cursor-headers`
+ * and both benign on inspection: the marker is appended onto the `/**` line of
+ * the DUPLICATE header, so it becomes part of the very comment that rule exists
+ * to delete. So the shared entries are load-bearing for this arm too, by
+ * measurement rather than by inheritance.
+ *
  * Staleness is asserted by `comment-fix-fidelity.test.ts` against its own
  * corpus, deliberately not here: this pairing is a superset, so a group that
  * only this sweep reaches would keep an entry alive that the own-corpus guard

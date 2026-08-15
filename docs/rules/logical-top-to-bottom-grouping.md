@@ -100,7 +100,10 @@ Two consequences worth knowing:
   for it.
 * **Comments travel with the statement they annotate.** A comment sharing a line with a
   statement moves with it; a comment on its own line above a statement is treated as
-  that statement's preamble and moves with it too.
+  that statement's preamble and moves with it too. The reordering also restores the line
+  break each statement had in front of it, so a statement moved in behind one whose line
+  ends in a `//` comment starts on a line of its own rather than being absorbed into
+  that comment.
 
 ### Declarations with more than one binding are reported, never moved
 
