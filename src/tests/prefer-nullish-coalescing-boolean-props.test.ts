@@ -1024,6 +1024,189 @@ ruleTesterTs.run(
         ],
         output: `const value = ('k' in strategy && strategy.k) ?? !!strategy.t;`,
       },
+      // ===== REGRESSION TESTS FOR ISSUE #2024 =====
+      // The fix rebuilds the expression from its operands, so a comment written
+      // between them lives inside the replaced span and used to be deleted. It
+      // is carried instead, on the side of the operator it was written on.
+      // The exact repro from the issue.
+      {
+        code: `const result = obj1.a.id || // keep me\n              obj2.b.key;`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'obj1.a.id', right: 'obj2.b.key' },
+          },
+        ],
+        output: `const result = obj1.a.id ?? // keep me\nobj2.b.key;`,
+      },
+      // A line comment keeps a line of its own: folding the operand onto it
+      // would comment the operand out.
+      {
+        code: `const value = a || // keep me\n  b;`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a', right: 'b' },
+          },
+        ],
+        output: `const value = a ?? // keep me\nb;`,
+      },
+      // A single-line block comment is inert beside the operand, so it rides
+      // inline and the emitted line count is unchanged.
+      {
+        code: `const value = a || /* keep me */ b;`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a', right: 'b' },
+          },
+        ],
+        output: `const value = a ?? /* keep me */ b;`,
+      },
+      {
+        code: `const value = a || /* keep me */\n  b;`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a', right: 'b' },
+          },
+        ],
+        output: `const value = a ?? /* keep me */ b;`,
+      },
+      // A comment on each side of the operator stays on its own side.
+      {
+        code: `const value = a /* before */ || /* after */ b;`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a', right: 'b' },
+          },
+        ],
+        output: `const value = a /* before */ ?? /* after */ b;`,
+      },
+      {
+        code: `const value = a // before\n  || b;`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a', right: 'b' },
+          },
+        ],
+        output: `const value = a // before\n?? b;`,
+      },
+      // A deleted `eslint-disable-next-line` silently re-enables whatever it
+      // suppressed. Carried, it still precedes the line holding its subject.
+      {
+        code: `const value = a ||\n  // eslint-disable-next-line no-undef\n  b;`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a', right: 'b' },
+          },
+        ],
+        output: `const value = a ?? // eslint-disable-next-line no-undef\nb;`,
+      },
+      // Source-level parentheses around an operand are outside that operand's
+      // range, so the rebuild drops them along with any comment they hold.
+      {
+        code: `const value = (/* lead */ a) || b;`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a', right: 'b' },
+          },
+        ],
+        output: `const value = /* lead */ a ?? b;`,
+      },
+      {
+        code: `const value = a || (b /* tail */);`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a', right: 'b' },
+          },
+        ],
+        output: `const value = a ?? b /* tail */;`,
+      },
+      // `return` forbids a LineTerminator before its operand, and a block
+      // comment carrying one IS a LineTerminator to the grammar (#1963), so a
+      // leading comment that demands its own line moves ahead of the keyword
+      // rather than folding into `return`'s line.
+      {
+        code: `function f() {\n  return (/* multi\n  line */ a) || b;\n}`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a', right: 'b' },
+          },
+        ],
+        output: `function f() {\n  /* multi\n  line */\n  return a ?? b;\n}`,
+      },
+      {
+        code: `function f() {\n  return (\n  // lead\n  a) || b;\n}`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a', right: 'b' },
+          },
+        ],
+        output: `function f() {\n  // lead\n  return a ?? b;\n}`,
+      },
+      // A converted link of a `||` chain is parenthesized, and inside those
+      // parentheses a newline can never trigger ASI, so a carried line comment
+      // rides within the replacement.
+      {
+        code: `const value = a || /* c */ b || d;`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a || /* c */ b', right: 'd' },
+          },
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a', right: 'b' },
+          },
+        ],
+        output: `const value = (a ?? /* c */ b) || d;`,
+      },
+      {
+        code: `const value = a || // c\n  b || d;`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a || // c\n  b', right: 'd' },
+          },
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a', right: 'b' },
+          },
+        ],
+        output: `const value = (a ?? // c\nb) || d;`,
+      },
+      // The comment-free fix is unchanged: the same multi-line shape collapses
+      // to exactly the text it collapsed to before comments were carried.
+      {
+        code: `const result = obj1.a.id ||\n              obj2.b.key;`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'obj1.a.id', right: 'obj2.b.key' },
+          },
+        ],
+        output: `const result = obj1.a.id ?? obj2.b.key;`,
+      },
+      // A comment INSIDE an operand travels with that operand's own text and is
+      // never stranded, so the surrounding rewrite is byte-identical.
+      {
+        code: `const value = f(/* inner */ a) || b;`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'f(/* inner */ a)', right: 'b' },
+          },
+        ],
+        output: `const value = f(/* inner */ a) ?? b;`,
+      },
     ],
   },
 );
