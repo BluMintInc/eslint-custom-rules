@@ -206,6 +206,94 @@ jest.mock('src/components/image/ImageOptimized', () => ({
 }));
 `,
     },
+    // The wrapper's own definition renders the image primitive; rewriting it
+    // would make the component render itself.
+    {
+      code: `
+type ImageOptimizedProps = { src: string; alt: string; width: number; height: number };
+const ImageOptimized = ({ src, alt }: ImageOptimizedProps) => <img src={src} alt={alt} />;
+`,
+    },
+    // A memo/forwardRef wrapper around the body leaves the declaration name
+    // unchanged, so the definition is still recognized.
+    {
+      code: `
+const ImageOptimized = memo(({ src, alt }) => <img src={src} alt={alt} />);
+`,
+    },
+    {
+      code: `
+const ImageOptimized = forwardRef((props, ref) => <img ref={ref} {...props} />);
+`,
+    },
+    // The function-declaration spelling of the same definition.
+    {
+      code: `
+function ImageOptimized({ src, alt }) {
+  return <img src={src} alt={alt} />;
+}
+`,
+    },
+    {
+      code: `
+export default function ImageOptimized({ src, alt }) {
+  return <img src={src} alt={alt} />;
+}
+`,
+    },
+    // The class spellings, declaration and default-exported alike.
+    {
+      code: `
+class ImageOptimized extends React.Component {
+  render() {
+    return <img src={this.props.src} alt={this.props.alt} />;
+  }
+}
+`,
+    },
+    {
+      code: `
+export default class ImageOptimized extends React.Component {
+  render() {
+    return <img {...this.props} />;
+  }
+}
+`,
+    },
+    // A helper nested inside the definition is part of that implementation.
+    {
+      code: `
+export const ImageOptimized = (props) => {
+  const Raw = () => <img {...props} />;
+  return <Raw />;
+};
+`,
+    },
+    // The definition is recognized wherever the file sits, since the module it
+    // lives in can be named anything.
+    {
+      code: `
+export const ImageOptimized = (props) => <img {...props} />;
+`,
+      filename: 'src/components/media/Picture.tsx',
+    },
+    // A locally named wrapper exported under the component's name is the same
+    // definition written differently.
+    {
+      code: `
+const Picture = ({ src, alt }) => <img src={src} alt={alt} />;
+export { Picture as ImageOptimized };
+`,
+      filename: 'src/components/media/Picture.tsx',
+    },
+    // A configured componentPath moves the exempt declaration name with it.
+    {
+      code: `
+export const OptimizedPicture = (props) => <img {...props} />;
+`,
+      filename: 'src/components/media/Picture.tsx',
+      options: [{ componentPath: 'src/components/media/OptimizedPicture' }],
+    },
     // The filename exemption holds however deeply the img is nested inside the
     // component's own module.
     {
@@ -721,6 +809,92 @@ function Component() {
 export const Gallery = () => <img src="/example.jpg" alt="Example" />;
 `,
       filename: 'src/components/image/ImageOptimizedGallery.tsx',
+      errors: [{ messageId: 'useImageOptimized' }],
+      output: null,
+    },
+    // The declaration exemption matches the component name exactly too, so a
+    // distinct component sharing its prefix is still a consumer of it.
+    {
+      code: `
+${IMPORT}
+const ImageOptimizedGallery = () => <img src="/a.jpg" alt="A" />;
+`,
+      errors: [{ messageId: 'useImageOptimized' }],
+      output: `
+${IMPORT}
+const ImageOptimizedGallery = () => <ImageOptimized src="/a.jpg" alt="A" />;
+`,
+    },
+    {
+      code: `
+${IMPORT}
+function ImageOptimizedGallery() {
+  return <img src="/a.jpg" alt="A" />;
+}
+`,
+      errors: [{ messageId: 'useImageOptimized' }],
+      output: `
+${IMPORT}
+function ImageOptimizedGallery() {
+  return <ImageOptimized src="/a.jpg" alt="A" />;
+}
+`,
+    },
+    // An export alias that is not the component's name leaves the declaration
+    // an ordinary consumer.
+    {
+      code: `
+${IMPORT}
+const Gallery = () => <img src="/a.jpg" alt="A" />;
+export { Gallery as PhotoGallery };
+`,
+      errors: [{ messageId: 'useImageOptimized' }],
+      output: `
+${IMPORT}
+const Gallery = () => <ImageOptimized src="/a.jpg" alt="A" />;
+export { Gallery as PhotoGallery };
+`,
+    },
+    // A helper nested inside an ordinary component is reported like any other.
+    {
+      code: `
+${IMPORT}
+export const Gallery = (props) => {
+  const Raw = () => <img {...props} />;
+  return <Raw />;
+};
+`,
+      errors: [{ messageId: 'useImageOptimized' }],
+      output: `
+${IMPORT}
+export const Gallery = (props) => {
+  const Raw = () => <ImageOptimized {...props} />;
+  return <Raw />;
+};
+`,
+    },
+    // A sibling declaration of the component name does not enclose the report,
+    // so the element outside it stays a violation.
+    {
+      code: `
+const ImageOptimized = (props) => <picture {...props} />;
+export const Gallery = () => <img src="/a.jpg" alt="A" />;
+`,
+      errors: [{ messageId: 'useImageOptimized' }],
+      output: `
+const ImageOptimized = (props) => <picture {...props} />;
+export const Gallery = () => <ImageOptimized src="/a.jpg" alt="A" />;
+`,
+    },
+    // The declaration name that matters is the configured component's, so an
+    // ImageOptimized definition is reportable under a different componentPath
+    // only when it is not the module the fix points at.
+    {
+      code: `
+export const Gallery = (props) => <img {...props} />;
+`,
+      filename: 'src/components/media/Gallery.tsx',
+      options: [{ componentPath: 'src/components/media/OptimizedPicture' }],
       errors: [{ messageId: 'useImageOptimized' }],
       output: null,
     },

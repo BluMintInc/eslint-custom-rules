@@ -54,6 +54,20 @@ not a violation:
   module, matched on the specifier's last segment so relative paths
   (`../image/ImageOptimized`) and `__mocks__` paths both qualify. A factory for
   any other module is still checked.
+* Anything lexically inside the declaration that *defines* the component —
+  `const ImageOptimized = ...` (including a `memo(...)` / `forwardRef(...)`
+  wrapper), `function ImageOptimized()`, `export default function
+  ImageOptimized()` and `class ImageOptimized` — plus any helper nested inside
+  it. The definition can live in a file named anything, so the filename check
+  alone does not cover it, and rewriting its `img` would make the component
+  render itself: unbounded recursion, and a type error too, since the wrapper
+  forwards only the props it destructured. A declaration exported under the
+  component's name (`export { Picture as ImageOptimized }`) is the same
+  definition written differently and is exempt as well.
+
+  The declaration name is matched exactly, so a distinct component that merely
+  shares the prefix (`ImageOptimizedGallery`) — or any other component that
+  happens to render an `img` — is still reported.
 
 A type-only import of `next/image`'s component is exempt for a different reason:
 it binds no value, so it renders nothing and routes no asset around the
