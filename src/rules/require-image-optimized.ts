@@ -91,6 +91,53 @@ const isInsideComponentMock = (
 };
 
 /**
+ * Name a declaration binds, for the forms a component is declared under:
+ * `const ImageOptimized = ...` (including `memo(...)`/`forwardRef(...)` around
+ * the body), `function ImageOptimized()` and `class ImageOptimized`. Anything
+ * else — an object property, a parameter — binds no declaration name the
+ * wrapper can be identified by, and treating it as one would exempt a mock
+ * factory keyed by the component name whatever module it stands in for.
+ */
+const declaredNameOf = (node: TSESTree.Node) => {
+  switch (node.type) {
+    case AST_NODE_TYPES.VariableDeclarator:
+      return node.id.type === AST_NODE_TYPES.Identifier ? node.id.name : null;
+    case AST_NODE_TYPES.FunctionDeclaration:
+    case AST_NODE_TYPES.FunctionExpression:
+    case AST_NODE_TYPES.ClassDeclaration:
+    case AST_NODE_TYPES.ClassExpression:
+      return node.id ? node.id.name : null;
+    default:
+      return null;
+  }
+};
+
+/**
+ * Names each local binding is exported under, so a wrapper declared as
+ * `Picture` and shipped as `export { Picture as ImageOptimized }` is still
+ * recognized as the component's own definition. A specifier carrying a `from`
+ * clause re-exports another module's binding and declares nothing here.
+ */
+const exportedNamesByLocal = (program: TSESTree.Program) => {
+  const exported = new Map<string, Set<string>>();
+  for (const statement of program.body) {
+    if (
+      statement.type !== AST_NODE_TYPES.ExportNamedDeclaration ||
+      statement.source ||
+      statement.exportKind === 'type'
+    ) {
+      continue;
+    }
+    for (const specifier of statement.specifiers) {
+      const names = exported.get(specifier.local.name) ?? new Set<string>();
+      names.add(specifier.exported.name);
+      exported.set(specifier.local.name, names);
+    }
+  }
+  return exported;
+};
+
+/**
  * A type-only specifier binds no value: it renders nothing, so it neither
  * bypasses the optimization pipeline nor can back a fix. The modifier lives
  * either on the specifier (`{ type Image }`) or on the whole declaration
@@ -288,6 +335,45 @@ export = createRule<Options, MessageIds>({
     const isComponentImplementationFile =
       moduleNameOf(context.getFilename()) === componentModule;
 
+    /**
+     * The wrapper is identified by the name the fixer would emit and by its
+     * module's name, which a component module's export shares by convention.
+     * Matching is exact so a distinct component whose name merely starts with
+     * it (`ImageOptimizedGallery`) stays reportable.
+     */
+    const isComponentName = (name: string) =>
+      name === COMPONENT_NAME || name === componentModule;
+
+    const exportedNames = exportedNamesByLocal(sourceCode.ast);
+
+    const definesComponent = (name: string) => {
+      if (isComponentName(name)) {
+        return true;
+      }
+      const aliases = exportedNames.get(name);
+      return !!aliases && [...aliases].some(isComponentName);
+    };
+
+    /**
+     * Whether the element sits inside the declaration of the component the fix
+     * points at. That declaration renders the image primitive by definition, so
+     * swapping it for the component makes the wrapper render itself: unbounded
+     * recursion, and a type error too, since the wrapper forwards only the
+     * props it destructured. The whole ancestry is walked because a helper
+     * nested inside the declaration is part of that implementation as well.
+     */
+    const isInsideComponentDefinition = (node: TSESTree.Node) => {
+      let current = node.parent;
+      while (current) {
+        const declared = declaredNameOf(current);
+        if (declared && definesComponent(declared)) {
+          return true;
+        }
+        current = current.parent;
+      }
+      return false;
+    };
+
     return {
       // Handle JSX img elements
       JSXElement(node) {
@@ -300,7 +386,8 @@ export = createRule<Options, MessageIds>({
         }
         if (
           isComponentImplementationFile ||
-          isInsideComponentMock(node, componentModule)
+          isInsideComponentMock(node, componentModule) ||
+          isInsideComponentDefinition(node)
         ) {
           return;
         }

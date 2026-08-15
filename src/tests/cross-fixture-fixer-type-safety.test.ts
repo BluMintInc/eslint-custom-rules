@@ -1269,13 +1269,6 @@ const findingKey = (finding: Finding) =>
  * is a hard repo invariant and each already carries an issue.
  */
 const TYPE_UNSAFE_BASELINE: Record<string, { pairs: number; note: string }> = {
-  'require-image-optimized TS2739': {
-    pairs: 1,
-    note:
-      "#2021. Rewrites `<img>` to `<ImageOptimized>` inside ImageOptimized's " +
-      'own definition, so the component is made to render itself. Reached ' +
-      'from no-unused-props.',
-  },
   'class-methods-read-top-to-bottom TS2729': {
     pairs: 2,
     note:
