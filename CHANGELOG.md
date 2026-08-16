@@ -1,3 +1,10 @@
+## [1.20.158](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.157...v1.20.158) (2026-08-16)
+
+
+### Bug Fixes
+
+* **no-excessive-parent-chain:** remove the binding the suggestion de-references ([f8be414](https://github.com/BluMintInc/eslint-custom-rules/commit/f8be414190d1a21f2514a81a71a36a7eba1afc24)), closes [#1733](https://github.com/BluMintInc/eslint-custom-rules/issues/1733) [#1903](https://github.com/BluMintInc/eslint-custom-rules/issues/1903) [#2026](https://github.com/BluMintInc/eslint-custom-rules/issues/2026)
+
 ## [1.20.157](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.156...v1.20.157) (2026-08-16)
 
 

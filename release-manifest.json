@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.158",
+    "date": "2026-08-16T14:52:13.506Z",
+    "rules": [
+      {
+        "name": "no-excessive-parent-chain",
+        "changeType": "fix",
+        "issues": [
+          2026
+        ],
+        "summary": "remove the binding the suggestion de-references"
+      }
+    ]
+  },
+  {
     "version": "1.20.157",
     "date": "2026-08-16T06:24:21.626Z",
     "rules": [
