@@ -37,6 +37,22 @@ import {
  * A rule that reports on only one spelling is broken whichever way it leans: it
  * either withholds a remedy the other spelling gets, or blesses code it flags
  * one rewrite away.
+ *
+ * **Detection multiplicity**, which the presence census above cannot express.
+ * Asking `has()` on both sides answers only whether the messageId survived, so
+ * a rule seeing three violations in one spelling and one in the other reads as
+ * agreeing with itself. That is the blindness #2010 found in
+ * `asconst-composition-closure`, where it hid the real defect #2007 for a
+ * release; here it covers the 6,000-odd comparisons where the id is present on
+ * both sides, and the transforms are partial by construction (`outermostOnly`
+ * drops nested sites, each builder declines what it cannot respell), so N→N-k
+ * is the ordinary shape rather than an exotic one. Counted LOSS-ONLY: a
+ * respelling yielding MORE reports is the introduction direction other guards
+ * own, and counting both ways would fail on every legitimate node-count change
+ * — `blockArrow->concise` deletes a `ReturnStatement`, so a return-keyed rule
+ * SHOULD drop one. Measured zero corpus-wide, which is why it gates without an
+ * exempt map; `control-detection-count-partial` is what keeps that zero
+ * distinguishable from an arm that never fires.
  */
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -589,6 +605,10 @@ const observerFor = (rule: string): Observer => ({
 
 type FixState = { withFix: number; withoutFix: number };
 
+/** Reports of one messageId, however the rule split them across fixability. */
+const totalOf = (state: FixState | undefined) =>
+  state ? state.withFix + state.withoutFix : 0;
+
 const fixStatesOf = (
   rule: string,
   code: string,
@@ -631,6 +651,13 @@ type Finding = {
 type ProbeResult = {
   fixFindings: Finding[];
   detectionFindings: Finding[];
+  /**
+   * Detections the presence census cannot express: the messageId survives the
+   * respelling but FEWER of them do. A rule that sees three violations in one
+   * spelling and one in the other is as blind as one that goes silent, yet
+   * `has()` reads identically on both sides (#2010's shape, which hid #2007).
+   */
+  detectionCountFindings: Finding[];
   /** messageIds present on BOTH sides — the only comparisons that can assert. */
   sharedMessageIds: number;
   /** Respelled pairs the detection census diffed — its own floor. */
@@ -658,6 +685,7 @@ type ProbeResult = {
 const EMPTY: ProbeResult = {
   fixFindings: [],
   detectionFindings: [],
+  detectionCountFindings: [],
   sharedMessageIds: 0,
   detectionComparisons: 0,
   detectionComparisonsByTransform: {},
@@ -691,6 +719,7 @@ const probeCase = (
   const result: ProbeResult = {
     fixFindings: [],
     detectionFindings: [],
+    detectionCountFindings: [],
     sharedMessageIds: 0,
     detectionComparisons: 0,
     detectionComparisonsByTransform: {},
@@ -727,7 +756,22 @@ const probeCase = (
     if (before.size || after.size) result.reportingDetectionComparisons++;
     for (const messageId of new Set([...before.keys(), ...after.keys()])) {
       const inOriginal = before.has(messageId);
-      if (inOriginal === after.has(messageId)) continue;
+      if (inOriginal === after.has(messageId)) {
+        // Present on both sides: the presence census is finished here, but a
+        // FALL in multiplicity is the same blindness spelled quantitatively.
+        // Loss-only and asymmetric — a respelling that yields MORE reports is
+        // the introduction direction, which other guards own.
+        const originalCount = totalOf(before.get(messageId));
+        const variantCount = totalOf(after.get(messageId));
+        if (inOriginal && variantCount < originalCount) {
+          result.detectionCountFindings.push({
+            ...context,
+            messageId,
+            detail: `reported ${originalCount}x on the original spelling and ${variantCount}x on the rewritten one`,
+          });
+        }
+        continue;
+      }
       result.detectionFindings.push({
         ...context,
         messageId,
@@ -817,6 +861,7 @@ const NON_TYPESCRIPT_FIXTURES: Record<string, string> = {
 
 const fixFindings: Finding[] = [];
 const detectionFindings: Finding[] = [];
+const detectionCountFindings: Finding[] = [];
 let casesConsidered = 0;
 let nonTypeScriptSkipped = 0;
 const rulesWithNonTypeScriptFixtures = new Set<string>();
@@ -896,6 +941,7 @@ for (const rule of probeRules) {
     if (result.sharedMessageIds > 0) rulesCompared.add(rule);
     fixFindings.push(...result.fixFindings);
     detectionFindings.push(...result.detectionFindings);
+    detectionCountFindings.push(...result.detectionCountFindings);
   }
 }
 
@@ -1192,7 +1238,7 @@ const CONTROLS = [
   {
     name: 'control-fix-asymmetric',
     code: 'function widget() { return legacyCompare(a, b); }\n',
-    expect: { fix: true, detection: false },
+    expect: { fix: true, detection: false, detectionCount: false },
     rule: {
       meta: {
         type: 'problem',
@@ -1222,7 +1268,7 @@ const CONTROLS = [
   {
     name: 'control-fix-symmetric',
     code: 'function widget() { return legacyCompare(a, b); }\n',
-    expect: { fix: false, detection: false },
+    expect: { fix: false, detection: false, detectionCount: false },
     rule: {
       meta: {
         type: 'problem',
@@ -1250,7 +1296,7 @@ const CONTROLS = [
     // #1792 both had.
     name: 'control-detection-block-only',
     code: 'const build = () => { return { a: 1 }; };\n',
-    expect: { fix: false, detection: true },
+    expect: { fix: false, detection: true, detectionCount: false },
     rule: {
       meta: { type: 'problem', schema: [], messages: { m: 'annotate it' } },
       create(context: any) {
@@ -1269,7 +1315,7 @@ const CONTROLS = [
     // merely reports on an object literal.
     name: 'control-detection-both-bodies',
     code: 'const build = () => { return { a: 1 }; };\n',
-    expect: { fix: false, detection: false },
+    expect: { fix: false, detection: false, detectionCount: false },
     rule: {
       meta: { type: 'problem', schema: [], messages: { m: 'annotate it' } },
       create(context: any) {
@@ -1283,6 +1329,34 @@ const CONTROLS = [
             node.body?.type === 'BlockStatement'
               ? undefined
               : check(node, node.body),
+        };
+      },
+    },
+  },
+  {
+    /**
+     * Reports on every spelling, so the messageId is present on BOTH sides and
+     * the presence census is silent by construction — but twice as often on a
+     * declaration. That is the only shape the COUNT census can catch and the
+     * presence one cannot, so without this control a corpus-wide zero would be
+     * indistinguishable from an arm that never fires.
+     */
+    name: 'control-detection-count-partial',
+    code: 'function widget() { return legacyCompare(a, b); }\n',
+    expect: { fix: false, detection: false, detectionCount: true },
+    rule: {
+      meta: { type: 'problem', schema: [], messages: { m: 'inspect it' } },
+      create(context: any) {
+        const once = (node: any) => context.report({ node, messageId: 'm' });
+        return {
+          // Two distinct nodes rather than one reported twice, so the pair
+          // survives any de-duplication ESLint applies to identical locations.
+          FunctionDeclaration: (node: any) => {
+            once(node);
+            if (node.body) once(node.body);
+          },
+          ArrowFunctionExpression: once,
+          FunctionExpression: once,
         };
       },
     },
@@ -1556,6 +1630,21 @@ console.log(
     `  detection pairs by transform: ${JSON.stringify(
       Object.fromEntries(detectionComparisonsByTransform),
     )}`,
+    `  detection COUNT census: ${detectionCountFindings.length} finding(s) ` +
+      `across ${
+        new Set(detectionCountFindings.map((f) => f.rule)).size
+      } rule(s)`,
+    ...[
+      ...new Map(
+        detectionCountFindings.map((f) => [
+          `${f.rule} :: ${f.messageId} :: ${f.transform}`,
+          f,
+        ]),
+      ),
+    ].map(
+      ([key, f]) =>
+        `    ${key} | ${f.detail} | ${f.origin.replace(/^.*\//, '')}`,
+    ),
     ...[...transformStats].map(
       ([name, stats]) =>
         `  ${name}: attempted=${stats.attempted} sites=${stats.sites} ` +
@@ -1731,6 +1820,21 @@ describe('every spelling of a function must be seen alike', () => {
   if (detectionSkips.length) {
     it.skip.each(detectionSkips)('%s', () => undefined);
   }
+
+  /**
+   * The same question the census above asks, spelled quantitatively: a rule may
+   * survive a respelling with its messageId intact and still see fewer of the
+   * violations. `has()` cannot express that, which is how a set-differencing
+   * guard stayed green over the real defect it existed to catch (#2007/#2010).
+   *
+   * Corpus-wide rather than per-rule because the measured population is zero:
+   * an exempt map here would be an allowance with nothing in it to review, and
+   * `sharedMessageIds` (asserted above, >3000) is already this arm's floor —
+   * it reads exactly the both-sides messageIds that counter counts.
+   */
+  it('no rule loses reports to a respelling it still reports on', () => {
+    expect(reportOf(detectionCountFindings)).toBe('');
+  });
 });
 
 describe('both detectors are load-bearing', () => {
@@ -1746,6 +1850,7 @@ describe('both detectors are load-bearing', () => {
       expect({
         fix: result.fixFindings.length > 0,
         detection: result.detectionFindings.length > 0,
+        detectionCount: result.detectionCountFindings.length > 0,
       }).toEqual(expected);
     },
   );
