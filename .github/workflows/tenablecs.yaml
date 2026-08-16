@@ -9,7 +9,7 @@ jobs:
     name: tenablecs-scan
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Tenable.cs Scan
         id: tenablecs-scan
         uses: docker://accurics/terrascan-action:latest
