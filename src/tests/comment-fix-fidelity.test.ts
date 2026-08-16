@@ -299,10 +299,19 @@ for (const suite of harvested.suites) {
   casesByRule.set(name, bucket);
 }
 
-const BLOCK_MARKER = '/* fidelity */';
-const LINE_MARKER = '// fidelity';
-const HTML_MARKER = '<!-- fidelity -->';
-const MARKER_TEXT = 'fidelity';
+const BLOCK_MARKER = '/* fidelityProbe */';
+const LINE_MARKER = '// fidelityProbe';
+const HTML_MARKER = '<!-- fidelityProbe -->';
+/**
+ * The token must not occur in any fixture's own source. The whole comment-loss
+ * oracle is `output.includes(MARKER_TEXT)`, so a fixture carrying the token
+ * itself survives the check on the fixer's behalf and a destroyed marker reads
+ * as carried. `// fidelity` was exactly such a fixture — and, sharply, the
+ * #1877 regression case written for the bug this guard exists to catch.
+ * `guards the marker against fixture collision` below fails the build on any
+ * new one.
+ */
+const MARKER_TEXT = 'fidelityProbe';
 
 /**
  * Both shapes are needed. A block comment is inert almost everywhere; a LINE
@@ -313,7 +322,7 @@ type Variant = { kind: string; text: string };
 
 /**
  * The marker must be a comment in the fixture's OWN language, or the probe stops
- * asking about comments. `// fidelity` in Markdown is a paragraph of literal
+ * asking about comments. `// fidelityProbe` in Markdown is a paragraph of literal
  * text: the fixer preserves it, the comment scan finds no comment carrying it,
  * and the guard reads a `COMMENT_LOST` that never happened. JSONC accepts both
  * JavaScript shapes, so the JSON arm keeps the pair.
@@ -941,6 +950,23 @@ describe('the comment fidelity guard is load-bearing', () => {
     expect(harvested.filesLoaded).toBeGreaterThanOrEqual(250);
   });
 
+  /**
+   * The comment-loss oracle is a presence test for `MARKER_TEXT`, so a fixture
+   * carrying that token in its OWN source satisfies the check on the fixer's
+   * behalf: the planted marker can be destroyed while the fixture's copy keeps
+   * both gates green. `// fidelity` was such a fixture — the #1877 regression
+   * case, written for the very bug this guard exists to catch. Statically
+   * excluded here rather than left to the marker staying obscure.
+   */
+  it('guards the marker against fixture collision', () => {
+    const colliding = [...corpus.byRule].flatMap(([rule, cases]) =>
+      cases
+        .filter((testCase) => testCase.code.includes(MARKER_TEXT))
+        .map((testCase) => `${rule} :: ${testCase.origin}`),
+    );
+    expect([...new Set(colliding)]).toEqual([]);
+  });
+
   it('covers the fixable rule population', () => {
     // Guards the denominator: a high ratio over a collapsed rule set would still
     // look healthy. 84 of the 194 registered rules ship `meta.fixable`.
@@ -1172,13 +1198,24 @@ describe('the comment fidelity guard is load-bearing', () => {
       configFor(rules, planted),
       { filename: planted.filename },
     );
+    // Built from the constant, never a literal: hard-coding the marker let the
+    // rename to `fidelityProbe` leave this asserting `not.toContain` about text
+    // that never held the token, so the control passed whatever the fixer did.
+    const variantIn = `rebuildMe(\n  ${BLOCK_MARKER} 1,\n);\n`;
     const variantOut = linter.verifyAndFix(
-      'rebuildMe(\n  /* fidelity */ 1,\n);\n',
+      variantIn,
       configFor(rules, planted),
-      { filename: planted.filename },
+      {
+        filename: planted.filename,
+      },
     );
     expect(baseOut.fixed).toBe(true);
     expect(variantOut.fixed).toBe(true);
+    // The absence oracle below is only evidence of a DROP if the input carried
+    // the token to begin with. Asserting that is what catches a marker rename
+    // that misses this plant, which `not.toContain` cannot: it reads green both
+    // when the fixer drops the marker and when there was never one to drop.
+    expect(variantIn).toContain(MARKER_TEXT);
     // The marker sat between the parts, so the rebuild dropped it.
     expect(variantOut.output).not.toContain(MARKER_TEXT);
   });
@@ -1226,7 +1263,7 @@ describe('the comment fidelity guard is load-bearing', () => {
       { filename: planted.filename },
     );
     const variantOut = linter.verifyAndFix(
-      'const renameMe = 1; // fidelity\n',
+      `const renameMe = 1; ${LINE_MARKER}\n`,
       configFor(rules, planted),
       { filename: planted.filename },
     );

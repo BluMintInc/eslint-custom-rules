@@ -296,10 +296,11 @@ const commentsOf = (
   filename: string,
 ): string[] | null => triviaOf(text, language, filename)?.comments ?? null;
 
-const BLOCK_MARKER = '/* fidelity */';
-const LINE_MARKER = '// fidelity';
-const HTML_MARKER = '<!-- fidelity -->';
-const MARKER_TEXT = 'fidelity';
+const BLOCK_MARKER = '/* fidelityProbe */';
+const LINE_MARKER = '// fidelityProbe';
+const HTML_MARKER = '<!-- fidelityProbe -->';
+/** Must not occur in any fixture's own source — see `comment-fix-fidelity`. */
+const MARKER_TEXT = 'fidelityProbe';
 
 /**
  * Both shapes are needed. A block comment is inert almost everywhere; a LINE
@@ -310,7 +311,7 @@ type Variant = { kind: string; text: string };
 
 /**
  * The marker must be a comment in the fixture's OWN language, or the probe stops
- * asking about comments. `// fidelity` in Markdown is a paragraph of literal
+ * asking about comments. `// fidelityProbe` in Markdown is a paragraph of literal
  * text: the fixer preserves it, the comment scan finds no comment carrying it,
  * and the guard reads a `COMMENT_LOST` that never happened. JSONC accepts both
  * JavaScript shapes, so the JSON arm keeps the pair.
@@ -989,6 +990,24 @@ const plantedCase = (code: string): ProbeCase => ({
 });
 
 describe('the cross-paired fidelity guard is load-bearing', () => {
+  /**
+   * The comment-loss oracle is a presence test for `MARKER_TEXT`, so a fixture
+   * carrying that token in its OWN source satisfies the check on the SUBJECT's
+   * behalf: the planted marker can be destroyed while the fixture's own copy
+   * keeps both gates green. `// fidelity` was such a fixture — the #1877
+   * regression case, written for the very bug this guard exists to catch. The
+   * rename that cured it is a coincidence waiting to expire, so the absence is
+   * asserted rather than left to the token staying obscure.
+   */
+  it('guards the marker against fixture collision', () => {
+    const colliding = [...corpus.byRule].flatMap(([owner, cases]) =>
+      cases
+        .filter((fixture) => fixture.code.includes(MARKER_TEXT))
+        .map((fixture) => `${owner} :: ${fixture.origin}`),
+    );
+    expect([...new Set(colliding)]).toEqual([]);
+  });
+
   it('detects a fixer that rebuilds a span (positive control)', () => {
     // The #1693 shape: rebuild a call from its parts, dropping anything written
     // between them. Driven over a foreign owner, which is the pairing under
