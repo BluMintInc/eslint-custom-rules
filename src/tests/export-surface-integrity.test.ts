@@ -463,7 +463,18 @@ for (const suite of harvested.suites) {
           language,
         } as never);
       const jsx = filename.endsWith('x');
-      const exported = injectExports(testCase.code, jsx);
+      /**
+       * `injectExports` returns `null` both for a fixture that declares nothing
+       * exportable AND for one that already exports everything it declares.
+       * The second is the more interesting input, not a skip: it is where a
+       * fixer meets a real export surface, and it is what the corpus wrote
+       * for the rules that key on exported-ness. The suggestion arm below has
+       * always fallen back to the raw surface; the fix arm dropped it, which
+       * left ~2,000 already-exported cases out of the fix loop unasserted.
+       */
+      const exported =
+        injectExports(testCase.code, jsx) ??
+        (exportedNames(testCase.code, jsx)?.size ? testCase.code : null);
       if (!exported) {
         continue;
       }
@@ -606,6 +617,12 @@ describe('no fixer removes a name from the export surface', () => {
   });
 });
 
+console.log(
+  `[export-surface-integrity] fix channel: ${considered} considered / ` +
+    `${injected} carrying an export surface / ${rewritten} rewritten across ` +
+    `${rulesExercised.size} rules`,
+);
+
 describe('the export-surface guard is load-bearing', () => {
   it('harvests the suite without executing or losing it', () => {
     expect(harvested.failures.length).toBeLessThanOrEqual(3);
@@ -616,13 +633,15 @@ describe('the export-surface guard is load-bearing', () => {
   it('injects exports into a large corpus and actually rewrites it', () => {
     // Floors, not equalities: fixtures move. A silent collapse of any of these
     // to zero is how this gate would pass while asserting nothing. Measured
-    // 7,859 considered / 5,815 injected / 2,384 rewritten. The floors sit just
-    // under that: left far below, a floor absorbs exactly the corpus loss this
-    // gate exists to notice.
-    expect(considered).toBeGreaterThan(7500);
-    expect(injected).toBeGreaterThan(5500);
-    expect(rewritten).toBeGreaterThan(1000);
-    expect(rulesExercised.size).toBeGreaterThan(50);
+    // 8,200 considered / 7,593 carrying an export surface / 3,147 rewritten
+    // across 79 rules, once the fix arm stopped dropping fixtures that already
+    // export everything they declare (5,815 / 2,384 / 50 before that). The
+    // floors sit just under the measurement: left far below, a floor absorbs
+    // exactly the corpus loss this gate exists to notice.
+    expect(considered).toBeGreaterThan(8000);
+    expect(injected).toBeGreaterThan(7300);
+    expect(rewritten).toBeGreaterThan(2900);
+    expect(rulesExercised.size).toBeGreaterThan(75);
   });
 
   it('discards no case to a parse it chose wrong', () => {
