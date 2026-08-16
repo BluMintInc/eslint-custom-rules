@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.157",
+    "date": "2026-08-16T06:24:21.626Z",
+    "rules": [
+      {
+        "name": "enforce-positive-naming",
+        "changeType": "fix",
+        "issues": [
+          2025
+        ],
+        "summary": "treat the inherit/increment/integrate/instantiate/inline families as in- exceptions (closes #2025)"
+      }
+    ]
+  },
+  {
     "version": "1.20.156",
     "date": "2026-08-15T18:39:54.919Z",
     "rules": [

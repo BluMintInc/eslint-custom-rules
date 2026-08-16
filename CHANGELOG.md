@@ -1,3 +1,10 @@
+## [1.20.157](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.156...v1.20.157) (2026-08-16)
+
+
+### Bug Fixes
+
+* **enforce-positive-naming:** treat the inherit/increment/integrate/instantiate/inline families as in- exceptions (closes [#2025](https://github.com/BluMintInc/eslint-custom-rules/issues/2025)) ([56e2fa2](https://github.com/BluMintInc/eslint-custom-rules/commit/56e2fa2c85f604b51517cca35ddf615d4fcb4df2))
+
 ## [1.20.156](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.155...v1.20.156) (2026-08-15)
 
 
