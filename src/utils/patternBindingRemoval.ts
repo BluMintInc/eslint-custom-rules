@@ -60,7 +60,7 @@ function patternBindingOf(
  * too, and deleting one leaves a `for` with no binding at all; an
  * `export const` keeps its `export` keyword outside the declaration's own range.
  */
-function isFreestandingStatement(
+export function isFreestandingStatement(
   declaration: TSESTree.VariableDeclaration,
 ): boolean {
   const parent = declaration.parent;

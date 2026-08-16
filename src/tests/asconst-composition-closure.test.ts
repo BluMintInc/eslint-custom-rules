@@ -391,7 +391,6 @@ const UNDRIVEN: Record<string, UndrivenCause> = {
   'no-async-foreach': 'noAssertionAdded',
   'no-complex-cloud-params': 'noAssertionAdded',
   'no-conditional-literals-in-jsx': 'noAssertionAdded',
-  'no-excessive-parent-chain': 'noAssertionAdded',
   'no-fill-template-mutation': 'noAssertionAdded',
   'no-filter-without-return': 'noAssertionAdded',
   'no-firestore-jest-mock': 'noAssertionAdded',

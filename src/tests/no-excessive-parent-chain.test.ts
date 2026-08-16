@@ -45,12 +45,13 @@ const MAX_THREE_HOP_CODE = `
       };
       `;
 
+// The rewrite takes the only reference to `change` with it, so the suggestion
+// removes the declaration that binds it (#2026).
 const MAX_THREE_HOP_SUGGESTION = `
       export const maxOptionThreeHopHandler: DocumentChangeHandler<
         OverwolfUpdate,
         OverwolfUpdatePath
       > = async (event) => {
-        const { data: change } = event;
         const uid = event.params.id;
       };
       `;
@@ -70,7 +71,6 @@ const MAX_TWO_HOP_SUGGESTION = `
         OverwolfUpdate,
         OverwolfUpdatePath
       > = async (event) => {
-        const { data: change } = event;
         const uid = event.params.id;
       };
       `;
@@ -800,6 +800,23 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
       };
       `,
     },
+    // Valid case (#2026): agora's `aggregateGroupIds` shape at the default max.
+    // Nothing is reported, so nothing is rewritten and the destructured `change`
+    // its `data()` calls read stays exactly as written.
+    {
+      code: `
+      export const aggregateGroupIds: DocumentChangeHandler<
+        OverwolfUpdate,
+        OverwolfUpdatePath
+      > = async (event) => {
+        const { data: change } = event;
+        const before = change.before.data();
+        const after = change.after.data();
+        const groupId = change.after.ref.parent.parent.id;
+        return { before, after, groupId };
+      };
+      `,
+    },
     // `max` widened above the chain length silences a chain that the default
     // max of 2 reports (see the invalid twin on the identical fixture).
     {
@@ -1105,7 +1122,6 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
         OverwolfUpdate,
         OverwolfUpdatePath
       > = async (evt) => {
-        const { data: changeData } = evt;
         const uid = evt.params.id;
       };
       `,
@@ -1654,7 +1670,6 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
         OverwolfUpdate,
         OverwolfUpdatePath
       > = async (e) => {
-        const { data: change } = e;
         const uid = e.params.id;
       };
       `,
@@ -1666,7 +1681,6 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
         OverwolfUpdate,
         OverwolfUpdatePath
       > = async (e) => {
-        const { data: change } = e;
         const uid = e.params.id;
       };
       `,
@@ -1692,7 +1706,6 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
         OverwolfUpdate,
         OverwolfUpdatePath
       > = async (event) => {
-        const { data: change } = event;
         const uid = event.params.id;
       };
       `,
@@ -1719,7 +1732,6 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
         OverwolfUpdate,
         OverwolfUpdatePath
       > = async (e) => {
-        const { data: change } = e;
         const uid = e.params.id;
       };
       `,
@@ -1751,7 +1763,9 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
       ],
     },
     // Regression (#1368): the event name survives hops through intermediate
-    // variables.
+    // variables. Regression (#2026): both intermediates go with the rewrite —
+    // `afterRef` loses its last reference to the rewrite, and `change` loses its
+    // last reference to `afterRef`'s removal.
     {
       code: `
       export const chainedAssignmentSuggestionHandler: DocumentChangeHandler<
@@ -1771,8 +1785,6 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
         OverwolfUpdate,
         OverwolfUpdatePath
       > = async (e) => {
-        const change = e.data;
-        const afterRef = change.after;
         const uid = e.params.id;
       };
       `,
@@ -1806,7 +1818,6 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
         OverwolfUpdate,
         OverwolfUpdatePath
       > = async (first) => {
-        const { data: change } = first;
         const uid = first.params.id;
       };
 
@@ -1834,7 +1845,6 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
         OverwolfUpdate,
         OverwolfUpdatePath
       > = async (second) => {
-        const { data: change } = second;
         const uid = second.params.id;
       };
       `,
@@ -1860,12 +1870,343 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
         OverwolfUpdate,
         OverwolfUpdatePath
       > = async (e) => {
-        const { data: change } = e;
         const uid = e.params?.id;
       };
       `,
         ),
       ],
+    },
+    // Regression (#2026): the reported reproducer. The rewrite takes the only
+    // reference to `change` with it, so the declaration binding it goes too —
+    // leaving it behind turned a clean file into a `no-unused-vars` failure.
+    {
+      code: `
+      export const orphanedBindingHandler: RealtimeDbChangeHandler<
+        OverwolfUpdate,
+        OverwolfUpdatePath
+      > = async (event) => {
+        const { data: change } = event;
+        const path = change.after.ref.parent.parent.parent.key;
+      };
+      `,
+      errors: [
+        errorWithSuggestion(
+          3,
+          `
+      export const orphanedBindingHandler: RealtimeDbChangeHandler<
+        OverwolfUpdate,
+        OverwolfUpdatePath
+      > = async (event) => {
+        const path = event.params.key;
+      };
+      `,
+        ),
+      ],
+    },
+    // Regression (#2026): a re-destructure stacks two orphans. `after` loses its
+    // last reference to the rewrite, and only then does `change` lose its last
+    // reference — to the removal of the declaration that read it.
+    {
+      code: `
+      export const reDestructuredOrphanHandler: DocumentChangeHandler<
+        OverwolfUpdate,
+        OverwolfUpdatePath
+      > = async (event) => {
+        const { data: change } = event;
+        const { after } = change;
+        const uid = after.ref.parent.parent.parent.id;
+      };
+      `,
+      errors: [
+        errorWithSuggestion(
+          3,
+          `
+      export const reDestructuredOrphanHandler: DocumentChangeHandler<
+        OverwolfUpdate,
+        OverwolfUpdatePath
+      > = async (event) => {
+        const uid = event.params.id;
+      };
+      `,
+        ),
+      ],
+    },
+    // Regression (#2026): a renamed binding read from a renamed event parameter.
+    {
+      code: `
+      export const renamedOrphanHandler: DocumentChangeHandler<
+        OverwolfUpdate,
+        OverwolfUpdatePath
+      > = async (evt) => {
+        const { data: changeData } = evt;
+        const path = changeData.after.ref.parent.parent.parent.path;
+      };
+      `,
+      errors: [
+        errorWithSuggestion(
+          3,
+          `
+      export const renamedOrphanHandler: DocumentChangeHandler<
+        OverwolfUpdate,
+        OverwolfUpdatePath
+      > = async (evt) => {
+        const path = evt.params.path;
+      };
+      `,
+        ),
+      ],
+    },
+    // Regression (#2026): only the orphaned property leaves the pattern, and the
+    // separator goes with it. The orphan is FIRST here, so the run reaches
+    // forward to the survivor.
+    {
+      code: `
+      export const firstPropertyOrphanHandler: DocumentChangeHandler<
+        OverwolfUpdate,
+        OverwolfUpdatePath
+      > = async (event) => {
+        const { data: change, params } = event;
+        const uid = change.after.ref.parent.parent.parent.id;
+        return \`\${params.gameId}:\${uid}\`;
+      };
+      `,
+      errors: [
+        errorWithSuggestion(
+          3,
+          `
+      export const firstPropertyOrphanHandler: DocumentChangeHandler<
+        OverwolfUpdate,
+        OverwolfUpdatePath
+      > = async (event) => {
+        const { params } = event;
+        const uid = event.params.id;
+        return \`\${params.gameId}:\${uid}\`;
+      };
+      `,
+        ),
+      ],
+    },
+    // Regression (#2026): the same pattern with the orphan LAST, where the run
+    // has to reach backward from the previous survivor instead.
+    {
+      code: `
+      export const lastPropertyOrphanHandler: DocumentChangeHandler<
+        OverwolfUpdate,
+        OverwolfUpdatePath
+      > = async (event) => {
+        const { params, data: change } = event;
+        const uid = change.after.ref.parent.parent.parent.id;
+        return \`\${params.gameId}:\${uid}\`;
+      };
+      `,
+      errors: [
+        errorWithSuggestion(
+          3,
+          `
+      export const lastPropertyOrphanHandler: DocumentChangeHandler<
+        OverwolfUpdate,
+        OverwolfUpdatePath
+      > = async (event) => {
+        const { params } = event;
+        const uid = event.params.id;
+        return \`\${params.gameId}:\${uid}\`;
+      };
+      `,
+        ),
+      ],
+    },
+    // Regression (#2026): agora's `aggregateGroupIds` shape. `change` is read by
+    // two `data()` calls the rewrite does not touch, so the declaration stays
+    // exactly as written and the suggestion is the rewrite alone.
+    {
+      code: `
+      export const survivingBindingHandler: DocumentChangeHandler<
+        OverwolfUpdate,
+        OverwolfUpdatePath
+      > = async (event) => {
+        const { data: change } = event;
+        const before = change.before.data();
+        const after = change.after.data();
+        const uid = change.after.ref.parent.parent.parent.id;
+        return { before, after, uid };
+      };
+      `,
+      errors: [
+        errorWithSuggestion(
+          3,
+          `
+      export const survivingBindingHandler: DocumentChangeHandler<
+        OverwolfUpdate,
+        OverwolfUpdatePath
+      > = async (event) => {
+        const { data: change } = event;
+        const before = change.before.data();
+        const after = change.after.data();
+        const uid = event.params.id;
+        return { before, after, uid };
+      };
+      `,
+        ),
+      ],
+    },
+    // Regression (#2026): a chain rooted at the handler parameter itself has no
+    // declaration to remove, so the rewrite ships alone. A parameter is part of
+    // the signature and is never deleted.
+    {
+      code: `
+      export const paramRootedOrphanHandler: DocumentChangeHandler<
+        OverwolfUpdate,
+        OverwolfUpdatePath
+      > = async (event) => {
+        const uid = event.data.after.ref.parent.parent.parent.id;
+      };
+      `,
+      errors: [
+        errorWithSuggestion(
+          3,
+          `
+      export const paramRootedOrphanHandler: DocumentChangeHandler<
+        OverwolfUpdate,
+        OverwolfUpdatePath
+      > = async (event) => {
+        const uid = event.params.id;
+      };
+      `,
+        ),
+      ],
+    },
+    // Regression (#2026): a handler that destructures its parameter in place has
+    // no event identifier to rewrite to, so it still declines to suggest at all
+    // rather than inventing one and then deleting a binding for it.
+    {
+      code: `
+      export const inPlaceDestructuredOrphanHandler: RealtimeDbChangeHandler<
+        OverwolfUpdate,
+        OverwolfUpdatePath
+      > = async ({ data: change }) => {
+        const path = change.after.ref.parent.parent.parent.key;
+      };
+      `,
+      errors: [errorWithoutSuggestion(3)],
+    },
+    // Regression (#2026): a `let` binding can be assigned from anywhere its
+    // scope reaches, so "nothing reads it" is not the whole story and the
+    // suggestion is withheld rather than deleting a binding that may be written.
+    {
+      code: `
+      export const mutableBindingHandler: DocumentChangeHandler<
+        OverwolfUpdate,
+        OverwolfUpdatePath
+      > = async (event) => {
+        let change = event.data;
+        const uid = change.after.ref.parent.parent.parent.id;
+      };
+      `,
+      errors: [errorWithoutSuggestion(3)],
+    },
+    // Regression (#2026): the removal spans separators, so a comment inside the
+    // declaration would be swallowed. The suggestion is withheld instead.
+    {
+      code: `
+      export const commentedDeclarationHandler: DocumentChangeHandler<
+        OverwolfUpdate,
+        OverwolfUpdatePath
+      > = async (event) => {
+        const { data: change /* the before/after pair */ } = event;
+        const uid = change.after.ref.parent.parent.parent.id;
+      };
+      `,
+      errors: [errorWithoutSuggestion(3)],
+    },
+    // Regression (#2026): a rest element absorbs whatever the pattern does not
+    // name, so dropping a property rewrites what it receives.
+    {
+      code: `
+      export const restSiblingHandler: DocumentChangeHandler<
+        OverwolfUpdate,
+        OverwolfUpdatePath
+      > = async (event) => {
+        const { data: change, ...rest } = event;
+        const uid = change.after.ref.parent.parent.parent.id;
+        return { rest, uid };
+      };
+      `,
+      errors: [errorWithoutSuggestion(3)],
+    },
+    // Regression (#2026): a declaration that binds something else keeps its
+    // surviving declarator, and the separator goes with the one that leaves.
+    {
+      code: `
+      export const multiDeclaratorOrphanHandler: DocumentChangeHandler<
+        OverwolfUpdate,
+        OverwolfUpdatePath
+      > = async (event) => {
+        const change = event.data, limit = 5;
+        const uid = change.after.ref.parent.parent.parent.id;
+        return [uid, limit];
+      };
+      `,
+      errors: [
+        errorWithSuggestion(
+          3,
+          `
+      export const multiDeclaratorOrphanHandler: DocumentChangeHandler<
+        OverwolfUpdate,
+        OverwolfUpdatePath
+      > = async (event) => {
+        const limit = 5;
+        const uid = event.params.id;
+        return [uid, limit];
+      };
+      `,
+        ),
+      ],
+    },
+    // Regression (#2026): a comment trailing the declaration on its own line
+    // describes the declaration, so it leaves with it. Anything else would
+    // strand a note — or an `eslint-disable-line` — on the statement that moves
+    // up into its place.
+    {
+      code: `
+      export const trailingCommentOrphanHandler: DocumentChangeHandler<
+        OverwolfUpdate,
+        OverwolfUpdatePath
+      > = async (event) => {
+        const { data: change } = event; // the before/after pair
+        const uid = change.after.ref.parent.parent.parent.id;
+      };
+      `,
+      errors: [
+        errorWithSuggestion(
+          3,
+          `
+      export const trailingCommentOrphanHandler: DocumentChangeHandler<
+        OverwolfUpdate,
+        OverwolfUpdatePath
+      > = async (event) => {
+        const uid = event.params.id;
+      };
+      `,
+        ),
+      ],
+    },
+    // Regression (#1903 applied to #2026): a shadowing local carrying the same
+    // spelling is a different binding. The scope-resolved orphan is the outer
+    // `change`, and because the name still occurs inside the declaring scope the
+    // removal declines rather than guessing which occurrence it owns.
+    {
+      code: `
+      export const shadowedBindingHandler: DocumentChangeHandler<
+        OverwolfUpdate,
+        OverwolfUpdatePath
+      > = async (event) => {
+        const { data: change } = event;
+        const uid = change.after.ref.parent.parent.parent.id;
+        const describe = (change: string) => change.trim();
+        return describe(uid);
+      };
+      `,
+      errors: [errorWithoutSuggestion(3)],
     },
     // Twin of the `max: 3` valid case: the same three-hop chain reports under
     // the default max of 2.

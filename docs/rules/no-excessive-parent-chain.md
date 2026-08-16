@@ -41,6 +41,18 @@ Found {{count}} consecutive ref.parent hops in this handler. Long parent chains 
 - The suggestion keeps the property that followed the chain (for example `.id`) as a placeholder, because the rule cannot know which params key corresponds to a given ancestor level. Replace it with the intended key (for example `e.params.userId`) after applying.
 - When the event binding has no identifier to reference — such as a handler destructured in its signature, `async ({ data: change }) => …` — the rule reports the chain but offers no suggestion rather than emitting an undefined name.
 
+### The suggestion also removes a binding it leaves unused
+
+Replacing the chain deletes the read that walked it, which can take away a binding's **last** use. The suggestion removes such a binding in the same edit, so accepting it never trades this rule's report for a `no-unused-vars` one:
+
+- The whole declaration goes when it declares nothing else — `const { data: change } = event;` above `const path = change.after.ref.parent.parent.parent.key;` disappears with the rewrite.
+- Only the orphaned property goes when the pattern binds something still in use — `const { data: change, params } = event;` becomes `const { params } = event;`.
+- A declaration whose removal strands a further binding takes that one with it too, so a re-destructure (`const { data: change } = event; const { after } = change;`) is cleaned up in full.
+- Nothing is removed while any reference survives the rewrite. A handler that also calls `change.before.data()` keeps its `const { data: change } = event;` exactly as written.
+- Handler parameters are never removed: they are part of the function's signature.
+
+The removal is declined — and with it the whole suggestion, leaving the chain reported but unfixed — whenever it cannot be proven safe: a `let` binding (which can be assigned from anywhere its scope reaches), a comment inside the declaration (the removal spans separators, so the comment would be swallowed), a rest element in the pattern (which absorbs whatever the pattern does not name), an initializer that is not a plain read, or a name whose occurrences inside the declaring scope do not all belong to the binding being removed.
+
 ## Examples
 
 ### Incorrect
