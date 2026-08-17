@@ -205,7 +205,18 @@ edit is skipped — for shapes where wrapping in place is not equivalent:
   holding more than one declarator, whose other declarators may carry reports of
   their own;
 - **`async` and generator functions**, which React renders as neither a promise
-  nor an iterator, so no wrapper rescues them.
+  nor an iterator, so no wrapper rescues them;
+- **a component declared inside a `jest.mock()` factory**, which jest hoists
+  above the module's imports, leaving the helper unbound when the factory runs;
+  jest rejects the reference outright with `The module factory of jest.mock() is
+  not allowed to reference any out-of-scope variables. Invalid variable access:
+  memo`. This holds whether the import is injected by the fix or already present,
+  so it is decided before the already-imported case. `jest.doMock` and
+  `jest.setMock` run their factory in place and keep the edit.
+
+To memoize such a component, spell the helper so jest allows it — `import { memo
+as mockMemo }`, whose name matches the `/^mock/i` allowlist, or a
+`jest.requireActual` call inside the factory.
 
 ### Existing `memo` bindings
 

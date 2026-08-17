@@ -442,6 +442,50 @@ const isRewritableFunction = (node: ComponentNode) =>
   !node.async && !(node as any).generator;
 
 /**
+ * Whether the call registers the one module factory jest hoists.
+ *
+ * `jest.mock` alone: `babel-plugin-jest-hoist` carries no case for `doMock` or
+ * `setMock`, which exist precisely to run in place, so a factory passed to
+ * either keeps its access to the module's bindings and needs no carve-out.
+ */
+function isHoistedMockCall(node: TSESTree.CallExpression): boolean {
+  const { callee } = node;
+  if (callee.type !== AST_NODE_TYPES.MemberExpression || callee.computed) {
+    return false;
+  }
+  const { object, property } = callee;
+  return (
+    object.type === AST_NODE_TYPES.Identifier &&
+    object.name === 'jest' &&
+    property.type === AST_NODE_TYPES.Identifier &&
+    property.name === 'mock'
+  );
+}
+
+/**
+ * Whether the node sits inside the factory jest hoists — the second argument of
+ * the call. The module specifier that precedes it is evaluated in place and
+ * keeps its access to the file's imports, so only the factory subtree is out of
+ * reach.
+ */
+function isInsideMockFactory(node: TSESTree.Node): boolean {
+  let child: TSESTree.Node = node;
+  let parent = node.parent;
+  while (parent) {
+    if (
+      parent.type === AST_NODE_TYPES.CallExpression &&
+      parent.arguments[1] === child &&
+      isHoistedMockCall(parent)
+    ) {
+      return true;
+    }
+    child = parent;
+    parent = parent.parent;
+  }
+  return false;
+}
+
+/**
  * Whether the emitted `memo(...)` call can reach the helper, and the import edit
  * that makes it so (null when the helper is already imported).
  *
@@ -459,6 +503,16 @@ function planMemoBinding(
   fixer: TSESLint.RuleFixer,
   node: ComponentNode,
 ): { available: boolean; importFix: TSESLint.RuleFix | null } {
+  // Jest hoists a `jest.mock()` factory above the module's imports, so the
+  // helper is unbound when the factory runs and jest rejects the reference
+  // outright ("Invalid variable access: memo"). This holds whether the import
+  // is injected here or already present, so it is decided before the
+  // already-imported shortcut below. The report stands because legal spellings
+  // exist: `import { memo as mockMemo }`, or `jest.requireActual` in-factory.
+  if (isInsideMockFactory(node)) {
+    return { available: false, importFix: null };
+  }
+
   const existingMemo = ASTHelpers.findVariableInScope(
     ASTHelpers.getScope(context, node),
     MEMO_NAME,
