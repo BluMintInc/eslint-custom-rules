@@ -1,3 +1,10 @@
+## [1.20.161](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.160...v1.20.161) (2026-08-17)
+
+
+### Bug Fixes
+
+* **enforce-react-type-naming:** read the type from a type assertion (closes [#2029](https://github.com/BluMintInc/eslint-custom-rules/issues/2029)) ([67e5d9f](https://github.com/BluMintInc/eslint-custom-rules/commit/67e5d9faae7991dfa92681bb2f89d379f0636593)), closes [1846/#1847](https://github.com/BluMintInc/eslint-custom-rules/issues/1847) [#1357](https://github.com/BluMintInc/eslint-custom-rules/issues/1357)
+
 ## [1.20.160](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.159...v1.20.160) (2026-08-17)
 
 
