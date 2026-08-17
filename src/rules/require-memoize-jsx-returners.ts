@@ -24,6 +24,26 @@ const MEMOIZE_MODULES = new Set([
 ]);
 const MEMOIZE_EXPORT_NAME = 'Memoize';
 
+/**
+ * The base classes React ships for class components. A class extending one of
+ * them hands its `render()` to React, which re-invokes it on every state and
+ * props change by contract (see `isReactComponentClass`).
+ */
+const REACT_COMPONENT_BASE_NAMES = new Set(['Component', 'PureComponent']);
+const RENDER_METHOD_NAME = 'render';
+/**
+ * The wrappers `unwrapSuperClass` strips. `ChainExpression` is ESTree's
+ * envelope for `extends X?.Component`, which is grammatical and, whenever the
+ * receiver is defined, means exactly `X.Component`.
+ */
+const SUPERCLASS_WRAPPER_TYPES = new Set<string>([
+  AST_NODE_TYPES.TSAsExpression,
+  AST_NODE_TYPES.TSNonNullExpression,
+  AST_NODE_TYPES.TSTypeAssertion,
+  AST_NODE_TYPES.TSSatisfiesExpression,
+  AST_NODE_TYPES.ChainExpression,
+]);
+
 type FunctionLike =
   | TSESTree.ArrowFunctionExpression
   | TSESTree.FunctionExpression
@@ -80,6 +100,123 @@ function isMemoizeDecorator(
   }
 
   return false;
+}
+
+/**
+ * The expression a class extends, with the wrappers an author can put around it
+ * stripped: `extends (React.Component)`, `extends (Component as any)`,
+ * `extends Base!`, `extends React?.Component`. The type arguments in
+ * `extends Component<Props, State>` live on `superTypeParameters` and never
+ * reach here.
+ */
+function unwrapSuperClass(expression: TSESTree.Node): TSESTree.Node {
+  let current: TSESTree.Node = expression;
+  for (;;) {
+    if (isParenthesizedExpression(current)) {
+      current = current.expression;
+      continue;
+    }
+    // Compared as strings: `superClass` is typed as a LeftHandSideExpression,
+    // which excludes the assertion forms the parser nevertheless yields there.
+    if (SUPERCLASS_WRAPPER_TYPES.has(current.type)) {
+      current = (current as unknown as { expression: TSESTree.Node })
+        .expression;
+      continue;
+    }
+    return current;
+  }
+}
+
+/**
+ * Whether the class hands its `render()` to React — that is, whether it extends
+ * React's `Component` or `PureComponent`.
+ *
+ * The match is keyed on React's VOCABULARY, not on the binding's provenance: a
+ * superclass spelled `Component` or `PureComponent` qualifies wherever the name
+ * is bound — an unaliased `import { Component } from 'react'`, an ambient
+ * global, a fixture that omits the import — and so does `X.Component` /
+ * `X.PureComponent` through any namespace object (`React.Component`,
+ * `Preact.PureComponent`, an aliased default import). Only where the spelling
+ * carries no vocabulary is the binding resolved through the scope chain: an
+ * import specifier renamed away from those names
+ * (`import { Component as ReactComponent } from 'react'`) and a same-file class
+ * that itself extends one of them (`class Base extends React.Component {}` …
+ * `class Boundary extends Base {}`). A superclass whose name is neither of
+ * those and resolves to nothing React-shaped in this file — `extends Base` from
+ * another module — is NOT treated as a component.
+ *
+ * Provenance is deliberately not verified: `class Foo extends Component` where
+ * `Component` is an unrelated local class is a corner case whose cost is one
+ * unreported factory named `render`, while treating a real component's `render`
+ * as a factory hands `--fix` a decorator that pins the component to its first
+ * output — a silent behavioural break (#2033). A false negative is the cheaper
+ * mistake, so the vocabulary wins.
+ */
+function isReactComponentClass(
+  classNode: TSESTree.ClassDeclaration | TSESTree.ClassExpression,
+  context: Readonly<TSESLint.RuleContext<MessageIds, Options>>,
+  visited: Set<TSESTree.Node> = new Set(),
+): boolean {
+  if (!classNode.superClass || visited.has(classNode)) {
+    return false;
+  }
+  visited.add(classNode);
+
+  const superClass = unwrapSuperClass(classNode.superClass);
+
+  if (
+    superClass.type === AST_NODE_TYPES.MemberExpression &&
+    !superClass.computed &&
+    superClass.property.type === AST_NODE_TYPES.Identifier
+  ) {
+    return REACT_COMPONENT_BASE_NAMES.has(superClass.property.name);
+  }
+
+  if (superClass.type !== AST_NODE_TYPES.Identifier) {
+    return false;
+  }
+  if (REACT_COMPONENT_BASE_NAMES.has(superClass.name)) {
+    return true;
+  }
+
+  const variable = ASTHelpers.findVariableInScope(
+    ASTHelpers.getScope(context, classNode),
+    superClass.name,
+  );
+  if (!variable) {
+    return false;
+  }
+
+  return variable.defs.some((def) => {
+    const declaration = def.node as TSESTree.Node;
+    if (
+      declaration.type === AST_NODE_TYPES.ImportSpecifier &&
+      declaration.imported.type === AST_NODE_TYPES.Identifier
+    ) {
+      return REACT_COMPONENT_BASE_NAMES.has(declaration.imported.name);
+    }
+    if (
+      declaration.type === AST_NODE_TYPES.ClassDeclaration ||
+      declaration.type === AST_NODE_TYPES.ClassExpression
+    ) {
+      return isReactComponentClass(declaration, context, visited);
+    }
+    return false;
+  });
+}
+
+/**
+ * Whether the member is the `render` React calls — the key is read literally,
+ * so a computed `[render]()` naming some other value does not qualify.
+ */
+function isRenderMember(node: TSESTree.MethodDefinition): boolean {
+  const { key } = node;
+  if (key.type === AST_NODE_TYPES.Identifier && !node.computed) {
+    return key.name === RENDER_METHOD_NAME;
+  }
+  return (
+    key.type === AST_NODE_TYPES.Literal && key.value === RENDER_METHOD_NAME
+  );
 }
 
 function getMemberName(node: TSESTree.MethodDefinition): string {
@@ -958,6 +1095,33 @@ export const requireMemoizeJsxReturners = createRule<Options, MessageIds>({
         // `export default class { … }` is a declaration despite having no name.
         const classBody = node.parent;
         if (classBody?.parent?.type === AST_NODE_TYPES.ClassExpression) {
+          return;
+        }
+
+        // React re-invokes a class component's `render()` on every state and
+        // props change BY CONTRACT, so `@Memoize()` there is never a remedy:
+        // it pins the component to the output of its first render. An error
+        // boundary is the sharpest case — it catches, `getDerivedStateFromError`
+        // sets state, React re-renders, and the memoized `render()` hands back
+        // the cached pre-error children, so the fallback can never appear
+        // (#2033). Unlike this rule's compile-breaking autofix defects
+        // (#1414, #1434, #1950, #1951, #1955), the result compiles and lints
+        // clean, so nothing downstream catches it. Report and fix are both
+        // withheld — the message's only remedy is the very edit that breaks
+        // the component. `render` is the ONLY instance lifecycle method that
+        // returns an element (`shouldComponentUpdate` returns a boolean,
+        // `getSnapshotBeforeUpdate` an opaque snapshot, the rest `void`), and
+        // the statics React also calls — `getDerivedStateFromError`,
+        // `getDerivedStateFromProps` — return state and are out of scope above
+        // regardless, so the exemption is keyed on that one name. Other
+        // members of a class component are the author's own factories, called
+        // on the author's schedule, and stay under the rule. Withholding the
+        // report here also keeps `render` out of the import-carrier race below.
+        if (
+          isRenderMember(node) &&
+          classBody?.parent?.type === AST_NODE_TYPES.ClassDeclaration &&
+          isReactComponentClass(classBody.parent, context)
+        ) {
           return;
         }
 
