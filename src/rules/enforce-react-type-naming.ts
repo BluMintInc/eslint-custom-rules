@@ -247,6 +247,78 @@ const isGlobalConstStyleGoverned = (
   );
 };
 
+// `as const` is spelled as a `TSTypeReference` named `const`, so it reaches
+// `getTypeName` like any other type name and has to be excluded by name.
+const isAsConstAssertion = (typeAnnotation: TSESTree.TypeNode): boolean =>
+  typeAnnotation.type === AST_NODE_TYPES.TSTypeReference &&
+  typeAnnotation.typeName.type === AST_NODE_TYPES.Identifier &&
+  typeAnnotation.typeName.name === 'const';
+
+/**
+ * The React type an `as`/`<T>` assertion pins on an initializer, or `undefined`.
+ *
+ * An assertion declares the binding's type exactly as bindingly as an
+ * annotation does — `tsc --emitDeclarationOnly` emits the same
+ * `export declare const config: FC;` for `const config: FC = {} as FC` and for
+ * `const config = {} as FC` — so it is a detection carrier, not decoration.
+ * Reading only the annotation made the shipped config's own `--fix` erase this
+ * rule's report: `no-redundant-annotation-assertion` deletes the redundant
+ * ANNOTATION and keeps the assertion (its fix direction is the type-safe one,
+ * since dropping the assertion instead leaves `const config: FC = {}`, TS2322),
+ * so a reported violation became an unreportable one (Issue #2029).
+ *
+ * Only the OUTERMOST assertion applied to the initializer answers. A nested one
+ * describes a sub-expression rather than the binding: in `(e as FC)()` the
+ * binding holds FC's RETURN value, and in `thing as unknown as FC` the
+ * intermediate `unknown` is discarded by the outer `as FC`. Parentheses need no
+ * handling because TSESTree does not model them, so `({} as FC)` IS the
+ * assertion node; `!` does, and is read through — non-nullability cannot change
+ * which React type names the value.
+ *
+ * `satisfies` is excluded because it leaves the expression's type alone
+ * (`{} satisfies FC` is still `{}`), and `as const` names no React type.
+ */
+const assertedTypeOf = (
+  init: TSESTree.Expression | null | undefined,
+): TSESTree.TypeNode | undefined => {
+  let target: TSESTree.Node | undefined = init ?? undefined;
+  while (target?.type === AST_NODE_TYPES.TSNonNullExpression) {
+    target = target.expression;
+  }
+  if (
+    target?.type !== AST_NODE_TYPES.TSAsExpression &&
+    target?.type !== AST_NODE_TYPES.TSTypeAssertion
+  ) {
+    return undefined;
+  }
+  return isAsConstAssertion(target.typeAnnotation)
+    ? undefined
+    : target.typeAnnotation;
+};
+
+/**
+ * Reports whether this identifier is the NAME of a JSX element (`<Content />`),
+ * as opposed to a value reference inside one (`{Content}`).
+ *
+ * A JSX element name resolves to a binding only while it starts uppercase: the
+ * scope analyzer models `<content />` as an intrinsic host element instead. So
+ * lowercasing such a name does not carry the reference across — it unbinds it,
+ * leaving the declaration orphaned and an unknown HTML tag rendered in its
+ * place. `JSXMemberExpression` is excluded on purpose: a dot always means value
+ * access, so `<ns.Thing />` keeps resolving whatever the case of `ns`.
+ */
+const isJsxElementName = (node: TSESTree.Node): boolean => {
+  const { parent } = node;
+  if (!parent) {
+    return false;
+  }
+  return (
+    (parent.type === AST_NODE_TYPES.JSXOpeningElement ||
+      parent.type === AST_NODE_TYPES.JSXClosingElement) &&
+    parent.name === node
+  );
+};
+
 // Every node shape whose declared identifiers this rule renames. Each one is a
 // node `getDeclaredVariables` understands, which is what lets the fixer resolve
 // the symbol behind the reported identifier.
@@ -387,6 +459,38 @@ export const enforceReactTypeNaming = createRule<[], MessageIds>({
     }
 
     /**
+     * Reports whether lowercasing this variable's name would unbind a
+     * `<Name />` that resolves to it.
+     *
+     * The rename is withheld there and the report stands alone, on the same
+     * terms as a colliding rename: an incomplete rename is worse than none. The
+     * rewritten element would render an intrinsic host tag while the declaration
+     * it used to name sits unreferenced, which is dead code the fix itself
+     * created — and a consumer building with `noUnusedLocals` gets a red CI out
+     * of running `--fix`.
+     *
+     * Asked of variables only. An unused PARAMETER is an ordinary
+     * signature-driven shape rather than dead code, so the parameter rename
+     * stays as #1357 pinned it.
+     */
+    function renameUnbindsJsxElement(
+      owner: RenameOwner,
+      declarationId: TSESTree.Identifier,
+    ): boolean {
+      const variable = context
+        .getDeclaredVariables(owner)
+        .find((candidate) =>
+          candidate.defs.some((def) => def.name === declarationId),
+        );
+
+      return !!variable?.references.some(
+        (reference) =>
+          reference.identifier !== declarationId &&
+          isJsxElementName(reference.identifier),
+      );
+    }
+
+    /**
      * Check variable declarations for React type naming conventions
      */
     function checkVariableDeclaration(node: TSESTree.VariableDeclarator) {
@@ -405,8 +509,12 @@ export const enforceReactTypeNaming = createRule<[], MessageIds>({
 
       const variableName = id.name;
 
-      // Get the type annotation
-      const typeAnnotation = id.typeAnnotation?.typeAnnotation;
+      // The declared type, from either carrier: the annotation when it is
+      // written, otherwise the assertion that stands in for it (#2029). The
+      // annotation wins when both are present — it is what the binding's type
+      // resolves to — so `const x: unknown = {} as FC` reads `unknown`.
+      const typeAnnotation =
+        id.typeAnnotation?.typeAnnotation ?? assertedTypeOf(node.init);
       const typeName = getTypeName(typeAnnotation);
 
       if (!typeName) return;
@@ -421,7 +529,10 @@ export const enforceReactTypeNaming = createRule<[], MessageIds>({
             type: typeName,
             suggestion,
           },
-          fix: (fixer) => buildRenameFixes(fixer, node, id, suggestion),
+          fix: (fixer) =>
+            renameUnbindsJsxElement(node, id)
+              ? null
+              : buildRenameFixes(fixer, node, id, suggestion),
         });
       }
 
@@ -435,6 +546,8 @@ export const enforceReactTypeNaming = createRule<[], MessageIds>({
             type: typeName,
             suggestion,
           },
+          // Uppercasing cannot unbind a `<Name />`: the target starts uppercase,
+          // which is exactly what a JSX element name needs to resolve at all.
           fix: (fixer) => buildRenameFixes(fixer, node, id, suggestion),
         });
       }
