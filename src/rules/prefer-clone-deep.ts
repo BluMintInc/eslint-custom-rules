@@ -46,15 +46,13 @@ function isConstAssertion(node: TSESTree.Node): boolean {
 /**
  * A `const` assertion is legal only on a literal, so leaving one wrapped around
  * the emitted `cloneDeep(...)` call yields TS1355 and turns a compiling file
- * into a broken one (#2011). The fix is declined there rather than absorbing
- * the assertion, which is the conservative reading of a `const` the author
- * asked for on a value this rule replaces.
+ * into a broken one (#2011).
  *
- * The whole assertion chain is walked because each of its links still applies
- * to the emitted call: `as Foo as const`, `satisfies Foo as const` and
- * `! as const` are TS1355 just the same. The walk stops at the first parent
- * that is not an assertion, which keeps `as const` on an ENCLOSING literal
- * fixable — that assertion still has a literal to apply to.
+ * The whole assertion chain above `node` is walked because each of its links
+ * still applies to the emitted call: `as Foo as const`, `satisfies Foo as
+ * const` and `! as const` are TS1355 just the same. The walk stops at the first
+ * parent that is not an assertion, which keeps `as const` on an ENCLOSING
+ * literal fixable — that assertion still has a literal to apply to.
  *
  * Only a `const` assertion is disqualifying: `as Foo` and `satisfies Foo` are
  * legal on a call expression and keep their fix.
@@ -73,6 +71,33 @@ function isConstAsserted(node: TSESTree.Node): boolean {
     current = current.parent;
   }
   return false;
+}
+
+/**
+ * The node the `cloneDeep(...)` call replaces for a rewritten literal, or null
+ * where the fix has to be declined.
+ *
+ * A `const` assertion applied DIRECTLY to the literal (`{ ... } as const`,
+ * optionally followed by `as Foo`, `satisfies Foo` or `!`) is absorbed: the
+ * replaced range covers the assertion, so the call takes its place with no
+ * `as const` left to wrap it. The emitted call already spells `as const` on its
+ * overrides literal, which is the only place a `const` assertion stays legal
+ * after the rewrite, so the author's literal typing lands there. Absorbing it
+ * is also what keeps the fix reachable under a composed `--fix`:
+ * `global-const-style` wins the range race on a module-scope constant and
+ * appends `as const` before this rule's turn, and declining on that assertion
+ * would report the hazard forever without ever fixing it (#2032).
+ *
+ * A `const` assertion behind another link (`as Foo as const`) cannot be
+ * absorbed without dropping the intervening assertion, and it would still wrap
+ * the emitted call — TS1355 either way — so the fix is declined there.
+ */
+function rewriteSiteOf(
+  target: TSESTree.ObjectExpression,
+): TSESTree.Node | null {
+  const parent = target.parent;
+  const site = parent && isConstAssertion(parent) ? parent : target;
+  return isConstAsserted(site) ? null : site;
 }
 
 export const preferCloneDeep = createRule<[], MessageIds>({
@@ -592,14 +617,15 @@ export const preferCloneDeep = createRule<[], MessageIds>({
                 }
 
                 for (const target of targets) {
-                  if (isConstAsserted(target)) {
+                  const site = rewriteSiteOf(target);
+                  if (site === null) {
                     return null;
                   }
                   const call = buildCloneDeepCall(target);
                   if (call === null) {
                     return null;
                   }
-                  rewrites.push(fixer.replaceText(target, call));
+                  rewrites.push(fixer.replaceText(site, call));
                 }
 
                 return rewrites;
