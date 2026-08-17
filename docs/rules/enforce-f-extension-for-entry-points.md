@@ -111,18 +111,20 @@ export default onCall(deleteUser);
 
 ### `entryPoints`
 
-An array of function names that should be treated as entry point wrappers. Defaults to the list mentioned above.
+Additional function names to treat as entry point wrappers. These **extend** the default list above rather than replacing it, so registering a custom trigger never stops the rule enforcing the convention for the built-in Firebase wrappers.
 
 ```json
 {
   "@blumintinc/blumint/enforce-f-extension-for-entry-points": [
     "error",
     {
-      "entryPoints": ["onCall", "onRequest", "onMyCustomTrigger"]
+      "entryPoints": ["onMyCustomTrigger"]
     }
   ]
 }
 ```
+
+There is no way to remove a default entry point, and nothing is lost by that: a default matches only when it is actually imported from `firebase-functions` or the internal `v2/` / `util/webhook/` wrappers, so an unused one never fires. Suppress an individual site with `eslint-disable-next-line` instead.
 
 ## When Not To Use It
 

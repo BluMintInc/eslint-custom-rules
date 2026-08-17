@@ -152,6 +152,12 @@ ruleTesterTs.run(
         filename: '/workspace/functions/src/callable/user/emptyOptions.ts',
         options: [{ entryPoints: [] }],
       },
+      // 25. A custom entry point is still honoured once it extends the defaults
+      {
+        code: `import { onMyCustomTrigger } from '../../v2/https/onMyCustomTrigger'; onMyCustomTrigger();`,
+        filename: '/workspace/functions/src/callable/user/custom.f.ts',
+        options: [{ entryPoints: ['onMyCustomTrigger'] }],
+      },
     ],
 
     invalid: [
@@ -378,6 +384,63 @@ ruleTesterTs.run(
               fileName: 'defaultWithExt.ts',
               entryPoint: 'onCall',
               suggestedName: 'defaultWithExt.f.ts',
+            },
+          },
+        ],
+      },
+      // 16a. A custom entryPoints list EXTENDS the defaults, so a default
+      // wrapper the list omits is still enforced. Replacing them let a consumer
+      // registering one custom trigger silently un-gate the other 19 (#2027).
+      {
+        code: `import { sequentialDocumentWritten } from '../../v2/firestore/sequentialDocumentWritten';
+const onWrite = sequentialDocumentWritten({ document: 'x' }, []);
+export default onWrite;`,
+        filename: '/workspace/functions/src/firestore/Membership/onWrite.ts',
+        options: [{ entryPoints: ['onMyCustomTrigger'] }],
+        errors: [
+          {
+            messageId: 'requireFExtension',
+            data: {
+              fileName: 'onWrite.ts',
+              entryPoint: 'sequentialDocumentWritten',
+              suggestedName: 'onWrite.f.ts',
+            },
+          },
+        ],
+      },
+      // 16b. The payload the docs' Options section shows, against the same
+      // page's headline incorrect example.
+      {
+        code: `import { sequentialDocumentWritten } from '../../v2/firestore/sequentialDocumentWritten';
+const onWrite = sequentialDocumentWritten({ document: 'x' }, []);
+export default onWrite;`,
+        filename: '/workspace/functions/src/firestore/Membership/documented.ts',
+        options: [
+          { entryPoints: ['onCall', 'onRequest', 'onMyCustomTrigger'] },
+        ],
+        errors: [
+          {
+            messageId: 'requireFExtension',
+            data: {
+              fileName: 'documented.ts',
+              entryPoint: 'sequentialDocumentWritten',
+              suggestedName: 'documented.f.ts',
+            },
+          },
+        ],
+      },
+      // 16c. The custom name itself is enforced.
+      {
+        code: `import { onMyCustomTrigger } from '../../v2/https/onMyCustomTrigger'; onMyCustomTrigger();`,
+        filename: '/workspace/functions/src/callable/user/customMissing.ts',
+        options: [{ entryPoints: ['onMyCustomTrigger'] }],
+        errors: [
+          {
+            messageId: 'requireFExtension',
+            data: {
+              fileName: 'customMissing.ts',
+              entryPoint: 'onMyCustomTrigger',
+              suggestedName: 'customMissing.f.ts',
             },
           },
         ],
