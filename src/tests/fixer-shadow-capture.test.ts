@@ -1425,13 +1425,20 @@ describe('fixers must not emit a reference an inner shadow captures', () => {
    * The nesting perturbation's own non-vacuity. Its whole contribution is
    * REACH — it finds no defect today — so nothing downstream would notice it
    * degrading to zero wrapped fixtures, and the guard would go on passing while
-   * asking 21 rules nothing at all.
+   * asking 20 rules nothing at all.
+   *
+   * A rule leaves the wrapped set the moment one of its FLAT fixtures fixes
+   * inside a function block, because the flat probe then reaches the shadow
+   * on its own: `prefer-clone-deep` moved across when its `return {...} as
+   * const` fixture gained a fix (#2032). Its 121 wrapped variants left with it
+   * (1023 -> 902 neutral, 5 -> 4 rules reaching a shadow), which is why every
+   * floor here sits just under the value measured after that move.
    */
   it('the nesting perturbation reaches a shadow it could not reach flat', () => {
-    expect(nestedTotals.rules).toBeGreaterThanOrEqual(21);
-    expect(nestedTotals.enclosureGained).toBeGreaterThanOrEqual(13);
-    expect(nestedTotals.probedRules).toBeGreaterThanOrEqual(5);
-    expect(nestedTotals.neutral).toBeGreaterThanOrEqual(980);
+    expect(nestedTotals.rules).toBeGreaterThanOrEqual(20);
+    expect(nestedTotals.enclosureGained).toBeGreaterThanOrEqual(12);
+    expect(nestedTotals.probedRules).toBeGreaterThanOrEqual(4);
+    expect(nestedTotals.neutral).toBeGreaterThanOrEqual(900);
     // An unvalidatable variant is not a valid one. Both zeros are trustworthy
     // only because the counter sits at its own skip rather than downstream.
     expect(validationErrors).toBe(0);

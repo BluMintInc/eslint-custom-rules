@@ -1046,7 +1046,6 @@ const FIX_UNDRIVEN: Record<string, UndrivenCause> = {
   'no-unnecessary-destructuring': 'noSharedMessageId',
   'no-unpinned-dependencies': 'noTsFixture',
   'omit-index-html': 'noRespelling',
-  'prefer-clone-deep': 'noFixInComparedPair',
   'prefer-fragment-shorthand': 'noRespelling',
   // All 104 function expressions in its fixtures are class method shorthand —
   // the shape the rule is ABOUT — and a class method has no arrow-valued

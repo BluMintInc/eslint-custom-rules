@@ -447,6 +447,11 @@ const KNOWN_DIVERGENT: Record<string, Exemption> = {
       'PIPELINE: the condition fixtures sit in lowercase module-scope consts; `--fix` renames all 9.',
     cases: { asConst: 1, upperSnakeCase: 9 },
   },
+  'prefer-clone-deep::global-const-style': {
+    reason:
+      "PIPELINE: the spread-copy fixtures sit in lowercase module-scope consts without `as const` to display the literal shape under test; `--fix` supplies SCREAMING_SNAKE/`as const` and both rules end silent (measured). The pair joins this list because #2032 names `global-const-style` in this rule's source: under the composed `--fix` the sibling wins the range race and appends `as const` to the very literal this rule rewrites, and the fix used to decline on that assertion (#2011), so the hazard was reported forever and never fixed. Absorbing a DIRECT `as const` into the `cloneDeep(...)` rewrite is what lets the pipeline converge; the disagreement itself predates the mention.",
+    cases: { asConst: 36, upperSnakeCase: 42 },
+  },
   'prefer-field-paths-in-transforms::enforce-object-literal-as-const': {
     reason:
       'PIPELINE: the transform fixtures return object literals without `as const`; `--fix` supplies it and the sibling goes silent on all 18.',

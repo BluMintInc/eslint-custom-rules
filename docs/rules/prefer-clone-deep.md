@@ -102,13 +102,25 @@ faithfully:
   no overrides argument).
 - A flagged literal whose partial copy is not reachable as a direct property
   value, so no faithful `cloneDeep` call can replace it.
-- A literal carrying a `const` assertion, for example
-  `const result = { ...a, nested: { ...a.nested, value: 42 } } as const;`. A
+- A literal carrying a `const` assertion *behind another assertion*, for
+  example `{ ...a, nested: { ...a.nested, value: 42 } } as Foo as const`. A
   `const` assertion applies only to a literal, so leaving it on the emitted call
-  is TS1355. Other assertions are legal on a call expression and keep their fix:
-  `as Foo` and `satisfies Foo` on the literal, and `as const` on an *enclosing*
-  literal such as `{ key: { ...a, nested: { ...a.nested, value: 42 } } } as const`,
-  where the rewrite happens inside and the assertion still has a literal.
+  is TS1355, and it cannot be dropped without also dropping the `as Foo` in
+  between.
+
+A `const` assertion applied **directly** to the literal is absorbed rather than
+declined: `const result = { ...a, nested: { ...a.nested, value: 42 } } as const;`
+becomes `const result = cloneDeep(a, { nested: { value: 42 } } as const);`, and
+any `as Foo`, `satisfies Foo` or `!` that follows the assertion is kept on the
+call. The emitted call already spells `as const` on its overrides literal, which
+is the one place the assertion stays legal after the rewrite. Absorbing it is
+also what keeps the fix reachable under a composed `--fix`: `global-const-style`
+appends `as const` to a module-scope constant before this rule's turn, and a
+fix declined on that assertion would never land. `as Foo` and `satisfies Foo`
+on the literal are legal on a call expression and keep their fix, as does
+`as const` on an *enclosing* literal such as
+`{ key: { ...a, nested: { ...a.nested, value: 42 } } } as const`, where the
+rewrite happens inside and the assertion still has a literal.
 
 Defensive spellings of the base path are recognized and dropped safely:
 `...(base?.x ?? {})`, `...base.x!` and `...base['x']` all mirror `base.x`. Array,
