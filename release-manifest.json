@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.160",
+    "date": "2026-08-17T02:55:06.538Z",
+    "rules": [
+      {
+        "name": "require-memo",
+        "changeType": "fix",
+        "issues": [
+          2028
+        ],
+        "summary": "decline the memo rewrite inside a jest.mock factory (closes #2028)"
+      }
+    ]
+  },
+  {
     "version": "1.20.159",
     "date": "2026-08-17T02:05:07.694Z",
     "rules": [

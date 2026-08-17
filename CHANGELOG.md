@@ -1,3 +1,10 @@
+## [1.20.160](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.159...v1.20.160) (2026-08-17)
+
+
+### Bug Fixes
+
+* **require-memo:** decline the memo rewrite inside a jest.mock factory (closes [#2028](https://github.com/BluMintInc/eslint-custom-rules/issues/2028)) ([7c643c7](https://github.com/BluMintInc/eslint-custom-rules/commit/7c643c76902c70b160b34a387e01cc1068f597f8)), closes [#1659](https://github.com/BluMintInc/eslint-custom-rules/issues/1659) [#1660](https://github.com/BluMintInc/eslint-custom-rules/issues/1660)
+
 ## [1.20.159](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.158...v1.20.159) (2026-08-17)
 
 
