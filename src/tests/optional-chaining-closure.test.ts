@@ -133,10 +133,6 @@ const KNOWN_DIVERGENT: Record<string, string> = {
     'ARTIFACT: only reached via `createElement?.()`',
   'enforce-verb-noun-naming::member':
     'ARTIFACT: only reached via `React?.createElement`',
-  'enforce-empty-object-check::call':
-    'ARTIFACT: only reached via `Object.keys?.(x)`; the writable `Object.keys(x)?.length === 0` stays silent (measured)',
-  'enforce-empty-object-check::member':
-    'ARTIFACT: only reached via `Object?.keys`; the writable `u?.name` in the same fixture stays silent (measured)',
   'fast-deep-equal-over-microdiff::call':
     'ARTIFACT: residue of #1825 — the binary arm is fixed; only `diff?.(a, b)`, an optional call on a static import binding, remains',
   'firestore-transaction-reads-before-writes::call':
