@@ -284,9 +284,15 @@ export const enforceFExtensionForEntryPoints = createRule<
       (context as unknown as { filename?: string }).filename ??
       context.getFilename();
     const fileName = path.basename(filePath);
-    const entryPoints = new Set(
-      options.entryPoints?.length ? options.entryPoints : DEFAULT_ENTRY_POINTS,
-    );
+    // Configured names EXTEND the defaults rather than replacing them. A
+    // default only matches when it is actually imported from firebase-functions
+    // or the internal wrappers, so carrying an unused one costs nothing, while
+    // dropping one silently stops enforcing the convention for that wrapper —
+    // which is what registering a single custom trigger used to do.
+    const entryPoints = new Set([
+      ...DEFAULT_ENTRY_POINTS,
+      ...(options.entryPoints ?? []),
+    ]);
 
     // Only apply to files under functions/src/
     const normalizedPath = filePath.replace(/\\/g, '/');
