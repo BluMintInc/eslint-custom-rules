@@ -1,5 +1,27 @@
 [
   {
+    "version": "1.20.163",
+    "date": "2026-08-17T20:02:54.585Z",
+    "rules": [
+      {
+        "name": "prefer-clone-deep",
+        "changeType": "fix",
+        "issues": [
+          2032
+        ],
+        "summary": "absorb a direct `as const` so the composed --fix lands (closes #2032)"
+      },
+      {
+        "name": "require-memoize-jsx-returners",
+        "changeType": "fix",
+        "issues": [
+          2033
+        ],
+        "summary": "exempt render() on a React class component (closes #2033)"
+      }
+    ]
+  },
+  {
     "version": "1.20.162",
     "date": "2026-08-17T15:38:50.817Z",
     "rules": [

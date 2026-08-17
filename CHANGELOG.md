@@ -1,3 +1,11 @@
+## [1.20.163](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.162...v1.20.163) (2026-08-17)
+
+
+### Bug Fixes
+
+* **prefer-clone-deep:** absorb a direct `as const` so the composed --fix lands (closes [#2032](https://github.com/BluMintInc/eslint-custom-rules/issues/2032)) ([74231b4](https://github.com/BluMintInc/eslint-custom-rules/commit/74231b42edf829b55aeff435c7d97f6d0b6de8d6)), closes [#2011](https://github.com/BluMintInc/eslint-custom-rules/issues/2011)
+* **require-memoize-jsx-returners:** exempt render() on a React class component (closes [#2033](https://github.com/BluMintInc/eslint-custom-rules/issues/2033)) ([fd83f72](https://github.com/BluMintInc/eslint-custom-rules/commit/fd83f721554d958e420eecf1698b833fb2e419ef))
+
 ## [1.20.162](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.161...v1.20.162) (2026-08-17)
 
 
