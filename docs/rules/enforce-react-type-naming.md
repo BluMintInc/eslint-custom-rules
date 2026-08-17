@@ -6,7 +6,7 @@
 
 <!-- end auto-generated rule header -->
 
-This rule enforces naming conventions for variables and parameters based on their React-related type annotations:
+This rule enforces naming conventions for variables and parameters based on their React type, which a variable declares either as an annotation or as a type assertion:
 
 - Variables and parameters of type `ReactNode` or `JSX.Element` must have **lowercase** names.
 - Variables and parameters of type `ComponentType` or `FC` (FunctionComponent) must have **uppercase** names.
@@ -27,6 +27,8 @@ const element: ComponentType = () => <div />; // ❌ Should be uppercase
 function useCustomHook(Component: ReactNode) { // ❌ Should be lowercase
   return <Component />;
 }
+
+export const config = {} as FC; // ❌ Should be uppercase — the assertion is the type
 ```
 
 ### Examples of **correct** code for this rule:
@@ -41,6 +43,8 @@ const Element: ComponentType = () => <div />; // ✅ Uppercase for ComponentType
 function useCustomHook(component: ReactNode) { // ✅ Lowercase for ReactNode
   return <component />;
 }
+
+const Enhanced = memoized as ComponentType<TProps>; // ✅ Uppercase for ComponentType
 ```
 
 The element examples are written inside a component on purpose: at module scope a
@@ -90,13 +94,17 @@ declaration it declines is still this rule's:
 | shape | named by |
 | --- | --- |
 | `const element: JSX.Element = …`, exported or not | `global-const-style` |
+| `const element = {} as JSX.Element` (type from an assertion) | `global-const-style` |
 | `let` / `var`, or any non-module scope | this rule |
 | `const button: FC = () => …` (function value) | this rule |
 | dynamic initializer, binding alias, no initializer, `jest.Mock*` cast | this rule |
 | `export const config: FC = …` (Next.js reserved export name) | this rule |
+| `export const config = {} as FC` (the same, type from an assertion) | this rule |
 
-Rows two through four hold whether or not the declaration is exported. The last
-row is the only one the export itself creates: `global-const-style`
+The `let`/`var`, function-value and dynamic-initializer rows hold whether or not
+the declaration is exported, and each row reads the same whichever way the type
+is written. The reserved-export rows are the only ones the export itself
+creates: `global-const-style`
 declines to rename `config`, `getServerSideProps`, `getStaticProps`,
 `getStaticPaths`, `getInitialProps` and `middleware` when they are exported,
 because Next.js matches those identifiers literally. Nothing over there governs
@@ -106,12 +114,52 @@ contract. The exemption is keyed on the export, exactly as the sibling keys it:
 a module-scope `const config` that is *not* exported is still renamed to
 `CONFIG` by `global-const-style`.
 
+## The type may be written as an assertion
+
+A type assertion declares the binding's type as bindingly as an annotation does,
+so the rule reads it too. `tsc --declaration --emitDeclarationOnly` emits the
+same `export declare const config: FC;` for both spellings:
+
+```tsx
+// both report `componentTypeShouldBeUppercase`
+export const config: FC = {} as FC;
+export const config = {} as FC;
+```
+
+Reading both carriers is what keeps the report stable under the recommended
+config's own `--fix`. [`no-redundant-annotation-assertion`](./no-redundant-annotation-assertion.md)
+removes the redundant *annotation* and keeps the *assertion* — the type-safe
+direction, since removing the assertion instead leaves `const config: FC = {}`,
+which does not typecheck — so an annotation-only reader loses its report the
+moment a consumer runs `--fix`.
+
+Which assertion answers, and which carries nothing:
+
+- The **outermost** assertion applied to the initializer, read through `!` and
+  through parentheses. `const Widget = thing as unknown as FC` reads `FC`.
+- A **nested** assertion describes a sub-expression, not the binding:
+  `const x = (e as FC)()` holds FC's *return* value, so the rule is silent.
+- **`as const`** names no React type, and **`satisfies`** leaves the
+  expression's type alone (`{} satisfies FC` is still `{}`). Neither carries.
+- When a declaration has **both**, the annotation is the declared type and wins:
+  `const x: unknown = {} as FC` reads `unknown`.
+- A **parameter** takes no assertion, so parameters read their annotation only.
+
+The `global-const-style` carve-out above is applied first, so a module-scope
+`const` typed by an assertion belongs to that rule exactly as an annotated one
+does:
+
+```tsx
+// `global-const-style` names this; --fix makes it `const WIDGET = {} as FC;`
+const widget = {} as FC;
+```
+
 ## Autofix
 
 The autofix is a scope-aware rename. It rewrites **only the name token**, so the
-type annotation that triggered the report — along with any `?` or `!` marker —
-survives, and it rewrites **every in-file reference** to the renamed binding, so
-the fixed code still resolves.
+annotation or assertion that triggered the report — along with any `?` or `!`
+marker — survives, and it rewrites **every in-file reference** to the renamed
+binding, so the fixed code still resolves.
 
 ```tsx
 // before
@@ -150,10 +198,26 @@ semantics-preserving rename is impossible:
   the section above.)
 - **Re-export specifier** — `export { Content }` binds the public export name to
   that identifier, so rewriting it would rename the export itself.
+- **A JSX element name that would be lowercased** — a variable referenced as
+  `<Content />`. Rewriting it to `<content />` does not carry the reference
+  across: a lowercase JSX element name is an intrinsic host element, so the
+  binding ends up unreferenced and an unknown HTML tag is rendered in its place.
 
-Lowercase JSX element names (`<component />`) are intrinsic host elements rather
-than references to the binding, so they are left untouched; uppercase JSX element
-names are real references and are renamed with the declaration.
+```tsx
+// reported, not fixed — the author decides how to spell the element
+function Page() {
+  const Content: JSX.Element = getContent();
+  return <Content />;
+}
+```
+
+A JSX element name is a reference only while it starts uppercase, so the
+directions are not symmetric. Uppercasing is safe and is applied:
+`const content: FC = …` renames to `Content`, leaving an already-intrinsic
+`<content />` alone. A value reference inside a JSX expression container
+(`{Content}`) is a plain reference and follows the rename either way. A
+PARAMETER keeps the rewrite — an unused parameter is an ordinary
+signature-driven shape rather than dead code the fix created.
 
 ## When Not To Use It
 

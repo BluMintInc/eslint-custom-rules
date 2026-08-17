@@ -205,6 +205,38 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
     // here: a reserved-name check written without that gate would silence the
     // sibling's contract and hand the identifier back to this rule.
     'const config: FC = {} as FC;',
+
+    // ISSUE #2029 — a type assertion is a detection carrier, and these are the
+    // shapes it must NOT report on.
+    //
+    // The carve-out comes first: a module-scope `const` typed by assertion alone
+    // is still `global-const-style`'s to name (it drives this to
+    // `const WIDGET = {} as FC;`), so widening the carrier must not reopen the
+    // #1846/#1847 contradiction.
+    'const widget = {} as FC;',
+    // Compliant already — the spelling agora ships at two sites
+    // (`withInteractFile.tsx`, `withFileInput.tsx`). A binding alias is outside
+    // `global-const-style`'s rename check, so this rule DOES read the assertion
+    // here; it is silent because the name is right.
+    'const Enhanced = memoized as ComponentType<TProps>;',
+    // Only the OUTERMOST assertion of the initializer answers. Here the
+    // assertion types the CALLEE, so the binding holds FC's return value and
+    // nothing about it is a component.
+    'const x = (e as FC)();',
+    // `as const` is a `TSTypeReference` named `const`, not a React type.
+    'const list = things as const;',
+    // The outer `as FC` discards the intermediate `unknown`, so the type reads
+    // `FC` and the PascalCase name satisfies it.
+    'const Widget = thing as unknown as FC;',
+    // `satisfies` leaves the expression's type alone — `value satisfies
+    // ReactNode` is still whatever `value` is — so it carries nothing.
+    'let Content = value satisfies ReactNode;',
+    // An annotation and an assertion together: the ANNOTATION is the declared
+    // type, so `unknown` wins and the assertion is not consulted. Written
+    // function-local to keep the sibling's module-scope contract out of it.
+    'function f() { const x: unknown = {} as FC; return x; }',
+    // A compliant lowercase local, typed by assertion.
+    'function f() { const el = {} as JSX.Element; return el; }',
   ],
   invalid: [
     // The rename-fixer fixtures below declare their subject with `let` rather
@@ -666,6 +698,198 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
         },
       ],
       output: 'function Page() { const Config: FC = {} as FC; return Config; }',
+    },
+
+    // ISSUE #2029 — the assertion carrier.
+    //
+    // `export const config = {} as FC;` declares `config: FC` exactly as
+    // bindingly as the annotated spelling above does, and it is the spelling the
+    // shipped config's own `--fix` converges on:
+    // `no-redundant-annotation-assertion` deletes the redundant ANNOTATION and
+    // keeps the assertion. While the annotation was the only carrier, running
+    // `--fix` over the two fixtures above turned a report into permanent
+    // silence — the loss landing on exactly the shapes where this rule reports
+    // without fixing.
+    //
+    // Every `output` below is MEASURED, not assumed. These three are exported,
+    // so the renamer withholds (an exported name is a cross-file contract) and
+    // the report stands alone.
+    {
+      code: 'export const config = {} as FC;',
+      errors: [
+        {
+          messageId: 'componentTypeShouldBeUppercase',
+          data: { type: 'FC', suggestion: 'Config' },
+        },
+      ],
+      output: null,
+    },
+    {
+      code: 'export const middleware = {} as ComponentType;',
+      errors: [
+        {
+          messageId: 'componentTypeShouldBeUppercase',
+          data: { type: 'ComponentType', suggestion: 'Middleware' },
+        },
+      ],
+      output: null,
+    },
+    // A dynamic initializer is outside `global-const-style`'s rename check, so
+    // an ordinary (non-reserved) export name is this rule's too.
+    {
+      code: 'export const widget = makeWidget() as FC;',
+      errors: [
+        {
+          messageId: 'componentTypeShouldBeUppercase',
+          data: { type: 'FC', suggestion: 'Widget' },
+        },
+      ],
+      output: null,
+    },
+    // The outermost assertion is read THROUGH a nested one.
+    {
+      code: 'export const config = {} as unknown as FC;',
+      errors: [
+        {
+          messageId: 'componentTypeShouldBeUppercase',
+          data: { type: 'FC', suggestion: 'Config' },
+        },
+      ],
+      output: null,
+    },
+    // A function value behind an assertion: the sibling skips the whole
+    // declaration list, so this shape is this rule's alone. It is one of the
+    // four the composed `--fix` silenced.
+    {
+      code: 'export const button = (() => <button />) as FC;',
+      errors: [
+        {
+          messageId: 'componentTypeShouldBeUppercase',
+          data: { type: 'FC', suggestion: 'Button' },
+        },
+      ],
+      output: null,
+    },
+    // Read through `!`: non-nullability cannot change which React type names
+    // the value. `let` keeps the sibling out of it at module scope.
+    {
+      code: 'let Content = (value as ReactNode)!;',
+      errors: [
+        {
+          messageId: 'reactNodeShouldBeLowercase',
+          data: { type: 'ReactNode', suggestion: 'content' },
+        },
+      ],
+      output: 'let content = (value as ReactNode)!;',
+    },
+    {
+      code: 'let Content = value as ReactNode;',
+      errors: [
+        {
+          messageId: 'reactNodeShouldBeLowercase',
+          data: { type: 'ReactNode', suggestion: 'content' },
+        },
+      ],
+      output: 'let content = value as ReactNode;',
+    },
+    // Component-local, so the rename IS applied — the assertion that carried
+    // the report survives it, exactly as an annotation does (#1357).
+    {
+      code: 'function Page() { const config = {} as FC; return config; }',
+      errors: [
+        {
+          messageId: 'componentTypeShouldBeUppercase',
+          data: { type: 'FC', suggestion: 'Config' },
+        },
+      ],
+      output: 'function Page() { const Config = {} as FC; return Config; }',
+    },
+    // A JSX expression container holds a plain reference, which follows the
+    // rename with nothing else moving.
+    {
+      code: 'function Page() { const Content = getContent() as JSX.Element; return <div>{Content}</div>; }',
+      errors: [
+        {
+          messageId: 'reactNodeShouldBeLowercase',
+          data: { type: 'JSX.Element', suggestion: 'content' },
+        },
+      ],
+      output:
+        'function Page() { const content = getContent() as JSX.Element; return <div>{content}</div>; }',
+    },
+    // REPORT-ONLY, and measured: lowercasing the name would rewrite `<Content />`
+    // to `<content />`, which the scope analyzer reads as an intrinsic host
+    // element rather than a reference. That does not carry the reference across
+    // — it unbinds it, leaving the declaration unreferenced and an unknown HTML
+    // tag rendered in its place, which is a red CI for any consumer building
+    // with `noUnusedLocals`. The violation is still reported; the author decides
+    // how to spell the element.
+    //
+    // The annotated twin below withholds identically. Both carriers must answer
+    // alike: if one applied the rename and the other declined,
+    // `no-redundant-annotation-assertion` deleting the annotation would flip
+    // this rule's fix behaviour on an unchanged binding — the same
+    // carrier-sensitivity #2029 is about.
+    {
+      code: 'function Page() { const Content = getContent() as JSX.Element; return <Content />; }',
+      errors: [
+        {
+          messageId: 'reactNodeShouldBeLowercase',
+          data: { type: 'JSX.Element', suggestion: 'content' },
+        },
+      ],
+      output: null,
+    },
+    {
+      code: 'function Page() { const Content: JSX.Element = getContent(); return <Content />; }',
+      errors: [
+        {
+          messageId: 'reactNodeShouldBeLowercase',
+          data: { type: 'JSX.Element', suggestion: 'content' },
+        },
+      ],
+      output: null,
+    },
+    // A value reference inside a JSX expression container is a plain reference,
+    // so it does follow the rename — the withholding above is keyed on the
+    // element NAME position, not on JSX being present.
+    {
+      code: 'function Page() { const Content: JSX.Element = getContent(); return <div>{Content}</div>; }',
+      errors: [
+        {
+          messageId: 'reactNodeShouldBeLowercase',
+          data: { type: 'JSX.Element', suggestion: 'content' },
+        },
+      ],
+      output:
+        'function Page() { const content: JSX.Element = getContent(); return <div>{content}</div>; }',
+    },
+    // A closing tag is an element name too, so a two-token reference withholds
+    // on the same grounds.
+    {
+      code: 'function Page() { const Content = getContent() as JSX.Element; return <Content>hi</Content>; }',
+      errors: [
+        {
+          messageId: 'reactNodeShouldBeLowercase',
+          data: { type: 'JSX.Element', suggestion: 'content' },
+        },
+      ],
+      output: null,
+    },
+    // The other direction: `<content />` is a lowercase JSX name, which the
+    // scope analyzer models as an intrinsic host element rather than a
+    // reference, so only the declaration moves and the rendered element is
+    // untouched.
+    {
+      code: 'function Page() { const content = getContent() as FC; return <content />; }',
+      errors: [
+        {
+          messageId: 'componentTypeShouldBeUppercase',
+          data: { type: 'FC', suggestion: 'Content' },
+        },
+      ],
+      output:
+        'function Page() { const Content = getContent() as FC; return <content />; }',
     },
 
     // Invalid uppercase names for ReactNode
@@ -1314,6 +1538,14 @@ const PAIR_CASES: PairCase[] = [
     output: 'const WIDGET: FC = {} as FC;\n',
   },
   {
+    // ISSUE #2029 — the same const with the annotation gone, which is where the
+    // recommended config's own `--fix` leaves it. The carrier widened to the
+    // assertion must not take this name back from the sibling.
+    name: 'the FC assertion with no annotation',
+    code: 'const widget = {} as FC;\n',
+    output: 'const WIDGET = {} as FC;\n',
+  },
+  {
     name: 'references follow the rename',
     code: 'const element: JSX.Element = <div />;\nrender(element);\n',
     output: 'const ELEMENT: JSX.Element = <div />;\nrender(ELEMENT);\n',
@@ -1438,6 +1670,13 @@ const EXPORTED_STILL_OURS: { name: string; code: string }[] = [
   {
     name: 'a Next.js reserved export name',
     code: 'export const config: FC = {} as FC;\n',
+  },
+  {
+    // ISSUE #2029 — the post-`--fix` spelling of the row above. The sibling is
+    // silent for the same reason (the reserved export name), so losing the
+    // assertion carrier left this line governed by nothing at all.
+    name: 'a Next.js reserved export name, typed by assertion alone',
+    code: 'export const config = {} as FC;\n',
   },
 ];
 
