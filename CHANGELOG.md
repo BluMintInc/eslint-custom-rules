@@ -1,3 +1,10 @@
+## [1.20.159](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.158...v1.20.159) (2026-08-17)
+
+
+### Bug Fixes
+
+* **enforce-f-extension-for-entry-points:** extend the default entry points rather than replacing them (closes [#2027](https://github.com/BluMintInc/eslint-custom-rules/issues/2027)) ([3ec50be](https://github.com/BluMintInc/eslint-custom-rules/commit/3ec50be300818e71dcb38b46d66b03270f2a37ef))
+
 ## [1.20.158](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.157...v1.20.158) (2026-08-16)
 
 
