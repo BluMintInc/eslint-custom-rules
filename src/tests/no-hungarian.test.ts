@@ -1514,3 +1514,85 @@ ruleTesterTs.run('no-hungarian-domain-symbol-compounds', noHungarian, {
     { code: 'const nameString = "x";', errors: [errorFor('nameString')] },
   ],
 });
+
+// Issue #2030: <taxonomy>Class compounds where "class" is the BUCKET a value
+// falls into ("window size class" is the Material Design 3 / UIKit term for a
+// breakpoint bucket, a regex character class is `[a-z]`, an S3 storage class is
+// "STANDARD") are not Hungarian notation — the value is a string/number map, so
+// there is no type marker to strip, and stripping it yields a wrong name
+// (WINDOW_SIZE names a width, not a bucket). Same shape as the <entity>Number
+// (#1277) and <domain>Symbol (#1835) carve-outs, and it keeps the `Class`
+// marker alive: the head noun must be a bucketing taxonomy, the exemption
+// applies in SUFFIX position only, and any declaration that syntactically
+// proves a real class (a `class` expression initializer, a class declaration's
+// own name, or a constructor-type annotation) vetoes it.
+ruleTesterTs.run('no-hungarian-domain-class-compounds', noHungarian, {
+  valid: [
+    // The reproduction from the issue: the M3 breakpoint-bucket map.
+    {
+      code: `
+      export const WINDOW_SIZE_CLASS = {
+        compact: 0,
+        medium: 600,
+        expanded: 840,
+      };
+    `,
+    },
+    /** Sibling M3 term, same shape. */
+    { code: 'const SIZE_CLASS = { compact: 0 };' },
+    // camelCase and PascalCase spellings of the same domain term.
+    `const windowSizeClass = 'compact';`,
+    `type WindowSizeClass = 'compact' | 'medium' | 'expanded';`,
+    // Other identifier positions for the same name.
+    `function pad(sizeClass: string) { return sizeClass; }`,
+    `class Layout { sizeClass = 'compact'; }`,
+    // Prefixed variants generalize via the LAST head segment.
+    `const currentWindowSizeClass = 'medium';`,
+    // Further taxonomy domains from the whitelist.
+    `const characterClass = '[a-z]';`,
+    `const storageClass = 'STANDARD';`,
+    `const STORAGE_CLASS = 'GLACIER';`,
+    `const assetClass = 'equities';`,
+    `const weightClass = 'heavyweight';`,
+    `const fareClass = 'Y';`,
+    `const complexityClass = 'NP';`,
+    `const drugClass = 'NSAID';`,
+  ],
+  invalid: [
+    // The head noun is not a bucketing taxonomy, so the suffix reads as a type
+    // tag: the value IS (or stands in for) a JS class.
+    { code: 'const UserClass = class {};', errors: [errorFor('UserClass')] },
+    { code: 'const userClass = User;', errors: [errorFor('userClass')] },
+    { code: 'const configClass = Config;', errors: [errorFor('configClass')] },
+    {
+      code: 'const HELPER_CLASS = Helper;',
+      errors: [errorFor('HELPER_CLASS')],
+    },
+    // PREFIX position is untouched by the carve-out.
+    {
+      code: 'const classRegistry = new Map();',
+      errors: [errorFor('classRegistry')],
+    },
+    { code: 'const CLASS_MAP = {};', errors: [errorFor('CLASS_MAP')] },
+    // VETO: a declaration that syntactically proves a real class fires even
+    // with a taxonomy head noun, because the suffix then genuinely encodes the
+    // value's type.
+    { code: 'const SizeClass = class {};', errors: [errorFor('SizeClass')] },
+    { code: 'class SizeClass {}', errors: [errorFor('SizeClass')] },
+    {
+      code: 'const sizeClass: new () => Widget = Widget;',
+      errors: [errorFor('sizeClass')],
+    },
+    {
+      code: 'class Registry { sizeClass = class {}; }',
+      errors: [errorFor('sizeClass')],
+    },
+    { code: 'const SIZE_CLASS = class {};', errors: [errorFor('SIZE_CLASS')] },
+    // The carve-out is scoped to the `Class` marker: every other marker is
+    // unchanged.
+    {
+      code: 'const sizeString = "compact";',
+      errors: [errorFor('sizeString')],
+    },
+  ],
+});

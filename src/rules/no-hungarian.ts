@@ -165,6 +165,54 @@ const DOMAIN_SYMBOL_HEAD_NOUNS = new Set([
   'ascii',
 ]);
 
+// Domain head nouns that legitimately precede a "Class" suffix. In
+// <taxonomy>Class the trailing "Class" is the HEAD NOUN of the domain concept —
+// the BUCKET a value falls into — not the JavaScript `class` construct bolted
+// onto the name. "Window size class" is the Material Design 3 / UIKit term for
+// a breakpoint bucket (compact/medium/expanded), a regex *character class* is
+// `[a-z]`, an S3 *storage class* is "STANDARD" — in each case the value is a
+// string or number map, so there is no type marker to strip: removing the
+// suffix yields a wrong name (WINDOW_SIZE names a width, not a bucket). Same
+// reasoning as the <entity>Number (#1277) and <domain>Symbol (#1835)
+// carve-outs, applied to the taxonomy sense of "class" (#2030).
+//
+// Nouns whose <noun>Class reads as a tag on a JS class value — user, config,
+// helper, base, model, controller, wrapper — are intentionally ABSENT, so
+// UserClass / userClass / HELPER_CLASS stay flagged, as do all PREFIX uses
+// (classRegistry, CLASS_MAP). The carve-out is additionally vetoed whenever the
+// declaration syntactically proves a real class (see isClassValuedDeclaration).
+const DOMAIN_CLASS_HEAD_NOUNS = new Set([
+  // Layout / responsive design: M3 and UIKit bucket a window's width into a
+  // "size class".
+  'size',
+  // Regex and linguistics: character class ([a-z]), word class (noun/verb).
+  'character',
+  'word',
+  // Mathematics / CS taxonomy: equivalence class, complexity class (P, NP).
+  'equivalence',
+  'complexity',
+  // Systems / infrastructure: C and S3 storage class, QoS traffic/service
+  // class, USB device class.
+  'storage',
+  'traffic',
+  'service',
+  'device',
+  // Finance: asset class, share class.
+  'asset',
+  'share',
+  // Travel: fare/cabin/booking class (airline RBD codes).
+  'fare',
+  'cabin',
+  'booking',
+  // Categorization by attribute: weight class (boxing), age class, hazard
+  // class (DOT), drug class (pharmacology), vehicle class (DMV).
+  'weight',
+  'age',
+  'hazard',
+  'drug',
+  'vehicle',
+]);
+
 // Common built-in JavaScript prototype methods
 const BUILT_IN_METHODS = new Set([
   // String methods
@@ -442,6 +490,27 @@ function isDomainSymbolCompound(name: string): boolean {
   );
 }
 
+// Is `name` a domain compound of the form <taxonomy>Class, where the word
+// directly before the trailing "Class" names a bucketing taxonomy
+// (windowSizeClass, characterClass, storageClass)? Only the LAST head segment
+// is consulted, so prefixed variants generalize (currentWindowSizeClass passes)
+// while names whose value is a real JS class keep firing (userClass -> head
+// segment "user", not a taxonomy).
+function isDomainClassCompound(name: string): boolean {
+  if (!name.endsWith('Class')) {
+    return false;
+  }
+  const head = name.slice(0, -'Class'.length);
+  if (head.length === 0) {
+    return false;
+  }
+  const segments = splitCamelSegments(head);
+  const lastSegment = segments[segments.length - 1];
+  return (
+    !!lastSegment && DOMAIN_CLASS_HEAD_NOUNS.has(lastSegment.toLowerCase())
+  );
+}
+
 // Does a type annotation denote the JS `symbol` primitive (`symbol` or the
 // declaration-site form `unique symbol`)?
 function isSymbolTypeAnnotation(node: TSESTree.TypeNode | undefined): boolean {
@@ -529,6 +598,51 @@ function isSymbolTypedDeclaration(node: TSESTree.Identifier): boolean {
   }
 }
 
+// Does a type annotation denote a class constructor (`new (...) => T`)? Such an
+// annotation is the one syntactic spelling that proves the annotated value is a
+// class without type information.
+function isConstructorTypeAnnotation(
+  node: TSESTree.TypeNode | undefined,
+): boolean {
+  return !!node && node.type === AST_NODE_TYPES.TSConstructorType;
+}
+
+// Does the declaration site PROVE, syntactically, that the named value is a JS
+// class? Only a `class` expression initializer, a class declaration's own name,
+// or an explicit constructor-type annotation are conclusive without type
+// information — an aliased constructor (`const sizeClass = User`) is invisible
+// here, which is precisely why the taxonomy carve-out is keyed on the head noun
+// rather than on the type. When this holds, the trailing "Class" genuinely
+// encodes the value's type and the DOMAIN_CLASS_HEAD_NOUNS carve-out is vetoed,
+// so `const SizeClass = class {}` still reports. Mirrors
+// isSymbolTypedDeclaration (#1835).
+function isClassValuedDeclaration(node: TSESTree.Identifier): boolean {
+  if (isConstructorTypeAnnotation(node.typeAnnotation?.typeAnnotation)) {
+    return true;
+  }
+  const parent = node.parent;
+  if (!parent) {
+    return false;
+  }
+  switch (parent.type) {
+    case AST_NODE_TYPES.ClassDeclaration:
+    case AST_NODE_TYPES.ClassExpression:
+      return parent.id === node;
+    case AST_NODE_TYPES.VariableDeclarator:
+      return (
+        parent.id === node &&
+        parent.init?.type === AST_NODE_TYPES.ClassExpression
+      );
+    case AST_NODE_TYPES.PropertyDefinition:
+      return (
+        parent.key === node &&
+        parent.value?.type === AST_NODE_TYPES.ClassExpression
+      );
+    default:
+      return false;
+  }
+}
+
 // Rebuild a SCREAMING_SNAKE_CASE identifier's segments into a PascalCase compound
 // (["MATCH","NUMBER"] -> "MatchNumber") so the snake-case branch can reuse the
 // camelCase isDomainNumberCompound / DOMAIN_NUMBER_HEAD_NOUNS exemption verbatim,
@@ -570,10 +684,13 @@ export const noHungarian = createRule<[], MessageIds>({
     // interfaces, classes), enabling the semantic-type-concept exemption.
     // `isSymbolTyped` is true when the declaration syntactically proves a JS
     // `symbol` value, which vetoes the <domain>Symbol glyph exemption.
+    // `isClassValued` is true when the declaration syntactically proves a JS
+    // class value, which vetoes the <taxonomy>Class exemption.
     function hasTypeMarker(
       variableName: string,
       isTypeName = false,
       isSymbolTyped = false,
+      isClassValued = false,
     ): boolean {
       // Type names whose type-word denotes a concept/relation (StringToNumber,
       // CapitalizedString, FuncKeys, PromiseOrValue) are not Hungarian — the word
@@ -711,6 +828,19 @@ export const noHungarian = createRule<[], MessageIds>({
             ) {
               return false;
             }
+            // A trailing "..._CLASS" whose preceding head noun names a
+            // bucketing taxonomy (WINDOW_SIZE_CLASS, STORAGE_CLASS) is a
+            // domain compound, not a type tag — same carve-out as camelCase
+            // windowSizeClass (#2030), routed through the shared PascalCase
+            // helper so the two casings cannot diverge (the #1294 asymmetry).
+            if (
+              normalizedMarker === 'class' &&
+              index === lastIndex &&
+              !isClassValued &&
+              isDomainClassCompound(screamingSnakePartsToPascalCase(parts))
+            ) {
+              return false;
+            }
             return true;
           });
         });
@@ -800,6 +930,22 @@ export const noHungarian = createRule<[], MessageIds>({
             normalizedMarker === 'symbol' &&
             !isSymbolTyped &&
             isDomainSymbolCompound(variableName)
+          ) {
+            return false;
+          }
+          // A trailing "...Class" whose head noun names a bucketing taxonomy
+          // (windowSizeClass, characterClass, storageClass) is a domain
+          // compound: the suffix names WHAT the value is (the BUCKET a window
+          // width falls into — Material Design 3 / UIKit vocabulary), and
+          // stripping it yields a wrong name (windowSize is a width, not a
+          // bucket) (#2030). Scoped to the full-word `Class` marker in SUFFIX
+          // position only, and vetoed when the declaration proves a real
+          // class, so userClass / classRegistry / `const SizeClass = class {}`
+          // keep firing.
+          if (
+            normalizedMarker === 'class' &&
+            !isClassValued &&
+            isDomainClassCompound(variableName)
           ) {
             return false;
           }
@@ -894,7 +1040,14 @@ export const noHungarian = createRule<[], MessageIds>({
       if (isExternalOrBuiltIn(node)) return;
 
       // Check for type markers
-      if (hasTypeMarker(name, isTypeName, isSymbolTypedDeclaration(node))) {
+      if (
+        hasTypeMarker(
+          name,
+          isTypeName,
+          isSymbolTypedDeclaration(node),
+          isClassValuedDeclaration(node),
+        )
+      ) {
         context.report({
           node,
           messageId: 'noHungarian',
