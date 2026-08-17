@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.164",
+    "date": "2026-08-17T22:26:37.717Z",
+    "rules": [
+      {
+        "name": "enforce-empty-object-check",
+        "changeType": "fix",
+        "issues": [
+          2034
+        ],
+        "summary": "see through optional chains (closes #2034)"
+      }
+    ]
+  },
+  {
     "version": "1.20.163",
     "date": "2026-08-17T20:02:54.585Z",
     "rules": [
