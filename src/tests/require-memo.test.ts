@@ -1371,5 +1371,91 @@ const Component = ({ foo }) => <div>{foo}</div>;`,
       output: null,
       name: 'Component',
     }),
+    // Jest hoists a `jest.mock` factory above the imports, so a memo reference
+    // inside one is unbound when the factory runs. The report stands — `memo as
+    // mockMemo` and an in-factory `jest.requireActual` are both legal — but the
+    // rewrite is withheld.
+    withDefaults({
+      code: `jest.mock('./Widget', () => {
+  const Widget = ({ label }) => <div>{label}</div>;
+  return { __esModule: true, Widget };
+});`,
+      output: null,
+      filename: 'src/components/Widget.test.tsx',
+      name: 'Widget',
+    }),
+    withDefaults({
+      code: `jest.mock('./Widget', () => {
+  function Widget({ label }) { return <div>{label}</div>; }
+  return { __esModule: true, Widget };
+});`,
+      output: null,
+      filename: 'src/components/Widget.test.tsx',
+      name: 'Widget',
+    }),
+    // `doMock`/`setMock` run their factory in place, so the helper is bound and
+    // the edit stands. These pin the carve-out to the one registrar jest
+    // hoists rather than to the shape `jest.<method>(path, factory)`.
+    withDefaults({
+      code: `jest.doMock('./Widget', () => {
+  const Widget = ({ label }) => <div>{label}</div>;
+  return { Widget };
+});`,
+      output: `import { memo } from '../util/memo';
+jest.doMock('./Widget', () => {
+  const Widget = memo(({ label }) => <div>{label}</div>);
+  return { Widget };
+});`,
+      filename: 'src/components/Widget.test.tsx',
+      name: 'Widget',
+    }),
+    withDefaults({
+      code: `jest.setMock('./Widget', () => {
+  const Widget = ({ label }) => <div>{label}</div>;
+  return { Widget };
+});`,
+      output: `import { memo } from '../util/memo';
+jest.setMock('./Widget', () => {
+  const Widget = memo(({ label }) => <div>{label}</div>);
+  return { Widget };
+});`,
+      filename: 'src/components/Widget.test.tsx',
+      name: 'Widget',
+    }),
+    // An already-imported helper is rejected by jest just the same, so the
+    // decline cannot be keyed on whether this rule injects the import.
+    withDefaults({
+      code: `import { memo } from '../util/memo';
+jest.mock('./Widget', () => {
+  const Widget = ({ label }) => <div>{label}</div>;
+  return { Widget };
+});`,
+      output: null,
+      filename: 'src/components/Widget.test.tsx',
+      name: 'Widget',
+    }),
+    // Controls: the carve-out is the factory subtree, not the file and not any
+    // call's second argument, so a component beside a mock registrar and one
+    // inside a non-jest callback both keep their edit.
+    withDefaults({
+      code: `jest.mock('./dep');
+const Component = ({ foo }) => <div>{foo}</div>;`,
+      output: `import { memo } from '../util/memo';
+jest.mock('./dep');
+const Component = memo(({ foo }) => <div>{foo}</div>);`,
+      filename: 'src/components/SomeComponent.test.tsx',
+      name: 'Component',
+    }),
+    withDefaults({
+      code: `describe('suite', () => {
+  const Component = ({ foo }) => <div>{foo}</div>;
+});`,
+      output: `import { memo } from '../util/memo';
+describe('suite', () => {
+  const Component = memo(({ foo }) => <div>{foo}</div>);
+});`,
+      filename: 'src/components/SomeComponent.test.tsx',
+      name: 'Component',
+    }),
   ],
 });
