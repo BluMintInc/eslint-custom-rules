@@ -1,3 +1,10 @@
+## [1.20.162](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.161...v1.20.162) (2026-08-17)
+
+
+### Bug Fixes
+
+* **no-hungarian:** treat Class as a taxonomy head noun in suffix position (closes [#2030](https://github.com/BluMintInc/eslint-custom-rules/issues/2030)) ([22b8117](https://github.com/BluMintInc/eslint-custom-rules/commit/22b8117a9501c3a8e22840990285217bf050f63e)), closes [#1277](https://github.com/BluMintInc/eslint-custom-rules/issues/1277) [#1835](https://github.com/BluMintInc/eslint-custom-rules/issues/1835)
+
 ## [1.20.161](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.160...v1.20.161) (2026-08-17)
 
 
