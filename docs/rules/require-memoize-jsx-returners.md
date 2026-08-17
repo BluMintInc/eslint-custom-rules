@@ -39,6 +39,7 @@ class ProviderFactory {
 - Skips static members, so it does not conflict with `no-memoize-on-static`.
 - Skips members declared in a class **expression** (`const Widget = class { … }`), where no decorator is legal at all (see below).
 - Skips members with a **private name** (`#view() { … }`, `get #view() { … }`), where no decorator is legal either (see below).
+- Skips `render()` on a **React class component** — a class extending `Component` / `PureComponent` / `React.Component` / `React.PureComponent` — because React calls `render()` on every state and props change, so memoizing it pins the component to its first output (see below).
 - Functions inside React components that rely on hooks (e.g., `useCallback`, `useMemo`) are out of scope because the rule only inspects class members.
 - Recognizes `@Memoize`, aliased imports, and namespaced forms like `@memoize.Memoize()`. Auto-fix reuses existing aliases and inserts `import { Memoize } from '@blumintinc/typescript-memoize';` if missing.
 - When other decorators exist, `@Memoize()` is added without removing them; multiple violations in a file share a single inserted import.
@@ -206,6 +207,107 @@ withhold report and fix on the same ground. The carve-out is mode-dependent in
 the same way the class-expression one is: standard (TC39) decorators do accept a
 private-named member, so targeting `experimentalDecorators: false` calls for
 revisiting it.
+
+### `render()` on a React class component
+
+`render()` on a class that extends React's `Component` or `PureComponent` is
+never reported. React re-invokes `render()` on every state and props change **by
+contract** — the call schedule belongs to React, not to the class — so
+`@Memoize()` there is never a remedy: it pins the component to the output of its
+first render. The sharpest case is an error boundary, whose whole job is to
+render a *different* tree after `getDerivedStateFromError` sets state. With
+`@Memoize()` on `render()` the boundary catches the error, sets state, re-renders
+— and hands back the cached pre-error children, so the fallback can never
+appear. Unlike a decorator TypeScript rejects, this one compiles and lints clean;
+the breakage is behavioural and silent. Report and fix are both withheld:
+
+```tsx
+import { Component } from 'react';
+
+// Not reported: React owns render()'s call schedule.
+class ErrorBoundary extends Component<Props, State> {
+  state = { caught: undefined };
+
+  static getDerivedStateFromError(error: Error) {
+    return { caught: error };
+  }
+
+  render() {
+    if (this.state.caught) {
+      return <span>{this.state.caught.message}</span>;
+    }
+    return this.props.children;
+  }
+}
+```
+
+The superclass is matched on React's **vocabulary**, not on where the name is
+imported from: `extends Component`, `extends PureComponent`, and
+`extends X.Component` / `extends X.PureComponent` through any namespace object
+(`React.Component`, an aliased default import, a namespace import) all qualify,
+with or without a visible `import … from 'react'`. A renamed import specifier
+(`import { Component as ReactComponent } from 'react'`) and a same-file base
+class that itself extends one of those (`class BaseBoundary extends
+React.Component {}` … `class Boundary extends BaseBoundary`) are resolved
+through the scope chain. Type arguments (`Component<Props, State>`) and
+assertion wrappers (`(Component as any)`) are looked through. Provenance is
+deliberately not verified: `class Foo extends Component` where `Component` is
+some unrelated local class costs one unreported factory named `render`, while
+decorating a real component's `render` silently breaks it — the false negative is
+the cheaper mistake.
+
+The exemption is keyed on `render` alone. It is the only instance lifecycle
+method that returns an element (`shouldComponentUpdate` returns a boolean,
+`getSnapshotBeforeUpdate` an opaque snapshot, the rest `void`), and the statics
+React also calls — `getDerivedStateFromError`, `getDerivedStateFromProps` —
+return state and are outside the rule regardless. Every **other** JSX-returning
+member of a class component is the author's own factory, called on the author's
+schedule, and stays under the rule — including a helper `render()` delegates
+to. As everywhere else, `@Memoize()` is right for such a member only when what
+it returns does not depend on state that changes over the instance's lifetime;
+one that reads `this.state` or `this.props` per render should keep its logic
+inside `render()` or opt out with an inline disable:
+
+```tsx
+import { Memoize } from '@blumintinc/typescript-memoize';
+import React from 'react';
+
+class Widget extends React.Component {
+  // Reported and fixed: a stable factory the author calls, not React.
+  @Memoize()
+  get Icon() {
+    return () => <svg />;
+  }
+
+  // Not reported.
+  render() {
+    return <this.Icon />;
+  }
+}
+```
+
+A method literally named `render` on a class that is **not** a React component —
+one with no superclass, or one extending a base whose name resolves to nothing
+React-shaped in the file — is still reported and fixed:
+
+```tsx
+import { Memoize } from '@blumintinc/typescript-memoize';
+import { Base } from './Base';
+
+class Widget {
+  @Memoize()
+  render() {
+    return <div />;
+  }
+}
+
+class Themed extends Base {
+  @Memoize()
+  render() {
+    return <div />;
+  }
+}
+```
 
 ### Interaction with inline disable comments
 

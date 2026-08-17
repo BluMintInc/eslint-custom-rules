@@ -4230,3 +4230,463 @@ export class Widget {
     expect(introducedBy(before, after)).toEqual(['TS1206']);
   });
 });
+
+// Issue #2033: React re-invokes a class component's `render()` on every state
+// and props change BY CONTRACT, so `@Memoize()` on it pins the component to
+// the output of its first render — a fixed error boundary catches, sets state,
+// re-renders, and returns the cached pre-error children, so its fallback can
+// never appear. Unlike the earlier autofix defects on this rule (#1414, #1434,
+// #1950, #1951, #1955) the result compiles and lints clean; the breakage is
+// behavioural and silent. `render()` on a class extending React's
+// `Component`/`PureComponent` is therefore exempt from both report and fix.
+//
+// The superclass is matched on React's VOCABULARY rather than on import
+// provenance — a false negative on `class Foo extends Component` where
+// `Component` is some unrelated local class is far cheaper than decorating a
+// real component's `render` — and the two spellings that carry no vocabulary
+// (a renamed import specifier, a same-file base class) are resolved through
+// the scope chain. Everything else the rule fires on keeps firing: a `render()`
+// with no superclass, one on a class extending a base from another module, and
+// every OTHER JSX-returning member of a class component.
+//
+// Declared under `ruleTesterJsx` because every fixture is JSX; each carries a
+// `.tsx` filename since the rule itself is gated on the path.
+ruleTesterJsx.run(
+  'require-memoize-jsx-returners (React class component render, issue #2033)',
+  requireMemoizeJsxReturners,
+  {
+    valid: [
+      {
+        name: 'render() on an error boundary extending Component (JSX fallback) — issue #2033 repro',
+        filename: 'ErrorBoundary.tsx',
+        code: `
+      import { Component } from 'react';
+      class ErrorBoundary extends Component {
+        state = { caught: undefined };
+        static getDerivedStateFromError(error) {
+          return { caught: error };
+        }
+        render() {
+          if (this.state.caught) {
+            return <span>{this.state.caught.message}</span>;
+          }
+          return this.props.children;
+        }
+      }
+    `,
+      },
+      {
+        name: 'render() on an error boundary extending Component (createElement fallback) — issue #2033 repro',
+        filename: 'ErrorBoundary.tsx',
+        code: `
+      import { Component, createElement } from 'react';
+      class ErrorBoundary extends Component {
+        state = { caught: undefined };
+        static getDerivedStateFromError(error) {
+          return { caught: error };
+        }
+        render() {
+          if (this.state.caught) {
+            return createElement('span', null, this.state.caught.message);
+          }
+          return this.props.children;
+        }
+      }
+    `,
+      },
+      {
+        name: 'render() on a class extending PureComponent',
+        filename: 'Widget.tsx',
+        code: `import { PureComponent } from 'react';
+
+class Widget extends PureComponent {
+  render() {
+    return <div>{this.props.label}</div>;
+  }
+}`,
+      },
+      {
+        name: 'render() on a class extending React.Component through the default import',
+        filename: 'Widget.tsx',
+        code: `import React from 'react';
+
+class Widget extends React.Component {
+  render() {
+    return <div>{this.props.label}</div>;
+  }
+}`,
+      },
+      {
+        name: 'render() on a class extending React.PureComponent',
+        filename: 'Widget.tsx',
+        code: `import React from 'react';
+
+class Widget extends React.PureComponent {
+  render() {
+    return <div>{this.props.label}</div>;
+  }
+}`,
+      },
+      {
+        name: 'render() on a class extending Component through an aliased default import',
+        filename: 'Widget.tsx',
+        code: `import MyReact from 'react';
+
+class Widget extends MyReact.Component {
+  render() {
+    return <div />;
+  }
+}`,
+      },
+      {
+        name: 'render() on a class extending Component through a namespace import',
+        filename: 'Widget.tsx',
+        code: `import * as React from 'react';
+
+class Widget extends React.Component {
+  render() {
+    return <div />;
+  }
+}`,
+      },
+      {
+        // The local name carries no vocabulary, so the binding is resolved to
+        // its import specifier.
+        name: 'render() on a class extending a renamed Component import',
+        filename: 'Widget.tsx',
+        code: `import { Component as ReactComponent } from 'react';
+
+class Widget extends ReactComponent {
+  render() {
+    return <div />;
+  }
+}`,
+      },
+      {
+        // The base carries no vocabulary either; it is resolved to its
+        // same-file declaration, whose own superclass does.
+        name: 'render() on a class extending a same-file base that extends React.Component',
+        filename: 'Widget.tsx',
+        code: `import React from 'react';
+
+class BaseBoundary extends React.Component {}
+
+class Widget extends BaseBoundary {
+  render() {
+    return <div />;
+  }
+}`,
+      },
+      {
+        name: 'render() on a class extending a two-hop same-file base chain',
+        filename: 'Widget.tsx',
+        code: `import { Component } from 'react';
+
+class Root extends Component {}
+class Middle extends Root {}
+
+class Widget extends Middle {
+  render() {
+    return <div />;
+  }
+}`,
+      },
+      {
+        // The vocabulary alone decides: no import is consulted, so a file that
+        // reaches React through a global keeps the exemption.
+        name: 'render() on a class extending a global React.Component with no import',
+        filename: 'Widget.tsx',
+        code: `class Widget extends React.Component {
+  render() {
+    return <div />;
+  }
+}`,
+      },
+      {
+        name: 'render() on a class extending a bare Component with no import',
+        filename: 'Widget.tsx',
+        code: `class Widget extends Component {
+  render() {
+    return <div />;
+  }
+}`,
+      },
+      {
+        name: 'render() on a class whose superclass carries type arguments',
+        filename: 'Widget.tsx',
+        code: `import React from 'react';
+
+type Props = { label: string };
+type State = { open: boolean };
+
+class Widget extends React.Component<Props, State> {
+  render() {
+    return <div>{this.props.label}</div>;
+  }
+}`,
+      },
+      {
+        name: 'render() on a class whose superclass is wrapped in an assertion',
+        filename: 'Widget.tsx',
+        code: `import React from 'react';
+
+class Widget extends (React.Component as any) {
+  render() {
+    return <div />;
+  }
+}`,
+      },
+      {
+        // ESTree wraps `React?.Component` in a ChainExpression; the spelling
+        // is grammatical and, wherever the receiver is defined, is
+        // `React.Component`.
+        name: 'render() on a class whose superclass is reached through optional chaining',
+        filename: 'Widget.tsx',
+        code: `import React from 'react';
+
+class Widget extends React?.Component {
+  render() {
+    return <div />;
+  }
+}`,
+      },
+      {
+        name: 'render() on an exported class component',
+        filename: 'Widget.tsx',
+        code: `import { Component } from 'react';
+
+export class Widget extends Component {
+  render() {
+    return <div />;
+  }
+}`,
+      },
+      {
+        name: 'render() on an anonymous default-exported class component',
+        filename: 'Widget.tsx',
+        code: `import { Component } from 'react';
+
+export default class extends Component {
+  render() {
+    return <div />;
+  }
+}`,
+      },
+      {
+        name: 'render() carrying modifiers on a class component',
+        filename: 'Widget.tsx',
+        code: `import { Component } from 'react';
+
+class Widget extends Component {
+  public override render() {
+    return <div />;
+  }
+}`,
+      },
+      {
+        name: 'render() on a class component declared inside a function',
+        filename: 'Widget.tsx',
+        code: `import { Component } from 'react';
+
+export function makeBoundary() {
+  class Boundary extends Component {
+    render() {
+      return <section>{this.props.children}</section>;
+    }
+  }
+  return Boundary;
+}`,
+      },
+      {
+        // The rule inspects class members only, so a standalone function or
+        // arrow returning JSX is out of scope regardless of this exemption.
+        name: 'standalone functions returning JSX beside a class component are out of scope',
+        filename: 'Widget.tsx',
+        code: `import { Component } from 'react';
+
+function Header() {
+  return <h1 />;
+}
+const Footer = () => <footer />;
+
+class Widget extends Component {
+  render() {
+    return (
+      <div>
+        <Header />
+        <Footer />
+      </div>
+    );
+  }
+}`,
+      },
+    ],
+    invalid: [
+      {
+        name: 'render() on a class with no superclass is still reported and fixed',
+        filename: 'Widget.tsx',
+        code: `class Widget {
+  render() {
+    return <div />;
+  }
+}`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+class Widget {
+  @Memoize()
+  render() {
+    return <div />;
+  }
+}`,
+      },
+      {
+        // A base from another module cannot be resolved here and its name
+        // carries no vocabulary, so the report stands.
+        name: 'render() on a class extending a base from another module is still reported and fixed',
+        filename: 'Widget.tsx',
+        code: `import { Base } from './Base';
+
+class Widget extends Base {
+  render() {
+    return <div />;
+  }
+}`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+import { Base } from './Base';
+
+class Widget extends Base {
+  @Memoize()
+  render() {
+    return <div />;
+  }
+}`,
+      },
+      {
+        name: 'render() on a class extending a same-file base that is not a component is still reported and fixed',
+        filename: 'Widget.tsx',
+        code: `class Base {}
+
+class Widget extends Base {
+  render() {
+    return <div />;
+  }
+}`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+class Base {}
+
+class Widget extends Base {
+  @Memoize()
+  render() {
+    return <div />;
+  }
+}`,
+      },
+      {
+        name: 'a plain (non-component) class method returning JSX is still reported and fixed',
+        filename: 'Widget.tsx',
+        code: `class Factory {
+  build() {
+    return <div />;
+  }
+}`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+class Factory {
+  @Memoize()
+  build() {
+    return <div />;
+  }
+}`,
+      },
+      {
+        // Only `render` is React's to call; a JSX-returning factory beside it
+        // is the author's, stays under the rule, and — since `render` never
+        // reports — carries the file's import.
+        name: 'a JSX-returning getter beside render() on a class component is still reported and carries the import',
+        filename: 'Widget.tsx',
+        code: `import React from 'react';
+
+class Widget extends React.Component {
+  get Icon() {
+    return () => <svg />;
+  }
+  render() {
+    return <this.Icon />;
+  }
+}`,
+        errors: [
+          { messageId: 'requireMemoizeJsxReturner', data: { name: 'Icon' } },
+        ],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+import React from 'react';
+
+class Widget extends React.Component {
+  @Memoize()
+  get Icon() {
+    return () => <svg />;
+  }
+  render() {
+    return <this.Icon />;
+  }
+}`,
+      },
+      {
+        name: 'a JSX-returning method beside render() on a class component is still reported',
+        filename: 'Widget.tsx',
+        code: `import { Component } from 'react';
+
+class Widget extends Component {
+  renderHeader() {
+    return <h1 />;
+  }
+  render() {
+    return <div>{this.renderHeader()}</div>;
+  }
+}`,
+        errors: [
+          {
+            messageId: 'requireMemoizeJsxReturner',
+            data: { name: 'renderHeader' },
+          },
+        ],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+import { Component } from 'react';
+
+class Widget extends Component {
+  @Memoize()
+  renderHeader() {
+    return <h1 />;
+  }
+  render() {
+    return <div>{this.renderHeader()}</div>;
+  }
+}`,
+      },
+      {
+        // The vocabulary is read off the superclass, not off the file: a React
+        // import beside a plain class does not exempt that class's `render`.
+        name: 'render() on a plain class in a file that imports React is still reported and fixed',
+        filename: 'Widget.tsx',
+        code: `import React from 'react';
+
+class Widget {
+  render() {
+    return React.createElement('div');
+  }
+}`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+import React from 'react';
+
+class Widget {
+  @Memoize()
+  render() {
+    return React.createElement('div');
+  }
+}`,
+      },
+    ],
+  },
+);
