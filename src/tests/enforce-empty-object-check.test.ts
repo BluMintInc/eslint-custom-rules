@@ -257,6 +257,99 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
         tsconfigRootDir,
       },
     },
+    /**
+     * The optional spellings of an emptiness check are the SAME guard as the
+     * plain one: every `?.` link short-circuits on a nullish receiver, and
+     * neither the `Object` global nor the array `Object.keys` hands back is ever
+     * nullish. Detection that matched only the plain shape read these as guards
+     * missing their emptiness check and appended a duplicate one under `--fix`,
+     * corrupting code that was already correct.
+     */
+    `
+      function processUserData(userData) {
+        if (!userData || Object?.keys?.(userData)?.length === 0) {
+          return null;
+        }
+        return userData.name || 'Unknown';
+      }
+      `,
+    `
+      function processUserData(userData) {
+        if (!userData || Object.keys(userData)?.length === 0) {
+          return null;
+        }
+        return userData.name || 'Unknown';
+      }
+      `,
+    `
+      if (!userData || Object?.keys(userData).length === 0) {
+        handle(userData);
+      }
+      `,
+    `
+      if (!userData || Object.keys?.(userData).length === 0) {
+        handle(userData);
+      }
+      `,
+    `
+      if (!payload || Object.keys(payload)?.length <= 0) {
+        handle(payload);
+      }
+      `,
+    `
+      const payload = getPayload();
+      if (!payload || 0 >= Object.keys(payload)?.length) {
+        handle(payload);
+      }
+      `,
+    `
+      const payload = getPayload();
+      if (!payload || 0 === Object.keys(payload)?.length) {
+        handle(payload);
+      }
+      `,
+    `
+      const payload = getPayload();
+      if (!payload || !Object.keys(payload)?.length) {
+        handle(payload);
+      }
+      `,
+    `
+      const config = getConfig();
+      if (!config || isEmpty?.(config)) {
+        useDefaultConfig();
+      }
+      `,
+    {
+      code: `
+        const responsePayload = getResponse();
+        if (!responsePayload || lodash?.isEmpty(responsePayload)) {
+          return;
+        }
+        `,
+      options: [{ emptyCheckFunctions: ['isEmpty'] }],
+    },
+    `
+      const name = !userProfile || Object.keys(userProfile)?.length === 0 ? 'anonymous' : userProfile.name;
+      `,
+    `
+      let options = load();
+      while (!options || Object.keys(options)?.length === 0) {
+        options = retry();
+      }
+      `,
+    `
+      let data;
+      do {
+        data = read();
+      } while (!data || Object.keys(data)?.length === 0);
+      `,
+    `
+      let config;
+      for (; !config || Object.keys(config)?.length === 0; ) {
+        config = getConfig();
+      }
+      `,
   ],
   invalid: [
     {
@@ -792,6 +885,132 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
         declare const slot: WidgetSlot | undefined;
         if ((!slot || Object.keys(slot).length === 0)) {
           throw new Error('missing slot');
+        }
+        `,
+    },
+    /**
+     * Negative controls for the optional-chain arm. Reading through a
+     * `ChainExpression` must recognize the emptiness check it wraps, not accept
+     * any chain at all: a presence test, a different object, `Object.values`, a
+     * negated emptiness test, and a helper called on another identifier each
+     * leave `{}` passing the guard, so each still has to report.
+     */
+    {
+      code: `
+        const payload = getPayload();
+        if (!payload || Object.keys(payload)?.length > 5) {
+          handle(payload);
+        }
+        `,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'payload' } },
+      ],
+      output: `
+        const payload = getPayload();
+        if ((!payload || Object.keys(payload).length === 0) || Object.keys(payload)?.length > 5) {
+          handle(payload);
+        }
+        `,
+    },
+    {
+      code: `
+        const userData = getUser();
+        if (!userData || Object.keys(otherData)?.length === 0) {
+          handle(userData);
+        }
+        `,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'userData' } },
+      ],
+      output: `
+        const userData = getUser();
+        if ((!userData || Object.keys(userData).length === 0) || Object.keys(otherData)?.length === 0) {
+          handle(userData);
+        }
+        `,
+    },
+    {
+      code: `
+        const userData = getUser();
+        if (!userData || Object.values(userData)?.length === 0) {
+          handle(userData);
+        }
+        `,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'userData' } },
+      ],
+      output: `
+        const userData = getUser();
+        if ((!userData || Object.keys(userData).length === 0) || Object.values(userData)?.length === 0) {
+          handle(userData);
+        }
+        `,
+    },
+    {
+      code: `
+        const payload = getPayload();
+        if (!payload || !(Object.keys(payload)?.length === 0)) {
+          handle(payload);
+        }
+        `,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'payload' } },
+      ],
+      output: `
+        const payload = getPayload();
+        if ((!payload || Object.keys(payload).length === 0) || !(Object.keys(payload)?.length === 0)) {
+          handle(payload);
+        }
+        `,
+    },
+    {
+      code: `
+        const payload = getPayload();
+        if (!payload || !!Object.keys(payload)?.length) {
+          return handle(payload);
+        }
+        `,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'payload' } },
+      ],
+      output: `
+        const payload = getPayload();
+        if ((!payload || Object.keys(payload).length === 0) || !!Object.keys(payload)?.length) {
+          return handle(payload);
+        }
+        `,
+    },
+    {
+      code: `
+        const payload = getPayload();
+        if (!payload || isEmpty?.(otherPayload)) {
+          return;
+        }
+        `,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'payload' } },
+      ],
+      output: `
+        const payload = getPayload();
+        if ((!payload || Object.keys(payload).length === 0) || isEmpty?.(otherPayload)) {
+          return;
+        }
+        `,
+    },
+    {
+      code: `
+        const config = load();
+        if (!config || Object.keys(config)?.length === 10) {
+          return config;
+        }
+        `,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `
+        const config = load();
+        if ((!config || Object.keys(config).length === 0) || Object.keys(config)?.length === 10) {
+          return config;
         }
         `,
     },

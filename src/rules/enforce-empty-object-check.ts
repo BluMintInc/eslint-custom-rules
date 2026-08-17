@@ -266,29 +266,62 @@ function isObjectLikeType(
   return 'object';
 }
 
+/**
+ * Reads through an optional chain to the member access or call it holds.
+ * `Object?.keys?.(payload)?.length` parses as a single `ChainExpression`
+ * wrapping the whole chain, so a matcher written against a bare
+ * `MemberExpression` sees the wrapper and recognizes nothing.
+ *
+ * Reading through it is sound for the only question asked of it — "is an
+ * emptiness check already written here?" — because every optional link guards a
+ * nullish RECEIVER, and neither the `Object` global nor the array `Object.keys`
+ * hands back is ever nullish. The chained spelling therefore evaluates to
+ * exactly what the plain one does, making the two the same guard.
+ */
+function unwrapOptionalChain(node: TSESTree.Node): TSESTree.Node {
+  let current = node;
+  while (current.type === AST_NODE_TYPES.ChainExpression) {
+    current = current.expression;
+  }
+  return current;
+}
+
 function isObjectKeysLengthExpression(
   node: TSESTree.Node,
   name: string,
 ): boolean {
+  const lengthRead = unwrapOptionalChain(node);
   if (
-    node.type === AST_NODE_TYPES.MemberExpression &&
-    !node.computed &&
-    node.property.type === AST_NODE_TYPES.Identifier &&
-    node.property.name === 'length' &&
-    node.object.type === AST_NODE_TYPES.CallExpression &&
-    node.object.callee.type === AST_NODE_TYPES.MemberExpression &&
-    !node.object.callee.computed &&
-    node.object.callee.object.type === AST_NODE_TYPES.Identifier &&
-    node.object.callee.object.name === 'Object' &&
-    node.object.callee.property.type === AST_NODE_TYPES.Identifier &&
-    node.object.callee.property.name === 'keys' &&
-    node.object.arguments.length === 1 &&
-    node.object.arguments[0].type === AST_NODE_TYPES.Identifier &&
-    node.object.arguments[0].name === name
+    lengthRead.type !== AST_NODE_TYPES.MemberExpression ||
+    lengthRead.computed ||
+    lengthRead.property.type !== AST_NODE_TYPES.Identifier ||
+    lengthRead.property.name !== 'length'
   ) {
-    return true;
+    return false;
   }
-  return false;
+
+  const keysCall = unwrapOptionalChain(lengthRead.object);
+  if (
+    keysCall.type !== AST_NODE_TYPES.CallExpression ||
+    keysCall.arguments.length !== 1
+  ) {
+    return false;
+  }
+
+  const callee = unwrapOptionalChain(keysCall.callee);
+  if (
+    callee.type !== AST_NODE_TYPES.MemberExpression ||
+    callee.computed ||
+    callee.object.type !== AST_NODE_TYPES.Identifier ||
+    callee.object.name !== 'Object' ||
+    callee.property.type !== AST_NODE_TYPES.Identifier ||
+    callee.property.name !== 'keys'
+  ) {
+    return false;
+  }
+
+  const argument = keysCall.arguments[0];
+  return argument.type === AST_NODE_TYPES.Identifier && argument.name === name;
 }
 
 function isZeroLiteral(node: TSESTree.Node): boolean {
@@ -383,8 +416,23 @@ function conditionHasEmptyCheck(
         emptyCheckFunctions,
         negationDepth,
       );
+    /**
+     * A whole optional chain arrives wrapped, so every arm below — each written
+     * against a bare member access or call — is handed a node type it does not
+     * match. Delegating to the wrapped expression at the SAME negation depth
+     * keeps the wrapper invisible, which is what lets
+     * `!Object.keys(data)?.length` and `isEmpty?.(data)` count as the emptiness
+     * checks they already are instead of being reported as missing ones.
+     */
+    case AST_NODE_TYPES.ChainExpression:
+      return conditionHasEmptyCheck(
+        node.expression,
+        name,
+        emptyCheckFunctions,
+        negationDepth,
+      );
     case AST_NODE_TYPES.CallExpression: {
-      const callee = node.callee;
+      const callee = unwrapOptionalChain(node.callee);
       const firstArgIsTarget =
         node.arguments[0] &&
         node.arguments[0].type === AST_NODE_TYPES.Identifier &&
