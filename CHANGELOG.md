@@ -1,3 +1,10 @@
+## [1.20.167](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.166...v1.20.167) (2026-08-18)
+
+
+### Bug Fixes
+
+* **require-props-composition:** credit composition through an array element (closes [#2038](https://github.com/BluMintInc/eslint-custom-rules/issues/2038)) ([b3f2922](https://github.com/BluMintInc/eslint-custom-rules/commit/b3f292242f2a77ad61cffb44a5c41a8d45482ff7))
+
 ## [1.20.166](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.165...v1.20.166) (2026-08-18)
 
 

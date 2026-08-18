@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.167",
+    "date": "2026-08-18T04:28:02.499Z",
+    "rules": [
+      {
+        "name": "require-props-composition",
+        "changeType": "fix",
+        "issues": [
+          2038
+        ],
+        "summary": "credit composition through an array element (closes #2038)"
+      }
+    ]
+  },
+  {
     "version": "1.20.166",
     "date": "2026-08-18T03:18:38.188Z",
     "rules": [
