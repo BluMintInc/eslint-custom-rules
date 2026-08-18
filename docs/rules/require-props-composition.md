@@ -116,6 +116,48 @@ child, and a fragment of one arm, say nothing about the surface the child
 accepts, so a parent composing with either still reports — as does a parent that
 composes with nothing at all.
 
+### List renderers: composition through an array element
+
+A component that renders a **list** forwards each child's props from the array's
+**element type**, not from its own props. Composition is therefore recognized
+through `T[]`, `readonly T[]`, `Array<T>`, `ReadonlyArray<T>` and tuple types:
+the element is tested against the child exactly as a direct prop is. Demanding a
+whole-props `Pick`/`Omit` on the list renderer itself would name a composition it
+must not have — the child's contract belongs to the element.
+
+```tsx
+type ItemProps = Omit<ButtonProps, 'style'>;
+
+export type ButtonListProps = Readonly<{ items: readonly ItemProps[] }>;
+
+export const ButtonList = ({ items }: ButtonListProps) => (
+  <div>
+    {items.map((item, index) => (
+      <Button key={index} {...item} />
+    ))}
+  </div>
+);
+```
+
+The unwrapping composes with every other shape the rule understands, so an
+element that is a union credits each arm's own child — the shape a list of
+discriminated actions takes:
+
+```tsx
+type AsyncActionProps = Readonly<
+  Omit<LoadingButtonProps, 'style'> & { isAsync: true }
+>;
+type SyncActionProps = Readonly<Omit<ButtonProps, 'style'> & { isAsync: false }>;
+type ActionProps = AsyncActionProps | SyncActionProps;
+
+export type DialogActionsProps = Readonly<{ buttons: readonly ActionProps[] }>;
+```
+
+Only the `readonly` type operator carries a prop surface through.
+`keyof ChildProps` is the child's **key union** — a set of strings that hands the
+child nothing — so a parent that merely names the child's keys still reports, as
+does an array whose element type is unrelated to the child on screen.
+
 ### Zero-prop children
 
 Rendering a component that takes **no props** does not by itself require
@@ -394,6 +436,27 @@ const CopyButton = ({ value, iconProps }: CopyButtonProps) => (
   <ClipboardShare value={value}>
     <GradientIconButton {...iconProps} />
   </ClipboardShare>
+);
+```
+
+```tsx
+// src/components/dialog/DialogActions.tsx
+// Composition through the array's element type — the list renderer forwards
+// each element onto the child it was composed from.
+type ActionButtonProps = Readonly<
+  Omit<LoadingButtonProps, 'style' | 'className'> & { disabledTooltip?: string }
+>;
+
+export type DialogActionsProps = Readonly<{
+  buttons: readonly ActionButtonProps[];
+}>;
+
+const DialogActions = ({ buttons }: DialogActionsProps) => (
+  <div>
+    {buttons.map((button, index) => (
+      <LoadingButton key={index} {...button} />
+    ))}
+  </div>
 );
 ```
 
