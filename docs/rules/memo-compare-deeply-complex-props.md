@@ -61,6 +61,19 @@ export const UserProfileCardMemo = memo(
 );
 ```
 
+Props inherited from a third-party type are not reported — only the props the component's own code declares.
+
+```tsx
+import { memo } from 'src/util/memo';
+import type { TypographyProps } from '@mui/material';
+
+type Props = TypographyProps & { title: string };
+
+const Heading = ({ title }: Props) => <h1>{title}</h1>;
+
+export const HeadingMemo = memo(Heading); // ✅ MUI's ~110 inherited props are not demanded
+```
+
 An open-ended literal union (`primitive & {}`) is a primitive at runtime, so it is not reported.
 
 ```tsx
@@ -84,6 +97,11 @@ export const BannerMemo = memo(Banner); // ✅ neither prop needs compareDeeply
 - Immutable data structures — still reported; add an inline disable if deep comparison is not desired for that component.
 - React render types (`ReactNode`, `ReactElement`, `ComponentType`, `FC`, render-prop functions) and DOM element types (`HTMLElement | null` anchors, containers) — not reported; they are stable references, and deep-comparing a DOM node walks React's circular fiber back-references.
 - Reserved React slots (`ref`, `key`) — skipped, because React strips them before the memo equality function runs.
+- Props declared by a dependency — not reported. TypeScript surfaces inherited members, so a props type that extends or intersects a library interface (MUI's `TypographyProps`, React's `HTMLAttributes`) exposes that library's entire surface, and demanding all of it produces lists past a hundred names for props the component neither declares nor receives. A prop is kept only when at least one of its declaration sites is authored code — i.e. not a declaration file and not under `node_modules`. Consequences worth knowing:
+  - A prop the author redeclares alongside the library's own (`LibProps & { classes: { root: string } }`) carries both declaration sites and is still reported.
+  - A base type the author owns in a plain `.ts` module is authored code, so its complex members are still reported; the gate is the declaration file, not "the prop came from another module".
+  - `Pick`/`Omit`/`Readonly` over a type carry the source declarations through, so a mapped type over the author's own props is still reported while one over a library type is not.
+  - There is no option to opt back in. Naming a library's inherited props is a remedy nobody can act on, and `blumintAreEqual` already deep-compares `sx` / `style` unconditionally, which covers the library props that actually change by value.
 - `sx` / `*Sx` / `style` / `*Style` — skipped when `memo` comes from `src/util/memo`, since `blumintAreEqual` already deep-compares them.
 - Intersections carrying a primitive member — not reported. A value of `string & X` is still assignable to `string`, so it is a primitive at runtime whatever `X` is. This covers both the open-ended literal union idiom (`'alert' | (string & {})`, of which React's `AriaRole` is the most widespread instance) and branded primitives (`string & { readonly __brand: 'UserId' }`). `compareDeeply` on such a prop would be dead code: `blumintAreEqual` only reaches deep equality behind a `typeof value === 'object'` guard, and deep equality on two primitives is `===` anyway. The exemption keys on the primitive member rather than on the object member being empty, so every spelling of the widener (`{}`, `Record<never, never>`, `Record<string, never>`) is covered. An intersection with no primitive member (`{ a: string } & { b: number }`) is still reported, as is an array of an exempt type (`('alert' | (string & {}))[]`).
 
