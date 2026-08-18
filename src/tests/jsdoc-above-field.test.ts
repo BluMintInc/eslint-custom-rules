@@ -74,6 +74,28 @@ interface Account {
 };`,
       options: [{ checkObjectLiterals: true }],
     },
+
+    // JSDoc above a class field stays valid once the separator no longer gates detection
+    `class Session {
+  /** @remarks JWT token */
+  token!: string;
+}`,
+
+    // A JSDoc block on its own line documents no field on the line above it
+    `type Trailing = {
+  phone?: string;
+  /** @remarks describes the shape, not a field */
+};`,
+
+    // Non-JSDoc block comment in the prettier-canonical position is not documentation
+    `type Flags = {
+  isEnabled: boolean /* not a jsdoc */;
+};`,
+
+    // Line comments never reach IDE hovers, so placement is unconstrained
+    `class Sensor {
+  reading!: number; // trailing note stays inline
+}`,
   ],
   invalid: [
     {
@@ -270,6 +292,89 @@ interface Merged {
         { messageId: 'moveJsdocAbove' },
         { messageId: 'moveJsdocAbove' },
       ],
+    },
+    // Prettier canonicalises trailing JSDoc to sit before the separator, so the
+    // spellings below are what formatted source actually contains.
+    {
+      code: `export type User = {
+  phone?: string /** @remarks stores digits like "+15168384181" */;
+};`,
+      output: `export type User = {
+  /** @remarks stores digits like "+15168384181" */
+  phone?: string;
+};`,
+      errors: [{ messageId: 'moveJsdocAbove' }],
+    },
+    {
+      code: `type Coordinates = {
+  latitude: number /** @remarks decimal degrees */,
+  longitude: number,
+};`,
+      output: `type Coordinates = {
+  /** @remarks decimal degrees */
+  latitude: number,
+  longitude: number,
+};`,
+      errors: [{ messageId: 'moveJsdocAbove' }],
+    },
+    {
+      code: `interface Profile {
+  username: string /** @remarks unique handle */;
+}`,
+      output: `interface Profile {
+  /** @remarks unique handle */
+  username: string;
+}`,
+      errors: [{ messageId: 'moveJsdocAbove' }],
+    },
+    {
+      code: `class Session {
+  token!: string /** @remarks JWT token */;
+}`,
+      output: `class Session {
+  /** @remarks JWT token */
+  token!: string;
+}`,
+      errors: [{ messageId: 'moveJsdocAbove' }],
+    },
+    {
+      code: `class User {
+  @Column()
+  private readonly email?: string /** @remarks must be lowercase */;
+}`,
+      output: `class User {
+  /** @remarks must be lowercase */
+  @Column()
+  private readonly email?: string;
+}`,
+      errors: [{ messageId: 'moveJsdocAbove' }],
+    },
+    {
+      code: `type Settings = {
+  timeout: number /**
+   * @remarks milliseconds
+   * ensure positive
+   */;
+};`,
+      output: `type Settings = {
+  /**
+   * @remarks milliseconds
+   * ensure positive
+   */
+  timeout: number;
+};`,
+      errors: [{ messageId: 'moveJsdocAbove' }],
+    },
+    {
+      code: `const config = {
+  timeout: 3000 /** @remarks in milliseconds */,
+};`,
+      output: `const config = {
+  /** @remarks in milliseconds */
+  timeout: 3000,
+};`,
+      options: [{ checkObjectLiterals: true }],
+      errors: [{ messageId: 'moveJsdocAbove' }],
     },
   ],
 });
