@@ -1,4 +1,5 @@
 import { Linter } from 'eslint';
+import { harvestRuleTesterCases } from '../utils/harvestRuleTesterCases';
 
 // Using require to avoid test build-time ESM interop issues; the test runner
 // only needs the plugin object shape (rules), not types.
@@ -219,6 +220,29 @@ const SPAN_POLICY: Record<string, Policy> = {
       `const db = admin.firestore();\n` +
       `export async function save() {\n  await ${span};\n}`,
   },
+  // Gated on `*.f.ts` under `/callable/`, which no CANDIDATE matches, so
+  // without this entry the rule never runs and its remedy banks an unearned
+  // `silent` (#2036). The wrap is a whole callable module because the rule only
+  // reaches unusedPropsType once a callable function exists to check.
+  'enforce-callable-types|unusedPropsType': {
+    filename: 'functions/src/callable/doThing.f.ts',
+    wrap: (span) =>
+      `import { CallableRequest } from 'firebase-functions/v2/https';\n` +
+      `export type Props = { a: string };\n` +
+      `export type Response = { b: string };\n` +
+      `export const doThing = onCall(\n` +
+      `  async (request: ${span}): Promise<Response> => {\n` +
+      `    return { b: request.data.a };\n` +
+      `  },\n` +
+      `);`,
+  },
+
+  // `require-migration-script-metadata` is the third path-gated remedy owner and
+  // deliberately has no entry: its 8 spans are JSDoc tag names (`@migration`,
+  // `@migrationPhase`, …), which stay `unparseable` at its own
+  // `functions/src/callable/scripts/*.f.ts` path exactly as they are under the
+  // CANDIDATES (measured). `unparseable` banks no pass, so an entry would be
+  // dead config rather than a missing assertion.
 
   // Exemptions. Each states why the span is not a testable code example; the
   // suite fails if one of these stops matching a real span.
@@ -344,11 +368,10 @@ export type RemedyVerdict = {
  * exists that satisfies it; requiring silence in EVERY framing would fail on
  * the framing rather than on the advice.
  */
-export function remedyVerdictFor({
-  rule,
-  messageId,
-  span,
-}: Span): RemedyVerdict {
+export function remedyVerdictFor(
+  { rule, messageId, span }: Span,
+  policies: Record<string, Policy> = SPAN_POLICY,
+): RemedyVerdict {
   const key = `${rule}|${messageId}`;
   // `meta.messages` is the TEMPLATE, not the rendered string: a span holding
   // {{placeholder}} is not text any developer ever reads.
@@ -356,10 +379,20 @@ export function remedyVerdictFor({
     return { key, status: 'templated', detail: span };
   }
 
-  const variants = [span, `${span};`, `const probe = ${span};`];
+  // A path-gated rule cannot fire under any of the CANDIDATES, so probing a
+  // remedy there yields `silent` — the PASSING verdict — without the rule ever
+  // running. `verdictFor` consults SPAN_POLICY for exactly this reason; sharing
+  // it here closes the same hole on the remedy half (#2036). `filename` is a
+  // property of the rule's path gate rather than of the span kind, so the entry
+  // that unlocks the negative half unlocks this one too.
+  const policy = policies[key];
+  const variants = policy?.wrap
+    ? [policy.wrap(span)]
+    : [span, `${span};`, `const probe = ${span};`];
+  const filenames = policy?.filename ? [policy.filename] : CANDIDATES;
   let sawParse = false;
   let reportedAs: string | undefined;
-  for (const filename of CANDIDATES) {
+  for (const filename of filenames) {
     for (const code of variants) {
       const config = {
         parser: 'ts',
@@ -397,6 +430,78 @@ export function remedyVerdictFor({
  */
 const MIN_ASSERTED_REMEDIES = 12;
 
+/**
+ * The same floor over spans whose rule was MEASURED reachable at the probe's
+ * filename. Kept just under the measured value so a regression that unhooks a
+ * rule from the probe fails here rather than sliding by on unearned silence.
+ */
+const MIN_EARNED_REMEDIES = 13;
+
+/** The filenames `remedyVerdictFor` will actually lint this span under. */
+function probeFilenamesFor({ rule, messageId }: Span): string[] {
+  const policy = SPAN_POLICY[`${rule}|${messageId}`];
+  return policy?.filename ? [policy.filename] : CANDIDATES;
+}
+
+/**
+ * Known-violating inputs per rule, taken from the suite's own `invalid`
+ * fixtures. Matched by OBJECT IDENTITY: ~100 suites pass a display name that is
+ * not a rule name, and name-keyed matching drops every one of them.
+ */
+const invalidFixturesByRule = (() => {
+  const { suites } = harvestRuleTesterCases();
+  const nameByRule = new Map<unknown, string>(
+    Object.entries(plugin.rules).map(([name, rule]) => [rule, name]),
+  );
+  const out = new Map<string, string[]>();
+  for (const suite of suites) {
+    const name = nameByRule.get(suite.rule);
+    if (!name) continue;
+    const codes = out.get(name) ?? [];
+    for (const testCase of suite.invalid) {
+      const code =
+        typeof testCase === 'string'
+          ? testCase
+          : (testCase as { code?: unknown })?.code;
+      if (typeof code === 'string') codes.push(code);
+    }
+    out.set(name, codes);
+  }
+  return out;
+})();
+
+const reachabilityCache = new Map<string, boolean>();
+
+/**
+ * Does this rule report on at least one of its own invalid fixtures at one of
+ * these filenames? A `false` means the probe's silence says nothing about the
+ * remedy — the rule was gated out before it ever looked.
+ *
+ * Fixtures are linted with the `ts` parser, the same one the probe itself uses,
+ * so a JSON- or Markdown-only rule's fixtures would parse fatally here and read
+ * as unreachable. No remedy-owning rule is one today, and the direction is safe
+ * if that changes: the guard FAILS naming the rule rather than waving a span
+ * through, which is the whole point of asserting reachability.
+ */
+function ruleReportsAt(rule: string, filenames: string[]): boolean {
+  const cacheKey = `${rule}|${filenames.join(',')}`;
+  const cached = reachabilityCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+
+  const fixtures = invalidFixturesByRule.get(rule) ?? [];
+  let reaches = false;
+  outer: for (const code of fixtures) {
+    for (const filename of filenames) {
+      if (lintOnce(rule, filename, code) === 'reported') {
+        reaches = true;
+        break outer;
+      }
+    }
+  }
+  reachabilityCache.set(cacheKey, reaches);
+  return reaches;
+}
+
 describe('message negative examples are reportable', () => {
   const spans = collectSpans(plugin.rules);
   const verdicts = spans.map((s) => ({ span: s, verdict: verdictFor(s) }));
@@ -429,6 +534,12 @@ describe('message negative examples are reportable', () => {
   });
 
   it('carries no stale exemptions', () => {
+    // Audited against the NEGATIVE spans only, even though SPAN_POLICY now
+    // serves both halves: `exempt` states why a span is not a testable negative
+    // example, so a surviving remedy span at the same key does not keep the
+    // exemption alive. Widening this to the union would let an exemption whose
+    // negative span disappeared sit here unnoticed. A remedy-only entry carries
+    // `filename`/`wrap` rather than `exempt`, so it is out of this filter.
     const present = new Set(spans.map((s) => `${s.rule}|${s.messageId}`));
     const stale = Object.entries(SPAN_POLICY)
       .filter(([key, policy]) => policy.exempt && !present.has(key))
@@ -465,6 +576,65 @@ describe('message remedies are silent under their own rule', () => {
     const total = Object.values(counted).reduce((a, b) => a + b, 0);
     expect(total).toBe(spans.length);
     expect(counted.silent ?? 0).toBeGreaterThanOrEqual(MIN_ASSERTED_REMEDIES);
+  });
+
+  // A rule the probe cannot reach is SILENT on everything, and `silent` is the
+  // passing verdict — so an unreachable rule banks a pass for advice nobody
+  // checked, and counts toward MIN_ASSERTED_REMEDIES while doing it. That is
+  // how enforce-identifiable-firestore-type shipped a message prescribing two
+  // spellings it reported on (#2035). Reachability is therefore asserted from
+  // the rule's OWN invalid fixtures — inputs measured to report — replayed at
+  // the very filename the probe used.
+  it('earns every silent verdict: the rule can report at that filename', () => {
+    const unreachable = verdicts
+      .filter(({ verdict }) => verdict.status === 'silent')
+      .filter(({ span }) => !ruleReportsAt(span.rule, probeFilenamesFor(span)))
+      .map(
+        ({ span }) =>
+          `${span.rule} [${span.messageId}] records the PASSING verdict for \`${span.span}\`, but ` +
+          `the rule reports on none of its own invalid fixtures at ${probeFilenamesFor(
+            span,
+          ).join(
+            ', ',
+          )} — so nothing about this remedy was actually checked. Give it a ` +
+          `filename/wrap in SPAN_POLICY that reaches the rule.`,
+      );
+    expect(unreachable).toEqual([]);
+  });
+
+  it('reports its own counters', () => {
+    const silent = verdicts.filter(
+      ({ verdict }) => verdict.status === 'silent',
+    );
+    const earned = silent.filter(({ span }) =>
+      ruleReportsAt(span.rule, probeFilenamesFor(span)),
+    );
+    const tally = verdicts.reduce<Record<string, number>>(
+      (acc, { verdict }) => {
+        acc[verdict.status] = (acc[verdict.status] || 0) + 1;
+        return acc;
+      },
+      {},
+    );
+    console.log(
+      `[message-negative-example] remedy spans: ${verdicts.length} over ` +
+        `${new Set(verdicts.map(({ span }) => span.rule)).size} rule(s); ` +
+        `verdicts ${JSON.stringify(tally)}; silent ${
+          silent.length
+        }, of which ` +
+        `EARNED ${earned.length} (floor ${MIN_EARNED_REMEDIES}); ` +
+        `fixture corpus ${invalidFixturesByRule.size} rule(s)`,
+    );
+    expect(verdicts.length).toBeGreaterThan(0);
+  });
+
+  it('drives a non-vacuous number of remedies to an EARNED verdict', () => {
+    // Floors the population that survives the reachability check, not the raw
+    // `silent` count: the raw count is satisfiable by unreachable rules alone.
+    const earned = verdicts
+      .filter(({ verdict }) => verdict.status === 'silent')
+      .filter(({ span }) => ruleReportsAt(span.rule, probeFilenamesFor(span)));
+    expect(earned.length).toBeGreaterThanOrEqual(MIN_EARNED_REMEDIES);
   });
 
   it('never tells a developer to write something its own rule reports', () => {
@@ -525,6 +695,34 @@ describe('the harness itself (controls)', () => {
       span: 'const {{constName}} = [...] as const',
     };
     expect(remedyVerdictFor(templated).status).toBe('templated');
+  });
+
+  // The reachability oracle is what stops an unreachable rule from banking a
+  // pass, so it needs a control on BOTH sides: an oracle stuck on `true` waves
+  // every gated rule through, and one stuck on `false` fails the build for
+  // rules that are fine. `enforce-callable-types` is the natural probe — it
+  // gates on `*.f.ts` under `/callable/`, so the same fixtures flip the answer
+  // purely on the filename.
+  it('reachability oracle: says NO where the path gate excludes the rule', () => {
+    expect(ruleReportsAt('enforce-callable-types', CANDIDATES)).toBe(false);
+  });
+
+  it('reachability oracle: says YES at the filename the gate admits', () => {
+    expect(
+      ruleReportsAt('enforce-callable-types', [
+        'functions/src/callable/doThing.f.ts',
+      ]),
+    ).toBe(true);
+  });
+
+  it('reachability oracle reads a real fixture corpus', () => {
+    // A corpus that silently harvested nothing would make the oracle answer
+    // `false` everywhere, which reads as "every rule is unreachable" rather
+    // than as the broken harvest it is (#1984).
+    expect(invalidFixturesByRule.size).toBeGreaterThanOrEqual(150);
+    expect(
+      (invalidFixturesByRule.get('enforce-callable-types') ?? []).length,
+    ).toBeGreaterThan(0);
   });
 });
 
