@@ -650,8 +650,152 @@ const Comp = ({ classes }: Props) => <div>{String(classes)}</div>;
 export const Wrapped = memo(Comp);
 `,
       },
+      // Bug #2039: a LIBRARY's non-homomorphic mapped type (`SystemProps` here,
+      // MUI's `SystemProps<Theme>` in the field) synthesizes members with ZERO
+      // declarations, so the #2037 carve-out — which keys on every declaration
+      // site being a dependency — let the library's ~100 style shorthands back
+      // into the report. Case A is the shape the rule's own docs promise is
+      // exempt: an interface the library owns extending its own mapped type.
+      {
+        filename: libraryPropsFile,
+        code: `
+import { memo } from 'react';
+import type { LibTypographyProps } from 'fake-system-lib';
+type Props = LibTypographyProps & { title: string };
+const Comp = ({ title }: Props) => <div>{title}</div>;
+export const Wrapped = memo(Comp);
+`,
+      },
+      // B: the shape a real consumer writes — the library surface narrowed by
+      // `Omit` and frozen by `Readonly`. Both wrappers re-synthesize the mapped
+      // members, so the carrier search has to see through a lib alias to reach
+      // the library type underneath.
+      {
+        filename: libraryPropsFile,
+        code: `
+import { memo } from 'react';
+import type { LibTypographyProps } from 'fake-system-lib';
+type Props = Readonly<Omit<LibTypographyProps, 'variant'> & { title: string }>;
+const Comp = ({ title }: Props) => <div>{title}</div>;
+export const Wrapped = memo(Comp);
+`,
+      },
+      // C: intersecting the library's mapped type DIRECTLY, with no interface
+      // in between — the members reach `getPropertiesOfType` without ever
+      // passing through a declared heritage clause.
+      {
+        filename: libraryPropsFile,
+        code: `
+import { memo } from 'react';
+import type { SystemProps } from 'fake-system-lib';
+type Props = SystemProps & { title: string };
+const Comp = ({ title }: Props) => <div>{title}</div>;
+export const Wrapped = memo(Comp);
+`,
+      },
     ]),
     invalid: withParserOptions(parserOptions, [
+      // Bug #2039 control (NEG-1): the AUTHOR's own non-homomorphic mapped type
+      // synthesizes declaration-less members too. Ownership, not the absence of
+      // a declaration, decides — so these are still demanded. A fix that
+      // exempted zero-declaration symbols outright would disable the rule here
+      // rather than narrow it.
+      {
+        filename: libraryPropsFile,
+        code: `
+import { memo } from 'react';
+type Keys = 'header' | 'footer';
+type Props = { [K in Keys]: { label: string } } & { title: string };
+const Comp = ({ title }: Props) => <div>{title}</div>;
+export const Wrapped = memo(Comp);
+`,
+        output: `
+import { compareDeeply } from 'src/util/memo';
+import { memo } from 'react';
+type Keys = 'header' | 'footer';
+type Props = { [K in Keys]: { label: string } } & { title: string };
+const Comp = ({ title }: Props) => <div>{title}</div>;
+export const Wrapped = memo(Comp, compareDeeply('footer', 'header'));
+`,
+        errors: [
+          {
+            messageId: 'useCompareDeeply',
+            data: {
+              componentName: 'Comp',
+              propsList: '[footer, header]',
+              propsCall: "'footer', 'header'",
+            },
+          },
+        ],
+      },
+      // Bug #2039 control (NEG-2): the author's mapped type wrapped in a LIBRARY
+      // alias. The outermost alias (`Readonly`, declared in `lib.es5.d.ts`) is a
+      // dependency's, yet the type that carries `header`/`footer` is the
+      // author's — so classifying by the outermost wrapper, or by the symbol's
+      // re-synthesized `mappedType`, would wrongly exempt this. The search must
+      // reach the CARRIER.
+      {
+        filename: libraryPropsFile,
+        code: `
+import { memo } from 'react';
+type Keys = 'header' | 'footer';
+type Props = Readonly<{ [K in Keys]: { label: string } } & { title: string }>;
+const Comp = ({ title }: Props) => <div>{title}</div>;
+export const Wrapped = memo(Comp);
+`,
+        output: `
+import { compareDeeply } from 'src/util/memo';
+import { memo } from 'react';
+type Keys = 'header' | 'footer';
+type Props = Readonly<{ [K in Keys]: { label: string } } & { title: string }>;
+const Comp = ({ title }: Props) => <div>{title}</div>;
+export const Wrapped = memo(Comp, compareDeeply('footer', 'header'));
+`,
+        errors: [
+          {
+            messageId: 'useCompareDeeply',
+            data: {
+              componentName: 'Comp',
+              propsList: '[footer, header]',
+              propsCall: "'footer', 'header'",
+            },
+          },
+        ],
+      },
+      // Bug #2039 control (NEG-3): the mixed case, pinned on the interpolated
+      // prop list rather than the bare messageId. Both the buggy and the fixed
+      // rule report `useCompareDeeply` here — only the NAMES tell them apart,
+      // and only naming `meta` while omitting `bgcolor` distinguishes "the
+      // library carve-out worked" from "the library type never resolved and
+      // contributed no members at all".
+      {
+        filename: libraryPropsFile,
+        code: `
+import { memo } from 'react';
+import type { LibTypographyProps } from 'fake-system-lib';
+type Props = LibTypographyProps & { meta: { id: string } };
+const Comp = ({ meta }: Props) => <div>{meta.id}</div>;
+export const Wrapped = memo(Comp);
+`,
+        output: `
+import { compareDeeply } from 'src/util/memo';
+import { memo } from 'react';
+import type { LibTypographyProps } from 'fake-system-lib';
+type Props = LibTypographyProps & { meta: { id: string } };
+const Comp = ({ meta }: Props) => <div>{meta.id}</div>;
+export const Wrapped = memo(Comp, compareDeeply('meta'));
+`,
+        errors: [
+          {
+            messageId: 'useCompareDeeply',
+            data: {
+              componentName: 'Comp',
+              propsList: '[meta]',
+              propsCall: "'meta'",
+            },
+          },
+        ],
+      },
       // Bug #2037 control: the carve-out is scoped to library DECLARATION sites,
       // so a complex prop the author declares is still reported. A fix that
       // silenced this would have disabled the rule rather than narrowed it.

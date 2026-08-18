@@ -385,7 +385,6 @@ const UNDRIVEN: Record<string, UndrivenCause> = {
   'flatten-push-calls': 'noAssertionAdded',
   'generic-starts-with-t': 'noAssertionAdded',
   'key-only-outermost-element': 'noAssertionAdded',
-  'memo-compare-deeply-complex-props': 'noAssertionAdded',
   'memoize-root-level-hocs': 'noAssertionAdded',
   'no-async-array-filter': 'noAssertionAdded',
   'no-async-foreach': 'noAssertionAdded',
