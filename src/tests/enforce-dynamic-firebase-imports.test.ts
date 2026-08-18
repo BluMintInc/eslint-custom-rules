@@ -460,7 +460,9 @@ export const handler = async () => {
         errors: [error('../firebaseCloud/messaging/setGroupChannel')],
         output: `
 export const handler = async () => {
-  const { setGroupChannel } = await import('../firebaseCloud/messaging/setGroupChannel');
+  const { setGroupChannel } = await import(
+    '../firebaseCloud/messaging/setGroupChannel'
+  );
   return setGroupChannel();
 };`,
       },
@@ -475,7 +477,9 @@ export const transact = async (params: unknown) => {
         errors: [error('../firebaseCloud/transaction/create')],
         output: `
 export const transact = async (params: unknown) => {
-  const { create: createTransaction } = await import('../firebaseCloud/transaction/create');
+  const { create: createTransaction } = await import(
+    '../firebaseCloud/transaction/create'
+  );
   return await createTransaction(params);
 };`,
       },
@@ -547,7 +551,11 @@ export const run = async () => {
         errors: [error('../firebaseCloud/utils/helper')],
         output: `
 export const run = async () => {
-  const { default: helper, a, b: B } = await import('../firebaseCloud/utils/helper');
+  const {
+    default: helper,
+    a,
+    b: B,
+  } = await import('../firebaseCloud/utils/helper');
   return helper(a, B);
 };`,
       },
@@ -579,7 +587,9 @@ export const handler = async (params: Params) => {
         output: `import type { Params } from '../firebaseCloud/messaging/setGroupChannel';
 
 export const handler = async (params: Params) => {
-  const { setGroupChannel } = await import('../firebaseCloud/messaging/setGroupChannel');
+  const { setGroupChannel } = await import(
+    '../firebaseCloud/messaging/setGroupChannel'
+  );
   return setGroupChannel(params);
 };`,
       },
@@ -795,7 +805,9 @@ export const handler = async (params: Params) => setGroupChannel(params);`,
         output: `import type { Params } from '../firebaseCloud/messaging/setGroupChannel';
 
 export const handler = async (params: Params) => {
-  const { setGroupChannel } = await import('../firebaseCloud/messaging/setGroupChannel');
+  const { setGroupChannel } = await import(
+    '../firebaseCloud/messaging/setGroupChannel'
+  );
   return setGroupChannel(params);
 };`,
       },
@@ -985,6 +997,272 @@ export const run = async () => {
   const { a } = await import('../firebaseCloud/utils/helper');
   const inner = async () => a();
   return inner();
+};`,
+      },
+
+      // ---------------------------------------------------------------------
+      // #2044 — the emitted statement is measured against the line it lands
+      // on. Its specifier list and module path both come from the source, so
+      // the one-line form has no width bound; wrapping unconditionally is the
+      // mirror failure, since Prettier collapses a short expanded pattern,
+      // argument list or assignment straight back onto one line.
+      // ---------------------------------------------------------------------
+
+      // Exactly 80 columns once emitted: the inline form is what Prettier
+      // prints, and a wrapped one would be collapsed back.
+      {
+        code: `import { sendGroupChannelMsg } from '../firebaseCloud/chat/message';
+
+export const handler = async () => {
+  return sendGroupChannelMsg();
+};`,
+        filename: 'src/hooks/useSendGroupChannelMsg.ts',
+        errors: [error('../firebaseCloud/chat/message')],
+        output: `
+export const handler = async () => {
+  const { sendGroupChannelMsg } = await import('../firebaseCloud/chat/message');
+  return sendGroupChannelMsg();
+};`,
+      },
+      // One column wider: the call's argument breaks open, which is the first
+      // break point Prettier takes.
+      {
+        code: `import { sendGroupChannelMsg } from '../firebaseCloud/chat/messages';
+
+export const handler = async () => {
+  return sendGroupChannelMsg();
+};`,
+        filename: 'src/hooks/useSendGroupChannelMsg.ts',
+        errors: [error('../firebaseCloud/chat/messages')],
+        output: `
+export const handler = async () => {
+  const { sendGroupChannelMsg } = await import(
+    '../firebaseCloud/chat/messages'
+  );
+  return sendGroupChannelMsg();
+};`,
+      },
+      // The same import at a deeper nesting level: the measurement is against
+      // the emitted line's own column, so the statement that fits at one step
+      // in wraps at three.
+      {
+        code: `import { sendGroupChannelMsg } from '../firebaseCloud/chat/message';
+
+export const outer = () => {
+  const middle = () => {
+    const inner = async () => {
+      return sendGroupChannelMsg();
+    };
+    return inner;
+  };
+  return middle;
+};`,
+        filename: 'src/hooks/useSendGroupChannelMsg.ts',
+        errors: [error('../firebaseCloud/chat/message')],
+        output: `
+export const outer = () => {
+  const middle = () => {
+    const inner = async () => {
+      const { sendGroupChannelMsg } = await import(
+        '../firebaseCloud/chat/message'
+      );
+      return sendGroupChannelMsg();
+    };
+    return inner;
+  };
+  return middle;
+};`,
+      },
+      // The issue's unboundedness demonstration: three specifiers whose joined
+      // length has no bound. The pattern still fits on its own line, so the
+      // break lands after the `=` rather than expanding the pattern.
+      //
+      // The issue writes this import across five lines, as Prettier does. That
+      // spelling is WITHHELD deliberately: the fixer removes the whole
+      // ImportDeclaration, so a comment INSIDE it is consumed with the node,
+      // and a multi-line import is the only shape where a comment-fidelity
+      // probe can land a marker there (on one line, every insertion site sits
+      // above the import or after its `;`, both outside the node). That is a
+      // pre-existing defect on a different axis — reproduced identically at
+      // HEAD, before any print-width change — and is tracked as #2056. Pinning
+      // the multi-line spelling here would sign that defect off as accepted
+      // rather than reporting it; re-admit it with #2056's fix. No width
+      // coverage is lost: the fixer reads the specifier
+      // LIST, not its formatting, so both spellings emit a byte-identical
+      // statement (verified).
+      {
+        code: `import { createGroupChannel, deleteGroupChannel, updateGroupChannel } from '../firebaseCloud/messaging/groupChannel';
+
+export const handler = async () => {
+  await createGroupChannel();
+  await deleteGroupChannel();
+  await updateGroupChannel();
+};`,
+        filename: 'src/hooks/useGroupChannel.ts',
+        errors: [error('../firebaseCloud/messaging/groupChannel')],
+        output: `
+export const handler = async () => {
+  const { createGroupChannel, deleteGroupChannel, updateGroupChannel } =
+    await import('../firebaseCloud/messaging/groupChannel');
+  await createGroupChannel();
+  await deleteGroupChannel();
+  await updateGroupChannel();
+};`,
+      },
+      // More than two properties with one of them renamed is Prettier's
+      // "complex destructuring": the pattern expands whatever the alternatives
+      // would measure.
+      {
+        code: `import { createChannel, deleteChannel as removeChannel, updateChannel } from '../firebaseCloud/messaging/channel';
+
+export const handler = async () => {
+  await createChannel();
+  await removeChannel();
+  await updateChannel();
+};`,
+        filename: 'src/hooks/useChannel.ts',
+        errors: [error('../firebaseCloud/messaging/channel')],
+        output: `
+export const handler = async () => {
+  const {
+    createChannel,
+    deleteChannel: removeChannel,
+    updateChannel,
+  } = await import('../firebaseCloud/messaging/channel');
+  await createChannel();
+  await removeChannel();
+  await updateChannel();
+};`,
+      },
+      // A renamed property too wide for its own line inside an expanded
+      // pattern breaks after its `:`, the last break point the pattern has.
+      {
+        code: `import { createGroupChannelWithMembersAndMetadata as createGroupChannelWithMembersAndMetadataNow } from '../firebaseCloud/messaging/groupChannel';
+
+export const handler = async () => {
+  return createGroupChannelWithMembersAndMetadataNow();
+};`,
+        filename: 'src/hooks/useGroupChannel.ts',
+        errors: [error('../firebaseCloud/messaging/groupChannel')],
+        output: `
+export const handler = async () => {
+  const {
+    createGroupChannelWithMembersAndMetadata:
+      createGroupChannelWithMembersAndMetadataNow,
+  } = await import('../firebaseCloud/messaging/groupChannel');
+  return createGroupChannelWithMembersAndMetadataNow();
+};`,
+      },
+      // The namespace branch is measured too, rather than left as the one
+      // emission that still prints an unbounded line.
+      {
+        code: `import * as groupChannelApi from '../firebaseCloud/messaging/groupChannel';
+
+export const handler = async () => {
+  return groupChannelApi.create();
+};`,
+        filename: 'src/hooks/useGroupChannel.ts',
+        errors: [error('../firebaseCloud/messaging/groupChannel')],
+        output: `
+export const handler = async () => {
+  const groupChannelApi = await import(
+    '../firebaseCloud/messaging/groupChannel'
+  );
+  return groupChannelApi.create();
+};`,
+      },
+      // Both statements the namespace branch emits are measured: the member
+      // read has no argument list to break, so it breaks after its `=`.
+      {
+        code: `import createGroupChannelWithMembersAndExtraMetadataPayloadNow, * as groupChannelApi from '../firebaseCloud/messaging/groupChannel';
+
+export const handler = async () => {
+  return createGroupChannelWithMembersAndExtraMetadataPayloadNow();
+};`,
+        filename: 'src/hooks/useGroupChannel.ts',
+        errors: [error('../firebaseCloud/messaging/groupChannel')],
+        output: `
+export const handler = async () => {
+  const groupChannelApi = await import(
+    '../firebaseCloud/messaging/groupChannel'
+  );
+  const createGroupChannelWithMembersAndExtraMetadataPayloadNow =
+    groupChannelApi.default;
+  return createGroupChannelWithMembersAndExtraMetadataPayloadNow();
+};`,
+      },
+      // A module path wider than the line it lands on is emitted as is: a
+      // string literal has no break point, so this is Prettier's output too —
+      // the fixer neither declines nor invents a shape.
+      {
+        code: `import { send } from '../firebaseCloud/messaging/groupChannel/withAVeryDeeplyNestedModulePathThatCannotBeBroken';
+
+export const handler = async () => {
+  return send();
+};`,
+        filename: 'src/hooks/useSend.ts',
+        errors: [
+          error(
+            '../firebaseCloud/messaging/groupChannel/withAVeryDeeplyNestedModulePathThatCannotBeBroken',
+          ),
+        ],
+        output: `
+export const handler = async () => {
+  const { send } = await import(
+    '../firebaseCloud/messaging/groupChannel/withAVeryDeeplyNestedModulePathThatCannotBeBroken'
+  );
+  return send();
+};`,
+      },
+      // The block a concise body gains is an emission site of its own, and is
+      // measured at the indentation the new body sits at.
+      {
+        code: `import { sendGroupChannelMsg } from '../firebaseCloud/chat/messages';
+
+export const handler = async () => sendGroupChannelMsg();`,
+        filename: 'src/hooks/useSendGroupChannelMsg.ts',
+        errors: [error('../firebaseCloud/chat/messages')],
+        output: `
+export const handler = async () => {
+  const { sendGroupChannelMsg } = await import(
+    '../firebaseCloud/chat/messages'
+  );
+  return sendGroupChannelMsg();
+};`,
+      },
+      // `printWidth` is live in both directions: a narrower width wraps the
+      // statement that fits at 80 ...
+      {
+        code: `import { sendGroupChannelMsg } from '../firebaseCloud/chat/message';
+
+export const handler = async () => {
+  return sendGroupChannelMsg();
+};`,
+        filename: 'src/hooks/useSendGroupChannelMsg.ts',
+        options: [{ printWidth: 60 }],
+        errors: [error('../firebaseCloud/chat/message')],
+        output: `
+export const handler = async () => {
+  const { sendGroupChannelMsg } = await import(
+    '../firebaseCloud/chat/message'
+  );
+  return sendGroupChannelMsg();
+};`,
+      },
+      // ... and a wider one keeps the statement that wraps at 80 on one line.
+      {
+        code: `import { sendGroupChannelMsg } from '../firebaseCloud/chat/messages';
+
+export const handler = async () => {
+  return sendGroupChannelMsg();
+};`,
+        filename: 'src/hooks/useSendGroupChannelMsg.ts',
+        options: [{ printWidth: 120 }],
+        errors: [error('../firebaseCloud/chat/messages')],
+        output: `
+export const handler = async () => {
+  const { sendGroupChannelMsg } = await import('../firebaseCloud/chat/messages');
+  return sendGroupChannelMsg();
 };`,
       },
 
