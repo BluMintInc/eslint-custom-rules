@@ -1,5 +1,27 @@
 [
   {
+    "version": "1.20.168",
+    "date": "2026-08-18T08:47:17.522Z",
+    "rules": [
+      {
+        "name": "memo-compare-deeply-complex-props",
+        "changeType": "fix",
+        "issues": [
+          2039
+        ],
+        "summary": "classify zero-declaration props by their carrier type (closes #2039)"
+      },
+      {
+        "name": "prefer-nullish-coalescing-boolean-props",
+        "changeType": "fix",
+        "issues": [
+          2040
+        ],
+        "summary": "keep || where it strips a short-circuit sentinel (closes #2040)"
+      }
+    ]
+  },
+  {
     "version": "1.20.167",
     "date": "2026-08-18T04:28:02.499Z",
     "rules": [

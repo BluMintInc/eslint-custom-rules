@@ -1,3 +1,11 @@
+## [1.20.168](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.167...v1.20.168) (2026-08-18)
+
+
+### Bug Fixes
+
+* **memo-compare-deeply-complex-props:** classify zero-declaration props by their carrier type (closes [#2039](https://github.com/BluMintInc/eslint-custom-rules/issues/2039)) ([f8ad12c](https://github.com/BluMintInc/eslint-custom-rules/commit/f8ad12c175bf1fa9d435a7e0dbd58d1fecbd1a3d))
+* **prefer-nullish-coalescing-boolean-props:** keep || where it strips a short-circuit sentinel (closes [#2040](https://github.com/BluMintInc/eslint-custom-rules/issues/2040)) ([1308578](https://github.com/BluMintInc/eslint-custom-rules/commit/1308578eb853a0343338164d39e5d43d35006872))
+
 ## [1.20.167](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.166...v1.20.167) (2026-08-18)
 
 
