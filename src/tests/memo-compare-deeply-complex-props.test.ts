@@ -993,7 +993,10 @@ const ChannelPreview = ({ Avatar, Preview, activeChannel, watchers }: ChannelPro
   <div>{activeChannel.name}</div>
 );
 
-export const Wrapped = memo(ChannelPreview, compareDeeply('activeChannel', 'watchers'));
+export const Wrapped = memo(
+  ChannelPreview,
+  compareDeeply('activeChannel', 'watchers'),
+);
 `,
         errors: [{ messageId: 'useCompareDeeply' }],
       },
@@ -1116,7 +1119,10 @@ const UserProfileCardUnmemoized = ({
   );
 };
 
-export const UserProfileCard = memo(UserProfileCardUnmemoized, compareDeeply('userSettings'));
+export const UserProfileCard = memo(
+  UserProfileCardUnmemoized,
+  compareDeeply('userSettings'),
+);
 `,
         errors: [{ messageId: 'useCompareDeeply' }],
       },
@@ -1156,7 +1162,10 @@ import { memo } from 'react';
 type Props = { beta: { value: number }; alpha: { value: number } };
 const Named = ({ beta, alpha }: Props) => <div>{beta.value}{alpha.value}</div>;
 export const WrappedNamed = memo(Named, compareDeeply('alpha', 'beta'));
-export const WrappedInline = memo(({ beta, alpha }: Props) => <section>{beta.value}{alpha.value}</section>, compareDeeply('alpha', 'beta'));
+export const WrappedInline = memo(
+  ({ beta, alpha }: Props) => <section>{beta.value}{alpha.value}</section>,
+  compareDeeply('alpha', 'beta'),
+);
 `,
         errors: [
           { messageId: 'useCompareDeeply' },
@@ -1177,7 +1186,8 @@ import { compareDeeply } from 'src/util/memo';
 import { memo } from 'react';
 type Props = { beta: { value: number }; alpha: { value: number } };
 export const Wrapped = memo<any, Props>(
-  ({ beta, alpha }: any) => <div>{beta.value}{alpha.value}</div>, compareDeeply('alpha', 'beta')
+  ({ beta, alpha }: any) => <div>{beta.value}{alpha.value}</div>,
+  compareDeeply('alpha', 'beta'),
 );
 `,
         errors: [{ messageId: 'useCompareDeeply' }],
@@ -1259,7 +1269,10 @@ export const Wrapped = memo(({ data }: Props) => <span>{data.id}</span>);
 import { compareDeeply } from 'src/util/memo';
 import { memo } from 'react';
 type Props = { data: { id: string } };
-export const Wrapped = memo(({ data }: Props) => <span>{data.id}</span>, compareDeeply('data'));
+export const Wrapped = memo(
+  ({ data }: Props) => <span>{data.id}</span>,
+  compareDeeply('data'),
+);
 `,
         errors: [{ messageId: 'useCompareDeeply' }],
       },
@@ -1276,7 +1289,10 @@ import { compareDeeply } from 'src/util/memo';
 import React, { memo } from 'react';
 type Props = { settings: { theme: string } };
 const Comp: React.FC<Props> = ({ settings }) => <div>{settings.theme}</div>;
-export const Wrapped = memo((Comp satisfies React.FC<Props>), compareDeeply('settings'));
+export const Wrapped = memo(
+  (Comp satisfies React.FC<Props>),
+  compareDeeply('settings'),
+);
 `,
         errors: [{ messageId: 'useCompareDeeply' }],
       },
@@ -1807,6 +1823,339 @@ type Props = {
 const Comp = ({ kind, config }: Props) => <div data-kind={kind}>{config.extra}</div>;
 export const Wrapped = memo(Comp, compareDeeply('config'));
 `,
+        errors: [{ messageId: 'useCompareDeeply' }],
+      },
+      // Print width (#2043). The comparator's text grows with the component's
+      // complex-prop count, so the emitted argument list has no length bound.
+      // The fixer measures the line each emission lands on and only breaks the
+      // argument list open past the print width, because a formatter collapses
+      // a short argument list back onto one line — the opposite failure.
+      {
+        filename: 'src/components/PrintWidthRepro.tsx',
+        code: `
+import { memo } from 'react';
+type P = {
+  activeChannel: { id: string };
+  watchers: string[];
+  participants: { id: string }[];
+  metadata: { k: string };
+};
+const C = (p: P) => <div>{p.activeChannel.id}</div>;
+export const M = memo(C);
+`,
+        output: `
+import { compareDeeply } from 'src/util/memo';
+import { memo } from 'react';
+type P = {
+  activeChannel: { id: string };
+  watchers: string[];
+  participants: { id: string }[];
+  metadata: { k: string };
+};
+const C = (p: P) => <div>{p.activeChannel.id}</div>;
+export const M = memo(
+  C,
+  compareDeeply('activeChannel', 'metadata', 'participants', 'watchers'),
+);
+`,
+        errors: [{ messageId: 'useCompareDeeply' }],
+      },
+      // Exactly at the print width: the emitted line is 80 columns, which a
+      // formatter keeps on one line — and collapses back onto one line if it is
+      // split — so the fixer must not break it.
+      {
+        filename: 'src/components/PrintWidthBoundaryFit.tsx',
+        code: `
+import { memo } from 'react';
+type Props = { alphaProps: { id: string }; betaProp: string[] };
+const FitUnmemoized = ({ alphaProps, betaProp }: Props) => (
+  <div>{alphaProps.id}{betaProp.length}</div>
+);
+export const Fit = memo(FitUnmemoized);
+`,
+        output: `
+import { compareDeeply } from 'src/util/memo';
+import { memo } from 'react';
+type Props = { alphaProps: { id: string }; betaProp: string[] };
+const FitUnmemoized = ({ alphaProps, betaProp }: Props) => (
+  <div>{alphaProps.id}{betaProp.length}</div>
+);
+export const Fit = memo(FitUnmemoized, compareDeeply('alphaProps', 'betaProp'));
+`,
+        errors: [{ messageId: 'useCompareDeeply' }],
+      },
+      // One column past the print width — the same shape as the fixture above
+      // with a single extra character — breaks open.
+      {
+        filename: 'src/components/PrintWidthBoundaryOverflow.tsx',
+        code: `
+import { memo } from 'react';
+type Props = { alphaPropsX: { id: string }; betaProp: string[] };
+const FitUnmemoized = ({ alphaPropsX, betaProp }: Props) => (
+  <div>{alphaPropsX.id}{betaProp.length}</div>
+);
+export const Fit = memo(FitUnmemoized);
+`,
+        output: `
+import { compareDeeply } from 'src/util/memo';
+import { memo } from 'react';
+type Props = { alphaPropsX: { id: string }; betaProp: string[] };
+const FitUnmemoized = ({ alphaPropsX, betaProp }: Props) => (
+  <div>{alphaPropsX.id}{betaProp.length}</div>
+);
+export const Fit = memo(
+  FitUnmemoized,
+  compareDeeply('alphaPropsX', 'betaProp'),
+);
+`,
+        errors: [{ messageId: 'useCompareDeeply' }],
+      },
+      // A prop list too long even on a line of its own breaks one prop per
+      // line, which is where a formatter takes it next.
+      {
+        filename: 'src/components/PrintWidthPropListBreak.tsx',
+        code: `
+import { memo } from 'react';
+type Props = {
+  activeChannelData: { id: string };
+  metadataRecords: { k: string };
+  participantsCollection: { id: string }[];
+  watchersListing: string[];
+  somethingElseEntirely: { flag: boolean };
+};
+const SomeVeryLongComponentNameUnmemoized = (props: Props) => (
+  <div>{props.activeChannelData.id}</div>
+);
+export const SomeVeryLongComponentName = memo(
+  SomeVeryLongComponentNameUnmemoized,
+);
+`,
+        output: `
+import { compareDeeply } from 'src/util/memo';
+import { memo } from 'react';
+type Props = {
+  activeChannelData: { id: string };
+  metadataRecords: { k: string };
+  participantsCollection: { id: string }[];
+  watchersListing: string[];
+  somethingElseEntirely: { flag: boolean };
+};
+const SomeVeryLongComponentNameUnmemoized = (props: Props) => (
+  <div>{props.activeChannelData.id}</div>
+);
+export const SomeVeryLongComponentName = memo(
+  SomeVeryLongComponentNameUnmemoized,
+  compareDeeply(
+    'activeChannelData',
+    'metadataRecords',
+    'participantsCollection',
+    'somethingElseEntirely',
+    'watchersListing',
+  ),
+);
+`,
+        errors: [{ messageId: 'useCompareDeeply' }],
+      },
+      // The call is measured at its own indentation, not at column zero.
+      {
+        filename: 'src/components/PrintWidthNestedIndent.tsx',
+        code: `
+import { memo } from 'react';
+type Props = { activeChannel: { id: string }; watchers: string[] };
+const ChannelPreviewUnmemoized = (props: Props) => (
+  <div>{props.activeChannel.id}</div>
+);
+export function makeChannel() {
+  const Channel = memo(ChannelPreviewUnmemoized);
+  return Channel;
+}
+`,
+        output: `
+import { compareDeeply } from 'src/util/memo';
+import { memo } from 'react';
+type Props = { activeChannel: { id: string }; watchers: string[] };
+const ChannelPreviewUnmemoized = (props: Props) => (
+  <div>{props.activeChannel.id}</div>
+);
+export function makeChannel() {
+  const Channel = memo(
+    ChannelPreviewUnmemoized,
+    compareDeeply('activeChannel', 'watchers'),
+  );
+  return Channel;
+}
+`,
+        errors: [{ messageId: 'useCompareDeeply' }],
+      },
+      // The nullish-comparator branch emits the same unbounded text, so it is
+      // measured the same way.
+      {
+        filename: 'src/components/PrintWidthNullishComparator.tsx',
+        code: `
+import { memo } from 'react';
+type Props = {
+  activeChannel: { id: string };
+  watchers: string[];
+  participants: { id: string }[];
+};
+const Comp = (props: Props) => <div>{props.activeChannel.id}</div>;
+export const Wrapped = memo(Comp, undefined);
+`,
+        output: `
+import { compareDeeply } from 'src/util/memo';
+import { memo } from 'react';
+type Props = {
+  activeChannel: { id: string };
+  watchers: string[];
+  participants: { id: string }[];
+};
+const Comp = (props: Props) => <div>{props.activeChannel.id}</div>;
+export const Wrapped = memo(
+  Comp,
+  compareDeeply('activeChannel', 'participants', 'watchers'),
+);
+`,
+        errors: [{ messageId: 'useCompareDeeply' }],
+      },
+      // A narrower configured width breaks a list the default width keeps
+      // inline, so the option is live.
+      {
+        filename: 'src/components/PrintWidthOptionNarrow.tsx',
+        options: [{ printWidth: 40 }],
+        code: `
+import { memo } from 'react';
+type Props = { items: string[] };
+const Comp = ({ items }: Props) => <div>{items.length}</div>;
+export const Wrapped = memo(Comp);
+`,
+        output: `
+import { compareDeeply } from 'src/util/memo';
+import { memo } from 'react';
+type Props = { items: string[] };
+const Comp = ({ items }: Props) => <div>{items.length}</div>;
+export const Wrapped = memo(
+  Comp,
+  compareDeeply('items'),
+);
+`,
+        errors: [{ messageId: 'useCompareDeeply' }],
+      },
+      // A wider configured width keeps inline the very list the default width
+      // breaks, pinning the option in both directions.
+      {
+        filename: 'src/components/PrintWidthOptionWide.tsx',
+        options: [{ printWidth: 200 }],
+        code: `
+import { memo } from 'react';
+type P = {
+  activeChannel: { id: string };
+  watchers: string[];
+  participants: { id: string }[];
+  metadata: { k: string };
+};
+const C = (p: P) => <div>{p.activeChannel.id}</div>;
+export const M = memo(C);
+`,
+        output: `
+import { compareDeeply } from 'src/util/memo';
+import { memo } from 'react';
+type P = {
+  activeChannel: { id: string };
+  watchers: string[];
+  participants: { id: string }[];
+  metadata: { k: string };
+};
+const C = (p: P) => <div>{p.activeChannel.id}</div>;
+export const M = memo(C, compareDeeply('activeChannel', 'metadata', 'participants', 'watchers'));
+`,
+        errors: [{ messageId: 'useCompareDeeply' }],
+      },
+      // A block-bodied arrow first argument is hugged by the formatter, which
+      // prints the remaining argument after its closing brace whatever the
+      // resulting width. The inline form is therefore the formatter's own
+      // output, so the fix stands rather than breaking a shape a formatter
+      // would put straight back.
+      {
+        filename: 'src/components/PrintWidthHuggedComponent.tsx',
+        code: `
+import { memo } from 'react';
+type Props = {
+  activeChannelData: { id: string };
+  metadataRecords: { k: string };
+  participantsCollection: { id: string }[];
+};
+export const Wrapped = memo((props: Props) => {
+  return <div>{props.activeChannelData.id}</div>;
+});
+`,
+        output: `
+import { compareDeeply } from 'src/util/memo';
+import { memo } from 'react';
+type Props = {
+  activeChannelData: { id: string };
+  metadataRecords: { k: string };
+  participantsCollection: { id: string }[];
+};
+export const Wrapped = memo((props: Props) => {
+  return <div>{props.activeChannelData.id}</div>;
+}, compareDeeply('activeChannelData', 'metadataRecords', 'participantsCollection'));
+`,
+        errors: [{ messageId: 'useCompareDeeply' }],
+      },
+      // A component written across lines that the formatter does NOT hug
+      // cannot be re-emitted one step in without misaligning its interior, so
+      // the fix is declined rather than written over the print width.
+      {
+        filename: 'src/components/PrintWidthMultilineComponent.tsx',
+        code: `
+import { memo } from 'react';
+type Props = {
+  activeChannelData: { id: string };
+  metadataRecords: { k: string };
+  participantsCollection: { id: string }[];
+};
+export const Wrapped = memo(function Impl(props: Props) {
+  return <div>{props.activeChannelData.id}</div>;
+});
+`,
+        output: null,
+        errors: [{ messageId: 'useCompareDeeply' }],
+      },
+      // A component name too long to sit on its own line would send the
+      // formatter looking for a break this fixer cannot place, so the fix is
+      // declined there too.
+      {
+        filename: 'src/components/PrintWidthLongComponentName.tsx',
+        code: `
+import { memo } from 'react';
+type Props = { activeChannelData: { id: string } };
+const AComponentNameSoLongThatItAloneOverflowsTheWholePrintWidthOnItsOwnLineUnmemoized = (
+  props: Props,
+) => <div>{props.activeChannelData.id}</div>;
+export const Wrapped = memo(
+  AComponentNameSoLongThatItAloneOverflowsTheWholePrintWidthOnItsOwnLineUnmemoized,
+);
+`,
+        output: null,
+        errors: [{ messageId: 'useCompareDeeply' }],
+      },
+      // A comment inside the argument list would be dropped by rebuilding it,
+      // so an overflowing call carrying one is declined too.
+      {
+        filename: 'src/components/PrintWidthCommentInArguments.tsx',
+        code: `
+import { memo } from 'react';
+type Props = {
+  activeChannelData: { id: string };
+  metadataRecords: { k: string };
+  participantsCollection: { id: string }[];
+};
+const ChannelPreviewUnmemoized = (props: Props) => (
+  <div>{props.activeChannelData.id}</div>
+);
+export const Wrapped = memo(ChannelPreviewUnmemoized /* keep */);
+`,
+        output: null,
         errors: [{ messageId: 'useCompareDeeply' }],
       },
       // A bare `{}` prop type has no primitive member, so it keeps reporting: it

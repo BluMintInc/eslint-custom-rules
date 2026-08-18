@@ -1,4 +1,9 @@
-import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
+import {
+  AST_NODE_TYPES,
+  AST_TOKEN_TYPES,
+  TSESLint,
+  TSESTree,
+} from '@typescript-eslint/utils';
 import type {
   IntersectionType,
   Type,
@@ -8,6 +13,20 @@ import type {
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'useCompareDeeply';
+
+type Options = [
+  {
+    printWidth?: number;
+  },
+];
+
+/**
+ * Matches Prettier's own default. The fixer authors an argument list whose
+ * length grows with the component's complex-prop count, so a line it emits past
+ * this width is rewritten by the next `prettier --write` — and fails
+ * `prettier --check` in the meantime.
+ */
+const DEFAULT_PRINT_WIDTH = 80;
 
 type ComponentAnalysisResult = {
   unwrappedComponent: TSESTree.Expression;
@@ -1709,45 +1728,334 @@ function resolveComponentName(
   );
 }
 
+/**
+ * The file's own nesting step, taken as the most common indentation increase
+ * between consecutive lines. Reading it from the source keeps emitted code in
+ * the author's units instead of assuming a two-space, space-indented file.
+ */
+function indentUnitOf(sourceCode: TSESLint.SourceCode): string {
+  const blockComments = sourceCode
+    .getAllComments()
+    .filter((comment) => comment.type === AST_TOKEN_TYPES.Block)
+    .map((comment) => comment.range);
+  // A block comment's interior lines carry the comment's own alignment, which
+  // is not a nesting step of the file; counting them makes a JSDoc-heavy file
+  // look 1-space indented.
+  const continuesBlockComment = (offset: number) =>
+    blockComments.some(([start, end]) => start < offset && offset < end);
+
+  const frequencies = new Map<string, number>();
+  let previous = '';
+  let offset = 0;
+  for (const line of sourceCode.getText().split('\n')) {
+    const lineStart = offset;
+    offset += line.length + 1;
+    if (line.trim() === '') {
+      continue;
+    }
+    if (continuesBlockComment(lineStart)) {
+      continue;
+    }
+    const match = /^[ \t]*/.exec(line);
+    const indent = match ? match[0] : '';
+    if (indent.length > previous.length && indent.startsWith(previous)) {
+      const delta = indent.slice(previous.length);
+      frequencies.set(delta, (frequencies.get(delta) ?? 0) + 1);
+    }
+    previous = indent;
+  }
+
+  let unit = '  ';
+  let best = 0;
+  for (const [delta, count] of frequencies) {
+    if (count > best) {
+      unit = delta;
+      best = count;
+    }
+  }
+  return unit;
+}
+
+/**
+ * The length the edited line ends up with, simulated against the pre-edit text:
+ * everything left of the replaced range on its first line, the emitted text,
+ * and the CODE right of it on its last line. Single-line emissions are the only
+ * ones measured, so this is the whole resulting line.
+ *
+ * A trailing comment is excluded from the measurement. Prettier's own accounting
+ * splits on the comment's kind — it counts a trailing block comment toward the
+ * line and ignores a trailing line comment, which it emits as a line suffix —
+ * and the line-comment spelling is the common one, so counting neither is both
+ * the closer approximation and the answer that keeps the emitted layout a
+ * function of the code alone.
+ */
+function lineLengthAfterEdit(
+  sourceCode: TSESLint.SourceCode,
+  range: TSESTree.Range,
+  text: string,
+): number {
+  const start = sourceCode.getLocFromIndex(range[0]);
+  const end = sourceCode.getLocFromIndex(range[1]);
+  const endLine = sourceCode.lines[end.line - 1] ?? '';
+  const lineEndIndex = range[1] + (endLine.length - end.column);
+  const trailingComment = sourceCode
+    .getAllComments()
+    .find(
+      (comment) =>
+        comment.range[0] >= range[1] && comment.range[0] < lineEndIndex,
+    );
+  const suffix = sourceCode
+    .getText()
+    .slice(range[1], trailingComment ? trailingComment.range[0] : lineEndIndex)
+    .replace(/\s+$/, '');
+  return start.column + text.length + suffix.length;
+}
+
+/** The leading whitespace of the line the given offset sits on. */
+function lineIndentAt(sourceCode: TSESLint.SourceCode, index: number): string {
+  const { line } = sourceCode.getLocFromIndex(index);
+  const text = sourceCode.lines[line - 1] ?? '';
+  const match = /^[ \t]*/.exec(text);
+  return match ? match[0] : '';
+}
+
+/** The `(` that opens a call's argument list, past any type arguments. */
+function argumentListOpenParen(
+  sourceCode: TSESLint.SourceCode,
+  callExpression: TSESTree.CallExpression,
+): TSESTree.Token | null {
+  let token = sourceCode.getTokenAfter(
+    callExpression.typeParameters ?? callExpression.callee,
+  );
+  while (token && token.value !== '(') {
+    token = sourceCode.getTokenAfter(token);
+  }
+  return token ?? null;
+}
+
+/**
+ * What to emit for a call whose inline argument list overflows.
+ *
+ * `hug` is the case where the inline form IS the formatter's own output, so
+ * the width it exceeds is not one any reformatting would take back; `decline`
+ * is every case whose broken-open shape this fixer cannot reproduce, where the
+ * report must stand on its own rather than carry an emission a formatter would
+ * rewrite.
+ */
+type OverflowPlan =
+  | { kind: 'wrap'; fix: TSESLint.RuleFix }
+  | { kind: 'hug' }
+  | { kind: 'decline' };
+
+/**
+ * A function passed as the first of two arguments is hugged: the formatter
+ * keeps its header on the call's own line and prints the remaining argument
+ * after its closing brace, whatever that line's width. Measured against
+ * Prettier 2.7, 2.8 and 3.3, all of which leave such a line untouched at 128
+ * columns.
+ */
+function isHuggedFirstArgument(node: TSESTree.Node): boolean {
+  return (
+    node.type === AST_NODE_TYPES.ArrowFunctionExpression &&
+    node.body.type === AST_NODE_TYPES.BlockStatement
+  );
+}
+
+/**
+ * Prettier's layout for a two-argument call that does not fit on one line: each
+ * argument alone on its own line, one nesting step in, with a trailing comma.
+ */
+function planOverflow(
+  sourceCode: TSESLint.SourceCode,
+  fixer: TSESLint.RuleFixer,
+  callExpression: TSESTree.CallExpression,
+  localName: string,
+  propLiterals: readonly string[],
+  printWidth: number,
+  indentUnit: string,
+): OverflowPlan {
+  const openParen = argumentListOpenParen(sourceCode, callExpression);
+  const closingParen = sourceCode.getLastToken(callExpression);
+  if (!openParen || !closingParen || closingParen.value !== ')') {
+    return { kind: 'decline' };
+  }
+
+  const componentArg = callExpression.arguments[0];
+  if (!componentArg || componentArg.type === AST_NODE_TYPES.SpreadElement) {
+    return { kind: 'decline' };
+  }
+
+  // Parentheses the author wrote around the argument are kept: they can be
+  // load-bearing, most sharply around a sequence expression, where dropping
+  // them turns one argument into two. The call's own `(` is not one of them,
+  // so a lone argument does not acquire a second pair.
+  const tokenBeforeComponent = sourceCode.getTokenBefore(componentArg);
+  const tokenAfterComponent = sourceCode.getTokenAfter(componentArg);
+  const componentRange: TSESTree.Range =
+    tokenBeforeComponent &&
+    tokenBeforeComponent.value === '(' &&
+    tokenBeforeComponent.range[0] !== openParen.range[0] &&
+    tokenAfterComponent?.value === ')'
+      ? [tokenBeforeComponent.range[0], tokenAfterComponent.range[1]]
+      : componentArg.range;
+  const componentText = sourceCode
+    .getText()
+    .slice(componentRange[0], componentRange[1]);
+  // A component written across lines carries its own interior indentation, so
+  // re-emitting it one step in would misalign every line but the first. Where
+  // the formatter hugs such a component, the inline form is what it prints
+  // anyway, so that call keeps its fix.
+  if (/[\r\n]/.test(componentText)) {
+    return isHuggedFirstArgument(componentArg)
+      ? { kind: 'hug' }
+      : { kind: 'decline' };
+  }
+
+  // Rebuilding the argument list drops anything in it that is not one of the
+  // two arguments, so a comment between them would be deleted outright.
+  const hasInteriorComment = sourceCode
+    .getCommentsInside(callExpression)
+    .some(
+      (comment) =>
+        comment.range[0] >= openParen.range[1] &&
+        comment.range[1] <= closingParen.range[0],
+    );
+  if (hasInteriorComment) {
+    return { kind: 'decline' };
+  }
+
+  const indent = lineIndentAt(sourceCode, callExpression.range[0]);
+  const argIndent = `${indent}${indentUnit}`;
+  // The component argument is emitted verbatim; when even that overflows, the
+  // formatter would break the expression itself in a shape this fixer cannot
+  // predict.
+  if (argIndent.length + componentText.length + 1 > printWidth) {
+    return { kind: 'decline' };
+  }
+
+  const comparatorText = `${localName}(${propLiterals.join(', ')})`;
+  const comparatorBlock =
+    argIndent.length + comparatorText.length + 1 <= printWidth
+      ? `${argIndent}${comparatorText},`
+      : // A prop list too long even on its own line breaks one prop per line,
+        // which is where the formatter takes it next.
+        [
+          `${argIndent}${localName}(`,
+          ...propLiterals.map(
+            (literal) => `${argIndent}${indentUnit}${literal},`,
+          ),
+          `${argIndent}),`,
+        ].join('\n');
+
+  return {
+    kind: 'wrap',
+    fix: fixer.replaceTextRange(
+      [openParen.range[1], closingParen.range[0]],
+      `\n${argIndent}${componentText},\n${comparatorBlock}\n${indent}`,
+    ),
+  };
+}
+
 function buildMemoFixes(
   sourceCode: TSESLint.SourceCode,
   fixer: TSESLint.RuleFixer,
   callExpression: TSESTree.CallExpression,
   comparatorArg: TSESTree.CallExpressionArgument | undefined,
-  propsCall: string,
+  propLiterals: readonly string[],
   memoSource: string,
   scope: TSESLint.Scope.Scope,
+  printWidth: number,
+  indentUnit: string,
   resolveCompareDeeplyImport: (
     fixer: TSESLint.RuleFixer,
     memoSource: string,
-  ) => { fixes: TSESLint.RuleFix[]; localName: string },
+  ) => {
+    fixes: TSESLint.RuleFix[];
+    localName: string;
+    commit: () => void;
+  },
 ): TSESLint.RuleFix[] {
   const fixes: TSESLint.RuleFix[] = [];
   const importResult = resolveCompareDeeplyImport(fixer, memoSource);
+  const comparatorText = `${importResult.localName}(${propLiterals.join(
+    ', ',
+  )})`;
+  // Every emission below is measured before it is chosen: the comparator's text
+  // grows with the component's complex-prop count, so an unconditionally inline
+  // argument list overflows the print width on ordinary components. Wrapping
+  // unconditionally is the mirror failure — a formatter collapses a short
+  // argument list back onto one line — so the width decides.
+  const overflowPlan = () =>
+    planOverflow(
+      sourceCode,
+      fixer,
+      callExpression,
+      importResult.localName,
+      propLiterals,
+      printWidth,
+      indentUnit,
+    );
+
+  /**
+   * The emission for a measurement that overflows: the broken-open argument
+   * list, the inline text the formatter hugs anyway, or nothing at all — never
+   * the over-wide line the measurement just rejected.
+   */
+  const overflowFix = (inline: TSESLint.RuleFix): TSESLint.RuleFix | null => {
+    const plan = overflowPlan();
+    if (plan.kind === 'wrap') return plan.fix;
+    return plan.kind === 'hug' ? inline : null;
+  };
+
   if (
     comparatorArg &&
     comparatorArg.type !== AST_NODE_TYPES.SpreadElement &&
     isNullishComparatorArgument(comparatorArg, scope)
   ) {
-    fixes.push(
-      fixer.replaceTextRange(
-        rangeWithParentheses(sourceCode, comparatorArg as TSESTree.Expression),
-        `${importResult.localName}(${propsCall})`,
-      ),
+    const comparatorRange = rangeWithParentheses(
+      sourceCode,
+      comparatorArg as TSESTree.Expression,
     );
+    const inline = fixer.replaceTextRange(comparatorRange, comparatorText);
+    if (
+      lineLengthAfterEdit(sourceCode, comparatorRange, comparatorText) <=
+      printWidth
+    ) {
+      fixes.push(inline);
+    } else {
+      const fix = overflowFix(inline);
+      if (!fix) return [];
+      fixes.push(fix);
+    }
   } else {
     const closingParen = sourceCode.getLastToken(callExpression);
     if (closingParen) {
       const tokenBeforeParen = sourceCode.getTokenBefore(closingParen);
-      const comparatorText = `${importResult.localName}(${propsCall})`;
-      if (tokenBeforeParen?.value === ',') {
-        fixes.push(fixer.replaceText(tokenBeforeParen, `, ${comparatorText}`));
+      const insertText = `, ${comparatorText}`;
+      const editRange: TSESTree.Range =
+        tokenBeforeParen?.value === ','
+          ? tokenBeforeParen.range
+          : [closingParen.range[0], closingParen.range[0]];
+      const inline = fixer.replaceTextRange(editRange, insertText);
+      if (
+        lineLengthAfterEdit(sourceCode, editRange, insertText) <= printWidth
+      ) {
+        fixes.push(inline);
       } else {
-        fixes.push(fixer.insertTextBefore(closingParen, `, ${comparatorText}`));
+        const fix = overflowFix(inline);
+        if (!fix) return [];
+        fixes.push(fix);
       }
     }
   }
+  if (fixes.length === 0) {
+    return [];
+  }
   fixes.push(...importResult.fixes);
+  // The import belongs to the output only once a comparator fix is emitted; a
+  // declined fix that recorded the local name would leave a later report in the
+  // same file emitting an identifier nothing imports.
+  importResult.commit();
   return fixes;
 }
 
@@ -1871,7 +2179,7 @@ function createComponentInitializerTracker(): ComponentInitializerTracker {
   };
 }
 
-export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
+export const memoCompareDeeplyComplexProps = createRule<Options, MessageIds>({
   name: 'memo-compare-deeply-complex-props',
   meta: {
     type: 'suggestion',
@@ -1882,14 +2190,25 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
       requiresTypeChecking: true,
     },
     fixable: 'code',
-    schema: [],
+    schema: [
+      {
+        type: 'object',
+        properties: {
+          printWidth: {
+            type: 'number',
+            minimum: 1,
+          },
+        },
+        additionalProperties: false,
+      },
+    ],
     messages: {
       useCompareDeeply:
         'What\'s wrong: Memoized component "{{componentName}}" receives complex prop(s) {{propsList}} but memo still uses shallow reference comparison → Why it matters: Objects/arrays are often recreated on each render, so shallow comparison treats them as "changed" and triggers avoidable re-renders → How to fix: Pass compareDeeply({{propsCall}}) as memo\'s second argument to compare those props by value.',
     },
   },
-  defaultOptions: [],
-  create(context) {
+  defaultOptions: [{}],
+  create(context, [options]) {
     const sourceCode = context.getSourceCode();
     const usedNames = collectUsedNames(sourceCode);
     const complexPropsCache = new WeakMap<TSESTree.Expression, string[]>();
@@ -1897,12 +2216,31 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
     const initializerTracking = createComponentInitializerTracker();
     let cachedCompareDeeplyImportLocalName: string | null = null;
 
+    const printWidth =
+      typeof options.printWidth === 'number' && options.printWidth > 0
+        ? options.printWidth
+        : DEFAULT_PRINT_WIDTH;
+
+    // Derived once per file rather than per fix: every fix in a file shares the
+    // author's nesting step.
+    let cachedIndentUnit: string | null = null;
+    const fileIndentUnit = () => {
+      if (cachedIndentUnit === null) {
+        cachedIndentUnit = indentUnitOf(sourceCode);
+      }
+      return cachedIndentUnit;
+    };
+
     function resolveCompareDeeplyImport(
       fixer: TSESLint.RuleFixer,
       memoSource: string,
     ) {
       if (cachedCompareDeeplyImportLocalName) {
-        return { fixes: [], localName: cachedCompareDeeplyImportLocalName };
+        return {
+          fixes: [],
+          localName: cachedCompareDeeplyImportLocalName,
+          commit: () => undefined,
+        };
       }
 
       const result = ensureCompareDeeplyImportFixes(
@@ -1911,8 +2249,12 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
         usedNames,
         memoSource,
       );
-      cachedCompareDeeplyImportLocalName = result.localName;
-      return result;
+      return {
+        ...result,
+        commit: () => {
+          cachedCompareDeeplyImportLocalName = result.localName;
+        },
+      };
     }
 
     function validateMemoCall(node: TSESTree.CallExpression) {
@@ -1964,11 +2306,16 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
 
     function generateReportData(complexProps: string[], componentName: string) {
       const propsList = `[${complexProps.join(', ')}]`;
-      const propsCall = complexProps
-        .map((prop) => escapeStringForCodeGeneration(prop))
-        .join(', ');
+      const propLiterals = complexProps.map((prop) =>
+        escapeStringForCodeGeneration(prop),
+      );
 
-      return { componentName, propsList, propsCall };
+      return {
+        componentName,
+        propsList,
+        propLiterals,
+        propsCall: propLiterals.join(', '),
+      };
     }
 
     return {
@@ -1994,7 +2341,7 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
         if (!analysisResult) return;
 
         const { complexProps, componentName } = analysisResult;
-        const { propsList, propsCall } = generateReportData(
+        const { propsList, propsCall, propLiterals } = generateReportData(
           complexProps,
           componentName,
         );
@@ -2008,16 +2355,21 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
             propsCall,
           },
           fix(fixer) {
-            return buildMemoFixes(
+            const fixes = buildMemoFixes(
               sourceCode,
               fixer,
               node,
               comparatorArg,
-              propsCall,
+              propLiterals,
               memoCall.source,
               currentScope,
+              printWidth,
+              fileIndentUnit(),
               resolveCompareDeeplyImport,
             );
+            // An empty list declines the fix: emitting the measured over-wide
+            // line would leave the source failing a formatter check.
+            return fixes.length > 0 ? fixes : null;
           },
         });
       },
