@@ -4,6 +4,14 @@ import { memoCompareDeeplyComplexProps } from '../rules/memo-compare-deeply-comp
 
 const callSignatureMissingFile = 'src/components/CallSignatureMissing.tsx';
 
+/**
+ * A real on-disk stub, so cases using it land in the tsconfig PROJECT program
+ * rather than the single-file default program. Only the project program loads
+ * `src/tests/fixtures/lib-props.d.ts`, which is what makes the library-declared
+ * props of bug #2037 resolve at all.
+ */
+const libraryPropsFile = 'src/tests/fixtures/memo-component.tsx';
+
 jest.mock('typescript', () => {
   const actual = jest.requireActual<typeof import('typescript')>('typescript');
   const originalCreateProgram = actual.createProgram;
@@ -588,8 +596,225 @@ const Comp = ({ userId }: Props) => <div>{userId}</div>;
 export const Wrapped = memo(Comp);
 `,
       },
+      // Bug #2037: `getPropertiesOfType` returns INHERITED members, so a props
+      // type that intersects a third-party interface surfaces that library's
+      // whole surface. The author declares `title` only; `classes` and
+      // `variantMapping` are declared in a `.d.ts` nobody here owns, so naming
+      // them in `compareDeeply` is advice the author cannot act on.
+      //
+      // The `libraryPropsFile` filename is load-bearing. It names a file that
+      // really exists under the tsconfig `include`, which is what puts the case
+      // in the PROJECT program; an invented path falls back to a single-file
+      // default program that never loads `lib-props.d.ts`, so `LibBaseProps`
+      // resolves to an error type, contributes no members, and the case passes
+      // vacuously whatever the rule does.
+      {
+        filename: libraryPropsFile,
+        code: `
+import { memo } from 'react';
+import type { LibBaseProps } from 'fake-ui-lib';
+type PanelProps = LibBaseProps & { title: string };
+const PanelUnmemoized = ({ title }: PanelProps) => {
+  return <div>{title}</div>;
+};
+export const Panel = memo(PanelUnmemoized);
+`,
+      },
+      // The same carve-out through an `interface … extends` heritage clause
+      // rather than an intersection: inheritance is the shape MUI components
+      // actually use, and it reaches `getPropertiesOfType` by a different route.
+      {
+        filename: libraryPropsFile,
+        code: `
+import { memo } from 'react';
+import type { LibBaseProps } from 'fake-ui-lib';
+interface CardProps extends LibBaseProps {
+  heading: string;
+}
+const CardUnmemoized = ({ heading }: CardProps) => <div>{heading}</div>;
+export const Card = memo(CardUnmemoized);
+`,
+      },
+      // `Pick` builds its members by mapping over the source type without an
+      // `as` clause, so each synthesized symbol carries the ORIGINAL property's
+      // declarations — which still point into the library `.d.ts`. Measured:
+      // exempt. That is the intended reading: selecting a subset of a library's
+      // props does not make the author the declarer of their shape.
+      {
+        filename: libraryPropsFile,
+        code: `
+import { memo } from 'react';
+import type { LibBaseProps } from 'fake-ui-lib';
+type Props = Pick<LibBaseProps, 'classes'>;
+const Comp = ({ classes }: Props) => <div>{String(classes)}</div>;
+export const Wrapped = memo(Comp);
+`,
+      },
     ]),
     invalid: withParserOptions(parserOptions, [
+      // Bug #2037 control: the carve-out is scoped to library DECLARATION sites,
+      // so a complex prop the author declares is still reported. A fix that
+      // silenced this would have disabled the rule rather than narrowed it.
+      {
+        filename: libraryPropsFile,
+        code: `
+import { memo } from 'react';
+type LocalProps = { title: string; options: Record<string, unknown> };
+const LocalThingUnmemoized = ({ title, options }: LocalProps) => (
+  <div>{title}{String(options)}</div>
+);
+export const LocalThing = memo(LocalThingUnmemoized);
+`,
+        output: `
+import { compareDeeply } from 'src/util/memo';
+import { memo } from 'react';
+type LocalProps = { title: string; options: Record<string, unknown> };
+const LocalThingUnmemoized = ({ title, options }: LocalProps) => (
+  <div>{title}{String(options)}</div>
+);
+export const LocalThing = memo(LocalThingUnmemoized, compareDeeply('options'));
+`,
+        errors: [
+          {
+            messageId: 'useCompareDeeply',
+            data: {
+              componentName: 'LocalThingUnmemoized',
+              propsList: '[options]',
+              propsCall: "'options'",
+            },
+          },
+        ],
+      },
+      // Bug #2037 mixed case: a props type intersecting a library base with an
+      // author-declared complex prop. Only the author's prop may be demanded, so
+      // the expectation pins the interpolated prop list rather than the bare
+      // messageId — the pre-fix report also carried `useCompareDeeply`, naming
+      // `[classes, rows, variantMapping]`, which a messageId check cannot tell
+      // apart from the fixed one.
+      {
+        filename: libraryPropsFile,
+        code: `
+import { memo } from 'react';
+import type { LibBaseProps } from 'fake-ui-lib';
+type MixedProps = LibBaseProps & { title: string; rows: { id: string }[] };
+const MixedUnmemoized = ({ title, rows }: MixedProps) => (
+  <div>{title}{rows.length}</div>
+);
+export const Mixed = memo(MixedUnmemoized);
+`,
+        output: `
+import { compareDeeply } from 'src/util/memo';
+import { memo } from 'react';
+import type { LibBaseProps } from 'fake-ui-lib';
+type MixedProps = LibBaseProps & { title: string; rows: { id: string }[] };
+const MixedUnmemoized = ({ title, rows }: MixedProps) => (
+  <div>{title}{rows.length}</div>
+);
+export const Mixed = memo(MixedUnmemoized, compareDeeply('rows'));
+`,
+        errors: [
+          {
+            messageId: 'useCompareDeeply',
+            data: {
+              componentName: 'MixedUnmemoized',
+              propsList: '[rows]',
+              propsCall: "'rows'",
+            },
+          },
+        ],
+      },
+      // The carve-out keys on the declaration FILE, not on "the prop arrived
+      // from another module": a base type the author owns in a plain `.ts` is
+      // authored code, so its complex members are still demanded.
+      {
+        filename: libraryPropsFile,
+        code: `
+import { memo } from 'react';
+import type { AuthoredBaseProps } from './memo-authored-props';
+type Props = AuthoredBaseProps & { title: string };
+const Comp = ({ title }: Props) => <div>{title}</div>;
+export const Wrapped = memo(Comp);
+`,
+        output: `
+import { compareDeeply } from 'src/util/memo';
+import { memo } from 'react';
+import type { AuthoredBaseProps } from './memo-authored-props';
+type Props = AuthoredBaseProps & { title: string };
+const Comp = ({ title }: Props) => <div>{title}</div>;
+export const Wrapped = memo(Comp, compareDeeply('settings'));
+`,
+        errors: [
+          {
+            messageId: 'useCompareDeeply',
+            data: {
+              componentName: 'Comp',
+              propsList: '[settings]',
+              propsCall: "'settings'",
+            },
+          },
+        ],
+      },
+      // A prop the author redeclares alongside the library's own yields ONE
+      // symbol carrying both declaration sites. The author declared it, so it is
+      // still demanded — while `variantMapping`, which they did not, is not.
+      {
+        filename: libraryPropsFile,
+        code: `
+import { memo } from 'react';
+import type { LibBaseProps } from 'fake-ui-lib';
+type Props = LibBaseProps & { classes: { root: string }; title: string };
+const Comp = ({ classes, title }: Props) => <div>{title}{classes.root}</div>;
+export const Wrapped = memo(Comp);
+`,
+        output: `
+import { compareDeeply } from 'src/util/memo';
+import { memo } from 'react';
+import type { LibBaseProps } from 'fake-ui-lib';
+type Props = LibBaseProps & { classes: { root: string }; title: string };
+const Comp = ({ classes, title }: Props) => <div>{title}{classes.root}</div>;
+export const Wrapped = memo(Comp, compareDeeply('classes'));
+`,
+        errors: [
+          {
+            messageId: 'useCompareDeeply',
+            data: {
+              componentName: 'Comp',
+              propsList: '[classes]',
+              propsCall: "'classes'",
+            },
+          },
+        ],
+      },
+      // A mapped type over the author's OWN props (`Readonly<…>`) carries the
+      // original declarations through, so the carve-out must not swallow it.
+      {
+        filename: libraryPropsFile,
+        code: `
+import { memo } from 'react';
+const Comp = ({ data, label }: Readonly<{ data: { a: string }; label: string }>) => (
+  <div>{label}{data.a}</div>
+);
+export const Wrapped = memo(Comp);
+`,
+        output: `
+import { compareDeeply } from 'src/util/memo';
+import { memo } from 'react';
+const Comp = ({ data, label }: Readonly<{ data: { a: string }; label: string }>) => (
+  <div>{label}{data.a}</div>
+);
+export const Wrapped = memo(Comp, compareDeeply('data'));
+`,
+        errors: [
+          {
+            messageId: 'useCompareDeeply',
+            data: {
+              componentName: 'Comp',
+              propsList: '[data]',
+              propsCall: "'data'",
+            },
+          },
+        ],
+      },
       // Bug #1179 regression: mixed React render types + data objects — only data props flagged.
       {
         filename: 'src/components/MixedReactAndDataInvalid.tsx',

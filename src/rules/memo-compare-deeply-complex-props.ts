@@ -1227,6 +1227,53 @@ function isPropertyComplex(
   );
 }
 
+/**
+ * Returns true when `declaration` was written by a dependency rather than by the
+ * component's author: a declaration file, or any file under `node_modules`.
+ * Keys on the same `getSourceFile().fileName` inspection the React and DOM
+ * origin gates use.
+ */
+function isExternalDeclaration(
+  declaration: import('typescript').Declaration,
+): boolean {
+  const sourceFile = declaration.getSourceFile?.();
+  if (!sourceFile) return false;
+  const fileName = sourceFile.fileName ?? '';
+  return (
+    sourceFile.isDeclarationFile === true ||
+    /\.d\.[cm]?ts$/.test(fileName) ||
+    /[/\\]node_modules[/\\]/.test(fileName)
+  );
+}
+
+/**
+ * Returns true when every declaration site of `prop` lives in a dependency.
+ *
+ * `checker.getPropertiesOfType` returns INHERITED members, so a props type that
+ * extends or intersects a library interface (MUI's `TypographyProps`, React's
+ * `HTMLAttributes`, …) surfaces that library's entire surface. Demanding the
+ * author name those in `compareDeeply` prescribes a remedy nobody can act on —
+ * the component neither declares nor receives them, and the lists run past a
+ * hundred names — so the only available exit is a blanket rule disable.
+ *
+ * The gate is `every` rather than "first declaration", so a prop the author
+ * redeclares alongside the library's (the intersection of two same-named
+ * members yields one symbol carrying BOTH declarations) still counts as
+ * authored and is still reported.
+ *
+ * A prop with no declarations at all is treated as authored. Synthesized
+ * symbols reach here from mapped and generic types over the component's own
+ * props, and reporting them preserves the rule's core behaviour; a missing
+ * declaration is not evidence of a dependency.
+ */
+function isExternallyDeclaredProperty(
+  prop: import('typescript').Symbol,
+): boolean {
+  const declarations = prop.declarations;
+  if (!declarations || declarations.length === 0) return false;
+  return declarations.every(isExternalDeclaration);
+}
+
 function getComplexPropertiesFromType(
   type: Type,
   checker: TypeChecker,
@@ -1240,6 +1287,7 @@ function getComplexPropertiesFromType(
 
   for (const prop of properties) {
     if (isReservedReactPropName(prop.name)) continue;
+    if (isExternallyDeclaredProperty(prop)) continue;
 
     if (
       isPropertyComplex(
