@@ -506,9 +506,10 @@ const TRANSPARENT_VALUE_WRAPPERS = new Set<AST_NODE_TYPES>([
  * `useFirestore(handler, initial)` does exactly that.
  *
  * Positions that use the value without keying anything on its identity do not
- * qualify: calling it, spelling it as a JSX prop, or handing it to a plain
- * function all read through to the latest closure a stable wrapper holds, so
- * nothing observes the frozen reference.
+ * qualify: calling it, spelling it as an ordinary JSX prop, or handing it to a
+ * plain function all read through to the latest closure a stable wrapper
+ * holds, so nothing observes the frozen reference. A `ref` prop is the one JSX
+ * position that does compare the reference; registersAsRef answers that.
  */
 const feedsHookDependency = (node: TSESTree.Node): boolean => {
   let value: TSESTree.Node = node;
@@ -535,6 +536,45 @@ const feedsHookDependency = (node: TSESTree.Node): boolean => {
   }
   return false;
 };
+
+/**
+ * Whether the value written at `node` is registered as a React ref callback.
+ *
+ * A ref callback runs on mount and re-runs whenever its identity changes, and
+ * that identity change is its only re-registration trigger: a ref carries no
+ * dependency array anywhere in the source for a reader to key on. Pinning the
+ * reference therefore freezes whatever the callback publishes at the values its
+ * first render closed over — a rail that registers its width once keeps
+ * reporting that width after the column resizes — which is the same silent
+ * breakage a frozen dependency causes (issue #1711).
+ */
+const registersAsRef = (node: TSESTree.Node): boolean => {
+  let value: TSESTree.Node = node;
+  let parent = value.parent;
+  while (parent && TRANSPARENT_VALUE_WRAPPERS.has(parent.type)) {
+    value = parent;
+    parent = value.parent;
+  }
+  if (
+    !parent ||
+    parent.type !== AST_NODE_TYPES.JSXExpressionContainer ||
+    parent.parent?.type !== AST_NODE_TYPES.JSXAttribute
+  ) {
+    return false;
+  }
+  const attributeName = parent.parent.name;
+  return (
+    attributeName.type === AST_NODE_TYPES.JSXIdentifier &&
+    attributeName.name === 'ref'
+  );
+};
+
+/**
+ * Whether this position exposes the callback's identity to a consumer that
+ * compares it between renders — the two triggers React itself keys on.
+ */
+const consumesIdentity = (node: TSESTree.Node): boolean =>
+  feedsHookDependency(node) || registersAsRef(node);
 
 /**
  * Whether the call's result changes identity between renders. An empty
@@ -573,12 +613,14 @@ const declaratorOf = (
 
 /**
  * Whether the callback's identity is load-bearing: it changes between renders
- * AND something in this file keys a hook on it.
+ * AND something in this file compares it — a hook keyed on it, or a ref that
+ * re-registers when it changes.
  *
- * `useLatestCallback` returns a permanently stable reference, so a hook that
- * compares the callback across renders stops seeing it change. An effect keyed
- * on the callback then fires once, ever — the callers that deliberately rebuild
- * a handler so a fetch re-runs lose their refresh (issue #1711). No compliant
+ * `useLatestCallback` returns a permanently stable reference, so a consumer
+ * that compares the callback across renders stops seeing it change. An effect
+ * keyed on the callback fires once, ever — the callers that deliberately
+ * rebuild a handler so a fetch re-runs lose their refresh — and a ref callback
+ * publishes its first render's values forever (issue #1711). No compliant
  * remedy exists for such a site: rewriting it as `useMemo` is converted back to
  * `useCallback` by `prefer-usecallback-over-usememo-for-functions`, so the
  * violation is not reported at all rather than reported without a fix.
@@ -599,13 +641,13 @@ const identityIsLoadBearing = (
   // An unbound call is consumed where it is written, so its own position in the
   // tree answers the question the references would.
   if (!declarator) {
-    return feedsHookDependency(call);
+    return consumesIdentity(call);
   }
 
   return ASTHelpers.getDeclaredVariables(context, declarator).some((variable) =>
     variable.references.some(
       (reference) =>
-        reference.isRead() && feedsHookDependency(reference.identifier),
+        reference.isRead() && consumesIdentity(reference.identifier),
     ),
   );
 };

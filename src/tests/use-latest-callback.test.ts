@@ -343,6 +343,76 @@ export const useThing = (ids) => {
   return useFirestore(handler, []);
 };`,
     },
+    // -----------------------------------------------------------------------
+    // Issue #1711 (recurrence): a ref callback is the second consumer of
+    // callback identity. React re-runs a ref callback when the identity it is
+    // given changes, and that is a ref's only re-registration trigger — no
+    // dependency array exists anywhere in the source to read. A pinned
+    // reference registers once and publishes the first render's values forever,
+    // as silently as a frozen dependency does.
+    // -----------------------------------------------------------------------
+    // The reported repro: the slot registers its density once, so a widened
+    // column keeps reporting the collapsed one.
+    {
+      code: `import { useCallback } from 'react';
+
+export const Slot = ({ density, slotId }) => {
+  const attach = useCallback((element) => {
+    attachSlot(slotId, element, density);
+  }, [slotId, density]);
+
+  return <div ref={attach} />;
+};`,
+    },
+    // A component's ref prop re-registers on the same trigger a host element's
+    // does.
+    {
+      code: `import { useCallback } from 'react';
+
+export const Slot = ({ density }) => {
+  const attach = useCallback((element) => {
+    measure(element, density);
+  }, [density]);
+
+  return <Panel ref={attach} />;
+};`,
+    },
+    // A type assertion passes the identity the ref receives through unchanged.
+    {
+      code: `import { useCallback } from 'react';
+
+export const Slot = ({ density }: Props) => {
+  const attach = useCallback((element: HTMLDivElement | null) => {
+    measure(element, density);
+  }, [density]) as React.RefCallback<HTMLDivElement>;
+
+  return <div ref={attach} />;
+};`,
+    },
+    // The call written straight into the ref, with no binding in between.
+    {
+      code: `import { useCallback } from 'react';
+
+export const Slot = ({ density }) => {
+  return (
+    <div ref={useCallback((element) => measure(element, density), [density])} />
+  );
+};`,
+    },
+    // One consumer that compares the identity is enough: the other reads cannot
+    // make the ref tolerate a frozen reference.
+    {
+      code: `import { useCallback } from 'react';
+
+export const Slot = ({ density }) => {
+  const attach = useCallback((element) => {
+    measure(element, density);
+  }, [density]);
+
+  report(attach);
+  return <div ref={attach} onLoad={attach} />;
+};`,
+    },
   ],
   invalid: [
     // Basic case: useCallback with empty dependency array
@@ -3072,6 +3142,104 @@ export const useThing = (id) => {
   }, [subscribed]);
 
   return <button onClick={pressed}>Save</button>;
+};`,
+      errors: errors(),
+    },
+
+    // -----------------------------------------------------------------------
+    // The other side of the ref carve-out. `ref` is the one JSX attribute whose
+    // value React compares between renders, so every neighbouring shape keeps
+    // converting.
+    // -----------------------------------------------------------------------
+    // An empty dependency array pins the identity already, so the ref registers
+    // exactly once either way.
+    {
+      code: `import { useCallback } from 'react';
+
+export const Slot = () => {
+  const attach = useCallback((element) => {
+    measure(element);
+  }, []);
+
+  return <div ref={attach} />;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+
+export const Slot = () => {
+  const attach = useLatestCallback((element) => {
+    measure(element);
+  });
+
+  return <div ref={attach} />;
+};`,
+      errors: errors(),
+    },
+    // `innerRef` is an ordinary prop: the component behind it decides what it
+    // does with the value, which this file cannot read.
+    {
+      code: `import { useCallback } from 'react';
+
+export const Slot = ({ density }) => {
+  const attach = useCallback((element) => {
+    measure(element, density);
+  }, [density]);
+
+  return <Panel innerRef={attach} />;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+
+export const Slot = ({ density }) => {
+  const attach = useLatestCallback((element) => {
+    measure(element, density);
+  });
+
+  return <Panel innerRef={attach} />;
+};`,
+      errors: errors(),
+    },
+    // A property spelled `ref` on an object handed to a plain function reaches
+    // no ref: the carve-out keys on the JSX attribute React itself registers.
+    {
+      code: `import { useCallback } from 'react';
+
+export const useSlot = (density) => {
+  const attach = useCallback((element) => {
+    measure(element, density);
+  }, [density]);
+
+  register({ ref: attach });
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+
+export const useSlot = (density) => {
+  const attach = useLatestCallback((element) => {
+    measure(element, density);
+  });
+
+  register({ ref: attach });
+};`,
+      errors: errors(),
+    },
+    // A namespaced attribute whose local part reads `ref` is a different
+    // attribute, and name matching alone would exempt it.
+    {
+      code: `import { useCallback } from 'react';
+
+export const Slot = ({ density }) => {
+  const attach = useCallback((element) => {
+    measure(element, density);
+  }, [density]);
+
+  return <svg:a xlink:ref={attach} />;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+
+export const Slot = ({ density }) => {
+  const attach = useLatestCallback((element) => {
+    measure(element, density);
+  });
+
+  return <svg:a xlink:ref={attach} />;
 };`,
       errors: errors(),
     },
