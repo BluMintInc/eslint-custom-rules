@@ -194,14 +194,39 @@ An `sx` object (or array) the author already broke open keeps that shape at any 
 />
 ```
 
-When every attribute shares one line and the merged element no longer fits, each attribute moves to a line of its own — the same change a formatter makes.
+When every attribute shares one line and the merged element no longer fits, each attribute moves to a line of its own — the same change a formatter makes. Pure punctuation after the element on that line — the statement's own `;`, an array element's `,`, a closing bracket — sits outside the rewritten range and stays put, landing after the closing `/>` exactly where a formatter leaves it.
+
+A block comment ahead of the attribute on its line does not block the wrap either: only the attribute's own text is replaced, so the comment survives in place and the object breaks open beside it, with the width test charging for the columns the comment already occupies:
+
+```tsx
+// Before
+<Stack
+  /* keep in sync with Sidebar */ alignItems="center"
+  justifyContent="center"
+  pb={6}
+/>
+
+// After
+<Stack
+  /* keep in sync with Sidebar */ sx={{
+    alignItems: 'center',
+    justifyContent: 'center',
+    pb: 6,
+  }}
+/>
+```
 
 The nesting step used for those emitted lines is read from the file itself — the most common indentation increase between consecutive lines — so a four-space or tab-indented file gets four-space or tab-indented output rather than an assumed two spaces. Lines that continue a block comment are excluded from that measurement: a JSDoc block's ` * ` lines sit one column in from the comment's own indentation, which is comment alignment rather than a nesting step, and counting them makes a doc-heavy file look one-space indented.
 
-Two situations leave the compact form in place on purpose:
+One situation leaves the compact form in place on purpose:
 
-- **Ambiguous indentation.** Moving a prop whose value spans lines (a nested object, a template literal) requires re-indenting that value's continuation lines. Where the source mixes tabs and spaces such that neither indentation is a prefix of the other, there is no delta to apply and a guess would corrupt the layout, so the fix falls back to the single-line splice. The interior lines of a **multi-line template literal or string are never moved** in any case: that whitespace is part of the value, not the layout.
-- **Children on the opening element's line.** A formatter answers an over-long `<Typography sx={...}>text</Typography>` by moving the children, not the attributes; the rule does not rewrite children, so it leaves the element alone.
+- **Ambiguous indentation.** Moving a prop whose value spans lines (a nested object, a template literal) requires re-indenting that value's continuation lines. Where the source mixes tabs and spaces such that neither indentation is a prefix of the other, there is no delta to apply and a guess would corrupt the layout, so the fix falls back to the single-line splice — provided that splice still fits the print width. The interior lines of a **multi-line template literal or string are never moved** in any case: that whitespace is part of the value, not the layout.
+
+When the merged line would run past the print width and no safe rewrite exists inside the opening element's range, the rule still reports every system prop but emits **no fix** — an unfixed report beats authoring a line the formatter immediately rewraps. That covers:
+
+- **An element that does not start its own line** (`const el = <Box ... />;`, `return <Box ... />;`): the only formatter-stable rewrite parenthesizes the whole element, which is outside the opening element.
+- **Children on the opening element's line.** A formatter answers an over-long `<Typography sx={...}>text</Typography>` by moving the children, not the attributes, and the rule does not rewrite children.
+- **A comment between the element name and its attributes**: rebuilding the element from its attribute list would drop the comment.
 
 ## When to disable
 

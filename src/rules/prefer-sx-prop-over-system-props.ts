@@ -675,10 +675,18 @@ function planSxEdits(
   };
 
   /**
-   * The whole rewritten `sx={...}` attribute rendered at `indent`, breaking the
-   * literal open only when the compact form would overflow the print width.
+   * The whole rewritten `sx={...}` attribute, breaking the literal open only
+   * when the compact form would overflow the print width. `indent` is where
+   * continuation lines land; `firstLineColumn` is the column the attribute
+   * itself starts at. The two differ when something else (a same-line block
+   * comment) already occupies the front of the line: continuation lines still
+   * belong at the line's indentation, but the width test has to charge for
+   * every column the first line has already consumed.
    */
-  const sxAttributeText = (indent: string): string | null => {
+  const sxAttributeText = (
+    indent: string,
+    firstLineColumn: number,
+  ): string | null => {
     if (slot.kind === 'array') {
       const existing = verbatimTextsOf(slot.array.elements);
       if (existing === null) {
@@ -689,7 +697,7 @@ function planSxEdits(
       )}]}`;
       if (
         !inline.includes('\n') &&
-        indent.length + inline.length <= printWidth
+        firstLineColumn + inline.length <= printWidth
       ) {
         return inline;
       }
@@ -719,7 +727,10 @@ function planSxEdits(
       indent,
       false,
     )}}`;
-    if (!inline.includes('\n') && indent.length + inline.length <= printWidth) {
+    if (
+      !inline.includes('\n') &&
+      firstLineColumn + inline.length <= printWidth
+    ) {
       return inline;
     }
     const parts = renderEntries(`${indent}${indentUnit}`);
@@ -815,12 +826,18 @@ function planSxEdits(
   // value is folded in, so ownership is judged against the line it ends on.
   const slotLineBreak = simulated.indexOf('\n', slotEnd);
   const slotLineEnd = slotLineBreak === -1 ? simulated.length : slotLineBreak;
+  // A block comment ahead of the attribute does not disqualify the in-place
+  // wrap: only the attribute's own range is replaced, so the comment stays
+  // put. Anything else on the line (the element head, another attribute) still
+  // does — wrapping there would not be the shape Prettier settles on.
+  const linePrefix = simulated.slice(lineStart, slotStart);
   const attributeOwnsLine =
-    simulated.slice(lineStart, slotStart).trim() === '' &&
+    linePrefix.replace(/\/\*[\s\S]*?\*\//g, '').trim() === '' &&
     simulated.slice(slotEnd, slotLineEnd).trim() === '';
 
   if (attributeOwnsLine) {
-    const rewritten = sxAttributeText(simulated.slice(lineStart, slotStart));
+    const indent = /^[ \t]*/.exec(linePrefix)?.[0] ?? '';
+    const rewritten = sxAttributeText(indent, slotStart - lineStart);
     if (rewritten !== null) {
       return [{ range: sxSlotNode.range, text: rewritten }, ...removals];
     }
@@ -850,7 +867,13 @@ function planSxEdits(
       node.range[1],
       tailBreak === -1 ? source.length : tailBreak,
     );
-    if (tail.trim() !== '') {
+    // The tail sits outside the replaced range (`node.range` covers only the
+    // opening element), so pure punctuation — a statement's `;`, an array
+    // element's `,`, a closing bracket — survives the rebuild verbatim and
+    // lands after the element's closing line, which is where Prettier puts it.
+    // Anything else (children, an operator, a sibling expression) keeps the
+    // decline: Prettier moves that text instead of breaking the element apart.
+    if (!/^[;,)\]}]*$/.test(tail.trim())) {
       return null;
     }
 
@@ -862,7 +885,10 @@ function planSxEdits(
     const attributes: string[] = [];
     for (const attr of node.attributes) {
       if (attr === sxSlotNode) {
-        const rewritten = sxAttributeText(attributeIndent);
+        const rewritten = sxAttributeText(
+          attributeIndent,
+          attributeIndent.length,
+        );
         if (rewritten === null) {
           return null;
         }
@@ -887,6 +913,14 @@ function planSxEdits(
     return [{ range: node.range, text: restructured }];
   }
 
+  // Every wrap remedy declined and the compact line measures over the print
+  // width — e.g. `const el = <Box ... />;`, whose only prettier-stable rewrite
+  // parenthesizes the whole element, outside the opening element's range.
+  // Reporting without a fix (an established outcome: unsupported slots return
+  // `[]` above) beats emitting the very line just measured as over-wide.
+  if (lineEnd - lineStart > printWidth) {
+    return [];
+  }
   return inlineEdits;
 }
 
