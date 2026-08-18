@@ -144,8 +144,8 @@ function getTypeReferenceName(node: TSESTree.TSTypeReference): string {
 /**
  * Recursively check if a TS type node composes with the given propsTypeName
  * via Pick/Omit (at any level of intersection / Readonly wrapping, union arm,
- * named-alias indirection, or nested in a TSTypeLiteral property's type
- * annotation).
+ * array or tuple element, named-alias indirection, or nested in a TSTypeLiteral
+ * property's type annotation).
  *
  * `scope` (when supplied) is the node the alias lookup walks outward from, which
  * enables resolving a locally-declared named type alias to its definition, so
@@ -226,6 +226,68 @@ function typeNodeComposesWithProps(
       // case, where every arm composes with the single shared child.
       return typeNode.types.some((t) =>
         typeNodeComposesWithProps(t, propsTypeName, scope, seenAliases),
+      );
+    }
+    case AST_NODE_TYPES.TSArrayType: {
+      // A list renderer's composition lives in the ELEMENT type: a parent
+      // declaring `buttons: readonly ActionButtonProps[]` and spreading one
+      // element onto each child forwards the child's ENTIRE prop object, which
+      // is the same DRY guarantee a direct `Pick`/`Omit` prop gives — the
+      // composition is simply one level of indirection away, inside the array.
+      // The child's contract belongs to the element type there, so demanding a
+      // whole-props Pick/Omit on the parent would name a composition a list
+      // renderer must not have (issue #2038). This is the array analogue of the
+      // union-arm unwrapping issue #1343 established.
+      return typeNodeComposesWithProps(
+        typeNode.elementType,
+        propsTypeName,
+        scope,
+        seenAliases,
+      );
+    }
+    case AST_NODE_TYPES.TSTupleType: {
+      // A tuple is a fixed-length list, and each slot is handed to a child
+      // exactly as an array element is, so any slot that composes composes.
+      return typeNode.elementTypes.some((element) =>
+        typeNodeComposesWithProps(element, propsTypeName, scope, seenAliases),
+      );
+    }
+    case AST_NODE_TYPES.TSNamedTupleMember: {
+      // A tuple slot's label names the slot, never its surface.
+      return typeNodeComposesWithProps(
+        typeNode.elementType,
+        propsTypeName,
+        scope,
+        seenAliases,
+      );
+    }
+    case AST_NODE_TYPES.TSOptionalType:
+    case AST_NODE_TYPES.TSRestType: {
+      // `?` and `...` govern how many slots a tuple carries, not what a slot
+      // carries, so the decorated type is the surface to test.
+      return typeNodeComposesWithProps(
+        typeNode.typeAnnotation,
+        propsTypeName,
+        scope,
+        seenAliases,
+      );
+    }
+    case AST_NODE_TYPES.TSTypeOperator: {
+      // `readonly T[]` describes the same prop surface as `T[]`: the modifier
+      // constrains mutation of the container, never the shape of its elements.
+      //
+      // Only `readonly` unwraps. `keyof ChildProps` is the child's KEY union — a
+      // set of strings that hands the child nothing — and `unique symbol` is a
+      // nominal token, so crediting either would let a parent that merely names
+      // the child's keys pass as composing with its props.
+      if (typeNode.operator !== 'readonly' || !typeNode.typeAnnotation) {
+        return false;
+      }
+      return typeNodeComposesWithProps(
+        typeNode.typeAnnotation,
+        propsTypeName,
+        scope,
+        seenAliases,
       );
     }
     case AST_NODE_TYPES.TSTypeLiteral: {

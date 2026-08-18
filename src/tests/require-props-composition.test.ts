@@ -1284,6 +1284,253 @@ function rendersHere() {
 }
 `,
     },
+    // 76. Issue #2038: a list renderer composes through its array's ELEMENT
+    // type. Each element is spread onto the child it was composed from, so the
+    // child's entire prop object is forwarded — the composition is present and
+    // explicit, one level of indirection away, and a whole-props Pick/Omit on
+    // the parent would be wrong here.
+    {
+      code: `
+    import Button, { ButtonProps } from '@mui/material/Button';
+
+    type ItemProps = Omit<ButtonProps, 'style'>;
+
+    export type ListProps = Readonly<{ items: readonly ItemProps[] }>;
+
+    export const List = ({ items }: ListProps) => {
+      return (
+        <div>
+          {items.map((item, index) => {
+            return <Button key={index} {...item} />;
+          })}
+        </div>
+      );
+    };
+  `,
+      filename: 'src/components/List.tsx',
+    },
+    // 77. Issue #2038: the mutable spelling. `readonly` constrains mutation of
+    // the container, never the shape of its elements, so both spellings carry
+    // the same prop surface and must answer alike.
+    {
+      filename: 'src/components/ButtonList.tsx',
+      code: `
+type ItemProps = Omit<ButtonProps, 'style'>;
+export type ButtonListProps = Readonly<{ items: ItemProps[] }>;
+export const ButtonList = ({ items }: ButtonListProps) => (
+  <div>{items.map((item, index) => <Button key={index} {...item} />)}</div>
+);
+`,
+    },
+    // 78. Issue #2038: `Array<T>` reaches the element through the generic
+    // type-parameter recursion rather than through the array unwrapping. It is
+    // pinned so the two paths cannot diverge.
+    {
+      filename: 'src/components/ButtonList.tsx',
+      code: `
+type ItemProps = Omit<ButtonProps, 'style'>;
+export type ButtonListProps = Readonly<{ items: Array<ItemProps> }>;
+export const ButtonList = ({ items }: ButtonListProps) => (
+  <div>{items.map((item, index) => <Button key={index} {...item} />)}</div>
+);
+`,
+    },
+    // 79. Issue #2038: `ReadonlyArray<T>`, the generic spelling of case 76.
+    {
+      filename: 'src/components/ButtonList.tsx',
+      code: `
+type ItemProps = Omit<ButtonProps, 'style'>;
+export type ButtonListProps = Readonly<{ items: ReadonlyArray<ItemProps> }>;
+export const ButtonList = ({ items }: ButtonListProps) => (
+  <div>{items.map((item, index) => <Button key={index} {...item} />)}</div>
+);
+`,
+    },
+    // 80. Issue #2038: a grid renderer nests one array inside another. Depth is
+    // not a property the composition knows about, so the unwrapping recurses.
+    {
+      filename: 'src/components/ButtonGrid.tsx',
+      code: `
+type ItemProps = Omit<ButtonProps, 'style'>;
+export type ButtonGridProps = Readonly<{ rows: readonly ItemProps[][] }>;
+export const ButtonGrid = ({ rows }: ButtonGridProps) => (
+  <div>
+    {rows.map((row, rowIndex) => (
+      <div key={rowIndex}>
+        {row.map((item, index) => <Button key={index} {...item} />)}
+      </div>
+    ))}
+  </div>
+);
+`,
+    },
+    // 81. Issue #2038, the agora DialogActions shape reduced: the array's
+    // element is a UNION whose arms each compose with a DIFFERENT child, and
+    // `requireAllDependencies` demands both be credited. This is the array
+    // analogue of the union-arm unwrapping issue #1343 established.
+    {
+      filename: 'src/components/DialogActions.tsx',
+      options: [{ requireAllDependencies: true }],
+      code: `
+type AsyncActionProps = Readonly<
+  Omit<LoadingButtonProps, 'style' | 'className'> & { isAsync: true }
+>;
+type SyncActionProps = Readonly<
+  Omit<ButtonProps, 'style' | 'className'> & { isAsync: false }
+>;
+type ActionProps = AsyncActionProps | SyncActionProps;
+export type DialogActionsProps = Readonly<{ buttons: readonly ActionProps[] }>;
+export const DialogActions = ({ buttons }: DialogActionsProps) => (
+  <div>
+    {buttons.map(({ isAsync, ...rest }, index) =>
+      isAsync ? (
+        <LoadingButton key={index} {...rest} />
+      ) : (
+        <Button key={index} {...rest} />
+      ),
+    )}
+  </div>
+);
+`,
+    },
+    // 82. Issue #2038: the props type IS the array, with no enclosing object.
+    // The unwrapping belongs to the type node, not to a property signature.
+    {
+      filename: 'src/components/ButtonList.tsx',
+      code: `
+type ItemProps = Omit<ButtonProps, 'style'>;
+export type ButtonListProps = readonly ItemProps[];
+export const ButtonList = (items: ButtonListProps) => (
+  <div>{items.map((item, index) => <Button key={index} {...item} />)}</div>
+);
+`,
+    },
+    // 83. Issue #2038: a tuple is a fixed-length list whose slots are handed to
+    // children exactly as array elements are.
+    {
+      filename: 'src/components/ButtonPair.tsx',
+      code: `
+type ItemProps = Omit<ButtonProps, 'style'>;
+export type ButtonPairProps = Readonly<{ pair: [ItemProps, ItemProps] }>;
+export const ButtonPair = ({ pair: [first, second] }: ButtonPairProps) => (
+  <div>
+    <Button {...first} />
+    <Button {...second} />
+  </div>
+);
+`,
+    },
+    // 84. Issue #2038: a tuple slot's label names the slot, not its surface.
+    {
+      filename: 'src/components/ButtonPair.tsx',
+      code: `
+type ItemProps = Omit<ButtonProps, 'style'>;
+export type ButtonPairProps = Readonly<{
+  pair: [primary: ItemProps, secondary: ItemProps];
+}>;
+export const ButtonPair = ({ pair: [first, second] }: ButtonPairProps) => (
+  <div>
+    <Button {...first} />
+    <Button {...second} />
+  </div>
+);
+`,
+    },
+    // 85. Issue #2038: `?` governs how many slots a tuple carries, not what a
+    // slot carries.
+    {
+      filename: 'src/components/ButtonPair.tsx',
+      code: `
+type ItemProps = Omit<ButtonProps, 'style'>;
+export type ButtonPairProps = Readonly<{ pair: [ItemProps?] }>;
+export const ButtonPair = ({ pair: [first] }: ButtonPairProps) => (
+  <div>{first ? <Button {...first} /> : null}</div>
+);
+`,
+    },
+    // 86. Issue #2038: a rest slot spreads an array into the tuple, so the
+    // element type is still the surface to test.
+    {
+      filename: 'src/components/ButtonList.tsx',
+      code: `
+type ItemProps = Omit<ButtonProps, 'style'>;
+export type ButtonListProps = Readonly<{ items: [string, ...ItemProps[]] }>;
+export const ButtonList = ({ items: [label, ...rest] }: ButtonListProps) => (
+  <div>{label}{rest.map((item, index) => <Button key={index} {...item} />)}</div>
+);
+`,
+    },
+    // 87. Issue #2038: `readonly` wraps a tuple as readily as an array.
+    {
+      filename: 'src/components/ButtonPair.tsx',
+      code: `
+type ItemProps = Omit<ButtonProps, 'style'>;
+export type ButtonPairProps = Readonly<{ pair: readonly [ItemProps, ItemProps] }>;
+export const ButtonPair = ({ pair: [first, second] }: ButtonPairProps) => (
+  <div>
+    <Button {...first} />
+    <Button {...second} />
+  </div>
+);
+`,
+    },
+    // 88. Issue #2038: a whole-props reference through an array is the maximal
+    // form of element composition — the child's entire surface is inherited
+    // verbatim, strictly stronger than Pick/Omit.
+    {
+      filename: 'src/components/ButtonList.tsx',
+      code: `
+export type ButtonListProps = Readonly<{ items: readonly ButtonProps[] }>;
+export const ButtonList = ({ items }: ButtonListProps) => (
+  <div>{items.map((item, index) => <Button key={index} {...item} />)}</div>
+);
+`,
+    },
+    // 89. Issue #2038: the array itself hides behind a named alias, so the
+    // element is only reachable by resolving the alias first.
+    {
+      filename: 'src/components/ButtonList.tsx',
+      code: `
+type ItemProps = Omit<ButtonProps, 'style'>;
+type ItemListProps = readonly ItemProps[];
+export type ButtonListProps = Readonly<{ items: ItemListProps }>;
+export const ButtonList = ({ items }: ButtonListProps) => (
+  <div>{items.map((item, index) => <Button key={index} {...item} />)}</div>
+);
+`,
+    },
+    // 90. Issue #2038: the array element is an inline object whose own property
+    // composes, which stacks the element unwrapping on the existing literal
+    // recursion.
+    {
+      filename: 'src/components/ButtonList.tsx',
+      code: `
+export type ButtonListProps = Readonly<{
+  items: readonly { buttonProps: Omit<ButtonProps, 'style'> }[];
+}>;
+export const ButtonList = ({ items }: ButtonListProps) => (
+  <div>
+    {items.map(({ buttonProps }, index) => <Button key={index} {...buttonProps} />)}
+  </div>
+);
+`,
+    },
+    // 91. Issue #2038: the array arrives through an intersection member, the
+    // shape a shared base produces.
+    {
+      filename: 'src/components/ButtonList.tsx',
+      code: `
+type ItemProps = Omit<ButtonProps, 'style'>;
+type ListBaseProps = { title: string };
+export type ButtonListProps = ListBaseProps & { items: readonly ItemProps[] };
+export const ButtonList = ({ title, items }: ButtonListProps) => (
+  <div>
+    {title}
+    {items.map((item, index) => <Button key={index} {...item} />)}
+  </div>
+);
+`,
+    },
   ],
 
   invalid: [
@@ -2475,6 +2722,127 @@ export const Panel = ({ title }: PanelProps) => {
 };
 `,
       errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 68. Issue #2038: `keyof ChildProps` is the child's KEY union — a set of
+    // strings that hands the child nothing. Only the `readonly` operator carries
+    // a prop surface through, so a parent that merely names the child's keys is
+    // not composing with it.
+    {
+      filename: 'src/components/ButtonList.tsx',
+      code: `
+export type ButtonListProps = Readonly<{ hiddenKeys: readonly (keyof ButtonProps)[] }>;
+export const ButtonList = ({ hiddenKeys }: ButtonListProps) => (
+  <div>{hiddenKeys.length}<Button /></div>
+);
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 69. Issue #2038: the same carve-out with a Pick/Omit alias underneath the
+    // `keyof`. Unwrapping the operator would credit this, so the operator check
+    // must gate on the spelling rather than on what it wraps.
+    {
+      filename: 'src/components/ButtonList.tsx',
+      code: `
+type ItemProps = Omit<ButtonProps, 'style'>;
+export type ButtonListProps = Readonly<{ sortKey: keyof ItemProps }>;
+export const ButtonList = ({ sortKey }: ButtonListProps) => (
+  <div>{sortKey}<Button /></div>
+);
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 70. Issue #2038: an array of something UNRELATED still reports for the
+    // child actually rendered. The element unwrapping credits the element's own
+    // composition, never the mere presence of an array.
+    {
+      filename: 'src/components/ButtonList.tsx',
+      code: `
+type RowProps = Omit<TextFieldProps, 'variant'>;
+export type ButtonListProps = Readonly<{ rows: readonly RowProps[] }>;
+export const ButtonList = ({ rows }: ButtonListProps) => (
+  <div>{rows.length}<Button /></div>
+);
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 71. Issue #2038: an array of an inline object that composes with nothing.
+    {
+      filename: 'src/components/ButtonList.tsx',
+      code: `
+export type ButtonListProps = Readonly<{ items: readonly { label: string }[] }>;
+export const ButtonList = ({ items }: ButtonListProps) => (
+  <div>{items.map((item, index) => <Button key={index}>{item.label}</Button>)}</div>
+);
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 72. Issue #2038: a tuple slot composes with ONE child and says nothing
+    // about the other. The asserted data pins the direction: TextField is
+    // credited through the slot, Button is flagged — a messageId alone would
+    // pass just as well if the slot credited nothing at all.
+    {
+      filename: 'src/components/ButtonPair.tsx',
+      code: `
+type RowProps = Omit<TextFieldProps, 'variant'>;
+export type ButtonPairProps = Readonly<{ pair: [RowProps, string] }>;
+export const ButtonPair = ({ pair: [row, label] }: ButtonPairProps) => (
+  <div>{label}<Button /><TextField {...row} /></div>
+);
+`,
+      options: [{ requireAllDependencies: true }],
+      errors: [
+        {
+          messageId: 'missingPropsComposition',
+          data: {
+            componentName: 'ButtonPair',
+            propsTypeName: 'ButtonPairProps',
+            dependencyList: "'Button', 'TextField'",
+            missingList: "'ButtonProps'",
+            primaryDep: 'ButtonProps',
+          },
+        },
+      ],
+    },
+    // 73. Issue #2038: depth does not launder an unrelated element type.
+    {
+      filename: 'src/components/ButtonGrid.tsx',
+      code: `
+type RowProps = Omit<TextFieldProps, 'variant'>;
+export type ButtonGridProps = Readonly<{ rows: readonly RowProps[][] }>;
+export const ButtonGrid = ({ rows }: ButtonGridProps) => (
+  <div>{rows.length}<Button /></div>
+);
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 74. Issue #2038: an array element naming a THIRD component's props does
+    // not answer for the child on screen — the credit is keyed on the rendered
+    // dependency's own props type.
+    {
+      filename: 'src/components/ButtonList.tsx',
+      options: [{ requireAllDependencies: true }],
+      code: `
+type ItemProps = Omit<ButtonProps, 'style'>;
+export type ButtonListProps = Readonly<{ items: readonly ItemProps[] }>;
+export const ButtonList = ({ items }: ButtonListProps) => (
+  <div>
+    {items.map((item, index) => <Button key={index} {...item} />)}
+    <LoadingButton>Save</LoadingButton>
+  </div>
+);
+`,
+      errors: [
+        {
+          messageId: 'missingPropsComposition',
+          data: {
+            componentName: 'ButtonList',
+            propsTypeName: 'ButtonListProps',
+            dependencyList: "'Button', 'LoadingButton'",
+            missingList: "'LoadingButtonProps'",
+            primaryDep: 'LoadingButtonProps',
+          },
+        },
+      ],
     },
   ],
 });
