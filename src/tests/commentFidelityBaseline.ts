@@ -56,6 +56,15 @@ export const COMMENT_FIDELITY_BASELINE: Record<string, string> = {
   // comment sits where the generated text would land.
   'prefer-type-over-interface :: TRANSFORM_DIVERGED':
     'clobbersComment withholds the rewrite when a comment occupies the generated span',
+  // DECLINE. Past the print width the comparator fix rebuilds memo's argument
+  // list one argument per line, and that rebuild owns every byte between the
+  // parentheses — a comment among the arguments would be dropped by it. The
+  // rule refuses the rewrite there, so the file keeps its report and is left
+  // byte-identical (verified: `fixed: false`, output === input on the
+  // `memo<any, Props>( /* c */ …)` fixture). Below the width nothing is rebuilt
+  // and the comment is untouched, which is why only the over-width arm diverges.
+  'memo-compare-deeply-complex-props :: TRANSFORM_DIVERGED':
+    'declines the over-width argument-list rebuild when a comment sits inside the list; input is left byte-identical and the report stands',
   // FORMATTING. The divergence is line wrapping and trailing commas only.
   // Verified by formatting both outputs with agora's pinned prettier (2.8.8,
   // not this repo's 2.7.1) and comparing code tokens: all cases converge. agora

@@ -88,6 +88,82 @@ const Banner = ({ role, kind }: Props) => <div role={role}>{kind}</div>;
 export const BannerMemo = memo(Banner); // ✅ neither prop needs compareDeeply
 ```
 
+## Options
+
+```js
+'@blumintinc/blumint/memo-compare-deeply-complex-props': ['error', {
+  // Column the autofix wraps the emitted memo() call at
+  printWidth: 80,
+}]
+```
+
+### `printWidth`
+
+Type: `number`
+
+Default: `80`
+
+The column the autofix wraps at, matching Prettier's option of the same name.
+Set it to your formatter's `printWidth` so the fixed source is already in the
+shape the formatter would produce; a lint run carrying `--fix` otherwise leaves
+the tree failing `prettier --check`.
+
+## Autofix
+
+The fixer adds `compareDeeply('propName', ...)` as `memo`'s second argument,
+importing `compareDeeply` from `src/util/memo` (merging into an existing import
+from that module when there is one).
+
+### Line width
+
+The comparator's text is not bounded: its length grows with the component's
+complex-prop count and with each prop's name, so a four-prop component turns a
+25-column `export const M = memo(C);` into a 97-column line. The fixer therefore
+simulates each emission — the line it lands on, the text it inserts, and what
+stays to its right — and breaks the argument list open only when that
+measurement overflows [`printWidth`](#printwidth):
+
+```tsx
+export const M = memo(
+  C,
+  compareDeeply('activeChannel', 'metadata', 'participants', 'watchers'),
+);
+```
+
+A prop list too long even on a line of its own breaks one prop per line, which
+is the next shape a formatter takes it to.
+
+Wrapping is not the safe default here. An argument list a formatter judges short
+enough is collapsed back onto one line — unlike an object literal, whose
+expansion a formatter preserves — so blanket wrapping would trade an over-width
+line on long prop lists for a needlessly split one on every short call. The
+measurement is what keeps both directions correct.
+
+A trailing comment on the line is left out of the measurement, so the layout the
+fixer emits is a function of the code alone. That also tracks the common case: a
+formatter counts a trailing block comment toward the line but emits a trailing
+line comment as a suffix that never forces a break.
+
+An inline component written as a block-bodied arrow is a special case in the
+other direction. A formatter hugs such an argument — it keeps the arrow's header
+on the call's line and prints the comparator after the closing brace, whatever
+the resulting width — so the inline form is already the formatter's own output
+and the fixer emits it:
+
+```tsx
+export const Wrapped = memo((props: Props) => {
+  return <div>{props.activeChannelData.id}</div>;
+}, compareDeeply('activeChannelData', 'metadataRecords', 'participantsCollection'));
+```
+
+**The fix is declined (report only) rather than written over the width** when the
+emitted shape cannot be reproduced faithfully: a component written across lines
+that a formatter does not hug (re-emitting it one step in would misalign its
+interior), a comment inside the argument list (rebuilding the list would drop
+it), or a component argument too long to sit on its own line. Emitting the
+over-wide line in those cases is what a formatter would rewrite, so the report
+stands on its own and the source is left untouched.
+
 ## Edge Cases
 
 - Already supplying a comparison function (including `compareDeeply`) — rule does not report.
