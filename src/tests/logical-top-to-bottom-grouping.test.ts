@@ -609,6 +609,99 @@ use(alias, derived, spacer);
   const unrelated = 2;
   return x + a + unrelated;
 }`,
+    // A JSX element name reads a binding just as an ordinary call argument does,
+    // so a destructuring that produces the components an effect renders is that
+    // effect's own setup and never the "unrelated" setup the report names. Missing
+    // the reference carried the declaration below its own use and left a function
+    // scope that throws `Cannot access 'Provider' before initialization` — code
+    // that parses, type-checks and lints clean (#2042).
+    {
+      name: 'declines to demote a declaration below a call that reads its bindings (function-scope TDZ)',
+      code: `
+const renderHarness = (harness) => {
+  const { Provider, Probe } = harness;
+  render(<Provider docPath="ChatbotIntegration/test"><Probe /></Provider>);
+};
+`,
+      parserOptions: { ecmaFeatures: { jsx: true } },
+    },
+    // The same data dependency in each enclosing scope the rule visits: the hazard
+    // belongs to the block, not to what encloses it, so a guard that held only at
+    // module scope would leave every one of these broken.
+    {
+      code: `
+function renderHarness(harness) {
+  const { Provider, Probe } = harness;
+  render(<Provider><Probe /></Provider>);
+}
+`,
+      parserOptions: { ecmaFeatures: { jsx: true } },
+    },
+    {
+      code: `
+const renderHarness = (harness) => {
+  const { Provider } = harness;
+  render(<Provider />);
+};
+`,
+      parserOptions: { ecmaFeatures: { jsx: true } },
+    },
+    {
+      code: `
+class Harness {
+  run(harness) {
+    const { Provider, Probe } = harness;
+    render(<Provider><Probe /></Provider>);
+  }
+}
+`,
+      parserOptions: { ecmaFeatures: { jsx: true } },
+    },
+    {
+      code: `
+function outer(harness) {
+  if (harness) {
+    const { Provider, Probe } = harness;
+    render(<Provider><Probe /></Provider>);
+  }
+}
+`,
+      parserOptions: { ecmaFeatures: { jsx: true } },
+    },
+    // A closing element names the same binding its opening element does, so a
+    // component used only around children is read exactly as a self-closing one is.
+    {
+      code: `
+function run(harness) {
+  const { Wrap } = harness;
+  render(<Wrap>text</Wrap>);
+}
+`,
+      parserOptions: { ecmaFeatures: { jsx: true } },
+    },
+    // `<Ns.Item />` reads `Ns`; the property half names a member of that value and
+    // binds nothing, which is why only the root of the member chain is a dependency.
+    {
+      code: `
+function run(harness) {
+  const { Ns } = harness;
+  render(<Ns.Item />);
+}
+`,
+      parserOptions: { ecmaFeatures: { jsx: true } },
+    },
+    // A component rendered inside a callback is still the effect's dependency: the
+    // callback may run the instant it is handed over, so the read is not deferred
+    // for the purpose of moving the declaration that produces it.
+    {
+      code: `
+function run(harness) {
+  const { Provider } = harness;
+  act(() => render(<Provider />));
+}
+`,
+      parserOptions: { ecmaFeatures: { jsx: true } },
+    },
   ],
   invalid: [
     // A shebang is only a shebang at character 0. ESLint presents it as a
@@ -1768,6 +1861,130 @@ const name = 'elementAt';
 `,
       errors: [{ messageId: 'groupDerived' }],
     },
+    // The reordering the rule exists for survives the dependency: an effect whose
+    // components come from outside the block has no data dependency on the setup
+    // above it, so it still hoists.
+    {
+      code: `
+function renderHarness(harness) {
+  const unrelated = 1;
+  render(<Provider />);
+  use(unrelated);
+}
+`,
+      output: `
+function renderHarness(harness) {
+  render(<Provider />);
+  const unrelated = 1;
+  use(unrelated);
+}
+`,
+      parserOptions: { ecmaFeatures: { jsx: true } },
+      errors: [{ messageId: 'moveSideEffect' }],
+    },
+    // `<div />` emits the string "div" whatever `div` a scope holds, so a lowercase
+    // element name is no dependency and must not manufacture a barrier.
+    {
+      code: `
+function run() {
+  const div = 1;
+  render(<div />);
+  use(div);
+}
+`,
+      output: `
+function run() {
+  render(<div />);
+  const div = 1;
+  use(div);
+}
+`,
+      parserOptions: { ecmaFeatures: { jsx: true } },
+      errors: [{ messageId: 'moveSideEffect' }],
+    },
+    // An attribute name is a property of the element, not a binding, and neither is
+    // the property half of a JSX member expression. Counting either would decline
+    // reorderings that are perfectly safe.
+    {
+      code: `
+function run() {
+  const docPath = 1;
+  render(<Provider docPath="literal" />);
+  use(docPath);
+}
+`,
+      output: `
+function run() {
+  render(<Provider docPath="literal" />);
+  const docPath = 1;
+  use(docPath);
+}
+`,
+      parserOptions: { ecmaFeatures: { jsx: true } },
+      errors: [{ messageId: 'moveSideEffect' }],
+    },
+    {
+      code: `
+function run() {
+  const Item = 1;
+  render(<Ns.Item />);
+  use(Item);
+}
+`,
+      output: `
+function run() {
+  render(<Ns.Item />);
+  const Item = 1;
+  use(Item);
+}
+`,
+      parserOptions: { ecmaFeatures: { jsx: true } },
+      errors: [{ messageId: 'moveSideEffect' }],
+    },
+    // The hoist that is available here lifts the independent `setup()` instead of
+    // burying `Component`: the declaration stays above the render that reads it.
+    {
+      code: `
+function build(harness) {
+  const Component = Wrapper;
+  setup();
+  render(<Component />);
+}
+`,
+      output: `
+function build(harness) {
+  setup();
+  const Component = Wrapper;
+  render(<Component />);
+}
+`,
+      parserOptions: { ecmaFeatures: { jsx: true } },
+      errors: [{ messageId: 'moveSideEffect' }],
+    },
+    // The opposite direction of the same hazard: the derived declaration would be
+    // promoted ABOVE the destructuring whose binding it renders. The reordering the
+    // block still earns moves the destructuring up instead, which keeps every
+    // binding declared before it is read.
+    {
+      code: `
+function build(harness) {
+  const x = 1;
+  const { Provider } = harness;
+  const el = <Provider a={x} />;
+  return el;
+}
+`,
+      output: `
+function build(harness) {
+  const { Provider } = harness;
+  const x = 1;
+  const el = <Provider a={x} />;
+  return el;
+}
+`,
+      parserOptions: { ecmaFeatures: { jsx: true } },
+      errors: [{ messageId: 'moveDeclarationCloser' }],
+    },
   ],
 });
 
@@ -2586,5 +2803,182 @@ describe('logical-top-to-bottom-grouping with a sibling declarator', () => {
     // the side effect and never touched the declaration it cannot move.
     expect(output).toContain('  const x = 1, y = 2;\n  use(x, y);');
     expect(fixToFixpoint(MIXED_BLOCK).cycled).toBe(false);
+  });
+});
+
+/**
+ * A reordering fixer's worst failure is silent: the emitted file parses,
+ * type-checks and lints clean, and only running it raises
+ * `ReferenceError: Cannot access 'X' before initialization`. Neither the rule's
+ * reports nor a reparse can see it, so the invariant needs an oracle of its own —
+ * here ESLint's core `no-use-before-define`, whose scope analysis is independent of
+ * every model this rule builds and which resolves JSX element names as the value
+ * references they are (#2042).
+ */
+const TDZ_JSX_PARSER_OPTIONS = {
+  ecmaVersion: 2020,
+  sourceType: 'module',
+  ecmaFeatures: { jsx: true },
+} as const;
+
+const jsxLinter = (): Linter => {
+  const linter = new Linter();
+  linter.defineParser('ts', tsParser as unknown as Linter.ParserModule);
+  linter.defineRule('ltb', logicalTopToBottomGrouping as never);
+  return linter;
+};
+
+const fixJsxToFixpoint = (code: string, maxPasses = 12): string => {
+  const linter = jsxLinter();
+  const config = {
+    parser: 'ts',
+    parserOptions: TDZ_JSX_PARSER_OPTIONS,
+    rules: { ltb: 'error' },
+  } as unknown as Linter.Config;
+
+  let text = code;
+  for (let pass = 0; pass < maxPasses; pass += 1) {
+    const { output, fixed } = linter.verifyAndFix(text, config, 'file.tsx');
+    if (!fixed || output === text) {
+      break;
+    }
+    text = output;
+  }
+  return text;
+};
+
+const usedBeforeDefined = (code: string): string[] => {
+  const linter = new Linter();
+  linter.defineParser('ts', tsParser as unknown as Linter.ParserModule);
+  const config = {
+    parser: 'ts',
+    parserOptions: TDZ_JSX_PARSER_OPTIONS,
+    rules: {
+      // Function declarations hoist complete, so demoting one past a call to it
+      // stays runnable; `const`/`let`/`class` do not, and those are the hazard.
+      'no-use-before-define': [
+        'error',
+        { functions: false, classes: true, variables: true },
+      ],
+    },
+  } as unknown as Linter.Config;
+  return linter
+    .verify(code, config, 'file.tsx')
+    .map((message) => message.message);
+};
+
+describe('logical-top-to-bottom-grouping declaration-order invariant', () => {
+  const TDZ_PRESSURE_CORPUS: Record<string, string> = {
+    'arrow body': `
+const renderHarness = (harness) => {
+  const { Provider, Probe } = harness;
+  render(<Provider docPath="ChatbotIntegration/test"><Probe /></Provider>);
+};
+`,
+    'function body': `
+function renderHarness(harness) {
+  const { Provider, Probe } = harness;
+  render(<Provider><Probe /></Provider>);
+}
+`,
+    'method body': `
+class Harness {
+  run(harness) {
+    const { Provider, Probe } = harness;
+    render(<Provider><Probe /></Provider>);
+  }
+}
+`,
+    'nested block': `
+function outer(harness) {
+  if (harness) {
+    const { Provider, Probe } = harness;
+    render(<Provider><Probe /></Provider>);
+  }
+}
+`,
+    'module scope': `
+const { Provider, Probe } = harness;
+render(<Provider><Probe /></Provider>);
+`,
+    'closing element only': `
+function run(harness) {
+  const { Wrap } = harness;
+  render(<Wrap>text</Wrap>);
+}
+`,
+    'member expression root': `
+function run(harness) {
+  const { Ns } = harness;
+  render(<Ns.Item />);
+}
+`,
+    'read inside a callback': `
+function run(harness) {
+  const { Provider } = harness;
+  act(() => render(<Provider />));
+}
+`,
+    'promotion above the declaration it reads': `
+function build(harness) {
+  const x = 1;
+  const { Provider } = harness;
+  const el = <Provider a={x} />;
+  return el;
+}
+`,
+    'declaration ahead of an independent effect': `
+function build(harness) {
+  const Component = Wrapper;
+  setup();
+  render(<Component />);
+}
+`,
+    'effect with no data dependency': `
+function renderHarness(harness) {
+  const unrelated = 1;
+  render(<Provider />);
+  use(unrelated);
+}
+`,
+    'intrinsic element name': `
+function run() {
+  const div = 1;
+  render(<div />);
+  use(div);
+}
+`,
+  };
+
+  const entries = Object.entries(TDZ_PRESSURE_CORPUS);
+
+  it('exercises every scope the rule visits', () => {
+    expect(entries.length).toBeGreaterThanOrEqual(12);
+  });
+
+  it('carries an oracle that fires on the shape the issue reported', () => {
+    expect(
+      usedBeforeDefined(`
+const renderHarness = (harness) => {
+  render(<Provider><Probe /></Provider>);
+  const { Provider, Probe } = harness;
+};
+`),
+    ).toEqual([
+      "'Provider' was used before it was defined.",
+      "'Probe' was used before it was defined.",
+    ]);
+  });
+
+  it('rewrites part of the corpus, so a silent fixer cannot pass this', () => {
+    const rewritten = entries.filter(
+      ([, code]) => fixJsxToFixpoint(code) !== code,
+    );
+    expect(rewritten.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it.each(entries)('leaves %s runnable after --fix', (_name, code) => {
+    expect(usedBeforeDefined(code)).toEqual([]);
+    expect(usedBeforeDefined(fixJsxToFixpoint(code))).toEqual([]);
   });
 });
