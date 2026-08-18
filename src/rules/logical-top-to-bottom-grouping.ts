@@ -238,6 +238,55 @@ function processIdentifier(
   names.add(identifier.name);
 }
 
+/**
+ * A JSX element name beginning with a lowercase letter is a string tag, not a
+ * binding: `<div />` emits the literal `"div"` whatever `div` a scope holds.
+ * Every other spelling — `<Provider />`, `<Ns.Item />` — reads a binding, which
+ * is why they must count as dependencies of the statement carrying them.
+ */
+function isIntrinsicElementName(name: string): boolean {
+  return /^[a-z]/.test(name);
+}
+
+/**
+ * Whether a `JSXIdentifier` reads a binding. Only element names and the root of
+ * a JSX member expression do; attribute names (`docPath` in `<P docPath={x} />`),
+ * the property half of `<Ns.Item />` and namespace parts name nothing in scope.
+ *
+ * JSX identifiers live in their own node type, so a walk keyed on `Identifier`
+ * alone sees a component reference as no reference at all — and a dependency that
+ * registers as absent lets the reordering carry a declaration past the very call
+ * that consumes it (#2042).
+ */
+function isJsxValueReference(identifier: TSESTree.JSXIdentifier): boolean {
+  const parent = identifier.parent as TSESTree.Node | undefined;
+  if (!parent) {
+    return false;
+  }
+  if (parent.type === AST_NODE_TYPES.JSXMemberExpression) {
+    return parent.object === identifier;
+  }
+  if (
+    parent.type === AST_NODE_TYPES.JSXOpeningElement ||
+    parent.type === AST_NODE_TYPES.JSXClosingElement
+  ) {
+    return (
+      parent.name === identifier && !isIntrinsicElementName(identifier.name)
+    );
+  }
+  return false;
+}
+
+function processJsxIdentifier(
+  identifier: TSESTree.JSXIdentifier,
+  names: Set<string>,
+): void {
+  if (!isJsxValueReference(identifier)) {
+    return;
+  }
+  names.add(identifier.name);
+}
+
 function shouldSkipIdentifier(
   identifier: TSESTree.Identifier,
   parent: TSESTree.Node | undefined,
@@ -511,6 +560,10 @@ function collectUsedIdentifiers(
     visit(current) {
       if (current.type === AST_NODE_TYPES.Identifier) {
         processIdentifier(current, names);
+        return { skipChildren: true };
+      }
+      if (current.type === AST_NODE_TYPES.JSXIdentifier) {
+        processJsxIdentifier(current, names);
         return { skipChildren: true };
       }
       if (skipFunctions && current.type === AST_NODE_TYPES.CallExpression) {
@@ -2548,6 +2601,145 @@ function preservesAwaitRuns(
 }
 
 /**
+ * Names a statement binds that are unusable before the binding itself runs.
+ * `const`, `let` and `class` sit in a temporal dead zone until their declaration
+ * evaluates, and `var` holds `undefined` until then, so carrying one of them past
+ * a statement that reads it turns a working read into a `ReferenceError` or a
+ * silent `undefined`.
+ *
+ * Function declarations are deliberately absent: they hoist complete, so demoting
+ * one past a call to it stays correct. This mirrors the same carve-out
+ * `vertically-group-related-functions` makes at module scope.
+ */
+function nonHoistingDeclaredNames(statement: TSESTree.Statement): Set<string> {
+  const names = new Set<string>();
+  const declaration = unwrapExport(statement);
+
+  if (declaration.type === AST_NODE_TYPES.VariableDeclaration) {
+    declaration.declarations.forEach((declarator) => {
+      collectDeclaredNamesFromPattern(
+        declarator.id as
+          | TSESTree.BindingName
+          | TSESTree.ArrayPattern
+          | TSESTree.ObjectPattern,
+        names,
+      );
+    });
+  }
+
+  if (
+    declaration.type === AST_NODE_TYPES.ClassDeclaration &&
+    declaration.id &&
+    declaration.id.type === AST_NODE_TYPES.Identifier
+  ) {
+    names.add(declaration.id.name);
+  }
+
+  return names;
+}
+
+/**
+ * Per-statement binding and reference sets, plus the declare-after-use names the
+ * block already carries.
+ *
+ * Statement identity survives every reordering, so both sets are computed once and
+ * read back for each candidate order — the search scores hundreds of orders and a
+ * fresh walk per order would dominate its cost.
+ *
+ * References are over-approximated: a read inside a nested function counts, since a
+ * callback may be invoked the moment it is handed over (`act(() => render(<P />))`),
+ * and only bindings the nested scope declares for itself are subtracted. Erring
+ * this way can withhold a reordering but can never license one.
+ */
+type DeclarationFlow = {
+  declared: Map<TSESTree.Statement, Set<string>>;
+  referenced: Map<TSESTree.Statement, Set<string>>;
+  baseline: Set<string>;
+};
+
+/**
+ * Names some statement reads before the statement that binds them runs. Empty for
+ * source that is already ordered; whatever it holds for the input order is the
+ * allowance a candidate order may not exceed.
+ */
+function declareAfterUseNames(
+  order: TSESTree.Statement[],
+  declared: Map<TSESTree.Statement, Set<string>>,
+  referenced: Map<TSESTree.Statement, Set<string>>,
+): Set<string> {
+  const declaredAt = new Map<string, number>();
+  order.forEach((statement, index) => {
+    declared.get(statement)?.forEach((name) => {
+      if (!declaredAt.has(name)) {
+        declaredAt.set(name, index);
+      }
+    });
+  });
+
+  const hazards = new Set<string>();
+  if (declaredAt.size === 0) {
+    return hazards;
+  }
+
+  order.forEach((statement, index) => {
+    referenced.get(statement)?.forEach((name) => {
+      const declaredIndex = declaredAt.get(name);
+      if (declaredIndex !== undefined && declaredIndex > index) {
+        hazards.add(name);
+      }
+    });
+  });
+
+  return hazards;
+}
+
+function buildDeclarationFlow(body: TSESTree.Statement[]): DeclarationFlow {
+  const declared = new Map<TSESTree.Statement, Set<string>>();
+  const referenced = new Map<TSESTree.Statement, Set<string>>();
+
+  body.forEach((statement) => {
+    declared.set(statement, nonHoistingDeclaredNames(statement));
+    const names = new Set<string>();
+    collectUsedIdentifiers(statement, names, {
+      skipFunctions: true,
+      includeFunctionCaptures: true,
+    });
+    referenced.set(statement, names);
+  });
+
+  return {
+    declared,
+    referenced,
+    baseline: declareAfterUseNames(body, declared, referenced),
+  };
+}
+
+/**
+ * Whether a candidate ordering leaves every binding declared before the statements
+ * that read it — measured against the input, so source that already reads a binding
+ * ahead of its declaration is not held against the reordering.
+ *
+ * The test is over the whole order rather than over a move's direction, which is
+ * what makes it answer both hazards at once: a declaration carried DOWN past its
+ * consumer and a consumer carried UP above its producer are the same broken order
+ * seen from either end. Data flow, not position, decides it — the emitted file
+ * parses and type-checks either way, and only a run surfaces the
+ * `ReferenceError: Cannot access '…' before initialization` (#2042).
+ */
+function preservesDeclarationOrder(
+  order: TSESTree.Statement[],
+  flow: DeclarationFlow,
+): boolean {
+  const hazards = declareAfterUseNames(order, flow.declared, flow.referenced);
+  for (const name of hazards) {
+    if (!flow.baseline.has(name)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
  * Upper bound on candidate moves expanded per search node. Each candidate costs one
  * full detection pass, so a node offering more violations than this has its tail
  * ignored: the frontier stays bounded and the budget buys depth rather than width.
@@ -2624,11 +2816,14 @@ function orderKey(
  * count and detection budget rather than by any notion of progress. Only the
  * zero-violation goal test decides whether a fix is emitted at all.
  *
- * The one hard constraint on the search is the block's await runs. Splitting a run of
+ * Two hard constraints bound the search. The block's await runs: splitting a run of
  * sequential awaits destroys `parallelize-async-operations`' `Promise.all` rewrite,
  * and that rewrite carries a latency win this reordering does not — so orders that
  * break a run are not candidates at all, however clean they score. A block whose only
- * clean orders break a run is reported without a fix (#1651).
+ * clean orders break a run is reported without a fix (#1651). And the block's
+ * declaration order: an order that reads a binding before the statement declaring it
+ * runs is refused outright, since a fix nobody can run is worse than a report the
+ * developer resolves (#2042).
  */
 function findResolvingMoves(
   sourceCode: TSESLint.SourceCode,
@@ -2641,6 +2836,7 @@ function findResolvingMoves(
   }
 
   const awaitRuns = collectAwaitRuns(body);
+  const declarationFlow = buildDeclarationFlow(body);
   const indices = new Map<TSESTree.Statement, number>(
     body.map((statement, index) => [statement, index]),
   );
@@ -2666,6 +2862,12 @@ function findResolvingMoves(
       // and dropping the order here prunes the frontier as well as the goal, so no
       // route to a clean order passes through a broken run.
       if (!preservesAwaitRuns(order, awaitRuns)) {
+        continue;
+      }
+      // Same placement and same reasoning as the await-run test: a set lookup per
+      // name is cheaper than a detection pass, and pruning the frontier here keeps
+      // every route to a clean order free of declare-after-use.
+      if (!preservesDeclarationOrder(order, declarationFlow)) {
         continue;
       }
       const key = orderKey(order, indices);

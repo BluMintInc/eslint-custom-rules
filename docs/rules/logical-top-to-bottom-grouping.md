@@ -205,6 +205,51 @@ handler();
 The hook carve-out reads through them for the same reason: `(useTrack as any)()`
 is a hook call and stays where it is.
 
+### A binding is never carried past a statement that reads it
+
+Data flow, not position, decides which statements the reordering may swap. A
+statement that declares a binding is never moved below a statement that reads it,
+and no statement is moved above a declaration it reads. Both are the same broken
+order seen from either end, and both are refused in every enclosing scope — a
+function body, an arrow body, a nested block, a method body and module scope
+alike.
+
+The hazard has no lint-visible symptom: the emitted file parses, type-checks and
+lints clean, and only running it raises `ReferenceError: Cannot access 'X' before
+initialization`. So the constraint is enforced on the ordering the fix emits, not
+inferred from the direction of a move, and a block whose only clean orderings
+break it is reported without an autofix.
+
+**JSX element names count as reads.** `<Provider />` reads the `Provider` binding
+exactly as `render(Provider)` does, so a destructuring that produces the
+components an effect renders is that effect's own setup — not the "unrelated
+setup" the report names — and the effect is not hoisted above it:
+
+```tsx
+// ✅ Correct — and left alone: `render` depends on the destructuring above it
+const renderHarness = (harness: Harness) => {
+  const { Provider, Probe } = harness;
+  render(
+    <Provider docPath="ChatbotIntegration/test">
+      <Probe />
+    </Provider>,
+  );
+};
+```
+
+Only names that resolve to a binding count. A lowercase element name is a string
+tag (`<div />` emits `"div"`), an attribute name is a property of the element, and
+in `<Ns.Item />` only `Ns` is read — none of those hold a reordering back:
+
+```tsx
+// ❌ Incorrect — `<div />` binds nothing, so the effect is still buried
+function run() {
+  const div = 1;
+  render(<div />);
+  use(div);
+}
+```
+
 ### Sequential awaits are never split
 
 Two or more adjacent `await` statements are a run, and the search treats keeping that
