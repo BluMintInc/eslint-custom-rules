@@ -286,7 +286,11 @@ const UNDRIVEN: Record<string, UndrivenCause> = {
   'enforce-firestore-rules-get-access::call': 'noSite',
   'enforce-firestore-rules-get-access::member': 'noSite',
   'enforce-identifiable-firestore-type::call': 'noSite',
-  'enforce-identifiable-firestore-type::member': 'noSite',
+  // A namespace-qualified interface heritage (`extends Types.Team`) is the
+  // rule's only member site, and the rule stays silent on both spellings: the
+  // walk unwraps the ChainExpression, so `Types?.Team` keeps the same
+  // module-boundary amnesty `Types.Team` gets (#2035).
+  'enforce-identifiable-firestore-type::member': 'silentBothSides',
   'enforce-m3-sentence-case::call': 'noSite',
   'enforce-m3-sentence-case::member': 'noSite',
   'enforce-mui-rounded-icons::call': 'silentBothSides',
