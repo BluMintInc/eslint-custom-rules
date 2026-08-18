@@ -433,6 +433,89 @@ ruleTesterTs.run(
           tsconfigRootDir,
         },
       },
+
+      // ===== REGRESSION TESTS FOR ISSUE #2040 =====
+      // The `boolean && object` short-circuit idiom: the `||` strips the `false`
+      // the `&&` produces, which `??` cannot do.
+      {
+        code: `
+type Arrows = { next: string; prev: string };
+type Options = { arrows?: Arrows };
+declare const hasArrows: boolean | undefined;
+declare const fallbackNext: string;
+export const options: Options = {
+  arrows:
+    (hasArrows && {
+      next: fallbackNext,
+      prev: fallbackNext,
+    }) ||
+    undefined,
+};
+  `,
+        filename: 'src/rules/prefer-nullish-coalescing-boolean-props.ts',
+        parserOptions: {
+          project: './tsconfig.json',
+          tsconfigRootDir,
+        },
+      },
+      // The defect belongs to the union, not to the `&&` that usually builds it:
+      // a hand-written `false | Arrows | undefined` is the same expression.
+      {
+        code: `
+type Arrows = { next: string; prev: string };
+declare const arrows: false | Arrows | undefined;
+export const chosen = arrows || undefined;
+  `,
+        filename: 'src/rules/prefer-nullish-coalescing-boolean-props.ts',
+        parserOptions: {
+          project: './tsconfig.json',
+          tsconfigRootDir,
+        },
+      },
+      // A string payload short-circuits the same way: `hasLabel && label` is
+      // `false | undefined | string`, and `??` leaks the `false` into a `string`
+      // annotation.
+      {
+        code: `
+declare const hasLabel: boolean | undefined;
+declare const label: string;
+export const text: string = (hasLabel && label) || 'default';
+  `,
+        filename: 'src/rules/prefer-nullish-coalescing-boolean-props.ts',
+        parserOptions: {
+          project: './tsconfig.json',
+          tsconfigRootDir,
+        },
+      },
+      // The `0 &&` sibling of the idiom: the sentinel is a numeric zero and the
+      // payload is an object.
+      {
+        code: `
+type Slide = { index: number };
+declare const count: number | undefined;
+declare const slide: Slide;
+export const current: Slide | undefined = (count && slide) || undefined;
+  `,
+        filename: 'src/rules/prefer-nullish-coalescing-boolean-props.ts',
+        parserOptions: {
+          project: './tsconfig.json',
+          tsconfigRootDir,
+        },
+      },
+      // The `'' &&` sibling, with an object payload.
+      {
+        code: `
+type Route = { path: string };
+declare const slug: string | undefined;
+declare const route: Route;
+export const target: Route | undefined = (slug && route) || undefined;
+  `,
+        filename: 'src/rules/prefer-nullish-coalescing-boolean-props.ts',
+        parserOptions: {
+          project: './tsconfig.json',
+          tsconfigRootDir,
+        },
+      },
     ],
     invalid: [
       // ===== REGRESSION TEST FOR ISSUE #1513 =====
@@ -509,6 +592,80 @@ ruleTesterTs.run(
           return x;
         }
         `,
+      },
+      // ===== REGRESSION TESTS FOR ISSUE #2040 =====
+      // The carve-out for a falsy sentinel must not swallow a plain nullable
+      // object: no `false` sits in this union, so `??` is both safe and correct.
+      {
+        code: `
+type Arrows = { next: string; prev: string };
+type Options = { arrows?: Arrows };
+declare const maybeObj: Arrows | undefined;
+export const a: Options = { arrows: maybeObj || undefined };
+  `,
+        filename: 'src/rules/prefer-nullish-coalescing-boolean-props.ts',
+        parserOptions: {
+          project: './tsconfig.json',
+          tsconfigRootDir,
+        },
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'maybeObj', right: 'undefined' },
+          },
+        ],
+        output: `
+type Arrows = { next: string; prev: string };
+type Options = { arrows?: Arrows };
+declare const maybeObj: Arrows | undefined;
+export const a: Options = { arrows: maybeObj ?? undefined };
+  `,
+      },
+      // The classic string default the rule exists for: `string` is falsy-capable
+      // but is not a falsy sentinel, so the report stands.
+      {
+        code: `
+declare const label: string | undefined;
+export const text = label || 'fallback';
+  `,
+        filename: 'src/rules/prefer-nullish-coalescing-boolean-props.ts',
+        parserOptions: {
+          project: './tsconfig.json',
+          tsconfigRootDir,
+        },
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'label', right: "'fallback'" },
+          },
+        ],
+        output: `
+declare const label: string | undefined;
+export const text = label ?? 'fallback';
+  `,
+      },
+      // A falsy member from the payload's own domain is the state the rule asks
+      // callers to preserve, so a single-domain union keeps reporting.
+      {
+        code: `
+declare const size: 0 | 1 | undefined;
+export const chosen = size || 5;
+  `,
+        filename: 'src/rules/prefer-nullish-coalescing-boolean-props.ts',
+        parserOptions: {
+          project: './tsconfig.json',
+          tsconfigRootDir,
+        },
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'size', right: '5' },
+          },
+        ],
+        output: `
+declare const size: 0 | 1 | undefined;
+export const chosen = size ?? 5;
+  `,
       },
       // ===== BASIC CASES WHERE NULLISH COALESCING SHOULD BE PREFERRED =====
       {

@@ -71,6 +71,149 @@ function isPossiblyNullish(type: ts.Type, checker?: ts.TypeChecker): boolean {
   );
 }
 
+/**
+ * The union members of a type, following a type parameter to its constraint so a
+ * generic operand is read through the same lens as a written-out union.
+ */
+function unionMembers(type: ts.Type, checker?: ts.TypeChecker): ts.Type[] {
+  if (type.isUnion()) {
+    return type.types.flatMap((member) => unionMembers(member, checker));
+  }
+
+  if (type.getFlags() & ts.TypeFlags.TypeParameter) {
+    if (checker) {
+      const constraint = checker.getBaseConstraintOfType(type);
+      if (constraint && constraint !== type) {
+        return unionMembers(constraint, checker);
+      }
+    }
+    return [type];
+  }
+
+  return [type];
+}
+
+/**
+ * A member every value of which is falsy while none of them is nullish: the part
+ * of a union that `||` discards and `??` keeps.
+ */
+function isNonNullishFalsy(type: ts.Type): boolean {
+  const flags = type.getFlags();
+
+  if (flags & ts.TypeFlags.BooleanLiteral) {
+    return (
+      (type as ts.Type & { intrinsicName?: string }).intrinsicName === 'false'
+    );
+  }
+
+  if (flags & (ts.TypeFlags.NumberLiteral | ts.TypeFlags.StringLiteral)) {
+    const { value } = type as ts.LiteralType;
+    // `-0` compares equal to `0`, so both numeric zeroes are covered.
+    return value === 0 || value === '';
+  }
+
+  if (flags & ts.TypeFlags.BigIntLiteral) {
+    const { value } = type as ts.LiteralType;
+    return typeof value === 'object' && value.base10Value === '0';
+  }
+
+  return false;
+}
+
+function isNullishMember(type: ts.Type): boolean {
+  return (
+    (type.getFlags() &
+      (ts.TypeFlags.Null |
+        ts.TypeFlags.Undefined |
+        ts.TypeFlags.Void |
+        ts.TypeFlags.Any |
+        ts.TypeFlags.Unknown)) !==
+    0
+  );
+}
+
+/**
+ * The primitive domain a union member belongs to. Members of one domain form the
+ * unions the rule exists for (`string | undefined`, `boolean | undefined`,
+ * `0 | 1 | undefined`), where a falsy value is a value of the same kind as the
+ * fallback and preserving it is the point.
+ */
+function domainOf(type: ts.Type): string {
+  const flags = type.getFlags();
+
+  if (flags & (ts.TypeFlags.Boolean | ts.TypeFlags.BooleanLiteral)) {
+    return 'boolean';
+  }
+  if (flags & (ts.TypeFlags.Number | ts.TypeFlags.NumberLiteral)) {
+    return 'number';
+  }
+  if (flags & (ts.TypeFlags.String | ts.TypeFlags.StringLiteral)) {
+    return 'string';
+  }
+  if (flags & (ts.TypeFlags.BigInt | ts.TypeFlags.BigIntLiteral)) {
+    return 'bigint';
+  }
+  return 'other';
+}
+
+/**
+ * Whether the `||` is load-bearing because its left operand carries a falsy
+ * sentinel from outside the payload's domain.
+ *
+ * `cond && payload` evaluates to the falsy `cond` itself when it short-circuits,
+ * so the operand's type is `false | payload` (or `0 | payload`, `'' | payload`).
+ * The trailing `||` exists to strip that sentinel; `??` strips only `null` and
+ * `undefined`, so the rewrite leaks a `false` into a position typed for the
+ * payload alone and the program stops compiling. The same union written out by
+ * hand behaves identically, so the test is a property of the type rather than of
+ * the `&&` that usually produces it.
+ *
+ * A union confined to a single domain is left alone: there the falsy member is a
+ * value of the payload's own kind, which is exactly the state the rule asks
+ * callers to preserve.
+ *
+ * Positive evidence from the checker is required. Without type information the
+ * answer is unknowable, and guessing would silence the rule across every
+ * untyped operand.
+ */
+function stripsForeignFalsyMember(
+  node: TSESTree.Expression,
+  checker?: ts.TypeChecker,
+  parserServices?: ParserServices,
+): boolean {
+  if (!checker || !parserServices) {
+    return false;
+  }
+
+  let members: ts.Type[];
+  try {
+    const tsNode = parserServices.esTreeNodeToTSNodeMap.get(node);
+    const type = checker.getTypeAtLocation(tsNode);
+    if (!type) {
+      return false;
+    }
+    members = unionMembers(type, checker);
+  } catch {
+    // esTreeNodeToTSNodeMap may fail for synthetic nodes and getTypeAtLocation
+    // may throw for nodes without type information; both mean no evidence.
+    return false;
+  }
+
+  const sentinelDomains = new Set(
+    members.filter(isNonNullishFalsy).map(domainOf),
+  );
+  if (sentinelDomains.size === 0) {
+    return false;
+  }
+
+  return members.some(
+    (member) =>
+      !isNullishMember(member) &&
+      !isNonNullishFalsy(member) &&
+      !sentinelDomains.has(domainOf(member)),
+  );
+}
+
 function isInJSXBooleanAttribute(node: TSESTree.Node): boolean {
   const parent = node.parent;
   if (parent?.type !== AST_NODE_TYPES.JSXAttribute) return false;
@@ -820,6 +963,12 @@ export const preferNullishCoalescingBooleanProps = createRule<[], MessageIds>({
           // Check if this could benefit from nullish coalescing
           // We only suggest nullish coalescing when the left operand could be nullish
           if (couldBeNullish(node.left, checker, parserServices)) {
+            // A `||` that strips a falsy sentinel from outside its payload's
+            // domain cannot become `??` without changing the expression's type.
+            if (stripsForeignFalsyMember(node.left, checker, parserServices)) {
+              return;
+            }
+
             const sourceCode = context.getSourceCode();
             const leftText = sourceCode.getText(node.left);
             const rightText = sourceCode.getText(node.right);

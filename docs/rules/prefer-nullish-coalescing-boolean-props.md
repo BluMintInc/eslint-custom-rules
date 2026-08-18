@@ -36,6 +36,21 @@ const uid = primary.id ?? // fall back for legacy documents
 
 A comment that must occupy its own line gets one, and where the expression follows `return`, `throw` or `yield` — which forbid a line terminator before their operand — such a comment is hoisted ahead of the keyword instead, so the fix cannot change the program through ASI. Whether the result is parenthesized is decided by the surrounding expression exactly as it is without comments, so a comment never adds or removes parentheses.
 
+**A `||` that strips a short-circuit sentinel is left alone**: `cond && payload` evaluates to `cond` itself when it short-circuits, so its type is `false | payload` (or `0 | payload`, `'' | payload`). The trailing `||` exists to strip that sentinel, and `??` — which discards only `null` and `undefined` — cannot, so the sentinel leaks into a position typed for the payload alone and the program stops compiling:
+
+```ts
+type Arrows = { next: string; prev: string };
+declare const hasArrows: boolean | undefined;
+
+const options: { arrows?: Arrows } = {
+  // `(hasArrows && {…})` is `false | Arrows | undefined`
+  arrows: (hasArrows && { next, prev }) || undefined, // ✅ `Arrows | undefined`
+  // `??` would keep the `false`: TS2322, boolean is not assignable to Arrows
+};
+```
+
+The test is a property of the left operand's type, not of the `&&` that usually produces it, so a hand-written `false | Arrows | undefined` is treated the same way. It applies only where the falsy member comes from outside the payload's primitive domain. A union confined to one domain — `string | undefined`, `boolean | undefined`, `0 | 1 | undefined` — is the case the rule exists for, where the falsy value belongs to the same kind as the fallback and preserving it is the point, so those keep reporting. The carve-out needs the type checker: without type information the rule behaves as it does for any other operand.
+
 ### Examples of correct code
 
 Boolean props keep logical OR:
@@ -85,6 +100,12 @@ A logical operand keeps its parentheses, which `??` requires:
 
 ```ts
 const config = (overrides.theme && overrides.theme.dark) ?? defaults.dark;
+```
+
+The short-circuit idiom keeps logical OR, because only `||` discards the `false`:
+
+```ts
+const arrows = (hasArrows && { next, prev }) || undefined;
 ```
 
 ### Examples of incorrect code
