@@ -21,7 +21,7 @@ This rule:
 - Emits the import rewrite and every call-site conversion as **one atomic fix** on a single report. When another rule's fix conflicts with any part of it in the same `--fix` pass, ESLint defers the whole conversion to the next pass instead of applying half of it, so the `useCallback` import can never be removed while a `useCallback(...)` call remains.
 - Withholds the fix when dropping the dependency array would leave a declaration with no reader left, and retires an **import** left that way in the same fix — see [Dependencies nothing else reads](#dependencies-nothing-else-reads).
 - Retires the `react` import a converted `React.useCallback` call was the last reader of, decided by scope analysis rather than by any JSX or `.tsx` test — see [Retiring the `react` import a `React.useCallback` call was the last reader of](#retiring-the-react-import-a-reactusecallback-call-was-the-last-reader-of).
-- Leaves a callback whose identity another hook keys on alone entirely — see [When the callback identity is load-bearing](#when-the-callback-identity-is-load-bearing).
+- Leaves a callback whose identity another hook keys on, or a `ref` re-registers on, alone entirely — see [When the callback identity is load-bearing](#when-the-callback-identity-is-load-bearing).
 - Keeps the rewritten call on one line only while that line fits the print width, and breaks the argument list open past it — see [Print width](#print-width).
 - Skips files in `node_modules` for performance so third-party code is untouched.
 
@@ -265,10 +265,14 @@ which touches only the specifier's own tokens and therefore never has to guess.
 ### When the callback identity is load-bearing
 
 `useLatestCallback` returns a **permanently stable** reference. That is the point
-of it, and it is also why a callback another hook keys on is exempt from this
-rule entirely. A hook that compares the callback between renders stops seeing it
-change, so the effect it guards fires **once, ever** — with the first render's
-values, forever.
+of it, and it is also why a callback whose identity something **compares** is
+exempt from this rule entirely. A consumer that watches the callback across
+renders stops seeing it change, so whatever that comparison triggers happens
+**once, ever** — with the first render's values, forever.
+
+Two consumers compare a callback's identity: a hook that lists it in a
+dependency array, and a **ref**, which React re-invokes precisely when the
+identity it is handed changes.
 
 ```ts
 // Exempt: useFirestore lists `handler` in its own effect's dependencies, so the
@@ -279,6 +283,21 @@ const handler = useCallback(
   [ids],
 );
 const state = useFirestore(handler, INITIAL);
+```
+
+```tsx
+// Exempt: a ref callback re-runs when its identity changes, and that is its
+// only re-registration trigger — no dependency array exists in the source to
+// read. A frozen `attach` registers the first render's `density` and keeps
+// publishing it after the column resizes.
+export const Slot = ({ slotId, density }) => {
+  const attach = useCallback(
+    (element) => attachSlot(slotId, element, density),
+    [slotId, density],
+  );
+
+  return <div ref={attach} />;
+};
 ```
 
 Such a site is not reported at all, rather than reported without a fix, because
@@ -294,11 +313,18 @@ Two conditions must both hold for the exemption:
    array already pins the identity for the component's lifetime, so converting
    the call cannot change what any consumer observes; such a call converts even
    when it is handed straight to a hook.
-2. The identity reaches a hook **in this file**: the result is an element of an
-   array argument of a call named `useSomething`, or a direct argument of one.
-   The naming convention is the signal, because a custom hook's body may live in
-   any module and no list of hook names can be complete. A member callee counts
-   through its property name, so `hooks.useThing(handler)` reads as a hook.
+2. A consumer **in this file** compares the identity, in one of two positions:
+   - It reaches a hook: the result is an element of an array argument of a call
+     named `useSomething`, or a direct argument of one. The naming convention is
+     the signal, because a custom hook's body may live in any module and no list
+     of hook names can be complete. A member callee counts through its property
+     name, so `hooks.useThing(handler)` reads as a hook.
+   - It is the value of a `ref` attribute (`<div ref={handler} />`). React
+     registers a ref callback by identity, so a stable reference registers once
+     and never re-runs. The attribute React itself reads is the signal: an
+     ordinary prop that merely spells `ref` in its name, such as `innerRef`, or
+     a `ref` property on an object handed to a plain function, is decided by
+     code this file cannot read and keeps reporting.
 
 Every other use keeps reporting, because nothing there compares the reference —
 a stable wrapper invokes the latest closure, so the callback's behaviour is
@@ -310,9 +336,12 @@ unchanged:
 | `handler()` | yes |
 | `setTimeout(handler, 0)` | yes — a plain function keys nothing on identity |
 | `useOptions({ onDone: handler })` | yes — the object is rebuilt every render |
+| `<Panel innerRef={handler} />` | yes — an ordinary prop, read by code elsewhere |
+| `register({ ref: handler })` | yes — no ref is registered here |
 | `return handler` | yes — see below |
 | `useEffect(effect, [handler])` | no |
 | `useFirestore(handler, initial)` | no |
+| `<div ref={handler} />` | no — a ref re-registers on identity change |
 
 Returning the callback keeps reporting deliberately. A custom hook that returns
 one hands the identity to consumers this file cannot read, so nothing here shows
