@@ -36,7 +36,30 @@ Enable the rule via the recommended config or explicitly:
 }
 ```
 
-This rule has no configuration options; the behavior is fixed.
+## Options
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `printWidth` | `number` | `80` | The column the autofix keeps its emitted statement within. Set it to the `printWidth` your formatter uses. |
+
+```json
+{
+  "rules": {
+    "@blumintinc/blumint/enforce-dynamic-firebase-imports": [
+      "error",
+      { "printWidth": 100 }
+    ]
+  }
+}
+```
+
+The fix authors a whole statement whose length grows with the import — one entry
+per specifier, plus the module path verbatim — so an unmeasured one-line form has
+no width bound. The statement is measured against the column it actually lands
+on, indentation included, and broken open only when it overflows: Prettier
+collapses a short expanded destructuring pattern, argument list or assignment
+straight back onto one line, so wrapping unconditionally would fail
+`prettier --check` on every short import instead.
 
 ## Autofix
 
@@ -74,6 +97,12 @@ export const handler = async () => {
   return setGroupChannel();
 };
 ```
+
+The emitted statement takes whichever shape the formatter would print at that
+column: one line while it fits, then the call's argument broken open, then a
+break after the `=`, then one property per line. A pattern of more than two
+properties with any of them renamed expands whatever it measures, matching
+Prettier's own treatment of a complex destructuring target.
 
 A reference held by a synchronous callback nested inside that async function
 still counts, because the callback cannot run before the first statement of the

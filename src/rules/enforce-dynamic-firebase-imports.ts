@@ -101,7 +101,226 @@ const isNeverBundled = (filename: string) =>
   TEST_FILE_SUFFIX.test(filename) ||
   TEST_FILE_DIRECTORY.test(filename);
 
-const enforceFirebaseImports = createRule({
+type Options = [
+  {
+    printWidth?: number;
+  },
+];
+
+type MessageIds = 'noDynamicImport';
+
+/**
+ * Prettier's own default. The fixer authors a whole statement that a formatter
+ * owns, so a line it emits past this width is rewritten on the next
+ * `prettier --write` — and fails `prettier --check` in the meantime.
+ */
+const DEFAULT_PRINT_WIDTH = 80;
+
+/**
+ * The file's own nesting step, taken as the most common indentation increase
+ * between consecutive lines. Reading it from the source keeps emitted code in
+ * the author's units instead of assuming a two-space, space-indented file.
+ */
+const indentUnitOf = (sourceCode: TSESLint.SourceCode): string => {
+  const blockComments = sourceCode
+    .getAllComments()
+    .filter((comment) => comment.type === AST_TOKEN_TYPES.Block)
+    .map((comment) => comment.range);
+  // A block comment's interior lines carry the comment's own alignment, which
+  // is not a nesting step of the file; counting them makes a JSDoc-heavy file
+  // look 1-space indented.
+  const continuesBlockComment = (offset: number) =>
+    blockComments.some(([start, end]) => start < offset && offset < end);
+
+  const frequencies = new Map<string, number>();
+  let previous = '';
+  let offset = 0;
+  for (const line of sourceCode.getText().split('\n')) {
+    const lineStart = offset;
+    offset += line.length + 1;
+    if (line.trim() === '' || continuesBlockComment(lineStart)) {
+      continue;
+    }
+    const indent = /^[ \t]*/.exec(line)?.[0] ?? '';
+    if (indent.length > previous.length && indent.startsWith(previous)) {
+      const delta = indent.slice(previous.length);
+      frequencies.set(delta, (frequencies.get(delta) ?? 0) + 1);
+    }
+    previous = indent;
+  }
+
+  let unit = '  ';
+  let best = 0;
+  for (const [delta, count] of frequencies) {
+    if (count > best) {
+      unit = delta;
+      best = count;
+    }
+  }
+  return unit;
+};
+
+/**
+ * A destructured binding kept as its two halves rather than as printed text:
+ * Prettier's next break point inside an over-wide pattern is the property's own
+ * `:`, so the value has to stay separable from the key.
+ */
+type DestructureProperty = {
+  readonly key: string;
+  /** Absent for a shorthand binding, where key and local name coincide. */
+  readonly value?: string;
+};
+
+const propertyText = (property: DestructureProperty): string =>
+  property.value === undefined
+    ? property.key
+    : `${property.key}: ${property.value}`;
+
+type Binding =
+  | { readonly kind: 'name'; readonly name: string }
+  | {
+      readonly kind: 'pattern';
+      readonly properties: readonly DestructureProperty[];
+    };
+
+type Initializer =
+  | { readonly kind: 'import'; readonly path: string }
+  | { readonly kind: 'expression'; readonly text: string };
+
+type Declaration = {
+  readonly binding: Binding;
+  readonly initializer: Initializer;
+};
+
+/** Everything a broken-open `await import(...)` keeps on the line before its argument. */
+const IMPORT_CALL_HEAD = 'await import(';
+
+/**
+ * Prettier expands an object pattern of more than two properties as soon as one
+ * of them is renamed, whatever the line would otherwise measure
+ * (`isComplexDestructuring`). A renamed specifier and the `default:` entry are
+ * both non-shorthand, so the emitted pattern has to answer that rule as well as
+ * the width to survive `prettier --check`.
+ */
+const isComplexPattern = (binding: Binding): boolean =>
+  binding.kind === 'pattern' &&
+  binding.properties.length > 2 &&
+  binding.properties.some((property) => property.value !== undefined);
+
+/**
+ * One property of an expanded pattern. A renamed binding whose own line
+ * overflows breaks after its `:`, which is the last break point the pattern
+ * has; a shorthand one has none, so it is printed as is — exactly what Prettier
+ * does with a name too long for the line it lands on.
+ */
+const printProperty = (
+  property: DestructureProperty,
+  indent: string,
+  indentUnit: string,
+  printWidth: number,
+): string => {
+  const inline = `${indent}${propertyText(property)},`;
+  if (property.value === undefined || inline.length <= printWidth) {
+    return inline;
+  }
+  return `${indent}${property.key}:\n${indent}${indentUnit}${property.value},`;
+};
+
+const inlineBindingOf = (binding: Binding): string =>
+  binding.kind === 'name'
+    ? binding.name
+    : `{ ${binding.properties.map(propertyText).join(', ')} }`;
+
+const inlineInitializerOf = (initializer: Initializer): string =>
+  initializer.kind === 'import'
+    ? `${IMPORT_CALL_HEAD}'${initializer.path}')`
+    : initializer.text;
+
+/** The whole declaration on one line, with no break opportunity taken. */
+const printInline = (declaration: Declaration): string =>
+  `const ${inlineBindingOf(declaration.binding)} = ${inlineInitializerOf(
+    declaration.initializer,
+  )};`;
+
+/**
+ * Prints the declaration in the shape Prettier prints it at `indent`.
+ *
+ * The specifier list and the module path both come from the source import, so
+ * the one-line form has no length bound and overflows on ordinary firebaseCloud
+ * paths. Wrapping unconditionally is the mirror failure: Prettier collapses an
+ * expanded destructuring pattern, argument list or assignment back onto one line
+ * as soon as it fits, so the width — not the shape of the input — decides.
+ *
+ * Every branch below is a shape Prettier itself emits, so there is no
+ * precondition that can fail and no line the measurement rejects yet still gets
+ * printed.
+ */
+const printDeclaration = (
+  declaration: Declaration,
+  indent: string,
+  indentUnit: string,
+  printWidth: number,
+): string => {
+  const { binding, initializer } = declaration;
+  const oneLine = printInline(declaration);
+  if (indent.length + oneLine.length <= printWidth) {
+    return oneLine;
+  }
+
+  const inlineHead = `const ${inlineBindingOf(binding)} =`;
+  // An expanded pattern moves the `=` onto the closing brace's line, so it is
+  // that line — not the head — the initializer is measured against.
+  const expanded =
+    binding.kind === 'pattern' &&
+    (isComplexPattern(binding) ||
+      indent.length + inlineHead.length > printWidth)
+      ? {
+          text: `const {\n${binding.properties
+            .map((property) =>
+              printProperty(
+                property,
+                `${indent}${indentUnit}`,
+                indentUnit,
+                printWidth,
+              ),
+            )
+            .join('\n')}\n${indent}} =`,
+          tail: '} =',
+        }
+      : { text: inlineHead, tail: inlineHead };
+
+  const inlineInitializer = inlineInitializerOf(initializer);
+  const tailColumn = indent.length + expanded.tail.length;
+
+  // The initializer still fits after an expanded pattern's `} =`.
+  if (tailColumn + inlineInitializer.length + 2 <= printWidth) {
+    return `${expanded.text} ${inlineInitializer};`;
+  }
+
+  // Prettier breaks the call's argument before it breaks after the `=`, so long
+  // as the call head still fits on the line the `=` sits on.
+  const rhsIndent = `${indent}${indentUnit}`;
+  if (
+    initializer.kind === 'import' &&
+    tailColumn + IMPORT_CALL_HEAD.length + 1 <= printWidth
+  ) {
+    return `${expanded.text} ${IMPORT_CALL_HEAD}\n${rhsIndent}'${initializer.path}'\n${indent});`;
+  }
+
+  // Nothing fits beside the `=`: the initializer takes the next line, and
+  // breaks its own argument there when even that line overflows. A module path
+  // wider than the line it lands on is emitted as is — Prettier cannot break a
+  // string literal either, so that is already its output.
+  if (
+    initializer.kind === 'import' &&
+    rhsIndent.length + inlineInitializer.length + 1 > printWidth
+  ) {
+    return `${expanded.text}\n${rhsIndent}${IMPORT_CALL_HEAD}\n${rhsIndent}${indentUnit}'${initializer.path}'\n${rhsIndent});`;
+  }
+  return `${expanded.text}\n${rhsIndent}${inlineInitializer};`;
+};
+
+const enforceFirebaseImports = createRule<Options, MessageIds>({
   name: 'enforce-dynamic-firebase-imports',
   meta: {
     type: 'problem',
@@ -112,15 +331,41 @@ const enforceFirebaseImports = createRule({
     },
     fixable: 'code',
     hasSuggestions: true,
-    schema: [],
+    schema: [
+      {
+        type: 'object',
+        properties: {
+          printWidth: {
+            type: 'number',
+            minimum: 1,
+          },
+        },
+        additionalProperties: false,
+      },
+    ],
     messages: {
       noDynamicImport:
         'Static import from firebaseCloud path "{{importPath}}" eagerly bundles Firebase code into the initial client chunk, which inflates startup time and prevents lazy loading. Load it at the call site instead, inside an async function body (e.g., `const { export } = await import(\'{{importPath}}\')`). Keep it out of module scope: a top-level `await import(...)` defers nothing and does not parse once the module is compiled to CommonJS.',
     },
   },
-  defaultOptions: [],
-  create(context) {
+  defaultOptions: [{}],
+  create(context, [options]) {
     const sourceCode = context.getSourceCode();
+
+    const printWidth =
+      typeof options.printWidth === 'number' && options.printWidth > 0
+        ? options.printWidth
+        : DEFAULT_PRINT_WIDTH;
+
+    // Derived once per file rather than per fix: every fix in a file shares the
+    // author's nesting step.
+    let cachedIndentUnit: string | null = null;
+    const fileIndentUnit = () => {
+      if (cachedIndentUnit === null) {
+        cachedIndentUnit = indentUnitOf(sourceCode);
+      }
+      return cachedIndentUnit;
+    };
     // Normalize Windows backslash separators so the forward-slash directory
     // checks match on every platform. Without this, `getFilename()` returns
     // `C:\repo\src\hooks\__tests__\Foo.ts` on Windows and the exemption
@@ -186,52 +431,80 @@ const enforceFirebaseImports = createRule({
             )
             .join(', ');
 
-        const destructureEntry = (spec: TSESTree.ImportSpecifier): string =>
+        const destructureEntry = (
+          spec: TSESTree.ImportSpecifier,
+        ): DestructureProperty =>
           spec.imported.name === spec.local.name
-            ? spec.local.name
-            : `${spec.imported.name}: ${spec.local.name}`;
+            ? { key: spec.local.name }
+            : { key: spec.imported.name, value: spec.local.name };
 
-        const buildValueStatements = (): string[] => {
+        /**
+         * The declarations to relocate, as structure rather than text: the line
+         * they land on is only known at the insertion site, and its width is
+         * what decides their printed shape.
+         */
+        const buildDeclarations = (): Declaration[] => {
           if (namespaceSpecifier) {
             const nsLocal = namespaceSpecifier.local.name;
-            const statements = [
-              `const ${nsLocal} = await import('${importPath}');`,
+            const declarations: Declaration[] = [
+              {
+                binding: { kind: 'name', name: nsLocal },
+                initializer: { kind: 'import', path: importPath },
+              },
             ];
 
             if (defaultSpecifier) {
-              statements.push(
-                `const ${defaultSpecifier.local.name} = ${nsLocal}.default;`,
-              );
+              declarations.push({
+                binding: { kind: 'name', name: defaultSpecifier.local.name },
+                initializer: {
+                  kind: 'expression',
+                  text: `${nsLocal}.default`,
+                },
+              });
             }
 
             if (namedSpecifiers.length > 0) {
-              statements.push(
-                `const { ${namedSpecifiers
-                  .map(destructureEntry)
-                  .join(', ')} } = ${nsLocal};`,
-              );
+              declarations.push({
+                binding: {
+                  kind: 'pattern',
+                  properties: namedSpecifiers.map(destructureEntry),
+                },
+                initializer: { kind: 'expression', text: nsLocal },
+              });
             }
 
-            return statements;
+            return declarations;
           }
 
-          const destructureParts = [
+          const destructureProperties: DestructureProperty[] = [
             ...(defaultSpecifier
-              ? [`default: ${defaultSpecifier.local.name}`]
+              ? [{ key: 'default', value: defaultSpecifier.local.name }]
               : []),
             ...namedSpecifiers.map(destructureEntry),
           ];
 
           // A side-effect import binds nothing, so there is no declaration to
           // relocate — the awaited call would have to stay at module scope.
-          return destructureParts.length > 0
+          return destructureProperties.length > 0
             ? [
-                `const { ${destructureParts.join(
-                  ', ',
-                )} } = await import('${importPath}');`,
+                {
+                  binding: {
+                    kind: 'pattern',
+                    properties: destructureProperties,
+                  },
+                  initializer: { kind: 'import', path: importPath },
+                },
               ]
             : [];
         };
+
+        const printAt = (
+          declarations: readonly Declaration[],
+          indent: string,
+        ): string[] =>
+          declarations.map((declaration) =>
+            printDeclaration(declaration, indent, fileIndentUnit(), printWidth),
+          );
 
         /**
          * An `ImportDeclaration` only ever sits at module scope, so rewriting
@@ -318,7 +591,7 @@ const enforceFirebaseImports = createRule({
         const blockifyConciseBody = (
           fixer: TSESLint.RuleFixer,
           arrow: TSESTree.ArrowFunctionExpression,
-          statements: string[],
+          declarations: readonly Declaration[],
         ): TSESLint.RuleFix | null => {
           const arrowToken = sourceCode.getTokenBefore(arrow.body, {
             filter: (token) =>
@@ -333,8 +606,11 @@ const enforceFirebaseImports = createRule({
             .slice(arrowToken.range[1], arrow.range[1])
             .trim();
           const indent = indentationAt(arrow.loc.start.line);
-          const bodyIndent = `${indent}  `;
-          const lines = [...statements, `return ${expression};`]
+          const bodyIndent = `${indent}${fileIndentUnit()}`;
+          const lines = [
+            ...printAt(declarations, bodyIndent),
+            `return ${expression};`,
+          ]
             .map((statement) => `\n${bodyIndent}${statement}`)
             .join('');
 
@@ -346,8 +622,8 @@ const enforceFirebaseImports = createRule({
 
         const buildFix: TSESLint.ReportFixFunction = (fixer) => {
           const target = findRelocationTarget();
-          const statements = buildValueStatements();
-          if (!target || statements.length === 0) {
+          const declarations = buildDeclarations();
+          if (!target || declarations.length === 0) {
             return null;
           }
 
@@ -365,7 +641,7 @@ const enforceFirebaseImports = createRule({
             target.type === AST_NODE_TYPES.ArrowFunctionExpression &&
             target.body.type !== AST_NODE_TYPES.BlockStatement
           ) {
-            const blockified = blockifyConciseBody(fixer, target, statements);
+            const blockified = blockifyConciseBody(fixer, target, declarations);
             return blockified ? [importEdit, blockified] : null;
           }
 
@@ -392,18 +668,25 @@ const enforceFirebaseImports = createRule({
             : body.loc.start.line;
           const neighbour = following ?? lastDirective;
 
+          const bodyIndent = neighbour
+            ? indentationAt(neighbour.loc.start.line)
+            : `${indentationAt(target.loc.start.line)}${fileIndentUnit()}`;
+
           // A body written on one line keeps its shape; a multi-line body gets
           // the declaration on its own line at the body's own indentation.
+          //
+          // The one-line body is the single emission the print width does not
+          // govern: a block body holding statements is a shape no formatter
+          // prints on one line at all, so there is no width at which the
+          // author's layout survives and no wrapped form that would restore it.
+          // Breaking the declaration open there would abandon that layout
+          // without buying anything. Every other emission lands on a fresh line
+          // whose column is known, and is printed against it.
           const insertion =
             following && following.loc.start.line === anchorLine
-              ? ` ${statements.join(' ')}`
-              : statements
-                  .map((statement) => {
-                    const indent = neighbour
-                      ? indentationAt(neighbour.loc.start.line)
-                      : `${indentationAt(target.loc.start.line)}  `;
-                    return `\n${indent}${statement}`;
-                  })
+              ? ` ${declarations.map(printInline).join(' ')}`
+              : printAt(declarations, bodyIndent)
+                  .map((statement) => `\n${bodyIndent}${statement}`)
                   .join('');
 
           return [
