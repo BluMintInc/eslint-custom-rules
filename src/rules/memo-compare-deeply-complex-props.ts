@@ -1247,7 +1247,112 @@ function isExternalDeclaration(
 }
 
 /**
- * Returns true when every declaration site of `prop` lives in a dependency.
+ * Who wrote a type: a dependency (`external`), the component's own code
+ * (`authored`), or a type carrying no symbol to answer with (`unknown`, e.g.
+ * `string` or a bare intersection).
+ */
+type TypeOrigin = 'external' | 'authored' | 'unknown';
+
+/**
+ * Classifies `type` itself by the declaration sites of the alias it was written
+ * as (`SystemProps`, `Readonly`) or, absent an alias, of its own symbol — an
+ * interface declaration, an object type literal, or the `MappedTypeNode` a
+ * mapped type is synthesized from.
+ */
+function classifyTypeOrigin(type: Type): TypeOrigin {
+  const symbol =
+    (type as { aliasSymbol?: import('typescript').Symbol }).aliasSymbol ??
+    type.symbol;
+  const declarations = symbol?.declarations;
+  if (!declarations || declarations.length === 0) return 'unknown';
+  return declarations.every(isExternalDeclaration) ? 'external' : 'authored';
+}
+
+/**
+ * The sub-types of `type` that could have contributed `propName`: intersection
+ * constituents, union members, and the arguments a generic alias was
+ * instantiated with. The alias arm is what sees through a dependency's wrapper
+ * — `Readonly<X>`/`Omit<X, K>` re-synthesize members and present themselves as
+ * `lib.es5.d.ts`, while the surface they wrap may belong to either side.
+ */
+function propertyCarriersOf(
+  type: Type,
+  propName: string,
+  checker: TypeChecker,
+  ts: typeof import('typescript'),
+): Type[] {
+  const candidates: Type[] = [];
+  if (type.flags & (ts.TypeFlags.Union | ts.TypeFlags.Intersection)) {
+    candidates.push(...(type as UnionType | IntersectionType).types);
+  }
+  const aliasTypeArguments = (type as { aliasTypeArguments?: readonly Type[] })
+    .aliasTypeArguments;
+  if (aliasTypeArguments) candidates.push(...aliasTypeArguments);
+
+  return candidates.filter((candidate) => {
+    if (candidate === type) return false;
+    try {
+      return Boolean(checker.getPropertyOfType?.(candidate, propName));
+    } catch {
+      return false;
+    }
+  });
+}
+
+// Guards the descent against a self-referential alias; real props types nest a
+// handful of wrappers at most.
+const MAX_ORIGIN_SEARCH_DEPTH = 8;
+
+/**
+ * Answers who wrote `propName` by finding the constituent of `type` that
+ * actually carries it, rather than by asking the outermost wrapper.
+ *
+ * Ownership is decided by the innermost carrier, so a dependency's wrapper over
+ * the author's type stays authored (`Readonly<{ [K in Keys]: … }>`) and the
+ * author's wrapper over a dependency's type stays external.
+ */
+function classifyPropertyOrigin(
+  propName: string,
+  type: Type,
+  checker: TypeChecker,
+  ts: typeof import('typescript'),
+  depth = 0,
+): TypeOrigin {
+  const carriers =
+    depth < MAX_ORIGIN_SEARCH_DEPTH
+      ? propertyCarriersOf(type, propName, checker, ts)
+      : [];
+
+  if (carriers.length > 0) {
+    const origins = carriers.map((carrier) =>
+      classifyPropertyOrigin(propName, carrier, checker, ts, depth + 1),
+    );
+    // One authored carrier is enough: the author declared the prop somewhere in
+    // the composition, so the remedy is theirs to apply.
+    if (origins.some((origin) => origin === 'authored')) return 'authored';
+    return origins.every((origin) => origin === 'external')
+      ? 'external'
+      : 'unknown';
+  }
+
+  const ownOrigin = classifyTypeOrigin(type);
+  if (ownOrigin !== 'external') return ownOrigin;
+
+  // No carrier holds the prop, yet the type is a dependency's: a mapping
+  // construct such as `Record<OwnKeys, T>` synthesizes members from the
+  // author's inputs while presenting `lib.es5.d.ts` as its own declaration
+  // site. The library supplied the machinery, the author supplied the keys.
+  const aliasTypeArguments = (type as { aliasTypeArguments?: readonly Type[] })
+    .aliasTypeArguments;
+  const hasAuthoredInput = aliasTypeArguments?.some(
+    (argument) => classifyTypeOrigin(argument) === 'authored',
+  );
+  return hasAuthoredInput ? 'authored' : 'external';
+}
+
+/**
+ * Returns true when `prop` belongs to a dependency rather than to the component
+ * under lint.
  *
  * `checker.getPropertiesOfType` returns INHERITED members, so a props type that
  * extends or intersects a library interface (MUI's `TypographyProps`, React's
@@ -1256,22 +1361,34 @@ function isExternalDeclaration(
  * the component neither declares nor receives them, and the lists run past a
  * hundred names — so the only available exit is a blanket rule disable.
  *
- * The gate is `every` rather than "first declaration", so a prop the author
- * redeclares alongside the library's (the intersection of two same-named
- * members yields one symbol carrying BOTH declarations) still counts as
- * authored and is still reported.
+ * The declaration gate is `every` rather than "first declaration", so a prop the
+ * author redeclares alongside the library's (the intersection of two same-named
+ * members yields one symbol carrying BOTH declarations) still counts as authored
+ * and is still reported.
  *
- * A prop with no declarations at all is treated as authored. Synthesized
- * symbols reach here from mapped and generic types over the component's own
- * props, and reporting them preserves the rule's core behaviour; a missing
- * declaration is not evidence of a dependency.
+ * A prop with NO declaration site cannot be answered that way at all, and a
+ * missing declaration is evidence of neither side. TypeScript propagates
+ * declarations only through HOMOMORPHIC mapped types (`Readonly<T>`,
+ * `Pick<T, K>`); a keyed mapped type (`{ [K in SystemKeys]?: … }` — the shape
+ * MUI's `SystemProps<Theme>` gives every `Box`-derived component) synthesizes
+ * fresh symbols with none, whoever wrote it. Such a prop is classified by the
+ * ORIGIN of the type that carries it, which keeps a library's ~100 style
+ * shorthands out of the report while the author's own mapped types stay in it.
  */
-function isExternallyDeclaredProperty(
+function isDependencyOwnedProperty(
   prop: import('typescript').Symbol,
+  containingType: Type,
+  checker: TypeChecker,
+  ts: typeof import('typescript'),
 ): boolean {
   const declarations = prop.declarations;
-  if (!declarations || declarations.length === 0) return false;
-  return declarations.every(isExternalDeclaration);
+  if (declarations && declarations.length > 0) {
+    return declarations.every(isExternalDeclaration);
+  }
+  return (
+    classifyPropertyOrigin(prop.name, containingType, checker, ts) ===
+    'external'
+  );
 }
 
 function getComplexPropertiesFromType(
@@ -1287,7 +1404,7 @@ function getComplexPropertiesFromType(
 
   for (const prop of properties) {
     if (isReservedReactPropName(prop.name)) continue;
-    if (isExternallyDeclaredProperty(prop)) continue;
+    if (isDependencyOwnedProperty(prop, type, checker, ts)) continue;
 
     if (
       isPropertyComplex(
