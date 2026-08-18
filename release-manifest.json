@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.166",
+    "date": "2026-08-18T03:18:38.188Z",
+    "rules": [
+      {
+        "name": "memo-compare-deeply-complex-props",
+        "changeType": "fix",
+        "issues": [
+          2037
+        ],
+        "summary": "exempt props declared by a dependency (closes #2037)"
+      }
+    ]
+  },
+  {
     "version": "1.20.165",
     "date": "2026-08-18T00:07:35.027Z",
     "rules": [

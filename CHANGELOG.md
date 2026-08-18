@@ -1,3 +1,10 @@
+## [1.20.166](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.165...v1.20.166) (2026-08-18)
+
+
+### Bug Fixes
+
+* **memo-compare-deeply-complex-props:** exempt props declared by a dependency (closes [#2037](https://github.com/BluMintInc/eslint-custom-rules/issues/2037)) ([05cf46c](https://github.com/BluMintInc/eslint-custom-rules/commit/05cf46cd852d563401ef713065a14d92cf9631cc))
+
 ## [1.20.165](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.164...v1.20.165) (2026-08-18)
 
 
