@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.165",
+    "date": "2026-08-18T00:07:35.027Z",
+    "rules": [
+      {
+        "name": "enforce-identifiable-firestore-type",
+        "changeType": "fix",
+        "issues": [
+          2035
+        ],
+        "summary": "accept every remedy its message prescribes (closes #2035)"
+      }
+    ]
+  },
+  {
     "version": "1.20.164",
     "date": "2026-08-17T22:26:37.717Z",
     "rules": [

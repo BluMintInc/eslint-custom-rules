@@ -1,3 +1,10 @@
+## [1.20.165](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.164...v1.20.165) (2026-08-18)
+
+
+### Bug Fixes
+
+* **enforce-identifiable-firestore-type:** accept every remedy its message prescribes (closes [#2035](https://github.com/BluMintInc/eslint-custom-rules/issues/2035)) ([86ba6de](https://github.com/BluMintInc/eslint-custom-rules/commit/86ba6dee2410b98db4f7971fd2fb789e875ae515))
+
 ## [1.20.164](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.163...v1.20.164) (2026-08-17)
 
 
