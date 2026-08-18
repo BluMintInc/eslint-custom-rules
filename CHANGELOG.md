@@ -1,3 +1,10 @@
+## [1.20.164](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.163...v1.20.164) (2026-08-17)
+
+
+### Bug Fixes
+
+* **enforce-empty-object-check:** see through optional chains (closes [#2034](https://github.com/BluMintInc/eslint-custom-rules/issues/2034)) ([b45da3e](https://github.com/BluMintInc/eslint-custom-rules/commit/b45da3e8f4e789c3382af4cf8496b528e8d4cf15))
+
 ## [1.20.163](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.162...v1.20.163) (2026-08-17)
 
 
