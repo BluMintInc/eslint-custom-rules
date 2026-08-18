@@ -381,6 +381,108 @@ function B() { return <Box sx={{ mt: 2, display: 'flex' }} />; }
 />`,
       },
 
+      // --- The same statement with its trailing semicolon (the spelling
+      // Prettier always writes): the semicolon sits outside the opening
+      // element's range, so the element still breaks apart and the `;` lands
+      // after the closing `/>`. ---
+      {
+        code: `<Box overflow="hidden" textOverflow="ellipsis" whiteSpace="nowrap" />;`,
+        errors: [
+          { messageId: 'preferSxProp', data: { prop: 'overflow' } },
+          { messageId: 'preferSxProp', data: { prop: 'textOverflow' } },
+          { messageId: 'preferSxProp', data: { prop: 'whiteSpace' } },
+        ],
+        output: `<Box
+  sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+/>;`,
+      },
+
+      // --- A trailing semicolon on a merge that fits stays on one line: the
+      // punctuation tail must not force the element apart. ---
+      {
+        code: `<Box mt={2} mb={1} />;`,
+        errors: [
+          { messageId: 'preferSxProp', data: { prop: 'mt' } },
+          { messageId: 'preferSxProp', data: { prop: 'mb' } },
+        ],
+        output: `<Box sx={{ mt: 2, mb: 1 }} />;`,
+      },
+
+      // --- An array element: the trailing comma sits outside the opening
+      // element's range, so the element breaks apart and the `,` follows the
+      // closing `/>`. ---
+      {
+        code: `
+const items = [
+  <Box display="flex" alignItems="center" justifyContent="center" key="a" />,
+];
+`,
+        errors: [
+          { messageId: 'preferSxProp', data: { prop: 'display' } },
+          { messageId: 'preferSxProp', data: { prop: 'alignItems' } },
+          { messageId: 'preferSxProp', data: { prop: 'justifyContent' } },
+        ],
+        output: `
+const items = [
+  <Box
+    sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+    key="a"
+  />,
+];
+`,
+      },
+
+      // --- An array element whose merge fits stays on one line. ---
+      {
+        code: `const items = [<Box mt={2} mb={1} key="a" />];`,
+        errors: [
+          { messageId: 'preferSxProp', data: { prop: 'mt' } },
+          { messageId: 'preferSxProp', data: { prop: 'mb' } },
+        ],
+        output: `const items = [<Box sx={{ mt: 2, mb: 1 }} key="a" />];`,
+      },
+
+      // --- An element that does not start its own line (`const el = <Box`):
+      // the only prettier-stable rewrite parenthesizes the whole element,
+      // which is outside the opening element's range, so the report carries no
+      // fix rather than emit a 95-column line. ---
+      {
+        code: `const el = <Box overflow="hidden" textOverflow="ellipsis" whiteSpace="nowrap" />;`,
+        errors: [
+          { messageId: 'preferSxProp', data: { prop: 'overflow' } },
+          { messageId: 'preferSxProp', data: { prop: 'textOverflow' } },
+          { messageId: 'preferSxProp', data: { prop: 'whiteSpace' } },
+        ],
+        output: null,
+      },
+
+      // --- Same shape when the merge fits: the fix still applies. ---
+      {
+        code: `const el = <Box mt={2} mb={1} />;`,
+        errors: [
+          { messageId: 'preferSxProp', data: { prop: 'mt' } },
+          { messageId: 'preferSxProp', data: { prop: 'mb' } },
+        ],
+        output: `const el = <Box sx={{ mt: 2, mb: 1 }} />;`,
+      },
+
+      // --- `return <Box ... />;` behaves like `const el =`: no safe wrap
+      // exists inside the opening element's range, so the over-wide merge is
+      // reported without a fix. ---
+      {
+        code: `
+export function Panel() {
+  return <Box overflow="hidden" textOverflow="ellipsis" whiteSpace="nowrap" />;
+}
+`,
+        errors: [
+          { messageId: 'preferSxProp', data: { prop: 'overflow' } },
+          { messageId: 'preferSxProp', data: { prop: 'textOverflow' } },
+          { messageId: 'preferSxProp', data: { prop: 'whiteSpace' } },
+        ],
+        output: null,
+      },
+
       // --- Custom component list via options ---
       {
         code: `<CustomBox mt={2} />`,
@@ -889,7 +991,8 @@ export const Overlay = ({ isActive }: Props) => (
       },
 
       // --- An array element that itself spans lines cannot be reproduced at a
-      // new depth, so the merge keeps the compact splice. ---
+      // new depth, and the compact splice would land on a 93-column line, so
+      // the report carries no fix rather than emit past the print width. ---
       {
         code: `
 export const Overlay = ({ isActive }: Props) => (
@@ -906,15 +1009,7 @@ export const Overlay = ({ isActive }: Props) => (
           { messageId: 'preferSxProp', data: { prop: 'alignItems' } },
           { messageId: 'preferSxProp', data: { prop: 'justifyContent' } },
         ],
-        output: `
-export const Overlay = ({ isActive }: Props) => (
-  <Box
-    sx={[{ alignItems: 'center', justifyContent: 'space-between' }, baseStyles, isActive && {
-      opacity: 0.5,
-    }]}
-  />
-);
-`,
+        output: null,
       },
 
       // --- sx as a variable: the spread stays last inside the broken-open
@@ -1238,8 +1333,10 @@ export const Panel = () => (
       },
 
       // --- A comment between attributes is not reachable from the attribute
-      // list, so the element is left on its line instead of being rebuilt
-      // without the comment. ---
+      // list, so the element cannot be rebuilt without dropping it, and the
+      // element head shares the merged attribute's line so the in-place wrap
+      // does not apply either. The merged line would run past the print width,
+      // so the report carries no fix. ---
       {
         code: `
 export const Panel = () => (
@@ -1251,16 +1348,71 @@ export const Panel = () => (
           { messageId: 'preferSxProp', data: { prop: 'justifyContent' } },
           { messageId: 'preferSxProp', data: { prop: 'pb' } },
         ],
+        output: null,
+      },
+
+      // --- The same comment at the front of the attribute's own line: only
+      // the attribute's range is replaced, so the comment survives in place
+      // and the literal breaks open. The width test charges for the columns
+      // the comment already consumed, not just the indentation. ---
+      {
+        code: `
+export const Panel = () => (
+  <Stack
+    /* keep in sync with Sidebar */ alignItems="center"
+    justifyContent="center"
+    pb={6}
+  />
+);
+`,
+        errors: [
+          { messageId: 'preferSxProp', data: { prop: 'alignItems' } },
+          { messageId: 'preferSxProp', data: { prop: 'justifyContent' } },
+          { messageId: 'preferSxProp', data: { prop: 'pb' } },
+        ],
         output: `
 export const Panel = () => (
-  <Stack /* keep in sync with Sidebar */ sx={{ alignItems: 'center', justifyContent: 'center', pb: 6 }} />
+  <Stack
+    /* keep in sync with Sidebar */ sx={{
+      alignItems: 'center',
+      justifyContent: 'center',
+      pb: 6,
+    }}
+  />
+);
+`,
+      },
+
+      // --- A leading comment whose line still fits inside the print width
+      // keeps the compact form: the comment only matters when the merged line
+      // overflows. ---
+      {
+        code: `
+export const Panel = () => (
+  <Stack
+    /* keep in sync with Sidebar */ alignItems="center"
+    pb={6}
+  />
+);
+`,
+        errors: [
+          { messageId: 'preferSxProp', data: { prop: 'alignItems' } },
+          { messageId: 'preferSxProp', data: { prop: 'pb' } },
+        ],
+        output: `
+export const Panel = () => (
+  <Stack
+    /* keep in sync with Sidebar */ sx={{ alignItems: 'center', pb: 6 }}
+  />
 );
 `,
       },
 
       // --- Children sharing the opening element's line: breaking the element
       // apart is not the change a formatter would make here (it moves the
-      // children instead), so the attributes are left where they are. ---
+      // children instead, which sit outside the opening element's range), and
+      // the merged line would land one column past the default print width, so
+      // the report carries no fix. ---
       {
         code: `
 export const Title = ({ theme }: Props) => (
@@ -1270,10 +1422,24 @@ export const Title = ({ theme }: Props) => (
 );
 `,
         errors: [{ messageId: 'preferSxProp', data: { prop: 'color' } }],
-        output: `
-export const Title = ({ theme }: Props) => (
+        output: null,
+      },
+
+      // --- Children sharing the line, but the merged form fits: the compact
+      // splice still applies. ---
+      {
+        code: `
+export const Title = () => (
   <Stack spacing={1}>
-    <Typography sx={{ color: theme.palette.primary.main }}>Lock team</Typography>
+    <Typography color={palette.main}>Lock team</Typography>
+  </Stack>
+);
+`,
+        errors: [{ messageId: 'preferSxProp', data: { prop: 'color' } }],
+        output: `
+export const Title = () => (
+  <Stack spacing={1}>
+    <Typography sx={{ color: palette.main }}>Lock team</Typography>
   </Stack>
 );
 `,
