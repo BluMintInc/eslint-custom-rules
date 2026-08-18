@@ -10,12 +10,25 @@ Ensures JSDoc-style comments live directly above the fields they describe (inter
 
 ## Rule Details
 
+Both orderings of the trailing comment and the member separator count as
+inline JSDoc: `phone?: string; /** … */` and the prettier-canonical
+`phone?: string /** … */;` describe the same field and are reported alike.
+
 ### ❌ Incorrect
 
 ```ts
 export type User = {
   phone?: string; /** @remarks stored as +15551234567 */
 };
+
+// Prettier rewrites the comment ahead of the separator — the same violation
+export type Contact = {
+  phone?: string /** @remarks stored as +15551234567 */;
+};
+
+interface Profile {
+  username: string /** @remarks unique handle */;
+}
 
 class Account {
   @Column()

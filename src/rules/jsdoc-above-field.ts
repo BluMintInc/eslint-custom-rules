@@ -1,4 +1,8 @@
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import {
+  AST_NODE_TYPES,
+  AST_TOKEN_TYPES,
+  TSESTree,
+} from '@typescript-eslint/utils';
 
 import { createRule } from '../utils/createRule';
 
@@ -13,6 +17,14 @@ type Options = [
 ];
 
 type MessageIds = 'moveJsdocAbove';
+
+/**
+ * Where a member's own code stops, ignoring the trailing `;`/`,` separator.
+ */
+type ContentEnd = {
+  offset: number;
+  line: number;
+};
 
 type FieldNode =
   | TSESTree.TSPropertySignature
@@ -108,23 +120,54 @@ export const jsdocAboveField = createRule<Options, MessageIds>({
       return 'type field';
     };
 
+    /**
+     * A member's range and its end line both swallow its trailing separator,
+     * while prettier canonicalises trailing JSDoc into the gap between the
+     * member's content and that separator. Such a comment therefore starts
+     * before `node.range[1]`, and when it spans lines it drags
+     * `node.loc.end.line` past the field's own line — so both boundaries have
+     * to come from the last non-separator token instead of the node, or the
+     * rule goes blind on formatted source.
+     */
+    const contentEndOf = (node: FieldNode): ContentEnd => {
+      const lastToken = sourceCode.getLastToken(node);
+      const isSeparator =
+        lastToken?.type === AST_TOKEN_TYPES.Punctuator &&
+        (lastToken.value === ';' || lastToken.value === ',');
+      const beforeSeparator = isSeparator
+        ? sourceCode.getTokenBefore(lastToken)
+        : undefined;
+
+      if (!beforeSeparator) {
+        return { offset: node.range[1], line: node.loc.end.line };
+      }
+
+      return {
+        offset: beforeSeparator.range[1],
+        line: beforeSeparator.loc.end.line,
+      };
+    };
+
     const inlineJSDocOnSameLine = (
-      node: FieldNode,
+      contentEnd: ContentEnd,
     ): TSESTree.Comment | undefined => {
       return allComments.find((comment) => {
         if (!isJSDocBlock(comment)) {
           return false;
         }
 
-        if (comment.loc.start.line !== node.loc.end.line) {
+        if (comment.loc.start.line !== contentEnd.line) {
           return false;
         }
 
-        if (comment.range[0] < node.range[1]) {
+        if (comment.range[0] < contentEnd.offset) {
           return false;
         }
 
-        const between = sourceCode.text.slice(node.range[1], comment.range[0]);
+        const between = sourceCode.text.slice(
+          contentEnd.offset,
+          comment.range[0],
+        );
 
         return /^[\s;,]*$/.test(between);
       });
@@ -216,7 +259,11 @@ export const jsdocAboveField = createRule<Options, MessageIds>({
       return normalizedLines.map((line) => `${indent}${line}`).join('\n');
     };
 
-    const reportInlineJSDoc = (node: FieldNode, comment: TSESTree.Comment) => {
+    const reportInlineJSDoc = (
+      node: FieldNode,
+      comment: TSESTree.Comment,
+      contentEnd: ContentEnd,
+    ) => {
       const insertTarget =
         node.type === AST_NODE_TYPES.PropertyDefinition &&
         node.decorators &&
@@ -241,7 +288,7 @@ export const jsdocAboveField = createRule<Options, MessageIds>({
         : `${commentText}\n`;
 
       while (
-        removalStart > node.range[1] &&
+        removalStart > contentEnd.offset &&
         /\s/.test(sourceCode.text[removalStart - 1])
       ) {
         removalStart -= 1;
@@ -272,13 +319,14 @@ export const jsdocAboveField = createRule<Options, MessageIds>({
         return;
       }
 
-      const jsdocComment = inlineJSDocOnSameLine(node);
+      const contentEnd = contentEndOf(node);
+      const jsdocComment = inlineJSDocOnSameLine(contentEnd);
 
       if (!jsdocComment) {
         return;
       }
 
-      reportInlineJSDoc(node, jsdocComment);
+      reportInlineJSDoc(node, jsdocComment, contentEnd);
     };
 
     return {
