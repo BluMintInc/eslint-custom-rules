@@ -265,6 +265,197 @@ ruleTesterTs.run(
         filename:
           'functions/src/types/firestore/Tournament/Participant/index.ts',
       },
+      // Issue #2035: every remedy the notExtendingIdentifiable message names
+      // has to clear the rule, or the message prescribes advice that reproduces
+      // itself. The next four fixtures are the message's own spellings,
+      // verbatim.
+      /**
+       * Remedy 1 of 3: intersect Identifiable. Also the spelling the message
+       * renders literally, comment placeholder included.
+       */
+      {
+        code: `
+        export type Connection = Identifiable & { /* other fields */ };
+      `,
+        filename: 'functions/src/types/firestore/Connection/index.ts',
+      },
+      /** Remedy 2 of 3: `extends Identifiable`, which needs an interface. */
+      {
+        code: `
+        import { Identifiable } from '../../Identifiable';
+
+        export interface Connection extends Identifiable {
+          userIdsConnected: string[];
+        }
+      `,
+        filename: 'functions/src/types/firestore/Connection/index.ts',
+      },
+      /**
+       * Remedy 3 of 3: declare `id: string` inline. This is also the example
+       * the missingType message renders, so it must clear BOTH messages —
+       * creating the folder-named type only to trip notExtendingIdentifiable
+       * would make that remedy unfollowable too.
+       */
+      {
+        code: `
+        export type Connection = { id: string; /* other fields */ };
+      `,
+        filename: 'functions/src/types/firestore/Connection/index.ts',
+      },
+      // An inline id satisfies the rule wherever it appears, not only under a
+      // `Resolve<>` wrapper: it delivers exactly the ID field the rule exists
+      // to guarantee.
+      {
+        code: `
+        export type Connection = {
+          id: string;
+          userIdsConnected: string[];
+        };
+      `,
+        filename: 'functions/src/types/firestore/Connection/index.ts',
+      },
+      // An id contributed by one branch of an intersection.
+      {
+        code: `
+        export type Connection = { userIdsConnected: string[] } & { id: string };
+      `,
+        filename: 'functions/src/types/firestore/Connection/index.ts',
+      },
+      // An id reached through a local alias hop.
+      {
+        code: `
+        type Base = { id: string; userIdsConnected: string[] };
+
+        export type Connection = Base;
+      `,
+        filename: 'functions/src/types/firestore/Connection/index.ts',
+      },
+      // An id under a transparent wrapper.
+      {
+        code: `
+        export type Connection = Readonly<{
+          id: string;
+          userIdsConnected: string[];
+        }>;
+      `,
+        filename: 'functions/src/types/firestore/Connection/index.ts',
+      },
+      // An interface may carry the id inline just as an alias may.
+      {
+        code: `
+        export interface Connection {
+          id: string;
+          userIdsConnected: string[];
+        }
+      `,
+        filename: 'functions/src/types/firestore/Connection/index.ts',
+      },
+      // Interface heritage is walked like an intersection: a local base that
+      // supplies the id satisfies the requirement.
+      {
+        code: `
+        interface Base {
+          id: string;
+        }
+
+        export interface Connection extends Base {
+          userIdsConnected: string[];
+        }
+      `,
+        filename: 'functions/src/types/firestore/Connection/index.ts',
+      },
+      // ...including a multi-hop heritage chain ending at Identifiable.
+      {
+        code: `
+        import { Identifiable } from '../../Identifiable';
+
+        interface Base extends Identifiable {
+          createdAt: number;
+        }
+
+        export interface Connection extends Base {
+          userIdsConnected: string[];
+        }
+      `,
+        filename: 'functions/src/types/firestore/Connection/index.ts',
+      },
+      // An alias whose chain ends at a local interface carrying the id.
+      {
+        code: `
+        interface Base {
+          id: string;
+        }
+
+        export type Connection = Base;
+      `,
+        filename: 'functions/src/types/firestore/Connection/index.ts',
+      },
+      // The export forms accepted for an alias apply to an interface too: a
+      // separate export specifier reaches the same local binding.
+      {
+        code: `
+        import { Identifiable } from '../../Identifiable';
+
+        interface Connection extends Identifiable {
+          userIdsConnected: string[];
+        }
+
+        export { Connection };
+      `,
+        filename: 'functions/src/types/firestore/Connection/index.ts',
+      },
+      // `export default interface` exports the local binding as well.
+      {
+        code: `
+        import { Identifiable } from '../../Identifiable';
+
+        export default interface Connection extends Identifiable {
+          userIdsConnected: string[];
+        }
+      `,
+        filename: 'functions/src/types/firestore/Connection/index.ts',
+      },
+      // Interfaces merge, so the id may be declared by either declaration of
+      // the name.
+      {
+        code: `
+        export interface Connection {
+          id: string;
+        }
+
+        export interface Connection {
+          userIdsConnected: string[];
+        }
+      `,
+        filename: 'functions/src/types/firestore/Connection/index.ts',
+      },
+      // Issue #1705's amnesty follows the same reasoning through heritage: an
+      // imported base is opaque to this single-file walk, so its lack of an id
+      // is unproven rather than disproven.
+      {
+        code: `
+        import { Team } from '../Team';
+
+        export interface Participant extends Team {
+          seed: number;
+        }
+      `,
+        filename:
+          'functions/src/types/firestore/Tournament/Participant/index.ts',
+      },
+      // A namespace-qualified base carries a MemberExpression rather than an
+      // Identifier, and names another module just the same.
+      {
+        code: `
+        import * as Types from '../Team';
+
+        export interface Participant extends Types.Team {
+          seed: number;
+        }
+      `,
+        filename:
+          'functions/src/types/firestore/Tournament/Participant/index.ts',
+      },
     ],
     invalid: [
       {
@@ -297,21 +488,11 @@ ruleTesterTs.run(
           },
         ],
       },
-      {
-        code: `
-        export type Connection = {
-          id: string;
-          userIdsConnected: string[];
-        };
-      `,
-        filename: 'functions/src/types/firestore/Connection/index.ts',
-        errors: [
-          {
-            messageId: 'notExtendingIdentifiable',
-            data: { typeName: 'Connection' },
-          },
-        ],
-      },
+      // Issue #2035: `export type Connection = { id: string; ... }` used to be
+      // asserted here, pinning the rule's report on the very remedy its message
+      // prescribes. The inline id is the ID field the rule exists to guarantee,
+      // so the fixture belongs in `valid` and lives there now; the arm that
+      // still has to report — an id-less type — is the fixture directly above.
       {
         code: `
         export const defaultConnection = {
@@ -605,6 +786,111 @@ ruleTesterTs.run(
         import { Team } from '../Team';
 
         type Connection = Team;
+      `,
+        filename: 'functions/src/types/firestore/Connection/index.ts',
+        errors: [
+          {
+            messageId: 'missingType',
+            data: { typeName: 'Connection', folderName: 'Connection' },
+          },
+        ],
+      },
+      // Issue #2035 regression guards. Honouring the message's remedies must
+      // not soften the requirement itself: a document type carrying neither an
+      // id nor Identifiable still reports, in either spelling.
+      /** REGRESSION GUARD: an interface with no id and no heritage. */
+      {
+        code: `
+        export interface Connection {
+          userIdsConnected: string[];
+          documentPath: string;
+        }
+      `,
+        filename: 'functions/src/types/firestore/Connection/index.ts',
+        errors: [
+          {
+            messageId: 'notExtendingIdentifiable',
+            data: { typeName: 'Connection' },
+          },
+        ],
+      },
+      /**
+       * REGRESSION GUARD: a fully resolvable heritage chain that supplies no
+       * id is proved id-less, so the amnesty does not apply.
+       */
+      {
+        code: `
+        interface Base {
+          createdAt: number;
+        }
+
+        export interface Connection extends Base {
+          userIdsConnected: string[];
+        }
+      `,
+        filename: 'functions/src/types/firestore/Connection/index.ts',
+        errors: [
+          {
+            messageId: 'notExtendingIdentifiable',
+            data: { typeName: 'Connection' },
+          },
+        ],
+      },
+      // `id` of any other type is not the ID field the rule requires.
+      {
+        code: `
+        export type Connection = {
+          id: number;
+          userIdsConnected: string[];
+        };
+      `,
+        filename: 'functions/src/types/firestore/Connection/index.ts',
+        errors: [
+          {
+            messageId: 'notExtendingIdentifiable',
+            data: { typeName: 'Connection' },
+          },
+        ],
+      },
+      // An id declared by a type the walk never descends into (a type argument
+      // of an unresolvable generic) is not the document's own id.
+      {
+        code: `
+        export type Connection = Map<{ id: string }, string>;
+      `,
+        filename: 'functions/src/types/firestore/Connection/index.ts',
+        errors: [
+          {
+            messageId: 'notExtendingIdentifiable',
+            data: { typeName: 'Connection' },
+          },
+        ],
+      },
+      // Recognizing interfaces does not exempt them from the export gate.
+      {
+        code: `
+        import { Identifiable } from '../../Identifiable';
+
+        interface Connection extends Identifiable {
+          userIdsConnected: string[];
+        }
+      `,
+        filename: 'functions/src/types/firestore/Connection/index.ts',
+        errors: [
+          {
+            messageId: 'missingType',
+            data: { typeName: 'Connection', folderName: 'Connection' },
+          },
+        ],
+      },
+      // Nor from the folder-name gate.
+      {
+        code: `
+        import { Identifiable } from '../../Identifiable';
+
+        export interface Other extends Identifiable {
+          userIdsConnected: string[];
+        }
       `,
         filename: 'functions/src/types/firestore/Connection/index.ts',
         errors: [
