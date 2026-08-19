@@ -145,6 +145,47 @@ This ensures effects re-run whenever array contents change, not just when its le
 
 - `hashImport.source` (default `functions/src/util/hash/stableHash`): Module path for the hash helper used by the fixer.
 - `hashImport.importName` (default `stableHash`): Imported name for the hash helper.
+- `printWidth` (default `80`): Column the autofix wraps the emitted declaration at.
+
+```js
+'@blumintinc/blumint/no-array-length-in-deps': ['error', {
+  // Column the autofix wraps the emitted declaration at
+  printWidth: 80,
+}]
+```
+
+### `printWidth`
+
+Type: `number`
+
+Default: `80`
+
+The column the autofix wraps at, matching Prettier's option of the same name.
+Set it to your formatter's `printWidth` so the fixed source is already in the
+shape the formatter would produce; a lint run carrying `--fix` otherwise leaves
+the tree failing `prettier --check`.
+
+The emitted declaration re-spells the array expression twice — once inside
+`stableHash(...)` and once in the `useMemo` dependency array — so its width
+grows with the input rather than being fixed. At a two-space indent the flat
+statement measures `41 + len(hashName) + 2 * len(expression)` columns, which an
+ordinary dependency name such as `participants` already pushes past 80.
+
+Within the width the declaration stays on one line; past it the fixer emits
+Prettier's break form for a two-argument call:
+
+```tsx
+const registrationsHash = useMemo(
+  () => stableHash(state.tournament.registrations),
+  [state.tournament.registrations],
+);
+```
+
+Wrapping unconditionally would be wrong in the other direction. A formatter
+collapses a hand-broken short argument list straight back onto one line, so
+always wrapping would trade an over-width line on long expressions for a
+needlessly split one on every short case. The fixer measures the exact statement
+it is about to write and only breaks when that measurement overflows.
 
 ## Warnings & Considerations
 

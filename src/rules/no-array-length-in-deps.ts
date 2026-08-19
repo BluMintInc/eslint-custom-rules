@@ -23,6 +23,7 @@ type Options = [
       source?: string;
       importName?: string;
     };
+    printWidth?: number;
   }?,
 ];
 
@@ -30,6 +31,15 @@ const DEFAULT_HASH_IMPORT = {
   source: 'functions/src/util/hash/stableHash',
   importName: 'stableHash',
 };
+
+/**
+ * Matches Prettier's own default. The fixer authors a whole statement whose
+ * length grows with the source — the base expression is emitted twice, and the
+ * binding name is derived from it — so a line it leaves past this width is
+ * rewritten on the next `prettier --write`, and fails `prettier --check` in the
+ * meantime.
+ */
+const DEFAULT_PRINT_WIDTH = 80;
 
 function isHookCall(node: TSESTree.CallExpression): boolean {
   const callee = node.callee;
@@ -410,6 +420,62 @@ function getAnchorIndent(
   return /^\s*$/.test(prefix) ? prefix : '';
 }
 
+/**
+ * Whether every line of `text` fits the print width once the first one is
+ * offset by the column the insertion starts at. Continuation lines already
+ * carry their own indentation, so only the first needs the offset.
+ */
+function fitsWidth(text: string, indent: string, printWidth: number): boolean {
+  return text
+    .split('\n')
+    .every(
+      (line, index) =>
+        (index === 0 ? indent.length : 0) + line.length <= printWidth,
+    );
+}
+
+/**
+ * The memo declaration in the layout Prettier gives it, or null when no layout
+ * this emitter can author fits.
+ *
+ * Measure, do not always-wrap: Prettier collapses a hand-broken
+ * `useMemo(\n  () => stableHash(items),\n  [items],\n)` straight back onto one
+ * line, so wrapping unconditionally would trade this overflow for its mirror
+ * image on every short dependency. Two layouts are authored, verified against
+ * the repo's own Prettier at widths 60/72/80/100/120 and indents 0-10:
+ *
+ * - the statement fits: keep it on one line;
+ * - it does not: break the `useMemo` argument list, one argument per line with
+ *   a trailing comma.
+ *
+ * Past that, Prettier's answer depends on which line overflowed — it breaks
+ * after the `=`, or splits the arrow body, or opens the `stableHash(...)`
+ * argument list, and those spellings compose. Rather than fall through to a
+ * line `prettier --check` rejects, the fixer declines and lets the report stand
+ * alone, exactly as it does for a base it cannot hoist. That region needs a
+ * base expression of ~58 characters or more at a two-space indent, since both
+ * gating lines are `indent + 21 + len(base)` columns wide.
+ */
+function buildMemoDeclaration(
+  varName: string,
+  hashName: string,
+  baseText: string,
+  indent: string,
+  printWidth: number,
+): string | null {
+  const oneLine = `const ${varName} = ${MEMO_HOOK_NAME}(() => ${hashName}(${baseText}), [${baseText}]);`;
+  if (fitsWidth(oneLine, indent, printWidth)) {
+    return oneLine;
+  }
+  const broken = [
+    `const ${varName} = ${MEMO_HOOK_NAME}(`,
+    `  () => ${hashName}(${baseText}),`,
+    `  [${baseText}],`,
+    `);`,
+  ].join(`\n${indent}`);
+  return fitsWidth(broken, indent, printWidth) ? broken : null;
+}
+
 function ensureWeakMapEntry<K extends object, V>(
   map: WeakMap<K, V>,
   key: K,
@@ -638,6 +704,10 @@ export const noArrayLengthInDeps = createRule<Options, MessageIds>({
             },
             additionalProperties: false,
           },
+          printWidth: {
+            type: 'number',
+            minimum: 1,
+          },
         },
         additionalProperties: false,
       },
@@ -655,6 +725,10 @@ export const noArrayLengthInDeps = createRule<Options, MessageIds>({
       source: hashImport?.source ?? DEFAULT_HASH_IMPORT.source,
       importName: hashImport?.importName ?? DEFAULT_HASH_IMPORT.importName,
     };
+    const printWidth =
+      typeof options.printWidth === 'number' && options.printWidth > 0
+        ? options.printWidth
+        : DEFAULT_PRINT_WIDTH;
 
     // Track planned file-wide changes to avoid overlapping fixers. Bases are
     // deduplicated per insertion block: a memo declared in one block is not
@@ -798,13 +872,20 @@ export const noArrayLengthInDeps = createRule<Options, MessageIds>({
               allTaken.add(name);
             }
 
+            // Names are resolved into a local map first. A declaration with no
+            // layout inside the print width withholds the whole edit, and a
+            // name already committed to the block's map would then stay
+            // reserved for a declaration that never got emitted.
+            const plannedNames = new Map<string, string>();
+            const nameFor = (baseText: string) =>
+              baseToVar.get(baseText) ?? plannedNames.get(baseText);
             for (const { member } of lengthDeps) {
               const baseExpr = getBaseExpression(member);
               const baseText = sourceCode.getText(baseExpr);
-              if (!baseToVar.has(baseText)) {
+              if (!nameFor(baseText)) {
                 const lastPropName = getLastPropertyName(baseExpr) || 'array';
                 const varName = generateUniqueName(lastPropName, allTaken);
-                baseToVar.set(baseText, varName);
+                plannedNames.set(baseText, varName);
                 allTaken.add(varName);
               }
             }
@@ -817,15 +898,33 @@ export const noArrayLengthInDeps = createRule<Options, MessageIds>({
               insertion.statement,
             );
             const indent = getAnchorIndent(sourceCode, anchor);
+            const pendingBases: string[] = [];
             let declText = '';
             for (const { member } of lengthDeps) {
               const baseExpr = getBaseExpression(member);
               const baseText = sourceCode.getText(baseExpr);
-              if (!declaredBases.has(baseText)) {
-                const varName = baseToVar.get(baseText)!;
-                declText += `const ${varName} = useMemo(() => ${hashImportConfig.importName}(${baseText}), [${baseText}]);\n${indent}`;
-                declaredBases.add(baseText);
-              }
+              if (
+                declaredBases.has(baseText) ||
+                pendingBases.includes(baseText)
+              )
+                continue;
+              const declaration = buildMemoDeclaration(
+                nameFor(baseText)!,
+                hashImportConfig.importName,
+                baseText,
+                indent,
+                printWidth,
+              );
+              if (declaration === null) return null;
+              declText += `${declaration}\n${indent}`;
+              pendingBases.push(baseText);
+            }
+
+            for (const [baseText, varName] of plannedNames) {
+              baseToVar.set(baseText, varName);
+            }
+            for (const baseText of pendingBases) {
+              declaredBases.add(baseText);
             }
             if (declText) {
               fixes.push(fixer.insertTextBeforeRange(anchor.range, declText));

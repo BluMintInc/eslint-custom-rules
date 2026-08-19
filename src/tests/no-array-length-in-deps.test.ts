@@ -198,7 +198,10 @@ import { useParticipants } from './livekit';
 export const useThing = () => {
   const participants = useParticipants();
 
-  const participantsHash = useMemo(() => stableHash(participants), [participants]);
+  const participantsHash = useMemo(
+    () => stableHash(participants),
+    [participants],
+  );
   useEffect(() => {
     console.log('changed');
   }, [participantsHash]);
@@ -698,7 +701,10 @@ import { useEffect, useMemo } from 'react';
 
 export const useCustomHits = (infiniteHits) => {
   const { items, isLastPage } = infiniteHits;
-  const hitsHash = useMemo(() => stableHash(infiniteHits.hits), [infiniteHits.hits]);
+  const hitsHash = useMemo(
+    () => stableHash(infiniteHits.hits),
+    [infiniteHits.hits],
+  );
   const isLoading = useMemo(() => {
     return infiniteHits.items.length === 0;
   }, [hitsHash]);
@@ -735,7 +741,10 @@ import { useEffect, useMemo } from 'react';
 
 export const useJoinCall = () => {
   const participants = useParticipants();
-  const participantsHash = useMemo(() => stableHash(participants), [participants]);
+  const participantsHash = useMemo(
+    () => stableHash(participants),
+    [participants],
+  );
   useEffect(() => {
     join(participants);
   }, [participantsHash]);
@@ -3141,6 +3150,314 @@ import { stableHash } from 'functions/src/util/hash/stableHash';
 const C = ({ items }) => {
   const itemsHash = useMemo(() => stableHash(items), [items]);
   do useEffect(() => { process(items); }, [itemsHash]); while (false);
+  return null;
+};
+`,
+    },
+  ],
+});
+
+// ------------------------------------------------------------------
+// Issue #2049: the emitted declaration re-spells the base expression twice and
+// derives the binding name from it, so its width grows with the input. Every
+// `output` below is a verified Prettier fixed point at the case's own
+// `printWidth`, and every layout was measured against the repo's own Prettier
+// rather than reasoned about — Prettier COLLAPSES a hand-broken short call
+// back onto one line, so the flat cases are the control an always-wrap remedy
+// would break.
+//
+// Boundary, measured at a two-space indent: the flat statement is
+// `41 + len(name) + 2 * len(base)` columns wide, and Prettier keeps it flat at
+// exactly 80 and breaks the argument list at 81.
+// ------------------------------------------------------------------
+ruleTesterJsx.run('no-array-length-in-deps', noArrayLengthInDeps, {
+  valid: [],
+  invalid: [
+    {
+      // The wrap side of the boundary: a member-chain base makes the flat
+      // statement 120 columns.
+      name: 'breaks the argument list when the flat statement overflows',
+      code: `
+import { useEffect, useMemo } from 'react';
+import { stableHash } from 'functions/src/util/hash/stableHash';
+
+export const useRegistrations = (state) => {
+  useEffect(() => {
+    sync(state.tournament.registrations);
+  }, [state.tournament.registrations.length]);
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'state.tournament.registrations.length' },
+        },
+      ],
+      output: `
+import { useEffect, useMemo } from 'react';
+import { stableHash } from 'functions/src/util/hash/stableHash';
+
+export const useRegistrations = (state) => {
+  const registrationsHash = useMemo(
+    () => stableHash(state.tournament.registrations),
+    [state.tournament.registrations],
+  );
+  useEffect(() => {
+    sync(state.tournament.registrations);
+  }, [registrationsHash]);
+};
+`,
+    },
+    {
+      // Collapse control, sitting exactly ON the width: an always-wrap remedy
+      // emits four lines here and Prettier folds them straight back.
+      name: 'keeps a declaration of exactly 80 columns on one line',
+      code: `
+import { useEffect, useMemo } from 'react';
+import { stableHash } from 'functions/src/util/hash/stableHash';
+
+const C = ({ attachments }) => {
+  useEffect(() => {
+    upload(attachments);
+  }, [attachments.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'attachments.length' },
+        },
+      ],
+      output: `
+import { useEffect, useMemo } from 'react';
+import { stableHash } from 'functions/src/util/hash/stableHash';
+
+const C = ({ attachments }) => {
+  const attachmentsHash = useMemo(() => stableHash(attachments), [attachments]);
+  useEffect(() => {
+    upload(attachments);
+  }, [attachmentsHash]);
+  return null;
+};
+`,
+    },
+    {
+      // One column over the control above: the predicate is `> printWidth`.
+      name: 'breaks a declaration of exactly 81 columns',
+      code: `
+import { useEffect, useMemo } from 'react';
+import { stableHash } from 'functions/src/util/hash/stableHash';
+
+const C = ({ s }) => {
+  useEffect(() => {
+    render(s.selections);
+  }, [s.selections.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 's.selections.length' },
+        },
+      ],
+      output: `
+import { useEffect, useMemo } from 'react';
+import { stableHash } from 'functions/src/util/hash/stableHash';
+
+const C = ({ s }) => {
+  const selectionsHash = useMemo(
+    () => stableHash(s.selections),
+    [s.selections],
+  );
+  useEffect(() => {
+    render(s.selections);
+  }, [selectionsHash]);
+  return null;
+};
+`,
+    },
+    {
+      // The width is measured per declaration, not per report.
+      name: 'wraps only the declaration that overflows',
+      code: `
+import { useEffect, useMemo } from 'react';
+import { stableHash } from 'functions/src/util/hash/stableHash';
+
+const C = ({ items, participants }) => {
+  useEffect(() => {
+    track(items, participants);
+  }, [items.length, participants.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length, participants.length' },
+        },
+      ],
+      output: `
+import { useEffect, useMemo } from 'react';
+import { stableHash } from 'functions/src/util/hash/stableHash';
+
+const C = ({ items, participants }) => {
+  const itemsHash = useMemo(() => stableHash(items), [items]);
+  const participantsHash = useMemo(
+    () => stableHash(participants),
+    [participants],
+  );
+  useEffect(() => {
+    track(items, participants);
+  }, [itemsHash, participantsHash]);
+  return null;
+};
+`,
+    },
+    {
+      // Past the argument-list break Prettier's answer depends on which line
+      // overflowed and the spellings compose, so the fixer declines instead of
+      // authoring text `prettier --check` rejects. Reaching this needs a base
+      // of ~58 characters or more at a two-space indent; here it is 62.
+      name: 'declines when no layout it can author fits the width',
+      code: `
+import { useEffect, useMemo } from 'react';
+import { stableHash } from 'functions/src/util/hash/stableHash';
+
+const C = ({ settings }) => {
+  useEffect(() => {
+    invite(settings.notifications.emailDigest.pendingInvitationRecipients);
+  }, [settings.notifications.emailDigest.pendingInvitationRecipients.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: {
+            dependencies:
+              'settings.notifications.emailDigest.pendingInvitationRecipients.length',
+          },
+        },
+      ],
+      output: null,
+    },
+  ],
+});
+
+// ------------------------------------------------------------------
+// Issue #2049: the `printWidth` option is live in both directions — it moves
+// the wrap boundary and it moves the point at which the fixer declines.
+// ------------------------------------------------------------------
+ruleTesterJsx.run('no-array-length-in-deps', noArrayLengthInDeps, {
+  valid: [],
+  invalid: [
+    {
+      name: 'a raised printWidth keeps an 83-column declaration on one line',
+      options: [{ printWidth: 100 }],
+      code: `
+import { useEffect, useMemo } from 'react';
+import { stableHash } from 'functions/src/util/hash/stableHash';
+
+export const useThing = (participants) => {
+  useEffect(() => {
+    join(participants);
+  }, [participants.length]);
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'participants.length' },
+        },
+      ],
+      output: `
+import { useEffect, useMemo } from 'react';
+import { stableHash } from 'functions/src/util/hash/stableHash';
+
+export const useThing = (participants) => {
+  const participantsHash = useMemo(() => stableHash(participants), [participants]);
+  useEffect(() => {
+    join(participants);
+  }, [participantsHash]);
+};
+`,
+    },
+    {
+      name: 'a lowered printWidth breaks a declaration that fits at 80',
+      options: [{ printWidth: 60 }],
+      code: `
+import { useEffect, useMemo } from 'react';
+import { stableHash } from 'functions/src/util/hash/stableHash';
+
+const C = ({ items }) => {
+  useEffect(() => {
+    track(items);
+  }, [items.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length' },
+        },
+      ],
+      output: `
+import { useEffect, useMemo } from 'react';
+import { stableHash } from 'functions/src/util/hash/stableHash';
+
+const C = ({ items }) => {
+  const itemsHash = useMemo(
+    () => stableHash(items),
+    [items],
+  );
+  useEffect(() => {
+    track(items);
+  }, [itemsHash]);
+  return null;
+};
+`,
+    },
+    {
+      // Control for the decline above: the same base is fixable once the width
+      // admits the broken argument list, so the decline is width-driven rather
+      // than a shape this fixer cannot handle at all.
+      name: 'a raised printWidth makes a declined base fixable again',
+      options: [{ printWidth: 120 }],
+      code: `
+import { useEffect, useMemo } from 'react';
+import { stableHash } from 'functions/src/util/hash/stableHash';
+
+const C = ({ settings }) => {
+  useEffect(() => {
+    invite(settings.notifications.emailDigest.pendingInvitationRecipients);
+  }, [settings.notifications.emailDigest.pendingInvitationRecipients.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: {
+            dependencies:
+              'settings.notifications.emailDigest.pendingInvitationRecipients.length',
+          },
+        },
+      ],
+      output: `
+import { useEffect, useMemo } from 'react';
+import { stableHash } from 'functions/src/util/hash/stableHash';
+
+const C = ({ settings }) => {
+  const pendingInvitationRecipientsHash = useMemo(
+    () => stableHash(settings.notifications.emailDigest.pendingInvitationRecipients),
+    [settings.notifications.emailDigest.pendingInvitationRecipients],
+  );
+  useEffect(() => {
+    invite(settings.notifications.emailDigest.pendingInvitationRecipients);
+  }, [pendingInvitationRecipientsHash]);
   return null;
 };
 `,
