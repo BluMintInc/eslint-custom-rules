@@ -744,6 +744,164 @@ function Component() {
 }
 `,
     },
+    // The tag is renamed in place, so an attribute list prettier expanded over
+    // several lines survives the fix intact. Re-authoring the element from
+    // joined attribute texts collapsed these five attributes onto a single
+    // 118-column line, which prettier --check then rejects.
+    {
+      code: `
+${IMPORT}
+export const Gallery = () => (
+  <div>
+    <img
+      src="/example.jpg"
+      alt="Example gallery item"
+      width={480}
+      height={320}
+      className="gallery-item"
+    />
+  </div>
+);
+`,
+      errors: [{ messageId: 'useImageOptimized' }],
+      output: `
+${IMPORT}
+export const Gallery = () => (
+  <div>
+    <ImageOptimized
+      src="/example.jpg"
+      alt="Example gallery item"
+      width={480}
+      height={320}
+      className="gallery-item"
+    />
+  </div>
+);
+`,
+    },
+    // Expression-valued attributes are carried over verbatim, braces and all.
+    {
+      code: `
+${IMPORT}
+export const Hero = ({ asset, sizes }) => (
+  <img
+    src={asset.url}
+    alt={asset.description ?? 'Hero image'}
+    sizes={sizes.join(', ')}
+  />
+);
+`,
+      errors: [{ messageId: 'useImageOptimized' }],
+      output: `
+${IMPORT}
+export const Hero = ({ asset, sizes }) => (
+  <ImageOptimized
+    src={asset.url}
+    alt={asset.description ?? 'Hero image'}
+    sizes={sizes.join(', ')}
+  />
+);
+`,
+    },
+    // The collapse direction is pinned too: a short attribute list stays on one
+    // line, because prettier folds a needlessly expanded one back anyway.
+    {
+      code: `
+${IMPORT}
+export const Thumb = () => <img src="/a.jpg" alt="A" />;
+`,
+      errors: [{ messageId: 'useImageOptimized' }],
+      output: `
+${IMPORT}
+export const Thumb = () => <ImageOptimized src="/a.jpg" alt="A" />;
+`,
+    },
+    // Dropping the closing tag of an expanded element leaves `/>` on the line
+    // the `>` occupied, which is where prettier puts it.
+    {
+      code: `
+${IMPORT}
+export const Banner = () => (
+  <img
+    src="/banner.jpg"
+    alt="Seasonal promotional banner artwork"
+    className="banner"
+  ></img>
+);
+`,
+      errors: [{ messageId: 'useImageOptimized' }],
+      output: `
+${IMPORT}
+export const Banner = () => (
+  <ImageOptimized
+    src="/banner.jpg"
+    alt="Seasonal promotional banner artwork"
+    className="banner"
+  />
+);
+`,
+    },
+    // A spread attribute, a comment between attributes and a multi-line
+    // expression value all keep their original positions.
+    {
+      code: `
+${IMPORT}
+export const Card = ({ rest, asset }) => (
+  <img
+    {...rest}
+    src={asset.url}
+    // the wrapper still needs an explicit alt
+    alt={asset.description}
+    style={{
+      objectFit: 'cover',
+      borderRadius: 8,
+    }}
+  />
+);
+`,
+      errors: [{ messageId: 'useImageOptimized' }],
+      output: `
+${IMPORT}
+export const Card = ({ rest, asset }) => (
+  <ImageOptimized
+    {...rest}
+    src={asset.url}
+    // the wrapper still needs an explicit alt
+    alt={asset.description}
+    style={{
+      objectFit: 'cover',
+      borderRadius: 8,
+    }}
+  />
+);
+`,
+    },
+    // With no attributes there is nothing but the name to rewrite, so a comment
+    // standing where the attributes would be is carried over rather than lost.
+    {
+      code: `
+${IMPORT}
+export const Blank = () => <img /* placeholder */ />;
+`,
+      errors: [{ messageId: 'useImageOptimized' }],
+      output: `
+${IMPORT}
+export const Blank = () => <ImageOptimized /* placeholder */ />;
+`,
+    },
+    // The same with a closing tag: the splice starts at the end of the tag name
+    // and keeps everything the opening element carried after it.
+    {
+      code: `
+${IMPORT}
+export const Blank = () => <img /* void */></img>;
+`,
+      errors: [{ messageId: 'useImageOptimized' }],
+      output: `
+${IMPORT}
+export const Blank = () => <ImageOptimized /* void */ />;
+`,
+    },
     {
       code: `
 ${IMPORT}

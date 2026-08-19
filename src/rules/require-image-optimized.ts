@@ -417,13 +417,43 @@ export = createRule<Options, MessageIds>({
             if (!resolvesToModuleBinding(scope, localName)) {
               return null;
             }
-            const attributes = node.openingElement.attributes
-              .map((attribute) => sourceCode.getText(attribute))
-              .join(' ');
-            return fixer.replaceText(
-              node,
-              `<${localName}${attributes ? ` ${attributes}` : ''} />`,
-            );
+            // Renaming the tag in place carries every attribute — and every
+            // line break between them — over byte for byte. Re-authoring the
+            // element from joined attribute texts instead collapses the list
+            // onto one line, by an amount that grows with the attribute count,
+            // so a prettier-formatted element comes back overflowing the print
+            // width. Wrapping by measurement is no remedy either: prettier
+            // collapses a short expanded attribute list back onto one line, so
+            // the input's own layout is the only shape that survives a round
+            // trip in both directions.
+            const fixes = [fixer.replaceText(elementName, localName)];
+            const { closingElement } = node;
+            const { attributes } = node.openingElement;
+            if (closingElement) {
+              // The component renders as a void element, so the closing tag
+              // has to go; splicing from the end of the last attribute (or of
+              // the tag name, when there is none) through the element's end
+              // leaves the attribute list untouched.
+              const spliceStart = (
+                attributes[attributes.length - 1] ?? elementName
+              ).range[1];
+              // Text between that point and the opening element's `>` carries
+              // the author's spacing and any trailing comment. Prettier puts
+              // `/>` on its own line when the attribute list is expanded and a
+              // space before it when it is not, which is exactly the
+              // distinction that spacing already encodes.
+              const gap = sourceCode.text.slice(
+                spliceStart,
+                node.openingElement.range[1] - 1,
+              );
+              fixes.push(
+                fixer.replaceTextRange(
+                  [spliceStart, node.range[1]],
+                  /\s$/.test(gap) ? `${gap}/>` : `${gap} />`,
+                ),
+              );
+            }
+            return fixes;
           },
         });
       },
