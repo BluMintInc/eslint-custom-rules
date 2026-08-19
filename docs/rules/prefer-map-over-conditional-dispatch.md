@@ -249,6 +249,17 @@ report-only message (`preferMapManual`) explaining why and suggesting the shape:
   is left report-only with a suggested thunk shape
   (`Record<D, () => Promise<V>>` invoked after lookup) rather than risk an
   incorrect eager-evaluation autofix.
+- **A function-valued branch is already that thunk.** The eager test stops at a
+  function boundary, so a branch value that *is* a function — a concise arrow
+  (`return (input: string) => trim(input);`), a block-bodied one, or an `async`
+  function expression whose body awaits — autofixes however busy its body is:
+  the body runs on invocation, after the lookup, and a default parameter is
+  evaluated on invocation too. What blocks the fix is a call or `await`
+  evaluated where the `Record` literal is built, so a **top-level** `await`
+  still reports. A class expression is deliberately not a boundary — its static
+  initializers, static blocks, computed member names and parameter decorators
+  all run when the class definition is evaluated, which the `Record` literal
+  does for every entry.
 - **A derivable, collision-free lookup name.** The name is derived
   deterministically from the discriminant as `RESULT_BY_<KEY>`, upper-snake-cased
   from the discriminant's identifier or trailing member property

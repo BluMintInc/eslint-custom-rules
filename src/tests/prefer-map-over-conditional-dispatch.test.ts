@@ -1829,6 +1829,314 @@ function f() {
       output: null,
       errors: [{ messageId: 'preferMapManual' }],
     },
+    // #2062 (A): a `function` expression branch value whose body calls. The
+    // value IS the thunk the eager carve-out's message asks for — its body runs
+    // on invocation, after the lookup — so the call cannot fire per entry and
+    // the fix applies.
+    {
+      code: `
+type Mode = 'plain' | 'fancy';
+declare const mode: Mode;
+declare function trim(input: string): string;
+declare function shout(input: string): string;
+function pick() {
+  switch (mode) {
+    case 'plain':
+      return function (input: string) {
+        return trim(input);
+      };
+    case 'fancy':
+      return function (input: string) {
+        return shout(input);
+      };
+  }
+}
+`,
+      output: `
+type Mode = 'plain' | 'fancy';
+declare const mode: Mode;
+declare function trim(input: string): string;
+declare function shout(input: string): string;
+function pick() {
+  const RESULT_BY_MODE: Record<Mode, (input: string) => string> = {
+    plain: function (input: string) {
+      return trim(input);
+    },
+    fancy: function (input: string) {
+      return shout(input);
+    },
+  };
+  return RESULT_BY_MODE[mode];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2062 (B): the same value spelled as a block-bodied arrow.
+    {
+      code: `
+type Mode = 'plain' | 'fancy';
+declare const mode: Mode;
+declare function trim(input: string): string;
+declare function shout(input: string): string;
+function pick() {
+  switch (mode) {
+    case 'plain':
+      return (input: string) => {
+        return trim(input);
+      };
+    case 'fancy':
+      return (input: string) => {
+        return shout(input);
+      };
+  }
+}
+`,
+      output: `
+type Mode = 'plain' | 'fancy';
+declare const mode: Mode;
+declare function trim(input: string): string;
+declare function shout(input: string): string;
+function pick() {
+  const RESULT_BY_MODE: Record<Mode, (input: string) => string> = {
+    plain: (input: string) => {
+      return trim(input);
+    },
+    fancy: (input: string) => {
+      return shout(input);
+    },
+  };
+  return RESULT_BY_MODE[mode];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2062 (C): and as a concise arrow, where the call is the whole body.
+    {
+      code: `
+type Mode = 'plain' | 'fancy';
+declare const mode: Mode;
+declare function trim(input: string): string;
+declare function shout(input: string): string;
+function pick() {
+  switch (mode) {
+    case 'plain':
+      return (input: string) => trim(input);
+    case 'fancy':
+      return (input: string) => shout(input);
+  }
+}
+`,
+      output: `
+type Mode = 'plain' | 'fancy';
+declare const mode: Mode;
+declare function trim(input: string): string;
+declare function shout(input: string): string;
+function pick() {
+  const RESULT_BY_MODE: Record<Mode, (input: string) => string> = {
+    plain: (input: string) => trim(input),
+    fancy: (input: string) => shout(input),
+  };
+  return RESULT_BY_MODE[mode];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2062 (D control): a bare call is still eager — the boundary above must
+    // not switch the carve-out off.
+    {
+      code: `
+type Mode = 'plain' | 'fancy';
+declare const mode: Mode;
+declare function sideEffect(): string;
+function pick() {
+  switch (mode) {
+    case 'plain':
+      return sideEffect();
+    case 'fancy':
+      return sideEffect();
+  }
+}
+`,
+      output: null,
+      errors: [{ messageId: 'preferMapManual' }],
+    },
+    // #2062 (E control): the same scaffold as (D), with a function-valued
+    // branch that carries no call at all. It converts on its own, so only the
+    // COMBINATION of the two shapes was ever broken.
+    {
+      code: `
+type Mode = 'plain' | 'fancy';
+declare const mode: Mode;
+declare function sideEffect(): string;
+function pick() {
+  switch (mode) {
+    case 'plain':
+      return function (input: string) {
+        return input + '!';
+      };
+    case 'fancy':
+      return function (input: string) {
+        return input + '?';
+      };
+  }
+}
+`,
+      output: `
+type Mode = 'plain' | 'fancy';
+declare const mode: Mode;
+declare function sideEffect(): string;
+function pick() {
+  const RESULT_BY_MODE: Record<Mode, (input: string) => string> = {
+    plain: function (input: string) {
+      return input + '!';
+    },
+    fancy: function (input: string) {
+      return input + '?';
+    },
+  };
+  return RESULT_BY_MODE[mode];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2062 (F): an `async` branch value whose body awaits is suspended until
+    // the value is called, so it converts. The emitted value type is what the
+    // lib-less test program prints for a promise (`unknown`); a real project
+    // prints `Promise<string>`.
+    {
+      code: `
+type Mode = 'plain' | 'fancy';
+declare const mode: Mode;
+declare function load(input: string): PromiseLike<string>;
+function pick() {
+  switch (mode) {
+    case 'plain':
+      return async function (input: string) {
+        return await load(input);
+      };
+    case 'fancy':
+      return async function (input: string) {
+        return await load(input.trim());
+      };
+  }
+}
+`,
+      output: `
+type Mode = 'plain' | 'fancy';
+declare const mode: Mode;
+declare function load(input: string): PromiseLike<string>;
+function pick() {
+  const RESULT_BY_MODE: Record<Mode, (input: string) => unknown> = {
+    plain: async function (input: string) {
+      return await load(input);
+    },
+    fancy: async function (input: string) {
+      return await load(input.trim());
+    },
+  };
+  return RESULT_BY_MODE[mode];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2062 (G control): a TOP-LEVEL await is evaluated where the Record
+    // literal is built, so it stays eager — `await` is not lazy by itself, only
+    // by the function that encloses it.
+    {
+      code: `
+type Mode = 'plain' | 'fancy';
+declare const mode: Mode;
+declare function load(input: string): PromiseLike<string>;
+async function pick() {
+  switch (mode) {
+    case 'plain':
+      return await load('a');
+    case 'fancy':
+      return await load('b');
+  }
+}
+`,
+      output: null,
+      errors: [{ messageId: 'preferMapManual' }],
+    },
+    // #2062 (H control): a parameter decorator sits inside a function yet runs
+    // with the enclosing class definition, which the Record literal performs
+    // per entry — so it is eager despite the function boundary around it.
+    {
+      code: `
+type Mode = 'plain' | 'fancy';
+declare const mode: Mode;
+declare function inject(): (t: unknown, k: unknown, i: number) => void;
+function pick() {
+  switch (mode) {
+    case 'plain':
+      return class {
+        run(@inject() dep: unknown) {}
+      };
+    case 'fancy':
+      return class {
+        run(dep: unknown) {}
+      };
+  }
+}
+`,
+      output: null,
+      errors: [{ messageId: 'preferMapManual' }],
+    },
+    // #2062 (I): a default parameter is evaluated on invocation like the body
+    // is, so a call in one is lazy too.
+    {
+      code: `
+type Mode = 'plain' | 'fancy';
+declare const mode: Mode;
+declare function fallback(): string;
+function pick() {
+  switch (mode) {
+    case 'plain':
+      return (input: string = fallback()) => input;
+    case 'fancy':
+      return (input: string = fallback()) => input + '!';
+  }
+}
+`,
+      output: `
+type Mode = 'plain' | 'fancy';
+declare const mode: Mode;
+declare function fallback(): string;
+function pick() {
+  const RESULT_BY_MODE: Record<Mode, (input?: string) => string> = {
+    plain: (input: string = fallback()) => input,
+    fancy: (input: string = fallback()) => input + '!',
+  };
+  return RESULT_BY_MODE[mode];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2062 (J control): a class expression is NOT a boundary — its static
+    // initializers, static blocks and computed member names all run when the
+    // class definition is evaluated, which the Record literal does per entry.
+    {
+      code: `
+type Mode = 'plain' | 'fancy';
+declare const mode: Mode;
+declare function sideEffect(): string;
+function pick() {
+  switch (mode) {
+    case 'plain':
+      return class {
+        static tag = sideEffect();
+      };
+    case 'fancy':
+      return class {
+        static tag = 'fancy';
+      };
+  }
+}
+`,
+      output: null,
+      errors: [{ messageId: 'preferMapManual' }],
+    },
     // Edge 2 + 3: grouped cases AND a partial-coverage default — report-only.
     {
       code: `
@@ -5510,6 +5818,99 @@ describe('prefer-map-over-conditional-dispatch fix output parseability', () => {
         { range: true },
       ),
     ).toThrow();
+  });
+});
+
+/**
+ * Pinning the expected text keeps a fix's layout stable, but says nothing about
+ * whether that layout is the one the consumer's formatter wants — and text
+ * `prettier --check` rejects is text the next `prettier --write` rewrites. So
+ * the layout is measured against the repo's own Prettier rather than eyeballed
+ * (#2062), which matters most for a function-valued entry: the widest thing
+ * this fixer copies, a multi-line body it re-indents under a head whose own
+ * layout depends on the annotation's width.
+ *
+ * The oracle is CONDITIONAL on the input, because the fixer copies branch
+ * values verbatim: a fixture written with its function body on one line ships
+ * that line into the Record, and the reformatting Prettier then asks for is the
+ * fixture's spelling talking, not the fixer's. Only a fixture whose own source
+ * is already a fixed point can hold the fixer to one.
+ */
+describe('prefer-map-over-conditional-dispatch fix layout vs Prettier', () => {
+  const PRETTIER_OPTIONS: prettier.Options = {
+    parser: 'typescript',
+    printWidth: 80,
+    tabWidth: 2,
+    singleQuote: true,
+    semi: true,
+    trailingComma: 'all',
+  };
+
+  const isFixedPoint = (text: string): boolean =>
+    prettier.format(text, PRETTIER_OPTIONS) === text;
+
+  // A case carrying `options` authors its layout for a width that is not the
+  // repo's, so Prettier at 80 is not its oracle. The leading newline every
+  // fixture opens with is a template-literal artifact Prettier strips; every
+  // other byte has to survive formatting untouched.
+  const fixedCases = tsTests.invalid
+    .filter((testCase) => testCase.options === undefined)
+    .map((testCase) => ({
+      code: testCase.code.trimStart(),
+      output:
+        typeof testCase.output === 'string' ? testCase.output.trimStart() : '',
+    }))
+    .filter((testCase) => testCase.output !== '');
+  const settled = fixedCases.filter((testCase) => isFixedPoint(testCase.code));
+  const functionValued = settled.filter((testCase) =>
+    /Record<[A-Za-z]+, \(/.test(testCase.output),
+  );
+
+  it('rewrites Prettier-clean input into Prettier-clean output', () => {
+    console.log(
+      `[fix-layout] ${settled.length} settled input(s) of ${fixedCases.length} fixed, ${functionValued.length} function-valued`,
+    );
+    // Floors just under the measured counts, so a fixture edited out of either
+    // sample fails here rather than quietly emptying it.
+    expect(settled.length).toBeGreaterThanOrEqual(108);
+    expect(functionValued.length).toBeGreaterThanOrEqual(14);
+    for (const testCase of functionValued) {
+      expect(prettier.format(testCase.output, PRETTIER_OPTIONS)).toBe(
+        testCase.output,
+      );
+    }
+  });
+
+  it('carries exactly the one measured residue over the whole sample', () => {
+    // Replacing a PARENTHESIZED expression keeps the source's parentheses
+    // (`if ((RESULT_BY_KIND[kind]) > 0)`), which Prettier strips as redundant.
+    // That is a property of the replacement span rather than of the layout this
+    // guard is about, so it is named rather than filtered away: a second
+    // unstable output has to fail here.
+    const unstable = settled.filter(
+      (testCase) => !isFixedPoint(testCase.output),
+    );
+    expect(unstable).toHaveLength(1);
+    expect(unstable[0].output).toContain('if ((RESULT_BY_KIND[kind]) > 0) {');
+  });
+
+  it('accounts for what it skips: a ceiling cut close to the measurement', () => {
+    // The skipped cases are fixtures whose own source Prettier would rewrite.
+    // Left uncounted, a formatting drift that unsettled every input would leave
+    // the assertion above passing over an empty sample, so the ceiling sits
+    // just above the measured count rather than at "a minority".
+    expect(fixedCases.length - settled.length).toBeLessThanOrEqual(8);
+  });
+
+  it('is not vacuous: the same output mis-indented is rejected', () => {
+    const misindented = functionValued[0].output.replace(
+      '  const RESULT_BY_',
+      '    const RESULT_BY_',
+    );
+    expect(misindented).not.toBe(functionValued[0].output);
+    expect(prettier.format(misindented, PRETTIER_OPTIONS)).not.toBe(
+      misindented,
+    );
   });
 });
 
