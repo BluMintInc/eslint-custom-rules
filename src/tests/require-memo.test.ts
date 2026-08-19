@@ -1538,6 +1538,45 @@ export const TournamentRegistrationPanelForBracket = memo(
       name: 'TournamentRegistrationPanelForBracket',
     }),
 
+    // A comment in the parameter list occupies columns like any other text, so
+    // it counts toward the measured header. This pair straddles the threshold on
+    // the comment alone: without it the in-place header is 67 columns and stays
+    // in place, and the same declaration is split once the comment carries it to
+    // 87. Discounting comment columns would emit the 87-column in-place header
+    // that #2054 exists to prevent, so the shape legitimately depends on a
+    // comment — the carve-out recorded for this rule in
+    // `src/tests/commentFidelityBaseline.ts`, which the comment-fidelity guards
+    // require a fixture here to keep anchored. The comment survives either way.
+    withDefaults({
+      code: `function ProfileCardPanel({
+  title,
+}: Props) {
+  return <div>{title}</div>;
+}`,
+      output: `import { memo } from '../util/memo';
+const ProfileCardPanel = memo(function ProfileCardPanelUnmemoized({
+  title,
+}: Props) {
+  return <div>{title}</div>;
+});`,
+      name: 'ProfileCardPanel',
+    }),
+    withDefaults({
+      code: `function ProfileCardPanel({ /* keep me */
+  title,
+}: Props) {
+  return <div>{title}</div>;
+}`,
+      output: `import { memo } from '../util/memo';
+function ProfileCardPanelUnmemoized({ /* keep me */
+  title,
+}: Props) {
+  return <div>{title}</div>;
+}
+const ProfileCardPanel = memo(ProfileCardPanelUnmemoized);`,
+      name: 'ProfileCardPanel',
+    }),
+
     // `printWidth` drives the decision rather than a hard-coded 80: the same
     // short component the default keeps in place is split at a narrower width,
     // and the appended binding breaks its sole argument out because the one-line

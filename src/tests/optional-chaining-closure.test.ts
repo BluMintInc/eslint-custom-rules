@@ -283,7 +283,6 @@ const UNDRIVEN: Record<string, UndrivenCause> = {
   'enforce-dynamic-imports::call': 'silentBothSides',
   'enforce-dynamic-imports::member': 'noSite',
   'enforce-f-extension-for-entry-points::member': 'silentBothSides',
-  'enforce-firestore-rules-get-access::call': 'noSite',
   'enforce-firestore-rules-get-access::member': 'noSite',
   'enforce-identifiable-firestore-type::call': 'noSite',
   // A namespace-qualified interface heritage (`extends Types.Team`) is the
