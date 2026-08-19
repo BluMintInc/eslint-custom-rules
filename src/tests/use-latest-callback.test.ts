@@ -2312,9 +2312,11 @@ export const useThing = (onChange: (i: number) => void) => {
 };`,
       errors: errors(),
     },
-    // A function expression WITH parameters stays collapsed: Prettier answers an
-    // over-long call there by hugging the function and breaking its parameter
-    // list, so the collapsed form is the one that keeps Prettier's first line.
+    // A function expression WITH parameters is hugged onto the call line with
+    // its parameter list broken one per line, which is Prettier's own answer
+    // here: the head through the parameter list's `(` measures 62 columns, so
+    // the callback stays hugged and only the parameters move (issue #2047).
+    // Collapsed, this line would run to 112 columns.
     {
       code: `import { useCallback } from 'react';
 
@@ -2327,6 +2329,389 @@ export const useThing = (onChange: (i: number) => void) => {
   );
   return updateIntersectionState;
 };`,
+      output: `import useLatestCallback from 'use-latest-callback';
+
+export const useThing = (onChange: (i: number) => void) => {
+  const updateIntersectionState = useLatestCallback(function (
+    index: number,
+    entry: IntersectionObserverEntry,
+  ) {
+    onChange(index);
+  });
+  return updateIntersectionState;
+};`,
+      errors: errors(),
+    },
+    // The issue's own minimal reproduction: one ordinary React event parameter
+    // already overruns the width when collapsed (85 columns). The head through
+    // the parameter list's `(` measures 41, so the callback stays hugged.
+    {
+      code: `import { useCallback } from 'react';
+
+export const useThing = (go: () => void) => {
+  const cb = useCallback(
+    function (event: React.PointerEvent<HTMLDivElement>) {
+      go();
+    },
+    [go],
+  );
+  return cb;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+
+export const useThing = (go: () => void) => {
+  const cb = useLatestCallback(function (
+    event: React.PointerEvent<HTMLDivElement>,
+  ) {
+    go();
+  });
+  return cb;
+};`,
+      errors: errors(),
+    },
+    // A NAMED function expression: the name rides the hugged head, exactly
+    // where Prettier puts it (105 columns collapsed).
+    {
+      code: `import { useCallback } from 'react';
+
+export const useScroll = (onScroll: (t: number) => void) => {
+  const handleScroll = useCallback(
+    function onScrollHandler(event: React.UIEvent<HTMLDivElement>) {
+      onScroll(event.currentTarget.scrollTop);
+    },
+    [onScroll],
+  );
+  return handleScroll;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+
+export const useScroll = (onScroll: (t: number) => void) => {
+  const handleScroll = useLatestCallback(function onScrollHandler(
+    event: React.UIEvent<HTMLDivElement>,
+  ) {
+    onScroll(event.currentTarget.scrollTop);
+  });
+  return handleScroll;
+};`,
+      errors: errors(),
+    },
+    // A rest parameter has to stay last, so the broken list ends without the
+    // trailing comma the setting otherwise asks for.
+    {
+      code: `import { useCallback } from 'react';
+
+export const useThing = (go: (...a: number[]) => void) => {
+  const cb = useCallback(
+    function (firstArgument: number, ...remainingArgumentValues: number[]) {
+      go(firstArgument, ...remainingArgumentValues);
+    },
+    [go],
+  );
+  return cb;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+
+export const useThing = (go: (...a: number[]) => void) => {
+  const cb = useLatestCallback(function (
+    firstArgument: number,
+    ...remainingArgumentValues: number[]
+  ) {
+    go(firstArgument, ...remainingArgumentValues);
+  });
+  return cb;
+};`,
+      errors: errors(),
+    },
+    // The hug/break-open threshold, lower side: the head through the parameter
+    // list's `(` measures exactly 80, so Prettier hugs and so does the fix.
+    {
+      code: `import { useCallback } from 'react';
+
+export const useThing = (go: () => void) => {
+  const handler = useCallback(
+    function handleTheDeferredNavigationRequest(event: PointerEvent) {
+      go();
+    },
+    [go],
+  );
+  return handler;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+
+export const useThing = (go: () => void) => {
+  const handler = useLatestCallback(function handleTheDeferredNavigationRequest(
+    event: PointerEvent,
+  ) {
+    go();
+  });
+  return handler;
+};`,
+      errors: errors(),
+    },
+    // The same threshold, upper side: one more character in the function's name
+    // puts the hugged head at 81, and Prettier breaks the argument list open
+    // instead. Paired with the case above, this pins the boundary in both
+    // directions rather than only the wrapping one.
+    {
+      code: `import { useCallback } from 'react';
+
+export const useThing = (go: () => void) => {
+  const handler = useCallback(
+    function handleTheDeferredNavigationRequests(event: PointerEvent) {
+      go();
+    },
+    [go],
+  );
+  return handler;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+
+export const useThing = (go: () => void) => {
+  const handler = useLatestCallback(
+    function handleTheDeferredNavigationRequests(event: PointerEvent) {
+      go();
+    },
+  );
+  return handler;
+};`,
+      errors: errors(),
+    },
+    // The shape agora ships in EditableWrapperBigInt.tsx: a named function
+    // expression whose head already spans lines. Its hugged head measures 84,
+    // so the call breaks open and the callback's own layout survives verbatim.
+    {
+      code: `import { useCallback } from 'react';
+
+export const useWrap = (ViewComponent: any, value: bigint) => {
+  const BigIntViewComponent = useCallback(
+    function BigIntViewComponentWrapper(
+      viewProps: Readonly<ViewComponentPropsBase<string>>,
+    ) {
+      return use(ViewComponent, viewProps, value);
+    },
+    [ViewComponent, value],
+  );
+  return BigIntViewComponent;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+
+export const useWrap = (ViewComponent: any, value: bigint) => {
+  const BigIntViewComponent = useLatestCallback(
+    function BigIntViewComponentWrapper(
+      viewProps: Readonly<ViewComponentPropsBase<string>>,
+    ) {
+      return use(ViewComponent, viewProps, value);
+    },
+  );
+  return BigIntViewComponent;
+};`,
+      errors: errors(),
+    },
+    // A comment written alongside a parameter rides the line the parameter
+    // moves to. Per-parameter node text would re-emit the parameter and drop
+    // the comment, so the emitted list is sliced between the separators.
+    {
+      code: `import { useCallback } from 'react';
+
+export const useThing = (go: () => void) => {
+  const cb = useCallback(
+    function (/* the pointer event */ event: React.PointerEvent<HTMLElement>) {
+      go();
+    },
+    [go],
+  );
+  return cb;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+
+export const useThing = (go: () => void) => {
+  const cb = useLatestCallback(function (
+    /* the pointer event */ event: React.PointerEvent<HTMLElement>,
+  ) {
+    go();
+  });
+  return cb;
+};`,
+      errors: errors(),
+    },
+    // A sole destructuring parameter is the one shape Prettier breaks
+    // differently: it opens the pattern's own braces and leaves the parameter
+    // list intact. The one-per-line spelling measures within the width yet is
+    // rewritten straight back, so it is not authored — the call breaks open,
+    // which at least emits no line past the width.
+    {
+      code: `import { useCallback } from 'react';
+
+export const useThing = (go: () => void) => {
+  const handleTheFormSubmission = useCallback(
+    function ({ alpha, bravo, charlie, delta }: SubmissionProps) {
+      go();
+    },
+    [go],
+  );
+  return handleTheFormSubmission;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+
+export const useThing = (go: () => void) => {
+  const handleTheFormSubmission = useLatestCallback(
+    function ({ alpha, bravo, charlie, delta }: SubmissionProps) {
+      go();
+    },
+  );
+  return handleTheFormSubmission;
+};`,
+      errors: errors(),
+    },
+    // A second parameter alongside the pattern puts the list back on the
+    // one-per-line path, because Prettier breaks the list rather than the
+    // pattern as soon as the pattern is not alone.
+    {
+      code: `import { useCallback } from 'react';
+
+export const useThing = (go: () => void) => {
+  const handleTheFormSubmission = useCallback(
+    function ({ alpha, bravo }: SubmissionProps, index: number) {
+      go();
+    },
+    [go],
+  );
+  return handleTheFormSubmission;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+
+export const useThing = (go: () => void) => {
+  const handleTheFormSubmission = useLatestCallback(function (
+    { alpha, bravo }: SubmissionProps,
+    index: number,
+  ) {
+    go();
+  });
+  return handleTheFormSubmission;
+};`,
+      errors: errors(),
+    },
+    // A default turns the pattern into an AssignmentPattern, which is no longer
+    // the sole-pattern shape Prettier expands in place, so the list breaks one
+    // per line again. This pins the carve-out's own boundary.
+    {
+      code: `import { useCallback } from 'react';
+
+export const useThing = (go: () => void) => {
+  const handleTheFormSubmission = useCallback(
+    function ({ alpha, bravo, charlie }: SubmissionProps = {} as any) {
+      go();
+    },
+    [go],
+  );
+  return handleTheFormSubmission;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+
+export const useThing = (go: () => void) => {
+  const handleTheFormSubmission = useLatestCallback(function (
+    { alpha, bravo, charlie }: SubmissionProps = {} as any,
+  ) {
+    go();
+  });
+  return handleTheFormSubmission;
+};`,
+      errors: errors(),
+    },
+    // The hugged head is read from the source rather than rebuilt, so an
+    // `async` keyword rides it where Prettier puts it.
+    {
+      code: `import { useCallback } from 'react';
+
+export const useThing = (go: () => Promise<void>) => {
+  const cb = useCallback(
+    async function (event: React.PointerEvent<HTMLDivElement>) {
+      await go();
+    },
+    [go],
+  );
+  return cb;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+
+export const useThing = (go: () => Promise<void>) => {
+  const cb = useLatestCallback(async function (
+    event: React.PointerEvent<HTMLDivElement>,
+  ) {
+    await go();
+  });
+  return cb;
+};`,
+      errors: errors(),
+    },
+    // The callback's own type parameters ride the hugged head too, which is why
+    // the head is sliced through the parameter list's `(` rather than assembled
+    // from the `function` keyword and a name.
+    {
+      code: `import { useCallback } from 'react';
+
+export const useThing = (go: () => void) => {
+  const cb = useCallback(
+    function <T extends HTMLElement>(event: React.PointerEvent<T>, extra: T) {
+      go();
+    },
+    [go],
+  );
+  return cb;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+
+export const useThing = (go: () => void) => {
+  const cb = useLatestCallback(function <T extends HTMLElement>(
+    event: React.PointerEvent<T>,
+    extra: T,
+  ) {
+    go();
+  });
+  return cb;
+};`,
+      errors: errors(),
+    },
+    // The collapse direction: a parameterised function expression that fits is
+    // left on one line. Wrapping unconditionally would be the opposite bug,
+    // since Prettier collapses a short broken-open list straight back.
+    {
+      code: `import { useCallback } from 'react';
+
+export const useThing = (go: () => void) => {
+  const cb = useCallback(
+    function (event: MouseEvent) {
+      go();
+    },
+    [go],
+  );
+  return cb;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+
+export const useThing = (go: () => void) => {
+  const cb = useLatestCallback(function (event: MouseEvent) {
+    go();
+  });
+  return cb;
+};`,
+      errors: errors(),
+    },
+    // A raised printWidth moves the threshold with it: the same 112-column call
+    // the default breaks stays collapsed at 120.
+    {
+      code: `import { useCallback } from 'react';
+
+export const useThing = (onChange: (i: number) => void) => {
+  const updateIntersectionState = useCallback(
+    function (index: number, entry: IntersectionObserverEntry) {
+      onChange(index);
+    },
+    [onChange],
+  );
+  return updateIntersectionState;
+};`,
+      options: [{ printWidth: 120 }],
       output: `import useLatestCallback from 'use-latest-callback';
 
 export const useThing = (onChange: (i: number) => void) => {
