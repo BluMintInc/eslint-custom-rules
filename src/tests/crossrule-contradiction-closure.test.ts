@@ -249,8 +249,8 @@ const KNOWN_DIVERGENT: Record<string, Exemption> = {
   },
   'enforce-global-constants::react-memoize-literals': {
     reason:
-      'HANDOFF: the fixtures declare component-scope literals that close over nothing, which `react-memoize-literals` owns; hoisting one to module scope — the remedy `enforce-global-constants` itself names — is clean under both (measured).',
-    cases: { componentLiteral: 6, hookReturnLiteral: 4 },
+      'HANDOFF: the fixtures declare component-scope literals that close over nothing, which `react-memoize-literals` owns; hoisting one to module scope — the remedy `enforce-global-constants` itself names — is clean under both (measured). 6/4 -> 8/6 with the #2046 width-gate fixtures: two blessed outputs keep an all-numeric `[100, …, 12800]` default inline because the hoist fix DECLINES it — prettier re-packs a numeric array several elements per line (fill mode), so no fixer-authored one-per-line hoist is a prettier fixed point — and each draws both sibling complaints, the surviving array (`componentLiteral`) and the object the hook returns (`hookReturnLiteral`). Hand-hoisting the array in prettier’s own fill layout and returning the object through `useMemo` with both names declared is clean under both (measured).',
+    cases: { componentLiteral: 8, hookReturnLiteral: 6 },
   },
   'enforce-memoize-async::enforce-dynamic-imports': {
     reason:
@@ -1162,10 +1162,11 @@ const KNOWN_STANDOFFS: Record<
 > = {
   'enforce-global-constants::react-memoize-literals': {
     reason:
-      'Two INDEPENDENT complaints about different expressions, neither fixable: a second destructuring default the hoist rule declines (`a_b = 2`, kept snake_case to pin how the constant NAME is derived; `debounceMs = 10`, whose derived `DEFAULT_DEBOUNCE_MS` already exists as a module-scope `let` — a deliberate name collision), and the returned array literal, which is `react-memoize-literals` domain. Hoisting the second default under a free name and memoizing the return is clean under both (measured).',
+      'Two INDEPENDENT complaints about different expressions, neither fixable: a second destructuring default the hoist rule declines (`a_b = 2`, kept snake_case to pin how the constant NAME is derived; `debounceMs = 10`, whose derived `DEFAULT_DEBOUNCE_MS` already exists as a module-scope `let` — a deliberate name collision), and the returned array literal, which is `react-memoize-literals` domain. Hoisting the second default under a free name and memoizing the return is clean under both (measured). The three-way signature joined with the #2046 width-gate fixtures: their blessed outputs keep an all-numeric `[100, …, 12800]` default inline because the hoist fix declines it (prettier re-packs a numeric array in fill mode, so no fixer-authored hoist is a prettier fixed point), and the hook also returns an object literal. Hand-hoisting the array in prettier’s own fill layout plus `useMemo` around the returned object, both names declared, is clean under both (measured).',
     residuals: {
       'enforce-global-constants:extractDefaultToGlobalConstant + react-memoize-literals:componentLiteral': 1,
       'enforce-global-constants:extractDefaultToGlobalConstant + react-memoize-literals:hookReturnLiteral': 1,
+      'enforce-global-constants:extractDefaultToGlobalConstant + react-memoize-literals:componentLiteral + react-memoize-literals:hookReturnLiteral': 2,
     },
   },
   'enforce-microdiff::enforce-dynamic-imports': {
