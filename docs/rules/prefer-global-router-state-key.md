@@ -192,6 +192,60 @@ function Component() {
 }
 ```
 
+## Options
+
+- `printWidth` (default `80`): Column the autofix wraps the emitted import at.
+
+```js
+'@blumintinc/blumint/prefer-global-router-state-key': ['error', {
+  // Column the autofix wraps the emitted import at
+  printWidth: 80,
+}]
+```
+
+### `printWidth`
+
+Type: `number`
+
+Default: `80`
+
+The column the autofix wraps at, matching Prettier's option of the same name.
+Set it to your formatter's `printWidth` so the fixed source is already in the
+shape the formatter would produce; a lint run carrying `--fix` otherwise leaves
+the tree failing `prettier --check`.
+
+Extending an existing queryKeys import is the emission whose width grows with
+the input: one `QUERY_KEY_*` element per distinct router-state key in the file,
+on a line already carrying ~48 columns of
+`import { … } from '../../util/routing/queryKeys';` overhead. That leaves a
+~32-column budget for the whole specifier list, so two realistically-named keys
+overflow and each further key adds ~25 more columns.
+
+So the fixer measures the extended declaration before writing it. Within the
+width the specifier list stays on one line; past it the declaration is written
+in Prettier's canonical broken form, one specifier per line:
+
+```typescript
+import {
+  QUERY_KEY_USER_PROFILE,
+  QUERY_KEY_USER_SETTINGS,
+} from '../../util/routing/queryKeys';
+```
+
+An import already broken across lines is extended in that same one-per-line
+shape, and keeps it. Appending to its last specifier's line instead would put
+two specifiers on one line — under any width, yet still not what Prettier
+prints, which is why width alone does not describe this case.
+
+Two paths stay flat deliberately, because wrapping them is the opposite failure:
+
+- **A short specifier list.** A formatter collapses a hand-broken import that
+  fits back onto one line, so always wrapping would leave every short import
+  failing `prettier --check` instead.
+- **A fresh single-specifier import.** A formatter never breaks a lone named
+  specifier, so such an import is stable at any width — well past `printWidth` —
+  and is emitted on one line regardless.
+
 ## When Not To Use It
 
 You might consider disabling this rule in test files or in cases where you need to quickly prototype with string literals.

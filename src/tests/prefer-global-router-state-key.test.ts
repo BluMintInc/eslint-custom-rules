@@ -800,7 +800,10 @@ export const useGroupIdMap = () => {
         `,
         errors: [stringLiteralError("'user-settings'")],
         output: `
-        import { QUERY_KEY_USER_PROFILE, QUERY_KEY_USER_SETTINGS } from '@/util/routing/queryKeys';
+        import {
+          QUERY_KEY_USER_PROFILE,
+          QUERY_KEY_USER_SETTINGS,
+        } from '@/util/routing/queryKeys';
 
         function Component() {
           const [value] = useRouterState({ key: QUERY_KEY_USER_SETTINGS });
@@ -1291,7 +1294,10 @@ export const useGroupIdMap = () => {
         }
         `,
         output: `
-        import { QUERY_KEY_USER_PROFILE, QUERY_KEY_USER_SETTINGS } from '../../util/routing/queryKeys';
+        import {
+          QUERY_KEY_USER_PROFILE,
+          QUERY_KEY_USER_SETTINGS,
+        } from '../../util/routing/queryKeys';
 
         function TeamCard() {
           const [profile] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
@@ -2489,6 +2495,212 @@ ruleTesterJsx.run(
         code: undefinedHeldKeyCode('let key;', "  key ||= 'playback-id';"),
         errors: [{ messageId: 'invalidQueryKeySource' as const }],
         output: null,
+      },
+    ],
+  },
+);
+
+// ------------------------------------------------------------------
+// Issue #2051: extending the existing queryKeys import appended
+// `, QUERY_KEY_*` to the last specifier's line, one element per distinct
+// router-state key in the file, on a line already carrying ~48 columns of
+// `import { … } from '../../util/routing/queryKeys';` overhead. Two
+// realistically-named keys overflow, and every further key adds ~25 more
+// columns to the same line.
+//
+// Every `output` below was measured against the repo's own Prettier rather
+// than reasoned about, in both directions: Prettier COLLAPSES a hand-broken
+// import that fits back onto one line, and never breaks a LONE named
+// specifier at any width.
+// ------------------------------------------------------------------
+ruleTesterJsx.run(
+  'prefer-global-router-state-key',
+  preferGlobalRouterStateKey,
+  {
+    valid: [],
+    invalid: [
+      {
+        name: 'breaks the specifier list one-per-line when the extension overflows',
+        filename: 'src/components/tournament/TeamCard.tsx',
+        code: `import { QUERY_KEY_USER_PROFILE } from '../../util/routing/queryKeys';
+
+export function TeamCard() {
+  const [a] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
+  const [b] = useRouterState({ key: 'user-settings' });
+  return null;
+}
+`,
+        errors: [{ messageId: 'preferGlobalRouterStateKey' as const }],
+        output: `import {
+  QUERY_KEY_USER_PROFILE,
+  QUERY_KEY_USER_SETTINGS,
+} from '../../util/routing/queryKeys';
+
+export function TeamCard() {
+  const [a] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
+  const [b] = useRouterState({ key: QUERY_KEY_USER_SETTINGS });
+  return null;
+}
+`,
+      },
+      {
+        // Collapse control: an always-wrap remedy expands this one and Prettier
+        // folds it straight back, so the wrap has to be measured, not assumed.
+        name: 'keeps the specifier list on one line while the extension fits',
+        filename: 'src/components/tournament/TeamCard.tsx',
+        code: `import { QUERY_KEY_A } from '../../util/routing/queryKeys';
+
+export function TeamCard() {
+  const [a] = useRouterState({ key: QUERY_KEY_A });
+  const [b] = useRouterState({ key: 'b' });
+  return null;
+}
+`,
+        errors: [{ messageId: 'preferGlobalRouterStateKey' as const }],
+        output: `import { QUERY_KEY_A, QUERY_KEY_B } from '../../util/routing/queryKeys';
+
+export function TeamCard() {
+  const [a] = useRouterState({ key: QUERY_KEY_A });
+  const [b] = useRouterState({ key: QUERY_KEY_B });
+  return null;
+}
+`,
+      },
+      {
+        // The case the width probe cannot see: appending to the last specifier's
+        // line puts two specifiers on one line without exceeding any width, and
+        // still fails `prettier --check`.
+        name: 'extends an already-broken import one specifier per line',
+        filename: 'src/components/tournament/TeamCard.tsx',
+        code: `import {
+  QUERY_KEY_USER_SETTINGS_PANEL,
+  QUERY_KEY_TOURNAMENT_OVERVIEW,
+} from '../../util/routing/queryKeys';
+
+export function TeamCard() {
+  const [a] = useRouterState({ key: QUERY_KEY_USER_SETTINGS_PANEL });
+  const [b] = useRouterState({ key: QUERY_KEY_TOURNAMENT_OVERVIEW });
+  const [c] = useRouterState({ key: 'match-overview' });
+  return null;
+}
+`,
+        errors: [{ messageId: 'preferGlobalRouterStateKey' as const }],
+        output: `import {
+  QUERY_KEY_USER_SETTINGS_PANEL,
+  QUERY_KEY_TOURNAMENT_OVERVIEW,
+  QUERY_KEY_MATCH_OVERVIEW,
+} from '../../util/routing/queryKeys';
+
+export function TeamCard() {
+  const [a] = useRouterState({ key: QUERY_KEY_USER_SETTINGS_PANEL });
+  const [b] = useRouterState({ key: QUERY_KEY_TOURNAMENT_OVERVIEW });
+  const [c] = useRouterState({ key: QUERY_KEY_MATCH_OVERVIEW });
+  return null;
+}
+`,
+      },
+      {
+        // An import Prettier has already broken keeps that shape even where the
+        // extended list would fit on one line: Prettier preserves the break, so
+        // re-joining it would be a rewrite Prettier undoes.
+        name: 'keeps an already-broken import broken even when the extension fits',
+        filename: 'src/components/tournament/TeamCard.tsx',
+        code: `import {
+  QUERY_KEY_A,
+  QUERY_KEY_B,
+} from '../../util/routing/queryKeys';
+
+export function TeamCard() {
+  const [a] = useRouterState({ key: QUERY_KEY_A });
+  const [b] = useRouterState({ key: QUERY_KEY_B });
+  const [c] = useRouterState({ key: 'c' });
+  return null;
+}
+`,
+        errors: [{ messageId: 'preferGlobalRouterStateKey' as const }],
+        output: `import {
+  QUERY_KEY_A,
+  QUERY_KEY_B,
+  QUERY_KEY_C,
+} from '../../util/routing/queryKeys';
+
+export function TeamCard() {
+  const [a] = useRouterState({ key: QUERY_KEY_A });
+  const [b] = useRouterState({ key: QUERY_KEY_B });
+  const [c] = useRouterState({ key: QUERY_KEY_C });
+  return null;
+}
+`,
+      },
+      {
+        // Asymmetry control: a lone named specifier is Prettier-stable at ANY
+        // width, so the fresh-import path stays flat at 89 columns. Wrapping it
+        // would be the opposite failure - Prettier would collapse it right back.
+        name: 'leaves a fresh single-specifier import flat past the width',
+        filename: 'src/components/tournament/registration/Status.tsx',
+        code: `export function Status() {
+  const [a] = useRouterState({ key: 'tournament-registration-step' });
+  return null;
+}
+`,
+        errors: [{ messageId: 'preferGlobalRouterStateKey' as const }],
+        output: `import { QUERY_KEY_TOURNAMENT_REGISTRATION_STEP } from '../../../util/routing/queryKeys';
+export function Status() {
+  const [a] = useRouterState({ key: QUERY_KEY_TOURNAMENT_REGISTRATION_STEP });
+  return null;
+}
+`,
+      },
+      {
+        // The option is read, not merely declared: the same source that stays
+        // flat at the default width breaks here.
+        name: 'a lowered printWidth breaks an import that fits at 80',
+        filename: 'src/components/tournament/TeamCard.tsx',
+        options: [{ printWidth: 40 }],
+        code: `import { QUERY_KEY_A } from '../../util/routing/queryKeys';
+
+export function TeamCard() {
+  const [a] = useRouterState({ key: QUERY_KEY_A });
+  const [b] = useRouterState({ key: 'b' });
+  return null;
+}
+`,
+        errors: [{ messageId: 'preferGlobalRouterStateKey' as const }],
+        output: `import {
+  QUERY_KEY_A,
+  QUERY_KEY_B,
+} from '../../util/routing/queryKeys';
+
+export function TeamCard() {
+  const [a] = useRouterState({ key: QUERY_KEY_A });
+  const [b] = useRouterState({ key: QUERY_KEY_B });
+  return null;
+}
+`,
+      },
+      {
+        // The other direction, so the option is pinned as a live measurement
+        // rather than a one-way switch: the source that breaks at 80 stays flat.
+        name: 'a raised printWidth keeps an import that breaks at 80 on one line',
+        filename: 'src/components/tournament/TeamCard.tsx',
+        options: [{ printWidth: 200 }],
+        code: `import { QUERY_KEY_USER_PROFILE } from '../../util/routing/queryKeys';
+
+export function TeamCard() {
+  const [a] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
+  const [b] = useRouterState({ key: 'user-settings' });
+  return null;
+}
+`,
+        errors: [{ messageId: 'preferGlobalRouterStateKey' as const }],
+        output: `import { QUERY_KEY_USER_PROFILE, QUERY_KEY_USER_SETTINGS } from '../../util/routing/queryKeys';
+
+export function TeamCard() {
+  const [a] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
+  const [b] = useRouterState({ key: QUERY_KEY_USER_SETTINGS });
+  return null;
+}
+`,
       },
     ],
   },

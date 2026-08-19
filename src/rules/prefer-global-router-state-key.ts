@@ -14,6 +14,25 @@ import {
 
 type MessageIds = 'preferGlobalRouterStateKey' | 'invalidQueryKeySource';
 
+type Options = [
+  {
+    printWidth?: number;
+  },
+];
+
+/**
+ * Prettier's own default. The fixer extends an import statement a formatter
+ * owns, so a specifier list it runs past this width is rewritten by the next
+ * `prettier --write` — and fails `prettier --check` until then (#2051).
+ */
+const DEFAULT_PRINT_WIDTH = 80;
+
+/**
+ * Prettier's default `tabWidth`, used for an import the source has not already
+ * broken across lines and so offers no step to copy.
+ */
+const DEFAULT_INDENT_STEP = '  ';
+
 // The module's path below the project root doubles as the bare specifier,
 // which is precisely why the root tsconfig `paths` and the Jest mapper resolve
 // it.
@@ -116,11 +135,136 @@ function unwrapTransparentKeySource(node: TSESTree.Node): TSESTree.Node {
 }
 
 /**
+ * The whitespace `node` sits behind on its own line, or '' when anything else
+ * shares that line. Used only to line the emitted continuation lines up with
+ * the declaration they belong to; a real import is at column 0, since the
+ * grammar admits one only at module top level.
+ */
+function lineIndentOf(
+  sourceCode: TSESLint.SourceCode,
+  node: TSESTree.Node,
+): string {
+  const text = sourceCode.getText();
+  const lineStart = text.lastIndexOf('\n', node.range[0] - 1) + 1;
+  const prefix = text.slice(lineStart, node.range[0]);
+  return /^[ \t]*$/.test(prefix) ? prefix : '';
+}
+
+/**
+ * The nesting step the declaration already uses when the source has broken it
+ * across lines, so re-rendering keeps the author's unit rather than imposing
+ * two spaces on a tab-indented or four-space file.
+ */
+function specifierIndentStepOf(
+  sourceCode: TSESLint.SourceCode,
+  declaration: TSESTree.ImportDeclaration,
+  declarationIndent: string,
+): string {
+  const first = declaration.specifiers[0];
+  if (!first) {
+    return DEFAULT_INDENT_STEP;
+  }
+  const indent = lineIndentOf(sourceCode, first);
+  return indent.length > declarationIndent.length &&
+    indent.startsWith(declarationIndent)
+    ? indent.slice(declarationIndent.length)
+    : DEFAULT_INDENT_STEP;
+}
+
+/**
+ * The edit that adds `addition` to an existing `queryKeys` named import.
+ *
+ * Prettier owns this statement's shape and makes an all-or-nothing choice about
+ * it: a named import list either stays entirely on one line, or breaks with
+ * EVERY specifier on its own line (measured — prettier never packs two
+ * specifiers onto a continuation line). Which one it picks is decided by the
+ * rendered line's own length against the print width, at column 0: the grammar
+ * admits an import only at module top level, so that is the column prettier
+ * prints it at whatever column the source indents it to. Measuring the source
+ * column instead would expand an import prettier then collapses straight back,
+ * trading one `prettier --check` failure for its mirror image.
+ *
+ * A lone specifier is exempt in both directions — prettier keeps it on one line
+ * at any length and collapses a pre-expanded one — which is why the sibling
+ * emission path that writes a fresh single-specifier import is left alone. This
+ * branch always ends at two or more specifiers, so it never meets that case.
+ *
+ * Appending to the last specifier — the historical edit — ignored the
+ * declaration's rendered form entirely and so failed BOTH ways: it ran a
+ * two-specifier list past the width, and it welded the new name onto the last
+ * populated line of an already-expanded import, which is under the width yet
+ * still not what prettier prints (#2051).
+ */
+function extendQueryKeysImport(
+  fixer: TSESLint.RuleFixer,
+  sourceCode: TSESLint.SourceCode,
+  declaration: TSESTree.ImportDeclaration,
+  specifiers: TSESTree.ImportSpecifier[],
+  addition: string,
+  printWidth: number,
+): TSESLint.RuleFix {
+  const lastSpecifier = specifiers[specifiers.length - 1];
+  const appendInPlace = () =>
+    fixer.insertTextAfter(lastSpecifier, `, ${addition}`);
+
+  const tail = sourceCode
+    .getText()
+    .slice(declaration.source.range[1], declaration.range[1]);
+
+  // Re-rendering writes the whole declaration, so it is only reached where the
+  // declaration carries nothing this function does not reproduce. An import
+  // attribute clause (`with { type: 'json' }`) lives in that tail; a comment
+  // between the specifiers, or a default/namespace specifier alongside them,
+  // would be written over. None of the three is reachable from a real
+  // `queryKeys` import, and each makes the in-place append the honest edit:
+  // this arm declines the wrap DELIBERATELY rather than by falling through,
+  // because a formatting nicety does not justify deleting a comment or a
+  // binding (#2045 — a declined wrap must be a decision, not an accident).
+  if (
+    !/^\s*;?\s*$/.test(tail) ||
+    specifiers.length !== declaration.specifiers.length ||
+    sourceCode.getCommentsInside(declaration).length > 0
+  ) {
+    return appendInPlace();
+  }
+
+  const names = [
+    ...specifiers.map((specifier) => sourceCode.getText(specifier)),
+    addition,
+  ];
+  const source = sourceCode.getText(declaration.source);
+  // An absent semicolon is the author's, and prettier's `semi: false` keeps it
+  // absent, so the re-render restates what the declaration already spells.
+  const semicolon = tail.includes(';') ? ';' : '';
+  const oneLine = `import { ${names.join(', ')} } from ${source}${semicolon}`;
+
+  if (oneLine.length <= printWidth) {
+    // Re-rendering rather than appending also collapses an import the source
+    // left expanded but that now fits, which is precisely what prettier does
+    // with one.
+    return fixer.replaceText(declaration, oneLine);
+  }
+
+  const declarationIndent = lineIndentOf(sourceCode, declaration);
+  const step = specifierIndentStepOf(
+    sourceCode,
+    declaration,
+    declarationIndent,
+  );
+  const wrapped = [
+    'import {',
+    ...names.map((name) => `${declarationIndent}${step}${name},`),
+    `${declarationIndent}} from ${source}${semicolon}`,
+  ].join('\n');
+  return fixer.replaceText(declaration, wrapped);
+}
+
+/**
  * Rule to enforce the use of centralized router state key constants imported from
  * `src/util/routing/queryKeys.ts` instead of arbitrary string literals when calling
  * router methods that accept key parameters.
  */
-export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
+export const preferGlobalRouterStateKey = createRule<Options, MessageIds>({
   name: 'prefer-global-router-state-key',
   meta: {
     type: 'problem',
@@ -130,7 +274,18 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
       recommended: 'error',
     },
     fixable: 'code',
-    schema: [],
+    schema: [
+      {
+        type: 'object',
+        properties: {
+          printWidth: {
+            type: 'number',
+            minimum: 1,
+          },
+        },
+        additionalProperties: false,
+      },
+    ],
     messages: {
       preferGlobalRouterStateKey:
         'Router state key {{keyValue}} is a string literal. String literals bypass the shared queryKeys.ts QUERY_KEY_* constants, which leads to duplicate router cache entries and makes allowed keys hard to discover. Import the corresponding QUERY_KEY_* constant from "src/util/routing/queryKeys" (a relative path to that module, or an approved re-export) and pass that to useRouterState instead.',
@@ -138,9 +293,14 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
         'Router state key variable "{{variableName}}" is not sourced from queryKeys.ts. useRouterState keys must come from QUERY_KEY_* exports so routing cache keys stay stable and traceable. Import the matching constant from "src/util/routing/queryKeys" (a relative path to that module, or an approved re-export) and use that value here instead of {{variableName}}.',
     },
   },
-  defaultOptions: [],
-  create(context) {
+  defaultOptions: [{}],
+  create(context, [options]) {
     const sourceCode = context.sourceCode;
+
+    const printWidth =
+      typeof options.printWidth === 'number' && options.printWidth > 0
+        ? options.printWidth
+        : DEFAULT_PRINT_WIDTH;
     const cwd =
       typeof context.getCwd === 'function' ? context.getCwd() : process.cwd();
     const absoluteFilename = toAbsoluteFilename(context.getFilename(), cwd);
@@ -842,12 +1002,14 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                                       spec.type ===
                                       AST_NODE_TYPES.ImportSpecifier,
                                   );
-                                const lastSpecifier =
-                                  importSpecifiers[importSpecifiers.length - 1];
                                 fixes.push(
-                                  fixer.insertTextAfter(
-                                    lastSpecifier,
-                                    `, ${suggestedConstant}`,
+                                  extendQueryKeysImport(
+                                    fixer,
+                                    sourceCode,
+                                    queryKeysNamedImport,
+                                    importSpecifiers,
+                                    suggestedConstant,
+                                    printWidth,
                                   ),
                                 );
                               } else if (importText === null) {
