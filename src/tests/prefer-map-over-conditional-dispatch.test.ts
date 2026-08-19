@@ -3,12 +3,13 @@ import { TSESLint } from '@typescript-eslint/utils';
 import * as prettier from 'prettier';
 import { ruleTesterTs, ruleTesterJsx } from '../utils/ruleTester';
 import {
+  normalizeTypeQuotes,
   preferMapOverConditionalDispatch,
   reflowsWhenOverWide,
 } from '../rules/prefer-map-over-conditional-dispatch';
 
 type RuleMessageIds = 'preferMap' | 'preferMapManual';
-type RuleOptions = [{ printWidth?: number }];
+type RuleOptions = [{ printWidth?: number; singleQuote?: boolean }];
 type RuleTests = TSESLint.RunTests<RuleMessageIds, RuleOptions>;
 
 const tsTests: RuleTests = {
@@ -2060,7 +2061,7 @@ function pickEncoder(standard: 'native' | 'erc20' | 'offchain') {
 `,
       output: `
 function pickEncoder(standard: 'native' | 'erc20' | 'offchain') {
-  const RESULT_BY_STANDARD: Record<"native" | "erc20" | "offchain", any> = {
+  const RESULT_BY_STANDARD: Record<'native' | 'erc20' | 'offchain', any> = {
     // eslint-disable-next-line no-restricted-syntax
     native: NativeEncoder,
     erc20: Erc20Encoder,
@@ -2368,8 +2369,7 @@ function getLabel() {
     buy: 'Buy now',
     sell: 'Sell now',
   };
-  const label =
-    RESULT_BY_SIDE[side];
+  const label = RESULT_BY_SIDE[side];
   return label;
 }
 `,
@@ -2760,7 +2760,7 @@ class Holder {
   readonly kind!: 'x' | 'y';
   readonly #kind!: 'a' | 'b';
   public read() {
-    const RESULT_BY_KIND: Record<"a" | "b", number> = {
+    const RESULT_BY_KIND: Record<'a' | 'b', number> = {
       a: 1,
       b: 2,
     };
@@ -3403,7 +3403,7 @@ function f() {
   if (h.kind === 'c') {
     return 0;
   }
-  const RESULT_BY_KIND: Record<"a" | "b", number> = {
+  const RESULT_BY_KIND: Record<'a' | 'b', number> = {
     a: 1,
     b: 2,
   };
@@ -3431,7 +3431,7 @@ function f() {
       output: `
 declare const o: { kind: 'a' | 'b' };
 function f() {
-  const RESULT_BY_KIND: Record<"a" | "b", number> = {
+  const RESULT_BY_KIND: Record<'a' | 'b', number> = {
     a: 1,
     b: 2,
   };
@@ -4223,6 +4223,1048 @@ function pick() {
 `,
       errors: [{ messageId: 'preferMapManual' }],
     },
+    // #2059: an anonymous literal-union discriminant. `typeToString` prints a
+    // string-literal type double-quoted whatever the file's quote style is, and
+    // the printed text ships straight into the key position, so the authored
+    // line failed `prettier --check` at any width.
+    {
+      code: `
+declare const kind: 'a' | 'b';
+function f() {
+  switch (kind) {
+    case 'a':
+      return 1;
+    case 'b':
+      return 2;
+  }
+}
+`,
+      output: `
+declare const kind: 'a' | 'b';
+function f() {
+  const RESULT_BY_KIND: Record<'a' | 'b', number> = {
+    a: 1,
+    b: 2,
+  };
+  return RESULT_BY_KIND[kind];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2059: a member holding a double quote. The printer escapes it inside its
+    // own delimiter; Prettier drops an escape the chosen delimiter does not
+    // need, which a textual quote swap cannot do.
+    {
+      code: `
+declare const kind: 'say "hi"' | 'plain';
+function f() {
+  switch (kind) {
+    case 'say "hi"':
+      return 1;
+    case 'plain':
+      return 2;
+  }
+}
+`,
+      output: `
+declare const kind: 'say "hi"' | 'plain';
+function f() {
+  const RESULT_BY_KIND: Record<'say "hi"' | 'plain', number> = {
+    'say "hi"': 1,
+    plain: 2,
+  };
+  return RESULT_BY_KIND[kind];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2059: a member holding a single quote keeps its double quotes even under
+    // `singleQuote`, because Prettier picks the delimiter that needs fewer
+    // escapes — so only the second member flips, in the type AND in the key.
+    {
+      code: `
+declare const kind: "it's" | 'plain';
+function f() {
+  switch (kind) {
+    case "it's":
+      return 1;
+    case 'plain':
+      return 2;
+  }
+}
+`,
+      output: `
+declare const kind: "it's" | 'plain';
+function f() {
+  const RESULT_BY_KIND: Record<"it's" | 'plain', number> = {
+    "it's": 1,
+    plain: 2,
+  };
+  return RESULT_BY_KIND[kind];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2059: `singleQuote: false`. The indexed-access key the fix reaches for is
+    // authored by this rule rather than printed by the checker, so it is the arm
+    // where the option decides the delimiter rather than merely keeping it.
+    {
+      options: [{ singleQuote: false }],
+      code: `
+type Flags = { tier: "free" | "pro" };
+declare const flags: Flags;
+function f() {
+  const label = flags.tier === "free" ? "Free" : "Pro";
+  return label;
+}
+`,
+      output: `
+type Flags = { tier: "free" | "pro" };
+declare const flags: Flags;
+function f() {
+  const RESULT_BY_TIER: Record<Flags["tier"], string> = {
+    free: "Free",
+    pro: "Pro",
+  };
+  const label = RESULT_BY_TIER[flags.tier];
+  return label;
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2059: the bidirectional partner of the fixture above, and a negative
+    // control — under `singleQuote: false` the printer's own double quotes are
+    // left exactly as they are, so the normalizer is not rewriting blindly.
+    {
+      options: [{ singleQuote: false }],
+      code: `
+declare const kind: "a" | "b";
+function f() {
+  switch (kind) {
+    case "a":
+      return 1;
+    case "b":
+      return 2;
+  }
+}
+`,
+      output: `
+declare const kind: "a" | "b";
+function f() {
+  const RESULT_BY_KIND: Record<"a" | "b", number> = {
+    a: 1,
+    b: 2,
+  };
+  return RESULT_BY_KIND[kind];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2059: a union too wide for one line goes through the broken
+    // type-argument list, a different emission path from the flat join — the
+    // normalization has to happen before the split, not after.
+    {
+      code: `
+declare const kind:
+  | 'alphaalpha'
+  | 'bravobravo'
+  | 'charliecharlie'
+  | 'deltadelta';
+function f() {
+  switch (kind) {
+    case 'alphaalpha':
+      return 1;
+    case 'bravobravo':
+      return 2;
+    case 'charliecharlie':
+      return 3;
+    case 'deltadelta':
+      return 4;
+  }
+}
+`,
+      output: `
+declare const kind:
+  | 'alphaalpha'
+  | 'bravobravo'
+  | 'charliecharlie'
+  | 'deltadelta';
+function f() {
+  const RESULT_BY_KIND: Record<
+    'alphaalpha' | 'bravobravo' | 'charliecharlie' | 'deltadelta',
+    number
+  > = {
+    alphaalpha: 1,
+    bravobravo: 2,
+    charliecharlie: 3,
+    deltadelta: 4,
+  };
+  return RESULT_BY_KIND[kind];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2059: members that are not identifiers, so the same value is spelled in
+    // the type position and in the key position by two different emitters. They
+    // have to agree on the delimiter.
+    {
+      code: `
+declare const kind: 'a-one' | 'b-two';
+function f() {
+  switch (kind) {
+    case 'a-one':
+      return 1;
+    case 'b-two':
+      return 2;
+  }
+}
+`,
+      output: `
+declare const kind: 'a-one' | 'b-two';
+function f() {
+  const RESULT_BY_KIND: Record<'a-one' | 'b-two', number> = {
+    'a-one': 1,
+    'b-two': 2,
+  };
+  return RESULT_BY_KIND[kind];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2059, value position: a bare literal branch value is widened before it is
+    // printed, but a literal NESTED in a type reference survives that widening
+    // and reaches the annotation double-quoted.
+    {
+      code: `
+type K = 'a' | 'b';
+declare const k: K;
+declare const A: Record<'x', number>;
+declare const B: Record<'y', number>;
+function f() {
+  switch (k) {
+    case 'a':
+      return A;
+    case 'b':
+      return B;
+  }
+}
+`,
+      output: `
+type K = 'a' | 'b';
+declare const k: K;
+declare const A: Record<'x', number>;
+declare const B: Record<'y', number>;
+function f() {
+  const RESULT_BY_K: Record<K, Record<'x', number> | Record<'y', number>> = {
+    a: A,
+    b: B,
+  };
+  return RESULT_BY_K[k];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2060: the enclosing declarator wrapped only because the ternary was wide.
+    // The lookup is short, so Prettier joins the host back onto one line and the
+    // emitted break has to go with the expression it belonged to.
+    {
+      code: `
+type Side = 'buy' | 'sell';
+declare const side: Side;
+declare const BUY_SIDE_LABEL_TEXT: string;
+declare const SELL_SIDE_LABEL_TEXT_FOR_HEADER: string;
+function getLabel() {
+  const label =
+    side === 'buy' ? BUY_SIDE_LABEL_TEXT : SELL_SIDE_LABEL_TEXT_FOR_HEADER;
+  return label;
+}
+`,
+      output: `
+type Side = 'buy' | 'sell';
+declare const side: Side;
+declare const BUY_SIDE_LABEL_TEXT: string;
+declare const SELL_SIDE_LABEL_TEXT_FOR_HEADER: string;
+function getLabel() {
+  const RESULT_BY_SIDE: Record<Side, string> = {
+    buy: BUY_SIDE_LABEL_TEXT,
+    sell: SELL_SIDE_LABEL_TEXT_FOR_HEADER,
+  };
+  const label = RESULT_BY_SIDE[side];
+  return label;
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2060 RETAIN: the host is over-width for a reason the ternary never
+    // caused, so Prettier keeps the break and the fixer must keep it too.
+    {
+      code: `
+type Side = 'buy' | 'sell';
+declare const side: Side;
+function getLabel() {
+  const selectedTradingSideLabelForTheOrderConfirmationDialog =
+    side === 'buy' ? 'Buy now' : 'Sell now';
+  return selectedTradingSideLabelForTheOrderConfirmationDialog;
+}
+`,
+      output: `
+type Side = 'buy' | 'sell';
+declare const side: Side;
+function getLabel() {
+  const RESULT_BY_SIDE: Record<Side, string> = {
+    buy: 'Buy now',
+    sell: 'Sell now',
+  };
+  const selectedTradingSideLabelForTheOrderConfirmationDialog =
+    RESULT_BY_SIDE[side];
+  return selectedTradingSideLabelForTheOrderConfirmationDialog;
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2060 RETAIN, second cause: the binding name is short and the type
+    // annotation is what holds the host over the width.
+    {
+      code: `
+type Side = 'buy' | 'sell';
+declare const side: Side;
+function getLabel() {
+  const label: Readonly<Record<'x', string>> | string | undefined =
+    side === 'buy' ? 'Buy now' : 'Sell now';
+  return label;
+}
+`,
+      output: `
+type Side = 'buy' | 'sell';
+declare const side: Side;
+function getLabel() {
+  const RESULT_BY_SIDE: Record<Side, string> = {
+    buy: 'Buy now',
+    sell: 'Sell now',
+  };
+  const label: Readonly<Record<'x', string>> | string | undefined =
+    RESULT_BY_SIDE[side];
+  return label;
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2060: an assignment right-hand side breaks after `=` exactly as a
+    // declarator does, so the join cannot be keyed on the declarator alone.
+    {
+      code: `
+type Side = 'buy' | 'sell';
+declare const side: Side;
+declare const BUY_SIDE_LABEL_TEXT_MAIN: string;
+declare const SELL_SIDE_LABEL_TEXT_HEADER: string;
+function getLabel() {
+  let label = '';
+  label =
+    side === 'buy' ? BUY_SIDE_LABEL_TEXT_MAIN : SELL_SIDE_LABEL_TEXT_HEADER;
+  return label;
+}
+`,
+      output: `
+type Side = 'buy' | 'sell';
+declare const side: Side;
+declare const BUY_SIDE_LABEL_TEXT_MAIN: string;
+declare const SELL_SIDE_LABEL_TEXT_HEADER: string;
+function getLabel() {
+  let label = '';
+  const RESULT_BY_SIDE: Record<Side, string> = {
+    buy: BUY_SIDE_LABEL_TEXT_MAIN,
+    sell: SELL_SIDE_LABEL_TEXT_HEADER,
+  };
+  label = RESULT_BY_SIDE[side];
+  return label;
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2060: an object property value breaks after `:`. The literal stays
+    // expanded — Prettier preserves that — so only the property line joins.
+    {
+      code: `
+type Side = 'buy' | 'sell';
+declare const side: Side;
+declare const BUY_SIDE_LABEL_TEXT: string;
+declare const SELL_SIDE_LABEL_TEXT_FOR_HEADER: string;
+function buildRow() {
+  const row = {
+    label:
+      side === 'buy' ? BUY_SIDE_LABEL_TEXT : SELL_SIDE_LABEL_TEXT_FOR_HEADER,
+  };
+  return row;
+}
+`,
+      output: `
+type Side = 'buy' | 'sell';
+declare const side: Side;
+declare const BUY_SIDE_LABEL_TEXT: string;
+declare const SELL_SIDE_LABEL_TEXT_FOR_HEADER: string;
+function buildRow() {
+  const RESULT_BY_SIDE: Record<Side, string> = {
+    buy: BUY_SIDE_LABEL_TEXT,
+    sell: SELL_SIDE_LABEL_TEXT_FOR_HEADER,
+  };
+  const row = {
+    label: RESULT_BY_SIDE[side],
+  };
+  return row;
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2060 DECLINE: a comment sits between the `=` and the expression. Joining
+    // would pull the lookup onto the comment's line and comment it out, and the
+    // retained break is itself what Prettier writes.
+    {
+      code: `
+type Side = 'buy' | 'sell';
+declare const side: Side;
+function getLabel() {
+  const label =
+    // the buy label leads because the buy flow is the default
+    side === 'buy' ? 'Buy now' : 'Sell now';
+  return label;
+}
+`,
+      output: `
+type Side = 'buy' | 'sell';
+declare const side: Side;
+function getLabel() {
+  const RESULT_BY_SIDE: Record<Side, string> = {
+    buy: 'Buy now',
+    sell: 'Sell now',
+  };
+  const label =
+    // the buy label leads because the buy flow is the default
+    RESULT_BY_SIDE[side];
+  return label;
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2060 BOUNDARY: the joined line measures exactly the print width, which
+    // Prettier keeps on one line. Paired with the fixture below, this pins the
+    // comparison as `<=` rather than `<`.
+    {
+      code: `
+type Side = 'buy' | 'sell';
+declare const side: Side;
+function getLabel() {
+  const labelXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX =
+    side === 'buy' ? 'Buy now' : 'Sell now';
+  return labelXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX;
+}
+`,
+      output: `
+type Side = 'buy' | 'sell';
+declare const side: Side;
+function getLabel() {
+  const RESULT_BY_SIDE: Record<Side, string> = {
+    buy: 'Buy now',
+    sell: 'Sell now',
+  };
+  const labelXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX = RESULT_BY_SIDE[side];
+  return labelXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX;
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2060 BOUNDARY: one column wider, so the joined line would overflow and
+    // the break stays.
+    {
+      code: `
+type Side = 'buy' | 'sell';
+declare const side: Side;
+function getLabel() {
+  const labelXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX =
+    side === 'buy' ? 'Buy now' : 'Sell now';
+  return labelXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX;
+}
+`,
+      output: `
+type Side = 'buy' | 'sell';
+declare const side: Side;
+function getLabel() {
+  const RESULT_BY_SIDE: Record<Side, string> = {
+    buy: 'Buy now',
+    sell: 'Sell now',
+  };
+  const labelXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX =
+    RESULT_BY_SIDE[side];
+  return labelXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX;
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2060: the join reads the configured width, not a hard-coded 80 — at 40
+    // the same host stays broken.
+    {
+      options: [{ printWidth: 40 }],
+      code: `
+type Side = 'buy' | 'sell';
+declare const side: Side;
+function getLabel() {
+  const labelForTheSide =
+    side === 'buy' ? 'Buy' : 'Sell';
+  return labelForTheSide;
+}
+`,
+      output: `
+type Side = 'buy' | 'sell';
+declare const side: Side;
+function getLabel() {
+  const RESULT_BY_SIDE: Record<
+    Side,
+    string
+  > = {
+    buy: 'Buy',
+    sell: 'Sell',
+  };
+  const labelForTheSide =
+    RESULT_BY_SIDE[side];
+  return labelForTheSide;
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2060: a call broken open around its sole argument. Absorbing the whole
+    // interior takes the dangling comma with it; leaving it would produce
+    // `renderLabel(RESULT_BY_SIDE[side],);`, which Prettier rewrites again.
+    {
+      code: `
+type Side = 'buy' | 'sell';
+declare const side: Side;
+declare const BUY_SIDE_LABEL_TEXT: string;
+declare const SELL_SIDE_LABEL_TEXT_FOR_HEADER: string;
+declare function renderLabel(text: string): void;
+function paint() {
+  renderLabel(
+    side === 'buy' ? BUY_SIDE_LABEL_TEXT : SELL_SIDE_LABEL_TEXT_FOR_HEADER,
+  );
+}
+`,
+      output: `
+type Side = 'buy' | 'sell';
+declare const side: Side;
+declare const BUY_SIDE_LABEL_TEXT: string;
+declare const SELL_SIDE_LABEL_TEXT_FOR_HEADER: string;
+declare function renderLabel(text: string): void;
+function paint() {
+  const RESULT_BY_SIDE: Record<Side, string> = {
+    buy: BUY_SIDE_LABEL_TEXT,
+    sell: SELL_SIDE_LABEL_TEXT_FOR_HEADER,
+  };
+  renderLabel(RESULT_BY_SIDE[side]);
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2060 DECLINE: a comment after the dangling comma sits in the absorbed
+    // interior while being adjacent to neither end of it — `getCommentsAfter`
+    // on the expression stops at the comma — so the join would delete text the
+    // fixer does not own. The join is dropped and the expression replaced in
+    // place; the conversion itself still happens and the comment survives.
+    {
+      code: `
+type Side = 'buy' | 'sell';
+declare const side: Side;
+declare const BUY_SIDE_LABEL_TEXT: string;
+declare const SELL_SIDE_LABEL_TEXT_FOR_HEADER: string;
+declare function renderLabel(text: string): void;
+function paint() {
+  renderLabel(
+    side === 'buy' ? BUY_SIDE_LABEL_TEXT : SELL_SIDE_LABEL_TEXT_FOR_HEADER, /* keep */
+  );
+}
+`,
+      output: `
+type Side = 'buy' | 'sell';
+declare const side: Side;
+declare const BUY_SIDE_LABEL_TEXT: string;
+declare const SELL_SIDE_LABEL_TEXT_FOR_HEADER: string;
+declare function renderLabel(text: string): void;
+function paint() {
+  const RESULT_BY_SIDE: Record<Side, string> = {
+    buy: BUY_SIDE_LABEL_TEXT,
+    sell: SELL_SIDE_LABEL_TEXT_FOR_HEADER,
+  };
+  renderLabel(
+    RESULT_BY_SIDE[side], /* keep */
+  );
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2060 DECLINE, operator arm: the mirror case on the other absorbing
+    // spelling. Here the tail check already refuses it — anything past the
+    // expression's own terminator means joining does not produce one line — so
+    // this pins that the two arms agree rather than one carrying the comment
+    // and the other eating it.
+    {
+      code: `
+type Side = 'buy' | 'sell';
+declare const side: Side;
+declare const BUY_SIDE_LABEL_TEXT: string;
+declare const SELL_SIDE_LABEL_TEXT_FOR_HEADER: string;
+function paint() {
+  const label =
+    side === 'buy' ? BUY_SIDE_LABEL_TEXT : SELL_SIDE_LABEL_TEXT_FOR_HEADER; /* keep */
+  return label;
+}
+`,
+      output: `
+type Side = 'buy' | 'sell';
+declare const side: Side;
+declare const BUY_SIDE_LABEL_TEXT: string;
+declare const SELL_SIDE_LABEL_TEXT_FOR_HEADER: string;
+function paint() {
+  const RESULT_BY_SIDE: Record<Side, string> = {
+    buy: BUY_SIDE_LABEL_TEXT,
+    sell: SELL_SIDE_LABEL_TEXT_FOR_HEADER,
+  };
+  const label =
+    RESULT_BY_SIDE[side]; /* keep */
+  return label;
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2060 CONTROL: `return` never carries a break before the expression —
+    // Prettier breaks the ternary's own `?`/`:` instead, so that break lives
+    // inside the replaced node. Nothing may be absorbed here.
+    {
+      code: `
+type Side = 'buy' | 'sell';
+declare const side: Side;
+declare const BUY_SIDE_LABEL_TEXT_FOR_DISPLAY: string;
+declare const SELL_SIDE_LABEL_TEXT_FOR_DISPLAY: string;
+function getLabel() {
+  return side === 'buy'
+    ? BUY_SIDE_LABEL_TEXT_FOR_DISPLAY
+    : SELL_SIDE_LABEL_TEXT_FOR_DISPLAY;
+}
+`,
+      output: `
+type Side = 'buy' | 'sell';
+declare const side: Side;
+declare const BUY_SIDE_LABEL_TEXT_FOR_DISPLAY: string;
+declare const SELL_SIDE_LABEL_TEXT_FOR_DISPLAY: string;
+function getLabel() {
+  const RESULT_BY_SIDE: Record<Side, string> = {
+    buy: BUY_SIDE_LABEL_TEXT_FOR_DISPLAY,
+    sell: SELL_SIDE_LABEL_TEXT_FOR_DISPLAY,
+  };
+  return RESULT_BY_SIDE[side];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2061: a multi-line function expression copied into an entry kept the
+    // columns it had at its original nesting depth, landing one step too deep.
+    {
+      code: `
+type Mode = 'plain' | 'fancy';
+declare const mode: Mode;
+function pick() {
+  switch (mode) {
+    case 'plain':
+      return function (input: string) {
+        return input + '!';
+      };
+    case 'fancy':
+      return function (input: string) {
+        return input + '?';
+      };
+  }
+}
+`,
+      output: `
+type Mode = 'plain' | 'fancy';
+declare const mode: Mode;
+function pick() {
+  const RESULT_BY_MODE: Record<Mode, (input: string) => string> = {
+    plain: function (input: string) {
+      return input + '!';
+    },
+    fancy: function (input: string) {
+      return input + '?';
+    },
+  };
+  return RESULT_BY_MODE[mode];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2061: an arrow with a block body, nested two levels deeper. The delta is
+    // read from the copied node, not assumed from the construct's depth.
+    {
+      code: `
+type Mode = 'plain' | 'fancy';
+declare const mode: Mode;
+export const outer = () => {
+  return function middle() {
+    switch (mode) {
+      case 'plain':
+        return (i: string) => {
+          return i + '!';
+        };
+      case 'fancy':
+        return (i: string) => {
+          return i + '?';
+        };
+    }
+  };
+};
+`,
+      output: `
+type Mode = 'plain' | 'fancy';
+declare const mode: Mode;
+export const outer = () => {
+  return function middle() {
+    const RESULT_BY_MODE: Record<Mode, (i: string) => string> = {
+      plain: (i: string) => {
+        return i + '!';
+      },
+      fancy: (i: string) => {
+        return i + '?';
+      },
+    };
+    return RESULT_BY_MODE[mode];
+  };
+};
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2061 THE OTHER DIRECTION: at this width the head takes the regime that
+    // moves the map one step in, so the entry sits DEEPER than the statement the
+    // value was copied from and the rebase has to add indentation. A fixer that
+    // only ever dedents passes every other fixture here and fails this one.
+    {
+      options: [{ printWidth: 65 }],
+      code: `
+type Mode = 'plain' | 'fancy';
+declare const mode: Mode;
+function pick() {
+  if (mode === 'plain') {
+    return (input: string) => {
+      return input + '!';
+    };
+  } else {
+    return (input: string) => {
+      return input + '?';
+    };
+  }
+}
+`,
+      output: `
+type Mode = 'plain' | 'fancy';
+declare const mode: Mode;
+function pick() {
+  const RESULT_BY_MODE: Record<Mode, (input: string) => string> =
+    {
+      plain: (input: string) => {
+        return input + '!';
+      },
+      fancy: (input: string) => {
+        return input + '?';
+      },
+    };
+  return RESULT_BY_MODE[mode];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2061 ZERO-DELTA CONTROL: the same chain at the default width, where the
+    // source depth already equals the entry depth. Catches an off-by-one that
+    // shifts unconditionally.
+    {
+      code: `
+type Mode = 'plain' | 'fancy';
+declare const mode: Mode;
+function pick() {
+  if (mode === 'plain') {
+    return (input: string) => {
+      return input + '!';
+    };
+  } else {
+    return (input: string) => {
+      return input + '?';
+    };
+  }
+}
+`,
+      output: `
+type Mode = 'plain' | 'fancy';
+declare const mode: Mode;
+function pick() {
+  const RESULT_BY_MODE: Record<Mode, (input: string) => string> = {
+    plain: (input: string) => {
+      return input + '!';
+    },
+    fancy: (input: string) => {
+      return input + '?';
+    },
+  };
+  return RESULT_BY_MODE[mode];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2061: a multi-line template literal inside the copied body. Its interior
+    // line is the value the code produces, so it must NOT move while the block
+    // lines around it do.
+    {
+      code: `
+type Mode = 'plain' | 'fancy';
+declare const mode: Mode;
+function pick() {
+  switch (mode) {
+    case 'plain':
+      return (i: string) => {
+        return \`first
+second\`;
+      };
+    case 'fancy':
+      return (i: string) => {
+        return i;
+      };
+  }
+}
+`,
+      output: `
+type Mode = 'plain' | 'fancy';
+declare const mode: Mode;
+function pick() {
+  const RESULT_BY_MODE: Record<Mode, (i: string) => string> = {
+    plain: (i: string) => {
+      return \`first
+second\`;
+    },
+    fancy: (i: string) => {
+      return i;
+    },
+  };
+  return RESULT_BY_MODE[mode];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2061 DECLINE: a tab-indented source against a fix site indented in tabs
+    // plus spaces. Neither indentation is a prefix of the other, so no delta is
+    // expressible and the fix is withheld rather than emitting a mangled body.
+    {
+      code: `
+type Mode = 'plain' | 'fancy';
+declare const mode: Mode;
+function pick() {
+\tswitch (mode) {
+\t\tcase 'plain':
+\t\t\treturn (i: string) => {
+\t\t\t\treturn i + '!';
+\t\t\t};
+\t\tcase 'fancy':
+\t\t\treturn (i: string) => {
+\t\t\t\treturn i + '?';
+\t\t\t};
+\t}
+}
+`,
+      output: null,
+      errors: [{ messageId: 'preferMapManual' }],
+    },
+    // #2061 DECLINE SCOPE: the same tab-indented file with single-line values
+    // still autofixes. Without this control the decline could widen to every
+    // tab-indented file and silently disable the rule there.
+    {
+      code: `
+type Mode = 'plain' | 'fancy';
+declare const mode: Mode;
+function pick() {
+\tswitch (mode) {
+\t\tcase 'plain':
+\t\t\treturn 1;
+\t\tcase 'fancy':
+\t\t\treturn 2;
+\t}
+}
+`,
+      output: `
+type Mode = 'plain' | 'fancy';
+declare const mode: Mode;
+function pick() {
+\tconst RESULT_BY_MODE: Record<Mode, number> = {
+\t  plain: 1,
+\t  fancy: 2,
+\t};
+\treturn RESULT_BY_MODE[mode];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2061: grouped cases copy one value into two entries, so the rebase runs
+    // per entry rather than once per source branch.
+    {
+      code: `
+type Mode = 'plain' | 'fancy' | 'bold';
+declare const mode: Mode;
+function pick() {
+  switch (mode) {
+    case 'plain':
+    case 'fancy':
+      return (i: string) => {
+        return i + '!';
+      };
+    case 'bold':
+      return (i: string) => {
+        return i + '#';
+      };
+  }
+}
+`,
+      output: `
+type Mode = 'plain' | 'fancy' | 'bold';
+declare const mode: Mode;
+function pick() {
+  const RESULT_BY_MODE: Record<Mode, (i: string) => string> = {
+    plain: (i: string) => {
+      return i + '!';
+    },
+    fancy: (i: string) => {
+      return i + '!';
+    },
+    bold: (i: string) => {
+      return i + '#';
+    },
+  };
+  return RESULT_BY_MODE[mode];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2061: the last entry comes from the `default` clause, which reaches the
+    // emitter down the tail path rather than the explicit-branch path.
+    {
+      code: `
+type Mode = 'plain' | 'fancy' | 'bold';
+declare const mode: Mode;
+function pick() {
+  switch (mode) {
+    case 'plain':
+      return (i: string) => {
+        return i + '!';
+      };
+    case 'fancy':
+      return (i: string) => {
+        return i + '?';
+      };
+    default:
+      return (i: string) => {
+        return i;
+      };
+  }
+}
+`,
+      output: `
+type Mode = 'plain' | 'fancy' | 'bold';
+declare const mode: Mode;
+function pick() {
+  const RESULT_BY_MODE: Record<Mode, (i: string) => string> = {
+    plain: (i: string) => {
+      return i + '!';
+    },
+    fancy: (i: string) => {
+      return i + '?';
+    },
+    bold: (i: string) => {
+      return i;
+    },
+  };
+  return RESULT_BY_MODE[mode];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2061: the assign form reaches the same emitter through a different
+    // capture site.
+    {
+      code: `
+type Mode = 'plain' | 'fancy';
+declare const mode: Mode;
+declare let out: (i: string) => string;
+function pick() {
+  switch (mode) {
+    case 'plain':
+      out = (i: string) => {
+        return i + '!';
+      };
+      break;
+    case 'fancy':
+      out = (i: string) => {
+        return i + '?';
+      };
+      break;
+  }
+}
+`,
+      output: `
+type Mode = 'plain' | 'fancy';
+declare const mode: Mode;
+declare let out: (i: string) => string;
+function pick() {
+  const RESULT_BY_MODE: Record<Mode, (i: string) => string> = {
+    plain: (i: string) => {
+      return i + '!';
+    },
+    fancy: (i: string) => {
+      return i + '?';
+    },
+  };
+  out = RESULT_BY_MODE[mode];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2061 x #2060: a ternary branch is written one step in from its line's
+    // indentation (the `? ` alignment), so the delta is two steps here and only
+    // the branch's closing line records the depth it was written at. The host's
+    // stale wrap is absorbed in the same fix.
+    {
+      code: `
+type Mode = 'plain' | 'fancy';
+declare const mode: Mode;
+function pick() {
+  const handler =
+    mode === 'plain'
+      ? (i: string) => {
+          return i + '!';
+        }
+      : (i: string) => {
+          return i + '?';
+        };
+  return handler;
+}
+`,
+      output: `
+type Mode = 'plain' | 'fancy';
+declare const mode: Mode;
+function pick() {
+  const RESULT_BY_MODE: Record<Mode, (i: string) => string> = {
+    plain: (i: string) => {
+      return i + '!';
+    },
+    fancy: (i: string) => {
+      return i + '?';
+    },
+  };
+  const handler = RESULT_BY_MODE[mode];
+  return handler;
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
   ],
 };
 
@@ -4547,5 +5589,90 @@ describe('prefer-map-over-conditional-dispatch print-width classifier', () => {
     for (const spelling of SPELLINGS) {
       expect(spelling.length + 4).toBeGreaterThan(80);
     }
+  });
+});
+
+/**
+ * The emitted key type is only correct if its quoting agrees with Prettier, so
+ * the agreement is asserted against the repo's own Prettier rather than
+ * described. `checker.typeToString` always prints a string-literal type
+ * double-quoted, and a codebase formatted with `singleQuote` rejects that text
+ * at any width (#2059).
+ *
+ * A template literal TYPE is the case this block exists to reach: a quote
+ * inside backticks is content rather than a delimiter, and no rule fixture can
+ * exercise it, because a template-literal discriminant is classified as "other"
+ * and never reaches the fixer at all.
+ */
+describe('prefer-map-over-conditional-dispatch quote normalizer', () => {
+  const PRETTIER_OPTIONS: prettier.Options = {
+    parser: 'typescript',
+    printWidth: 80,
+    tabWidth: 2,
+    singleQuote: true,
+    semi: true,
+    trailingComma: 'all',
+  };
+
+  const prettierQuoting = (typeText: string, singleQuote: boolean): string =>
+    prettier
+      .format(`type T = ${typeText};\n`, { ...PRETTIER_OPTIONS, singleQuote })
+      .replace(/^type T = /, '')
+      .replace(/;\n$/, '');
+
+  const SPELLINGS = [
+    '"a" | "b"',
+    '"it\'s" | "b"',
+    '"say \\"hi\\"" | "b"',
+    '"mix \' and \\" here" | "b"',
+    '"two \'\' vs one \\"" | "b"',
+    '"a\\tb"',
+    '"back\\\\slash"',
+    '"caf\\u00e9"',
+    "Holder['kind']",
+    'Holder["kind"]',
+    "`it's-${string}`",
+    '`a-${"x" | "y"}`',
+    'import("some/module/path").Thing',
+    "import('some/module/path').Thing",
+    'Record<"x", number> | Record<"y", number>',
+    '{ readonly t: "x" }',
+    '(a: "x") => "y"',
+    '1 | 2',
+    'Kind',
+  ];
+
+  it('agrees with Prettier on every measured spelling, both settings', () => {
+    const disagreements = SPELLINGS.flatMap((spelling) =>
+      [true, false]
+        .map((singleQuote) => ({
+          spelling,
+          singleQuote,
+          mine: normalizeTypeQuotes(spelling, singleQuote),
+          prettier: prettierQuoting(spelling, singleQuote),
+        }))
+        .filter((row) => row.mine !== row.prettier),
+    );
+    expect(disagreements).toEqual([]);
+  });
+
+  it('is not vacuous: it rewrites some spellings and leaves others alone', () => {
+    const rewritten = SPELLINGS.filter(
+      (spelling) => normalizeTypeQuotes(spelling, true) !== spelling,
+    );
+    expect(rewritten.length).toBeGreaterThanOrEqual(10);
+    expect(SPELLINGS.length - rewritten.length).toBeGreaterThanOrEqual(4);
+    // A quote inside a template literal type is content, not a delimiter, and
+    // survives both settings untouched — the shape a regex would corrupt.
+    expect(normalizeTypeQuotes("`it's-${string}`", true)).toBe(
+      "`it's-${string}`",
+    );
+    expect(normalizeTypeQuotes("`it's-${string}`", false)).toBe(
+      "`it's-${string}`",
+    );
+    // Text the parser cannot resolve into a type comes back byte-identical
+    // rather than half-rewritten; the annotation gate is the only place that
+    // decides whether such text may ship at all.
+    expect(normalizeTypeQuotes('not a "type', true)).toBe('not a "type');
   });
 });

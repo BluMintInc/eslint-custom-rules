@@ -196,6 +196,8 @@ a hidden lookup table.
 '@blumintinc/blumint/prefer-map-over-conditional-dispatch': ['error', {
   // Column the autofix measures the emitted declaration head against
   printWidth: 80,
+  // Quote style the autofix spells emitted string literals with
+  singleQuote: true,
 }]
 ```
 
@@ -210,6 +212,20 @@ name. Set it to your formatter's `printWidth` so the fixed source is already in
 the shape the formatter would produce; a lint run carrying `--fix` otherwise
 leaves the tree failing `prettier --check`. See
 [Line width](#line-width).
+
+### `singleQuote`
+
+Type: `boolean`
+
+Default: `true`
+
+The quote style the autofix spells emitted string literals with, matching
+Prettier's option of the same name. It governs both the keys the fixer
+synthesizes and any string-literal type it inlines into the emitted
+`Record<...>` key — the compiler prints a literal type as `"a" | "b"` whatever
+the codebase's style is, so without this the fix would ship double quotes into a
+single-quoted tree and fail `prettier --check` at any width. See
+[Quote style](#quote-style).
 
 ## Coverage and autofix carve-outs
 
@@ -438,6 +454,34 @@ on its own over-wide line, because that is what Prettier does with it. A type
 Prettier *would* open up (a function type's parameter list, a type literal's
 members, a two-argument type-argument list) is a shape the fixer cannot author,
 so it declines the fix instead.
+
+### Quote style
+
+Two of the things the fixer authors are string literals: the map's keys, and —
+when the discriminant is an anonymous union rather than a named alias — the
+literal types inlined into the `Record`'s key argument. The key type is read
+back from the compiler, which prints a string-literal type with double quotes
+unconditionally, so both are re-spelled at [`singleQuote`](#singlequote) before
+they ship.
+
+The delimiter is chosen the way Prettier chooses it, by occurrence count rather
+than by preference: the configured quote wins unless the content holds strictly
+more of it than of the other, in which case the other wins because it needs
+fewer escapes. A tie keeps the configured quote.
+
+```ts
+// Configured quote, and escapes are re-spelled to match the new delimiter.
+const RESULT_BY_KIND: Record<'a' | 'b', number> = {
+
+// Content with more single quotes than double keeps double quotes, because
+// that is the spelling Prettier settles on.
+const RESULT_BY_KIND: Record<"it's" | 'b', number> = {
+```
+
+Re-spelling happens on the parsed type's literal nodes, not by rewriting the
+type text: re-escaping is a property of the literal being re-delimited, and a
+quote inside a **template** literal type is not a delimiter at all and is left
+untouched.
 
 ### Incorrect
 
