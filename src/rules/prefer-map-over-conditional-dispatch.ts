@@ -67,8 +67,9 @@ type NameDerivation =
   | { kind: 'underivable' };
 
 /**
- * Node types whose presence anywhere in a branch value means the value is NOT
- * safe to eager-evaluate inside a `Record` (all entries construct at once).
+ * Node types whose presence in a branch value — outside any function the value
+ * itself carries — means the value is NOT safe to eager-evaluate inside a
+ * `Record` (all entries construct at once).
  */
 const EAGER_UNSAFE_NODES = new Set<string>([
   AST_NODE_TYPES.CallExpression,
@@ -1139,7 +1140,28 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
       return null;
     }
 
-    /** True when any node in the subtree is unsafe to eager-evaluate. */
+    /**
+     * True when any node in the subtree is unsafe to eager-evaluate.
+     *
+     * The walk stops at a function boundary, because what the `Record` literal
+     * evaluates per entry is the branch value itself, not what that value does
+     * when it is later invoked. A branch value that IS a function is already
+     * the thunk the report-only message asks for: its body runs on invocation,
+     * after the lookup, so a call inside it can no more fire per entry than a
+     * call inside any other uninvoked function. Scanning through the boundary
+     * declined every function-valued dispatch whose body did anything but
+     * arithmetic, and told the author to write the very shape they had (#2062).
+     *
+     * The boundary answers `await` too, and answers it correctly in both
+     * directions: an `await` is eager exactly when it is evaluated where the
+     * literal is built, so a top-level one still blocks, while one inside an
+     * `async` branch value — the only place it can legally appear inside a
+     * function — is suspended until that value is called.
+     *
+     * A class expression is deliberately not a boundary: its static
+     * initializers, static blocks and computed member names all run when the
+     * class definition is evaluated, which is per entry.
+     */
     function containsEagerUnsafe(node: TSESTree.Node): boolean {
       let found = false;
       const visit = (n: unknown): void => {
@@ -1152,6 +1174,19 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
         }
         if (EAGER_UNSAFE_NODES.has(anyNode.type)) {
           found = true;
+          return;
+        }
+        if (FUNCTION_TYPES.has(anyNode.type)) {
+          // A parameter decorator is the one position inside a function that
+          // does not wait for a call: it is evaluated with the enclosing class
+          // definition, which the `Record` literal performs for every entry.
+          for (const param of (anyNode.params as unknown[]) ?? []) {
+            const decorators = (param as { decorators?: unknown[] } | null)
+              ?.decorators;
+            for (const decorator of decorators ?? []) {
+              visit(decorator);
+            }
+          }
           return;
         }
         for (const key of Object.keys(anyNode)) {
