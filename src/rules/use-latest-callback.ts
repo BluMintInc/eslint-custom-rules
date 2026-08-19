@@ -188,6 +188,10 @@ const lineLengthAt = (text: string, offset: number): number => {
   return (lineBreak === -1 ? text.length : lineBreak) - lineStart;
 };
 
+/** The column `offset` sits at on its line, counted from zero. */
+const lineColumnAt = (text: string, offset: number): number =>
+  offset - (text.lastIndexOf('\n', offset - 1) + 1);
+
 /**
  * Ranges whose interior line breaks carry string data rather than formatting.
  * A multi-line template literal (or a string spliced together with line
@@ -295,23 +299,14 @@ const collapsedCallbackText = (
   ) ?? sourceCode.getText(callback);
 
 /**
- * Whether Prettier answers an over-long call by breaking the argument list
- * open. It does for an arrow, and for a parameter-less function expression —
- * but a function expression WITH parameters is instead hugged onto the call
- * line with its parameter list broken, a shape this fixer cannot author. Left
- * collapsed, such a call at least keeps the first line Prettier keeps.
- */
-const breaksOpenWhenLong = (callback: TSESTree.Node): boolean =>
-  callback.type !== AST_NODE_TYPES.FunctionExpression ||
-  callback.params.length === 0;
-
-/**
  * Whether the callback's own head — its parameter list, up to where its body
  * begins — is spelled across several lines. An arrow written that way is never
  * hugged onto the call's line, because that would leave the call's open paren
  * and the arrow's dangling at the end of one line; Prettier breaks the argument
  * list open instead however short the collapsed line measures. A function
- * expression is the exception handled above: its broken parameter list IS hugged.
+ * expression is the exception: its parameter list is a break point of its own,
+ * so a head spread over lines is exactly the shape Prettier hugs, and
+ * `huggedParamsCallText` re-emits it.
  */
 const headSpansLines = (
   sourceCode: TSESLint.SourceCode,
@@ -322,6 +317,107 @@ const headSpansLines = (
     .getText()
     .slice(callback.range[0], callback.body.range[0])
     .includes('\n');
+
+/**
+ * Whether Prettier breaks the parameter list one parameter per line rather than
+ * expanding a parameter in place.
+ *
+ * A sole destructuring parameter is the exception: Prettier opens the pattern's
+ * own braces (`function ({\n  alpha,\n}: Props) {`) and leaves the parameter
+ * list unbroken. Measured against the repo's Prettier at width 80, the
+ * one-per-line spelling of that shape is rewritten straight back, so it is not
+ * a form this fixer may author — and because every line of it measures within
+ * the width, a width check alone would not catch it.
+ */
+const breaksParamsOnePerLine = (
+  callback: TSESTree.FunctionExpression,
+): boolean => {
+  if (callback.params.length !== 1) {
+    // No parameters leaves no list to break; two or more always break one per
+    // line, because a pattern sharing the list stops being the sole parameter
+    // Prettier expands in place.
+    return callback.params.length > 1;
+  }
+  const [only] = callback.params;
+  return (
+    only.type !== AST_NODE_TYPES.ObjectPattern &&
+    only.type !== AST_NODE_TYPES.ArrayPattern
+  );
+};
+
+/**
+ * The callback's head from its `function` keyword through the `(` that opens
+ * its parameter list, e.g. `function onScroll(`. This is the text Prettier
+ * hugs onto the call's line, so its length is what decides between hugging and
+ * breaking the argument list open. Null when that head is itself spelled across
+ * lines (a parameter list is re-emitted, but a multi-line type parameter list
+ * is text this fixer does not own and cannot reflow onto one line).
+ */
+const parameterListHeadOf = (
+  sourceCode: TSESLint.SourceCode,
+  callback: TSESTree.FunctionExpression,
+): string | null => {
+  const openParen = sourceCode.getTokenBefore(callback.params[0], {
+    filter: (token) =>
+      token.type === AST_TOKEN_TYPES.Punctuator && token.value === '(',
+  });
+  if (!openParen) {
+    return null;
+  }
+  const head = sourceCode
+    .getText()
+    .slice(callback.range[0], openParen.range[1]);
+  return head.includes('\n') ? null : head;
+};
+
+/**
+ * Each parameter as the source spells it, taken as the span between the
+ * separators around it rather than as the parameter node's own text.
+ *
+ * The span carries whatever sits between the commas — a type annotation, a
+ * default, and any comment written alongside the parameter — where node text
+ * would silently drop the comment while re-emitting the parameter it annotates.
+ * Null when a span still spans lines once trimmed, which is a layout the
+ * emitter cannot fold onto one line without reflowing text it does not own.
+ */
+const parameterSegmentsOf = (
+  sourceCode: TSESLint.SourceCode,
+  callback: TSESTree.FunctionExpression,
+): string[] | null => {
+  const text = sourceCode.getText();
+  const isParen = (value: string) => (token: TSESTree.Token) =>
+    token.type === AST_TOKEN_TYPES.Punctuator && token.value === value;
+
+  const openParen = sourceCode.getTokenBefore(callback.params[0], {
+    filter: isParen('('),
+  });
+  const closeParen = sourceCode.getTokenAfter(
+    callback.params[callback.params.length - 1],
+    { filter: isParen(')') },
+  );
+  if (!openParen || !closeParen) {
+    return null;
+  }
+
+  const segments: string[] = [];
+  let start = openParen.range[1];
+  for (const [index, param] of callback.params.entries()) {
+    const isLast = index === callback.params.length - 1;
+    const separator = isLast
+      ? closeParen
+      : sourceCode.getTokenAfter(param, { filter: isComma });
+    if (!separator) {
+      return null;
+    }
+    const segment = text.slice(start, separator.range[0]).trim();
+    if (segment === '' || segment.includes('\n')) {
+      return null;
+    }
+    segments.push(segment);
+    start = separator.range[1];
+  }
+  return segments;
+};
 
 /**
  * Whether the rewritten call should end its argument list with a comma. The
@@ -381,6 +477,92 @@ const brokenOpenCallText = (
 
   const comma = wantsTrailingComma(sourceCode, call) ? ',' : '';
   return `${head}(\n${calleeIndent}${moved}${comma}\n${callIndent})`;
+};
+
+/**
+ * The rewritten call with the callback hugged onto the call's line and its
+ * parameter list broken one parameter per line — the shape Prettier gives an
+ * over-long call whose callback is a parameterised function expression.
+ *
+ * Swept against the repo's own Prettier at widths 60..120, Prettier hugs the
+ * callback exactly while the head line through the parameter list's `(` fits
+ * within the print width, and breaks the argument list open above it. Returning
+ * null hands the call to `brokenOpenCallText`, which is both the shape Prettier
+ * picks past that boundary and the safe answer for the parameter spellings this
+ * emitter declines, since it carries the callback's text verbatim.
+ */
+const huggedParamsCallText = (
+  sourceCode: TSESLint.SourceCode,
+  call: TSESTree.CallExpression,
+  callback: TSESTree.Node,
+  head: string,
+  indentUnit: string,
+  printWidth: number,
+  column: number,
+): string | null => {
+  if (
+    callback.type !== AST_NODE_TYPES.FunctionExpression ||
+    callback.params.length === 0 ||
+    !breaksParamsOnePerLine(callback)
+  ) {
+    return null;
+  }
+
+  const paramsHead = parameterListHeadOf(sourceCode, callback);
+  if (paramsHead === null) {
+    return null;
+  }
+
+  const segments = parameterSegmentsOf(sourceCode, callback);
+  if (segments === null) {
+    return null;
+  }
+
+  const callIndent = indentationAt(sourceCode, call.range[0]);
+  const body = reindentedText(
+    sourceCode,
+    callback.body,
+    indentationAt(sourceCode, callback.range[0]),
+    callIndent,
+  );
+  if (body === null) {
+    return null;
+  }
+
+  // A rest parameter must stay last, so it cannot carry a trailing comma.
+  const lastParam = callback.params[callback.params.length - 1];
+  const trailingComma =
+    wantsTrailingComma(sourceCode, call) &&
+    lastParam.type !== AST_NODE_TYPES.RestElement
+      ? ','
+      : '';
+
+  const paramIndent = `${callIndent}${indentUnit}`;
+  const paramLines = segments.map(
+    (segment, index) =>
+      `${paramIndent}${segment}${
+        index === segments.length - 1 ? trailingComma : ','
+      }`,
+  );
+  const closingLine = `${callIndent}) ${body.split('\n')[0]}`;
+
+  // The head, the parameter lines and the line the body opens on are the only
+  // lines this emitter writes; the rest of the body is source text carried
+  // through. Any one of them past the width would be rewritten by the next
+  // `prettier --write` — the very failure this branch exists to avoid — so an
+  // over-wide candidate is declined rather than emitted.
+  const headLineLength = column + head.length + 1 + paramsHead.length;
+  const overWide =
+    headLineLength > printWidth ||
+    paramLines.some((line) => line.length > printWidth) ||
+    closingLine.length > printWidth;
+  if (overWide) {
+    return null;
+  }
+
+  return `${head}(${paramsHead}\n${paramLines.join(
+    '\n',
+  )}\n${callIndent}) ${body})`;
 };
 
 /** Whether a range sits wholly inside one of the ranges a fix deletes. */
@@ -1260,17 +1442,39 @@ export const useLatestCallback = createRule<Options, MessageIds>({
             const overflows =
               lineLengthAt(simulated, start) > printWidth ||
               headSpansLines(sourceCode, callback);
-            const broken =
-              overflows && breaksOpenWhenLong(callback)
-                ? brokenOpenCallText(
-                    sourceCode,
-                    node,
-                    callback,
-                    headOf(node),
-                    indentUnit,
-                  )
-                : null;
-            texts.set(node, broken ?? edit.text);
+            // Prettier's answer to an over-long call is measured, not implied
+            // by the callback's node type: it hugs the callback onto the call
+            // line while the head through the callback's own break point fits,
+            // and breaks the argument list open above that. An arrow and a
+            // parameter-less function expression carry no break point of their
+            // own, so `huggedParamsCallText` declines them and the call breaks
+            // open, as before.
+            const rewrapped = overflows
+              ? huggedParamsCallText(
+                  sourceCode,
+                  node,
+                  callback,
+                  headOf(node),
+                  indentUnit,
+                  printWidth,
+                  lineColumnAt(simulated, start),
+                ) ??
+                brokenOpenCallText(
+                  sourceCode,
+                  node,
+                  callback,
+                  headOf(node),
+                  indentUnit,
+                )
+              : null;
+            // Reached only when the collapsed line overruns the width AND both
+            // rewrapped forms declined, which happens when the callback's lines
+            // cannot be moved to the target depth at all — a tab-indented
+            // callback under a space-indented call, where any delta corrupts
+            // the layout. Emitting the collapsed line then trades a rewrap by
+            // the next `prettier --write` against mangled indentation, and the
+            // rewrap is the recoverable one.
+            texts.set(node, rewrapped ?? edit.text);
           }
           return texts;
         };

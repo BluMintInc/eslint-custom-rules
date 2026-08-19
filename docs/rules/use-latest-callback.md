@@ -22,7 +22,7 @@ This rule:
 - Withholds the fix when dropping the dependency array would leave a declaration with no reader left, and retires an **import** left that way in the same fix — see [Dependencies nothing else reads](#dependencies-nothing-else-reads).
 - Retires the `react` import a converted `React.useCallback` call was the last reader of, decided by scope analysis rather than by any JSX or `.tsx` test — see [Retiring the `react` import a `React.useCallback` call was the last reader of](#retiring-the-react-import-a-reactusecallback-call-was-the-last-reader-of).
 - Leaves a callback whose identity another hook keys on, or a `ref` re-registers on, alone entirely — see [When the callback identity is load-bearing](#when-the-callback-identity-is-load-bearing).
-- Keeps the rewritten call on one line only while that line fits the print width, and breaks the argument list open past it — see [Print width](#print-width).
+- Keeps the rewritten call on one line only while that line fits the print width. Past it the fix follows the shape Prettier picks: a parameterised function expression is hugged onto the call line with its parameter list broken one per line while that head fits, and otherwise the argument list is broken open — see [Print width](#print-width).
 - Skips files in `node_modules` for performance so third-party code is untouched.
 
 ### Print width
@@ -67,13 +67,55 @@ across lines** is never hugged onto the call's line — that would leave the
 call's open paren and the arrow's dangling at the end of one line — so such a
 call is broken open however short the collapsed line measures.
 
-Two cases deliberately stay collapsed even past the width:
+#### Function expressions with parameters
 
-- A **function expression with parameters**. Prettier answers an over-long call
-  there by hugging the function and breaking its *parameter list* instead, a
-  shape this fix cannot author; collapsed at least keeps the first line Prettier
-  keeps. A parameter-less function expression has no such list and does break
-  open.
+A parameterised function expression has a second break point an arrow does not:
+its own parameter list. Prettier uses it, hugging the callback onto the call's
+line and moving the parameters one per line. Which of the two shapes it picks is
+a **measurement**, not a property of the node — swept against Prettier at widths
+60 through 120, it hugs exactly while the head line through the parameter list's
+`(` fits the print width, and breaks the argument list open above it. The fix
+follows the same boundary:
+
+```ts
+// Hugged: the head through `function (` fits, so only the parameters move.
+// Collapsed, this line would run past the width.
+const cb = useLatestCallback(function (
+  event: React.PointerEvent<HTMLDivElement>,
+) {
+  go();
+});
+
+// Broken open: the head through `function BigIntViewComponentWrapper(` does
+// not fit, so the argument list breaks instead.
+const BigIntViewComponent = useLatestCallback(
+  function BigIntViewComponentWrapper(
+    viewProps: Readonly<ViewComponentPropsBase<string>>,
+  ) {
+    return use(ViewComponent, viewProps, value);
+  },
+);
+```
+
+Each parameter is taken as the span between its separators rather than as the
+parameter's own text, so a comment written alongside a parameter travels with
+it. A rest parameter has to stay last, so the broken list ends without the
+trailing comma the setting otherwise asks for.
+
+Three parameter spellings are not authored as a hugged, one-per-line list. The
+first two break the call open instead; the last stays collapsed:
+
+- A **sole destructuring parameter**. Prettier answers that one by opening the
+  pattern's own braces (`function ({\n  alpha,\n}: Props) {`) and leaving the
+  parameter list intact. Every line of the one-per-line spelling measures within
+  the width yet Prettier rewrites it straight back, so the fix does not author
+  it and breaks the call open instead, which at least emits no over-wide line. A
+  pattern sharing the list with another parameter is broken one per line as
+  usual.
+- A **parameter list spelled across lines once trimmed**, or a **multi-line type
+  parameter list** on the callback. Folding either onto one line would reflow
+  text the fix does not own, so the call breaks open and the callback's own
+  layout survives byte for byte.
 - **Ambiguous indentation** — a callback indented with characters that are
   neither a prefix of the call's indentation nor extended by it (tabs against
   spaces). No delta can be applied without corrupting the layout, so the
