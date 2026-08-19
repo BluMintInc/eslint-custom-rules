@@ -25,7 +25,10 @@ switch (token.standard) {
 }
 
 // After: the lookup table IS a lookup table
-const RESULT_BY_STANDARD: Record<TokenStandard, typeof NativeTokenEncoder | typeof Erc20TokenEncoder> = {
+const RESULT_BY_STANDARD: Record<
+  TokenStandard,
+  typeof NativeTokenEncoder | typeof Erc20TokenEncoder
+> = {
   native: NativeTokenEncoder,
   ERC20: Erc20TokenEncoder,
 };
@@ -187,6 +190,27 @@ a hidden lookup table.
 - A lone `x === 'lit' ? a : b` on a 2-member union is a fully-covered chain of
   length 1 and does fire.
 
+## Options
+
+```js
+'@blumintinc/blumint/prefer-map-over-conditional-dispatch': ['error', {
+  // Column the autofix measures the emitted declaration head against
+  printWidth: 80,
+}]
+```
+
+### `printWidth`
+
+Type: `number`
+
+Default: `80`
+
+The column the autofix measures against, matching Prettier's option of the same
+name. Set it to your formatter's `printWidth` so the fixed source is already in
+the shape the formatter would produce; a lint run carrying `--fix` otherwise
+leaves the tree failing `prettier --check`. See
+[Line width](#line-width).
+
 ## Coverage and autofix carve-outs
 
 The rule **reports** on every qualifying construct, but applies the **autofix**
@@ -262,6 +286,11 @@ report-only message (`preferMapManual`) explaining why and suggesting the shape:
   checker prints a symbol's bare name with no regard for imports — an
   unimported helper type prints the same as an imported one), the fix is
   skipped — import the type or write the `Record` manually.
+- **An annotation that fits the print width.** The head the fixer authors is
+  laid out the way Prettier lays it out (see [Line width](#line-width)). When
+  no such layout exists — a single printed type too long for its own line that
+  Prettier would open up, such as a function type with several parameters —
+  the fix is skipped rather than shipping a head the formatter rewrites.
 - **Hostable comments.** Comments inside the converted construct are carried
   onto the generated `Record`: a branch's leading comments (including
   `eslint-disable-next-line` and `@ts-expect-error` directives that target the
@@ -345,6 +374,70 @@ The derived spelling ships only when the name resolves at the fix site and the
 property's declared key set matches the discriminant's; otherwise the fix falls
 back to the resolved literal union, because a weak key type beats one that does
 not compile.
+
+### Line width
+
+The fixer authors the whole declaration head — the lookup name, both `Record`
+type arguments and the `= {` that opens the map — and both type arguments grow
+with the source: the value type is the distinct branch value types joined with
+`|`, and an anonymous discriminant union is inlined into the key type. The head
+is therefore measured against [`printWidth`](#printwidth) and emitted in the
+layout Prettier itself settles on, which has three regimes:
+
+```ts
+// Fits: one line.
+function pickFits() {
+  const RESULT_BY_MODE: Record<Mode, typeof PlainSummary | typeof FancyCard> = {
+    plain: PlainSummary,
+    fancy: FancyCard,
+  };
+  return RESULT_BY_MODE[mode];
+}
+
+// Over by one or two columns: the annotation through the `=` still fits, so
+// the map moves to its own line.
+function pickNarrowlyOver() {
+  const RESULT_BY_MODE: Record<Mode, typeof PlainSummary | typeof FancyCards> =
+    {
+      plain: PlainSummary,
+      fancy: FancyCards,
+    };
+  return RESULT_BY_MODE[mode];
+}
+
+// Further over: the type-argument list breaks open, and a value union that
+// does not fit its own line is spelled one member per line.
+function deduceEncoder() {
+  const RESULT_BY_STANDARD: Record<
+    TokenStandard,
+    | typeof NativeTokenEncoder
+    | typeof Erc20TokenEncoder
+    | typeof OffchainTokenEncoder
+  > = {
+    native: NativeTokenEncoder,
+    ERC20: Erc20TokenEncoder,
+    offchain: OffchainTokenEncoder,
+  };
+  return RESULT_BY_STANDARD[token.standard];
+}
+```
+
+The middle regime is withheld for an annotation Prettier calls *complex* — one
+whose key or value type is itself a generic reference (`Record<Mode, Box<Row>>`)
+or a conditional type. Prettier breaks the argument list for those however
+narrowly the head overflows, so the fixer does too.
+
+Each regime is a measurement, not a preference. Wrapping unconditionally would
+break the first case just as badly: Prettier collapses a hand-broken
+`Record<Mode, string>` straight back onto one line, so a fixer that always
+wraps trades this failure for its mirror image on every short dispatch.
+
+A type with no break point of its own — a reference, a `typeof` query, a
+literal, and the array / `keyof` / indexed-access wrappers around one — is left
+on its own over-wide line, because that is what Prettier does with it. A type
+Prettier *would* open up (a function type's parameter list, a type literal's
+members, a two-argument type-argument list) is a shape the fixer cannot author,
+so it declines the fix instead.
 
 ### Incorrect
 
@@ -484,7 +577,10 @@ declare const side: Side;
 
 // The rule's own derived form — idempotent, never re-flags
 function label() {
-  const RESULT_BY_SIDE: Record<Side, string> = { buy: 'Buy now', sell: 'Sell now' };
+  const RESULT_BY_SIDE: Record<Side, string> = {
+    buy: 'Buy now',
+    sell: 'Sell now',
+  };
   return RESULT_BY_SIDE[side];
 }
 ```
