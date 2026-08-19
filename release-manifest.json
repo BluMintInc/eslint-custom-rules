@@ -1,5 +1,138 @@
 [
   {
+    "version": "1.20.169",
+    "date": "2026-08-19T20:16:38.161Z",
+    "rules": [
+      {
+        "name": "enforce-dynamic-firebase-imports",
+        "changeType": "fix",
+        "issues": [
+          2044,
+          2056,
+          2057
+        ],
+        "summary": "carry comments, reindent body (closes #2056, closes #2057); measure the emitted declaration against the print width (closes #2044)"
+      },
+      {
+        "name": "enforce-firestore-rules-get-access",
+        "changeType": "fix",
+        "issues": [
+          2052
+        ],
+        "summary": "wrap the rewritten literal at print width (closes #2052)"
+      },
+      {
+        "name": "enforce-global-constants",
+        "changeType": "fix",
+        "issues": [
+          2046
+        ],
+        "summary": "measure the hoisted declaration against the print width (closes #2046)"
+      },
+      {
+        "name": "enforce-querykey-ts",
+        "changeType": "fix",
+        "issues": [
+          2050
+        ],
+        "summary": "measure the extended import before writing it (closes #2050)"
+      },
+      {
+        "name": "global-const-style",
+        "changeType": "fix",
+        "issues": [
+          2055
+        ],
+        "summary": "exempt components, rename both halves of a JSX tag (closes #2055)"
+      },
+      {
+        "name": "jsdoc-above-field",
+        "changeType": "fix",
+        "issues": [
+          2041
+        ],
+        "summary": "detect trailing JSDoc placed before the member separator (closes #2041)"
+      },
+      {
+        "name": "logical-top-to-bottom-grouping",
+        "changeType": "fix",
+        "issues": [
+          2042
+        ],
+        "summary": "count JSX element names as binding reads (closes #2042)"
+      },
+      {
+        "name": "memo-compare-deeply-complex-props",
+        "changeType": "fix",
+        "issues": [
+          2043
+        ],
+        "summary": "measure the emitted comparator line against the print width (closes #2043)"
+      },
+      {
+        "name": "no-array-length-in-deps",
+        "changeType": "fix",
+        "issues": [
+          2049
+        ],
+        "summary": "measure the emitted declaration before writing it (closes #2049)"
+      },
+      {
+        "name": "prefer-global-router-state-key",
+        "changeType": "fix",
+        "issues": [
+          2051
+        ],
+        "summary": "measure the extended import before writing it (closes #2051)"
+      },
+      {
+        "name": "prefer-map-over-conditional-dispatch",
+        "changeType": "fix",
+        "issues": [
+          2048,
+          2059,
+          2060,
+          2061
+        ],
+        "summary": "quote keys, absorb stale wraps, rebase copied bodies (closes #2059, closes #2060, closes #2061); measure the Record annotation head before emitting it (closes #2048)"
+      },
+      {
+        "name": "prefer-sx-prop-over-system-props",
+        "changeType": "fix",
+        "issues": [
+          2045,
+          2058
+        ],
+        "summary": "rejoin children on the one-attribute merge (closes #2058); stop falling through to the over-wide line every wrap remedy declined (closes #2045)"
+      },
+      {
+        "name": "require-image-optimized",
+        "changeType": "fix",
+        "issues": [
+          2053
+        ],
+        "summary": "rename the tag in place, not re-author the element (closes #2053)"
+      },
+      {
+        "name": "require-memo",
+        "changeType": "fix",
+        "issues": [
+          2054
+        ],
+        "summary": "split the memo wrapper past the print width (closes #2054)"
+      },
+      {
+        "name": "use-latest-callback",
+        "changeType": "fix",
+        "issues": [
+          1711,
+          2047
+        ],
+        "summary": "honour the width measurement it already takes (closes #2047); treat a ref callback as a consumer of callback identity (closes #1711)"
+      }
+    ]
+  },
+  {
     "version": "1.20.168",
     "date": "2026-08-18T08:47:17.522Z",
     "rules": [
