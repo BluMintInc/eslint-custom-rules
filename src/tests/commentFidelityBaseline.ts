@@ -93,8 +93,13 @@ export const COMMENT_FIDELITY_BASELINE: Record<string, string> = {
   // in each, except where the INPUT was not one either (a block comment between
   // the argument's comma and the closer, which Prettier rewrites with or
   // without this rule).
+  // The parenthesis widening (#2063) is the same shape and the same remedy: a
+  // comment between a parenthesis and the expression it groups sits in the
+  // margin that widening adds, so the fixer steps down to the narrower
+  // replacement and both the conversion and the comment survive. It shares this
+  // entry because it is measured by the same gate, on the same span.
   'prefer-map-over-conditional-dispatch :: TRANSFORM_DIVERGED':
-    'declines the shortened-statement join when a comment sits in the span it would absorb; Prettier makes the same layout choice, and every shape keeps both the conversion and the comment (#2060)',
+    'declines a layout widening — the shortened-statement join, or the now-redundant parentheses — when a comment sits in the span it would absorb; Prettier makes the same layout choice, and every shape keeps both the conversion and the comment (#2060, #2063)',
   // FORMATTING. The divergence is line wrapping and trailing commas only.
   // Verified by formatting both outputs with agora's pinned prettier (2.8.8,
   // not this repo's 2.7.1) and comparing code tokens: all cases converge. agora

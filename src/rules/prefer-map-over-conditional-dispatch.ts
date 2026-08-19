@@ -1675,15 +1675,121 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
     type LookupEdit = { range: TSESTree.Range; text: string };
 
     /**
-     * The ternary's replacement, taking the host's line break with it when the
-     * shortened host fits on one line; null when only the expression itself
-     * should be replaced.
+     * The reported node together with the outer edges of the text a replacement
+     * may cover: the node itself, or the parentheses standing around it that the
+     * lookup does not need. Absorption is measured from those edges, so a
+     * parenthesized conditional joins onto its host by the same rules as a bare
+     * one and the two widenings compose into a single edit.
+     */
+    type FixSpan = {
+      node: TSESTree.Node;
+      left: TSESTree.Node | TSESTree.Token;
+      right: TSESTree.Node | TSESTree.Token;
+    };
+
+    /**
+     * The opening parenthesis the PARENT's own syntax puts in front of `node` —
+     * an `if`/`while`/`switch`/`with` head, a lone call or `new` argument, a
+     * `do…while` test, `import(...)`. Such a pair delimits the parent rather
+     * than grouping the expression, and dropping it does not parse.
+     *
+     * A call with more than one argument needs no entry: the token on one side
+     * of any argument is then a comma, so no pair is seen around it at all.
+     */
+    function parentSyntaxParen(
+      node: TSESTree.Node,
+      parent: TSESTree.Node,
+    ): TSESTree.Token | null {
+      const parenAfter = (preceding: TSESTree.Node) =>
+        sourceCode.getTokenAfter(preceding, {
+          filter: (token) => token.value === '(',
+        });
+      switch (parent.type) {
+        case AST_NODE_TYPES.CallExpression:
+        case AST_NODE_TYPES.NewExpression:
+          return parent.arguments.length === 1 && parent.arguments[0] === node
+            ? parenAfter(parent.callee)
+            : null;
+        case AST_NODE_TYPES.DoWhileStatement:
+          return parent.test === node ? parenAfter(parent.body) : null;
+        case AST_NODE_TYPES.IfStatement:
+        case AST_NODE_TYPES.WhileStatement:
+          return parent.test === node
+            ? sourceCode.getFirstToken(parent, 1)
+            : null;
+        case AST_NODE_TYPES.SwitchStatement:
+          return parent.discriminant === node
+            ? sourceCode.getFirstToken(parent, 1)
+            : null;
+        case AST_NODE_TYPES.WithStatement:
+          return parent.object === node
+            ? sourceCode.getFirstToken(parent, 1)
+            : null;
+        case AST_NODE_TYPES.ImportExpression:
+          return parent.source === node
+            ? sourceCode.getFirstToken(parent, 1)
+            : null;
+        default:
+          return null;
+      }
+    }
+
+    /**
+     * The parentheses standing around `node` that the emitted lookup does not
+     * need — the outermost such pair, so a nested grouping goes with it.
+     *
+     * Precedence is a property of the REPLACEMENT text, not of the expression
+     * being replaced: a computed member access is the tightest-binding
+     * production there is, so no enclosing operator can require a pair around
+     * one. Parentheses a ternary genuinely needed (`(k === 'a' ? 1 : 2) > 0`
+     * parses differently without them) are therefore redundant the moment the
+     * lookup takes its place, and keeping them ships
+     * `if ((RESULT_BY_KIND[kind]) > 0)` — text the next `prettier --write`
+     * strips, so the fix is not a fixed point (#2063).
+     *
+     * Two pairs are not the expression's own grouping and stay: one the
+     * parent's syntax requires, and one a decorator requires, whose grammar
+     * admits no computed access at all (`@(cond)` cannot become `@X[k]`).
+     */
+    function redundantParens(
+      node: TSESTree.Node,
+    ): { open: TSESTree.Token; close: TSESTree.Token } | null {
+      const parent = node.parent;
+      if (!parent || parent.type === AST_NODE_TYPES.Decorator) {
+        return null;
+      }
+      const syntaxParen = parentSyntaxParen(node, parent);
+      let pair: { open: TSESTree.Token; close: TSESTree.Token } | null = null;
+      let open = sourceCode.getTokenBefore(node);
+      let close = sourceCode.getTokenAfter(node);
+      while (
+        open !== null &&
+        close !== null &&
+        open !== syntaxParen &&
+        open.type === AST_TOKEN_TYPES.Punctuator &&
+        open.value === '(' &&
+        close.type === AST_TOKEN_TYPES.Punctuator &&
+        close.value === ')'
+      ) {
+        pair = { open, close };
+        open = sourceCode.getTokenBefore(open);
+        close = sourceCode.getTokenAfter(close);
+      }
+      return pair;
+    }
+
+    /**
+     * The ternary's replacement, widened over text the lookup makes redundant —
+     * the parentheses that used to bind the conditional, and the host's line
+     * break when the shortened host fits on one line; null when only the
+     * expression itself should be replaced.
      *
      * The break exists only because the ternary used to be wide; a lookup is
      * short, and Prettier answers the shortened host by joining it back onto one
      * line (#2060). This is the mirror of measuring an inserted head: the fixer
      * SHORTENS, so every line it writes is well inside the width and nothing
-     * about the emitted text reveals the stale wrap.
+     * about the emitted text reveals the stale wrap — which is equally true of
+     * the stale parentheses (#2063).
      *
      * Measure, do not always-join: a host that is over-width for a reason the
      * ternary never caused — a long binding name, a wide type annotation —
@@ -1697,10 +1803,34 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
       if (!parent) {
         return null;
       }
-      const edit =
-        absorbedOperatorWrap(node, parent, lookupText) ??
-        absorbedArgumentWrap(node, parent, lookupText);
-      return edit !== null && absorbsComment(node, edit) ? null : edit;
+      const parens = redundantParens(node);
+      const span: FixSpan = {
+        node,
+        left: parens?.open ?? node,
+        right: parens?.close ?? node,
+      };
+      const parenEdit: LookupEdit | null =
+        parens === null
+          ? null
+          : {
+              range: [parens.open.range[0], parens.close.range[1]],
+              text: lookupText,
+            };
+      // Widest first: a host join is measured from the parentheses' outer
+      // edges, so where one applies it already carries the paren widening. A
+      // candidate whose span would delete a comment steps down to the next,
+      // narrower one rather than withholding the conversion.
+      const candidates = [
+        absorbedOperatorWrap(span, parent, lookupText),
+        absorbedArgumentWrap(span, parent, lookupText),
+        parenEdit,
+      ];
+      return (
+        candidates.find(
+          (edit): edit is LookupEdit =>
+            edit !== null && !absorbsComment(node, edit),
+        ) ?? null
+      );
     }
 
     /**
@@ -1717,6 +1847,11 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
      * declining there would cost the join and save nothing. The join is a layout
      * optimization, so dropping it and replacing the expression in place keeps
      * both the conversion and the comment.
+     *
+     * Measured against the reported node whatever the edit spans, this is the
+     * single gate for every widening: the parenthesis absorption (#2063) adds
+     * exactly such a margin, and a comment written between a parenthesis and the
+     * expression it groups sits in it.
      */
     function absorbsComment(node: TSESTree.Node, edit: LookupEdit): boolean {
       return sourceCode
@@ -1732,40 +1867,44 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
 
     /** The join for a host that broke after `=` / `:` (see `absorbedLookupEdit`). */
     function absorbedOperatorWrap(
-      node: TSESTree.Node,
+      span: FixSpan,
       parent: TSESTree.Node,
       lookupText: string,
     ): LookupEdit | null {
       if (
         !WRAP_ABSORBING_PARENTS.has(parent.type) ||
-        !isWrapAbsorbingPosition(node, parent)
+        !isWrapAbsorbingPosition(span.node, parent)
       ) {
         return null;
       }
-      const prevToken = sourceCode.getTokenBefore(node);
-      if (!prevToken || prevToken.loc.end.line === node.loc.start.line) {
+      const prevToken = sourceCode.getTokenBefore(span.left);
+      if (!prevToken || prevToken.loc.end.line === span.left.loc.start.line) {
         return null;
       }
       // Joining across a comment would pull the lookup onto a `//` line, which
       // comments the value out.
-      if (sourceCode.getCommentsBefore(node).length > 0) {
+      if (sourceCode.getCommentsBefore(span.left).length > 0) {
         return null;
       }
       const headLine = sourceCode.lines[prevToken.loc.end.line - 1] ?? '';
       if (headLine.slice(prevToken.loc.end.column).trim() !== '') {
         return null;
       }
-      const tailLine = sourceCode.lines[node.loc.end.line - 1] ?? '';
-      const tail = tailLine.slice(node.loc.end.column).trimEnd();
-      // Anything after the expression beyond its own terminator (a closing
-      // paren, a trailing comment) means joining does not produce one line.
+      const tailLine = sourceCode.lines[span.right.loc.end.line - 1] ?? '';
+      const tail = tailLine.slice(span.right.loc.end.column).trimEnd();
+      // Anything after the span beyond its own terminator (a closing paren the
+      // span does not own, a trailing comment) means joining does not produce
+      // one line.
       if (!/^[,;]?$/.test(tail)) {
         return null;
       }
       const head = headLine.slice(0, prevToken.loc.end.column);
       const joined = `${head} ${lookupText}${tail}`;
       return joined.length <= printWidth
-        ? { range: [prevToken.range[1], node.range[1]], text: ` ${lookupText}` }
+        ? {
+            range: [prevToken.range[1], span.right.range[1]],
+            text: ` ${lookupText}`,
+          }
         : null;
     }
 
@@ -1776,7 +1915,7 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
      * would leave `render(RESULT[x],);`, which Prettier rewrites again.
      */
     function absorbedArgumentWrap(
-      node: TSESTree.Node,
+      span: FixSpan,
       parent: TSESTree.Node,
       lookupText: string,
     ): LookupEdit | null {
@@ -1784,11 +1923,11 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
         (parent.type !== AST_NODE_TYPES.CallExpression &&
           parent.type !== AST_NODE_TYPES.NewExpression) ||
         parent.arguments.length !== 1 ||
-        parent.arguments[0] !== node
+        parent.arguments[0] !== span.node
       ) {
         return null;
       }
-      const openParen = sourceCode.getTokenBefore(node);
+      const openParen = sourceCode.getTokenBefore(span.left);
       const closeParen = sourceCode.getLastToken(parent);
       if (
         !openParen ||
@@ -1799,10 +1938,10 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
       ) {
         return null;
       }
-      // The argument's own parentheses would otherwise be swallowed: the token
-      // trail from the expression to the call's closer must hold nothing but
-      // Prettier's dangling comma.
-      const afterNode = sourceCode.getTokenAfter(node);
+      // Parentheses the span does not own would otherwise be swallowed: the
+      // token trail from the span's right edge to the call's closer must hold
+      // nothing but Prettier's dangling comma.
+      const afterNode = sourceCode.getTokenAfter(span.right);
       const afterComma =
         afterNode && afterNode.value === ','
           ? sourceCode.getTokenAfter(afterNode)
@@ -1811,8 +1950,8 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
         return null;
       }
       if (
-        sourceCode.getCommentsBefore(node).length > 0 ||
-        sourceCode.getCommentsAfter(node).length > 0
+        sourceCode.getCommentsBefore(span.left).length > 0 ||
+        sourceCode.getCommentsAfter(span.right).length > 0
       ) {
         return null;
       }
