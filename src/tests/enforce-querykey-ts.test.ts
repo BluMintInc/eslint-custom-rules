@@ -1441,7 +1441,10 @@ function Component() {
       errors: [{ messageId: 'enforceQueryKeyImport' }],
       // The existing queryKeys import is extended rather than duplicated.
       output: `
-        import { QUERY_KEY_VALID, QUERY_KEY_INVALID_LITERAL } from '@/util/routing/queryKeys';
+        import {
+          QUERY_KEY_VALID,
+          QUERY_KEY_INVALID_LITERAL,
+        } from '@/util/routing/queryKeys';
 
         function Component() {
           const [valid] = useRouterState({ key: QUERY_KEY_VALID });
@@ -1660,7 +1663,10 @@ function Component() {
   return [valid, other];
 }`,
       errors: [{ messageId: 'enforceQueryKeyImport' }],
-      output: `import { QUERY_KEY_VALID, QUERY_KEY_OTHER_KEY } from '../util/routing/queryKeys';
+      output: `import {
+  QUERY_KEY_VALID,
+  QUERY_KEY_OTHER_KEY,
+} from '../util/routing/queryKeys';
 
 function Component() {
   const [valid] = useRouterState({ key: QUERY_KEY_VALID });
@@ -2011,7 +2017,10 @@ function TeamCard() {
   return [valid, other];
 }`,
       errors: [{ messageId: 'enforceQueryKeyImport' }],
-      output: `import { QUERY_KEY_VALID, QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';
+      output: `import {
+  QUERY_KEY_VALID,
+  QUERY_KEY_USER_PROFILE,
+} from '@/util/routing/queryKeys';
 
 function TeamCard() {
   const [valid] = useRouterState({ key: QUERY_KEY_VALID });
@@ -2309,7 +2318,10 @@ export const useProfileKey = () => {
       `,
       errors: [{ messageId: 'enforceQueryKeyImport' }],
       output: `
-        import { QUERY_KEY_VALID, QUERY_KEY_TOURNAMENT_VIEW } from '@/util/routing/queryKeys';
+        import {
+          QUERY_KEY_VALID,
+          QUERY_KEY_TOURNAMENT_VIEW,
+        } from '@/util/routing/queryKeys';
 
         function Component() {
           const [valid] = useRouterState({ key: QUERY_KEY_VALID });
@@ -2812,7 +2824,10 @@ function Component() {
   return [profile, stream];
 }`,
       errors: [{ messageId: 'enforceQueryKeyImport' }],
-      output: `import { QUERY_KEY_USER_PROFILE, QUERY_KEY_STREAM_VIEW } from '@/util/routing/queryKeys';
+      output: `import {
+  QUERY_KEY_USER_PROFILE,
+  QUERY_KEY_STREAM_VIEW,
+} from '@/util/routing/queryKeys';
 
 function Component() {
   const key = QUERY_KEY_USER_PROFILE as const;
@@ -3055,8 +3070,11 @@ function Component() {
   return [valid, match, tournament];
 }`);
 
-    expect(output)
-      .toBe(`import { QUERY_KEY_VALID, QUERY_KEY_MATCH_VIEW, QUERY_KEY_TOURNAMENT_VIEW } from '@/util/routing/queryKeys';
+    expect(output).toBe(`import {
+  QUERY_KEY_VALID,
+  QUERY_KEY_MATCH_VIEW,
+  QUERY_KEY_TOURNAMENT_VIEW,
+} from '@/util/routing/queryKeys';
 
 function Component() {
   const [valid] = useRouterState({ key: QUERY_KEY_VALID });
@@ -3126,8 +3144,10 @@ function B() {
   return [match, tournament];
 }`);
 
-    expect(output)
-      .toBe(`import { QUERY_KEY_MATCH_VIEW, QUERY_KEY_TOURNAMENT_VIEW } from 'src/util/routing/queryKeys';
+    expect(output).toBe(`import {
+  QUERY_KEY_MATCH_VIEW,
+  QUERY_KEY_TOURNAMENT_VIEW,
+} from 'src/util/routing/queryKeys';
 
 function Component() {
   const [match] = useRouterState({ key: QUERY_KEY_MATCH_VIEW });
@@ -3148,8 +3168,10 @@ function Component() {
       '/repo/src/components/Widget.tsx',
     );
 
-    expect(output)
-      .toBe(`import { QUERY_KEY_PLAYBACK_ID, QUERY_KEY_STREAM_VIEW } from '../util/routing/queryKeys';
+    expect(output).toBe(`import {
+  QUERY_KEY_PLAYBACK_ID,
+  QUERY_KEY_STREAM_VIEW,
+} from '../util/routing/queryKeys';
 
 function Component() {
   const [a] = useRouterState({ key: QUERY_KEY_PLAYBACK_ID });
@@ -3354,8 +3376,10 @@ function Component() {
 }
 `);
 
-    expect(output)
-      .toBe(`import { QUERY_KEY_VALID, QUERY_KEY_TOURNAMENT_VIEW } from '@/util/routing/queryKeys';
+    expect(output).toBe(`import {
+  QUERY_KEY_VALID,
+  QUERY_KEY_TOURNAMENT_VIEW,
+} from '@/util/routing/queryKeys';
 
 function Component() {
   const [valid] = useRouterState({ key: QUERY_KEY_VALID });
@@ -3754,4 +3778,179 @@ const key = QUERY_KEY_TOURNAMENT_VIEW;`,
     expect(output).toContain('key: QUERY_KEY_TOURNAMENT_VIEW');
     expect(linter.verify(output, config, FILENAME)).toHaveLength(0);
   });
+});
+
+// ------------------------------------------------------------------
+// Issue #2050: extending an existing queryKeys import appends one
+// `, QUERY_KEY_*` element per distinct router-state key in the file, onto a
+// line whose fixed overhead is already 46-51 columns from
+// `import { … } from '<specifier>';`. The emitted width therefore grows with
+// the input, and two realistically-named keys already overflow.
+//
+// Every `output` below was measured against the repo's own Prettier rather
+// than reasoned about. Prettier COLLAPSES a hand-broken import that fits back
+// onto one line, so the flat cases are the control an always-wrap remedy would
+// break, and it never breaks a LONE named specifier, so the fresh-import path
+// stays flat at any width.
+// ------------------------------------------------------------------
+ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
+  valid: [],
+  invalid: [
+    {
+      name: 'breaks the specifier list one-per-line when the extension overflows',
+      filename: '/repo/src/components/Widget.tsx',
+      code: `import { QUERY_KEY_MATCH_VIEW } from '../util/routing/queryKeys';
+
+function Widget() {
+  const [a] = useRouterState({ key: QUERY_KEY_MATCH_VIEW });
+  const [b] = useRouterState({ key: 'tournament-view' });
+  return null;
+}
+`,
+      errors: [{ messageId: 'enforceQueryKeyImport' as const }],
+      output: `import {
+  QUERY_KEY_MATCH_VIEW,
+  QUERY_KEY_TOURNAMENT_VIEW,
+} from '../util/routing/queryKeys';
+
+function Widget() {
+  const [a] = useRouterState({ key: QUERY_KEY_MATCH_VIEW });
+  const [b] = useRouterState({ key: QUERY_KEY_TOURNAMENT_VIEW });
+  return null;
+}
+`,
+    },
+    {
+      // Collapse control: an always-wrap remedy expands this one and Prettier
+      // folds it straight back, so the wrap has to be measured, not assumed.
+      name: 'keeps the specifier list on one line while the extension fits',
+      filename: '/repo/src/components/Widget.tsx',
+      code: `import { QUERY_KEY_A } from '../util/routing/queryKeys';
+
+function Widget() {
+  const [a] = useRouterState({ key: QUERY_KEY_A });
+  const [b] = useRouterState({ key: 'b' });
+  return null;
+}
+`,
+      errors: [{ messageId: 'enforceQueryKeyImport' as const }],
+      output: `import { QUERY_KEY_A, QUERY_KEY_B } from '../util/routing/queryKeys';
+
+function Widget() {
+  const [a] = useRouterState({ key: QUERY_KEY_A });
+  const [b] = useRouterState({ key: QUERY_KEY_B });
+  return null;
+}
+`,
+    },
+    {
+      // An import already broken across lines is extended in that same shape.
+      // Appending to its last specifier's line would put two specifiers on one
+      // line, which fails `prettier --check` without exceeding any width.
+      //
+      // The 81-column substitution line in the output is the fixed-size
+      // literal->identifier rename, which is a separate concern from the
+      // specifier list this case pins: it tips an already-near-80 line and has
+      // no wrapped form of its own to emit.
+      name: 'extends an already-broken import one specifier per line',
+      filename: '/repo/src/components/Widget.tsx',
+      code: `import {
+  QUERY_KEY_TOURNAMENT_REGISTRATION_VIEW,
+  QUERY_KEY_TOURNAMENT_REGISTRATION_DETAILS,
+} from '../util/routing/queryKeys';
+
+function Widget() {
+  const [a] = useRouterState({ key: QUERY_KEY_TOURNAMENT_REGISTRATION_VIEW });
+  const [b] = useRouterState({ key: QUERY_KEY_TOURNAMENT_REGISTRATION_DETAILS });
+  const [c] = useRouterState({ key: 'match-overview' });
+  return null;
+}
+`,
+      errors: [{ messageId: 'enforceQueryKeyImport' as const }],
+      output: `import {
+  QUERY_KEY_TOURNAMENT_REGISTRATION_VIEW,
+  QUERY_KEY_TOURNAMENT_REGISTRATION_DETAILS,
+  QUERY_KEY_MATCH_OVERVIEW,
+} from '../util/routing/queryKeys';
+
+function Widget() {
+  const [a] = useRouterState({ key: QUERY_KEY_TOURNAMENT_REGISTRATION_VIEW });
+  const [b] = useRouterState({ key: QUERY_KEY_TOURNAMENT_REGISTRATION_DETAILS });
+  const [c] = useRouterState({ key: QUERY_KEY_MATCH_OVERVIEW });
+  return null;
+}
+`,
+    },
+    {
+      // Asymmetry control: a lone named specifier is Prettier-stable at ANY
+      // width, so the fresh-import path stays flat at 91 columns. Wrapping it
+      // would be the opposite failure - Prettier would collapse it right back.
+      name: 'leaves a fresh single-specifier import flat past the width',
+      filename: '/repo/src/components/tournament/registration/Status.tsx',
+      code: `function Status() {
+  const [a] = useRouterState({ key: 'tournament-registration-status' });
+  return null;
+}
+`,
+      errors: [{ messageId: 'enforceQueryKeyImport' as const }],
+      output: `import { QUERY_KEY_TOURNAMENT_REGISTRATION_STATUS } from '../../../util/routing/queryKeys';
+
+function Status() {
+  const [a] = useRouterState({ key: QUERY_KEY_TOURNAMENT_REGISTRATION_STATUS });
+  return null;
+}
+`,
+    },
+    {
+      // The option is read, not merely declared: the same source that stays
+      // flat at the default width breaks here.
+      name: 'a lowered printWidth breaks an import that fits at 80',
+      filename: '/repo/src/components/Widget.tsx',
+      options: [{ printWidth: 40 }],
+      code: `import { QUERY_KEY_A } from '../util/routing/queryKeys';
+
+function Widget() {
+  const [a] = useRouterState({ key: QUERY_KEY_A });
+  const [b] = useRouterState({ key: 'b' });
+  return null;
+}
+`,
+      errors: [{ messageId: 'enforceQueryKeyImport' as const }],
+      output: `import {
+  QUERY_KEY_A,
+  QUERY_KEY_B,
+} from '../util/routing/queryKeys';
+
+function Widget() {
+  const [a] = useRouterState({ key: QUERY_KEY_A });
+  const [b] = useRouterState({ key: QUERY_KEY_B });
+  return null;
+}
+`,
+    },
+    {
+      // The other direction, so the option is pinned as a live measurement
+      // rather than a one-way switch: the source that breaks at 80 stays flat.
+      name: 'a raised printWidth keeps an import that breaks at 80 on one line',
+      filename: '/repo/src/components/Widget.tsx',
+      options: [{ printWidth: 200 }],
+      code: `import { QUERY_KEY_MATCH_VIEW } from '../util/routing/queryKeys';
+
+function Widget() {
+  const [a] = useRouterState({ key: QUERY_KEY_MATCH_VIEW });
+  const [b] = useRouterState({ key: 'tournament-view' });
+  return null;
+}
+`,
+      errors: [{ messageId: 'enforceQueryKeyImport' as const }],
+      output: `import { QUERY_KEY_MATCH_VIEW, QUERY_KEY_TOURNAMENT_VIEW } from '../util/routing/queryKeys';
+
+function Widget() {
+  const [a] = useRouterState({ key: QUERY_KEY_MATCH_VIEW });
+  const [b] = useRouterState({ key: QUERY_KEY_TOURNAMENT_VIEW });
+  return null;
+}
+`,
+    },
+  ],
 });
