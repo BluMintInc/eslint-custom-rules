@@ -3913,7 +3913,7 @@ function f() {
     // #1990 control: an `if` TEST is evaluated exactly once, before control
     // reaches either branch, so lifting text out of it runs precisely when it
     // used to. The boundary test asks about the child's POSITION, not the
-    // parent's type.
+    // parent's type. The parentheses the ternary needed go with it (#2063).
     {
       code: `
 type Kind = 'a' | 'b';
@@ -3935,7 +3935,7 @@ function f() {
     a: box.a.v,
     b: box.b.v,
   };
-  if ((RESULT_BY_KIND[kind]) > 0) {
+  if (RESULT_BY_KIND[kind] > 0) {
     return 1;
   }
   return 0;
@@ -5573,6 +5573,260 @@ function pick() {
 `,
       errors: [{ messageId: 'preferMap' }],
     },
+    // #2063: the parentheses are genuinely required around the ternary — the
+    // comparison would otherwise bind into its alternate — and redundant around
+    // the lookup that replaces it, whose computed access binds tighter than any
+    // operator. Keeping them ships text Prettier strips.
+    {
+      code: `
+type Kind = 'a' | 'b';
+declare const kind: Kind;
+function pick() {
+  if ((kind === 'a' ? 1 : 2) > 0) {
+    return 'yes';
+  }
+  return 'no';
+}
+`,
+      output: `
+type Kind = 'a' | 'b';
+declare const kind: Kind;
+function pick() {
+  const RESULT_BY_KIND: Record<Kind, number> = {
+    a: 1,
+    b: 2,
+  };
+  if (RESULT_BY_KIND[kind] > 0) {
+    return 'yes';
+  }
+  return 'no';
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2063: the same widening reaches through a type assertion, which binds
+    // looser than the lookup as well.
+    {
+      code: `
+type Kind = 'a' | 'b';
+declare const kind: Kind;
+function pick() {
+  const width = (kind === 'a' ? 1 : 2) as number;
+  return width;
+}
+`,
+      output: `
+type Kind = 'a' | 'b';
+declare const kind: Kind;
+function pick() {
+  const RESULT_BY_KIND: Record<Kind, number> = {
+    a: 1,
+    b: 2,
+  };
+  const width = RESULT_BY_KIND[kind] as number;
+  return width;
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2063 control: an `if` head's parentheses belong to the STATEMENT, not to
+    // the expression, so an unconditional strip emits `if RESULT_BY_KIND[kind]`.
+    {
+      code: `
+type Kind = 'a' | 'b';
+declare const kind: Kind;
+function pick() {
+  if (kind === 'a' ? 1 : 2) {
+    return 'yes';
+  }
+  return 'no';
+}
+`,
+      output: `
+type Kind = 'a' | 'b';
+declare const kind: Kind;
+function pick() {
+  const RESULT_BY_KIND: Record<Kind, number> = {
+    a: 1,
+    b: 2,
+  };
+  if (RESULT_BY_KIND[kind]) {
+    return 'yes';
+  }
+  return 'no';
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2063 control: a lone call argument's parentheses are the call's own.
+    {
+      code: `
+type Kind = 'a' | 'b';
+declare const kind: Kind;
+declare function use(value: number): void;
+function pick() {
+  use(kind === 'a' ? 1 : 2);
+}
+`,
+      output: `
+type Kind = 'a' | 'b';
+declare const kind: Kind;
+declare function use(value: number): void;
+function pick() {
+  const RESULT_BY_KIND: Record<Kind, number> = {
+    a: 1,
+    b: 2,
+  };
+  use(RESULT_BY_KIND[kind]);
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2063 control: the `new` argument list the issue names — the same
+    // parentheses question with a different keyword in front of it.
+    {
+      code: `
+type Kind = 'a' | 'b';
+declare const kind: Kind;
+declare class Box {
+  constructor(value: number);
+}
+function pick() {
+  return new Box(kind === 'a' ? 1 : 2);
+}
+`,
+      output: `
+type Kind = 'a' | 'b';
+declare const kind: Kind;
+declare class Box {
+  constructor(value: number);
+}
+function pick() {
+  const RESULT_BY_KIND: Record<Kind, number> = {
+    a: 1,
+    b: 2,
+  };
+  return new Box(RESULT_BY_KIND[kind]);
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2063 control: the inner pair is the expression's and goes, the outer one
+    // heads the `if` and stays. The scan widens outward and stops there.
+    {
+      code: `
+type Kind = 'a' | 'b';
+declare const kind: Kind;
+function pick() {
+  if ((kind === 'a' ? 1 : 2)) {
+    return 'yes';
+  }
+  return 'no';
+}
+`,
+      output: `
+type Kind = 'a' | 'b';
+declare const kind: Kind;
+function pick() {
+  const RESULT_BY_KIND: Record<Kind, number> = {
+    a: 1,
+    b: 2,
+  };
+  if (RESULT_BY_KIND[kind]) {
+    return 'yes';
+  }
+  return 'no';
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2063 x #2060: both widenings apply at once. The argument join is measured
+    // from the parentheses' outer edges, so it carries them away with the call's
+    // interior instead of leaving `renderLabel((RESULT_BY_SIDE[side]))`.
+    {
+      code: `
+type Side = 'left' | 'right';
+declare const side: Side;
+declare function renderLabel(value: string): void;
+function pick() {
+  renderLabel(
+    (side === 'left' ? 'L' : 'R'),
+  );
+}
+`,
+      output: `
+type Side = 'left' | 'right';
+declare const side: Side;
+declare function renderLabel(value: string): void;
+function pick() {
+  const RESULT_BY_SIDE: Record<Side, string> = {
+    left: 'L',
+    right: 'R',
+  };
+  renderLabel(RESULT_BY_SIDE[side]);
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2063: a comment between the parenthesis and the expression sits in the
+    // margin the widening would delete, so the widening is declined and the
+    // parentheses stay. Layout is optional; the comment is not.
+    {
+      code: `
+type Kind = 'a' | 'b';
+declare const kind: Kind;
+function pick() {
+  if ((/* tuned */ kind === 'a' ? 1 : 2) > 0) {
+    return 'yes';
+  }
+  return 'no';
+}
+`,
+      output: `
+type Kind = 'a' | 'b';
+declare const kind: Kind;
+function pick() {
+  const RESULT_BY_KIND: Record<Kind, number> = {
+    a: 1,
+    b: 2,
+  };
+  if ((/* tuned */ RESULT_BY_KIND[kind]) > 0) {
+    return 'yes';
+  }
+  return 'no';
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2063: the other margin — between the expression and the closing
+    // parenthesis — declines the same way.
+    {
+      code: `
+type Kind = 'a' | 'b';
+declare const kind: Kind;
+function pick() {
+  if ((kind === 'a' ? 1 : 2 /* tuned */) > 0) {
+    return 'yes';
+  }
+  return 'no';
+}
+`,
+      output: `
+type Kind = 'a' | 'b';
+declare const kind: Kind;
+function pick() {
+  const RESULT_BY_KIND: Record<Kind, number> = {
+    a: 1,
+    b: 2,
+  };
+  if ((RESULT_BY_KIND[kind] /* tuned */) > 0) {
+    return 'yes';
+  }
+  return 'no';
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
   ],
 };
 
@@ -5872,7 +6126,7 @@ describe('prefer-map-over-conditional-dispatch fix layout vs Prettier', () => {
     );
     // Floors just under the measured counts, so a fixture edited out of either
     // sample fails here rather than quietly emptying it.
-    expect(settled.length).toBeGreaterThanOrEqual(108);
+    expect(settled.length).toBeGreaterThanOrEqual(113);
     expect(functionValued.length).toBeGreaterThanOrEqual(14);
     for (const testCase of functionValued) {
       expect(prettier.format(testCase.output, PRETTIER_OPTIONS)).toBe(
@@ -5881,17 +6135,34 @@ describe('prefer-map-over-conditional-dispatch fix layout vs Prettier', () => {
     }
   });
 
-  it('carries exactly the one measured residue over the whole sample', () => {
-    // Replacing a PARENTHESIZED expression keeps the source's parentheses
-    // (`if ((RESULT_BY_KIND[kind]) > 0)`), which Prettier strips as redundant.
-    // That is a property of the replacement span rather than of the layout this
-    // guard is about, so it is named rather than filtered away: a second
-    // unstable output has to fail here.
+  it('carries no residue over the whole sample', () => {
+    // Replacing a PARENTHESIZED expression used to keep the source's
+    // parentheses (`if ((RESULT_BY_KIND[kind]) > 0)`), which Prettier strips as
+    // redundant. That residue was carried here as a named baseline until #2063
+    // widened the replaced range over them, so the sample now settles whole and
+    // any new unstable output has to fail.
     const unstable = settled.filter(
       (testCase) => !isFixedPoint(testCase.output),
     );
-    expect(unstable).toHaveLength(1);
-    expect(unstable[0].output).toContain('if ((RESULT_BY_KIND[kind]) > 0) {');
+    expect(unstable.map((testCase) => testCase.output)).toEqual([]);
+  });
+
+  it('is not vacuous: the residue it used to carry is still detected', () => {
+    // A `toEqual([])` over a filter passes just as well when the oracle went
+    // blind or the corpus stopped reaching the widening, so both are planted.
+    const stale = `function pick() {\n  if ((RESULT_BY_KIND[kind]) > 0) {\n    return 1;\n  }\n  return 0;\n}\n`;
+    expect(isFixedPoint(stale)).toBe(false);
+    expect(
+      isFixedPoint(
+        stale.replace('(RESULT_BY_KIND[kind])', 'RESULT_BY_KIND[kind]'),
+      ),
+    ).toBe(true);
+    // And the corpus still holds outputs the widening had to produce: a lookup
+    // sitting bare where its ternary needed parentheses.
+    const widened = settled.filter((testCase) =>
+      /if \(RESULT_BY_[A-Z_]+\[[\w.]+\] > 0\) \{/.test(testCase.output),
+    );
+    expect(widened.length).toBeGreaterThanOrEqual(2);
   });
 
   it('accounts for what it skips: a ceiling cut close to the measurement', () => {
@@ -5899,7 +6170,12 @@ describe('prefer-map-over-conditional-dispatch fix layout vs Prettier', () => {
     // Left uncounted, a formatting drift that unsettled every input would leave
     // the assertion above passing over an empty sample, so the ceiling sits
     // just above the measured count rather than at "a minority".
-    expect(fixedCases.length - settled.length).toBeLessThanOrEqual(8);
+    //
+    // Nine of them, because a fixture pinning what #2063 must NOT do cannot be
+    // Prettier-clean by construction: a redundant paren pair, a second pair
+    // nested in a required one, and a comment written inside a pair are each
+    // something Prettier rewrites in the INPUT.
+    expect(fixedCases.length - settled.length).toBeLessThanOrEqual(10);
   });
 
   it('is not vacuous: the same output mis-indented is rejected', () => {

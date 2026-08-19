@@ -466,6 +466,24 @@ Prettier *would* open up (a function type's parameter list, a type literal's
 members, a two-argument type-argument list) is a shape the fixer cannot author,
 so it declines the fix instead.
 
+### The replaced span
+
+The lookup is shorter than the construct it replaces, so the fixer's other job
+at the fix site is dropping the text that shortening leaves stale: a line break
+the enclosing statement took only because the ternary was wide, and the
+parentheses that used to bind the ternary. Precedence is a property of the
+replacement text — an indexed lookup binds tighter than every operator that
+could enclose it — so `(kind === 'a' ? 1 : 2) > 0`, whose parentheses the
+ternary genuinely needed, becomes `RESULT_BY_KIND[kind] > 0` rather than
+`(RESULT_BY_KIND[kind]) > 0`, which the next `prettier --write` would strip.
+
+Both widenings are established rather than assumed. Parentheses the parent's
+own syntax requires stay — an `if`/`while`/`switch` head, a lone call or `new`
+argument list — and so does a decorator's pair, whose grammar admits no indexed
+access. A widening that would absorb a comment (one written between a
+parenthesis and the expression it groups, say) is dropped in favour of the
+narrower replacement, so the conversion and the comment both survive.
+
 ### Quote style
 
 Two of the things the fixer authors are string literals: the map's keys, and —
