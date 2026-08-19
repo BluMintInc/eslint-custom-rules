@@ -1040,7 +1040,6 @@ const measuredUndriven = (
  */
 const FIX_UNDRIVEN: Record<string, UndrivenCause> = {
   'enforce-date-ttime': 'noSharedMessageId',
-  'enforce-firestore-rules-get-access': 'noRespelling',
   'enforce-typescript-markdown-code-blocks': 'noTsFixture',
   'jsdoc-above-field': 'noRespelling',
   'no-unnecessary-destructuring': 'noSharedMessageId',
@@ -1075,7 +1074,6 @@ const DETECTION_UNDRIVEN: Record<string, UndrivenCause> = {
   'enforce-dynamic-file-naming': 'noRespelling',
   'enforce-dynamic-imports': 'silentOnComparedPairs',
   'enforce-firestore-path-utils': 'noRespelling',
-  'enforce-firestore-rules-get-access': 'noRespelling',
   'enforce-identifiable-firestore-type': 'noRespelling',
   'enforce-m3-sentence-case': 'noRespelling',
   'enforce-realtimedb-path-utils': 'noRespelling',

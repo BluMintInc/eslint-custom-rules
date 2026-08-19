@@ -577,8 +577,66 @@ ruleTesterTs.run('global-const-style', rule, {
       ].join('\n'),
       filename: 'test.ts',
     },
+    // Issue #2055: a module-scope const whose binding is used as a JSX element
+    // name holds a React component, whatever its initializer looks like. The
+    // repro's initializer is a MEMBER EXPRESSION (a component read off a class
+    // getter), which #1681's function-value/factory carve-out never reached.
+    {
+      name: 'declines to rename a module-scope const used as a JSX element name',
+      code: `
+const provider = buildProvider();
+const Provider = provider.Provider;
+
+const Probe = () => {
+  return <Provider docPath="Test/doc"><span /></Provider>;
+};
+`,
+      parserOptions: { ecmaFeatures: { jsx: true } },
+    },
   ],
   invalid: [
+    // Issue #2055: a JSX tag name is spelled twice, but the scope manager
+    // references only the OPENING occurrence — the identifier in a closing tag
+    // resolves to no variable at all. Renaming the reference list alone split
+    // `<nsHolder.Thing>…</nsHolder.Thing>` into a pair whose halves disagree,
+    // and the emitted file no longer parsed: `--fix` exited 0 having written
+    // source ESLint itself could never read again.
+    //
+    // This is the reachable arm of that defect. A binding used as a WHOLE tag
+    // name is carved out of the rename entirely (it holds a React component),
+    // so only a member-expression tag — where the reference is the namespace
+    // object rather than the component — still reaches the fixer.
+    {
+      code: `const nsHolder = { Thing: () => null };
+const Probe = () => {
+  return <nsHolder.Thing>hi</nsHolder.Thing>;
+};`,
+      filename: 'src/x.tsx',
+      parserOptions: { ecmaFeatures: { jsx: true }, ecmaVersion: 2020 },
+      errors: [
+        {
+          messageId: 'asConst',
+          data: {
+            name: 'nsHolder',
+            valueKind: 'an object literal',
+          },
+        },
+        {
+          messageId: 'upperSnakeCase',
+          data: {
+            name: 'nsHolder',
+            suggestedName: 'NS_HOLDER',
+          },
+        },
+      ],
+      // One RuleTester pass: the `as const` insertion and the rename overlap on
+      // this declaration, so only the rename lands here. What it pins is that
+      // BOTH halves of the tag pair move together.
+      output: `const NS_HOLDER = { Thing: () => null };
+const Probe = () => {
+  return <NS_HOLDER.Thing>hi</NS_HOLDER.Thing>;
+};`,
+    },
     // Issue #1257: the reserved-export exemption only suppresses the unsafe
     // rename — the `as const` fix is still applied because it never touches
     // the export name and is safe for Next.js.

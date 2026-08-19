@@ -65,6 +65,18 @@ export const COMMENT_FIDELITY_BASELINE: Record<string, string> = {
   // and the comment is untouched, which is why only the over-width arm diverges.
   'memo-compare-deeply-complex-props :: TRANSFORM_DIVERGED':
     'declines the over-width argument-list rebuild when a comment sits inside the list; input is left byte-identical and the report stands',
+  // WIDTH. The rule chooses between two correct shapes by measuring the header
+  // the in-place one would emit — `const X = memo(function XUnmemoized(<params>`
+  // — and a comment in the parameter list occupies columns in exactly that
+  // header, so it moves the measurement like any other text. Past the width the
+  // wrapper is appended as its own statement instead (#2054). Both shapes are
+  // valid and BOTH CARRY THE COMMENT: this is a layout choice diverging, not a
+  // comment being consumed, which is why the remedy is not a decline. Ignoring
+  // comment columns would re-emit the over-wide in-place header that #2054
+  // exists to prevent. Anchored by the straddling fixture pair in
+  // `src/tests/require-memo.test.ts`, so the own-corpus guard keeps it honest.
+  'require-memo :: TRANSFORM_DIVERGED':
+    'chooses its shape by measured header width, which a comment in the parameter list legitimately changes; both shapes preserve the comment (#2054)',
   // FORMATTING. The divergence is line wrapping and trailing commas only.
   // Verified by formatting both outputs with agora's pinned prettier (2.8.8,
   // not this repo's 2.7.1) and comparing code tokens: all cases converge. agora

@@ -1,5 +1,6 @@
 import type { TSESLint } from '@typescript-eslint/utils';
 import { requireMemo } from '../rules/require-memo';
+import type { RequireMemoOptions } from '../rules/require-memo';
 import { ruleTesterJsx } from '../utils/ruleTester';
 
 const message = (name: string) =>
@@ -8,14 +9,17 @@ const message = (name: string) =>
   `Wrap the component with memo from util/memo so callers receive a stable reference; rename to "${name}Unmemoized" if it must stay un-memoized.`;
 
 type RequireMemoInvalidCase = Omit<
-  TSESLint.InvalidTestCase<'requireMemo', []>,
+  TSESLint.InvalidTestCase<'requireMemo', RequireMemoOptions>,
   'errors'
 > & { name?: string };
 
 const withDefaults = ({
   name,
   ...testCase
-}: RequireMemoInvalidCase): TSESLint.InvalidTestCase<'requireMemo', []> => ({
+}: RequireMemoInvalidCase): TSESLint.InvalidTestCase<
+  'requireMemo',
+  RequireMemoOptions
+> => ({
   ...testCase,
   filename: testCase.filename || 'src/components/SomeComponent.tsx',
   errors: [
@@ -489,14 +493,16 @@ const FooBar = memo(({baz}) => {
     withDefaults({
       code: `function MultiplePropsComponent({ foo, bar }) { return <div>{foo}{bar}</div>; }`,
       output: `import { memo } from '../util/memo';
-const MultiplePropsComponent = memo(function MultiplePropsComponentUnmemoized({ foo, bar }) { return <div>{foo}{bar}</div>; });`,
+function MultiplePropsComponentUnmemoized({ foo, bar }) { return <div>{foo}{bar}</div>; }
+const MultiplePropsComponent = memo(MultiplePropsComponentUnmemoized);`,
       filename: 'src/components/SomeComponent.tsx',
       name: 'MultiplePropsComponent',
     }),
     withDefaults({
       code: `function DefaultPropComponent({ foo = 'default' }) { return <div>{foo}</div>; }`,
       output: `import { memo } from '../util/memo';
-const DefaultPropComponent = memo(function DefaultPropComponentUnmemoized({ foo = 'default' }) { return <div>{foo}</div>; });`,
+function DefaultPropComponentUnmemoized({ foo = 'default' }) { return <div>{foo}</div>; }
+const DefaultPropComponent = memo(DefaultPropComponentUnmemoized);`,
       filename: 'src/components/SomeComponent.tsx',
       name: 'DefaultPropComponent',
     }),
@@ -531,11 +537,12 @@ const Component = memo(({ onClick = () => {} }) => <button onClick={onClick}>Cli
         )
       }`,
       output: `import { memo } from '../util/memo';
-export const ShouldBeMemoized = memo(function ShouldBeMemoizedUnmemoized({foo}) {
+function ShouldBeMemoizedUnmemoized({foo}) {
         return (
           <div>{foo}</div>
         )
-      });`,
+      }
+export const ShouldBeMemoized = memo(ShouldBeMemoizedUnmemoized);`,
       filename: 'src/components/SomeComponent.tsx',
       name: 'ShouldBeMemoized',
     }),
@@ -546,11 +553,12 @@ export const ShouldBeMemoized = memo(function ShouldBeMemoizedUnmemoized({foo}) 
             )
           }`,
       output: `import { memo } from '../util/memo';
-export const ShouldBeMemoized = memo(function ShouldBeMemoizedUnmemoized({ foo }: { foo: string }): JSX.Element {
+function ShouldBeMemoizedUnmemoized({ foo }: { foo: string }): JSX.Element {
             return (
               <div>{foo}</div>
             )
-          });`,
+          }
+export const ShouldBeMemoized = memo(ShouldBeMemoizedUnmemoized);`,
       filename: 'src/components/SomeComponent.tsx',
       name: 'ShouldBeMemoized',
     }),
@@ -563,11 +571,12 @@ export const ShouldBeMemoized = memo(function ShouldBeMemoizedUnmemoized({ foo }
           }`,
       output: `import { useState } from 'react';
 import { memo } from '../util/memo';
-    export const ShouldBeMemoized = memo(function ShouldBeMemoizedUnmemoized({foo}) {
+    function ShouldBeMemoizedUnmemoized({foo}) {
             return (
               <div>{foo}</div>
             )
-          });`,
+          }
+    export const ShouldBeMemoized = memo(ShouldBeMemoizedUnmemoized);`,
       filename: 'src/components/SomeComponent.tsx',
       name: 'ShouldBeMemoized',
     }),
@@ -578,11 +587,12 @@ import { memo } from '../util/memo';
             )
           }`,
       output: `import { memo } from '../util/memo';
-export const ShouldStillBeMemoized = memo(function ShouldStillBeMemoizedUnmemoized({foo}) {
+function ShouldStillBeMemoizedUnmemoized({foo}) {
             return (
               <div>{foo}</div>
             )
-          });`,
+          }
+export const ShouldStillBeMemoized = memo(ShouldStillBeMemoizedUnmemoized);`,
       name: 'ShouldStillBeMemoized',
     }),
     withDefaults({
@@ -1456,6 +1466,156 @@ describe('suite', () => {
 });`,
       filename: 'src/components/SomeComponent.test.tsx',
       name: 'Component',
+    }),
+
+    // --- #2054: the in-place wrapper spells the component's name twice on one
+    // line, so the header it authors is 42 + 2*len(name) columns before any
+    // parameter text. Past the print width the declaration stays put and the
+    // memo binding is appended instead, which is one identifier per line. ---
+
+    // The issue's repro. Its parameters are ALREADY broken one per line, so the
+    // pre-image header is 46 columns — nothing about it is near 80. The 96-column
+    // header is authored entirely by the fix, which is what makes this a shape
+    // defect rather than a fixed-size insertion tipping a near-80 line.
+    withDefaults({
+      code: `export function TournamentRegistrationPanel({
+  tournamentId,
+  userId,
+  onRegistered,
+  variant,
+}) {
+  return <div>{tournamentId}</div>;
+}`,
+      output: `import { memo } from '../util/memo';
+function TournamentRegistrationPanelUnmemoized({
+  tournamentId,
+  userId,
+  onRegistered,
+  variant,
+}) {
+  return <div>{tournamentId}</div>;
+}
+export const TournamentRegistrationPanel = memo(
+  TournamentRegistrationPanelUnmemoized,
+);`,
+      filename: 'src/components/T.tsx',
+      name: 'TournamentRegistrationPanel',
+    }),
+
+    // The other side of the threshold: a short name's in-place header fits, so
+    // the wrapper goes in place and the declaration is NOT split. Without this
+    // control an unconditional split would pass the case above while landing
+    // the mirror-image defect on every short component.
+    withDefaults({
+      code: `export function Panel({ foo }) {
+  return <div>{foo}</div>;
+}`,
+      output: `import { memo } from '../util/memo';
+export const Panel = memo(function PanelUnmemoized({ foo }) {
+  return <div>{foo}</div>;
+});`,
+      filename: 'src/components/T.tsx',
+      name: 'Panel',
+    }),
+
+    // Only the in-place header is measured. Here the split header overflows too
+    // — the parameters are on one line — and the split shape is still correct:
+    // a formatter breaks that parameter list alone, leaving the body where the
+    // author put it, while the in-place shape forces `memo(` open and re-indents
+    // the whole body.
+    withDefaults({
+      code: `export function TournamentRegistrationPanelForBracket({ tournamentId, userId, onRegistered }) {
+  return <div>{tournamentId}</div>;
+}`,
+      output: `import { memo } from '../util/memo';
+function TournamentRegistrationPanelForBracketUnmemoized({ tournamentId, userId, onRegistered }) {
+  return <div>{tournamentId}</div>;
+}
+export const TournamentRegistrationPanelForBracket = memo(
+  TournamentRegistrationPanelForBracketUnmemoized,
+);`,
+      filename: 'src/components/T.tsx',
+      name: 'TournamentRegistrationPanelForBracket',
+    }),
+
+    // A comment in the parameter list occupies columns like any other text, so
+    // it counts toward the measured header. This pair straddles the threshold on
+    // the comment alone: without it the in-place header is 67 columns and stays
+    // in place, and the same declaration is split once the comment carries it to
+    // 87. Discounting comment columns would emit the 87-column in-place header
+    // that #2054 exists to prevent, so the shape legitimately depends on a
+    // comment — the carve-out recorded for this rule in
+    // `src/tests/commentFidelityBaseline.ts`, which the comment-fidelity guards
+    // require a fixture here to keep anchored. The comment survives either way.
+    withDefaults({
+      code: `function ProfileCardPanel({
+  title,
+}: Props) {
+  return <div>{title}</div>;
+}`,
+      output: `import { memo } from '../util/memo';
+const ProfileCardPanel = memo(function ProfileCardPanelUnmemoized({
+  title,
+}: Props) {
+  return <div>{title}</div>;
+});`,
+      name: 'ProfileCardPanel',
+    }),
+    withDefaults({
+      code: `function ProfileCardPanel({ /* keep me */
+  title,
+}: Props) {
+  return <div>{title}</div>;
+}`,
+      output: `import { memo } from '../util/memo';
+function ProfileCardPanelUnmemoized({ /* keep me */
+  title,
+}: Props) {
+  return <div>{title}</div>;
+}
+const ProfileCardPanel = memo(ProfileCardPanelUnmemoized);`,
+      name: 'ProfileCardPanel',
+    }),
+
+    // `printWidth` drives the decision rather than a hard-coded 80: the same
+    // short component the default keeps in place is split at a narrower width,
+    // and the appended binding breaks its sole argument out because the one-line
+    // spelling (42 columns) no longer fits either.
+    withDefaults({
+      code: `export function Panel({ foo }) {
+  return <div>{foo}</div>;
+}`,
+      options: [{ printWidth: 40 }],
+      output: `import { memo } from '../util/memo';
+function PanelUnmemoized({ foo }) {
+  return <div>{foo}</div>;
+}
+export const Panel = memo(
+  PanelUnmemoized,
+);`,
+      filename: 'src/components/T.tsx',
+      name: 'Panel',
+    }),
+
+    // The width is a measurement in both directions: widening it past the
+    // 96-column header keeps the issue's own repro in place.
+    withDefaults({
+      code: `export function TournamentRegistrationPanel({
+  tournamentId,
+  userId,
+}) {
+  return <div>{tournamentId}</div>;
+}`,
+      options: [{ printWidth: 200 }],
+      output: `import { memo } from '../util/memo';
+export const TournamentRegistrationPanel = memo(function TournamentRegistrationPanelUnmemoized({
+  tournamentId,
+  userId,
+}) {
+  return <div>{tournamentId}</div>;
+});`,
+      filename: 'src/components/T.tsx',
+      name: 'TournamentRegistrationPanel',
     }),
   ],
 });

@@ -1433,10 +1433,18 @@ describe('fixers must not emit a reference an inner shadow captures', () => {
    * const` fixture gained a fix (#2032). Its 121 wrapped variants left with it
    * (1023 -> 902 neutral, 5 -> 4 rules reaching a shadow), which is why every
    * floor here sits just under the value measured after that move.
+   *
+   * `enforce-firestore-rules-get-access` moved across the same way (#2052): its
+   * wrap-at-print-width fixtures pin the indentation the fix emits, so several
+   * of them place the rewritten literal inside a `function buildRules() { ... }`
+   * and the flat probe reaches an enclosure without help. Leaving the wrapped
+   * set is what a rule gaining flat reach is SUPPOSED to look like — the
+   * perturbation exists only for rules the flat pass cannot reach — so the
+   * floors below track the population down rather than pinning a rule into it.
    */
   it('the nesting perturbation reaches a shadow it could not reach flat', () => {
-    expect(nestedTotals.rules).toBeGreaterThanOrEqual(20);
-    expect(nestedTotals.enclosureGained).toBeGreaterThanOrEqual(12);
+    expect(nestedTotals.rules).toBeGreaterThanOrEqual(19);
+    expect(nestedTotals.enclosureGained).toBeGreaterThanOrEqual(11);
     expect(nestedTotals.probedRules).toBeGreaterThanOrEqual(4);
     expect(nestedTotals.neutral).toBeGreaterThanOrEqual(900);
     // An unvalidatable variant is not a valid one. Both zeros are trustworthy

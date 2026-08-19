@@ -1,6 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
-import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
+import {
+  AST_NODE_TYPES,
+  AST_TOKEN_TYPES,
+  TSESLint,
+  TSESTree,
+} from '@typescript-eslint/utils';
 import { RuleContext } from '@typescript-eslint/utils/dist/ts-eslint';
 import { ASTHelpers } from '../utils/ASTHelpers';
 import { createRule } from '../utils/createRule';
@@ -15,6 +20,20 @@ export type ComponentNode =
   | TSESTree.ArrowFunctionExpression
   | TSESTree.FunctionExpression
   | TSESTree.FunctionDeclaration;
+
+export type RequireMemoOptions = [
+  {
+    printWidth?: number;
+  },
+];
+
+/**
+ * Matches Prettier's own default. The declaration rewrite authors a line whose
+ * length grows with the component's name — the name is spelled twice — so past
+ * this width a formatter rewrites the fixed source, and `prettier --check`
+ * fails on it in the meantime.
+ */
+const DEFAULT_PRINT_WIDTH = 80;
 
 const isComponentExplicitlyUnmemoized = (componentName: string) =>
   componentName.toLowerCase().includes('unmemoized');
@@ -40,7 +59,7 @@ function isFunction(
 
 function isHigherOrderFunctionReturningJSX(
   node: TSESTree.Node,
-  context: Readonly<RuleContext<'requireMemo', []>>,
+  context: Readonly<RuleContext<'requireMemo', RequireMemoOptions>>,
 ): boolean {
   if (isFunction(node)) {
     if (node.body && node.body.type === 'BlockStatement') {
@@ -499,7 +518,7 @@ function isInsideMockFactory(node: TSESTree.Node): boolean {
  * default import rather than a `memo` binding, so it never reaches this path.
  */
 function planMemoBinding(
-  context: Readonly<RuleContext<'requireMemo', []>>,
+  context: Readonly<RuleContext<'requireMemo', RequireMemoOptions>>,
   fixer: TSESLint.RuleFixer,
   node: ComponentNode,
 ): { available: boolean; importFix: TSESLint.RuleFix | null } {
@@ -585,12 +604,198 @@ function isWrappableInitializer(declarator: TSESTree.VariableDeclarator) {
 }
 
 /**
+ * The file's own nesting step, taken as the most common indentation increase
+ * between consecutive lines. Reading it from the source keeps the appended
+ * wrapper in the author's units instead of assuming a two-space file.
+ */
+function indentUnitOf(sourceCode: TSESLint.SourceCode): string {
+  const text = sourceCode.getText();
+  // A block comment's interior lines carry the comment's own alignment — the
+  // `*` one column in from its indentation — which is not a nesting step of the
+  // file. Counting them makes a JSDoc-heavy file look one-space indented.
+  const blockComments = sourceCode
+    .getAllComments()
+    .filter((comment) => comment.type === AST_TOKEN_TYPES.Block)
+    .map((comment) => comment.range);
+
+  const frequencies = new Map<string, number>();
+  let previous = '';
+  let offset = 0;
+  for (const line of text.split('\n')) {
+    const lineStart = offset;
+    offset += line.length + 1;
+    if (line.trim() === '') {
+      continue;
+    }
+    if (
+      blockComments.some(([start, end]) => start < lineStart && lineStart < end)
+    ) {
+      continue;
+    }
+    const indent = /^[ \t]*/.exec(line)?.[0] ?? '';
+    if (indent.length > previous.length && indent.startsWith(previous)) {
+      const step = indent.slice(previous.length);
+      frequencies.set(step, (frequencies.get(step) ?? 0) + 1);
+    }
+    previous = indent;
+  }
+
+  let unit = '  ';
+  let best = 0;
+  for (const [step, count] of frequencies) {
+    if (count > best) {
+      unit = step;
+      best = count;
+    }
+  }
+  return unit;
+}
+
+/** The `export`/`export default` declaration wrapping `node`, if any. */
+function exportWrapperOf(node: ComponentNode & NodeWithParent) {
+  return node.parent.type === AST_NODE_TYPES.ExportDefaultDeclaration ||
+    node.parent.type === AST_NODE_TYPES.ExportNamedDeclaration
+    ? node.parent
+    : null;
+}
+
+/**
+ * The memo binding the split shape appends below the declaration.
+ *
+ * Prettier keeps `const X = memo(XUnmemoized);` on one line while it fits and
+ * breaks the sole argument out past the width — and collapses the broken form
+ * back onto one line when it fits — so the two spellings are chosen by
+ * measurement. A blanket break would land the mirror-image defect on every
+ * short name.
+ */
+function memoWrapperStatement(
+  name: string,
+  indent: string,
+  exported: boolean,
+  printWidth: number,
+  indentStep: string,
+): string {
+  const keyword = exported ? 'export const' : 'const';
+  const inline = `${keyword} ${name} = ${MEMO_NAME}(${name}Unmemoized);`;
+  if (indent.length + inline.length <= printWidth) {
+    return `${indent}${inline}`;
+  }
+  return (
+    `${indent}${keyword} ${name} = ${MEMO_NAME}(\n` +
+    `${indent}${indentStep}${name}Unmemoized,\n` +
+    `${indent});`
+  );
+}
+
+/**
+ * Whether the declaration should become a renamed declaration plus a separate
+ * memo binding rather than the in-place `const X = memo(function XUnmemoized`.
+ *
+ * The in-place shape splices two copies of the component's name into the
+ * declaration's first line, so that line grows by 24 + len(name) columns — 96
+ * for a 20-character exported name whose parameters are already broken one per
+ * line. Past the print width a formatter rewrites the whole declaration and
+ * re-indents its body, so a `--fix` run leaves the tree failing
+ * `prettier --check`. Splitting the wrapper onto its own statement puts one
+ * identifier per line instead, which no width can overflow.
+ *
+ * The switch is a measurement, not a default: the split shape moves the
+ * wrapper below the body, detaching a leading JSDoc comment from the exported
+ * binding, so it is only taken where the in-place header does not fit.
+ *
+ * Only the in-place width is measured, because the split shape is the better
+ * answer even when its own first line overflows. A formatter resolves an
+ * over-wide `function XUnmemoized(<params>)` by breaking the parameter list
+ * alone, which leaves the body at the depth the author wrote it; an over-wide
+ * in-place header instead forces the `memo(` call open and re-indents every
+ * line of the body. Comparing the two shapes' widths would trade the second
+ * outcome for the first on exactly the declarations that suffer most from it.
+ */
+function shouldSplitDeclaration(
+  context: Readonly<RuleContext<'requireMemo', RequireMemoOptions>>,
+  node: ComponentNode & NodeWithParent,
+  printWidth: number,
+): boolean {
+  const name = node.id!.name;
+  // A name spelled across two lines has no single header to measure, and the
+  // rename's landing column is not the one this arithmetic assumes.
+  if (node.id!.loc.start.line !== node.loc.start.line) {
+    return false;
+  }
+
+  // The split shape introduces `<Name>Unmemoized` as a real binding in the
+  // enclosing scope, where the in-place shape only names a function
+  // expression. An existing binding of that name would be redeclared, or
+  // shadowed out from under the code that reads it.
+  if (
+    ASTHelpers.findVariableInScope(
+      ASTHelpers.getScope(context, node),
+      `${name}Unmemoized`,
+    )
+  ) {
+    return false;
+  }
+
+  const text = context.sourceCode.getText();
+  const exportWrapper = exportWrapperOf(node);
+  const start = (exportWrapper ?? node).range[0];
+  const lineStart = text.lastIndexOf('\n', start - 1) + 1;
+  const indent = text.slice(lineStart, start);
+  // A declaration sharing its line with other code has no indentation of its
+  // own to give the appended statement.
+  if (!/^[ \t]*$/.test(indent)) {
+    return false;
+  }
+
+  // The split shape drops the export keywords from the declaration. Anything
+  // else between them and `function` — a comment — would be dropped with them.
+  const droppedPrefix = text.slice(start, node.range[0]);
+  if (!/^(?:export\s+(?:default\s+)?)?$/.test(droppedPrefix)) {
+    return false;
+  }
+
+  // The header is what precedes the body's opening brace: a formatter always
+  // breaks a non-empty function body onto its own lines, so whatever a
+  // compressed source keeps on the declaration's line after `{` is text the
+  // formatter moves regardless of which shape the fix takes. Measuring to the
+  // brace — or to the first line break, whichever comes first, since broken
+  // parameters end the line earlier — is therefore the emitted first line of a
+  // formatted file.
+  const lineBreak = text.indexOf('\n', node.id!.range[1]);
+  const headerEnd = Math.min(
+    lineBreak === -1 ? text.length : lineBreak,
+    node.body.range[0] + 1,
+  );
+  const tail = text.slice(node.id!.range[1], headerEnd);
+
+  // A default export is the one form the in-place shape also relocates: the
+  // keywords cannot precede a `const`, so they are dropped here and re-emitted
+  // as a trailing `export default X;`. A named export's keyword stays on the
+  // line and counts toward its width.
+  const inlinePrefix =
+    exportWrapper?.type === AST_NODE_TYPES.ExportDefaultDeclaration
+      ? indent
+      : text.slice(lineStart, node.range[0]);
+  const inlineWidth =
+    inlinePrefix.length +
+    `const ${name} = ${MEMO_NAME}(function ${name}Unmemoized`.length +
+    tail.length;
+  return inlineWidth > printWidth;
+}
+
+/**
  * Rewrites a function declaration into a memoized `const`, renaming the function
  * itself to `<Name>Unmemoized` so the wrapped component keeps a display name.
+ *
+ * Two shapes carry that rewrite. The in-place one splices the wrapper into the
+ * declaration's own header; the split one leaves the (renamed) declaration
+ * where it stands and appends the memo binding as its own statement, which is
+ * the width-safe spelling for a long name. See {@link shouldSplitDeclaration}.
  */
 function memoizeDeclaration(
-  context: Readonly<RuleContext<'requireMemo', []>>,
+  context: Readonly<RuleContext<'requireMemo', RequireMemoOptions>>,
   node: ComponentNode & NodeWithParent,
+  printWidth: number,
 ): TSESLint.ReportFixFunction {
   return function fix(fixer) {
     if (!isRewritableFunction(node)) {
@@ -602,13 +807,6 @@ function memoizeDeclaration(
       return null;
     }
 
-    const functionKeywordRange: Readonly<[number, number]> = [
-      node.range[0],
-      node.range[0] + 'function'.length,
-    ];
-    const functionKeywordReplacement = `const ${node.id!.name} = memo(`;
-    const functionNameReplacement = `function ${node.id!.name}Unmemoized`;
-
     // `export default const X = memo(...)` is a syntax error, so a
     // default-exported declaration becomes a memoized const plus a trailing
     // `export default X;`. The local binding is preserved because other
@@ -618,21 +816,9 @@ function memoizeDeclaration(
         ? node.parent
         : null;
 
-    const fixes = [
-      fixer.replaceTextRange(functionKeywordRange, functionKeywordReplacement),
-      fixer.insertTextAfterRange(
-        [node.range[1], node.range[1]],
-        defaultExport ? `);\nexport default ${node.id!.name};` : ');',
-      ),
-      fixer.replaceTextRange(
-        [node.id!.range[0] - 1, node.id!.range[1]],
-        functionNameReplacement,
-      ),
-    ];
-
-    if (defaultExport) {
-      fixes.push(fixer.removeRange([defaultExport.range[0], node.range[0]]));
-    }
+    const fixes = shouldSplitDeclaration(context, node, printWidth)
+      ? splitFixes(context, fixer, node, printWidth, defaultExport)
+      : inlineFixes(fixer, node, defaultExport);
 
     if (importFix) {
       fixes.push(importFix);
@@ -640,6 +826,87 @@ function memoizeDeclaration(
 
     return fixes;
   };
+}
+
+/** `export const X = memo(function XUnmemoized(<params>) { ... });` */
+function inlineFixes(
+  fixer: TSESLint.RuleFixer,
+  node: ComponentNode & NodeWithParent,
+  defaultExport: TSESTree.Node | null,
+): TSESLint.RuleFix[] {
+  const name = node.id!.name;
+  const functionKeywordRange: Readonly<[number, number]> = [
+    node.range[0],
+    node.range[0] + 'function'.length,
+  ];
+
+  const fixes = [
+    fixer.replaceTextRange(
+      functionKeywordRange,
+      `const ${name} = ${MEMO_NAME}(`,
+    ),
+    fixer.insertTextAfterRange(
+      [node.range[1], node.range[1]],
+      defaultExport ? `);\nexport default ${name};` : ');',
+    ),
+    fixer.replaceTextRange(
+      [node.id!.range[0] - 1, node.id!.range[1]],
+      `function ${name}Unmemoized`,
+    ),
+  ];
+
+  if (defaultExport) {
+    fixes.push(fixer.removeRange([defaultExport.range[0], node.range[0]]));
+  }
+
+  return fixes;
+}
+
+/**
+ * `function XUnmemoized(<params>) { ... }` followed by the memo binding as its
+ * own statement.
+ *
+ * The declaration and its body are left exactly where the author put them, so
+ * nothing is re-indented and the appended statement carries one identifier per
+ * line. The export keywords move with the binding: a named export re-exports
+ * the const, and a default export keeps the local binding plus a trailing
+ * `export default X;`, matching the in-place shape.
+ */
+function splitFixes(
+  context: Readonly<RuleContext<'requireMemo', RequireMemoOptions>>,
+  fixer: TSESLint.RuleFixer,
+  node: ComponentNode & NodeWithParent,
+  printWidth: number,
+  defaultExport: TSESTree.Node | null,
+): TSESLint.RuleFix[] {
+  const name = node.id!.name;
+  const text = context.sourceCode.getText();
+  const exportWrapper = exportWrapperOf(node);
+  const start = (exportWrapper ?? node).range[0];
+  const indent = text.slice(text.lastIndexOf('\n', start - 1) + 1, start);
+
+  const wrapper = memoWrapperStatement(
+    name,
+    indent,
+    !!exportWrapper && !defaultExport,
+    printWidth,
+    indentUnitOf(context.sourceCode),
+  );
+  const trailer = defaultExport ? `\n${indent}export default ${name};` : '';
+
+  const fixes = [
+    fixer.replaceTextRange(node.id!.range, `${name}Unmemoized`),
+    fixer.insertTextAfterRange(
+      [node.range[1], node.range[1]],
+      `\n${wrapper}${trailer}`,
+    ),
+  ];
+
+  if (exportWrapper) {
+    fixes.push(fixer.removeRange([exportWrapper.range[0], node.range[0]]));
+  }
+
+  return fixes;
 }
 
 /**
@@ -650,7 +917,7 @@ function memoizeDeclaration(
  * anonymous initializer is not forced into a spelling it did not have.
  */
 function memoizeInitializer(
-  context: Readonly<RuleContext<'requireMemo', []>>,
+  context: Readonly<RuleContext<'requireMemo', RequireMemoOptions>>,
   node: ComponentNode,
 ): TSESLint.ReportFixFunction {
   return function fix(fixer) {
@@ -677,8 +944,9 @@ function memoizeInitializer(
 }
 
 function checkFunction(
-  context: Readonly<RuleContext<'requireMemo', []>>,
+  context: Readonly<RuleContext<'requireMemo', RequireMemoOptions>>,
   node: ComponentNode & NodeWithParent,
+  printWidth: number,
 ) {
   const fileName = context.getFilename();
   if (!fileName.endsWith('.tsx')) {
@@ -723,7 +991,7 @@ function checkFunction(
           name: componentName,
         },
         fix: fixDeclaration
-          ? memoizeDeclaration(context, node)
+          ? memoizeDeclaration(context, node, printWidth)
           : fixInitializer
           ? memoizeInitializer(context, node)
           : undefined,
@@ -751,19 +1019,26 @@ function calculateImportPath(currentFilePath: string): string {
   return depth > 0 ? '../'.repeat(depth) + 'util/memo' : './util/memo';
 }
 
-export const requireMemo = createRule<[], 'requireMemo'>({
+export const requireMemo = createRule<RequireMemoOptions, 'requireMemo'>({
   name: 'require-memo',
-  create: (context) => ({
-    ArrowFunctionExpression(node) {
-      checkFunction(context, node as any);
-    },
-    FunctionDeclaration(node) {
-      checkFunction(context, node as any);
-    },
-    FunctionExpression(node) {
-      checkFunction(context, node as any);
-    },
-  }),
+  create: (context, [options]) => {
+    const printWidth =
+      typeof options?.printWidth === 'number' && options.printWidth > 0
+        ? options.printWidth
+        : DEFAULT_PRINT_WIDTH;
+
+    return {
+      ArrowFunctionExpression(node) {
+        checkFunction(context, node as any, printWidth);
+      },
+      FunctionDeclaration(node) {
+        checkFunction(context, node as any, printWidth);
+      },
+      FunctionExpression(node) {
+        checkFunction(context, node as any, printWidth);
+      },
+    };
+  },
   meta: {
     type: 'problem',
     docs: {
@@ -776,8 +1051,19 @@ export const requireMemo = createRule<[], 'requireMemo'>({
         'Without memo the component function is recreated on every parent render, breaking referential equality and causing avoidable child re-renders. ' +
         'Wrap the component with memo from util/memo so callers receive a stable reference; rename to "{{name}}Unmemoized" if it must stay un-memoized.',
     },
-    schema: [],
+    schema: [
+      {
+        type: 'object',
+        properties: {
+          printWidth: {
+            type: 'number',
+            minimum: 1,
+          },
+        },
+        additionalProperties: false,
+      },
+    ],
     fixable: 'code',
   },
-  defaultOptions: [],
+  defaultOptions: [{}],
 });

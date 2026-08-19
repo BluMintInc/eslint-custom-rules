@@ -617,6 +617,165 @@ function planSxEdits(
   }
   const inlineEdits = [inlineEdit, ...removals];
 
+  /**
+   * Prettier's JSX printer breaks an element's children onto their own lines
+   * whenever the opening element carries more than one attribute, whatever the
+   * width. Merging every system prop into one `sx` can drop the element to
+   * exactly one attribute, which flips that decision: the formatter joins the
+   * children back onto the element's line while the fix leaves them broken, so
+   * the emitted element fails `prettier --check`.
+   *
+   * The children lie outside `node.range` (which covers only the opening
+   * element), so the join widens the fix range over adjacent text. It stays a
+   * deletion of the two whitespace runs that surround the children — their text
+   * is spliced verbatim, never re-authored.
+   */
+  const childJoinEdits = (planned: PlannedEdit[]): PlannedEdit[] => {
+    const element = node.parent;
+    if (!element || element.type !== AST_NODE_TYPES.JSXElement) {
+      return [];
+    }
+    if (element.openingElement !== node || !element.closingElement) {
+      return [];
+    }
+    // Joining changes the element's height, and Prettier chooses the layout of
+    // several enclosing constructs from that height: the parentheses wrapping a
+    // multi-line JSX initializer, `return`, arrow body, ternary branch or
+    // object value, and the broken form of an array or argument list. A
+    // collapsed element lets all of those close up, which moves text the fix
+    // does not own. The join is therefore confined to the two positions whose
+    // enclosing layout cannot answer back: a statement of its own, and a direct
+    // JSX child, whose parent is held open by containing a tag at all.
+    const host = element.parent;
+    if (
+      !host ||
+      (host.type !== AST_NODE_TYPES.JSXElement &&
+        host.type !== AST_NODE_TYPES.JSXFragment &&
+        host.type !== AST_NODE_TYPES.ExpressionStatement)
+    ) {
+      return [];
+    }
+    // Only crossing the one-attribute threshold moves the children: an element
+    // that already carried one attribute, or that keeps two, is printed the
+    // same way before and after the merge.
+    const attributesAfter =
+      node.attributes.length -
+      systemPropAttrs.length +
+      (sxAttr === null ? 1 : 0);
+    if (node.attributes.length <= 1 || attributesAfter !== 1) {
+      return [];
+    }
+
+    const regionStart = node.range[1];
+    const regionEnd = element.closingElement.range[0];
+    const region = source.slice(regionStart, regionEnd);
+    const leading = /^\s*/.exec(region)?.[0] ?? '';
+    const trailing = /\s*$/.exec(region)?.[0] ?? '';
+    // Both runs have to carry a line break, which is what makes them layout
+    // rather than content: JSX drops whitespace spanning a newline but keeps a
+    // space written inline. A whitespace-only region has no children to join.
+    if (
+      leading.length === region.length ||
+      !leading.includes('\n') ||
+      !trailing.includes('\n')
+    ) {
+      return [];
+    }
+    const contentStart = regionStart + leading.length;
+    const contentEnd = regionEnd - trailing.length;
+    // Children spread over several lines would have to be reflowed, which is
+    // rewriting them rather than moving the lines they sit between.
+    if (source.slice(contentStart, contentEnd).includes('\n')) {
+      return [];
+    }
+
+    let containers = 0;
+    for (const child of element.children) {
+      switch (child.type) {
+        // Prettier's `containsTag`: an element or fragment child forces the
+        // broken layout at any width, so the merge never moves it.
+        case AST_NODE_TYPES.JSXElement:
+        case AST_NODE_TYPES.JSXFragment:
+          return [];
+        case AST_NODE_TYPES.JSXExpressionContainer: {
+          containers += 1;
+          // Prettier's `containsMultipleExpressions`: a second container forces
+          // the break just as a second attribute does.
+          if (containers > 1) {
+            return [];
+          }
+          const { expression } = child;
+          // `{' '}` is Prettier's own spelling of a significant JSX space; the
+          // formatter rewrites it into a literal space rather than moving it.
+          if (
+            expression.type === AST_NODE_TYPES.Literal &&
+            typeof expression.value === 'string' &&
+            expression.value.trim() === ''
+          ) {
+            return [];
+          }
+          break;
+        }
+        case AST_NODE_TYPES.JSXText: {
+          const kept = source.slice(
+            Math.max(child.range[0], contentStart),
+            Math.min(child.range[1], contentEnd),
+          );
+          // Prettier collapses whitespace runs inside JSX text and prints every
+          // separator as one space, so text carrying anything else is not
+          // reproduced by a verbatim splice.
+          if (/\s\s/.test(kept) || /[^\S ]/.test(kept)) {
+            return [];
+          }
+          break;
+        }
+        default:
+          return [];
+      }
+    }
+
+    const joinEdits: PlannedEdit[] = [
+      { range: [regionStart, contentStart], text: '' },
+      { range: [contentEnd, regionEnd], text: '' },
+    ];
+    const merged = [...planned, ...joinEdits];
+    const emitted = applyEdits(source, merged);
+    const shift = (offset: number) =>
+      merged
+        .filter((edit) => edit.range[1] <= offset)
+        .reduce(
+          (total, edit) =>
+            total + edit.text.length - (edit.range[1] - edit.range[0]),
+          0,
+        );
+    const elementStart = node.range[0] + shift(node.range[0]);
+    const elementEnd =
+      element.closingElement.range[1] + shift(element.closingElement.range[1]);
+    // An opening element the merge leaves broken across lines keeps Prettier's
+    // multi-line children layout, so there is nothing to join.
+    if (emitted.slice(elementStart, elementEnd).includes('\n')) {
+      return [];
+    }
+    const joinedLineStart = emitted.lastIndexOf('\n', elementStart - 1) + 1;
+    const joinedLineBreak = emitted.indexOf('\n', elementStart);
+    const joinedLineEnd =
+      joinedLineBreak === -1 ? emitted.length : joinedLineBreak;
+    // Past the print width the broken layout is Prettier's own answer, so the
+    // children stay where the author left them.
+    return joinedLineEnd - joinedLineStart <= printWidth ? joinEdits : [];
+  };
+
+  /**
+   * Every plan that emits anything carries the children join, so no arm — least
+   * of all the conservative fall-through at the end — can bypass it. The join
+   * measures the plan it is handed and declines on its own where the emitted
+   * opening element still spans lines.
+   */
+  const withJoinedChildren = (planned: PlannedEdit[]): PlannedEdit[] => [
+    ...planned,
+    ...childJoinEdits(planned),
+  ];
+
   /** The indentation of a node that starts its own line, else null. */
   const ownLineIndentOf = (offset: number): string | null => {
     const lineStart = source.lastIndexOf('\n', offset - 1) + 1;
@@ -792,7 +951,7 @@ function planSxEdits(
 
   const expandedMerge = expandedMergeEdits();
   if (expandedMerge) {
-    return expandedMerge;
+    return withJoinedChildren(expandedMerge);
   }
 
   // Measure the line the compact form actually lands on, with every removal
@@ -819,7 +978,7 @@ function planSxEdits(
   const hasMultilineEntry = inlineEntries.some((entry) => entry.includes('\n'));
 
   if (!hasMultilineEntry && lineEnd - lineStart <= printWidth) {
-    return inlineEdits;
+    return withJoinedChildren(inlineEdits);
   }
 
   // The attribute may end several lines below where it starts once a multi-line
@@ -839,7 +998,10 @@ function planSxEdits(
     const indent = /^[ \t]*/.exec(linePrefix)?.[0] ?? '';
     const rewritten = sxAttributeText(indent, slotStart - lineStart);
     if (rewritten !== null) {
-      return [{ range: sxSlotNode.range, text: rewritten }, ...removals];
+      return withJoinedChildren([
+        { range: sxSlotNode.range, text: rewritten },
+        ...removals,
+      ]);
     }
   }
 
@@ -910,7 +1072,7 @@ function planSxEdits(
 
   const restructured = restructuredElement();
   if (restructured !== null) {
-    return [{ range: node.range, text: restructured }];
+    return withJoinedChildren([{ range: node.range, text: restructured }]);
   }
 
   // Every wrap remedy declined and the compact line measures over the print
@@ -921,7 +1083,7 @@ function planSxEdits(
   if (lineEnd - lineStart > printWidth) {
     return [];
   }
-  return inlineEdits;
+  return withJoinedChildren(inlineEdits);
 }
 
 export const preferSxPropOverSystemProps = createRule<Options, MessageIds>({

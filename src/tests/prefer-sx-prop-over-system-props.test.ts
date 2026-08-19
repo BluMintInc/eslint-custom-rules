@@ -1542,6 +1542,77 @@ export const Panel = () => (
 );
 `,
       },
+
+      // --- #2058: Prettier breaks an element's children onto their own lines
+      // whenever the opening element carries more than one attribute, whatever
+      // the width. Merging every system prop into one `sx` drops the element to
+      // exactly one attribute, so the children have to come back with it. ---
+      {
+        code: `<Box overflow="hidden" textOverflow="ellipsis">
+  hi
+</Box>;`,
+        errors: [
+          { messageId: 'preferSxProp', data: { prop: 'overflow' } },
+          { messageId: 'preferSxProp', data: { prop: 'textOverflow' } },
+        ],
+        output: `<Box sx={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>hi</Box>;`,
+      },
+
+      // An attribute the merge does not consume keeps the element at two, so
+      // the threshold is never crossed and the children stay where they are.
+      // This is the collapse direction's other side: joining here would be the
+      // mirror-image defect.
+      {
+        code: `<Box overflow="hidden" textOverflow="ellipsis" id="x">
+  hi
+</Box>;`,
+        errors: [
+          { messageId: 'preferSxProp', data: { prop: 'overflow' } },
+          { messageId: 'preferSxProp', data: { prop: 'textOverflow' } },
+        ],
+        output: `<Box sx={{ overflow: 'hidden', textOverflow: 'ellipsis' }} id="x">
+  hi
+</Box>;`,
+      },
+
+      // An element or fragment child forces Prettier's broken layout at any
+      // attribute count (its `containsTag`), so the merge never moves it.
+      {
+        code: `<Box overflow="hidden" textOverflow="ellipsis">
+  <Inner />
+</Box>;`,
+        errors: [
+          { messageId: 'preferSxProp', data: { prop: 'overflow' } },
+          { messageId: 'preferSxProp', data: { prop: 'textOverflow' } },
+        ],
+        output: `<Box sx={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+  <Inner />
+</Box>;`,
+      },
+
+      // Past the print width the broken opening element is Prettier's own
+      // answer, so the children stay broken with it.
+      {
+        code: `<Box overflow="hidden" textOverflow="ellipsis" display="flex" alignItems="center">
+  some fairly long children text here indeed
+</Box>;`,
+        errors: [
+          { messageId: 'preferSxProp', data: { prop: 'overflow' } },
+          { messageId: 'preferSxProp', data: { prop: 'textOverflow' } },
+          { messageId: 'preferSxProp', data: { prop: 'display' } },
+          { messageId: 'preferSxProp', data: { prop: 'alignItems' } },
+        ],
+        output: `<Box
+  sx={{
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    display: 'flex',
+    alignItems: 'center',
+  }}
+>
+  some fairly long children text here indeed
+</Box>;`,
+      },
     ],
   },
 );

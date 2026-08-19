@@ -255,3 +255,66 @@ An alias in either direction (`import { memo as m }`, `import { createMemo as me
 binds something else, so the first leaves the name free for the fix to claim and
 the second withholds the fix. `React.memo` is a member access on the default
 import rather than a `memo` binding, so it never trips the guard.
+
+## Options
+
+```js
+'@blumintinc/blumint/require-memo': ['error', {
+  // Column the autofix measures the emitted declaration header against
+  printWidth: 80,
+}]
+```
+
+### `printWidth`
+
+Type: `number`
+
+Default: `80`
+
+The column the autofix measures against, matching Prettier's option of the same
+name. Set it to your formatter's `printWidth` so the fixed source is already in
+the shape the formatter would produce; a lint run carrying `--fix` otherwise
+leaves the tree failing `prettier --check`.
+
+### Which shape the fix emits for a declaration
+
+Wrapping a declaration in place spells the component's name twice on one line —
+`export const X = memo(function XUnmemoized(` is 42 + 2 × `len(name)` columns
+before a single character of parameter text — so the header overflows for any
+sufficiently long name no matter how the source was formatted. The fix measures
+that header and picks between two shapes.
+
+While it fits, the wrapper goes in place:
+
+```jsx
+export const Panel = memo(function PanelUnmemoized({ foo }) {
+  return <div>{foo}</div>;
+});
+```
+
+Past `printWidth`, the declaration stays where it stands — renamed — and the
+memo binding is appended as its own statement, which is one identifier per line
+and so fits at any name length:
+
+```jsx
+function TournamentRegistrationPanelUnmemoized({
+  tournamentId,
+  userId,
+  onRegistered,
+  variant,
+}) {
+  return <div>{tournamentId}</div>;
+}
+export const TournamentRegistrationPanel = memo(
+  TournamentRegistrationPanelUnmemoized,
+);
+```
+
+Only the in-place header is measured. The split shape is the better answer even
+where its own first line overflows, because a formatter resolves an over-wide
+`function XUnmemoized(<params>)` by breaking the parameter list alone, leaving
+the body at the depth the author wrote it — whereas an over-wide in-place header
+forces the `memo(` call open and re-indents every line of the body.
+
+The appended binding follows the same measurement: it stays on one line while it
+fits, and breaks its sole argument out past the width.

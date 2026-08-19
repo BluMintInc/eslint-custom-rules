@@ -95,6 +95,30 @@ import { ImageOptimized as CustomImage } from '../image/ImageOptimized';
 // <img src="/a.jpg" alt="A" />  ->  <CustomImage src="/a.jpg" alt="A" />
 ```
 
+Only the tag name is rewritten. Every attribute — and every line break, comment
+and space between attributes — is carried over byte for byte, so an element
+prettier expanded over several lines keeps that shape and a one-line element
+stays on one line:
+
+```jsx
+// <img                         ->  <ImageOptimized
+//   src="/example.jpg"         //    src="/example.jpg"
+//   alt="Example gallery item" //    alt="Example gallery item"
+//   width={480}                //    width={480}
+// />                           //  />
+```
+
+Preserving the input's layout is what keeps the output print-width clean in both
+directions. Joining the attributes onto one line overflows by an amount that
+grows with the attribute count, while expanding a short list unconditionally is
+equally wrong, since prettier folds a needlessly expanded attribute list back
+onto one line.
+
+An explicit closing tag has no counterpart on the component, so `<img ...></img>`
+becomes self-closing: ` />` takes the place the `>` occupied, which leaves it on
+its own line when the attribute list is expanded and beside the last attribute
+when it is not.
+
 When nothing binds the component, the violation is reported without a fix.
 Inserting an import would have to guess the module's canonical path, and a
 rewrite to an unimported name leaves the file referencing an undefined
