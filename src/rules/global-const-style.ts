@@ -1,4 +1,9 @@
-import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
+import {
+  AST_NODE_TYPES,
+  AST_TOKEN_TYPES,
+  TSESLint,
+  TSESTree,
+} from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 const isUpperSnakeCase = (str: string): boolean =>
@@ -135,6 +140,105 @@ const isComponentFactoryCall = (node: TSESTree.Node): boolean => {
 const isFunctionValue = (node: TSESTree.Node): boolean =>
   node.type === AST_NODE_TYPES.ArrowFunctionExpression ||
   node.type === AST_NODE_TYPES.FunctionExpression;
+
+/**
+ * A component-shaped identifier: an initial capital followed by at least one
+ * lowercase letter. React resolves a JSX name by its spelling — `<Provider/>`
+ * reads the binding while `<provider/>` is the intrinsic string `'provider'` —
+ * so the capital carries meaning an UPPER_SNAKE rename destroys. A name that is
+ * already UPPER_SNAKE is not component-shaped, which costs nothing: the rule
+ * never reports one.
+ */
+const isComponentShapedName = (name: string): boolean =>
+  /^[A-Z]/.test(name) && /[a-z]/.test(name);
+
+/**
+ * Whether the binding is spelled as a JSX element name (`<Provider …>`)
+ * anywhere in the file. Such a binding holds a React component whatever its
+ * initializer looks like: the reported shape reads one off a class getter
+ * (`const Provider = provider.Provider`), a MemberExpression that #1681's
+ * function-value/factory carve-out never reached (Issue #2055).
+ *
+ * The answer comes from the scope manager's reference list rather than a
+ * textual search for the name, so a same-named component bound inside a
+ * callback never exempts an unrelated module constant. Only a whole-name use
+ * counts: in `<Ns.Thing/>` the component is `Thing`, and `Ns` is an ordinary
+ * object whose UPPER_SNAKE spelling (`<NS.Thing/>`) resolves the same value.
+ */
+const isUsedAsJsxElementName = (variable: TSESLint.Scope.Variable): boolean =>
+  variable.references.some((reference) => {
+    const parent = reference.identifier.parent;
+    return (
+      parent?.type === AST_NODE_TYPES.JSXOpeningElement &&
+      parent.name === reference.identifier
+    );
+  });
+
+/**
+ * Whether the initializer reads a component off another value —
+ * `const Provider = provider.Provider`, the class-getter shape from the report.
+ * Both the property read and the binding carry the component spelling, which
+ * leaves an ordinary configuration read (`const themeColor = Theme.color`)
+ * subject to the rename (Issue #1418). Type information would settle the
+ * question exactly; the spelling is what a single-file rule can decide, and a
+ * missed rename is a cheaper error than a renamed component (Issue #2055).
+ */
+const isComponentPropertyRead = (
+  init: TSESTree.Node,
+  bindingName: string,
+): boolean => {
+  const target = unwrapValueWrappers(init);
+  return (
+    isComponentShapedName(bindingName) &&
+    target.type === AST_NODE_TYPES.MemberExpression &&
+    !target.computed &&
+    target.property.type === AST_NODE_TYPES.Identifier &&
+    isComponentShapedName(target.property.name)
+  );
+};
+
+/**
+ * The `JSXElement` whose tag name `refId` spells, or null when the reference
+ * sits anywhere else. A member-expression name (`<Ns.Thing/>`) references its
+ * ROOT object, so the climb walks out of the member chain first.
+ */
+const jsxElementOfTagName = (
+  refId: TSESTree.Node,
+): TSESTree.JSXElement | null => {
+  let current: TSESTree.Node = refId;
+  let owner: TSESTree.Node | undefined = current.parent;
+  while (
+    owner?.type === AST_NODE_TYPES.JSXMemberExpression &&
+    owner.object === current
+  ) {
+    current = owner;
+    owner = current.parent;
+  }
+
+  if (
+    owner?.type !== AST_NODE_TYPES.JSXOpeningElement &&
+    owner?.type !== AST_NODE_TYPES.JSXClosingElement
+  ) {
+    return null;
+  }
+  if (owner.name !== current) {
+    return null;
+  }
+
+  const element = owner.parent;
+  return element?.type === AST_NODE_TYPES.JSXElement ? element : null;
+};
+
+/** The root identifier of a tag name: `Ns` in `<Ns.Thing.Deep/>`. */
+const jsxTagNameRoot = (
+  name: TSESTree.JSXTagNameExpression,
+): TSESTree.JSXTagNameExpression => {
+  let current: TSESTree.JSXTagNameExpression = name;
+  while (current.type === AST_NODE_TYPES.JSXMemberExpression) {
+    current = current.object;
+  }
+  return current;
+};
 
 // `as const` does more than pin literal types: it makes the value deeply
 // `readonly`. A binding that is written through after its declaration therefore
@@ -660,11 +764,37 @@ export default createRule<[], MessageIds>({
             return;
           }
 
+          // Resolve the declared variable up front: the component carve-out
+          // below reads its reference list, and the rename fix rewrites every
+          // one of those references.
+          const renamedVariable =
+            context
+              .getDeclaredVariables(declaration)
+              .find((variable) => variable.name === name) ?? null;
+
+          // A React component is exempt from the rename however it is built.
+          // #1681 covered the shapes that DECLARE one inline (a function value,
+          // a `memo`/`forwardRef` call); a component read off another value —
+          // `const Provider = provider.Provider`, a getter on a class instance —
+          // is a MemberExpression that carve-out never reached. Renaming one
+          // contradicts React's component spelling, and the rename is what
+          // wrote unparseable JSX in the first place (Issue #2055). The
+          // exemption gates only this rename check, exactly like the jest-mock
+          // one: the `as const` logic above is untouched.
+          const isComponentBinding =
+            (renamedVariable !== null &&
+              isUsedAsJsxElementName(renamedVariable)) ||
+            isComponentPropertyRead(init, name);
+
           // Check for UPPER_SNAKE_CASE. Jest mock handles (`x as jest.Mock<…>`)
           // are exempt: they are mutable test doubles, not immutable config, so
           // the `mockedX` idiom is intentional. The exemption gates only this
           // rename check — the `as const` logic above is untouched.
-          if (!isUpperSnakeCase(name) && !isJestMockCast(init)) {
+          if (
+            !isUpperSnakeCase(name) &&
+            !isJestMockCast(init) &&
+            !isComponentBinding
+          ) {
             const newName = toUpperSnakeCase(name);
 
             const idNode = declaration.id;
@@ -677,16 +807,12 @@ export default createRule<[], MessageIds>({
                 suggestedName: newName,
               },
               fix(fixer) {
-                // Resolve the declared variable so the rename can rewrite the
-                // declaration AND every reference together. Renaming only the
-                // declaration id (the previous behavior) left every use site
-                // bound to a now-undefined name — `--fix` exited 0 while
-                // silently corrupting working code (Issue #1313, same defect
-                // class as #1256).
-                const declaredVariable =
-                  context
-                    .getDeclaredVariables(declaration)
-                    .find((variable) => variable.name === name) ?? null;
+                // The rename rewrites the declaration AND every reference
+                // together. Renaming only the declaration id (the previous
+                // behavior) left every use site bound to a now-undefined name —
+                // `--fix` exited 0 while silently corrupting working code
+                // (Issue #1313, same defect class as #1256).
+                const declaredVariable = renamedVariable;
 
                 // Cannot resolve the variable — never emit a partial rename.
                 if (!declaredVariable) {
@@ -738,6 +864,15 @@ export default createRule<[], MessageIds>({
                     typeAnnotation ? `${newName}${typeText}` : newName,
                   ),
                 ];
+
+                // Every span this fix rewrites, keyed by range so a token and
+                // the node covering it compare equal. It lets the closing-tag
+                // audit below tell a rewritten tag from an untouched one.
+                const rewrittenRanges = new Set<string>();
+                const rangeKey = (node: { range: TSESTree.Range }): string =>
+                  `${node.range[0]}:${node.range[1]}`;
+                rewrittenRanges.add(rangeKey(idNode));
+
                 for (const ref of declaredVariable.references) {
                   const refId = ref.identifier;
                   // The declaration write reference is the id node itself and
@@ -749,6 +884,43 @@ export default createRule<[], MessageIds>({
 
                   const refParent = refId.parent;
 
+                  // A JSX tag name is spelled twice, and the scope manager
+                  // references only the OPENING occurrence — the identifier in
+                  // a closing tag resolves to no variable at all. Renaming the
+                  // reference list alone therefore splits
+                  // `<Provider>…</Provider>` into `<PROVIDER>…</Provider>`, and
+                  // the emitted file no longer parses: `--fix` exits 0 having
+                  // written source ESLint itself can never read again
+                  // (Issue #2055, the #1740 precedent). The closing tag is
+                  // reached through the element instead, and a self-closing
+                  // element has none to rewrite.
+                  if (refId.type === AST_NODE_TYPES.JSXIdentifier) {
+                    const element = jsxElementOfTagName(refId);
+
+                    // A JSX reference in a position the fixer does not model:
+                    // withdraw rather than rewrite one half of a tag pair.
+                    if (!element) {
+                      return null;
+                    }
+
+                    const closingName = element.closingElement?.name;
+                    if (closingName) {
+                      const closingRoot = jsxTagNameRoot(closingName);
+                      if (
+                        closingRoot.type !== AST_NODE_TYPES.JSXIdentifier ||
+                        closingRoot.name !== name
+                      ) {
+                        return null;
+                      }
+                      rewrittenRanges.add(rangeKey(closingRoot));
+                      fixes.push(fixer.replaceText(closingRoot, newName));
+                    }
+
+                    rewrittenRanges.add(rangeKey(refId));
+                    fixes.push(fixer.replaceText(refId, newName));
+                    continue;
+                  }
+
                   // An object-literal shorthand `{ fooBar }` desugars to
                   // `{ fooBar: fooBar }`: the one token is both the property key
                   // and its value. Rewriting it to `{ FOO_BAR }` would rename
@@ -759,6 +931,7 @@ export default createRule<[], MessageIds>({
                     refParent.shorthand &&
                     refParent.parent?.type === AST_NODE_TYPES.ObjectExpression
                   ) {
+                    rewrittenRanges.add(rangeKey(refId));
                     fixes.push(fixer.replaceText(refId, `${name}: ${newName}`));
                     continue;
                   }
@@ -772,7 +945,60 @@ export default createRule<[], MessageIds>({
                     return null;
                   }
 
+                  rewrittenRanges.add(rangeKey(refId));
                   fixes.push(fixer.replaceText(refId, newName));
+                }
+
+                // Belt and braces: an opening tag this fix rewrites whose
+                // closing tag it does not own leaves the pair split, and the
+                // emitted file stops parsing. Rather than trust the rewrite
+                // above to have paired every tag, the audit re-derives the
+                // pairing from the source and withdraws the whole fix on any
+                // asymmetry — a standing report is recoverable, unparseable
+                // source is not.
+                //
+                // `</` is two punctuators followed by the tag name's root
+                // identifier, so a JSX attribute named like the binding
+                // (`<Foo apiEndpoint={…}/>`) never matches the triple. A
+                // closing tag whose opening twin is untouched is left alone on
+                // purpose: it spells a DIFFERENT binding (an intrinsic `</div>`
+                // beside a `const div`, or a component shadowing this one
+                // inside a callback), and rewriting neither half keeps it
+                // parsing.
+                const tokens = sourceCode.ast.tokens ?? [];
+                for (let index = 0; index + 2 < tokens.length; index += 1) {
+                  const nameToken = tokens[index + 2];
+                  const opensClosingTag =
+                    tokens[index].type === AST_TOKEN_TYPES.Punctuator &&
+                    tokens[index].value === '<' &&
+                    tokens[index + 1].type === AST_TOKEN_TYPES.Punctuator &&
+                    tokens[index + 1].value === '/';
+                  if (
+                    !opensClosingTag ||
+                    nameToken.type !== AST_TOKEN_TYPES.JSXIdentifier ||
+                    nameToken.value !== name ||
+                    rewrittenRanges.has(rangeKey(nameToken))
+                  ) {
+                    continue;
+                  }
+
+                  const closingRoot = sourceCode.getNodeByRangeIndex(
+                    nameToken.range[0],
+                  );
+                  const element = closingRoot
+                    ? jsxElementOfTagName(closingRoot)
+                    : null;
+                  // An unresolvable tag pair is an unmodelled shape: withdraw.
+                  if (!element) {
+                    return null;
+                  }
+                  if (
+                    rewrittenRanges.has(
+                      rangeKey(jsxTagNameRoot(element.openingElement.name)),
+                    )
+                  ) {
+                    return null;
+                  }
                 }
 
                 return fixes;
