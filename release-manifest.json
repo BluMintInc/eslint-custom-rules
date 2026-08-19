@@ -1,5 +1,20 @@
 [
   {
+    "version": "1.20.170",
+    "date": "2026-08-19T23:48:20.873Z",
+    "rules": [
+      {
+        "name": "prefer-map-over-conditional-dispatch",
+        "changeType": "fix",
+        "issues": [
+          2062,
+          2063
+        ],
+        "summary": "drop the parentheses the replaced ternary needed (closes #2063); stop the eager-call scan at function boundaries (closes #2062)"
+      }
+    ]
+  },
+  {
     "version": "1.20.169",
     "date": "2026-08-19T20:16:38.161Z",
     "rules": [

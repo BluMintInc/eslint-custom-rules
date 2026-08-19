@@ -1,3 +1,11 @@
+## [1.20.170](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.169...v1.20.170) (2026-08-19)
+
+
+### Bug Fixes
+
+* **prefer-map-over-conditional-dispatch:** drop the parentheses the replaced ternary needed (closes [#2063](https://github.com/BluMintInc/eslint-custom-rules/issues/2063)) ([b85d84e](https://github.com/BluMintInc/eslint-custom-rules/commit/b85d84e3ed814a734bdf5dbc886ab4ab208df6b0)), closes [#2060](https://github.com/BluMintInc/eslint-custom-rules/issues/2060)
+* **prefer-map-over-conditional-dispatch:** stop the eager-call scan at function boundaries (closes [#2062](https://github.com/BluMintInc/eslint-custom-rules/issues/2062)) ([e637200](https://github.com/BluMintInc/eslint-custom-rules/commit/e63720022ca9427589f73cb8d4bc5838288c2fbf))
+
 ## [1.20.169](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.168...v1.20.169) (2026-08-19)
 
 
