@@ -723,8 +723,10 @@ export const run = async () => {
   return a();
 };`,
       },
-      // A parenthesized object literal keeps its parentheses: they are not part
-      // of the expression's node, so reprinting it would drop them
+      // The parentheses around a concise body's object literal exist only to
+      // keep its leading brace from parsing as a block. `return` already
+      // supplies an expression position, so they are dead there and a formatter
+      // strips them (#2057)
       {
         code: `import { a } from '../firebaseCloud/utils/helper';
 
@@ -734,11 +736,12 @@ export const run = async () => ({ value: a() });`,
         output: `
 export const run = async () => {
   const { a } = await import('../firebaseCloud/utils/helper');
-  return ({ value: a() });
+  return { value: a() };
 };`,
       },
-      // A multi-line object literal is spliced verbatim rather than re-indented,
-      // which is what keeps a multi-line template literal's own text intact
+      // A multi-line body moves one nesting level deeper on the way into the
+      // block, so its continuation lines are shifted by that delta rather than
+      // landing at the column they were written at (#2057)
       {
         code: `import { a } from '../firebaseCloud/utils/helper';
 
@@ -750,12 +753,13 @@ export const run = async () => ({
         output: `
 export const run = async () => {
   const { a } = await import('../firebaseCloud/utils/helper');
-  return ({
-  value: a(),
-});
+  return {
+    value: a(),
+  };
 };`,
       },
-      // An `as const` assertion wrapping the object literal rides along
+      // An `as const` assertion wrapping the object literal rides along, and the
+      // parentheses around it are dead in return position just the same
       {
         code: `import { a } from '../firebaseCloud/utils/helper';
 
@@ -765,7 +769,7 @@ export const run = async () => ({ value: a() } as const);`,
         output: `
 export const run = async () => {
   const { a } = await import('../firebaseCloud/utils/helper');
-  return ({ value: a() } as const);
+  return { value: a() } as const;
 };`,
       },
       // Multiple named specifiers destructure into one declaration
@@ -1076,20 +1080,6 @@ export const outer = () => {
       // The issue's unboundedness demonstration: three specifiers whose joined
       // length has no bound. The pattern still fits on its own line, so the
       // break lands after the `=` rather than expanding the pattern.
-      //
-      // The issue writes this import across five lines, as Prettier does. That
-      // spelling is WITHHELD deliberately: the fixer removes the whole
-      // ImportDeclaration, so a comment INSIDE it is consumed with the node,
-      // and a multi-line import is the only shape where a comment-fidelity
-      // probe can land a marker there (on one line, every insertion site sits
-      // above the import or after its `;`, both outside the node). That is a
-      // pre-existing defect on a different axis — reproduced identically at
-      // HEAD, before any print-width change — and is tracked as #2056. Pinning
-      // the multi-line spelling here would sign that defect off as accepted
-      // rather than reporting it; re-admit it with #2056's fix. No width
-      // coverage is lost: the fixer reads the specifier
-      // LIST, not its formatting, so both spellings emit a byte-identical
-      // statement (verified).
       {
         code: `import { createGroupChannel, deleteGroupChannel, updateGroupChannel } from '../firebaseCloud/messaging/groupChannel';
 
@@ -1107,6 +1097,61 @@ export const handler = async () => {
   await createGroupChannel();
   await deleteGroupChannel();
   await updateGroupChannel();
+};`,
+      },
+      // The multi-line spelling Prettier writes is the only shape where a
+      // comment can sit INSIDE the ImportDeclaration the fixer removes. Its
+      // subject survives the rewrite — every value specifier reappears in the
+      // emitted pattern — so the comment is carried ahead of the relocated
+      // declaration rather than consumed with the node it annotated (#2056).
+      {
+        code: `import {
+  createGroupChannel,
+  // the channel is deleted by the caller
+  deleteGroupChannel,
+  updateGroupChannel,
+} from '../firebaseCloud/messaging/groupChannel';
+
+export const handler = async () => {
+  await createGroupChannel();
+  await deleteGroupChannel();
+  await updateGroupChannel();
+};`,
+        filename: 'src/hooks/useGroupChannel.ts',
+        errors: [error('../firebaseCloud/messaging/groupChannel')],
+        output: `
+export const handler = async () => {
+  // the channel is deleted by the caller
+  const { createGroupChannel, deleteGroupChannel, updateGroupChannel } =
+    await import('../firebaseCloud/messaging/groupChannel');
+  await createGroupChannel();
+  await deleteGroupChannel();
+  await updateGroupChannel();
+};`,
+      },
+      // A block comment inside the import is carried the same way. It shares a
+      // line with the specifier it annotates in the pre-image, but the emitted
+      // declaration is authored as one unit, so the run breaks ahead of it.
+      {
+        code: `import {
+  /* keep in sync with the callable */ createGroupChannel,
+  deleteGroupChannel,
+} from '../firebaseCloud/messaging/groupChannel';
+
+export const handler = async () => {
+  await createGroupChannel();
+  await deleteGroupChannel();
+};`,
+        filename: 'src/hooks/useGroupChannel.ts',
+        errors: [error('../firebaseCloud/messaging/groupChannel')],
+        output: `
+export const handler = async () => {
+  /* keep in sync with the callable */
+  const { createGroupChannel, deleteGroupChannel } = await import(
+    '../firebaseCloud/messaging/groupChannel'
+  );
+  await createGroupChannel();
+  await deleteGroupChannel();
 };`,
       },
       // More than two properties with one of them renamed is Prettier's

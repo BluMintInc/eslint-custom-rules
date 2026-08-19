@@ -5,6 +5,12 @@ import {
   TSESTree,
 } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import {
+  joinSegmentBody,
+  requiresLineBreakAfter,
+  requiresOwnLine,
+} from '../utils/replacementSegments';
+import type { ReplacementSegment } from '../utils/replacementSegments';
 
 type FunctionNode =
   | TSESTree.ArrowFunctionExpression
@@ -158,6 +164,125 @@ const indentUnitOf = (sourceCode: TSESLint.SourceCode): string => {
     }
   }
   return unit;
+};
+
+/**
+ * A per-line transform moving text written at `fromIndent` to `toIndent`, or
+ * null when neither indentation is a prefix of the other (tabs against spaces),
+ * where no delta can be applied without corrupting the layout.
+ */
+const lineShifterBetween = (
+  fromIndent: string,
+  toIndent: string,
+): ((line: string) => string) | null => {
+  if (fromIndent === toIndent) {
+    return (line) => line;
+  }
+  if (fromIndent.startsWith(toIndent)) {
+    const removed = fromIndent.slice(toIndent.length);
+    return (line) =>
+      line.startsWith(removed) ? line.slice(removed.length) : line;
+  }
+  if (toIndent.startsWith(fromIndent)) {
+    const added = toIndent.slice(fromIndent.length);
+    return (line) => `${added}${line}`;
+  }
+  return null;
+};
+
+/**
+ * Ranges whose interior line breaks carry string data rather than formatting.
+ * A multi-line template literal evaluates to the whitespace written inside it,
+ * so shifting those lines would silently change the value the code produces.
+ */
+const stringDataRangesOf = (
+  sourceCode: TSESLint.SourceCode,
+  node: TSESTree.Node,
+): TSESTree.Range[] =>
+  sourceCode
+    .getTokens(node)
+    .filter(
+      (token) =>
+        (token.type === AST_TOKEN_TYPES.Template ||
+          token.type === AST_TOKEN_TYPES.String) &&
+        token.loc.start.line !== token.loc.end.line,
+    )
+    .map((token) => token.range);
+
+/**
+ * The source spanned by `range` with its continuation lines moved from the
+ * depth they were written at to `toIndent`, or null when that move is not
+ * expressible.
+ *
+ * An expression spliced out of a concise body lands one nesting level deeper
+ * once the arrow gains a block, so every line after the first would otherwise
+ * keep the column it had at the shallower depth (issue #2057). The first line
+ * is excluded because it is spliced in directly after `return `, where it has
+ * no indentation of its own left to adjust.
+ */
+const reindentedRange = (
+  sourceCode: TSESLint.SourceCode,
+  range: TSESTree.Range,
+  stringData: readonly TSESTree.Range[],
+  fromIndent: string,
+  toIndent: string,
+): string | null => {
+  const text = sourceCode.getText().slice(range[0], range[1]);
+  if (!text.includes('\n')) {
+    return text;
+  }
+
+  const shiftLine = lineShifterBetween(fromIndent, toIndent);
+  if (!shiftLine) {
+    return null;
+  }
+
+  const carriesStringData = (offset: number) =>
+    stringData.some(([start, end]) => start < offset && offset < end);
+
+  let offset = range[0];
+  return text
+    .split('\n')
+    .map((line, index) => {
+      const lineStart = offset;
+      offset += line.length + 1;
+      if (index === 0 || line.trim() === '' || carriesStringData(lineStart)) {
+        return line;
+      }
+      return shiftLine(line);
+    })
+    .join('\n');
+};
+
+/**
+ * Type syntax that wraps an expression without changing where its parentheses
+ * are needed, so an object literal behind one is still an object literal for
+ * the purposes of {@link wrapsObjectLiteral}.
+ */
+const TYPE_WRAPPER_EXPRESSIONS = new Set<string>([
+  AST_NODE_TYPES.TSAsExpression,
+  AST_NODE_TYPES.TSNonNullExpression,
+  AST_NODE_TYPES.TSSatisfiesExpression,
+  AST_NODE_TYPES.TSTypeAssertion,
+]);
+
+/**
+ * Whether the parentheses around a concise body exist only to keep its leading
+ * brace from parsing as a block.
+ *
+ * Those are the parentheses `return` makes dead, since a return argument is
+ * already an expression position. Every other parenthesized body keeps them:
+ * a broken-open binary expression or a multi-line JSX element is printed
+ * parenthesized in return position too, so dropping them there would trade one
+ * formatter rewrite for another.
+ */
+const wrapsObjectLiteral = (node: TSESTree.Node): boolean => {
+  let current: TSESTree.Node = node;
+  while (TYPE_WRAPPER_EXPRESSIONS.has(current.type)) {
+    current = (current as unknown as { expression: TSESTree.Expression })
+      .expression;
+  }
+  return current.type === AST_NODE_TYPES.ObjectExpression;
 };
 
 /**
@@ -553,6 +678,38 @@ const enforceFirebaseImports = createRule<Options, MessageIds>({
         const indentationAt = (line: number): string =>
           /^[ \t]*/.exec(sourceCode.lines[line - 1] ?? '')?.[0] ?? '';
 
+        const commentSegment = (
+          comment: TSESTree.Comment,
+        ): ReplacementSegment => ({
+          text: sourceCode.getText().slice(comment.range[0], comment.range[1]),
+          breakAfter: requiresLineBreakAfter(comment),
+        });
+
+        /**
+         * The comments written inside the import, as one run of text to
+         * re-emit ahead of the relocated declaration.
+         *
+         * The declaration is removed — or, in the type-only branch, re-authored
+         * from its parts — wholesale, so a comment inside it has no anchor in
+         * the replacement. Its subject survives, though: every value specifier
+         * reappears in the emitted destructuring pattern, so the comment has
+         * somewhere to go and dropping it would be the fixer writing text it
+         * does not own. Declining instead would only let a comment decide
+         * whether the rewrite happens at all, which is the same violation seen
+         * from the other side (#1877), so the comments are carried (#2056).
+         *
+         * A `//` comment swallows whatever follows it on its line, so the run
+         * breaks wherever `requiresLineBreakAfter` says it must, and the
+         * declaration always begins on the line after it.
+         */
+        const carriedImportComments = (indent: string): string | null => {
+          const comments = sourceCode.getCommentsInside(node);
+          if (comments.length === 0) {
+            return null;
+          }
+          return joinSegmentBody(comments.map(commentSegment), indent);
+        };
+
         /**
          * Consumes the import's own trailing whitespace, and its line break
          * when the import owns the line, so the removal strands neither a blank
@@ -579,14 +736,57 @@ const enforceFirebaseImports = createRule<Options, MessageIds>({
         };
 
         /**
+         * The span of source the concise body's `return` takes as its argument.
+         *
+         * It is copied out of the file rather than reprinted from the AST,
+         * because the parentheses around an object literal are not part of the
+         * literal's node and a broken-open expression's own line breaks are not
+         * recoverable from it. The one thing left behind is a parenthesis pair
+         * that exists solely to keep a leading brace from parsing as a block:
+         * `return` already supplies an expression position, so those are dead
+         * and a formatter strips them (#2057). Any other parenthesized body
+         * keeps its parentheses — a broken-open binary expression and a
+         * multi-line JSX element are printed parenthesized in return position
+         * too.
+         */
+        const returnedExpressionRange = (
+          arrow: TSESTree.ArrowFunctionExpression,
+          arrowToken: TSESTree.Token,
+        ): TSESTree.Range => {
+          const first = sourceCode.getTokenAfter(arrowToken);
+          const last = sourceCode.getLastToken(arrow);
+          const disambiguatingParens =
+            !!first &&
+            !!last &&
+            first.type === AST_TOKEN_TYPES.Punctuator &&
+            first.value === '(' &&
+            last.type === AST_TOKEN_TYPES.Punctuator &&
+            last.value === ')' &&
+            first.range[1] <= arrow.body.range[0] &&
+            last.range[0] >= arrow.body.range[1] &&
+            wrapsObjectLiteral(arrow.body);
+          return disambiguatingParens
+            ? [arrow.body.range[0], arrow.body.range[1]]
+            : [first ? first.range[0] : arrowToken.range[1], arrow.range[1]];
+        };
+
+        /**
          * Gives a concise-bodied arrow the block its declaration needs, turning
          * the returned expression into an explicit `return`.
          *
-         * The expression is spliced verbatim out of the source rather than
-         * reprinted from the AST: the parentheses around an object literal are
-         * not part of its node, and a comment sitting between `=>` and the
-         * expression belongs to neither, so both survive only by copying the
-         * text the arrow already owns.
+         * The expression moves one nesting level deeper on the way in, so its
+         * continuation lines are shifted by that delta rather than spliced at
+         * the column they were written at — everything a multi-line concise
+         * body holds would otherwise land under-indented inside the block it
+         * gains (#2057). Lines whose breaks belong to a template literal are
+         * left alone: their whitespace is the string's own value.
+         *
+         * A comment written between `=>` and the expression annotates neither
+         * node, so it is carried across explicitly. One that cannot share a
+         * line with what follows takes a line of its own ABOVE the `return`:
+         * after `return` a line break — or a block comment carrying one, which
+         * the grammar reads as a line terminator — triggers ASI and silently
+         * replaces the returned value with `undefined` (#1963).
          */
         const blockifyConciseBody = (
           fixer: TSESLint.RuleFixer,
@@ -601,17 +801,57 @@ const enforceFirebaseImports = createRule<Options, MessageIds>({
             return null;
           }
 
-          const expression = sourceCode
-            .getText()
-            .slice(arrowToken.range[1], arrow.range[1])
-            .trim();
           const indent = indentationAt(arrow.loc.start.line);
           const bodyIndent = `${indent}${fileIndentUnit()}`;
+          const range = returnedExpressionRange(arrow, arrowToken);
+          const expression = reindentedRange(
+            sourceCode,
+            range,
+            stringDataRangesOf(sourceCode, arrow),
+            indentationAt(sourceCode.getLocFromIndex(range[0]).line),
+            bodyIndent,
+          );
+          // Tab-indented source under a space-indented block, or the reverse,
+          // admits no expressible delta; the body would land mangled, so the
+          // fix is withheld and the report stands.
+          if (expression === null) {
+            return null;
+          }
+
+          const outer = sourceCode
+            .getCommentsInside(arrow)
+            .filter(
+              (comment) =>
+                comment.range[0] >= arrowToken.range[1] &&
+                (comment.range[1] <= range[0] || comment.range[0] >= range[1]),
+            );
+          const leading = outer.filter(
+            (comment) => comment.range[1] <= range[0],
+          );
+          const trailing = outer.filter(
+            (comment) => comment.range[0] >= range[1],
+          );
+          const hoisted = leading.filter(requiresOwnLine);
+
+          const statement = `return ${joinSegmentBody(
+            [
+              ...leading
+                .filter((comment) => !requiresOwnLine(comment))
+                .map(commentSegment),
+              { text: `${expression};`, breakAfter: false },
+              ...trailing.map(commentSegment),
+            ],
+            bodyIndent,
+          )}`;
+
+          const carried = carriedImportComments(bodyIndent);
           const lines = [
+            ...(carried === null ? [] : [carried]),
             ...printAt(declarations, bodyIndent),
-            `return ${expression};`,
+            ...hoisted.map((comment) => commentSegment(comment).text),
+            statement,
           ]
-            .map((statement) => `\n${bodyIndent}${statement}`)
+            .map((emitted) => `\n${bodyIndent}${emitted}`)
             .join('');
 
           return fixer.replaceTextRange(
@@ -668,10 +908,6 @@ const enforceFirebaseImports = createRule<Options, MessageIds>({
             : body.loc.start.line;
           const neighbour = following ?? lastDirective;
 
-          const bodyIndent = neighbour
-            ? indentationAt(neighbour.loc.start.line)
-            : `${indentationAt(target.loc.start.line)}${fileIndentUnit()}`;
-
           // A body written on one line keeps its shape; a multi-line body gets
           // the declaration on its own line at the body's own indentation.
           //
@@ -682,10 +918,25 @@ const enforceFirebaseImports = createRule<Options, MessageIds>({
           // Breaking the declaration open there would abandon that layout
           // without buying anything. Every other emission lands on a fresh line
           // whose column is known, and is printed against it.
+          const inlineBody = Boolean(
+            following && following.loc.start.line === anchorLine,
+          );
+          const bodyIndent =
+            neighbour && !inlineBody
+              ? indentationAt(neighbour.loc.start.line)
+              : `${indentationAt(target.loc.start.line)}${fileIndentUnit()}`;
+
+          // A carried comment forces the multi-line form even for a one-line
+          // body: a `//` comment appended to that line would swallow the rest
+          // of it, and the comment-free emission is unchanged either way.
+          const carried = carriedImportComments(bodyIndent);
           const insertion =
-            following && following.loc.start.line === anchorLine
+            inlineBody && carried === null
               ? ` ${declarations.map(printInline).join(' ')}`
-              : printAt(declarations, bodyIndent)
+              : [
+                  ...(carried === null ? [] : [carried]),
+                  ...printAt(declarations, bodyIndent),
+                ]
                   .map((statement) => `\n${bodyIndent}${statement}`)
                   .join('');
 
