@@ -1,6 +1,7 @@
 import path from 'path';
 import {
   AST_NODE_TYPES,
+  AST_TOKEN_TYPES,
   ASTUtils,
   TSESLint,
   TSESTree,
@@ -14,6 +15,74 @@ import {
 } from '../utils/importInsertion';
 
 type MessageIds = 'enforceQueryKeyImport' | 'enforceQueryKeyConstant';
+
+type Options = [
+  {
+    printWidth?: number;
+  },
+];
+
+/**
+ * Matches Prettier's own default. Extending an import's specifier list is a
+ * line-length decision a formatter owns: a list this fixer joins onto one line
+ * past this width is rewritten by the next `prettier --write`, and fails
+ * `prettier --check` in the meantime (#2050).
+ */
+const DEFAULT_PRINT_WIDTH = 80;
+
+const DEFAULT_INDENT_UNIT = '  ';
+
+/**
+ * The file's own nesting step, taken as the most common indentation increase
+ * between consecutive lines. Reading it from the source keeps a wrapped
+ * specifier list in the author's units instead of assuming a two-space,
+ * space-indented file. The narrowest indentation in the file is the wrong
+ * answer: a whole region written at one depth reports that depth as a step.
+ */
+function indentUnitOf(sourceCode: TSESLint.SourceCode): string {
+  const blockComments = sourceCode
+    .getAllComments()
+    .filter((comment) => comment.type === AST_TOKEN_TYPES.Block)
+    .map((comment) => comment.range);
+  // A block comment's interior lines carry whatever alignment the comment uses
+  // — the `*` one column in from its own indentation, or, for commented-out
+  // code, the original code's depths. Neither is a nesting step of the file,
+  // and counting them makes a JSDoc-heavy file look 1-space indented. Keying on
+  // the comment's range rather than a leading `*` also covers a body without
+  // them.
+  const continuesBlockComment = (offset: number) =>
+    blockComments.some(([start, end]) => start < offset && offset < end);
+
+  const frequencies = new Map<string, number>();
+  let previous = '';
+  let offset = 0;
+  for (const line of sourceCode.getText().split('\n')) {
+    const lineStart = offset;
+    offset += line.length + 1;
+    if (line.trim() === '' || continuesBlockComment(lineStart)) {
+      continue;
+    }
+    const indent = /^[ \t]*/.exec(line)?.[0] ?? '';
+    if (indent.length > previous.length && indent.startsWith(previous)) {
+      const delta = indent.slice(previous.length);
+      frequencies.set(delta, (frequencies.get(delta) ?? 0) + 1);
+    }
+    previous = indent;
+  }
+
+  // Ties break towards the narrower step. A snippet whose every line carries a
+  // shared base indentation contributes that whole base as an increase off
+  // column 0, which is a region's depth rather than a nesting step of the file.
+  let unit = DEFAULT_INDENT_UNIT;
+  let best = 0;
+  for (const [delta, count] of frequencies) {
+    if (count > best || (count === best && delta.length < unit.length)) {
+      unit = delta;
+      best = count;
+    }
+  }
+  return unit;
+}
 
 // The module's path below the project root doubles as the bare specifier,
 // which is precisely why the root tsconfig `paths` and the Jest mapper resolve
@@ -178,7 +247,7 @@ type PendingReport = {
  * `src/util/routing/queryKeys.ts` instead of arbitrary string literals when calling
  * router methods that accept key parameters.
  */
-export const enforceQueryKeyTs = createRule<[], MessageIds>({
+export const enforceQueryKeyTs = createRule<Options, MessageIds>({
   name: 'enforce-querykey-ts',
   meta: {
     type: 'problem',
@@ -188,7 +257,18 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
       recommended: 'error',
     },
     fixable: 'code',
-    schema: [],
+    schema: [
+      {
+        type: 'object',
+        properties: {
+          printWidth: {
+            type: 'number',
+            minimum: 1,
+          },
+        },
+        additionalProperties: false,
+      },
+    ],
     messages: {
       enforceQueryKeyImport:
         'Router state key must come from queryKeys.ts (e.g., "src/util/routing/queryKeys" or a relative path to that module). Use a QUERY_KEY_* constant instead of string literals.',
@@ -196,8 +276,12 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
         'Router state key must use a QUERY_KEY_* constant from queryKeys.ts. Variable "{{variableName}}" is not imported from the correct source.',
     },
   },
-  defaultOptions: [],
-  create(context) {
+  defaultOptions: [{}],
+  create(context, [options]) {
+    const printWidth =
+      typeof options.printWidth === 'number' && options.printWidth > 0
+        ? options.printWidth
+        : DEFAULT_PRINT_WIDTH;
     const cwd =
       typeof context.getCwd === 'function' ? context.getCwd() : process.cwd();
     const absoluteFilename = toAbsoluteFilename(context.getFilename(), cwd);
@@ -400,6 +484,146 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
         : queryKeysSpecifier;
     }
 
+    // Derived once per file rather than per fix: every fix in a file shares
+    // the author's nesting step.
+    let indentUnit: string | null = null;
+    const fileIndentUnit = () => {
+      if (indentUnit === null) {
+        indentUnit = indentUnitOf(sourceCode);
+      }
+      return indentUnit;
+    };
+
+    /**
+     * The whitespace a node's line opens with, reused so emitted continuation
+     * lines sit at the node's own depth. A node that shares its line with
+     * earlier code has no indentation of its own to copy.
+     */
+    function lineIndentOf(node: TSESTree.Node): string {
+      const line = sourceCode.lines[node.loc.start.line - 1] ?? '';
+      const prefix = line.slice(0, node.loc.start.column);
+      return /^[\t ]*$/.test(prefix) ? prefix : '';
+    }
+
+    /**
+     * A declaration's named-import braces and everything written inside them.
+     * Type-only specifiers are carried too: `{ type A, B }` keeps its `type A`
+     * when the list is rewritten, even though only a value specifier can be the
+     * one a new constant follows.
+     */
+    type NamedGroup = {
+      range: TSESTree.Range;
+      specifierTexts: string[];
+      /** Whether the braces already stand on separate lines. */
+      broken: boolean;
+      /** A comment inside the braces cannot survive a rebuild of the list. */
+      hasComments: boolean;
+    };
+
+    function namedGroupOf(
+      declaration: TSESTree.ImportDeclaration,
+    ): NamedGroup | null {
+      const named = declaration.specifiers.filter(
+        (specifier): specifier is TSESTree.ImportSpecifier =>
+          specifier.type === AST_NODE_TYPES.ImportSpecifier,
+      );
+      if (!named.length) {
+        return null;
+      }
+      const openBrace = sourceCode.getTokenBefore(
+        named[0],
+        (token) => token.value === '{',
+      );
+      const closeBrace = sourceCode.getTokenAfter(
+        named[named.length - 1],
+        (token) => token.value === '}',
+      );
+      if (!openBrace || !closeBrace) {
+        return null;
+      }
+      const range: TSESTree.Range = [openBrace.range[0], closeBrace.range[1]];
+      return {
+        range,
+        specifierTexts: named.map((specifier) => sourceCode.getText(specifier)),
+        broken: openBrace.loc.end.line !== closeBrace.loc.start.line,
+        hasComments: sourceCode
+          .getCommentsInside(declaration)
+          .some(
+            (comment) =>
+              comment.range[0] >= range[0] && comment.range[1] <= range[1],
+          ),
+      };
+    }
+
+    /**
+     * Add `constant` to a queryKeys import the file already has, in the shape
+     * Prettier prints for the list that results.
+     *
+     * Prettier breaks a named-import list all or nothing: it holds one line
+     * while it fits the print width and becomes one specifier per line the
+     * moment it does not. The append is therefore measured rather than assumed
+     * — wrapping unconditionally would be undone on every short import, since
+     * Prettier collapses a list that fits back onto one line (#2050).
+     */
+    function extendImportFix(
+      fixer: TSESLint.RuleFixer,
+      declaration: TSESTree.ImportDeclaration,
+      lastSpecifier: TSESTree.ImportSpecifier,
+      constant: string,
+    ): TSESLint.RuleFix | null {
+      const group = namedGroupOf(declaration);
+      if (!group) {
+        return fixer.insertTextAfter(lastSpecifier, `, ${constant}`);
+      }
+
+      const indent = lineIndentOf(declaration);
+
+      if (group.broken) {
+        // A broken list prints one specifier per line, so the new specifier
+        // takes a line of its own. Inserting after the specifier rather than
+        // before the closing brace puts the text ahead of the separator that
+        // follows it, which is why the existing comma lands after the new name;
+        // a list written without a trailing comma gets one, as Prettier writes
+        // it. The lines already there are left as they are — the declaration's
+        // shape is the author's, and only the text this fixer adds is its own.
+        const trailingComma =
+          sourceCode.getTokenAfter(lastSpecifier)?.value === '}' ? ',' : '';
+        return fixer.insertTextAfter(
+          lastSpecifier,
+          `,\n${indent}${fileIndentUnit()}${constant}${trailingComma}`,
+        );
+      }
+
+      const specifierTexts = [...group.specifierTexts, constant];
+      const relativeStart = group.range[0] - declaration.range[0];
+      const relativeEnd = group.range[1] - declaration.range[0];
+      const declarationText = sourceCode.getText(declaration);
+      const inlineDeclaration = `${declarationText.slice(
+        0,
+        relativeStart,
+      )}{ ${specifierTexts.join(', ')} }${declarationText.slice(relativeEnd)}`;
+      if (
+        declaration.loc.start.column + inlineDeclaration.length <=
+        printWidth
+      ) {
+        return fixer.insertTextAfter(lastSpecifier, `, ${constant}`);
+      }
+
+      // A comment written between the braces has no place in a list rebuilt
+      // from its specifiers, so rebuilding would silently delete it. Declining
+      // the fix keeps the violation reported and — the trap #2045 records —
+      // explicitly does NOT fall through to the one-line append that this
+      // branch exists to avoid emitting.
+      if (group.hasComments) {
+        return null;
+      }
+
+      const body = specifierTexts
+        .map((text) => `${indent}${fileIndentUnit()}${text},`)
+        .join('\n');
+      return fixer.replaceTextRange(group.range, `{\n${body}\n${indent}}`);
+    }
+
     /**
      * Make a substituted constant resolve: extend the file's queryKeys import
      * when there is one to extend, otherwise add a fresh import statement.
@@ -424,7 +648,7 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
           isValueImportSpecifier,
         );
         const lastSpecifier = namedSpecifiers[namedSpecifiers.length - 1];
-        return fixer.insertTextAfter(lastSpecifier, `, ${constant}`);
+        return extendImportFix(fixer, reusable, lastSpecifier, constant);
       }
 
       // A namespace or type-only queryKeys import cannot take named value

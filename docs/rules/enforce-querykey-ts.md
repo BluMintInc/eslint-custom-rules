@@ -408,6 +408,56 @@ The fix is declined (the violation is still reported, but nothing is rewritten) 
 
 Note: the fix is gated on the key's **value**, not on the notation that spells it. A quoted string and an expression-free template are the same key written two ways, and both are rewritten to the same constant — reading the template through its cooked value, so `` `user-profile` `` and `'user-profile'` derive one name. Keys whose value depends on something the rule cannot evaluate — concatenation, ternaries, and templates that interpolate an expression — are still reported and require manual refactoring.
 
+### Options
+
+- `printWidth` (default `80`): Column the autofix wraps the emitted import at.
+
+```js
+'@blumintinc/blumint/enforce-querykey-ts': ['error', {
+  // Column the autofix wraps the emitted import at
+  printWidth: 80,
+}]
+```
+
+Type: `number`
+
+Default: `80`
+
+The column the autofix wraps at, matching Prettier's option of the same name.
+Set it to your formatter's `printWidth` so the fixed source is already in the
+shape the formatter would produce; a lint run carrying `--fix` otherwise leaves
+the tree failing `prettier --check`.
+
+Extending an existing queryKeys import is the emission whose width grows with
+the input: one `, QUERY_KEY_*` element per distinct router-state key in the
+file, on a line whose fixed overhead is already 46–51 columns from
+`import { … } from '<specifier>';`. With `QUERY_KEY_*` names averaging ~20
+characters, two keys in one file already overflow.
+
+So the fixer simulates the extended import before writing it. Within the width
+the specifier list stays on one line; past it the declaration is rewritten to
+Prettier's canonical broken form, one specifier per line:
+
+```typescript
+import {
+  QUERY_KEY_MATCH_VIEW,
+  QUERY_KEY_TOURNAMENT_VIEW,
+} from './util/routing/queryKeys';
+```
+
+An import already broken across lines is extended in that same one-per-line
+shape rather than having a second specifier appended to its last line.
+
+Two cases are deliberately left flat, because wrapping them would introduce the
+opposite failure:
+
+- **A short specifier list.** A formatter collapses a hand-broken import that
+  fits back onto one line, so always wrapping would leave every short import
+  failing `prettier --check` instead.
+- **A fresh single-specifier import.** A formatter never breaks a lone named
+  specifier, so such an import is stable at any width — even well past
+  `printWidth` — and is emitted on one line regardless.
+
 ### Interaction with inline disable comments
 
 A violation suppressed by an inline `eslint-disable` directive is rewritten by nothing, so it contributes no specifier: the import names only the constants the surviving substitutions use. Suppressing one key therefore neither strands the other rewritten keys without an import nor leaves an unused specifier behind:
