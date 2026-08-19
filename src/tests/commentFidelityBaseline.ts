@@ -77,6 +77,24 @@ export const COMMENT_FIDELITY_BASELINE: Record<string, string> = {
   // `src/tests/require-memo.test.ts`, so the own-corpus guard keeps it honest.
   'require-memo :: TRANSFORM_DIVERGED':
     'chooses its shape by measured header width, which a comment in the parameter list legitimately changes; both shapes preserve the comment (#2054)',
+  // WIDTH/LAYOUT, same class as require-memo above. Having replaced a wide
+  // conditional with a short lookup, the fixer joins the enclosing statement
+  // back onto one line when the shortened statement fits, because that is what
+  // Prettier does with it (#2060). A comment inside the span that join would
+  // absorb legitimately changes PRETTIER'S OWN layout answer — a `//` comment
+  // forces the break to stay, and a comment on its own line keeps the call open
+  // — so the fixer declines the join there, which tracks Prettier rather than
+  // diverging from it. The conversion itself still happens in both shapes.
+  // NOT a COMMENT_LOST in disguise: that kind is a separate key and stays
+  // gated, and the case that used to lose a comment here — one after Prettier's
+  // dangling comma, adjacent to neither end of the absorbed span — is fixed and
+  // pinned by a fixture rather than excused. Verified by formatting every
+  // shape at the repo's settings: the declined output is a Prettier fixed point
+  // in each, except where the INPUT was not one either (a block comment between
+  // the argument's comma and the closer, which Prettier rewrites with or
+  // without this rule).
+  'prefer-map-over-conditional-dispatch :: TRANSFORM_DIVERGED':
+    'declines the shortened-statement join when a comment sits in the span it would absorb; Prettier makes the same layout choice, and every shape keeps both the conversion and the comment (#2060)',
   // FORMATTING. The divergence is line wrapping and trailing commas only.
   // Verified by formatting both outputs with agora's pinned prettier (2.8.8,
   // not this repo's 2.7.1) and comparing code tokens: all cases converge. agora

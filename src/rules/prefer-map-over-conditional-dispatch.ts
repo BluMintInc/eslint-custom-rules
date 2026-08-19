@@ -17,6 +17,7 @@ type MessageIds = 'preferMap' | 'preferMapManual';
 type Opts = [
   {
     printWidth?: number;
+    singleQuote?: boolean;
   },
 ];
 
@@ -97,6 +98,18 @@ const STATEMENT_LIST_TYPES = new Set<string>([
   AST_NODE_TYPES.SwitchCase,
   AST_NODE_TYPES.StaticBlock,
   AST_NODE_TYPES.TSModuleBlock,
+]);
+
+/**
+ * Parents that break AFTER their operator and leave the right-hand side flat on
+ * the next line, so a break there is a property of the RHS's width alone. Every
+ * other position either never breaks before the expression (`return`) or
+ * re-measures a delimiter group whose layout the expression does not decide.
+ */
+const WRAP_ABSORBING_PARENTS = new Set<string>([
+  AST_NODE_TYPES.VariableDeclarator,
+  AST_NODE_TYPES.AssignmentExpression,
+  AST_NODE_TYPES.Property,
 ]);
 
 const FUNCTION_TYPES = new Set<string>([
@@ -259,18 +272,171 @@ function typeReflows(node: ts.TypeNode): boolean {
   return !ts.isToken(node) && node.kind !== ts.SyntaxKind.ThisType;
 }
 
-/** The printed type as a TypeScript node, or null when it does not parse. */
-function parseTypeText(typeText: string): ts.TypeNode | null {
+/**
+ * The alias wrapper every printed type is parsed through. Shared so the offset
+ * a parsed node reports and the offset into the type text it came from cannot
+ * drift apart.
+ */
+const TYPE_TEXT_PREFIX = 'type __T = ';
+
+/** The printed type parsed standalone, with the file it was parsed in. */
+function parseTypeSourceFile(typeText: string): {
+  sourceFile: ts.SourceFile;
+  type: ts.TypeNode | null;
+} {
   const sourceFile = ts.createSourceFile(
     '__annotation__.ts',
-    `type __T = ${typeText};`,
+    `${TYPE_TEXT_PREFIX}${typeText};`,
     ts.ScriptTarget.Latest,
     true,
   );
   const [statement] = sourceFile.statements;
-  return statement && ts.isTypeAliasDeclaration(statement)
-    ? statement.type
-    : null;
+  const type =
+    statement && ts.isTypeAliasDeclaration(statement) ? statement.type : null;
+  return { sourceFile, type };
+}
+
+/** The printed type as a TypeScript node, or null when it does not parse. */
+function parseTypeText(typeText: string): ts.TypeNode | null {
+  return parseTypeSourceFile(typeText).type;
+}
+
+/**
+ * The delimiter Prettier gives a string whose content is `content`, reproducing
+ * `getPreferredQuote`: the configured quote, unless the content holds strictly
+ * more of it than of the other one, in which case the other one wins because it
+ * needs fewer escapes. A tie keeps the configured quote.
+ *
+ * The count decides it, not the presence — this is why a blind flip is wrong:
+ * under `singleQuote`, `"it's"` keeps its double quotes.
+ */
+function preferredQuoteFor(content: string, singleQuote: boolean): '"' | "'" {
+  const preferred = singleQuote ? "'" : '"';
+  const alternate = singleQuote ? '"' : "'";
+  const preferredCount = content.split(preferred).length - 1;
+  const alternateCount = content.split(alternate).length - 1;
+  return preferredCount > alternateCount ? alternate : preferred;
+}
+
+/**
+ * A raw string literal (delimiters included) re-spelled with the delimiter
+ * Prettier would choose, reproducing `makeString`.
+ *
+ * It works on the RAW text rather than the cooked value so every other escape
+ * — `\t`, `\u00e9`, `\\` — survives byte-identical, and only the quotes move:
+ * an escape that the old delimiter needed is dropped when the new delimiter
+ * does not need it, and vice versa. A regex over the whole type text cannot do
+ * that, because re-escaping is a property of the literal being re-delimited.
+ */
+function requoteStringLiteral(raw: string, singleQuote: boolean): string {
+  const content = raw.slice(1, -1);
+  const quote = preferredQuoteFor(content, singleQuote);
+  const other = quote === '"' ? "'" : '"';
+  const body = content.replace(
+    /\\([\s\S])|(["'])/g,
+    (_match, escaped: string | undefined, bare: string | undefined) => {
+      if (escaped !== undefined) {
+        return escaped === other ? escaped : `\\${escaped}`;
+      }
+      return bare === quote ? `\\${quote}` : other;
+    },
+  );
+  return `${quote}${body}${quote}`;
+}
+
+/** Characters a synthesized string literal cannot carry unescaped. */
+const STRING_ESCAPES: Record<string, string> = {
+  '\\': '\\\\',
+  '\n': '\\n',
+  '\r': '\\r',
+  '\u2028': '\\u2028',
+  '\u2029': '\\u2029',
+};
+
+/**
+ * A cooked value spelled as a string literal the way Prettier spells one: the
+ * delimiter chosen by occurrence count, and only the delimiter escaped.
+ * Escaping the other quote as well would ship text `prettier --check` rejects,
+ * because Prettier drops an escape its own delimiter does not need.
+ */
+function quotedStringLiteral(value: string, singleQuote: boolean): string {
+  const quote = preferredQuoteFor(value, singleQuote);
+  const body = value.replace(/[\\\n\r\u2028\u2029"']/g, (character) =>
+    character === quote ? `\\${quote}` : STRING_ESCAPES[character] ?? character,
+  );
+  return `${quote}${body}${quote}`;
+}
+
+/**
+ * A per-line transform moving text written at `fromIndent` to `toIndent`, or
+ * null when neither indentation is a prefix of the other (tabs against spaces),
+ * where no delta is expressible and applying one would mangle the body.
+ */
+function lineShifterBetween(
+  fromIndent: string,
+  toIndent: string,
+): ((line: string) => string) | null {
+  if (fromIndent === toIndent) {
+    return (line) => line;
+  }
+  if (fromIndent.startsWith(toIndent)) {
+    const removed = fromIndent.slice(toIndent.length);
+    return (line) =>
+      line.startsWith(removed) ? line.slice(removed.length) : line;
+  }
+  if (toIndent.startsWith(fromIndent)) {
+    const added = toIndent.slice(fromIndent.length);
+    return (line) => `${added}${line}`;
+  }
+  return null;
+}
+
+/**
+ * The printed type with every string literal inside it re-delimited the way
+ * Prettier would.
+ *
+ * `checker.typeToString` always prints a string-literal type double-quoted, so
+ * shipping its text verbatim into an annotation fails `prettier --check` in a
+ * `singleQuote` codebase at any width (#2059). Re-emitting the parsed literals
+ * rather than substituting quotes textually is what keeps two shapes intact: a
+ * quote embedded in the content (whose escaping changes with the delimiter),
+ * and a quote inside a template literal TYPE, which is content and never a
+ * delimiter. Text that does not parse is returned unchanged — the annotation
+ * gate is the one place that decides whether unparseable text may ship.
+ */
+export function normalizeTypeQuotes(
+  typeText: string,
+  singleQuote: boolean,
+): string {
+  const { sourceFile, type } = parseTypeSourceFile(typeText);
+  if (type === null) {
+    return typeText;
+  }
+  const edits: { start: number; end: number; text: string }[] = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isStringLiteral(node)) {
+      const start = node.getStart(sourceFile);
+      const end = node.getEnd();
+      const raw = sourceFile.text.slice(start, end);
+      if (raw.length >= 2 && (raw[0] === '"' || raw[0] === "'")) {
+        edits.push({
+          start: start - TYPE_TEXT_PREFIX.length,
+          end: end - TYPE_TEXT_PREFIX.length,
+          text: requoteStringLiteral(raw, singleQuote),
+        });
+      }
+      return;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(type);
+  let result = typeText;
+  for (const edit of edits.reverse()) {
+    result = `${result.slice(0, edit.start)}${edit.text}${result.slice(
+      edit.end,
+    )}`;
+  }
+  return result;
 }
 
 /**
@@ -371,6 +537,9 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
             type: 'number',
             minimum: 1,
           },
+          singleQuote: {
+            type: 'boolean',
+          },
         },
         additionalProperties: false,
       },
@@ -389,6 +558,10 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
       typeof options.printWidth === 'number' && options.printWidth > 0
         ? options.printWidth
         : DEFAULT_PRINT_WIDTH;
+    // Prettier's own default, and the setting this repo and its consumer ship:
+    // the emitted quote has to match the formatter's, or every fix authors a
+    // line that fails `prettier --check` (#2059).
+    const singleQuote = options.singleQuote !== false;
     const parserServices = sourceCode.parserServices;
 
     // Type-aware rule: without the TypeScript program we cannot verify the
@@ -546,7 +719,10 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
           // printer qualifies namespaced symbols to their scoped name (e.g.
           // `JSX.Element`, not the DOM global `Element`) at the fix site.
           const enclosing = esTreeNodeToTSNodeMap.get(expr);
-          text = checker.typeToString(widened, enclosing);
+          text = normalizeTypeQuotes(
+            checker.typeToString(widened, enclosing),
+            singleQuote,
+          );
         } catch {
           return null;
         }
@@ -673,7 +849,7 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
         ) {
           return null;
         }
-        return `${printed}['${propertyName}']`;
+        return `${printed}[${quotedStringLiteral(propertyName, singleQuote)}]`;
       } catch {
         return null;
       }
@@ -703,7 +879,8 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
       if (printed && BARE_TYPE_NAME.test(printed)) {
         return printed;
       }
-      return indexedAccessTypeText(discriminant, type) ?? printed;
+      const text = indexedAccessTypeText(discriminant, type) ?? printed;
+      return text === null ? null : normalizeTypeQuotes(text, singleQuote);
     }
 
     /**
@@ -1340,7 +1517,7 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
       if (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(str)) {
         return str;
       }
-      return `'${str.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+      return quotedStringLiteral(str, singleQuote);
     }
 
     function indentOf(node: TSESTree.Node): string {
@@ -1348,6 +1525,280 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
       const before = line.slice(0, node.loc.start.column);
       const match = /[ \t]*$/.exec(before);
       return match ? match[0] : '';
+    }
+
+    /** The leading whitespace of the line `offset` sits on. */
+    function lineIndentAt(offset: number): string {
+      const text = sourceCode.getText();
+      const lineStart = text.lastIndexOf('\n', offset - 1) + 1;
+      const match = /^[ \t]*/.exec(text.slice(lineStart, offset));
+      return match ? match[0] : '';
+    }
+
+    /**
+     * The depth the copied expression's interior lines were written against.
+     *
+     * `indentOf` answers a different question — the whitespace immediately
+     * before the node — which on `return function () {` is the single space
+     * after `return`. What the interior is measured from is the column the
+     * expression's own closing line sits at, so that line is read when there is
+     * one. A branch of a broken ternary is written one step in from its line's
+     * indentation (Prettier's `? ` alignment) and only its closing line records
+     * that step; keying on the opening line would rebase it one step too far.
+     */
+    function copiedBaseIndent(expr: TSESTree.Node): string {
+      const text = sourceCode.getText(expr);
+      const lastLine = text.slice(text.lastIndexOf('\n') + 1);
+      const closer = /^([ \t]*)(?:[)\]}]|<\/)/.exec(lastLine);
+      return closer ? closer[1] : lineIndentAt(expr.range[0]);
+    }
+
+    /**
+     * Ranges whose interior line breaks carry string data rather than layout. A
+     * multi-line template literal evaluates to the whitespace written inside
+     * it, so shifting those lines would change the value the code produces.
+     */
+    function stringDataRangesOf(node: TSESTree.Node): TSESTree.Range[] {
+      return sourceCode
+        .getTokens(node)
+        .filter(
+          (token) =>
+            (token.type === AST_TOKEN_TYPES.Template ||
+              token.type === AST_TOKEN_TYPES.String) &&
+            token.loc.start.line !== token.loc.end.line,
+        )
+        .map((token) => token.range);
+    }
+
+    /**
+     * A branch value's source text with its continuation lines moved to the
+     * depth the map entry sits at, or null when that move is not expressible.
+     *
+     * A copied multi-line value keeps the columns it had at its original
+     * nesting depth, which is rarely the entry's (#2061). The first line is
+     * excluded because it is spliced in after the `key: ` prefix and has no
+     * indentation of its own left to adjust — re-indenting it is the usual
+     * off-by-one. A source indented in the other unit than the fix site has no
+     * expressible delta at all, and the caller declines rather than emitting a
+     * mangled body.
+     */
+    function rebasedValueText(entry: Entry, toIndent: string): string | null {
+      const { valueExpr, valueText } = entry;
+      if (!valueExpr || !valueText.includes('\n')) {
+        return valueText;
+      }
+      const shiftLine = lineShifterBetween(
+        copiedBaseIndent(valueExpr),
+        toIndent,
+      );
+      if (!shiftLine) {
+        return null;
+      }
+      const stringData = stringDataRangesOf(valueExpr);
+      const carriesStringData = (offset: number) =>
+        stringData.some(([start, end]) => start < offset && offset < end);
+
+      let offset = valueExpr.range[0];
+      return valueText
+        .split('\n')
+        .map((line, index) => {
+          const lineStart = offset;
+          offset += line.length + 1;
+          if (
+            index === 0 ||
+            line.trim() === '' ||
+            carriesStringData(lineStart)
+          ) {
+            return line;
+          }
+          return shiftLine(line);
+        })
+        .join('\n');
+    }
+
+    /**
+     * Whether `node` sits where Prettier breaks after the operator, leaving the
+     * expression alone on the next line.
+     */
+    function isWrapAbsorbingPosition(
+      node: TSESTree.Node,
+      parent: TSESTree.Node,
+    ): boolean {
+      switch (parent.type) {
+        case AST_NODE_TYPES.VariableDeclarator:
+          return parent.init === node;
+        case AST_NODE_TYPES.AssignmentExpression:
+          return parent.right === node;
+        case AST_NODE_TYPES.Property:
+          return parent.value === node && !parent.shorthand;
+        default:
+          return false;
+      }
+    }
+
+    /** A rewrite of the fix site, replacing `range` with `text`. */
+    type LookupEdit = { range: TSESTree.Range; text: string };
+
+    /**
+     * The ternary's replacement, taking the host's line break with it when the
+     * shortened host fits on one line; null when only the expression itself
+     * should be replaced.
+     *
+     * The break exists only because the ternary used to be wide; a lookup is
+     * short, and Prettier answers the shortened host by joining it back onto one
+     * line (#2060). This is the mirror of measuring an inserted head: the fixer
+     * SHORTENS, so every line it writes is well inside the width and nothing
+     * about the emitted text reveals the stale wrap.
+     *
+     * Measure, do not always-join: a host that is over-width for a reason the
+     * ternary never caused — a long binding name, a wide type annotation —
+     * keeps a wrap Prettier would put straight back.
+     */
+    function absorbedLookupEdit(
+      node: TSESTree.Node,
+      lookupText: string,
+    ): LookupEdit | null {
+      const parent = node.parent;
+      if (!parent) {
+        return null;
+      }
+      const edit =
+        absorbedOperatorWrap(node, parent, lookupText) ??
+        absorbedArgumentWrap(node, parent, lookupText);
+      return edit !== null && absorbsComment(node, edit) ? null : edit;
+    }
+
+    /**
+     * Whether the margins an absorbing edit adds around `node` hold a comment.
+     *
+     * The absorbed span is wider than the reported node, so a comment can sit in
+     * it while being adjacent to neither end — between Prettier's dangling comma
+     * and the call's closer, say, which `getCommentsAfter(node)` does not reach
+     * because it stops at the comma. Absorbing that span deletes text the fixer
+     * does not own.
+     *
+     * Only the MARGINS are asked about, not the whole span: a comment inside the
+     * expression itself goes with the expression under either spelling, so
+     * declining there would cost the join and save nothing. The join is a layout
+     * optimization, so dropping it and replacing the expression in place keeps
+     * both the conversion and the comment.
+     */
+    function absorbsComment(node: TSESTree.Node, edit: LookupEdit): boolean {
+      return sourceCode
+        .getAllComments()
+        .some(
+          (comment) =>
+            (comment.range[1] > edit.range[0] &&
+              comment.range[0] < node.range[0]) ||
+            (comment.range[1] > node.range[1] &&
+              comment.range[0] < edit.range[1]),
+        );
+    }
+
+    /** The join for a host that broke after `=` / `:` (see `absorbedLookupEdit`). */
+    function absorbedOperatorWrap(
+      node: TSESTree.Node,
+      parent: TSESTree.Node,
+      lookupText: string,
+    ): LookupEdit | null {
+      if (
+        !WRAP_ABSORBING_PARENTS.has(parent.type) ||
+        !isWrapAbsorbingPosition(node, parent)
+      ) {
+        return null;
+      }
+      const prevToken = sourceCode.getTokenBefore(node);
+      if (!prevToken || prevToken.loc.end.line === node.loc.start.line) {
+        return null;
+      }
+      // Joining across a comment would pull the lookup onto a `//` line, which
+      // comments the value out.
+      if (sourceCode.getCommentsBefore(node).length > 0) {
+        return null;
+      }
+      const headLine = sourceCode.lines[prevToken.loc.end.line - 1] ?? '';
+      if (headLine.slice(prevToken.loc.end.column).trim() !== '') {
+        return null;
+      }
+      const tailLine = sourceCode.lines[node.loc.end.line - 1] ?? '';
+      const tail = tailLine.slice(node.loc.end.column).trimEnd();
+      // Anything after the expression beyond its own terminator (a closing
+      // paren, a trailing comment) means joining does not produce one line.
+      if (!/^[,;]?$/.test(tail)) {
+        return null;
+      }
+      const head = headLine.slice(0, prevToken.loc.end.column);
+      const joined = `${head} ${lookupText}${tail}`;
+      return joined.length <= printWidth
+        ? { range: [prevToken.range[1], node.range[1]], text: ` ${lookupText}` }
+        : null;
+    }
+
+    /**
+     * The join for a call broken open around its sole argument. Absorbing the
+     * whole interior — both breaks and the dangling comma Prettier adds with
+     * them — is what makes the shortened call a fixed point; keeping the comma
+     * would leave `render(RESULT[x],);`, which Prettier rewrites again.
+     */
+    function absorbedArgumentWrap(
+      node: TSESTree.Node,
+      parent: TSESTree.Node,
+      lookupText: string,
+    ): LookupEdit | null {
+      if (
+        (parent.type !== AST_NODE_TYPES.CallExpression &&
+          parent.type !== AST_NODE_TYPES.NewExpression) ||
+        parent.arguments.length !== 1 ||
+        parent.arguments[0] !== node
+      ) {
+        return null;
+      }
+      const openParen = sourceCode.getTokenBefore(node);
+      const closeParen = sourceCode.getLastToken(parent);
+      if (
+        !openParen ||
+        !closeParen ||
+        openParen.value !== '(' ||
+        closeParen.value !== ')' ||
+        openParen.loc.end.line === closeParen.loc.start.line
+      ) {
+        return null;
+      }
+      // The argument's own parentheses would otherwise be swallowed: the token
+      // trail from the expression to the call's closer must hold nothing but
+      // Prettier's dangling comma.
+      const afterNode = sourceCode.getTokenAfter(node);
+      const afterComma =
+        afterNode && afterNode.value === ','
+          ? sourceCode.getTokenAfter(afterNode)
+          : afterNode;
+      if (afterComma !== closeParen) {
+        return null;
+      }
+      if (
+        sourceCode.getCommentsBefore(node).length > 0 ||
+        sourceCode.getCommentsAfter(node).length > 0
+      ) {
+        return null;
+      }
+      const headLine = sourceCode.lines[openParen.loc.end.line - 1] ?? '';
+      const tailLine = sourceCode.lines[closeParen.loc.start.line - 1] ?? '';
+      if (
+        headLine.slice(openParen.loc.end.column).trim() !== '' ||
+        tailLine.slice(0, closeParen.loc.start.column).trim() !== ''
+      ) {
+        return null;
+      }
+      const joined = `${headLine.slice(
+        0,
+        openParen.loc.end.column,
+      )}${lookupText}${tailLine.slice(closeParen.loc.start.column).trimEnd()}`;
+      return joined.length <= printWidth
+        ? {
+            range: [openParen.range[1], closeParen.range[0]],
+            text: lookupText,
+          }
+        : null;
     }
 
     /**
@@ -1449,21 +1900,33 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
       };
     }
 
-    function buildRecordText(layout: RecordLayout, entries: Entry[]): string {
+    /**
+     * The emitted declaration, or null when a multi-line branch value cannot be
+     * re-indented to the entry's depth. The caller decides on that null before
+     * reporting, because it changes which message the construct gets.
+     */
+    function buildRecordText(
+      layout: RecordLayout,
+      entries: Entry[],
+    ): string | null {
       const { bodyIndent } = layout;
-      const lines = entries.flatMap((e) => {
-        const hosted = (e.leadingComments ?? []).map(
-          (comment) => `${bodyIndent}  ${comment}`,
-        );
+      const lines: string[] = [];
+      for (const e of entries) {
+        const valueText = rebasedValueText(e, `${bodyIndent}  `);
+        if (valueText === null) {
+          return null;
+        }
+        for (const comment of e.leadingComments ?? []) {
+          lines.push(`${bodyIndent}  ${comment}`);
+        }
         const trailing =
           e.trailingComments && e.trailingComments.length > 0
             ? ` ${e.trailingComments.join(' ')}`
             : '';
-        hosted.push(
-          `${bodyIndent}  ${formatKey(e.key)}: ${e.valueText},${trailing}`,
+        lines.push(
+          `${bodyIndent}  ${formatKey(e.key)}: ${valueText},${trailing}`,
         );
-        return hosted;
-      });
+      }
       return [...layout.head, ...lines, `${bodyIndent}};`].join('\n');
     }
 
@@ -1580,6 +2043,11 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
     type Entry = {
       key: LiteralKey;
       valueText: string;
+      /**
+       * The node `valueText` was copied from, so a multi-line value can be
+       * re-indented against the depth the emitted entry sits at.
+       */
+      valueExpr?: TSESTree.Node;
       /** Comments emitted on their own line(s) directly above the entry. */
       leadingComments?: string[];
       /** Comments appended after the entry's trailing comma. */
@@ -1612,9 +2080,13 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
      * Returns null when the construct is not a qualifying dispatch at all.
      */
     function resolveCoverage(
-      explicit: { keys: LiteralKey[]; valueText: string }[],
+      explicit: {
+        keys: LiteralKey[];
+        valueText: string;
+        valueExpr: TSESTree.Node;
+      }[],
       unionKeys: LiteralKey[],
-      tail: { valueText: string } | null,
+      tail: { valueText: string; valueExpr: TSESTree.Node } | null,
     ): {
       entries: Entry[];
       fullCoverage: boolean;
@@ -1639,7 +2111,11 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
       const entries: Entry[] = [];
       for (const branch of explicit) {
         for (const k of branch.keys) {
-          entries.push({ key: k, valueText: branch.valueText });
+          entries.push({
+            key: k,
+            valueText: branch.valueText,
+            valueExpr: branch.valueExpr,
+          });
         }
       }
 
@@ -1648,7 +2124,11 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
         return { entries, fullCoverage: true, remainingCount: 0 };
       }
       if (remaining.length === 1 && tail) {
-        entries.push({ key: remaining[0], valueText: tail.valueText });
+        entries.push({
+          key: remaining[0],
+          valueText: tail.valueText,
+          valueExpr: tail.valueExpr,
+        });
         return { entries, fullCoverage: true, remainingCount: 1 };
       }
       if (!tail) {
@@ -1837,6 +2317,22 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
         return;
       }
 
+      // Built here rather than inside the fixer: a value whose indentation
+      // cannot be rebased withholds the fix, which changes which message this
+      // construct gets, and a fixer runs long after that decision is made.
+      const recordText = buildRecordText(layout, entries);
+      if (recordText === null) {
+        context.report({
+          node,
+          messageId: 'preferMapManual',
+          data: {
+            reason:
+              'a multi-line branch value is indented in different units than the fix site, so its body cannot be re-indented onto the Record — normalize the indentation, then convert',
+          },
+        });
+        return;
+      }
+
       // Claimed only once every gate has passed, so a dispatch that ends up
       // report-only never blocks a later one from using the name.
       const claimed = claimedNames.get(fixScope) ?? new Set<string>();
@@ -1848,13 +2344,17 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
         messageId: 'preferMap',
         fix(fixer) {
           const discText = sourceCode.getText(discriminantOf(node));
-          const recordText = buildRecordText(layout, entries);
           if (form === 'expr') {
             // Ternary: insert the Record before the enclosing statement and
-            // replace the conditional expression with the lookup.
+            // replace the conditional expression with the lookup, taking the
+            // host's stale line break with it when the shortened host fits.
+            const lookupText = `${lookupName}[${discText}]`;
+            const absorbed = absorbedLookupEdit(node, lookupText);
             return [
               fixer.insertTextBefore(fixTarget, `${recordText}\n${baseIndent}`),
-              fixer.replaceText(node, `${lookupName}[${discText}]`),
+              absorbed === null
+                ? fixer.replaceText(node, lookupText)
+                : fixer.replaceTextRange(absorbed.range, absorbed.text),
             ];
           }
 
@@ -2058,9 +2558,13 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
       const explicitForCoverage = explicit.map((b) => ({
         keys: b.keys,
         valueText: sourceCode.getText(b.value.expr),
+        valueExpr: b.value.expr,
       }));
       const tail = defaultVal
-        ? { valueText: sourceCode.getText(defaultVal.expr) }
+        ? {
+            valueText: sourceCode.getText(defaultVal.expr),
+            valueExpr: defaultVal.expr,
+          }
         : null;
 
       // A throwing/omitted default cannot satisfy a needed tail: when the
@@ -2232,9 +2736,11 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
       const explicitForCoverage = links.map((l, i) => ({
         keys: explicitKeys[i],
         valueText: sourceCode.getText(l.expr),
+        valueExpr: l.expr,
       }));
       const coverage = resolveCoverage(explicitForCoverage, unionKeys, {
         valueText: sourceCode.getText(tailExpr),
+        valueExpr: tailExpr,
       });
       if (!coverage) {
         return;
@@ -2422,11 +2928,14 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
       const explicitForCoverage = links.map((l, i) => ({
         keys: explicitKeys[i],
         valueText: sourceCode.getText(l.value.expr),
+        valueExpr: l.value.expr,
       }));
       const coverage = resolveCoverage(
         explicitForCoverage,
         unionKeys,
-        tail ? { valueText: sourceCode.getText(tail.expr) } : null,
+        tail
+          ? { valueText: sourceCode.getText(tail.expr), valueExpr: tail.expr }
+          : null,
       );
       if (!coverage) {
         return;
