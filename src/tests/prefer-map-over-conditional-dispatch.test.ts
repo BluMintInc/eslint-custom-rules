@@ -1,10 +1,15 @@
 import { parse } from '@typescript-eslint/parser';
 import { TSESLint } from '@typescript-eslint/utils';
+import * as prettier from 'prettier';
 import { ruleTesterTs, ruleTesterJsx } from '../utils/ruleTester';
-import { preferMapOverConditionalDispatch } from '../rules/prefer-map-over-conditional-dispatch';
+import {
+  preferMapOverConditionalDispatch,
+  reflowsWhenOverWide,
+} from '../rules/prefer-map-over-conditional-dispatch';
 
 type RuleMessageIds = 'preferMap' | 'preferMapManual';
-type RuleTests = TSESLint.RunTests<RuleMessageIds, []>;
+type RuleOptions = [{ printWidth?: number }];
+type RuleTests = TSESLint.RunTests<RuleMessageIds, RuleOptions>;
 
 const tsTests: RuleTests = {
   valid: [
@@ -1042,7 +1047,15 @@ class OffchainTokenEncoder {}
 class CoinflowTokenEncoder {}
 declare const token: { standard: TokenStandard };
 function deduceConstructor() {
-  const RESULT_BY_STANDARD: Record<TokenStandard, typeof NativeTokenEncoder | typeof Erc20TokenEncoder | typeof Erc721TokenEncoder | typeof Erc1155TokenEncoder | typeof OffchainTokenEncoder | typeof CoinflowTokenEncoder> = {
+  const RESULT_BY_STANDARD: Record<
+    TokenStandard,
+    | typeof NativeTokenEncoder
+    | typeof Erc20TokenEncoder
+    | typeof Erc721TokenEncoder
+    | typeof Erc1155TokenEncoder
+    | typeof OffchainTokenEncoder
+    | typeof CoinflowTokenEncoder
+  > = {
     native: NativeTokenEncoder,
     ERC20: Erc20TokenEncoder,
     ERC721: Erc721TokenEncoder,
@@ -1921,7 +1934,10 @@ declare const mode: Mode;
 declare const formatPlain: (input: string) => string;
 declare const formatFancy: (input: number) => string;
 function pick() {
-  const RESULT_BY_MODE: Record<Mode, ((input: string) => string) | ((input: number) => string)> = {
+  const RESULT_BY_MODE: Record<
+    Mode,
+    ((input: string) => string) | ((input: number) => string)
+  > = {
     plain: formatPlain,
     fancy: formatFancy,
   };
@@ -1956,7 +1972,10 @@ declare const target: Target;
 declare const replaceParam: (param: ParamMod) => void;
 declare const replaceSegment: (segment: SegMod) => void;
 function update() {
-  const RESULT_BY_TARGET: Record<Target, ((param: ParamMod) => void) | ((segment: SegMod) => void)> = {
+  const RESULT_BY_TARGET: Record<
+    Target,
+    ((param: ParamMod) => void) | ((segment: SegMod) => void)
+  > = {
     queryParam: replaceParam,
     segment: replaceSegment,
   };
@@ -1966,7 +1985,10 @@ function update() {
 `,
       errors: [{ messageId: 'preferMap' }],
     },
-    // Mixed union — only the function-type member gains parentheses.
+    // Mixed union — only the function-type member gains parentheses. The head
+    // lands two columns over the width, the one window where Prettier answers
+    // by moving the map to its own line rather than by breaking the type
+    // arguments open; the emitted layout is that answer.
     {
       code: `
 type Choice = 'fn' | 'label';
@@ -1986,10 +2008,11 @@ type Choice = 'fn' | 'label';
 declare const choice: Choice;
 declare const toLabel: (value: number) => string;
 function pick() {
-  const RESULT_BY_CHOICE: Record<Choice, ((value: number) => string) | string> = {
-    fn: toLabel,
-    label: 'none',
-  };
+  const RESULT_BY_CHOICE: Record<Choice, ((value: number) => string) | string> =
+    {
+      fn: toLabel,
+      label: 'none',
+    };
   return RESULT_BY_CHOICE[choice];
 }
 `,
@@ -2078,7 +2101,12 @@ class Erc20TokenEncoder {}
 class OffchainTokenEncoder {}
 declare const token: { standard: TokenStandard };
 function deduceConstructor() {
-  const RESULT_BY_STANDARD: Record<TokenStandard, typeof NativeTokenEncoder | typeof Erc20TokenEncoder | typeof OffchainTokenEncoder> = {
+  const RESULT_BY_STANDARD: Record<
+    TokenStandard,
+    | typeof NativeTokenEncoder
+    | typeof Erc20TokenEncoder
+    | typeof OffchainTokenEncoder
+  > = {
     // eslint-disable-next-line no-restricted-syntax
     native: NativeTokenEncoder,
     ERC20: Erc20TokenEncoder,
@@ -3690,6 +3718,511 @@ function f() {
 `,
       errors: [{ messageId: 'preferMap' }],
     },
+    // ---- Print-width layout (#2048) ---------------------------------------
+    // The fixer authors the whole declaration head, so its width is its own
+    // responsibility. Every `output` below is a verified Prettier fixed point
+    // at the width the case runs under; agora applies `--fix` and then runs
+    // `prettier --check`, so a head Prettier rewrites fails CI on mangled
+    // source before a human reads the report.
+    // Width regime 1 of 3 — the head measures exactly the print width, so it
+    // stays on one line. This is the control an always-wrap remedy breaks:
+    // Prettier collapses a hand-broken `Record<Mode, V>` straight back.
+    {
+      code: `
+type Mode = 'plain' | 'fancy';
+class PlainSummary {}
+class FancyCard {}
+declare const mode: Mode;
+function pick() {
+  switch (mode) {
+    case 'plain':
+      return PlainSummary;
+    case 'fancy':
+      return FancyCard;
+  }
+}
+`,
+      output: `
+type Mode = 'plain' | 'fancy';
+class PlainSummary {}
+class FancyCard {}
+declare const mode: Mode;
+function pick() {
+  const RESULT_BY_MODE: Record<Mode, typeof PlainSummary | typeof FancyCard> = {
+    plain: PlainSummary,
+    fancy: FancyCard,
+  };
+  return RESULT_BY_MODE[mode];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // Width regime 2 of 3 — one column over. Prettier's answer here is not to
+    // break the type arguments but to move the map onto its own line, which
+    // fits because the annotation through the `=` is two columns shorter.
+    {
+      code: `
+type Mode = 'plain' | 'fancy';
+class PlainSummary {}
+class FancyCards {}
+declare const mode: Mode;
+function pick() {
+  switch (mode) {
+    case 'plain':
+      return PlainSummary;
+    case 'fancy':
+      return FancyCards;
+  }
+}
+`,
+      output: `
+type Mode = 'plain' | 'fancy';
+class PlainSummary {}
+class FancyCards {}
+declare const mode: Mode;
+function pick() {
+  const RESULT_BY_MODE: Record<Mode, typeof PlainSummary | typeof FancyCards> =
+    {
+      plain: PlainSummary,
+      fancy: FancyCards,
+    };
+  return RESULT_BY_MODE[mode];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // Width regime 3 of 3 — three columns over, past the point where moving the
+    // map alone helps, so the type-argument list breaks open.
+    {
+      code: `
+type Mode = 'plain' | 'fancy';
+class PlainSummary {}
+class FancyCardList {}
+declare const mode: Mode;
+function pick() {
+  switch (mode) {
+    case 'plain':
+      return PlainSummary;
+    case 'fancy':
+      return FancyCardList;
+  }
+}
+`,
+      output: `
+type Mode = 'plain' | 'fancy';
+class PlainSummary {}
+class FancyCardList {}
+declare const mode: Mode;
+function pick() {
+  const RESULT_BY_MODE: Record<
+    Mode,
+    typeof PlainSummary | typeof FancyCardList
+  > = {
+    plain: PlainSummary,
+    fancy: FancyCardList,
+  };
+  return RESULT_BY_MODE[mode];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // The broken type-argument list keeps a union on one line while that line
+    // fits — here at exactly the print width.
+    {
+      code: `
+type TokenStandard = 'coinflow' | 'offchain' | 'erc1155';
+class CoinflowEncoder {}
+class OffchainEncoder {}
+class Erc1155TokenEncoder {}
+declare const standard: TokenStandard;
+function deduceEncoder() {
+  switch (standard) {
+    case 'coinflow':
+      return CoinflowEncoder;
+    case 'offchain':
+      return OffchainEncoder;
+    case 'erc1155':
+      return Erc1155TokenEncoder;
+  }
+}
+`,
+      output: `
+type TokenStandard = 'coinflow' | 'offchain' | 'erc1155';
+class CoinflowEncoder {}
+class OffchainEncoder {}
+class Erc1155TokenEncoder {}
+declare const standard: TokenStandard;
+function deduceEncoder() {
+  const RESULT_BY_STANDARD: Record<
+    TokenStandard,
+    typeof CoinflowEncoder | typeof OffchainEncoder | typeof Erc1155TokenEncoder
+  > = {
+    coinflow: CoinflowEncoder,
+    offchain: OffchainEncoder,
+    erc1155: Erc1155TokenEncoder,
+  };
+  return RESULT_BY_STANDARD[standard];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // One column further and the same union is spelled one member per line
+    // behind a leading `|` — the other side of the boundary above.
+    {
+      code: `
+type TokenStandard = 'erc1155' | 'erc721' | 'native';
+class Erc1155TokenEncoder {}
+class Erc721Encoder {}
+class NativeTokenEncoder {}
+declare const standard: TokenStandard;
+function deduceEncoder() {
+  switch (standard) {
+    case 'erc1155':
+      return Erc1155TokenEncoder;
+    case 'erc721':
+      return Erc721Encoder;
+    case 'native':
+      return NativeTokenEncoder;
+  }
+}
+`,
+      output: `
+type TokenStandard = 'erc1155' | 'erc721' | 'native';
+class Erc1155TokenEncoder {}
+class Erc721Encoder {}
+class NativeTokenEncoder {}
+declare const standard: TokenStandard;
+function deduceEncoder() {
+  const RESULT_BY_STANDARD: Record<
+    TokenStandard,
+    | typeof Erc1155TokenEncoder
+    | typeof Erc721Encoder
+    | typeof NativeTokenEncoder
+  > = {
+    erc1155: Erc1155TokenEncoder,
+    erc721: Erc721Encoder,
+    native: NativeTokenEncoder,
+  };
+  return RESULT_BY_STANDARD[standard];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // The issue's shape at a width that accommodates it: the option is what
+    // decides, and a 99-column head is left alone at `printWidth: 120`.
+    {
+      options: [{ printWidth: 120 }],
+      code: `
+type Mode = 'plain' | 'fancy';
+declare const mode: Mode;
+declare const formatPlain: (input: string) => string;
+declare const formatFancy: (input: number) => string;
+function pick() {
+  switch (mode) {
+    case 'plain':
+      return formatPlain;
+    case 'fancy':
+      return formatFancy;
+  }
+}
+`,
+      output: `
+type Mode = 'plain' | 'fancy';
+declare const mode: Mode;
+declare const formatPlain: (input: string) => string;
+declare const formatFancy: (input: number) => string;
+function pick() {
+  const RESULT_BY_MODE: Record<Mode, ((input: string) => string) | ((input: number) => string)> = {
+    plain: formatPlain,
+    fancy: formatFancy,
+  };
+  return RESULT_BY_MODE[mode];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // The KEY type grows with the source too, and an anonymous discriminant
+    // union is inlined into it. It breaks to leading `|` members on the same
+    // measurement, and carries the comma the type-argument list needs.
+    {
+      options: [{ printWidth: 40 }],
+      code: `
+declare const status:
+  | 200
+  | 301
+  | 400
+  | 404
+  | 429
+  | 500
+  | 503;
+function describe() {
+  switch (status) {
+    case 200:
+      return 'ok';
+    case 301:
+      return 'moved';
+    case 400:
+      return 'bad request';
+    case 404:
+      return 'not found';
+    case 429:
+      return 'slow down';
+    case 500:
+      return 'server error';
+    case 503:
+      return 'unavailable';
+  }
+}
+`,
+      output: `
+declare const status:
+  | 200
+  | 301
+  | 400
+  | 404
+  | 429
+  | 500
+  | 503;
+function describe() {
+  const RESULT_BY_STATUS: Record<
+    | 200
+    | 301
+    | 400
+    | 404
+    | 429
+    | 500
+    | 503,
+    string
+  > = {
+    200: 'ok',
+    301: 'moved',
+    400: 'bad request',
+    404: 'not found',
+    429: 'slow down',
+    500: 'server error',
+    503: 'unavailable',
+  };
+  return RESULT_BY_STATUS[status];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // An atomic type has no break point of its own, so Prettier leaves it on
+    // its over-wide line — emitting that line IS emitting Prettier's output,
+    // and the fix is not withheld over it.
+    {
+      code: `
+type Mode = 'plain' | 'fancy';
+class TheOnlyRendererImplementationForEveryDispatchedModeHere {}
+declare const mode: Mode;
+declare const plainRenderer: TheOnlyRendererImplementationForEveryDispatchedModeHere;
+declare const fancyRenderer: TheOnlyRendererImplementationForEveryDispatchedModeHere;
+function pick() {
+  switch (mode) {
+    case 'plain':
+      return plainRenderer;
+    case 'fancy':
+      return fancyRenderer;
+  }
+}
+`,
+      output: `
+type Mode = 'plain' | 'fancy';
+class TheOnlyRendererImplementationForEveryDispatchedModeHere {}
+declare const mode: Mode;
+declare const plainRenderer: TheOnlyRendererImplementationForEveryDispatchedModeHere;
+declare const fancyRenderer: TheOnlyRendererImplementationForEveryDispatchedModeHere;
+function pick() {
+  const RESULT_BY_MODE: Record<
+    Mode,
+    TheOnlyRendererImplementationForEveryDispatchedModeHere
+  > = {
+    plain: plainRenderer,
+    fancy: fancyRenderer,
+  };
+  return RESULT_BY_MODE[mode];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // Each union member overflows its own line and Prettier answers by opening
+    // the function types up, a shape this fixer cannot author — so it declines
+    // rather than shipping text `prettier --check` rejects.
+    {
+      code: `
+type Mode = 'plain' | 'fancy';
+type PlainInput = { readonly identifier: string };
+type FancyInput = { readonly identifier: number };
+declare const mode: Mode;
+declare const formatPlain: (
+  input: PlainInput,
+  fallbackLabelText: string,
+  secondFallbackLabel: number,
+) => string;
+declare const formatFancy: (
+  input: FancyInput,
+  fallbackLabelText: number,
+  secondFallbackLabel: string,
+) => number;
+function pick() {
+  switch (mode) {
+    case 'plain':
+      return formatPlain;
+    case 'fancy':
+      return formatFancy;
+  }
+}
+`,
+      errors: [{ messageId: 'preferMapManual' }],
+    },
+    // The same decline with a single value type: there is no union to spell one
+    // member per line, and the lone member is one Prettier reflows.
+    {
+      code: `
+type Mode = 'plain' | 'fancy';
+type RowInput = { readonly identifier: string };
+declare const mode: Mode;
+declare const formatPlain: (
+  row: RowInput,
+  fallbackLabelText: string,
+  secondFallbackLabel: number,
+) => string;
+declare const formatFancy: (
+  row: RowInput,
+  fallbackLabelText: string,
+  secondFallbackLabel: number,
+) => string;
+function pick() {
+  switch (mode) {
+    case 'plain':
+      return formatPlain;
+    case 'fancy':
+      return formatFancy;
+  }
+}
+`,
+      errors: [{ messageId: 'preferMapManual' }],
+    },
+    // A generic type argument makes the annotation "complex" in Prettier's sense:
+    // it breaks the argument list rather than moving the map down, even one
+    // column over, where an ordinary union takes the narrower spelling above.
+    {
+      code: `
+type Mode = 'plain' | 'fancy';
+declare class SomeQuiteLongDispatchResultTypeName {}
+declare class Box<T> {
+  value: T;
+}
+declare const plainBox: Box<SomeQuiteLongDispatchResultTypeName>;
+declare const fancyBox: Box<SomeQuiteLongDispatchResultTypeName>;
+declare const mode: Mode;
+function pick() {
+  switch (mode) {
+    case 'plain':
+      return plainBox;
+    case 'fancy':
+      return fancyBox;
+  }
+}
+`,
+      output: `
+type Mode = 'plain' | 'fancy';
+declare class SomeQuiteLongDispatchResultTypeName {}
+declare class Box<T> {
+  value: T;
+}
+declare const plainBox: Box<SomeQuiteLongDispatchResultTypeName>;
+declare const fancyBox: Box<SomeQuiteLongDispatchResultTypeName>;
+declare const mode: Mode;
+function pick() {
+  const RESULT_BY_MODE: Record<
+    Mode,
+    Box<SomeQuiteLongDispatchResultTypeName>
+  > = {
+    plain: plainBox,
+    fancy: fancyBox,
+  };
+  return RESULT_BY_MODE[mode];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // A lone "simple" type argument is hugged onto its reference's line, so the
+    // spelling has no break point of its own and rides its over-wide line.
+    {
+      options: [{ printWidth: 40 }],
+      code: `
+type Mode = 'plain' | 'fancy';
+declare class SomeQuiteLongDispatchResultTypeName {}
+declare class Box<T> {
+  value: T;
+}
+declare const plainBox: Box<SomeQuiteLongDispatchResultTypeName>;
+declare const fancyBox: Box<SomeQuiteLongDispatchResultTypeName>;
+declare const mode: Mode;
+function pick() {
+  switch (mode) {
+    case 'plain':
+      return plainBox;
+    case 'fancy':
+      return fancyBox;
+  }
+}
+`,
+      output: `
+type Mode = 'plain' | 'fancy';
+declare class SomeQuiteLongDispatchResultTypeName {}
+declare class Box<T> {
+  value: T;
+}
+declare const plainBox: Box<SomeQuiteLongDispatchResultTypeName>;
+declare const fancyBox: Box<SomeQuiteLongDispatchResultTypeName>;
+declare const mode: Mode;
+function pick() {
+  const RESULT_BY_MODE: Record<
+    Mode,
+    Box<SomeQuiteLongDispatchResultTypeName>
+  > = {
+    plain: plainBox,
+    fancy: fancyBox,
+  };
+  return RESULT_BY_MODE[mode];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // Two type arguments are a break point of their own: Prettier opens the
+    // list up rather than leaving the line long, so the fix declines.
+    {
+      options: [{ printWidth: 40 }],
+      code: `
+type Mode = 'plain' | 'fancy';
+declare class SomeKeyTypeName {}
+declare class SomeValueTypeName {}
+declare class Pair<K, V> {
+  key: K;
+  value: V;
+}
+declare const plainPair: Pair<
+  SomeKeyTypeName,
+  SomeValueTypeName
+>;
+declare const fancyPair: Pair<
+  SomeKeyTypeName,
+  SomeValueTypeName
+>;
+declare const mode: Mode;
+function pick() {
+  switch (mode) {
+    case 'plain':
+      return plainPair;
+    case 'fancy':
+      return fancyPair;
+  }
+}
+`,
+      errors: [{ messageId: 'preferMapManual' }],
+    },
   ],
 };
 
@@ -3935,5 +4468,84 @@ describe('prefer-map-over-conditional-dispatch fix output parseability', () => {
         { range: true },
       ),
     ).toThrow();
+  });
+});
+
+/**
+ * The layout the fixer authors is only correct if it agrees with Prettier, so
+ * the agreement is asserted against the repo's own Prettier rather than
+ * described. Each spelling below sits alone as the value type argument of a
+ * `Record<>` whose argument list has already broken, at a width it overflows:
+ * Prettier either leaves it on that over-wide line (a shape the fixer may
+ * emit) or opens it up (a shape the fixer cannot author, and declines).
+ */
+describe('prefer-map-over-conditional-dispatch print-width classifier', () => {
+  const PRETTIER_OPTIONS: prettier.Options = {
+    parser: 'typescript',
+    printWidth: 80,
+    tabWidth: 2,
+    singleQuote: true,
+    semi: true,
+    trailingComma: 'all',
+  };
+
+  const prettierReflows = (typeText: string): boolean => {
+    const source = `function scope() {\n  const RESULT: Record<Key, ${typeText}> = {\n    alpha: first,\n  };\n}\n`;
+    const formatted = prettier.format(source, PRETTIER_OPTIONS);
+    return !formatted
+      .split('\n')
+      .some((line) => line.trim() === typeText.trim());
+  };
+
+  // Long enough that every spelling below overflows its own line.
+  const PAD = 'X'.repeat(60);
+  const SPELLINGS = [
+    `SomeVeryLongTypeName${PAD}`,
+    `typeof SomeVeryLongEncoderName${PAD}`,
+    `SomeVeryLongTypeName${PAD}[]`,
+    `SomeVeryLongTypeName${PAD}[][]`,
+    `SomeHolderTypeName${PAD}['kindPropertyName']`,
+    `SomeNamespace.SomeVeryLongTypeName${PAD}`,
+    `JSX.ElementSomethingVeryLongIndeed${PAD}`,
+    `keyof SomeVeryLongTypeName${PAD}`,
+    `readonly SomeVeryLongTypeName${PAD}[]`,
+    `'someVeryLongStringLiteralValue${PAD}'`,
+    `\`prefix-\${string}-suffix-${PAD}\``,
+    `import('some/really/long/module/path/${PAD}').SomeType`,
+    `Array<SomeVeryLongTypeName${PAD}>`,
+    `Promise<SomeVeryLongTypeName${PAD}>`,
+    `SomeType<SomeVeryLongArgumentName${PAD}>[]`,
+    `Map<SomeVeryLongKeyTypeName${PAD}, SomeValueTypeName>`,
+    `Array<Array<SomeVeryLongTypeName${PAD}>>`,
+    `Array<{ alpha: SomeLongTypeName${PAD} }>`,
+    `import('m').Type<SomeVeryLongArg${PAD}, Second>`,
+    `(inputParameter: SomeLongTypeName${PAD}) => ResultTypeName`,
+    `((inputParameter: SomeLongTypeName${PAD}) => ResultTypeName)`,
+    `(() => SomeVeryLongResultTypeName${PAD})`,
+    `new (inputParameter: SomeLongTypeName${PAD}) => ResultTypeName`,
+    `{ alphaProperty: SomeLongTypeName${PAD}; beta: number }`,
+    `{ [key: string]: SomeVeryLongValueTypeName${PAD} }`,
+    `{ readonly [K in SomeVeryLongKeyName${PAD}]: string }`,
+    `[SomeLongTypeName${PAD}, AnotherTypeName]`,
+    `SomeLongTypeName${PAD} & AnotherTypeName`,
+    `SomeVeryLongTypeName${PAD} | Another`,
+    `SomeVeryLongTypeName${PAD} extends X ? A : B`,
+  ];
+
+  it('agrees with Prettier on every measured spelling', () => {
+    const disagreements = SPELLINGS.filter(
+      (spelling) => reflowsWhenOverWide(spelling) !== prettierReflows(spelling),
+    );
+    expect(disagreements).toEqual([]);
+  });
+
+  it('is not vacuous: both answers occur, and every spelling overflows', () => {
+    const reflowed = SPELLINGS.filter((spelling) => prettierReflows(spelling));
+    expect(reflowed.length).toBeGreaterThanOrEqual(11);
+    expect(SPELLINGS.length - reflowed.length).toBeGreaterThanOrEqual(11);
+    // 4 columns of indentation inside a broken type-argument list.
+    for (const spelling of SPELLINGS) {
+      expect(spelling.length + 4).toBeGreaterThan(80);
+    }
   });
 });

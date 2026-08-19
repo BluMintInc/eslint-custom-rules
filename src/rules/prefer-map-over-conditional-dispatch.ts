@@ -10,6 +10,17 @@ import { createRule } from '../utils/createRule';
 type MessageIds = 'preferMap' | 'preferMapManual';
 
 /**
+ * Named short deliberately: spelled `Options`, the `createRule<...>` call below
+ * measures 81 columns against this rule's export name, and Prettier answers
+ * that by breaking the call open and re-indenting the entire rule body.
+ */
+type Opts = [
+  {
+    printWidth?: number;
+  },
+];
+
+/**
  * A single value produced by a branch: either `return <expr>;` or
  * `<target> = <expr>;`. Ternary branches carry only an expression. `stmt` is
  * the producing statement itself — the anchor comments hosted by the fix are
@@ -136,6 +147,174 @@ function parenthesizeForUnion(text: string): string {
 }
 
 /**
+ * Prettier's own default. The fixer authors the whole declaration head — the
+ * lookup name, both `Record` type arguments and the `= {` that opens the map —
+ * so a head left past this width is rewritten by the next `prettier --write`,
+ * and fails `prettier --check` in the meantime.
+ */
+const DEFAULT_PRINT_WIDTH = 80;
+
+/**
+ * A printed string, numeric, boolean or template literal type — the only
+ * members a discriminant's inlined union can hold, since the type gate admits
+ * only string/number literal members.
+ */
+const PRINTED_LITERAL_TYPE =
+  /^(?:'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"|`(?:[^`\\]|\\.)*`|-?(?:\d[\d_]*(?:\.[\d_]*)?|\.[\d_]+)(?:[eE][+-]?\d+)?n?|true|false)$/;
+
+/**
+ * Top-level `|` members of a printed type, for the leading-`|` spelling
+ * Prettier breaks a wide union into. The scan is quote-aware and then insists
+ * every member is a literal type: a discriminant prints as a union only when
+ * the checker inlined its literal members, and refusing anything else keeps the
+ * splitter away from text where a bare `|` is not a top-level separator (the
+ * `>` of a `=>` inside a function type, a conditional type's branches). Text it
+ * declines to segment stays one member and is emitted on a single line.
+ */
+function printedUnionMembers(text: string): string[] {
+  const members: string[] = [];
+  let current = '';
+  let quote: string | null = null;
+  for (let index = 0; index < text.length; index++) {
+    const char = text[index];
+    if (quote !== null) {
+      current += char;
+      if (char === '\\') {
+        current += text[index + 1] ?? '';
+        index++;
+      } else if (char === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (char === "'" || char === '"' || char === '`') {
+      quote = char;
+      current += char;
+      continue;
+    }
+    if (char === '|') {
+      members.push(current.trim());
+      current = '';
+      continue;
+    }
+    current += char;
+  }
+  members.push(current.trim());
+  return members.length > 1 &&
+    members.every((member) => PRINTED_LITERAL_TYPE.test(member))
+    ? members
+    : [text];
+}
+
+/**
+ * Whether Prettier hugs a lone type argument onto its reference's line instead
+ * of breaking the argument list open. It hugs a "simple" argument only — a
+ * literal, or a reference carrying no type arguments of its own — so
+ * `Array<Foo>` stays whole while `Array<Foo[]>`, `Array<typeof Foo>` and
+ * `Array<Array<Foo>>` break (measured).
+ */
+function isHuggedTypeArgument(node: ts.TypeNode): boolean {
+  if (ts.isLiteralTypeNode(node) || ts.isTemplateLiteralTypeNode(node)) {
+    return true;
+  }
+  return (
+    (ts.isTypeReferenceNode(node) || ts.isImportTypeNode(node)) &&
+    node.typeArguments === undefined
+  );
+}
+
+function typeReflows(node: ts.TypeNode): boolean {
+  if (ts.isParenthesizedTypeNode(node)) {
+    return typeReflows(node.type);
+  }
+  if (ts.isArrayTypeNode(node)) {
+    return typeReflows(node.elementType);
+  }
+  if (ts.isTypeOperatorNode(node)) {
+    return typeReflows(node.type);
+  }
+  if (ts.isIndexedAccessTypeNode(node)) {
+    return typeReflows(node.objectType) || typeReflows(node.indexType);
+  }
+  if (ts.isLiteralTypeNode(node) || ts.isTemplateLiteralTypeNode(node)) {
+    return false;
+  }
+  if (ts.isTypeQueryNode(node)) {
+    return node.typeArguments !== undefined;
+  }
+  if (ts.isTypeReferenceNode(node) || ts.isImportTypeNode(node)) {
+    const args = node.typeArguments;
+    if (args === undefined || args.length === 0) {
+      return false;
+    }
+    return args.length > 1 || !isHuggedTypeArgument(args[0]);
+  }
+  if (ts.isUnionTypeNode(node) || ts.isIntersectionTypeNode(node)) {
+    return node.types.length > 1 || typeReflows(node.types[0]);
+  }
+  // A keyword type (`string`, `never`, ...) is a single token and `this` is a
+  // single word, neither with an interior. Every remaining shape — function,
+  // constructor, type literal, tuple, conditional, mapped — carries a break
+  // point Prettier uses, so an over-wide line holding one is not its output.
+  return !ts.isToken(node) && node.kind !== ts.SyntaxKind.ThisType;
+}
+
+/** The printed type as a TypeScript node, or null when it does not parse. */
+function parseTypeText(typeText: string): ts.TypeNode | null {
+  const sourceFile = ts.createSourceFile(
+    '__annotation__.ts',
+    `type __T = ${typeText};`,
+    ts.ScriptTarget.Latest,
+    true,
+  );
+  const [statement] = sourceFile.statements;
+  return statement && ts.isTypeAliasDeclaration(statement)
+    ? statement.type
+    : null;
+}
+
+/**
+ * Whether Prettier answers an over-wide line holding this printed type alone by
+ * reflowing the type itself. Exported so the measurement it encodes is pinned
+ * differentially against the repo's own Prettier rather than restated in prose.
+ *
+ * It leaves an atomic type — a reference, a `typeof` query, a literal, and the
+ * array / `keyof` / indexed-access wrappers around one — on its own over-wide
+ * line, so emitting that line IS emitting Prettier's output. Anything with an
+ * interior break point it opens up instead, a shape this emitter cannot author,
+ * and the fix declines rather than shipping text the formatter rewrites.
+ */
+export function reflowsWhenOverWide(typeText: string): boolean {
+  const node = parseTypeText(typeText);
+  return node === null || typeReflows(node);
+}
+
+/**
+ * Whether this printed type makes the whole annotation "complex" in Prettier's
+ * sense, which decides the narrow regime between a head that fits and one that
+ * needs its type-argument list broken.
+ *
+ * A `Record<K, V>` two columns over the width is normally answered by moving
+ * the map to the next line, leaving the annotation whole. Prettier withholds
+ * that spelling when a type argument is itself a generic reference or a
+ * conditional type, and breaks the argument list instead — measured across a
+ * 10x10 matrix of key/value shapes at heads 80, 81 and 82. An `import(...)`
+ * type carrying arguments is NOT complex, and neither is a generic reached
+ * through an array or a union member: only the argument's own top-level shape
+ * counts.
+ */
+function forcesTypeArgumentBreak(typeText: string): boolean {
+  const node = parseTypeText(typeText);
+  if (node === null) {
+    return false;
+  }
+  if (ts.isConditionalTypeNode(node)) {
+    return true;
+  }
+  return ts.isTypeReferenceNode(node) && (node.typeArguments?.length ?? 0) > 0;
+}
+
+/**
  * How position-sensitive a comment is when the fix relocates it onto the
  * generated Record:
  *
@@ -173,7 +352,7 @@ function directiveKindOf(
   return 'none';
 }
 
-export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
+export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
   name: 'prefer-map-over-conditional-dispatch',
   meta: {
     type: 'suggestion',
@@ -184,7 +363,18 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
       requiresTypeChecking: true,
     },
     fixable: 'code',
-    schema: [],
+    schema: [
+      {
+        type: 'object',
+        properties: {
+          printWidth: {
+            type: 'number',
+            minimum: 1,
+          },
+        },
+        additionalProperties: false,
+      },
+    ],
     messages: {
       preferMap:
         'This dispatch on a literal-union discriminant maps each case to a single value; replace it with a Record<Discriminant, Value> lookup so exhaustiveness is a compile-time guarantee and adding a case is a one-line data edit.',
@@ -192,9 +382,13 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
         'This dispatch on a literal-union discriminant is a lookup table in disguise; prefer a Record<Discriminant, Value>. Autofix skipped: {{reason}}.',
     },
   },
-  defaultOptions: [],
-  create(context) {
+  defaultOptions: [{}],
+  create(context, [options]) {
     const sourceCode = context.getSourceCode();
+    const printWidth =
+      typeof options.printWidth === 'number' && options.printWidth > 0
+        ? options.printWidth
+        : DEFAULT_PRINT_WIDTH;
     const parserServices = sourceCode.parserServices;
 
     // Type-aware rule: without the TypeScript program we cannot verify the
@@ -324,7 +518,15 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
       return { ...literal, sourceText: sourceCode.getText(node) };
     }
 
-    function computeValueTypeText(exprs: TSESTree.Expression[]): string | null {
+    /**
+     * The distinct printed branch value types, each already spelled as a legal
+     * `|` member. The members are returned rather than joined so the emitter
+     * can lay them out one per line when the joined union does not fit the
+     * print width; the annotation gate still sees the flat join.
+     */
+    function computeValueTypeMembers(
+      exprs: TSESTree.Expression[],
+    ): string[] | null {
       const seen = new Set<string>();
       const parts: string[] = [];
       for (const expr of exprs) {
@@ -359,10 +561,12 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
       if (parts.length === 0) {
         return null;
       }
+      // A sole member sits in a plain type-argument position, where function
+      // type notation needs no parentheses.
       if (parts.length === 1) {
-        return parts[0];
+        return parts;
       }
-      return parts.map(parenthesizeForUnion).join(' | ');
+      return parts.map(parenthesizeForUnion);
     }
 
     /** Whether two classified discriminant types admit exactly the same keys. */
@@ -1090,6 +1294,20 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
     }
 
     /**
+     * The statement a ternary's generated declaration is inserted before. The
+     * conditional is an expression, so the declaration cannot take its place;
+     * it is hoisted to the nearest enclosing statement, whose indentation the
+     * emitted head is measured against.
+     */
+    function hoistTargetOf(node: TSESTree.Node): TSESTree.Node {
+      let stmt: TSESTree.Node = node;
+      while (stmt.parent && !CONTAINER_TYPES.has(stmt.parent.type)) {
+        stmt = stmt.parent;
+      }
+      return stmt;
+    }
+
+    /**
      * The node whose children the generated `const` joins — the scope its
      * binding lives in. A ternary hoists to the enclosing statement, so its
      * declaration lands beside that statement; every other form is replaced in
@@ -1098,12 +1316,7 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
      * answers with the statement that owns that block.
      */
     function fixScopeOf(node: TSESTree.Node, form: Analysis['form']) {
-      let stmt: TSESTree.Node = node;
-      if (form === 'expr') {
-        while (stmt.parent && !CONTAINER_TYPES.has(stmt.parent.type)) {
-          stmt = stmt.parent;
-        }
-      }
+      const stmt = form === 'expr' ? hoistTargetOf(node) : node;
       const container = stmt.parent ?? stmt;
       return container.type === AST_NODE_TYPES.SwitchCase
         ? container.parent ?? container
@@ -1137,31 +1350,121 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
       return match ? match[0] : '';
     }
 
-    function buildRecordText(
-      name: string,
-      dText: string,
-      vText: string,
-      entries: Entry[],
+    /**
+     * The emitted declaration's head lines and the indentation its map entries
+     * take. The two travel together: the spelling that moves the map onto its
+     * own line indents the whole literal one step further in.
+     */
+    type RecordLayout = { head: string[]; bodyIndent: string };
+
+    /**
+     * One `Record<...>` type argument as Prettier lays it out once the argument
+     * list has broken: on its own line while that line fits, and past the width
+     * one member per line behind a leading `|`. Null when neither spelling
+     * fits and the overflowing member is one Prettier would reflow internally —
+     * a shape this emitter cannot author, so the fix declines rather than
+     * shipping text `prettier --check` rejects.
+     */
+    function typeArgumentLines(
+      members: string[],
+      separator: string,
       baseIndent: string,
-    ): string {
+    ): string[] | null {
+      const flat = `${baseIndent}  ${members.join(' | ')}${separator}`;
+      if (flat.length <= printWidth) {
+        return [flat];
+      }
+      if (members.length === 1) {
+        return reflowsWhenOverWide(members[0]) ? null : [flat];
+      }
+      const lines: string[] = [];
+      for (const [index, member] of members.entries()) {
+        const tail = index === members.length - 1 ? separator : '';
+        const line = `${baseIndent}  | ${member}${tail}`;
+        if (line.length > printWidth && reflowsWhenOverWide(member)) {
+          return null;
+        }
+        lines.push(line);
+      }
+      return lines;
+    }
+
+    /**
+     * The declaration head, plus the indentation its map entries take. The
+     * first head line carries no indentation of its own — it is written at the
+     * construct's position, which already sits at `baseIndent`.
+     *
+     * Measure, do not always-wrap: Prettier collapses a hand-broken
+     * `Record<Mode, string>` straight back onto one line, so an unconditional
+     * wrap would trade this overflow for its mirror image on every short
+     * dispatch. Prettier answers a head that does not fit in three measured
+     * regimes, each reproduced here and each verified against the repo's own
+     * Prettier at widths 60/80/100/120 and indents 0-3:
+     *
+     * - the whole head fits: keep it on one line;
+     * - only the text through the `=` fits: the map opens on the next line,
+     *   one indent step in (this window is exactly two columns wide, since the
+     *   head is that text plus ` {`) — unless the annotation is "complex", a
+     *   spelling Prettier answers by breaking the arguments instead;
+     * - neither fits: break the `Record<...>` type-argument list open.
+     *
+     * Null when no spelling within the width exists.
+     */
+    function buildRecordLayout(
+      name: string,
+      dMembers: string[],
+      vMembers: string[],
+      baseIndent: string,
+    ): RecordLayout | null {
+      const dText = dMembers.join(' | ');
+      const vText = vMembers.join(' | ');
+      const declaration = `const ${name}: Record<${dText}, ${vText}> =`;
+      if (baseIndent.length + declaration.length + 2 <= printWidth) {
+        return { head: [`${declaration} {`], bodyIndent: baseIndent };
+      }
+      const complexAnnotation =
+        forcesTypeArgumentBreak(dText) || forcesTypeArgumentBreak(vText);
+      if (
+        !complexAnnotation &&
+        baseIndent.length + declaration.length <= printWidth
+      ) {
+        return {
+          head: [declaration, `${baseIndent}  {`],
+          bodyIndent: `${baseIndent}  `,
+        };
+      }
+      const keyLines = typeArgumentLines(dMembers, ',', baseIndent);
+      const valueLines = typeArgumentLines(vMembers, '', baseIndent);
+      if (!keyLines || !valueLines) {
+        return null;
+      }
+      return {
+        head: [
+          `const ${name}: Record<`,
+          ...keyLines,
+          ...valueLines,
+          `${baseIndent}> = {`,
+        ],
+        bodyIndent: baseIndent,
+      };
+    }
+
+    function buildRecordText(layout: RecordLayout, entries: Entry[]): string {
+      const { bodyIndent } = layout;
       const lines = entries.flatMap((e) => {
         const hosted = (e.leadingComments ?? []).map(
-          (comment) => `${baseIndent}  ${comment}`,
+          (comment) => `${bodyIndent}  ${comment}`,
         );
         const trailing =
           e.trailingComments && e.trailingComments.length > 0
             ? ` ${e.trailingComments.join(' ')}`
             : '';
         hosted.push(
-          `${baseIndent}  ${formatKey(e.key)}: ${e.valueText},${trailing}`,
+          `${bodyIndent}  ${formatKey(e.key)}: ${e.valueText},${trailing}`,
         );
         return hosted;
       });
-      return [
-        `const ${name}: Record<${dText}, ${vText}> = {`,
-        ...lines,
-        `${baseIndent}};`,
-      ].join('\n');
+      return [...layout.head, ...lines, `${bodyIndent}};`].join('\n');
     }
 
     // ---- Comment hosting ----------------------------------------------------
@@ -1476,8 +1779,8 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
       }
 
       const lookupName = derivation.name;
-      const vText = computeValueTypeText(contributingValues);
-      if (!vText) {
+      const vMembers = computeValueTypeMembers(contributingValues);
+      if (!vMembers) {
         context.report({
           node,
           messageId: 'preferMapManual',
@@ -1489,8 +1792,10 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
         return;
       }
 
+      // The gate parses `type __T = ...;` standalone, so it reads the flat
+      // annotation whatever layout the emitter settles on for it.
       const verdict = validateAnnotation(
-        `Record<${dText}, ${vText}>`,
+        `Record<${dText}, ${vMembers.join(' | ')}>`,
         discriminantOf(node),
       );
       if (verdict !== 'ok') {
@@ -1507,6 +1812,31 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
         return;
       }
 
+      // A ternary hoists its declaration to the enclosing statement's line;
+      // every other form is replaced where it stands. The head is laid out
+      // against the print width here rather than inside the fixer, because a
+      // head with no spelling within the width withholds the fix altogether
+      // and so changes which message is reported.
+      const fixTarget = form === 'expr' ? hoistTargetOf(node) : node;
+      const baseIndent = indentOf(fixTarget);
+      const layout = buildRecordLayout(
+        lookupName,
+        printedUnionMembers(dText),
+        vMembers,
+        baseIndent,
+      );
+      if (!layout) {
+        context.report({
+          node,
+          messageId: 'preferMapManual',
+          data: {
+            reason:
+              'the Record annotation does not fit the print width in any layout the formatter would keep — shorten the branch value types, or write the Record manually',
+          },
+        });
+        return;
+      }
+
       // Claimed only once every gate has passed, so a dispatch that ends up
       // report-only never blocks a later one from using the name.
       const claimed = claimedNames.get(fixScope) ?? new Set<string>();
@@ -1518,35 +1848,16 @@ export const preferMapOverConditionalDispatch = createRule<[], MessageIds>({
         messageId: 'preferMap',
         fix(fixer) {
           const discText = sourceCode.getText(discriminantOf(node));
+          const recordText = buildRecordText(layout, entries);
           if (form === 'expr') {
             // Ternary: insert the Record before the enclosing statement and
             // replace the conditional expression with the lookup.
-            let stmt: TSESTree.Node = node;
-            while (stmt.parent && !CONTAINER_TYPES.has(stmt.parent.type)) {
-              stmt = stmt.parent;
-            }
-            const stmtIndent = indentOf(stmt);
-            const recordText = buildRecordText(
-              lookupName,
-              dText,
-              vText,
-              entries,
-              stmtIndent,
-            );
             return [
-              fixer.insertTextBefore(stmt, `${recordText}\n${stmtIndent}`),
+              fixer.insertTextBefore(fixTarget, `${recordText}\n${baseIndent}`),
               fixer.replaceText(node, `${lookupName}[${discText}]`),
             ];
           }
 
-          const baseIndent = indentOf(node);
-          const recordText = buildRecordText(
-            lookupName,
-            dText,
-            vText,
-            entries,
-            baseIndent,
-          );
           const lookup =
             form === 'assign'
               ? `${assignTargetText} = ${lookupName}[${discText}];`
