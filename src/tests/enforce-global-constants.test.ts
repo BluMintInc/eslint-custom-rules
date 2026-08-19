@@ -535,14 +535,17 @@ export const useQuerySelector = <TElement extends HTMLElement>({
       `,
       errors: [{ messageId: 'extractDefaultToGlobalConstant' }],
     },
-    // Extract array default and primitive defaults
+    // Extract array default and primitive defaults. The substituted names
+    // push the destructuring line past the print width, so the pattern breaks
+    // one entry per line — the layout prettier itself picks for a defaulted
+    // object pattern of three or more entries.
     {
       code: `
-      const MyComponent = () => {
-        const { list = [1,2,3], size = 20, flag = true } = props;
-        return <div/>;
-      };
-      `,
+const MyComponent = () => {
+  const { list = [1,2,3], size = 20, flag = true } = props;
+  return <div/>;
+};
+`,
       output: `
 const DEFAULT_LIST = [1,2,3] as const;
 
@@ -550,11 +553,15 @@ const DEFAULT_SIZE = 20 as const;
 const DEFAULT_FLAG = true as const;
 
 
-      const MyComponent = () => {
-        const { list = DEFAULT_LIST, size = DEFAULT_SIZE, flag = DEFAULT_FLAG } = props;
-        return <div/>;
-      };
-      `,
+const MyComponent = () => {
+  const {
+    list = DEFAULT_LIST,
+    size = DEFAULT_SIZE,
+    flag = DEFAULT_FLAG,
+  } = props;
+  return <div/>;
+};
+`,
       errors: [{ messageId: 'extractDefaultToGlobalConstant' }],
     },
     // Should skip defaults that reference identifiers, but still extract static ones
@@ -601,25 +608,30 @@ const DEFAULT_B = { y: 2 } as const;
       `,
       errors: [{ messageId: 'extractDefaultToGlobalConstant' }],
     },
-    // Defaults inside hooks
+    // Defaults inside hooks. The substituted names overflow the line and the
+    // pattern has only two entries, so the object initializer hugs the `= {`
+    // and breaks its own items — prettier's layout for this shape.
     {
       code: `
-      export const useThing = ({ opts, n }: { opts?: any; n?: number }) => {
-        const { opts: options = { stable: true }, n: count = 3 } = { opts, n };
-        return { options, count };
-      };
-      `,
+export const useThing = ({ opts, n }: { opts?: any; n?: number }) => {
+  const { opts: options = { stable: true }, n: count = 3 } = { opts, n };
+  return { options, count };
+};
+`,
       output: `
 const DEFAULT_OPTIONS = { stable: true } as const;
 
 const DEFAULT_COUNT = 3 as const;
 
 
-      export const useThing = ({ opts, n }: { opts?: any; n?: number }) => {
-        const { opts: options = DEFAULT_OPTIONS, n: count = DEFAULT_COUNT } = { opts, n };
-        return { options, count };
-      };
-      `,
+export const useThing = ({ opts, n }: { opts?: any; n?: number }) => {
+  const { opts: options = DEFAULT_OPTIONS, n: count = DEFAULT_COUNT } = {
+    opts,
+    n,
+  };
+  return { options, count };
+};
+`,
       errors: [{ messageId: 'extractDefaultToGlobalConstant' }],
     },
     // Multiple declarations in one statement
@@ -953,6 +965,267 @@ const DEFAULT_RETRIES = 3 as const;
         return [debounceMs, retries];
       };
       `,
+      errors: [{ messageId: 'extractDefaultToGlobalConstant' }],
+    },
+    // The hoisted line pays a `const DEFAULT_… = ` prefix and an ` as const;`
+    // suffix the original default never did, so a 74-column prettier-stable
+    // input would emit an 86-column line: the initializer breaks one element
+    // per line instead. The destructuring line, in turn, gets SHORTER, and the
+    // `=`-break prettier needed for the long literal collapses back onto one
+    // line — both directions of the width gate in one fixture.
+    {
+      code: `
+export const useTableState = (props: any) => {
+  const { visibleColumnKeys = ['name', 'status', 'owner', 'updatedAt'] } =
+    props;
+  return visibleColumnKeys;
+};
+`,
+      output: `
+const DEFAULT_VISIBLE_COLUMN_KEYS = [
+  'name',
+  'status',
+  'owner',
+  'updatedAt',
+] as const;
+
+
+export const useTableState = (props: any) => {
+  const { visibleColumnKeys = DEFAULT_VISIBLE_COLUMN_KEYS } = props;
+  return visibleColumnKeys;
+};
+`,
+      errors: [{ messageId: 'extractDefaultToGlobalConstant' }],
+    },
+    // Just under the threshold the same array shape stays on one line:
+    // prettier collapses a short expanded array, so wrapping unconditionally
+    // would be the mirror failure.
+    {
+      code: `
+export const useTable = (props: any) => {
+  const { visibleKeys = ['name', 'status', 'owner'] } = props;
+  return visibleKeys;
+};
+`,
+      output: `
+const DEFAULT_VISIBLE_KEYS = ['name', 'status', 'owner'] as const;
+
+
+export const useTable = (props: any) => {
+  const { visibleKeys = DEFAULT_VISIBLE_KEYS } = props;
+  return visibleKeys;
+};
+`,
+      errors: [{ messageId: 'extractDefaultToGlobalConstant' }],
+    },
+    // An object default whose hoisted line overflows breaks one property per
+    // line; the substituted destructuring line fits and stays put.
+    {
+      code: `
+export const useObserver = (props: any) => {
+  const { observerConfiguration = { childList: true, subtree: true } } = props;
+  return observerConfiguration;
+};
+`,
+      output: `
+const DEFAULT_OBSERVER_CONFIGURATION = {
+  childList: true,
+  subtree: true,
+} as const;
+
+
+export const useObserver = (props: any) => {
+  const { observerConfiguration = DEFAULT_OBSERVER_CONFIGURATION } = props;
+  return observerConfiguration;
+};
+`,
+      errors: [{ messageId: 'extractDefaultToGlobalConstant' }],
+    },
+    // Prettier re-packs an all-numeric array several elements per line (fill
+    // mode), so a one-element-per-line expansion is not a fixed point: an
+    // overflowing numeric-array default declines the fix and keeps the report.
+    {
+      code: `
+export const useRetry = (props: any) => {
+  const { retryDelaysMs = [100, 200, 400, 800, 1600, 3200, 6400, 12800] } =
+    props;
+  return retryDelaysMs;
+};
+`,
+      output: null,
+      errors: [{ messageId: 'extractDefaultToGlobalConstant' }],
+    },
+    // A width-declined default must not suppress the fix for a safe sibling
+    // statement.
+    {
+      code: `
+export const useRetry = (props: any) => {
+  const { retryDelaysMs = [100, 200, 400, 800, 1600, 3200, 6400, 12800] } =
+    props;
+  const { retryMode = 'fast' } = props;
+  return { retryDelaysMs, retryMode };
+};
+`,
+      output: `
+const DEFAULT_RETRY_MODE = 'fast' as const;
+
+
+export const useRetry = (props: any) => {
+  const { retryDelaysMs = [100, 200, 400, 800, 1600, 3200, 6400, 12800] } =
+    props;
+  const { retryMode = DEFAULT_RETRY_MODE } = props;
+  return { retryDelaysMs, retryMode };
+};
+`,
+      errors: [
+        { messageId: 'extractDefaultToGlobalConstant' },
+        { messageId: 'extractDefaultToGlobalConstant' },
+      ],
+    },
+    // A width-declined default must not suppress a safe sibling in the SAME
+    // pattern; the untouched over-long default keeps prettier's expanded
+    // pattern layout.
+    {
+      code: `
+export const useRetry = (props: any) => {
+  const {
+    retryDelaysMs = [100, 200, 400, 800, 1600, 3200, 6400, 12800],
+    retryMode = 'fast',
+  } = props;
+  return { retryDelaysMs, retryMode };
+};
+`,
+      output: `
+const DEFAULT_RETRY_MODE = 'fast' as const;
+
+
+export const useRetry = (props: any) => {
+  const {
+    retryDelaysMs = [100, 200, 400, 800, 1600, 3200, 6400, 12800],
+    retryMode = DEFAULT_RETRY_MODE,
+  } = props;
+  return { retryDelaysMs, retryMode };
+};
+`,
+      errors: [{ messageId: 'extractDefaultToGlobalConstant' }],
+    },
+    // The printWidth option relaxes the budget: at 120 the 86-column hoisted
+    // line is within width and stays inline.
+    {
+      code: `
+export const useTableState = (props: any) => {
+  const { visibleColumnKeys = ['name', 'status', 'owner', 'updatedAt'] } = props;
+  return visibleColumnKeys;
+};
+`,
+      options: [{ printWidth: 120 }],
+      output: `
+const DEFAULT_VISIBLE_COLUMN_KEYS = ['name', 'status', 'owner', 'updatedAt'] as const;
+
+
+export const useTableState = (props: any) => {
+  const { visibleColumnKeys = DEFAULT_VISIBLE_COLUMN_KEYS } = props;
+  return visibleColumnKeys;
+};
+`,
+      errors: [{ messageId: 'extractDefaultToGlobalConstant' }],
+    },
+    // The printWidth option tightens the budget too: at 60 a 66-column hoisted
+    // line breaks open, and the substituted destructuring line — 54 columns —
+    // collapses back onto one line.
+    {
+      code: `
+export const useTable = (props: any) => {
+  const { visibleKeys = ['name', 'status', 'owner'] } =
+    props;
+  return visibleKeys;
+};
+`,
+      options: [{ printWidth: 60 }],
+      output: `
+const DEFAULT_VISIBLE_KEYS = [
+  'name',
+  'status',
+  'owner',
+] as const;
+
+
+export const useTable = (props: any) => {
+  const { visibleKeys = DEFAULT_VISIBLE_KEYS } = props;
+  return visibleKeys;
+};
+`,
+      errors: [{ messageId: 'extractDefaultToGlobalConstant' }],
+    },
+    // A single-entry pattern that overflows breaks after `=` when the head
+    // still fits — prettier's layout for a non-complex pattern with a
+    // non-literal initializer.
+    {
+      code: `
+export const useNav = (props: any) => {
+  const { navigationBreadcrumbTrail = ['home'] } = props;
+  return navigationBreadcrumbTrail;
+};
+`,
+      output: `
+const DEFAULT_NAVIGATION_BREADCRUMB_TRAIL = ['home'] as const;
+
+
+export const useNav = (props: any) => {
+  const { navigationBreadcrumbTrail = DEFAULT_NAVIGATION_BREADCRUMB_TRAIL } =
+    props;
+  return navigationBreadcrumbTrail;
+};
+`,
+      errors: [{ messageId: 'extractDefaultToGlobalConstant' }],
+    },
+    // A parameter default whose substituted signature line still fits is
+    // replaced in place.
+    {
+      code: `
+function Component({ animationMode = 'fade' }) {
+  return <div>{animationMode}</div>;
+}
+`,
+      output: `
+const DEFAULT_ANIMATION_MODE = 'fade' as const;
+
+
+function Component({ animationMode = DEFAULT_ANIMATION_MODE }) {
+  return <div>{animationMode}</div>;
+}
+`,
+      errors: [{ messageId: 'extractDefaultToGlobalConstant' }],
+    },
+    // A parameter default whose substituted signature line would overflow has
+    // no relayout here (prettier owns signature wrapping), so the fix is
+    // declined and the report kept.
+    {
+      code: `
+function Component({ animationTransitionPreset = 'fade-through-left' }) {
+  return <div>{animationTransitionPreset}</div>;
+}
+`,
+      output: null,
+      errors: [{ messageId: 'extractDefaultToGlobalConstant' }],
+    },
+    // The same signature fits a wider budget, so the parameter gate reads the
+    // printWidth option too.
+    {
+      code: `
+function Component({ animationTransitionPreset = 'fade-through-left' }) {
+  return <div>{animationTransitionPreset}</div>;
+}
+`,
+      options: [{ printWidth: 100 }],
+      output: `
+const DEFAULT_ANIMATION_TRANSITION_PRESET = 'fade-through-left' as const;
+
+
+function Component({ animationTransitionPreset = DEFAULT_ANIMATION_TRANSITION_PRESET }) {
+  return <div>{animationTransitionPreset}</div>;
+}
+`,
       errors: [{ messageId: 'extractDefaultToGlobalConstant' }],
     },
   ],

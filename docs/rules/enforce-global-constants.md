@@ -128,6 +128,26 @@ const useMyHook = (options = DEFAULT_OPTIONS) => {
 };
 ```
 
+## Options
+
+```js
+'@blumintinc/blumint/enforce-global-constants': ['error', {
+  // Column the autofix measures the emitted lines against
+  printWidth: 80,
+}]
+```
+
+### `printWidth`
+
+Type: `number`
+
+Default: `80`
+
+The column the autofix measures against, matching Prettier's option of the same
+name. Set it to your formatter's `printWidth` so the fixed source is already in
+the shape the formatter would produce; a lint run carrying `--fix` otherwise
+leaves the tree failing `prettier --check`.
+
 ## Which remedy the rule names
 
 A `useMemo` over an object literal with an empty dependency array gets one of two
@@ -173,6 +193,30 @@ A withheld fix does not silence the report: the violation is still reported and
 is resolved by extracting the constant by hand under a name that does not clash.
 Each default is decided independently, so a withheld default does not block the
 fix for its siblings.
+
+### Line width
+
+The fixer authors two kinds of lines whose length grows with the source — the
+hoisted `const DEFAULT_… = … as const;` declaration (its name gains an
+underscore per camelCase boundary and its initializer is copied from the
+source) and the destructuring line it rewrites in place. Both are measured
+against [`printWidth`](#printwidth) before being emitted:
+
+- The hoisted declaration stays on one line while it fits and breaks the
+  initializer one item per line past the width — the layout a formatter would
+  produce anyway.
+- The destructuring line is re-laid out the way Prettier chooses for the
+  measured widths: collapsed onto one line while it fits, the pattern broken
+  one entry per line, a literal initializer hugging the `= {`, or the
+  statement broken after `=`.
+
+Measuring is not the same as always wrapping: a formatter collapses a short
+expanded array or object pattern back onto one line, so blanket wrapping would
+trade an over-long line for a needlessly split one. When no within-width
+spelling exists at all — for example an all-numeric array default, which
+Prettier re-packs several elements per line, or a parameter default whose
+substituted signature line would overflow — the fix is withheld and the report
+kept, exactly like a name collision.
 
 ## When Not To Use It
 
