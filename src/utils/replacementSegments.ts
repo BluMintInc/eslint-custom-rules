@@ -31,7 +31,7 @@ export function requiresLineBreakAfter(comment: TSESTree.Comment): boolean {
  * Whether a comment's own text carries a line terminator, which only a block
  * comment can do.
  */
-function spansMultipleLines(comment: TSESTree.Comment): boolean {
+export function spansMultipleLines(comment: TSESTree.Comment): boolean {
   return comment.loc.start.line !== comment.loc.end.line;
 }
 

@@ -6,6 +6,7 @@ import { Linter, Rule } from 'eslint';
 import * as ts from 'typescript';
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import * as tsParser from '@typescript-eslint/parser';
+import * as prettier from 'prettier';
 import { ruleTesterTs } from '../utils/ruleTester';
 import { noExplicitReturnType } from '../rules/no-explicit-return-type';
 import { preferTypeOverInterface } from '../rules/prefer-type-over-interface';
@@ -3379,9 +3380,10 @@ export const buildUser = (id: string) => ({ id, seed: SEED });
           data: { functionKind: 'arrow function "buildCount"' },
         },
       ],
-      output: `export const buildCount = () => /**
- * doc
- */ 1;
+      output: `export const buildCount = () =>
+  /**
+   * doc
+   */ 1;
 `,
     },
     {
@@ -3395,9 +3397,10 @@ export const buildUser = (id: string) => ({ id, seed: SEED });
           data: { functionKind: 'arrow function "buildCount"' },
         },
       ],
-      output: `export const buildCount = async () => /**
- * doc
- */ 1;
+      output: `export const buildCount = async () =>
+  /**
+   * doc
+   */ 1;
 `,
     },
     // A line comment ends its line, so it displaces the arrow the same way.
@@ -3500,9 +3503,10 @@ export const buildUser = (id: string) => ({ id, seed: SEED });
           data: { functionKind: 'arrow function "formatCount"' },
         },
       ],
-      output: `export const formatCount = () => /**
- * doc
- */ 1;
+      output: `export const formatCount = () =>
+  /**
+   * doc
+   */ 1;
 `,
     },
     {
@@ -3534,9 +3538,10 @@ export const buildUser = (id: string) => ({ id, seed: SEED });
           data: { functionKind: 'arrow function "readCount"' },
         },
       ],
-      output: `export const readCount = () => /**
- * doc
- */ 1;
+      output: `export const readCount = () =>
+  /**
+   * doc
+   */ 1;
 `,
     },
     {
@@ -3566,9 +3571,10 @@ export const buildUser = (id: string) => ({ id, seed: SEED });
           data: { functionKind: 'arrow function "renderRow"' },
         },
       ],
-      output: `export const renderRow = () /* a */ => /**
- * b
- */ 1;
+      output: `export const renderRow = () /* a */ =>
+  /**
+   * b
+   */ 1;
 `,
     },
     {
@@ -3601,9 +3607,10 @@ export const buildUser = (id: string) => ({ id, seed: SEED });
         },
       ],
       output: `export class Registry {
-  buildCount = () => /**
-   * doc
-   */ 1;
+  buildCount = () =>
+    /**
+     * doc
+     */ 1;
 }
 `,
     },
@@ -3621,10 +3628,162 @@ export const buildUser = (id: string) => ({ id, seed: SEED });
           data: { functionKind: 'arrow function "loadCount"' },
         },
       ],
-      output: `export const loadCount = () => /**
- * doc
- */
+      output: `export const loadCount = () =>
+  /**
+   * doc
+   */
   1;
+`,
+    },
+    // Issue #2066: the carried comment is re-emitted at the depth an arrow body
+    // is written at, one step past the declaration it belongs to — not at the
+    // arrow's own column, which for a multi-line annotation is the comment's
+    // one-space gutter. The gutter travels with it.
+    {
+      code: `function buildFormatter() {
+  const formatCount = (): /**
+   * doc
+   */ number => 1;
+  return formatCount;
+}
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "formatCount"' },
+        },
+      ],
+      output: `function buildFormatter() {
+  const formatCount = () =>
+    /**
+     * doc
+     */ 1;
+  return formatCount;
+}
+`,
+    },
+    // A gutter aligned to nothing in particular is re-aligned to the column the
+    // comment lands at, exactly as a formatter aligns one.
+    {
+      code: `export const scoreCount = (): /**
+     * doc
+       * more
+ */ number => 1;
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "scoreCount"' },
+        },
+      ],
+      output: `export const scoreCount = () =>
+  /**
+   * doc
+   * more
+   */ 1;
+`,
+    },
+    // A block comment WITHOUT the `*` gutter carries content in its columns —
+    // commented-out code, a table — so only its opening line moves and every
+    // interior line keeps the text it was written with.
+    {
+      code: `export const traceCount = (): /*
+  raw one
+  raw two
+*/ number => 1;
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "traceCount"' },
+        },
+      ],
+      output: `export const traceCount = () =>
+  /*
+  raw one
+  raw two
+*/ 1;
+`,
+    },
+    // A body that opens a bracket keeps the arrow's own line: it closes back at
+    // the declaration's depth, so breaking ahead of it buys nothing. The gutter
+    // is still re-aligned, to the declaration's column rather than a step past.
+    {
+      code: `export const listCounts = (): /**
+ * doc
+ */ number[] => [1, 2];
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "listCounts"' },
+        },
+      ],
+      output: `export const listCounts = () => /**
+ * doc
+ */ [1, 2];
+`,
+    },
+    {
+      code: `function buildFormatter() {
+  const buildRecord = (): /**
+ * doc
+ */ { a: number } => ({ a: 1 });
+  return buildRecord;
+}
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildRecord"' },
+        },
+      ],
+      output: `function buildFormatter() {
+  const buildRecord = () => /**
+   * doc
+   */ ({ a: 1 });
+  return buildRecord;
+}
+`,
+    },
+    // A comment that fits on one line is not what the break is for, so neither a
+    // line comment nor a one-line block comment gains one.
+    {
+      code: `function buildFormatter() {
+  const tallyCount = () // doc
+: number => 1;
+  return tallyCount;
+}
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "tallyCount"' },
+        },
+      ],
+      output: `function buildFormatter() {
+  const tallyCount = () => // doc
+  1;
+  return tallyCount;
+}
+`,
+    },
+    {
+      code: `function buildFormatter() {
+  const sumCount = (): /* doc */ number => 1;
+  return sumCount;
+}
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "sumCount"' },
+        },
+      ],
+      output: `function buildFormatter() {
+  const sumCount = () /* doc */ => 1;
+  return sumCount;
+}
 `,
     },
     // A block body is reached the same way: `=>` binds it whether or not a line
@@ -5477,5 +5636,168 @@ describe('no-explicit-return-type --fix emits code V8 accepts', () => {
     const { output } = linter.verifyAndFix(source, CONFIG, FILENAME);
 
     expect(linter.verifyAndFix(output, CONFIG, FILENAME).fixed).toBe(false);
+  });
+});
+
+/**
+ * Issue #2066: a carried comment that lands somewhere V8 accepts can still land
+ * somewhere Prettier will not leave it. Re-emitting the raw source slice kept
+ * every continuation line at the column it held in the annotation position, and
+ * spliced the comment in after an arrow whose line then had to break — valid
+ * output, rewritten by the next `prettier --write` and rejected by
+ * `prettier --check` until then.
+ *
+ * Prettier itself is the oracle rather than a described layout, and it is asked
+ * CONDITIONALLY: a source Prettier would rewrite on its own cannot hold the
+ * fixer to a fixed point, so each input is required to be one first. That
+ * requirement is what makes the sample honest — and it is asserted, not assumed,
+ * because a sample that silently emptied would pass this guard forever.
+ */
+describe('no-explicit-return-type --fix emits code Prettier leaves alone', () => {
+  const RULE_ID = '@blumintinc/blumint/no-explicit-return-type';
+  const FILENAME = 'x.ts';
+
+  const linter = new Linter();
+  linter.defineParser('@typescript-eslint/parser', tsParser as never);
+  linter.defineRule(
+    RULE_ID,
+    noExplicitReturnType as unknown as Rule.RuleModule,
+  );
+
+  const CONFIG: Linter.Config = {
+    parser: '@typescript-eslint/parser',
+    parserOptions: {
+      ecmaVersion: 2022 as const,
+      sourceType: 'module' as const,
+    },
+    rules: { [RULE_ID]: 'error' },
+  };
+
+  // The repo's own settings, which are what agora formats its source with.
+  const PRETTIER_OPTIONS: prettier.Options = {
+    parser: 'typescript',
+    printWidth: 80,
+    tabWidth: 2,
+    singleQuote: true,
+    semi: true,
+    trailingComma: 'all',
+  };
+
+  const isFixedPoint = (text: string): boolean =>
+    prettier.format(text, PRETTIER_OPTIONS) === text;
+
+  const DOC = ['/**', ' * doc', ' */'].join('\n');
+  const NESTED_DOC = ['/**', '   * doc', '   */'].join('\n');
+
+  /**
+   * Every shape the carried comment can land in, at column 0 and nested, with a
+   * body that breaks the arrow's line and one that keeps it.
+   */
+  const SOURCES: [string, string][] = [
+    ['comment after the colon', `export const f = (): ${DOC} number => 1;\n`],
+    [
+      'comment after the annotation',
+      `export const f = (): number ${DOC} => 1;\n`,
+    ],
+    [
+      'async arrow',
+      `export const f = async (): ${DOC} Promise<number> => 1;\n`,
+    ],
+    [
+      'nested declaration',
+      `function outer() {\n  const f = (): ${NESTED_DOC} number => 1;\n  return f;\n}\n`,
+    ],
+    [
+      'class property',
+      `export class C {\n  m = (): ${NESTED_DOC} number => 1;\n}\n`,
+    ],
+    [
+      'object property',
+      `const repo = {\n  read: (): ${NESTED_DOC} number => 1,\n};\n`,
+    ],
+    [
+      'body already on its own line',
+      `export const f = (): ${DOC} number =>\n  computeTotal(alpha, beta, gamma, delta, epsilon, zeta, eta, theta);\n`,
+    ],
+    ['call body', `export const f = (): ${DOC} number => compute();\n`],
+    [
+      'conditional body',
+      `export const f = (): ${DOC} number => (flag ? 1 : 2);\n`,
+    ],
+    [
+      'object-literal body',
+      `export const f = (): ${DOC} { a: number } => ({ a: 1 });\n`,
+    ],
+    ['array-literal body', `export const f = (): ${DOC} number[] => [1, 2];\n`],
+    [
+      'block body',
+      `export const f = (): ${DOC} number => {\n  return 1;\n};\n`,
+    ],
+    [
+      'gutterless block comment',
+      `export const f = (): /*\n  raw doc one\n  raw doc two\n*/ number => 1;\n`,
+    ],
+    [
+      'one-line block comment, which stays in the gap',
+      `export const f = (): /* doc */ number => 1;\n`,
+    ],
+  ];
+
+  /**
+   * The one residue this planner cannot clear, named rather than dropped from
+   * the sample so the arm keeps being exercised.
+   *
+   * Prettier requires the parentheses around a conditional arrow body while the
+   * arrow is flat and strips them once the line breaks, so breaking the line
+   * leaves behind a pair the SOURCE wrote. Taking them out means editing the
+   * body, which is outside the gap this planner rewrites — and a fixer reaching
+   * across a body to adjust parentheses is a hazard of its own (#2063). The
+   * carve-out is held to the parentheses alone below: with them gone the output
+   * settles, so a drift in where the comment lands fails here regardless.
+   */
+  const PAREN_RESIDUE = 'conditional body';
+
+  const settled = SOURCES.filter(([, source]) => isFixedPoint(source));
+
+  it('rewrites Prettier-clean input into Prettier-clean output', () => {
+    // Equality, not a floor: a source edited into a shape Prettier rewrites is
+    // one this guard stops asking about, which reads exactly like a pass.
+    expect(settled.length).toBe(SOURCES.length);
+    expect(settled.length).toBeGreaterThanOrEqual(14);
+
+    const unstable = settled
+      .map(([label, source]) => {
+        const { output, fixed } = linter.verifyAndFix(source, CONFIG, FILENAME);
+        // A source the rule declines proves nothing about what it writes.
+        expect(fixed).toBe(true);
+        expect(output).toContain('doc');
+        return { label, output };
+      })
+      .filter((entry) => !isFixedPoint(entry.output));
+
+    expect(unstable.map((entry) => entry.label)).toEqual([PAREN_RESIDUE]);
+    // What is left of the residue is the parenthesis pair and nothing else.
+    expect(
+      isFixedPoint(
+        unstable[0].output.replace('(flag ? 1 : 2)', 'flag ? 1 : 2'),
+      ),
+    ).toBe(true);
+  });
+
+  it('is not vacuous: the shape this replaced is still detected', () => {
+    // The output the raw-slice re-emission produced, planted so a green run
+    // means the fixer improved rather than the oracle going blind.
+    const residue = `export const f = () => /**\n * doc\n */ 1;\n`;
+    expect(isFixedPoint(residue)).toBe(false);
+    expect(
+      isFixedPoint(`export const f = () =>\n  /**\n   * doc\n   */ 1;\n`),
+    ).toBe(true);
+    // And the break is not free: applied where the body hugs the arrow,
+    // Prettier takes it straight back out.
+    expect(
+      isFixedPoint(
+        `export const f = () =>\n  /**\n   * doc\n   */ ({ a: 1 });\n`,
+      ),
+    ).toBe(false);
   });
 });

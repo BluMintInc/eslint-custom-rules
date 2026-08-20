@@ -1,10 +1,11 @@
-import { TSESLint, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { parseDisableDirectives } from './disableDirectives';
 import { TextRange } from './importRemoval';
 import {
   joinSegmentBody,
   requiresLineBreakAfter,
   requiresOwnLine,
+  spansMultipleLines,
 } from './replacementSegments';
 
 /**
@@ -28,6 +29,14 @@ export type Edit = { range: TextRange; text: string };
 
 /** Every character the syntactic grammar counts as a LineTerminator. */
 const LINE_TERMINATOR = /[\n\r\u2028\u2029]/;
+
+/**
+ * One nesting step, in the spelling prettier writes at its default `tabWidth`.
+ * Text placed on a line of its own has to pick SOME depth, and the depth
+ * prettier gives an arrow body it has broken is a single step past the
+ * declaration the arrow belongs to.
+ */
+const INDENT_STEP = '  ';
 
 function containsRange(outer: TextRange, inner: TextRange): boolean {
   return inner[0] >= outer[0] && inner[1] <= outer[1];
@@ -80,34 +89,155 @@ export function arrowAnnotationGap(
 }
 
 /**
+ * Whether every continuation line of a block comment carries the `*` gutter.
+ *
+ * Such a comment's interior alignment is a function of the column it opens at
+ * rather than text its author chose, so moving the comment obliges re-aligning
+ * it — and it is exactly the shape prettier re-indents. Every other block
+ * comment's interior is content (commented-out code, an ASCII table, a fenced
+ * example), which keeps its columns byte-for-byte because re-flowing it would
+ * rewrite text the fixer does not own.
+ */
+function hasAlignedGutter(lines: readonly string[]): boolean {
+  return (
+    lines.length > 1 &&
+    lines.slice(1).every((line) => line.trimStart().startsWith('*'))
+  );
+}
+
+/**
+ * A block comment re-aligned to open at `indent`, its gutter one column in from
+ * the `/*` as a `*`-gutter comment is written. Only leading whitespace moves:
+ * the comment's own characters are the part a fix may not rewrite.
+ */
+function realignComment(text: string, indent: string): string {
+  const lines = text.split('\n');
+  if (!hasAlignedGutter(lines)) return text;
+
+  return lines
+    .map((line, index) =>
+      index === 0 ? line : `${indent} ${line.trimStart()}`,
+    )
+    .join('\n');
+}
+
+/**
+ * The arrow function an annotation belongs to. The annotation itself stands in
+ * where a caller holds a detached node, so an anchor derived from it degrades to
+ * the annotation's own line rather than throwing.
+ */
+function subjectOf(returnType: TSESTree.TSTypeAnnotation): TSESTree.Node {
+  return returnType.parent ?? returnType;
+}
+
+/**
+ * Where the annotated function's own line begins, which is the depth an arrow
+ * body is indented from.
+ *
+ * The `=>` is the wrong anchor for it: an annotation carrying a line terminator
+ * leaves the arrow on a continuation line whose indentation is that of the
+ * annotation's last line — a comment's gutter, one column — rather than the
+ * declaration's.
+ */
+function subjectIndentOf(
+  source: TSESLint.SourceCode,
+  returnType: TSESTree.TSTypeAnnotation,
+): string {
+  return indentAt(source, subjectOf(returnType).range[0]);
+}
+
+/**
+ * Body shapes that keep the arrow's own line rather than being pushed onto the
+ * next one. Each opens a bracket on that line and closes it back at the
+ * declaration's depth, so breaking ahead of it buys nothing and leaves the
+ * closing brace out of line with what opened it. A template spanning lines is
+ * here for a related reason: its interior columns are content, and shifting its
+ * opening quote moves the whole literal.
+ *
+ * A nested arrow is deliberately absent. It reads as one more shape that closes
+ * back at its own depth, but a chain of arrows is laid out as a chain — every
+ * signature on a line of its own, starting with the `=` — which no annotation
+ * strip can produce and which anchors the carried comment one step in, exactly
+ * where a broken body goes.
+ */
+const HUGGING_BODY_TYPES = new Set<string>([
+  AST_NODE_TYPES.ArrayExpression,
+  AST_NODE_TYPES.BlockStatement,
+  AST_NODE_TYPES.JSXElement,
+  AST_NODE_TYPES.JSXFragment,
+  AST_NODE_TYPES.ObjectExpression,
+]);
+
+function hugsArrow(
+  source: TSESLint.SourceCode,
+  returnType: TSESTree.TSTypeAnnotation,
+): boolean {
+  const subject = subjectOf(returnType);
+  if (subject.type !== AST_NODE_TYPES.ArrowFunctionExpression) return false;
+
+  const { body } = subject;
+  if (
+    body.type === AST_NODE_TYPES.TemplateLiteral ||
+    body.type === AST_NODE_TYPES.TaggedTemplateExpression
+  ) {
+    return LINE_TERMINATOR.test(textOf(source, body.range));
+  }
+
+  return HUGGING_BODY_TYPES.has(body.type);
+}
+
+/**
  * Re-emits `comments` on the far side of the arrow, where a line terminator is
  * inert, consuming the horizontal whitespace the arrow already had after it so
  * the body keeps a single separator.
+ *
+ * A run holding a comment that breaks the line takes a line of its own, one step
+ * past the declaration, and its block comments are re-aligned to the column they
+ * land at — which is where prettier prints an arrow body it has had to break. A
+ * comment spliced in after the `=>` keeping the alignment it had in the
+ * annotation position is valid but is not what prettier writes, so it fails
+ * `prettier --check` on arrival (#2066). A run that leaves the arrow's line
+ * unbroken keeps it, since that is where prettier leaves it.
  */
 function hoistPastArrow(
   source: TSESLint.SourceCode,
   arrow: TSESTree.Token,
   comments: readonly TSESTree.Comment[],
+  returnType: TSESTree.TSTypeAnnotation,
 ): Edit {
-  const indent = indentAt(source, arrow.range[0]);
   const trailingText = source.text.slice(arrow.range[1]);
   const [spacing] = /^[ \t]*/.exec(trailingText) ?? [''];
+  const rest = trailingText.slice(spacing.length);
+  const last = comments[comments.length - 1];
+
+  // The run and the body share the arrow's line only while nothing between them
+  // ends one: a second comment, a comment that must own its line, or a body the
+  // source already put on the line below.
+  const bodyStartsALine =
+    comments.length > 1 ||
+    requiresLineBreakAfter(last) ||
+    LINE_TERMINATOR.test(rest.charAt(0));
+  const ownsLine =
+    comments.some(spansMultipleLines) &&
+    (bodyStartsALine || !hugsArrow(source, returnType));
+
+  const subjectIndent = subjectIndentOf(source, returnType);
+  const indent = ownsLine ? `${subjectIndent}${INDENT_STEP}` : subjectIndent;
   const body = joinSegmentBody(
     comments.map((comment) => ({
-      text: textOf(source, comment.range),
+      text: realignComment(textOf(source, comment.range), indent),
       breakAfter: true,
     })),
     indent,
   );
-  const rest = trailingText.slice(spacing.length);
   const separator = LINE_TERMINATOR.test(rest.charAt(0))
     ? ''
-    : requiresLineBreakAfter(comments[comments.length - 1])
+    : requiresLineBreakAfter(last)
     ? `\n${indent}`
     : ' ';
   return {
     range: [arrow.range[1], arrow.range[1] + spacing.length],
-    text: ` ${body}${separator}`,
+    text: `${ownsLine ? `\n${indent}` : ' '}${body}${separator}`,
   };
 }
 
@@ -176,7 +306,7 @@ export function planArrowAnnotationEdits(
     { range: gap, text: inline.length === 0 ? ' ' : ` ${inline.join(' ')} ` },
   ];
   if (hoisted.length > 0) {
-    edits.push(hoistPastArrow(source, arrow, hoisted));
+    edits.push(hoistPastArrow(source, arrow, hoisted, returnType));
   }
   return edits;
 }
