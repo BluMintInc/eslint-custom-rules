@@ -8,6 +8,7 @@ import {
   importInsertionAnchor,
   insertAtImportAnchor,
 } from '../utils/importInsertion';
+import { declaresResourceHandleResult } from '../utils/resourceHandleType';
 
 type MessageIds = 'requireMemoize';
 type Options = [];
@@ -762,6 +763,18 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
         // fixer would convert a repeatable side effect into a
         // once-per-instance one, unattended, under `--fix`.
         if (declaresVoidResult(node.value.returnType)) {
+          return;
+        }
+
+        // A method that hands back a resource handle — an object carrying the
+        // closure that releases what the call allocated — must run per caller.
+        // Cached, N concurrent callers share one lease and one release closure:
+        // the first `release()` frees it while the remaining N-1 keep running
+        // against budget nobody accounts for, and a caller's `finally` block
+        // disposes another caller's resource. The failure is silent and
+        // load-dependent, so the fixer would apply it unattended under `--fix`
+        // and a passing concurrency suite would keep passing.
+        if (declaresResourceHandleResult(node.value.returnType)) {
           return;
         }
 

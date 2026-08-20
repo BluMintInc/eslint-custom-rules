@@ -742,6 +742,287 @@ ruleTesterTs.run('enforce-memoize-async', enforceMemoizeAsync, {
         }
       `,
     },
+    {
+      code: `
+    class Pool {
+      public async acquire(size: number): Promise<{ id: string; release: () => void }> {
+        const id = await this.claim(size);
+        return { id, release: () => this.free(id) };
+      }
+    }
+  `,
+      // Expected: no error. A method returning a handle with a release/dispose
+      // member allocates a caller-owned resource; memoizing it hands the same
+      // handle — and the same release closure — to every later caller.
+      options: [],
+    },
+    // A method that hands back a resource handle allocates it for THIS caller,
+    // so a cache hands the second caller the first caller's live lease and the
+    // release closure bound to it (issue #2068). The signal is structural: an
+    // object result carrying a function-valued member.
+    {
+      name: 'an inline handle with a release closure is exempt',
+      code: `
+        class Pool {
+          public async acquire(size: number): Promise<{ id: string; release: () => void }> {
+            const id = await this.claim(size);
+            return { id, release: () => this.free(id) };
+          }
+        }
+      `,
+    },
+    {
+      name: 'an inline handle with a dispose closure is exempt',
+      code: `
+        class Sessions {
+          public async open(): Promise<{ socket: Socket; dispose: () => Promise<void> }> {
+            const socket = await connect();
+            return { socket, dispose: async () => socket.end() };
+          }
+        }
+      `,
+    },
+    {
+      // The member the disposal protocol is named by is a computed symbol key,
+      // which a name allowlist could not read at all.
+      name: 'a handle whose disposer is [Symbol.dispose] is exempt',
+      code: `
+        class Files {
+          public async openTemp(): Promise<{ path: string; [Symbol.dispose](): void }> {
+            return makeTempFile();
+          }
+        }
+      `,
+    },
+    {
+      name: 'a readonly handle is exempt',
+      code: `
+        class Governor {
+          public async admit(spec: JobSpec): Promise<{ readonly reservedMb: number; readonly release: () => void }> {
+            return this.store.claim(spec);
+          }
+        }
+      `,
+    },
+    {
+      name: 'a method-signature disposer is exempt',
+      code: `
+        class Leases {
+          public async take(): Promise<{ id: string; release(): void }> {
+            return this.store.take();
+          }
+        }
+      `,
+    },
+    {
+      name: 'an optional disposer is exempt',
+      code: `
+        class Leases {
+          public async take(): Promise<{ id: string; release?: () => void }> {
+            return this.store.take();
+          }
+        }
+      `,
+    },
+    {
+      // A disposer typed `(() => void) | undefined` still hands the caller a
+      // closure on the arm that has one, and that caller is the one harmed.
+      name: 'a disposer hidden in a union is exempt',
+      code: `
+        class Leases {
+          public async take(): Promise<{ id: string; release: (() => void) | undefined }> {
+            return this.store.take();
+          }
+        }
+      `,
+    },
+    {
+      name: 'a handle reached through a same-file type alias is exempt',
+      code: `
+        type Admission = { readonly reservedMb: number; readonly release: () => void };
+
+        export class ExecutionGovernor {
+          public async admit(spec: JobSpec): Promise<Admission> {
+            while (!this.hasRoom(spec)) {
+              await delay(750);
+            }
+            const release = this.store.claim(spec);
+            return { reservedMb: spec.reservedMb, release };
+          }
+        }
+      `,
+    },
+    {
+      // Declarations hoist, so an alias written below the class it serves is in
+      // scope for it.
+      name: 'a handle alias declared after the class is exempt',
+      code: `
+        export class ExecutionGovernor {
+          public async admit(spec: JobSpec): Promise<Admission> {
+            return this.store.claim(spec);
+          }
+        }
+
+        type Admission = { reservedMb: number; release: () => void };
+      `,
+    },
+    {
+      name: 'a handle reached through a same-file interface is exempt',
+      code: `
+        export interface Subscription {
+          topic: string;
+          unsubscribe: () => void;
+        }
+
+        export class Bus {
+          public async subscribe(topic: string): Promise<Subscription> {
+            return this.transport.subscribe(topic);
+          }
+        }
+      `,
+    },
+    {
+      // The alias is declared beside the class inside the factory, so only a
+      // scope-chain walk — not a scan of `Program.body` — finds it.
+      name: 'a handle alias declared in an enclosing function body is exempt',
+      code: `
+        export function makeGovernor() {
+          type Admission = { reservedMb: number; release: () => void };
+
+          class Governor {
+            public async admit(spec: JobSpec): Promise<Admission> {
+              return this.store.claim(spec);
+            }
+          }
+
+          return new Governor();
+        }
+      `,
+    },
+    {
+      name: 'a handle whose disposer is typed by a same-file function alias is exempt',
+      code: `
+        type Release = () => void;
+        type Admission = { reservedMb: number; release: Release };
+
+        export class Governor {
+          public async admit(spec: JobSpec): Promise<Admission> {
+            return this.store.claim(spec);
+          }
+        }
+      `,
+    },
+    {
+      name: 'a nested handle is exempt',
+      code: `
+        class Governor {
+          public async admit(spec: JobSpec): Promise<{ spec: JobSpec; admission: { release: () => void } }> {
+            return this.store.claim(spec);
+          }
+        }
+      `,
+    },
+    {
+      name: 'a nullable handle result is exempt',
+      code: `
+        class Pool {
+          public async tryAcquire(size: number): Promise<{ id: string; release: () => void } | null> {
+            return this.store.tryClaim(size);
+          }
+        }
+      `,
+    },
+    {
+      name: 'a handle mixed into an intersection is exempt',
+      code: `
+        type Metered = { reservedMb: number };
+
+        class Governor {
+          public async admit(spec: JobSpec): Promise<Metered & { release: () => void }> {
+            return this.store.claim(spec);
+          }
+        }
+      `,
+    },
+    {
+      // A batch of leases is a batch of caller-owned leases: the container the
+      // method hands them back in does not change who owns them.
+      name: 'an array of handles is exempt',
+      code: `
+        type Admission = { reservedMb: number; release: () => void };
+
+        class Governor {
+          public async admitAll(specs: JobSpec[]): Promise<Admission[]> {
+            return specs.map((spec) => this.store.claim(spec));
+          }
+        }
+      `,
+    },
+    {
+      name: 'a readonly array of handles is exempt',
+      code: `
+        type Admission = { reservedMb: number; release: () => void };
+
+        class Governor {
+          public async admitAll(specs: JobSpec[]): Promise<readonly Admission[]> {
+            return specs.map((spec) => this.store.claim(spec));
+          }
+        }
+      `,
+    },
+    {
+      name: 'a Readonly-wrapped handle is exempt',
+      code: `
+        type Admission = { reservedMb: number; release: () => void };
+
+        class Governor {
+          public async admit(spec: JobSpec): Promise<Readonly<Admission>> {
+            return this.store.claim(spec);
+          }
+        }
+      `,
+    },
+    {
+      name: 'a handle alias that chains through another alias is exempt',
+      code: `
+        type Lease = { id: string; release: () => void };
+        type Admission = Lease;
+
+        class Governor {
+          public async admit(spec: JobSpec): Promise<Admission> {
+            return this.store.claim(spec);
+          }
+        }
+      `,
+    },
+    {
+      name: 'a zero-parameter handle factory is exempt',
+      code: `
+        class Locks {
+          public async acquire(): Promise<{ token: string; release: () => Promise<void> }> {
+            return this.store.lock();
+          }
+        }
+      `,
+    },
+    {
+      // The carve-out drops the method entirely, so a class of only handle
+      // factories must not gain `import { Memoize }` either.
+      name: 'a class of only handle factories pulls in no import',
+      code: `
+        type Admission = { reservedMb: number; release: () => void };
+
+        export class Governor {
+          public async admit(spec: JobSpec): Promise<Admission> {
+            return this.store.claim(spec);
+          }
+
+          public async admitDefault(): Promise<Admission> {
+            return this.store.claim(DEFAULT_SPEC);
+          }
+        }
+      `,
+    },
   ],
   invalid: [
     // Missing decorator on async method with no parameters
@@ -2101,6 +2382,357 @@ ruleTesterTs.run('enforce-memoize-async', enforceMemoizeAsync, {
           public async loadConfig() {
             return this.api.getConfig();
           }
+        }
+      `,
+    },
+    // The handle carve-out (issue #2068) keys on an object result carrying a
+    // callable. A result that carries none is ordinary data, and caching it is
+    // exactly what this rule is for.
+    {
+      name: 'a plain data object result still reports',
+      code: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class Repo {
+          public async load(id: string): Promise<{ id: string; name: string }> {
+            return this.api.get(id);
+          }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class Repo {
+          @Memoize()
+          public async load(id: string): Promise<{ id: string; name: string }> {
+            return this.api.get(id);
+          }
+        }
+      `,
+    },
+    {
+      name: 'a primitive result still reports',
+      code: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class Repo {
+          public async name(id: string): Promise<string> {
+            return this.api.name(id);
+          }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class Repo {
+          @Memoize()
+          public async name(id: string): Promise<string> {
+            return this.api.name(id);
+          }
+        }
+      `,
+    },
+    {
+      name: 'a nested plain object result still reports',
+      code: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class Repo {
+          public async load(id: string): Promise<{ id: string; meta: { count: number } }> {
+            return this.api.get(id);
+          }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class Repo {
+          @Memoize()
+          public async load(id: string): Promise<{ id: string; meta: { count: number } }> {
+            return this.api.get(id);
+          }
+        }
+      `,
+    },
+    {
+      name: 'an alias resolving to a plain object still reports',
+      code: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        type Row = { id: string; count: number };
+        class Repo {
+          public async load(id: string): Promise<Row> {
+            return this.api.get(id);
+          }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        type Row = { id: string; count: number };
+        class Repo {
+          @Memoize()
+          public async load(id: string): Promise<Row> {
+            return this.api.get(id);
+          }
+        }
+      `,
+    },
+    {
+      name: 'an interface resolving to a plain object still reports',
+      code: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        interface Row {
+          id: string;
+          count: number;
+        }
+        class Repo {
+          public async load(id: string): Promise<Row> {
+            return this.api.get(id);
+          }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        interface Row {
+          id: string;
+          count: number;
+        }
+        class Repo {
+          @Memoize()
+          public async load(id: string): Promise<Row> {
+            return this.api.get(id);
+          }
+        }
+      `,
+    },
+    {
+      // The recursion guard has to terminate on a self-referential alias, and
+      // a self-referential alias of plain data is still plain data.
+      name: 'a self-referential plain alias terminates and still reports',
+      code: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        type Node = { id: string; next: Node };
+        class Repo {
+          public async head(): Promise<Node> {
+            return this.api.head();
+          }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        type Node = { id: string; next: Node };
+        class Repo {
+          @Memoize()
+          public async head(): Promise<Node> {
+            return this.api.head();
+          }
+        }
+      `,
+    },
+    {
+      // The closure is the whole result, with no resource paired to it whose
+      // accounting a shared reference corrupts — the shape a compiled formatter
+      // or a prepared query is returned in, which is worth computing once.
+      name: 'a bare callable result still reports',
+      code: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class Templates {
+          public async compile(name: string): Promise<() => string> {
+            return compileTemplate(name);
+          }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class Templates {
+          @Memoize()
+          public async compile(name: string): Promise<() => string> {
+            return compileTemplate(name);
+          }
+        }
+      `,
+    },
+    {
+      // A lookup table of handlers is not a lease: a second caller shares it
+      // without losing anything the first one owned.
+      name: 'an index signature of callables still reports',
+      code: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class Handlers {
+          public async load(): Promise<{ [event: string]: () => void }> {
+            return this.registry.all();
+          }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class Handlers {
+          @Memoize()
+          public async load(): Promise<{ [event: string]: () => void }> {
+            return this.registry.all();
+          }
+        }
+      `,
+    },
+    {
+      // A getter signature is a property access wearing a parameter list, so
+      // the object it belongs to carries no callable member.
+      name: 'a getter signature member still reports',
+      code: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class Repo {
+          public async load(id: string): Promise<{ get name(): string }> {
+            return this.api.get(id);
+          }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class Repo {
+          @Memoize()
+          public async load(id: string): Promise<{ get name(): string }> {
+            return this.api.get(id);
+          }
+        }
+      `,
+    },
+    {
+      // `Function` is a type REFERENCE that resolves nowhere in the file, not a
+      // written function type, so it declares no callable this rule can read.
+      name: 'a member typed as bare Function still reports',
+      code: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class Repo {
+          public async load(id: string): Promise<{ id: string; release: Function }> {
+            return this.api.get(id);
+          }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class Repo {
+          @Memoize()
+          public async load(id: string): Promise<{ id: string; release: Function }> {
+            return this.api.get(id);
+          }
+        }
+      `,
+    },
+    {
+      // A two-argument container describes a registry the method looked handles
+      // up in rather than a handle the call allocated, so it is not entered.
+      name: 'a map keyed to handles still reports',
+      code: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        type Admission = { reservedMb: number; release: () => void };
+        class Governor {
+          public async all(): Promise<Map<string, Admission>> {
+            return this.store.all();
+          }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        type Admission = { reservedMb: number; release: () => void };
+        class Governor {
+          @Memoize()
+          public async all(): Promise<Map<string, Admission>> {
+            return this.store.all();
+          }
+        }
+      `,
+    },
+    {
+      // Annotation-driven, as every other carve-out in this rule is: a body
+      // that happens to build a handle declares no intent to honour, and this
+      // rule reads no type information.
+      name: 'an unannotated handle factory still reports',
+      code: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class Pool {
+          public async acquire(size: number) {
+            const id = await this.claim(size);
+            return { id, release: () => this.free(id) };
+          }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class Pool {
+          @Memoize()
+          public async acquire(size: number) {
+            const id = await this.claim(size);
+            return { id, release: () => this.free(id) };
+          }
+        }
+      `,
+    },
+    {
+      // Resolution is lexical and same-file, so a handle type imported from
+      // elsewhere is unreadable here and the method keeps reporting. The
+      // author's remedy is the disable directive, which is deliberate and
+      // reviewable.
+      name: 'a handle type imported from another module still reports',
+      code: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        import { Admission } from './types';
+        class Governor {
+          public async admit(spec: JobSpec): Promise<Admission> {
+            return this.store.claim(spec);
+          }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        import { Admission } from './types';
+        class Governor {
+          @Memoize()
+          public async admit(spec: JobSpec): Promise<Admission> {
+            return this.store.claim(spec);
+          }
+        }
+      `,
+    },
+    {
+      // A same-named alias declared in the nearer scope is the one the
+      // annotation denotes, so an outer handle alias must not answer for it.
+      name: 'an inner plain alias shadowing an outer handle alias still reports',
+      code: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        type Admission = { reservedMb: number; release: () => void };
+        export function makeGovernor() {
+          type Admission = { reservedMb: number };
+
+          class Governor {
+            public async admit(spec: JobSpec): Promise<Admission> {
+              return this.store.reserve(spec);
+            }
+          }
+
+          return new Governor();
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        type Admission = { reservedMb: number; release: () => void };
+        export function makeGovernor() {
+          type Admission = { reservedMb: number };
+
+          class Governor {
+            @Memoize()
+            public async admit(spec: JobSpec): Promise<Admission> {
+              return this.store.reserve(spec);
+            }
+          }
+
+          return new Governor();
         }
       `,
     },
