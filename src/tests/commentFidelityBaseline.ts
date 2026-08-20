@@ -117,6 +117,29 @@ export const COMMENT_FIDELITY_BASELINE: Record<string, string> = {
   // entry because it is measured by the same gate, on the same span.
   'prefer-map-over-conditional-dispatch :: TRANSFORM_DIVERGED':
     'declines a layout widening — the shortened-statement join, or the now-redundant parentheses — when a comment sits in the span it would absorb; Prettier makes the same layout choice, and every shape keeps both the conversion and the comment (#2060, #2063)',
+  // DECLINE, plus one arm where the marker is genuinely not neutral. Two
+  // classes reproduce here, both verified against the rule's own fixtures with
+  // the probe replayed by hand (#2065):
+  //
+  //   1. DECLINE (12 of the 14 cases). The disable comment the fixer inserts
+  //      needs a line of its own, which forces Prettier to print the hook call
+  //      one argument per line, so the fix re-emits every byte between the
+  //      parentheses. A comment written BETWEEN the arguments belongs to no
+  //      argument and would be dropped by that re-emission, so the rule refuses
+  //      the rewrite: the marker variants leave the source byte-identical and
+  //      keep their report. Same shape and same remedy as
+  //      `memo-compare-deeply-complex-props` above.
+  //   2. NON-NEUTRAL MARKER (2 cases). Two fixtures already carry an
+  //      `// eslint-disable-next-line react-hooks/exhaustive-deps` on the line
+  //      above the hook call. A `-next-line` directive targets the line that
+  //      FOLLOWS it, so inserting any comment between the directive and the
+  //      call retargets the directive at the marker — ESLint's own semantics,
+  //      not this rule's reading of them. The dependency array is then no
+  //      longer suppressed, and the rule correctly writes a fresh disable where
+  //      the base output needed none. Both outputs keep the marker; nothing is
+  //      consumed.
+  'enforce-stable-hash-spread-props :: TRANSFORM_DIVERGED':
+    'declines the argument-list re-emission when a comment sits between the arguments (output byte-identical, report stands); and a marker inserted between an existing exhaustive-deps disable and its hook retargets that directive, so a fresh one is legitimately emitted (#2065)',
   // FORMATTING. The divergence is line wrapping and trailing commas only.
   // Verified by formatting both outputs with agora's pinned prettier (2.8.8,
   // not this repo's 2.7.1) and comparing code tokens: all cases converge. agora

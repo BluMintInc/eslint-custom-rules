@@ -17,7 +17,9 @@ This rule looks for rest props extracted in function components and used directl
 
 - Wrapping the dependency with `stableHash(...)`.
 - Adding `import { stableHash } from 'functions/src/util/hash/stableHash';` if it is missing.
-- Inserting `// eslint-disable-next-line react-hooks/exhaustive-deps` immediately before the dependency array when needed to avoid secondary violations from `react-hooks/exhaustive-deps`.
+- Inserting `// eslint-disable-next-line react-hooks/exhaustive-deps` on the line above the dependency array when needed to avoid secondary violations from `react-hooks/exhaustive-deps`.
+
+That comment needs a line of its own, which forces Prettier to print the hook call with one argument per line, so the fix re-emits the whole argument list in that shape. A call whose argument list cannot be reproduced faithfully is reported without a fix rather than rewritten: a comment written between the arguments would be deleted by the re-emission, a call nested inside another expression does not indent against the line it starts on, and an argument broken across lines because it did not fit the room it had may not stay broken once the expansion changes that room.
 
 Rest objects that are already hashed (e.g., `stableHash(restProps)`) or memoized with a stable dependency helper (e.g., `useDeepCompareMemo`) are ignored.
 
@@ -50,11 +52,13 @@ const MyComponent = ({ someProp, ...typographyProps }: Props) => {
 import { stableHash } from 'functions/src/util/hash/stableHash';
 
 const MyComponent = ({ someProp, ...typographyProps }: Props) => {
-  useEffect(() => {
-    console.log('typographyProps changed!');
-  },
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  [stableHash(typographyProps)]);
+  useEffect(
+    () => {
+      console.log('typographyProps changed!');
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [stableHash(typographyProps)],
+  );
 
   return <Typography {...typographyProps}>Hello</Typography>;
 };

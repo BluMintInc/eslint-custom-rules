@@ -1,4 +1,10 @@
-import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
+import {
+  AST_NODE_TYPES,
+  AST_TOKEN_TYPES,
+  ASTUtils,
+  TSESLint,
+  TSESTree,
+} from '@typescript-eslint/utils';
 import { ASTHelpers } from '../utils/ASTHelpers';
 import { createRule } from '../utils/createRule';
 import { createSuppressionChecker } from '../utils/disableDirectives';
@@ -272,6 +278,380 @@ function getIndentBeforeNode(
   return match ? match[0] : '';
 }
 
+const EXHAUSTIVE_DEPS_DISABLE =
+  '// eslint-disable-next-line react-hooks/exhaustive-deps';
+
+/**
+ * One level of indentation, spelled because the fixer prints an argument list
+ * rather than nudging the existing one. Two spaces is prettier's `tabWidth`
+ * default and this repo's and its consumers' setting; a tab-indented region is
+ * declined below instead of being indented with a mixture of the two.
+ */
+const INDENT_STEP = '  ';
+
+/**
+ * Wrappers that sit between a call and its statement without changing where
+ * prettier indents the call's arguments.
+ */
+const TRANSPARENT_PARENTS = new Set<AST_NODE_TYPES>([
+  AST_NODE_TYPES.AwaitExpression,
+  AST_NODE_TYPES.ChainExpression,
+  AST_NODE_TYPES.TSAsExpression,
+  AST_NODE_TYPES.TSNonNullExpression,
+]);
+
+type ExpansionAnchor = {
+  /** The statement whose indentation the expanded list is measured against. */
+  statement: TSESTree.Node;
+  /**
+   * Whether the call is the concise body of an arrow, which prettier prints on
+   * its own line one step past the statement once the argument list breaks.
+   */
+  followsArrow: boolean;
+};
+
+/**
+ * Where an expanded argument list is measured from, or null where that cannot
+ * be resolved.
+ *
+ * Giving an argument a leading own-line comment forces prettier to print one
+ * argument per line — the decision is the comment's, not the line width's —
+ * indented one step past the enclosing statement, with the closing paren back
+ * at the statement's indentation. That holds while the call is the whole of a
+ * statement. A call nested inside another expression sits in a group prettier
+ * may break as well, and its arguments then indent against that break rather
+ * than against the line the call starts on, so those positions are declined
+ * rather than guessed at.
+ *
+ * A concise arrow body is the one nested position with a settled answer, and it
+ * has to be handled rather than declined because it is the same call spelled
+ * another way: `() => useCallback(…)` and `() => { return useCallback(…); }`
+ * are one function, and a fixer that remedies only one of them reports a
+ * violation it will not fix. Measured at the repo's prettier settings, the
+ * break lands after the final `=>` with the call one step past the statement,
+ * whatever the length of the arrow chain ahead of it.
+ */
+function expandedArgumentAnchor(
+  node: TSESTree.CallExpression,
+): ExpansionAnchor | null {
+  const skipTransparent = (from: TSESTree.Node): TSESTree.Node => {
+    let current = from;
+    while (current.parent && TRANSPARENT_PARENTS.has(current.parent.type)) {
+      current = current.parent;
+    }
+    return current;
+  };
+
+  let current = skipTransparent(node);
+  let followsArrow = false;
+  while (
+    current.parent?.type === AST_NODE_TYPES.ArrowFunctionExpression &&
+    current.parent.body === current
+  ) {
+    followsArrow = true;
+    current = skipTransparent(current.parent);
+  }
+
+  const parent = current.parent;
+  if (!parent) {
+    return null;
+  }
+
+  if (
+    parent.type === AST_NODE_TYPES.ExpressionStatement ||
+    parent.type === AST_NODE_TYPES.ReturnStatement
+  ) {
+    return { statement: parent, followsArrow };
+  }
+
+  // A second declarator is a break of its own, which moves the indentation the
+  // argument list is measured from off the declaration's line.
+  if (
+    parent.type === AST_NODE_TYPES.VariableDeclarator &&
+    parent.parent?.type === AST_NODE_TYPES.VariableDeclaration &&
+    parent.parent.declarations.length === 1
+  ) {
+    return { statement: parent.parent, followsArrow };
+  }
+
+  if (
+    parent.type === AST_NODE_TYPES.AssignmentExpression &&
+    parent.parent?.type === AST_NODE_TYPES.ExpressionStatement
+  ) {
+    return { statement: parent.parent, followsArrow };
+  }
+
+  return null;
+}
+
+/**
+ * Source lines whose leading whitespace belongs to a string's value rather than
+ * to the file's indentation. Re-indenting one of them would change what the
+ * program prints, and prettier leaves them alone for the same reason.
+ */
+function stringContinuationLines(
+  sourceCode: TSESLint.SourceCode,
+  node: TSESTree.Node,
+): Set<number> {
+  const lines = new Set<number>();
+  for (const token of sourceCode.getTokens(node)) {
+    if (
+      token.type !== AST_TOKEN_TYPES.String &&
+      token.type !== AST_TOKEN_TYPES.Template
+    ) {
+      continue;
+    }
+    for (
+      let line = token.loc.start.line + 1;
+      line <= token.loc.end.line;
+      line += 1
+    ) {
+      lines.add(line);
+    }
+  }
+  return lines;
+}
+
+/**
+ * Moves a span of source text by `shift` columns, leaving its first line alone
+ * because that line's indentation is written by the caller.
+ *
+ * Returns null when a line carries a tab, since a shift expressed in spaces
+ * cannot preserve a tab-indented line's column.
+ */
+function shiftIndentation(
+  text: string,
+  shift: number,
+  firstLine: number,
+  protectedLines: ReadonlySet<number>,
+): string | null {
+  if (shift === 0) {
+    return text;
+  }
+
+  const shifted: string[] = [];
+  const lines = text.split('\n');
+  for (const [index, line] of lines.entries()) {
+    // A blank line gets no indentation: padding one is exactly the trailing
+    // whitespace this fixer exists to stop emitting.
+    if (index === 0 || protectedLines.has(firstLine + index) || !line.trim()) {
+      shifted.push(line);
+      continue;
+    }
+    if (line.startsWith('\t')) {
+      return null;
+    }
+    shifted.push(
+      shift > 0
+        ? `${' '.repeat(shift)}${line}`
+        : line.slice(Math.min(-shift, line.length - line.trimStart().length)),
+    );
+  }
+  return shifted.join('\n');
+}
+
+/**
+ * Whether an argument that spans several lines keeps the layout prettier gave
+ * it once the expansion moves it to `argumentIndent`.
+ *
+ * Prettier breaks an argument for one of two reasons: the construct forces it,
+ * or it did not fit the room it had. Only the first survives the move, because
+ * the expansion hands every argument a different amount of room — an argument
+ * broken purely for width may fit on one line where it lands, and prettier would
+ * join it back up over text this fixer had copied verbatim.
+ *
+ * Two cases qualify. An argument already sitting alone at the target indent has
+ * lost no room at all. And a function with a non-empty block body is the shape
+ * prettier never prints on one line, whatever room it is given, provided
+ * everything ahead of the body already fits on one line.
+ */
+function keepsItsLayoutWhenMoved(
+  sourceCode: TSESLint.SourceCode,
+  argument: TSESTree.Node,
+  argumentIndent: string,
+  currentIndent: string,
+): boolean {
+  if (argument.loc.start.line === argument.loc.end.line) {
+    return true;
+  }
+
+  if (
+    currentIndent === argumentIndent &&
+    argument.loc.start.column === currentIndent.length
+  ) {
+    return true;
+  }
+
+  if (
+    argument.type !== AST_NODE_TYPES.ArrowFunctionExpression &&
+    argument.type !== AST_NODE_TYPES.FunctionExpression
+  ) {
+    return false;
+  }
+
+  const { body } = argument;
+  return (
+    body.type === AST_NODE_TYPES.BlockStatement &&
+    body.loc.start.line === argument.loc.start.line &&
+    (body.body.length > 0 || sourceCode.getCommentsInside(body).length > 0)
+  );
+}
+
+type TextRewrite = { range: TSESTree.Range; text: string };
+
+/**
+ * The text of `node` with the rewrites that fall inside it already applied, so
+ * that a caller re-emitting the surrounding span carries them along instead of
+ * overlapping them with a second edit.
+ */
+function applyRewrites(
+  sourceCode: TSESLint.SourceCode,
+  node: TSESTree.Node,
+  rewrites: readonly TextRewrite[],
+): string {
+  const inside = rewrites
+    .filter(
+      ({ range }) => range[0] >= node.range[0] && range[1] <= node.range[1],
+    )
+    .sort((left, right) => left.range[0] - right.range[0]);
+
+  let cursor = node.range[0];
+  let text = '';
+  for (const rewrite of inside) {
+    text += sourceCode.text.slice(cursor, rewrite.range[0]) + rewrite.text;
+    cursor = rewrite.range[1];
+  }
+  return text + sourceCode.text.slice(cursor, node.range[1]);
+}
+
+/**
+ * Re-emits a call's argument list in the one-argument-per-line shape prettier
+ * prints once an argument carries an own-line comment, with `comment` placed
+ * above `commentTarget` and `rewrites` folded into the arguments they fall in.
+ *
+ * Inserting the comment in place instead leaves two marks of the pre-image on
+ * the file: the separator whitespace the inserted line break strands at the end
+ * of the preceding line, and the arguments' pre-expansion indentation. Owning
+ * the whole span between the parentheses settles both, at the cost of having to
+ * reproduce every argument — so a span this cannot reproduce faithfully returns
+ * null and the caller declines the fix outright.
+ */
+function expandArgumentList(
+  sourceCode: TSESLint.SourceCode,
+  node: TSESTree.CallExpression,
+  commentTarget: TSESTree.Node,
+  comment: string,
+  rewrites: readonly TextRewrite[],
+): TextRewrite[] | null {
+  const anchor = expandedArgumentAnchor(node);
+  if (!anchor) {
+    return null;
+  }
+
+  const { statement, followsArrow } = anchor;
+  const lineStart = sourceCode.getIndexFromLoc({
+    line: statement.loc.start.line,
+    column: 0,
+  });
+  const statementIndent = sourceCode.text.slice(lineStart, statement.range[0]);
+  if (!/^ *$/.test(statementIndent)) {
+    return null;
+  }
+
+  const edits: TextRewrite[] = [];
+  let callIndent = statementIndent;
+
+  if (followsArrow) {
+    // The arrow chain ahead of the body stays on the statement's line, so the
+    // break the expansion forces is the one after the final `=>` — and the
+    // whitespace across that break is the fixer's to write, for the same reason
+    // the separator between two arguments is.
+    const arrowToken = sourceCode.getTokenBefore(node);
+    if (
+      !arrowToken ||
+      arrowToken.value !== '=>' ||
+      arrowToken.loc.end.line !== statement.loc.start.line ||
+      !/^\s*$/.test(sourceCode.text.slice(arrowToken.range[1], node.range[0]))
+    ) {
+      return null;
+    }
+    callIndent = `${statementIndent}${INDENT_STEP}`;
+    edits.push({
+      range: [arrowToken.range[1], node.range[0]],
+      text: `\n${callIndent}`,
+    });
+  } else if (statement.loc.start.line !== node.loc.start.line) {
+    return null;
+  }
+
+  const openParen = sourceCode.getTokenAfter(
+    node.typeParameters ?? node.callee,
+    {
+      filter: ASTUtils.isOpeningParenToken,
+    },
+  );
+  const closeParen = sourceCode.getLastToken(node);
+  if (!openParen || !closeParen || !ASTUtils.isClosingParenToken(closeParen)) {
+    return null;
+  }
+
+  // A comment written between the arguments belongs to no argument, so the
+  // re-emitted list has nowhere to carry it and would delete it. Declining is
+  // the deliberate choice here: a formatting correction does not justify
+  // dropping a comment (#1877).
+  const strandsAComment = sourceCode
+    .getCommentsInside(node)
+    .some(
+      (existing) =>
+        existing.range[0] >= openParen.range[1] &&
+        existing.range[1] <= closeParen.range[0] &&
+        !node.arguments.some(
+          (argument) =>
+            existing.range[0] >= argument.range[0] &&
+            existing.range[1] <= argument.range[1],
+        ),
+    );
+  if (strandsAComment) {
+    return null;
+  }
+
+  const argumentIndent = `${callIndent}${INDENT_STEP}`;
+  const protectedLines = stringContinuationLines(sourceCode, node);
+  const parts: string[] = [];
+
+  for (const argument of node.arguments) {
+    const base = getIndentBeforeNode(sourceCode, argument);
+    if (!/^ *$/.test(base)) {
+      return null;
+    }
+    if (!keepsItsLayoutWhenMoved(sourceCode, argument, argumentIndent, base)) {
+      return null;
+    }
+    // Wrapping an element in a call adds no line terminator, so each line of
+    // the rewritten text still stands for the source line at the same offset
+    // and the protected-line numbering survives the rewrite.
+    const shifted = shiftIndentation(
+      applyRewrites(sourceCode, argument, rewrites),
+      argumentIndent.length - base.length,
+      argument.loc.start.line,
+      protectedLines,
+    );
+    if (shifted === null) {
+      return null;
+    }
+    if (argument === commentTarget) {
+      parts.push(`${argumentIndent}${comment}\n`);
+    }
+    parts.push(`${argumentIndent}${shifted},\n`);
+  }
+
+  edits.push({
+    range: [openParen.range[1], closeParen.range[0]],
+    text: `\n${parts.join('')}${callIndent}`,
+  });
+  return edits;
+}
+
 function hasExhaustiveDepsDisable(
   sourceCode: TSESLint.SourceCode,
   callNode: TSESTree.CallExpression,
@@ -496,16 +876,54 @@ export const enforceStableHashSpreadProps = createRule<Options, MessageIds>({
               return null;
             }
 
-            const fixes: TSESLint.RuleFix[] = [];
             const seen = new Set<number>();
+            const rewrites: TextRewrite[] = [];
             for (const { node: targetNode } of offendingElements) {
               if (seen.has(targetNode.range[0])) continue;
               seen.add(targetNode.range[0]);
               const original = sourceCode.getText(targetNode);
-              fixes.push(
-                fixer.replaceText(targetNode, `${hashIdentifier}(${original})`),
-              );
+              rewrites.push({
+                range: targetNode.range,
+                text: `${hashIdentifier}(${original})`,
+              });
             }
+
+            // The disable comment and the `stableHash(...)` wraps are one edit
+            // whenever the comment lands: an own-line comment forces prettier
+            // to expand the argument list, and the expansion re-emits the very
+            // span the wraps live in, which ESLint rejects as two overlapping
+            // fixes. Where the comment is already there, the wraps stand alone
+            // and the call's layout is left as the author wrote it.
+            const needsDisable = !hasExhaustiveDepsDisable(
+              sourceCode,
+              node,
+              depsArg,
+            );
+            const expansion = needsDisable
+              ? expandArgumentList(
+                  sourceCode,
+                  node,
+                  depsArg,
+                  EXHAUSTIVE_DEPS_DISABLE,
+                  rewrites,
+                )
+              : null;
+
+            // A call whose argument list cannot be reproduced still needs the
+            // disable, since the wrapped dependency is what makes
+            // `react-hooks/exhaustive-deps` fire. Emitting the wraps without it
+            // would trade this rule's report for that one, so the whole fix is
+            // declined and the report stands for the author. The decision is
+            // taken before any fix is scheduled: `importPlanned` claims the
+            // file's import for this violation, and a later `return null` would
+            // strand the surviving violations with no import at all.
+            if (needsDisable && !expansion) {
+              return null;
+            }
+
+            const fixes: TSESLint.RuleFix[] = (expansion ?? rewrites).map(
+              ({ range, text }) => fixer.replaceTextRange(range, text),
+            );
 
             if (
               !isStableHashImported(sourceCode, hashImport) &&
@@ -541,19 +959,6 @@ export const enforceStableHashSpreadProps = createRule<Options, MessageIds>({
                 );
               }
               importPlanned = true;
-            }
-
-            if (!hasExhaustiveDepsDisable(sourceCode, node, depsArg)) {
-              const indent = getIndentBeforeNode(sourceCode, depsArg);
-              const tokenBefore = sourceCode.getTokenBefore(depsArg, {
-                includeComments: true,
-              });
-              const needsLeadingNewline =
-                tokenBefore?.loc.end.line === depsArg.loc.start.line;
-              const commentText = needsLeadingNewline
-                ? `\n${indent}// eslint-disable-next-line react-hooks/exhaustive-deps\n${indent}`
-                : `// eslint-disable-next-line react-hooks/exhaustive-deps\n${indent}`;
-              fixes.push(fixer.insertTextBefore(depsArg, commentText));
             }
 
             return fixes;
