@@ -3410,7 +3410,9 @@ export const buildUser = (id: string) => ({ id, seed: SEED });
    */ 1;
 `,
     },
-    // A line comment ends its line, so it displaces the arrow the same way.
+    // A line comment ends its line, so it displaces the arrow the same way —
+    // and the body it displaces goes where a broken arrow body goes, one step
+    // past the declaration (#2069).
     {
       code: `export const buildCount = () // doc
 : number => 1;
@@ -3421,8 +3423,30 @@ export const buildUser = (id: string) => ({ id, seed: SEED });
           data: { functionKind: 'arrow function "buildCount"' },
         },
       ],
-      output: `export const buildCount = () => // doc
-1;
+      output: `export const buildCount = () =>
+  // doc
+  1;
+`,
+    },
+    // Issue #2069, the reported reproduction: the pre-image is what Prettier
+    // writes for a line comment in the gap, so this is reachable from formatted
+    // source rather than only from hand-written text. The issue spells the
+    // binding `f`, which `enforce-verb-noun-naming` reports — a scaffolding
+    // name that would join that pair's contradiction baseline without saying
+    // anything about this fixer (#2066).
+    {
+      code: `export const readNote = (): // note
+number => 1;
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "readNote"' },
+        },
+      ],
+      output: `export const readNote = () =>
+  // note
+  1;
 `,
     },
     // A comment on one line trips no restricted production, so it stays exactly
@@ -3753,8 +3777,8 @@ export const buildUser = (id: string) => ({ id, seed: SEED });
 }
 `,
     },
-    // A comment that fits on one line is not what the break is for, so neither a
-    // line comment nor a one-line block comment gains one.
+    // The depth a carried line comment lands at is measured from the
+    // declaration it belongs to, exactly as it is for a block comment (#2069).
     {
       code: `function buildFormatter() {
   const tallyCount = () // doc
@@ -3769,12 +3793,34 @@ export const buildUser = (id: string) => ({ id, seed: SEED });
         },
       ],
       output: `function buildFormatter() {
-  const tallyCount = () => // doc
-  1;
+  const tallyCount = () =>
+    // doc
+    1;
   return tallyCount;
 }
 `,
     },
+    {
+      code: `export class Registry {
+  readCount = (): // doc
+  number => 1;
+}
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function' },
+        },
+      ],
+      output: `export class Registry {
+  readCount = () =>
+    // doc
+    1;
+}
+`,
+    },
+    // A one-line block comment is not what the break is for, so it gains
+    // neither a line of its own nor the step that goes with one.
     {
       code: `function buildFormatter() {
   const sumCount = (): /* doc */ number => 1;
@@ -3794,7 +3840,11 @@ export const buildUser = (id: string) => ({ id, seed: SEED });
 `,
     },
     // A block body is reached the same way: `=>` binds it whether or not a line
-    // terminator precedes it.
+    // terminator precedes it. The `hugsArrow` carve-out cannot save the arrow's
+    // line here — a line comment would swallow the `{` — so the comment takes
+    // the same step in a broken body takes. Prettier re-indents the block's
+    // interior to match; those columns belong to the body, which is outside the
+    // gap this planner rewrites, so they are left as the source wrote them.
     {
       code: `export const readRow = () // doc
 : number => {
@@ -3807,10 +3857,102 @@ export const buildUser = (id: string) => ({ id, seed: SEED });
           data: { functionKind: 'arrow function "readRow"' },
         },
       ],
-      output: `export const readRow = () => // doc
-{
+      output: `export const readRow = () =>
+  // doc
+  {
   return 1;
 };
+`,
+    },
+    // A bracketed body that a line comment forces off the arrow's line goes one
+    // step in with the comment, which is where Prettier puts it. Only the run
+    // that breaks by the fixer's own choice — a multi-line block comment — is
+    // held back by `hugsArrow`, as the two fixtures above this one pin.
+    {
+      code: `export const listRows = (): // doc
+number[] => [1, 2];
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "listRows"' },
+        },
+      ],
+      output: `export const listRows = () =>
+  // doc
+  [1, 2];
+`,
+    },
+    {
+      code: `export const buildEntry = (): // doc
+{ a: number } => ({ a: 1 });
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildEntry"' },
+        },
+      ],
+      output: `export const buildEntry = () =>
+  // doc
+  ({ a: 1 });
+`,
+    },
+    // A body the source already put on its own line keeps that line and the
+    // indentation the source gave it: the fixer emits no separator of its own,
+    // only the comment ahead of it.
+    {
+      code: `export const readTotal = (): // doc
+number =>
+  computeTotalScoreForEveryone(alphaValue, betaValue, gammaValue, deltaValue);
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "readTotal"' },
+        },
+      ],
+      output: `export const readTotal = () =>
+  // doc
+  computeTotalScoreForEveryone(alphaValue, betaValue, gammaValue, deltaValue);
+`,
+    },
+    // The separator keys on the LAST comment of the run, so a run ending in a
+    // line comment breaks whatever precedes it — and a run ending in a block
+    // comment still breaks, because an earlier line comment already ended a
+    // line.
+    {
+      code: `export const renderCell = (): /* a */ // b
+number => 1;
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "renderCell"' },
+        },
+      ],
+      output: `export const renderCell = () /* a */ =>
+  // b
+  1;
+`,
+    },
+    {
+      code: `export const scanRow = (): // a
+/**
+ * b
+ */ number => 1;
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "scanRow"' },
+        },
+      ],
+      output: `export const scanRow = () =>
+  // a
+  /**
+   * b
+   */ 1;
 `,
     },
     // A directive that shares the gap with nothing else keeps both its line and
@@ -5748,21 +5890,65 @@ describe('no-explicit-return-type --fix emits code Prettier leaves alone', () =>
       'one-line block comment, which stays in the gap',
       `export const f = (): /* doc */ number => 1;\n`,
     ],
+    // Issue #2069: a `//` comment breaks its line without its own text holding
+    // a terminator, so every arm above is repeated for one. Prettier writes a
+    // line comment in the gap by leaving it on the parameter list's line and
+    // pushing the annotation down, which is the pre-image shape below.
+    ['line comment', `export const f = (): // doc\nnumber => 1;\n`],
+    [
+      'line comment, nested declaration',
+      `function outer() {\n  const f = (): // doc\n  number => 1;\n  return f;\n}\n`,
+    ],
+    [
+      'line comment, class property',
+      `export class C {\n  m = (): // doc\n  number => 1;\n}\n`,
+    ],
+    [
+      'line comment, object property',
+      `const repo = {\n  read: (): // doc\n  number => 1,\n};\n`,
+    ],
+    [
+      'line comment, body already on its own line',
+      `export const f = (): // doc\nnumber =>\n  computeTotalScoreForEveryone(alphaValue, betaValue, gammaValue, delta);\n`,
+    ],
+    [
+      'line comment, array-literal body',
+      `export const f = (): // doc\nnumber[] => [1, 2];\n`,
+    ],
+    [
+      'line comment, object-literal body',
+      `export const f = (): // doc\n{ a: number } => ({ a: 1 });\n`,
+    ],
+    [
+      'line comment last of two',
+      `export const f = (): /* a */ // doc\nnumber => 1;\n`,
+    ],
+    [
+      'line comment, block body',
+      `export const f = (): // doc\nnumber => {\n  return 1;\n};\n`,
+    ],
   ];
 
   /**
-   * The one residue this planner cannot clear, named rather than dropped from
-   * the sample so the arm keeps being exercised.
+   * The residues this planner cannot clear, named rather than dropped from the
+   * sample so each arm keeps being exercised. Each is pinned below to the one
+   * difference named here, so a drift in where the comment lands fails this
+   * guard regardless.
    *
    * Prettier requires the parentheses around a conditional arrow body while the
    * arrow is flat and strips them once the line breaks, so breaking the line
    * leaves behind a pair the SOURCE wrote. Taking them out means editing the
    * body, which is outside the gap this planner rewrites — and a fixer reaching
-   * across a body to adjust parentheses is a hazard of its own (#2063). The
-   * carve-out is held to the parentheses alone below: with them gone the output
-   * settles, so a drift in where the comment lands fails here regardless.
+   * across a body to adjust parentheses is a hazard of its own (#2063).
+   *
+   * A line comment ahead of a block body forces the break that `hugsArrow`
+   * exists to avoid — the comment would otherwise swallow the `{` — and
+   * Prettier re-indents the whole block behind it. Those interior columns are
+   * the body's own text, equally outside the gap (#2069). What the planner does
+   * own, the line the comment lands on, matches Prettier exactly.
    */
   const PAREN_RESIDUE = 'conditional body';
+  const BLOCK_INDENT_RESIDUE = 'line comment, block body';
 
   const settled = SOURCES.filter(([, source]) => isFixedPoint(source));
 
@@ -5770,23 +5956,40 @@ describe('no-explicit-return-type --fix emits code Prettier leaves alone', () =>
     // Equality, not a floor: a source edited into a shape Prettier rewrites is
     // one this guard stops asking about, which reads exactly like a pass.
     expect(settled.length).toBe(SOURCES.length);
-    expect(settled.length).toBeGreaterThanOrEqual(14);
+    expect(settled.length).toBeGreaterThanOrEqual(23);
 
-    const unstable = settled
-      .map(([label, source]) => {
+    const outputs = new Map(
+      settled.map(([label, source]) => {
         const { output, fixed } = linter.verifyAndFix(source, CONFIG, FILENAME);
         // A source the rule declines proves nothing about what it writes.
         expect(fixed).toBe(true);
         expect(output).toContain('doc');
-        return { label, output };
-      })
-      .filter((entry) => !isFixedPoint(entry.output));
+        return [label, output] as const;
+      }),
+    );
 
-    expect(unstable.map((entry) => entry.label)).toEqual([PAREN_RESIDUE]);
-    // What is left of the residue is the parenthesis pair and nothing else.
+    const unstable = [...outputs]
+      .filter(([, output]) => !isFixedPoint(output))
+      .map(([label]) => label);
+
+    // In SOURCES order, which is why the line-comment arms sit last.
+    expect(unstable).toEqual([PAREN_RESIDUE, BLOCK_INDENT_RESIDUE]);
+    // What is left of each residue is the one thing named above and nothing
+    // else: the parenthesis pair, and the block interior's own columns.
     expect(
       isFixedPoint(
-        unstable[0].output.replace('(flag ? 1 : 2)', 'flag ? 1 : 2'),
+        (outputs.get(PAREN_RESIDUE) as string).replace(
+          '(flag ? 1 : 2)',
+          'flag ? 1 : 2',
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      isFixedPoint(
+        (outputs.get(BLOCK_INDENT_RESIDUE) as string).replace(
+          '{\n  return 1;\n};\n',
+          '{\n    return 1;\n  };\n',
+        ),
       ),
     ).toBe(true);
   });
@@ -5799,6 +6002,10 @@ describe('no-explicit-return-type --fix emits code Prettier leaves alone', () =>
     expect(
       isFixedPoint(`export const f = () =>\n  /**\n   * doc\n   */ 1;\n`),
     ).toBe(true);
+    // The same plant for the line-comment arm (#2069): the break was already
+    // written, at the declaration's own column rather than a step past it.
+    expect(isFixedPoint(`export const f = () => // doc\n1;\n`)).toBe(false);
+    expect(isFixedPoint(`export const f = () =>\n  // doc\n  1;\n`)).toBe(true);
     // And the break is not free: applied where the body hugs the arrow,
     // Prettier takes it straight back out.
     expect(

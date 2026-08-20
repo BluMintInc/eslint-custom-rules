@@ -290,12 +290,28 @@ export const buildCount = () /**
  */: number => 1;
 
 // after --fix
-export const buildCount = () => /**
- * the count
- */ 1;
+export const buildCount = () =>
+  /**
+   * the count
+   */ 1;
 ```
 
 Hoisting it above the enclosing line instead would anchor an insertion at a column zero that can sit inside a template literal or JSX text, where the comment becomes content rather than code.
+
+The carried comment lands where Prettier puts an arrow body it has had to break — one step past the declaration the arrow belongs to — and a `*`-gutter block comment is re-aligned to the column it arrives at. A `//` comment is carried the same way: its own text cannot hold a line terminator, but it ends its line just as hard, so it gets the same line of its own at the same depth.
+
+```ts
+// before
+export const buildCount = (): // the count
+number => 1;
+
+// after --fix
+export const buildCount = () =>
+  // the count
+  1;
+```
+
+A body that opens a bracket — an object, an array, a block, JSX — keeps the arrow's line when the only thing breaking it is a multi-line block comment, since such a body closes back at the declaration's own depth and gains nothing from the break; the comment is spliced in after the `=>` and re-aligned to the declaration's column instead. A line comment leaves it no such choice — it would swallow the opening bracket — so the body goes onto the next line with the comment.
 
 A comment that fits on one line trips no restricted production and is left exactly where it was written (`() /* doc */: number => 1` → `() /* doc */ => 1`), and a function declaration, method or function expression ends its parameter list at a body rather than an arrow, so its comments never move.
 
