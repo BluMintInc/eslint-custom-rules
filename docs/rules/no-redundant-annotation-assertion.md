@@ -86,12 +86,26 @@ const getUser = () /**
  */: User => fetchUser() as User;
 
 // After: the comment is carried past the arrow, character for character
-const getUser = () => /**
- * why this exists
- */ fetchUser() as User;
+const getUser = () =>
+  /**
+   * why this exists
+   */ fetchUser() as User;
 ```
 
-Three things bound that rewrite:
+Four things bound that rewrite:
+
+- **The comment lands at the depth an arrow body is written at**, one step past the declaration the arrow belongs to, which is where Prettier puts a body it has had to break. A `*`-gutter block comment is re-aligned to the column it arrives at. A `//` comment is carried the same way — its own text cannot hold a line terminator, but it ends its line just as hard:
+
+```ts
+// Before
+const getUser = (): // why this exists
+User => fetchUser() as User;
+
+// After
+const getUser = () =>
+  // why this exists
+  fetchUser() as User;
+```
 
 - **A comment that trips no restricted production is not moved.** A single-line block comment stays exactly where it was written (`const getUser = () /* doc */ => …`); relocating comments gratuitously is its own regression.
 - **A positional directive in the gap withholds the fix.** Rewriting the gap collapses the lines it spanned, which would retarget an `eslint-disable-next-line` or a `@ts-expect-error` written there. The report ships without a fixer instead.

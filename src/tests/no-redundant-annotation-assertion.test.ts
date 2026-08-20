@@ -1595,6 +1595,10 @@ const getUser = () /* doc */ => fetchUser() as User;
 `,
       },
       {
+        // Issue #2069: a line comment ends its line without its own text
+        // holding a terminator, so the body it displaces goes exactly where a
+        // broken arrow body goes — one step past the declaration, which is what
+        // Prettier writes.
         name: 'a line comment ahead of the annotation is carried past the arrow',
         code: `
 type User = { id: string };
@@ -1606,8 +1610,96 @@ const getUser = () // doc
         output: `
 type User = { id: string };
 declare function fetchUser(): User;
-const getUser = () => // doc
-fetchUser() as User;
+const getUser = () =>
+  // doc
+  fetchUser() as User;
+`,
+      },
+      {
+        // The shape Prettier itself writes for a line comment in the gap, so
+        // this arm is reachable from formatted source.
+        name: 'a line comment inside the annotation is carried to the body depth',
+        code: `
+type User = { id: string };
+declare function fetchUser(): User;
+const getUser = (): // why this exists
+User => fetchUser() as User;
+`,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+type User = { id: string };
+declare function fetchUser(): User;
+const getUser = () =>
+  // why this exists
+  fetchUser() as User;
+`,
+      },
+      {
+        name: 'a nested declaration carries its line comment to its own depth',
+        code: `
+type User = { id: string };
+declare function fetchUser(): User;
+function outer() {
+  const getUser = (): // doc
+  User => fetchUser() as User;
+  return getUser;
+}
+`,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+type User = { id: string };
+declare function fetchUser(): User;
+function outer() {
+  const getUser = () =>
+    // doc
+    fetchUser() as User;
+  return getUser;
+}
+`,
+      },
+      {
+        // The separator keys on the LAST comment of the run: the one-line block
+        // stays in the gap and the line comment behind it still breaks.
+        name: 'a run ending in a line comment breaks behind the comment that stayed',
+        code: `
+type User = { id: string };
+declare function fetchUser(): User;
+const getUser = (): /* a */ // doc
+User => fetchUser() as User;
+`,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+type User = { id: string };
+declare function fetchUser(): User;
+const getUser = () /* a */ =>
+  // doc
+  fetchUser() as User;
+`,
+      },
+      {
+        // A line comment ahead of a block body forces the break the bracketed
+        // body would otherwise avoid — it would swallow the `{` — so the
+        // comment takes the step a broken body takes. Prettier re-indents the
+        // block behind it; those columns are the body's own text, outside the
+        // gap this planner rewrites.
+        name: 'a line comment ahead of a block body still takes the body depth',
+        code: `
+type User = { id: string };
+declare function fetchUser(): User;
+const getUser = (): // doc
+User => {
+  return fetchUser() as User;
+};
+`,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+type User = { id: string };
+declare function fetchUser(): User;
+const getUser = () =>
+  // doc
+  {
+  return fetchUser() as User;
+};
 `,
       },
       {
