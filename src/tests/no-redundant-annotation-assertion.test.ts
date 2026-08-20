@@ -2,7 +2,8 @@ import { Linter, Rule } from 'eslint';
 import * as tsParser from '@typescript-eslint/parser';
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import * as ts from 'typescript';
-import { ruleTesterTs } from '../utils/ruleTester';
+import * as prettier from 'prettier';
+import { ruleTesterJsx, ruleTesterTs } from '../utils/ruleTester';
 import { noRedundantAnnotationAssertion } from '../rules/no-redundant-annotation-assertion';
 
 ruleTesterTs.run(
@@ -2512,3 +2513,163 @@ function g() {
     ],
   },
 );
+
+/**
+ * Issue #2070 reaches this rule through the shared arrow-gap planner, which
+ * carries a stranded comment into the parentheses a JSX arrow body takes. The
+ * branch is measured UNREACHABLE from here, and the reason is structural rather
+ * than incidental: this rule fires only where the arrow returns an assertion, so
+ * the body it hands the planner is a `TSAsExpression` or the `BlockStatement`
+ * holding one — never a `JSXElement` or `JSXFragment`. An arrow returning bare
+ * JSX has no assertion to be redundant with, so it draws no report at all.
+ *
+ * What the JSX VALUE must not do is drag the body with it. The fixtures below
+ * pin that: the carried comment keeps the position every non-JSX body gets, and
+ * the emitted text is a Prettier fixed point at the repo's settings.
+ */
+ruleTesterJsx.run(
+  'no-redundant-annotation-assertion',
+  noRedundantAnnotationAssertion,
+  {
+    valid: [
+      // No assertion, so nothing is redundant — the shape that would otherwise
+      // be the JSX branch's own subject draws no report here.
+      `export const Row = (): JSX.Element => <div />;\n`,
+    ],
+    invalid: [
+      // The assertion's operand is JSX; the arrow's body is the assertion. The
+      // comment takes the line one step past the declaration, with no
+      // parentheses added around a body that is not itself JSX.
+      {
+        code: `export const Row = (): /**
+ * doc
+ */ JSX.Element => (<div />) as JSX.Element;
+`,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `export const Row = () =>
+  /**
+   * doc
+   */ (<div />) as JSX.Element;
+`,
+      },
+      // The same through a block body, which the hugging carve-out answers for:
+      // the brace closes back at the declaration's depth, so it keeps the
+      // arrow's own line whatever the returned value is.
+      {
+        code: `export const Row = (): /**
+ * doc
+ */ JSX.Element => {
+  return (<div />) as JSX.Element;
+};
+`,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `export const Row = () => /**
+ * doc
+ */ {
+  return (<div />) as JSX.Element;
+};
+`,
+      },
+      // A line comment reaches the same place, without consulting the carve-out
+      // at all: it ends its line by itself.
+      {
+        code: `export const Row = (): // doc
+JSX.Element => (<div />) as JSX.Element;
+`,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `export const Row = () =>
+  // doc
+  (<div />) as JSX.Element;
+`,
+      },
+    ],
+  },
+);
+
+/**
+ * The shared planner's output for this rule, judged by Prettier (#2070). The
+ * JSX branch changed where a comment lands for one body shape; this asks
+ * whether that move leaked into the shapes this rule actually produces.
+ */
+describe('no-redundant-annotation-assertion --fix leaves JSX values alone', () => {
+  const RULE_ID = '@blumintinc/blumint/no-redundant-annotation-assertion';
+  const FILENAME = 'x.tsx';
+
+  const linter = new Linter();
+  linter.defineParser('@typescript-eslint/parser', tsParser as never);
+  linter.defineRule(
+    RULE_ID,
+    noRedundantAnnotationAssertion as unknown as Rule.RuleModule,
+  );
+
+  const CONFIG: Linter.Config = {
+    parser: '@typescript-eslint/parser',
+    parserOptions: {
+      ecmaVersion: 2022 as const,
+      sourceType: 'module' as const,
+      ecmaFeatures: { jsx: true },
+    },
+    rules: { [RULE_ID]: 'error' },
+  };
+
+  const PRETTIER_OPTIONS: prettier.Options = {
+    parser: 'typescript',
+    printWidth: 80,
+    tabWidth: 2,
+    singleQuote: true,
+    semi: true,
+    trailingComma: 'all',
+  };
+
+  const isFixedPoint = (text: string): boolean =>
+    prettier.format(text, PRETTIER_OPTIONS) === text;
+
+  const DOC = ['/**', ' * doc', ' */'].join('\n');
+
+  const SOURCES: [string, string][] = [
+    [
+      'asserted JSX value',
+      `export const Row = (): ${DOC} JSX.Element => (<div />) as JSX.Element;\n`,
+    ],
+    [
+      'line comment, asserted JSX value',
+      `export const Row = (): // doc\nJSX.Element => (<div />) as JSX.Element;\n`,
+    ],
+    [
+      'non-JSX value, for contrast',
+      `type El = { k: string };\ndeclare function make(): El;\nexport const Row = (): ${DOC} El => make() as El;\n`,
+    ],
+  ];
+
+  const settled = SOURCES.filter(([, source]) => isFixedPoint(source));
+
+  it('rewrites Prettier-clean input into Prettier-clean output', () => {
+    expect(settled.length).toBe(SOURCES.length);
+
+    for (const [, source] of settled) {
+      const { output, fixed } = linter.verifyAndFix(source, CONFIG, FILENAME);
+      expect(fixed).toBe(true);
+      expect(output).toContain('doc');
+      // No pair is added around the assertion: the parentheses in the output
+      // are the ones the source wrote around the JSX operand.
+      expect(output).not.toMatch(/=> \(\n/);
+      expect(isFixedPoint(output)).toBe(true);
+    }
+  });
+
+  it('is not vacuous: the JSX branch would be visible here if it fired', () => {
+    // The shape the JSX branch emits, planted. Prettier rejects it for an
+    // assertion body, so a leak into this rule could not pass the check above.
+    expect(
+      isFixedPoint(
+        `export const Row = () => (\n  /**\n   * doc\n   */ (<div />) as JSX.Element\n);\n`,
+      ),
+    ).toBe(false);
+    // And the position this rule does emit is one Prettier keeps.
+    expect(
+      isFixedPoint(
+        `export const Row = () =>\n  /**\n   * doc\n   */ (<div />) as JSX.Element;\n`,
+      ),
+    ).toBe(true);
+  });
+});

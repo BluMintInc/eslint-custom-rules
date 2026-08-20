@@ -7,7 +7,7 @@ import * as ts from 'typescript';
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import * as tsParser from '@typescript-eslint/parser';
 import * as prettier from 'prettier';
-import { ruleTesterTs } from '../utils/ruleTester';
+import { ruleTesterJsx, ruleTesterTs } from '../utils/ruleTester';
 import { noExplicitReturnType } from '../rules/no-explicit-return-type';
 import { preferTypeOverInterface } from '../rules/prefer-type-over-interface';
 import { enforceMemoizeAsync } from '../rules/enforce-memoize-async';
@@ -6902,5 +6902,526 @@ describe('enforce-memoize-async survives no-explicit-return-type --fix', () => {
     // the silence above is the carve-out rather than a dead harness.
     expect(fixed.output).toContain('@Memoize()');
     expect(fixed.output).not.toContain('Promise<{ id: string; name: string }>');
+  });
+});
+
+/**
+ * Issue #2070: JSX is the one arrow body Prettier refuses to leave beside the
+ * `=>` once anything forces the arrow's line open. Every other bracketed body —
+ * an object, an array, a block — closes back at the declaration's depth and so
+ * keeps the arrow's line; JSX instead takes parentheses of its own and drops to
+ * a line inside them. A comment carried past the `=>` therefore has exactly one
+ * home Prettier keeps: immediately ahead of the body, INSIDE those parentheses.
+ *
+ * Both positions the planner used before land outside them — hugging the arrow
+ * for a block comment, a bare line one step in for a line comment — so both were
+ * rewritten by the next `prettier --write` and rejected by `prettier --check`
+ * until then, on arrival in a Prettier-formatted consumer.
+ *
+ * The fixtures use `ruleTesterJsx` because a fixture's extension is a property
+ * of its CODE: a `.ts` path forces `ScriptKind.TS`, under which `ecmaFeatures.jsx`
+ * does not make `<div />` parse at all, and a fatal parse reads exactly like the
+ * rule staying silent.
+ */
+ruleTesterJsx.run('no-explicit-return-type', noExplicitReturnType, {
+  valid: [
+    // An annotation with no comment anywhere near it is not this planner's
+    // business, whatever the body is.
+    `export const Row = () => <div />;\n`,
+  ],
+  invalid: [
+    // Arm A: a multi-line block comment with a single-line JSX body the source
+    // never parenthesized. The parentheses are added, the comment goes one step
+    // past the declaration, and the pair closes back at the declaration's depth.
+    {
+      code: `export const Row = (): /**
+ * doc
+ */ JSX.Element => <div />;
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "Row"' },
+        },
+      ],
+      output: `export const Row = () => (
+  /**
+   * doc
+   */ <div />
+);
+`,
+    },
+    // Arm B: a line comment reaches the same place. It never consults the
+    // hugging carve-out at all — it ends its line outright — yet the bare line
+    // one step in that a non-JSX body gets is still not where Prettier puts a
+    // JSX one.
+    {
+      code: `export const Row = (): // doc
+JSX.Element => <div />;
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "Row"' },
+        },
+      ],
+      output: `export const Row = () => (
+  // doc
+  <div />
+);
+`,
+    },
+    // Arm C: a body the source ALREADY parenthesized. Adding a second pair
+    // emits brackets Prettier immediately strips, so the source's own pair is
+    // reused and the comment is realigned to the body's column inside it.
+    {
+      code: `export const Row = (): /**
+ * doc
+ */ JSX.Element => (
+  <div className="a">
+    <span />
+  </div>
+);
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "Row"' },
+        },
+      ],
+      output: `export const Row = () => (
+  /**
+   * doc
+   */ <div className="a">
+    <span />
+  </div>
+);
+`,
+    },
+    // Arm D: a fragment is JSX for this purpose too — the body type differs, the
+    // layout Prettier gives it does not.
+    {
+      code: `export const Row = (): /**
+ * doc
+ */ JSX.Element => <></>;
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "Row"' },
+        },
+      ],
+      output: `export const Row = () => (
+  /**
+   * doc
+   */ <></>
+);
+`,
+    },
+    // A line comment inside a pair the source wrote combines both halves: the
+    // pair is reused, and the comment still closes its own line ahead of the
+    // body rather than sitting beside it.
+    {
+      code: `export const Row = (): // doc
+JSX.Element => (
+  <div className="a">
+    <span />
+  </div>
+);
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "Row"' },
+        },
+      ],
+      output: `export const Row = () => (
+  // doc
+  <div className="a">
+    <span />
+  </div>
+);
+`,
+    },
+    // A parenthesized fragment, which reaches the reuse branch through a
+    // different body type than the element above it.
+    {
+      code: `export const Row = (): /**
+ * doc
+ */ JSX.Element => (
+  <>
+    <span />
+  </>
+);
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "Row"' },
+        },
+      ],
+      output: `export const Row = () => (
+  /**
+   * doc
+   */ <>
+    <span />
+  </>
+);
+`,
+    },
+    // The depth is measured from the declaration the arrow belongs to, so a
+    // nested one carries the whole pair — comment, body and closing paren — one
+    // step further in.
+    {
+      code: `export function buildRow() {
+  const Row = (): /**
+   * doc
+   */ JSX.Element => <div />;
+  return Row;
+}
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "Row"' },
+        },
+      ],
+      output: `export function buildRow() {
+  const Row = () => (
+    /**
+     * doc
+     */ <div />
+  );
+  return Row;
+}
+`,
+    },
+    // An object property value, where the closing paren has to land back at the
+    // property's column for the trailing comma to read correctly.
+    {
+      code: `export const map = {
+  Row: (): /**
+   * doc
+   */ JSX.Element => <div />,
+};
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function' },
+        },
+      ],
+      output: `export const map = {
+  Row: () => (
+    /**
+     * doc
+     */ <div />
+  ),
+};
+`,
+    },
+    // A run of two comments takes one line each inside the added pair, and only
+    // the last one decides whether the body joins it or drops a line.
+    {
+      code: `export const Row = (): /**
+ * one
+ */ /**
+ * two
+ */ JSX.Element => <div />;
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "Row"' },
+        },
+      ],
+      output: `export const Row = () => (
+  /**
+   * one
+   */
+  /**
+   * two
+   */ <div />
+);
+`,
+    },
+    // The carve-out's near side: a one-line block comment breaches no restricted
+    // production, so the plain deletion still applies and no parentheses appear.
+    // Without this the JSX branch would read as "any comment near a JSX arrow
+    // gets parentheses", which is a much larger claim than the one measured.
+    {
+      code: `export const Row = (): /* doc */ JSX.Element => <div />;
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "Row"' },
+        },
+      ],
+      output: `export const Row = () /* doc */ => <div />;
+`,
+    },
+  ],
+});
+
+/**
+ * The bodies the hugging carve-out still answers for, pinned so the JSX branch
+ * cannot quietly widen into them (#2070). Each closes its bracket back at the
+ * declaration's depth, so it keeps the arrow's own line and gains nothing from
+ * parentheses; a multi-line template is here because its interior columns are
+ * content, and moving its opening quote would move the whole literal.
+ */
+ruleTesterTs.run('no-explicit-return-type', noExplicitReturnType, {
+  valid: [],
+  invalid: [
+    {
+      code: `export const buildEntry = (): /**
+ * doc
+ */ Entry => ({ a: 1 });
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildEntry"' },
+        },
+      ],
+      output: `export const buildEntry = () => /**
+ * doc
+ */ ({ a: 1 });
+`,
+    },
+    {
+      code: `export const listEntries = (): /**
+ * doc
+ */ Entry[] => [1, 2];
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "listEntries"' },
+        },
+      ],
+      output: `export const listEntries = () => /**
+ * doc
+ */ [1, 2];
+`,
+    },
+    {
+      code: `export const readEntry = (): /**
+ * doc
+ */ Entry => {
+  return 1;
+};
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "readEntry"' },
+        },
+      ],
+      output: `export const readEntry = () => /**
+ * doc
+ */ {
+  return 1;
+};
+`,
+    },
+    {
+      code: `export const printEntry = (): /**
+ * doc
+ */ Entry => \`a
+b\`;
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "printEntry"' },
+        },
+      ],
+      output: `export const printEntry = () => /**
+ * doc
+ */ \`a
+b\`;
+`,
+    },
+  ],
+});
+
+/**
+ * Issue #2070, judged by Prettier rather than by a described layout — the same
+ * conditional oracle the non-JSX arms use above, over the shapes a JSX body
+ * takes. Each input has to be a Prettier fixed point before its output is asked
+ * about: a pre-image Prettier would rewrite on its own cannot hold the fixer to
+ * one, and screening on that is also what keeps the multi-line unparenthesized
+ * body out of the sample. Prettier always parenthesizes a JSX arrow body it has
+ * broken, so that shape cannot occur in a Prettier-formatted consumer — and it
+ * is the only arm where added parentheses would also oblige re-indenting the
+ * body's interior, which is text this planner does not own.
+ */
+describe('no-explicit-return-type --fix emits Prettier-clean JSX', () => {
+  const RULE_ID = '@blumintinc/blumint/no-explicit-return-type';
+  const FILENAME = 'x.tsx';
+
+  const linter = new Linter();
+  linter.defineParser('@typescript-eslint/parser', tsParser as never);
+  linter.defineRule(
+    RULE_ID,
+    noExplicitReturnType as unknown as Rule.RuleModule,
+  );
+
+  const CONFIG: Linter.Config = {
+    parser: '@typescript-eslint/parser',
+    parserOptions: {
+      ecmaVersion: 2022 as const,
+      sourceType: 'module' as const,
+      ecmaFeatures: { jsx: true },
+    },
+    rules: { [RULE_ID]: 'error' },
+  };
+
+  const PRETTIER_OPTIONS: prettier.Options = {
+    parser: 'typescript',
+    printWidth: 80,
+    tabWidth: 2,
+    singleQuote: true,
+    semi: true,
+    trailingComma: 'all',
+  };
+
+  const isFixedPoint = (text: string): boolean =>
+    prettier.format(text, PRETTIER_OPTIONS) === text;
+
+  const DOC = ['/**', ' * doc', ' */'].join('\n');
+  const NESTED_DOC = ['/**', '   * doc', '   */'].join('\n');
+  const BROKEN_BODY = '(\n  <div className="a">\n    <span />\n  </div>\n)';
+
+  const SOURCES: [string, string][] = [
+    ['element body', `export const Row = (): ${DOC} JSX.Element => <div />;\n`],
+    ['fragment body', `export const Row = (): ${DOC} JSX.Element => <></>;\n`],
+    [
+      'parenthesized body',
+      `export const Row = (): ${DOC} JSX.Element => ${BROKEN_BODY};\n`,
+    ],
+    [
+      'parenthesized fragment body',
+      `export const Row = (): ${DOC} JSX.Element => (\n  <>\n    <span />\n  </>\n);\n`,
+    ],
+    [
+      'nested declaration',
+      `export function outer() {\n  const Row = (): ${NESTED_DOC} JSX.Element => <div />;\n  return Row;\n}\n`,
+    ],
+    [
+      'object property',
+      `export const map = {\n  Row: (): ${NESTED_DOC} JSX.Element => <div />,\n};\n`,
+    ],
+    [
+      'class property',
+      `export class C {\n  render = (): ${NESTED_DOC} JSX.Element => <div />;\n}\n`,
+    ],
+    [
+      'two comments',
+      `export const Row = (): ${DOC} ${DOC} JSX.Element => <div />;\n`,
+    ],
+    [
+      'line comment',
+      `export const Row = (): // doc\nJSX.Element => <div />;\n`,
+    ],
+    [
+      'line comment, fragment body',
+      `export const Row = (): // doc\nJSX.Element => <></>;\n`,
+    ],
+    [
+      'line comment, parenthesized body',
+      `export const Row = (): // doc\nJSX.Element => ${BROKEN_BODY};\n`,
+    ],
+    [
+      'line comment, nested declaration',
+      `export function outer() {\n  const Row = (): // doc\n  JSX.Element => <div />;\n  return Row;\n}\n`,
+    ],
+  ];
+
+  const settled = SOURCES.filter(([, source]) => isFixedPoint(source));
+
+  it('rewrites Prettier-clean JSX input into Prettier-clean output', () => {
+    // Equality, not a floor: an arm edited into a shape Prettier rewrites is one
+    // this guard stops asking about, which reads exactly like a pass.
+    expect(settled.length).toBe(SOURCES.length);
+    expect(settled.length).toBeGreaterThanOrEqual(12);
+
+    const outputs = new Map(
+      settled.map(([label, source]) => {
+        const { output, fixed } = linter.verifyAndFix(source, CONFIG, FILENAME);
+        // A source the rule declines proves nothing about what it writes.
+        expect(fixed).toBe(true);
+        expect(output).toContain('doc');
+        // The carried comment lands inside parentheses, which is the whole
+        // claim: an output holding the comment but no pair around the body
+        // would be the pre-fix shape passing on the comment check alone.
+        expect(output).toMatch(/=>\s*\(/);
+        return [label, output] as const;
+      }),
+    );
+
+    const unstable = [...outputs]
+      .filter(([, output]) => !isFixedPoint(output))
+      .map(([label]) => label);
+    expect(unstable).toEqual([]);
+
+    // The reuse branch is exercised rather than merely present: the three
+    // already-parenthesized arms must not have gained a second pair.
+    for (const label of [
+      'parenthesized body',
+      'parenthesized fragment body',
+      'line comment, parenthesized body',
+    ]) {
+      expect(outputs.get(label)).not.toContain('=> ((');
+    }
+  });
+
+  it('is not vacuous: the positions this replaced are still rejected', () => {
+    // What the planner emitted before, per arm, planted so a green run means
+    // the fixer moved rather than the oracle going blind.
+    expect(
+      isFixedPoint(`export const Row = () => /**\n * doc\n */ <div />;\n`),
+    ).toBe(false);
+    expect(
+      isFixedPoint(`export const Row = () => /**\n * doc\n */ <></>;\n`),
+    ).toBe(false);
+    expect(
+      isFixedPoint(`export const Row = () =>\n  // doc\n  <div />;\n`),
+    ).toBe(false);
+    expect(
+      isFixedPoint(
+        `export const Row = () => /**\n * doc\n */ (\n  <div className="a">\n    <span />\n  </div>\n);\n`,
+      ),
+    ).toBe(false);
+    // The position the planner picks instead IS one Prettier keeps.
+    expect(
+      isFixedPoint(
+        `export const Row = () => (\n  /**\n   * doc\n   */ <div />\n);\n`,
+      ),
+    ).toBe(true);
+    expect(
+      isFixedPoint(`export const Row = () => (\n  // doc\n  <div />\n);\n`),
+    ).toBe(true);
+    // And reusing the source's pair is load-bearing, not cosmetic: a second
+    // pair is one Prettier takes straight back out.
+    expect(
+      isFixedPoint(
+        `export const Row = () => (\n  (\n    /**\n     * doc\n     */ <div />\n  )\n);\n`,
+      ),
+    ).toBe(false);
+  });
+
+  it('screens candidate arms by pre-image stability', () => {
+    // The multi-line JSX body with no parentheses of its own: the one arm where
+    // added parentheses would also oblige re-indenting the body's interior.
+    // Prettier writes the pair itself, so the shape cannot reach a formatted
+    // consumer — which is why it is excluded by measurement rather than named.
+    const MULTILINE_NO_PARENS = `export const Row = (): ${DOC} JSX.Element => <div className="a">\n  <span />\n</div>;\n`;
+    expect(isFixedPoint(MULTILINE_NO_PARENS)).toBe(false);
+    expect(SOURCES.map(([, source]) => source)).not.toContain(
+      MULTILINE_NO_PARENS,
+    );
   });
 });

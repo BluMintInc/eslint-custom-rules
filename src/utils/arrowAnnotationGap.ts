@@ -159,12 +159,14 @@ function subjectIndentOf(
  * signature on a line of its own, starting with the `=` — which no annotation
  * strip can produce and which anchors the carried comment one step in, exactly
  * where a broken body goes.
+ *
+ * JSX is absent for a stronger reason: it does not merely fail to hug, it takes
+ * parentheses of its own, which {@link carryIntoJsxParens} answers for ahead of
+ * this set being consulted (#2070).
  */
 const HUGGING_BODY_TYPES = new Set<string>([
   AST_NODE_TYPES.ArrayExpression,
   AST_NODE_TYPES.BlockStatement,
-  AST_NODE_TYPES.JSXElement,
-  AST_NODE_TYPES.JSXFragment,
   AST_NODE_TYPES.ObjectExpression,
 ]);
 
@@ -187,6 +189,120 @@ function hugsArrow(
 }
 
 /**
+ * The JSX body an arrow returns, or `null` for every other shape.
+ *
+ * JSX is the one body prettier never leaves bare beside the `=>` once anything
+ * forces the arrow's line open: it wraps the body in parentheses and puts it on
+ * a line of its own. A comment carried past the `=>` therefore has to land
+ * INSIDE those parentheses, since any position outside them is one prettier
+ * rewrites (#2070).
+ */
+function jsxBodyOf(
+  returnType: TSESTree.TSTypeAnnotation,
+): TSESTree.Expression | null {
+  const subject = subjectOf(returnType);
+  if (subject.type !== AST_NODE_TYPES.ArrowFunctionExpression) return null;
+
+  const { body } = subject;
+  return body.type === AST_NODE_TYPES.JSXElement ||
+    body.type === AST_NODE_TYPES.JSXFragment
+    ? body
+    : null;
+}
+
+/**
+ * The parentheses the source already wraps a JSX body in, if it has any: the
+ * token past the `=>` is a `(` that closes before the body begins, so it can
+ * only be a grouping paren — JSX itself opens with `<`.
+ *
+ * Reusing them matters beyond tidiness. Parentheses added around a body that
+ * already has them nest a second pair prettier immediately strips, so the
+ * emitted text would fail `prettier --check` for the shape of its brackets
+ * rather than for where the comment sits.
+ */
+function enclosingParenOf(
+  source: TSESLint.SourceCode,
+  arrow: TSESTree.Token,
+  body: TSESTree.Expression,
+): TSESTree.Token | null {
+  const next = source.getTokenAfter(arrow);
+  return next && next.value === '(' && next.range[1] <= body.range[0]
+    ? next
+    : null;
+}
+
+/** Whether nothing but whitespace precedes `offset` on the line it sits on. */
+function startsItsLine(source: TSESLint.SourceCode, offset: number): boolean {
+  const lineStart = source.text.lastIndexOf('\n', offset - 1) + 1;
+  return source.text.slice(lineStart, offset).trim() === '';
+}
+
+/**
+ * Re-emits `comments` immediately ahead of a JSX body, inside the parentheses
+ * that body takes — reusing the source's own pair where it has one and adding
+ * one where it does not.
+ *
+ * The added pair opens on the arrow's line and closes back at the declaration's
+ * depth, with the comment run one step in; a reused pair leaves the brackets
+ * untouched and realigns the run to the body's own column. Both are the
+ * position prettier prints, measured at top level, inside a function body, as
+ * an object property value and as a call argument (#2070).
+ */
+function carryIntoJsxParens(
+  source: TSESLint.SourceCode,
+  arrow: TSESTree.Token,
+  comments: readonly TSESTree.Comment[],
+  returnType: TSESTree.TSTypeAnnotation,
+  body: TSESTree.Expression,
+): Edit[] {
+  const existingParen = enclosingParenOf(source, arrow, body);
+  const subjectIndent = subjectIndentOf(source, returnType);
+  // A body opening a line of its own already sits at the depth its parentheses
+  // give it, so the carried run joins it there. Anywhere else — an added pair,
+  // or a source pair hugging its body — the run takes the depth prettier gives
+  // a broken arrow body, since the body's line holds text that is not its own.
+  const indent =
+    existingParen && startsItsLine(source, body.range[0])
+      ? indentAt(source, body.range[0])
+      : `${subjectIndent}${INDENT_STEP}`;
+  const run = joinSegmentBody(
+    comments.map((comment) => ({
+      text: realignComment(textOf(source, comment.range), indent),
+      breakAfter: true,
+    })),
+    indent,
+  );
+  const last = comments[comments.length - 1];
+
+  if (existingParen) {
+    // A line comment still closes its own line, so the body drops to the next
+    // one; a block comment leaves the body beside it, where prettier prints it.
+    const separator = requiresLineBreakAfter(last) ? `\n${indent}` : ' ';
+    return [
+      { range: [body.range[0], body.range[0]], text: `${run}${separator}` },
+    ];
+  }
+
+  const trailingText = source.text.slice(arrow.range[1]);
+  const [spacing] = /^[ \t]*/.exec(trailingText) ?? [''];
+  const rest = trailingText.slice(spacing.length);
+  // A body the source already dropped to its own line brings its own break, so
+  // adding one would leave a blank line inside the parentheses.
+  const separator = LINE_TERMINATOR.test(rest.charAt(0))
+    ? ''
+    : requiresLineBreakAfter(last)
+    ? `\n${indent}`
+    : ' ';
+  return [
+    {
+      range: [arrow.range[1], arrow.range[1] + spacing.length],
+      text: ` (\n${indent}${run}${separator}`,
+    },
+    { range: [body.range[1], body.range[1]], text: `\n${subjectIndent})` },
+  ];
+}
+
+/**
  * Re-emits `comments` on the far side of the arrow, where a line terminator is
  * inert, consuming the horizontal whitespace the arrow already had after it so
  * the body keeps a single separator.
@@ -198,13 +314,22 @@ function hugsArrow(
  * annotation position is valid but is not what prettier writes, so it fails
  * `prettier --check` on arrival (#2066). A run that leaves the arrow's line
  * unbroken keeps it, since that is where prettier leaves it.
+ *
+ * A JSX body is answered before any of that: it takes parentheses rather than a
+ * bare line, so neither hugging the arrow nor a plain line one step in is a
+ * position prettier keeps (#2070).
  */
 function hoistPastArrow(
   source: TSESLint.SourceCode,
   arrow: TSESTree.Token,
   comments: readonly TSESTree.Comment[],
   returnType: TSESTree.TSTypeAnnotation,
-): Edit {
+): Edit[] {
+  const jsxBody = jsxBodyOf(returnType);
+  if (jsxBody) {
+    return carryIntoJsxParens(source, arrow, comments, returnType, jsxBody);
+  }
+
   const trailingText = source.text.slice(arrow.range[1]);
   const [spacing] = /^[ \t]*/.exec(trailingText) ?? [''];
   const rest = trailingText.slice(spacing.length);
@@ -244,10 +369,12 @@ function hoistPastArrow(
     : requiresLineBreakAfter(last)
     ? `\n${indent}`
     : ' ';
-  return {
-    range: [arrow.range[1], arrow.range[1] + spacing.length],
-    text: `${ownsLine ? `\n${indent}` : ' '}${body}${separator}`,
-  };
+  return [
+    {
+      range: [arrow.range[1], arrow.range[1] + spacing.length],
+      text: `${ownsLine ? `\n${indent}` : ' '}${body}${separator}`,
+    },
+  ];
 }
 
 /**
@@ -315,7 +442,7 @@ export function planArrowAnnotationEdits(
     { range: gap, text: inline.length === 0 ? ' ' : ` ${inline.join(' ')} ` },
   ];
   if (hoisted.length > 0) {
-    edits.push(hoistPastArrow(source, arrow, hoisted, returnType));
+    edits.push(...hoistPastArrow(source, arrow, hoisted, returnType));
   }
   return edits;
 }
