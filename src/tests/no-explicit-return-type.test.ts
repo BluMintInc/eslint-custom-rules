@@ -10,6 +10,7 @@ import * as prettier from 'prettier';
 import { ruleTesterTs } from '../utils/ruleTester';
 import { noExplicitReturnType } from '../rules/no-explicit-return-type';
 import { preferTypeOverInterface } from '../rules/prefer-type-over-interface';
+import { enforceMemoizeAsync } from '../rules/enforce-memoize-async';
 
 /**
  * Type names the source references but no longer binds.
@@ -1186,13 +1187,19 @@ class E {
     // general: each snippet below compiles without its annotation, so TS7023
     // never applies and the report must stand.
 
-    // Same factory as the valid case, with the self-reference removed
+    // Same factory as the valid case, with the self-reference removed. `orderBy`
+    // is a plain property here rather than the `() => FakeQuery` closure the
+    // paired valid case declares, because a callable member makes the
+    // annotation a resource-handle declaration the #2073 carve-out preserves
+    // for its own reason — this control would then stay green however the
+    // recursion exemption behaved. The handle-shaped spelling is pinned as a
+    // valid case in the resource-handle block at the end of this file.
     {
       code: `
-        type FakeQuery = { orderBy: () => FakeQuery };
+        type FakeQuery = { orderBy: FakeQuery | null };
         declare const fallback: FakeQuery;
         const buildQuery = (p?: string): FakeQuery => {
-          return { orderBy: () => fallback };
+          return { orderBy: fallback };
         };
       `,
       errors: [
@@ -1202,10 +1209,10 @@ class E {
         },
       ],
       output: `
-        type FakeQuery = { orderBy: () => FakeQuery };
+        type FakeQuery = { orderBy: FakeQuery | null };
         declare const fallback: FakeQuery;
         const buildQuery = (p?: string) => {
-          return { orderBy: () => fallback };
+          return { orderBy: fallback };
         };
       `,
     },
@@ -5799,5 +5806,894 @@ describe('no-explicit-return-type --fix emits code Prettier leaves alone', () =>
         `export const f = () =>\n  /**\n   * doc\n   */ ({ a: 1 });\n`,
       ),
     ).toBe(false);
+  });
+});
+
+// A resource-handle return annotation is preserved (issue #2073). The
+// annotation is not a redundant restatement of the result: it is the signal
+// `enforce-memoize-async`'s handle-factory carve-out (#2068) reads before
+// deciding NOT to demand `@Memoize()` on the method. Stripping it re-arms the
+// very autofix that carve-out exists to prevent, inside the same unattended
+// `eslint --fix` run, and the failure it re-arms — N concurrent callers sharing
+// one lease and one release closure — is silent and load-dependent. This is
+// `declaresVoidResult` (#1562) one carve-out later; the predicate itself lives
+// in `src/utils/resourceHandleType.ts` so the two rules cannot drift.
+
+/**
+ * Every return shape `enforce-memoize-async` reads as a resource handle, held
+ * in one array so that the `valid` block below and the composed-fix acceptance
+ * test at the end of this file cannot cover different sets. A shape blessed
+ * here but absent from the composed run is exactly the gap #2073 was: silent in
+ * each rule's own suite, live under `eslint --fix`.
+ */
+const RESOURCE_HANDLE_FIXTURES: readonly string[] = [
+  // The issue's reproduction, verbatim.
+  `
+type Admission = { readonly reservedMb: number; readonly release: () => void };
+export class ExecutionGovernor {
+  public async admit(spec: JobSpec): Promise<Admission> {
+    const release = this.store.claim(spec);
+    return { reservedMb: spec.reservedMb, release };
+  }
+}
+`,
+  // An inline handle, the shape the carve-out reads with no resolution at all.
+  `
+class Pool {
+  public async acquire(size: number): Promise<{ id: string; release: () => void }> {
+    const id = await this.claim(size);
+    return { id, release: () => this.free(id) };
+  }
+}
+`,
+  // The disposer's spelling is not what is read — the shape is. `dispose`,
+  // `close` and `unsubscribe` are the same member as `release`.
+  `
+class Sessions {
+  public async open(): Promise<{ socket: Socket; dispose: () => Promise<void> }> {
+    const socket = await connect();
+    return { socket, dispose: async () => socket.end() };
+  }
+}
+`,
+  `
+class Handles {
+  public async open(): Promise<{ fd: number; close: () => void }> {
+    return openFile();
+  }
+}
+`,
+  // A computed symbol key, which no name allowlist could read.
+  `
+class Files {
+  public async openTemp(): Promise<{ path: string; [Symbol.dispose](): void }> {
+    return makeTempFile();
+  }
+}
+`,
+  // `readonly` on the members, not on the result: the top-level annotation is
+  // a `Promise`, so the readonly-widening carve-out does not answer for this.
+  `
+class Governor {
+  public async admit(spec: JobSpec): Promise<{ readonly reservedMb: number; readonly release: () => void }> {
+    return this.store.claim(spec);
+  }
+}
+`,
+  // A method signature (`release(): void`) is callable by construction.
+  `
+class Leases {
+  public async take(): Promise<{ id: string; release(): void }> {
+    return this.store.take();
+  }
+}
+`,
+  `
+class Leases {
+  public async take(): Promise<{ id: string; release?: () => void }> {
+    return this.store.take();
+  }
+}
+`,
+  // One union arm carrying the closure is enough: the caller handed that arm
+  // is the one harmed.
+  `
+class Leases {
+  public async take(): Promise<{ id: string; release: (() => void) | undefined }> {
+    return this.store.take();
+  }
+}
+`,
+  // A handle type is named far more often than it is written inline.
+  `
+type Admission = { reservedMb: number; release: () => void };
+
+class Governor {
+  public async admit(spec: JobSpec): Promise<Admission> {
+    return this.store.claim(spec);
+  }
+}
+`,
+  // Type declarations hoist, so an alias written below its use is in scope.
+  `
+class Governor {
+  public async admit(spec: JobSpec): Promise<Admission> {
+    return this.store.claim(spec);
+  }
+}
+
+type Admission = { reservedMb: number; release: () => void };
+`,
+  `
+export interface Subscription {
+  topic: string;
+  unsubscribe: () => void;
+}
+
+export class Bus {
+  public async subscribe(topic: string): Promise<Subscription> {
+    return this.transport.subscribe(topic);
+  }
+}
+`,
+  // Declared beside the class inside a factory, so only a scope-chain walk —
+  // not a scan of `Program.body` — finds it.
+  `
+export function makeGovernor() {
+  type Admission = { reservedMb: number; release: () => void };
+
+  class Governor {
+    public async admit(spec: JobSpec): Promise<Admission> {
+      return this.store.claim(spec);
+    }
+  }
+
+  return new Governor();
+}
+`,
+  // The disposer's own type is an alias to a function type.
+  `
+type Release = () => void;
+type Admission = { reservedMb: number; release: Release };
+
+export class Governor {
+  public async admit(spec: JobSpec): Promise<Admission> {
+    return this.store.claim(spec);
+  }
+}
+`,
+  // The handle sits one member deep.
+  `
+class Governor {
+  public async admit(spec: JobSpec): Promise<{ spec: JobSpec; admission: { release: () => void } }> {
+    return this.store.claim(spec);
+  }
+}
+`,
+  `
+class Pool {
+  public async tryAcquire(size: number): Promise<{ id: string; release: () => void } | null> {
+    return this.store.tryClaim(size);
+  }
+}
+`,
+  `
+type Metered = { reservedMb: number };
+
+class Governor {
+  public async admit(spec: JobSpec): Promise<Metered & { release: () => void }> {
+    return this.store.claim(spec);
+  }
+}
+`,
+  // A batch of leases is a batch of caller-owned leases: the container does
+  // not change who owns them. `readonly Admission[]` and `Readonly<Admission>`
+  // sit inside the `Promise`, so the readonly-widening carve-out is not what
+  // answers here either.
+  `
+type Admission = { reservedMb: number; release: () => void };
+
+class Governor {
+  public async admitAll(specs: JobSpec[]): Promise<Admission[]> {
+    return specs.map((spec) => this.store.claim(spec));
+  }
+}
+`,
+  `
+type Admission = { reservedMb: number; release: () => void };
+
+class Governor {
+  public async admitAll(specs: JobSpec[]): Promise<readonly Admission[]> {
+    return specs.map((spec) => this.store.claim(spec));
+  }
+}
+`,
+  `
+type Admission = { reservedMb: number; release: () => void };
+
+class Governor {
+  public async admit(spec: JobSpec): Promise<Readonly<Admission>> {
+    return this.store.claim(spec);
+  }
+}
+`,
+  `
+type Admission = { reservedMb: number; release: () => void };
+
+class Governor {
+  public async admitAll(specs: JobSpec[]): Promise<Array<Admission>> {
+    return specs.map((spec) => this.store.claim(spec));
+  }
+}
+`,
+  `
+type Admission = { reservedMb: number; release: () => void };
+
+class Governor {
+  public async admitAll(specs: JobSpec[]): Promise<ReadonlyArray<Admission>> {
+    return specs.map((spec) => this.store.claim(spec));
+  }
+}
+`,
+  // An alias chain still ends at the object the caller receives.
+  `
+type Lease = { id: string; release: () => void };
+type Admission = Lease;
+
+class Governor {
+  public async admit(spec: JobSpec): Promise<Admission> {
+    return this.store.claim(spec);
+  }
+}
+`,
+  // The exemption is a property of the ANNOTATION, not of the site it is
+  // written at — the same shape as the void and readonly-widening carve-outs,
+  // both of which apply at every implementation site this rule can fix. A
+  // handle is caller-owned however the function that allocates it is spelled.
+  `
+type Admission = { reservedMb: number; release: () => void };
+
+export function admit(spec: JobSpec): Admission {
+  return claim(spec);
+}
+`,
+  `
+export function openHandle(): { fd: number; close: () => void } {
+  return openFile();
+}
+`,
+  `
+export const openHandle = (): { fd: number; close: () => void } => {
+  return openFile();
+};
+`,
+  `
+export const openHandle = function (): { fd: number; close: () => void } {
+  return openFile();
+};
+`,
+  // A synchronous method, which `enforce-memoize-async` never visits: the
+  // annotation still declares a caller-owned result, and a rule reading
+  // annotations should not answer differently because of the `async` keyword
+  // a later refactor adds or removes.
+  `
+class Pool {
+  public acquire(size: number): { id: string; release: () => void } {
+    return this.claim(size);
+  }
+}
+`,
+  // The #1512 recursion repro's own type is handle-shaped, so this spelling is
+  // preserved even where the recursion exemption does not apply — the reason
+  // the paired negative control above uses a plain member instead.
+  `
+type FakeQuery = { orderBy: () => FakeQuery };
+declare const fallback: FakeQuery;
+const buildQuery = (p?: string): FakeQuery => {
+  return { orderBy: () => fallback };
+};
+`,
+  // A zero-parameter factory: the arity that makes a memoized call look most
+  // obviously safe is exactly the one whose every caller shares one lease.
+  `
+class Locks {
+  public async acquire(): Promise<{ token: string; release: () => Promise<void> }> {
+    return this.store.lock();
+  }
+}
+`,
+  // Two handle factories in one class, which is what the owner rule needs in
+  // order to add no `import { Memoize }` either.
+  `
+type Admission = { reservedMb: number; release: () => void };
+
+export class Governor {
+  public async admit(spec: JobSpec): Promise<Admission> {
+    return this.store.claim(spec);
+  }
+
+  public async admitDefault(): Promise<Admission> {
+    return this.store.claim(DEFAULT_SPEC);
+  }
+}
+`,
+];
+
+ruleTesterTs.run('no-explicit-return-type', noExplicitReturnType, {
+  valid: [...RESOURCE_HANDLE_FIXTURES],
+  invalid: [
+    // The carve-out is NOT a blanket exemption for object results. An object
+    // carrying no callable is ordinary data, and its annotation restates what
+    // the body already returns.
+    {
+      code: `
+class Repo {
+  public async load(id: string): Promise<{ id: string; name: string }> {
+    return this.api.get(id);
+  }
+}
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'class method "load"' },
+        },
+      ],
+      output: `
+class Repo {
+  public async load(id: string) {
+    return this.api.get(id);
+  }
+}
+`,
+    },
+    {
+      code: `
+class Repo {
+  public async name(id: string): Promise<string> {
+    return this.api.name(id);
+  }
+}
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'class method "name"' },
+        },
+      ],
+      output: `
+class Repo {
+  public async name(id: string) {
+    return this.api.name(id);
+  }
+}
+`,
+    },
+    {
+      code: `
+class Repo {
+  public async load(id: string): Promise<{ id: string; meta: { count: number } }> {
+    return this.api.get(id);
+  }
+}
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'class method "load"' },
+        },
+      ],
+      output: `
+class Repo {
+  public async load(id: string) {
+    return this.api.get(id);
+  }
+}
+`,
+    },
+    // A bare callable result is not a handle: the closure IS the whole result,
+    // with no resource paired to it whose accounting a shared reference
+    // corrupts. Both rules read it the same way.
+    {
+      code: `
+class Templates {
+  public async compile(name: string): Promise<() => string> {
+    return compileTemplate(name);
+  }
+}
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'class method "compile"' },
+        },
+      ],
+      output: `
+class Templates {
+  public async compile(name: string) {
+    return compileTemplate(name);
+  }
+}
+`,
+    },
+    // A lookup table of handlers is not a lease: an index signature is not a
+    // member either rule counts.
+    {
+      code: `
+class Handlers {
+  public async load(): Promise<{ [event: string]: () => void }> {
+    return this.registry.all();
+  }
+}
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'class method "load"' },
+        },
+      ],
+      output: `
+class Handlers {
+  public async load() {
+    return this.registry.all();
+  }
+}
+`,
+    },
+    // A getter signature is a property access wearing a parameter list.
+    {
+      code: `
+class Repo {
+  public async load(id: string): Promise<{ get name(): string }> {
+    return this.api.get(id);
+  }
+}
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'class method "load"' },
+        },
+      ],
+      output: `
+class Repo {
+  public async load(id: string) {
+    return this.api.get(id);
+  }
+}
+`,
+    },
+    // `Function` is a type REFERENCE resolving nowhere in the file, not a
+    // written function type.
+    {
+      code: `
+class Repo {
+  public async load(id: string): Promise<{ id: string; release: Function }> {
+    return this.api.get(id);
+  }
+}
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'class method "load"' },
+        },
+      ],
+      output: `
+class Repo {
+  public async load(id: string) {
+    return this.api.get(id);
+  }
+}
+`,
+    },
+    // A self-referential alias of plain data terminates and is still plain data.
+    {
+      code: `
+type Chain = { id: string; next: Chain };
+class Repo {
+  public async head(): Promise<Chain> {
+    return this.api.head();
+  }
+}
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'class method "head"' },
+        },
+      ],
+      output: `
+type Chain = { id: string; next: Chain };
+class Repo {
+  public async head() {
+    return this.api.head();
+  }
+}
+`,
+    },
+    {
+      code: `
+export function loadRow(id: string): { id: string; count: number } {
+  return read(id);
+}
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'function "loadRow"' },
+        },
+      ],
+      output: `
+export function loadRow(id: string) {
+  return read(id);
+}
+`,
+    },
+    {
+      code: `
+export const loadRow = (id: string): { id: string; count: number } => {
+  return read(id);
+};
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "loadRow"' },
+        },
+      ],
+      output: `
+export const loadRow = (id: string) => {
+  return read(id);
+};
+`,
+    },
+    // A handle type imported from another module resolves nowhere lexically, so
+    // neither rule can read it: this rule strips and the owner reports, which is
+    // the pair AGREEING. The remedy an author has is the disable directive.
+    {
+      code: `
+import { Admission } from './types';
+class Governor {
+  public async admit(spec: JobSpec): Promise<Admission> {
+    return this.store.claim(spec);
+  }
+}
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'class method "admit"' },
+        },
+      ],
+      output: `
+class Governor {
+  public async admit(spec: JobSpec) {
+    return this.store.claim(spec);
+  }
+}
+`,
+    },
+    // The reports below stand while their fixes do not: stripping the only
+    // reference to a same-file type declaration would orphan it, and this
+    // fixer declines rather than strand it. The report is what this block
+    // pins — the carve-out must not silence a plain data result.
+    {
+      code: `
+type Row = { id: string; count: number };
+class Repo {
+  public async load(id: string): Promise<Row> {
+    return this.api.get(id);
+  }
+}
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'class method "load"' },
+        },
+      ],
+      output: null,
+    },
+    {
+      code: `
+interface Row {
+  id: string;
+  count: number;
+}
+class Repo {
+  public async load(id: string): Promise<Row> {
+    return this.api.get(id);
+  }
+}
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'class method "load"' },
+        },
+      ],
+      output: null,
+    },
+    // A two-argument container describes a registry the method looked handles
+    // up in rather than a handle the call allocated, so it is not entered.
+    {
+      code: `
+type Admission = { reservedMb: number; release: () => void };
+class Governor {
+  public async all(): Promise<Map<string, Admission>> {
+    return this.store.all();
+  }
+}
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'class method "all"' },
+        },
+      ],
+      output: null,
+    },
+    // A same-named alias in the nearer scope is what the annotation denotes, so
+    // an outer handle alias must not answer for it.
+    {
+      code: `
+type Admission = { reservedMb: number; release: () => void };
+export function makeGovernor() {
+  type Admission = { reservedMb: number };
+
+  class Governor {
+    public async admit(spec: JobSpec): Promise<Admission> {
+      return this.store.reserve(spec);
+    }
+  }
+
+  return new Governor();
+}
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'class method "admit"' },
+        },
+      ],
+      output: null,
+    },
+  ],
+});
+
+// The `valid` block above is only worth its length if each case is silent
+// BECAUSE of the handle carve-out. Silence is the pass condition for a valid
+// case, so any unrelated exemption — non-inferability, readonly widening, a
+// parse failure — would let the whole block pass while asserting nothing
+// (`silence-is-pass-oracle-needs-reachability`). Each pair below differs in one
+// token: the member that makes the object a handle. The data twin must report.
+describe('no-explicit-return-type resource-handle carve-out is not vacuous', () => {
+  const RULE_ID = '@blumintinc/blumint/no-explicit-return-type';
+  const FILENAME = 'x.ts';
+
+  const makeLinter = () => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      RULE_ID,
+      noExplicitReturnType as unknown as Rule.RuleModule,
+    );
+    return linter;
+  };
+
+  const CONFIG: Linter.Config = {
+    parser: '@typescript-eslint/parser',
+    parserOptions: { ecmaVersion: 2022, sourceType: 'module' },
+    rules: { [RULE_ID]: 'error' },
+  };
+
+  const PAIRS: readonly {
+    name: string;
+    handle: string;
+    data: string;
+  }[] = [
+    {
+      name: 'an inline handle',
+      handle:
+        'class P { async take(): Promise<{ id: string; release: () => void }> { return t(); } }',
+      data: 'class P { async take(): Promise<{ id: string; release: string }> { return t(); } }',
+    },
+    {
+      name: 'a method-signature disposer',
+      handle:
+        'class P { async take(): Promise<{ id: string; release(): void }> { return t(); } }',
+      data: 'class P { async take(): Promise<{ id: string; release: void }> { return t(); } }',
+    },
+    {
+      name: 'an optional disposer',
+      handle:
+        'class P { async take(): Promise<{ id: string; release?: () => void }> { return t(); } }',
+      data: 'class P { async take(): Promise<{ id: string; release?: string }> { return t(); } }',
+    },
+    {
+      name: 'a disposer in a union arm',
+      handle:
+        'class P { async take(): Promise<{ id: string; release: (() => void) | undefined }> { return t(); } }',
+      data: 'class P { async take(): Promise<{ id: string; release: string | undefined }> { return t(); } }',
+    },
+    {
+      name: 'a symbol-keyed disposer',
+      handle:
+        'class P { async take(): Promise<{ id: string; [Symbol.dispose](): void }> { return t(); } }',
+      data: 'class P { async take(): Promise<{ id: string; [Symbol.toStringTag]: string }> { return t(); } }',
+    },
+    {
+      name: 'a nested handle',
+      handle:
+        'class P { async take(): Promise<{ id: string; inner: { release: () => void } }> { return t(); } }',
+      data: 'class P { async take(): Promise<{ id: string; inner: { count: number } }> { return t(); } }',
+    },
+    {
+      name: 'an intersection arm',
+      handle:
+        'type M = { mb: number };\nclass P { async take(): Promise<M & { release: () => void }> { return t(); } }',
+      data: 'type M = { mb: number };\nclass P { async take(): Promise<M & { id: string }> { return t(); } }',
+    },
+    {
+      name: 'a standalone function',
+      handle:
+        'export function open(): { fd: number; close: () => void } { return o(); }',
+      data: 'export function open(): { fd: number; path: string } { return o(); }',
+    },
+    {
+      name: 'an arrow function',
+      handle:
+        'export const open = (): { fd: number; close: () => void } => o();',
+      data: 'export const open = (): { fd: number; path: string } => o();',
+    },
+    {
+      name: 'a function expression',
+      handle:
+        'export const open = function (): { fd: number; close: () => void } { return o(); };',
+      data: 'export const open = function (): { fd: number; path: string } { return o(); };',
+    },
+    {
+      name: 'a synchronous method',
+      handle:
+        'class P { take(): { id: string; release: () => void } { return t(); } }',
+      data: 'class P { take(): { id: string; owner: string } { return t(); } }',
+    },
+  ];
+
+  it.each(PAIRS.map((pair) => [pair.name, pair.handle] as const))(
+    'preserves the annotation on %s',
+    (_name, handle) => {
+      const linter = makeLinter();
+      expect(linter.verify(handle, CONFIG, FILENAME)).toEqual([]);
+    },
+  );
+
+  it.each(PAIRS.map((pair) => [pair.name, pair.data] as const))(
+    'still strips the data twin of %s',
+    (_name, data) => {
+      const linter = makeLinter();
+      const messages = linter.verify(data, CONFIG, FILENAME);
+      expect(messages.map((message) => message.messageId)).toEqual([
+        'noExplicitReturnTypeInferable',
+      ]);
+    },
+  );
+
+  // The negative control for the carve-out itself, not for the rule: a bare
+  // callable is the whole result rather than a resource paired with the closure
+  // that frees it, so BOTH rules read it as ordinary and this one still strips.
+  // Without it the table above could be satisfied by a predicate that exempts
+  // every annotation mentioning a function type.
+  it('does not exempt a bare callable result', () => {
+    const linter = makeLinter();
+    const messages = linter.verify(
+      'class P { async take(): Promise<() => void> { return t(); } }',
+      CONFIG,
+      FILENAME,
+    );
+    expect(messages.map((message) => message.messageId)).toEqual([
+      'noExplicitReturnTypeInferable',
+    ]);
+  });
+
+  it('carries every shape the owner rule exempts', () => {
+    // A pair silently dropped from the table would otherwise shrink this
+    // control without failing it.
+    expect(PAIRS).toHaveLength(11);
+  });
+});
+
+// The acceptance test for the PAIR. `enforce-memoize-async` decides from the
+// written annotation and `no-explicit-return-type` can delete it, and `--fix`
+// re-lints until the output settles — so the strip and the memoization it
+// re-arms land in one unattended run (#2073). Neither rule's own suite can see
+// this: `RuleTester` applies a single pass of a single rule.
+describe('enforce-memoize-async survives no-explicit-return-type --fix', () => {
+  const STRIPPER_ID = '@blumintinc/blumint/no-explicit-return-type';
+  const MEMOIZER_ID = '@blumintinc/blumint/enforce-memoize-async';
+  const FILENAME = 'x.ts';
+
+  const makeLinter = () => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      STRIPPER_ID,
+      noExplicitReturnType as unknown as Rule.RuleModule,
+    );
+    linter.defineRule(
+      MEMOIZER_ID,
+      enforceMemoizeAsync as unknown as Rule.RuleModule,
+    );
+    return linter;
+  };
+
+  const BOTH: Linter.Config = {
+    parser: '@typescript-eslint/parser',
+    parserOptions: { ecmaVersion: 2022, sourceType: 'module' },
+    rules: { [STRIPPER_ID]: 'error', [MEMOIZER_ID]: 'error' },
+  };
+
+  const REPRODUCTION = [
+    'type Admission = { readonly reservedMb: number; readonly release: () => void };',
+    'export class ExecutionGovernor {',
+    '  public async admit(spec: JobSpec): Promise<Admission> {',
+    '    const release = this.store.claim(spec);',
+    '    return { reservedMb: spec.reservedMb, release };',
+    '  }',
+    '}',
+    '',
+  ].join('\n');
+
+  it('leaves the issue reproduction byte-identical', () => {
+    const linter = makeLinter();
+    const fixed = linter.verifyAndFix(REPRODUCTION, BOTH, FILENAME);
+    expect(fixed.output).toBe(REPRODUCTION);
+    expect(fixed.messages).toEqual([]);
+  });
+
+  it('decorates nothing across the whole handle corpus', () => {
+    const linter = makeLinter();
+    const decorated: string[] = [];
+    let examined = 0;
+    for (const source of RESOURCE_HANDLE_FIXTURES) {
+      examined += 1;
+      const fixed = linter.verifyAndFix(source, BOTH, FILENAME);
+      if (fixed.output.includes('@Memoize()')) {
+        decorated.push(fixed.output);
+      }
+      // A composed run that never settles is its own defect, and an
+      // unsettled run leaves the corpus half-examined.
+      expect(fixed.messages).toEqual([]);
+    }
+    expect(decorated).toEqual([]);
+    // The corpus cannot shrink out from under this without saying so.
+    expect(examined).toBe(RESOURCE_HANDLE_FIXTURES.length);
+    expect(examined).toBeGreaterThanOrEqual(29);
+  });
+
+  it('still memoizes a plain data result through the same pipeline', () => {
+    const linter = makeLinter();
+    const plain = [
+      'export class Repo {',
+      '  public async load(id: string): Promise<{ id: string; name: string }> {',
+      '    return this.api.get(id);',
+      '  }',
+      '}',
+      '',
+    ].join('\n');
+    const fixed = linter.verifyAndFix(plain, BOTH, FILENAME);
+    // The annotation goes and the decorator arrives: the pipeline is live, so
+    // the silence above is the carve-out rather than a dead harness.
+    expect(fixed.output).toContain('@Memoize()');
+    expect(fixed.output).not.toContain('Promise<{ id: string; name: string }>');
   });
 });

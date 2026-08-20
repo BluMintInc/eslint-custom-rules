@@ -164,6 +164,129 @@ class TokenClient {
 }
 ```
 
+### Methods that hand back a resource handle
+
+A method whose declared result is an object carrying a **function-valued
+member** — the closure that releases what the call allocated — is exempt. Such a
+method is the allocation point for a resource its caller owns, and caching it is
+not a performance win with a staleness caveat, it is a correctness failure:
+
+- **The handle is unique per call.** Two concurrent callers must hold two
+  distinct leases, or the pool's accounting under-counts and overcommits the
+  machine.
+- **The handle belongs to the caller that asked for it.** The returned closure
+  disposes one specific resource, so a `finally { admission.release(); }` in
+  caller A deletes caller B's lease.
+- **The result is stateful over time.** A second call minutes later must
+  re-evaluate a pool whose contents have changed entirely.
+
+With `@Memoize()` applied, N concurrent callers share one lease and one release
+closure. The first `release()` frees it, and the remaining N-1 keep running
+against budget nobody accounts for. The failure is silent and load-dependent, so
+`--fix` ships it past a green concurrency suite: the tests that protect the
+invariant keep passing while the invariant is gone. The `Promise<void>`
+exemption cannot reach this shape, because the method returns a value — and the
+value is the problem.
+
+```ts
+type Admission = { readonly reservedMb: number; readonly release: () => void };
+
+class ExecutionGovernor {
+  // ✅ not reported: each caller needs its own lease and its own release
+  public async admit(spec: JobSpec): Promise<Admission> {
+    while (!this.hasRoom(spec)) {
+      await delay(750);
+    }
+    const release = this.store.claim(spec);
+    return { reservedMb: spec.reservedMb, release };
+  }
+
+  // ❌ still reported: a quota reading is data, and data is what a cache is for
+  public async quota(poolId: string): Promise<{ reservedMb: number; limitMb: number }> {
+    return this.store.quota(poolId);
+  }
+}
+```
+
+The shapes the annotation can take:
+
+| annotation | read as a handle |
+|---|---|
+| `Promise<{ id: string; release: () => void }>` | yes |
+| `Promise<{ id: string; release(): void }>` — a method signature | yes |
+| `Promise<{ path: string; [Symbol.dispose](): void }>` | yes |
+| `readonly release: () => void`, `release?: () => void`, `release: (() => void) \| undefined` | yes |
+| `Promise<Admission>`, where `Admission` is a `type` or `interface` declared in the same file | yes |
+| `Promise<Admission[]>`, `Promise<readonly Admission[]>`, `Promise<Readonly<Admission>>` | yes |
+| `Promise<Base & { release: () => void }>`, `Promise<Admission \| null>` | yes |
+| `Promise<{ spec: JobSpec; admission: { release: () => void } }>` — nested | yes |
+| `Promise<{ id: string; name: string }>` | no |
+| `Promise<() => void>` | no |
+| `Promise<Map<string, Admission>>` | no |
+
+A union arm carrying the closure is enough, which is the opposite of the reading
+the [callback-parameter carve-out](#methods-keyed-only-by-a-callback) gives a
+union — and for a reason the two questions do not share. There, the question is
+whether an argument can key a cache, and `cb: string | (() => void)` need not be
+the arm that cannot. Here, the question is whether a caller can be handed
+somebody else's closure, and the caller who receives the callable arm is handed
+exactly that. One hazardous arm is enough, as it is for a
+[transaction handle](#methods-that-take-part-in-a-transaction).
+
+The test is **structural, not a list of member names.** `release`, `dispose`,
+`close` and `unsubscribe` are the spellings that come to mind, but `free`,
+`cancel`, `destroy`, `abort` and `[Symbol.dispose]` are the same member, and a
+list omitting any of them re-reports the very method the carve-out exists for —
+the harmful direction, since the report carries a fixer that applies unattended.
+Reading the shape instead costs the opposite error: an object that merely bundles
+a callback with its data goes unreported. That is the cheaper error, and a small
+one, because an async method whose result carries a closure is already sharing
+that closure's captured state with every caller a cache would serve.
+
+Because the decision is read off the annotation, the annotation has to survive
+the same `eslint --fix` run.
+[`no-explicit-return-type`](./no-explicit-return-type.md) preserves a
+handle-shaped return type for exactly this reason, from the same predicate
+(`src/utils/resourceHandleType.ts`), so the two rules cannot disagree about what
+a handle is. Without that, `--fix` would strip the annotation and then memoize
+the method it had just stopped being able to recognise, in one unattended pass.
+
+Like the other carve-outs, this reads the **declared annotation**: the rule is
+syntactic and does not require `parserOptions.project`. These therefore keep
+reporting:
+
+- A **bare callable result** (`Promise<() => string>`). The closure is the whole
+  result, with no resource paired to it whose accounting a shared reference
+  corrupts. It is how a compiled template, a prepared query or a resolved
+  renderer comes back, and computing one once is the point of asking.
+- A handle type **imported from another module**
+  (`import { Admission } from './types'`). Resolution is lexical and same-file, so
+  a name declared elsewhere is unreadable here.
+- An **unannotated** method whose body happens to build a handle. Without an
+  annotation there is no declaration of intent to honour, and inferring one would
+  need type information this rule does not take.
+- An **index signature** of callables (`{ [event: string]: () => void }`), which
+  is a lookup table of handlers a second caller shares without losing anything the
+  first one owned, and a **getter signature** (`{ get name(): string }`), which is
+  a property access wearing a parameter list.
+- A **two-argument container** (`Promise<Map<string, Admission>>`), which
+  describes a registry the method looked handles up in rather than a handle the
+  call allocated.
+
+To exempt one of those, declare the handle type in the file that returns it, or
+suppress the report deliberately:
+
+```ts
+import { Admission } from './types';
+
+class Governor {
+  // eslint-disable-next-line @blumintinc/blumint/enforce-memoize-async -- every call claims its own lease
+  public async admit(spec: JobSpec): Promise<Admission> {
+    return this.store.claim(spec);
+  }
+}
+```
+
 ### Methods keyed only by a callback
 
 A method whose sole parameter is annotated as a function type — a callback, a

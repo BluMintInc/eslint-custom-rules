@@ -81,6 +81,46 @@ So by default (`allowVoidReturnTypes`) the rule leaves these annotations alone o
 
 Signature-only declarations are outside this allowance: an interface method, an abstract method or a `declare function` has no body to infer from, so its annotation is mandatory rather than redundant, it is reported only when its own `allow*` option is turned off, and no fixer ever strips it.
 
+### Resource handles: the annotation is a sibling rule's evidence
+
+A method that hands back a **resource handle** — an object result carrying a function-valued member, the closure that releases whatever the call allocated — keeps its annotation:
+
+```ts
+// Not reported: the annotation is what tells `enforce-memoize-async` that this
+// method allocates a lease per caller.
+type Admission = { readonly reservedMb: number; readonly release: () => void };
+
+export class ExecutionGovernor {
+  public async admit(spec: JobSpec): Promise<Admission> {
+    const release = this.store.claim(spec);
+    return { reservedMb: spec.reservedMb, release };
+  }
+}
+```
+
+```ts
+// Reported and stripped: the result carries no callable, so it is ordinary data
+// and the annotation restates what the body already returns.
+export class Repo {
+  public async load(id: string): Promise<{ id: string; name: string }> {
+    return this.api.get(id);
+  }
+}
+```
+
+[`enforce-memoize-async`](./enforce-memoize-async.md) reads exactly this shape and declines to require `@Memoize()` on the first method: a memoized handle factory serves every caller after the first the **first** caller's live lease and the release closure bound to it, so N concurrent callers hold one lease between them while the pool accounts for N, and whichever caller finishes first disposes a resource the others still believe they own. Deleting the annotation therefore does not remove redundancy, it deletes the evidence that decision rests on — and it does so unattended, because `eslint --fix` re-lints until the output settles, so the strip and the memoization it re-arms land in the same run. The failure it re-arms needs concurrent callers to show itself, so a passing test suite keeps passing.
+
+Both rules answer the question from one predicate (`src/utils/resourceHandleType.ts`), so a shape one exempts and the other strips cannot arise. It reads:
+
+- through single-argument result containers — `Promise<T>`, `Array<T>`, `ReadonlyArray<T>`, `Readonly<T>`, `T[]` and `readonly T[]` — because a lease handed back inside one of them is still the caller's lease. A container taking more than one type argument (`Map<string, Lease>`) describes a registry the method looked a handle up in, and is left alone;
+- through union and intersection arms, since the caller handed the arm that carries the closure is the one harmed;
+- through a **same-file** `type` or `interface`, resolved lexically along the scope chain, including a declaration written below its own use and an alias chain. An imported handle type resolves nowhere here, so its annotation is still stripped;
+- into nested member object types.
+
+A member counts as callable when it is a method signature (`release(): void`) or a property whose written type is a function type, directly or through a same-file alias — the test is **structural**, not a list of names, so `release`, `dispose`, `close`, `unsubscribe`, `abort` and `[Symbol.dispose]` are all read without enumerating them. An index signature (`{ [event: string]: () => void }`) is a lookup table rather than a lease and does not count, nor does a getter signature, nor does `Function`. A bare callable result (`Promise<() => string>`) is not a handle either: the closure is the whole result, with no resource paired to it whose accounting a shared reference corrupts.
+
+The exemption is a property of the annotation rather than of the site it is written at, matching the `void` and read-only allowances above, so a function, an arrow, a function expression and a synchronous method are all covered.
+
 ### Decorator factories: the annotation is what makes the factory usable
 
 A function whose return value is applied as a decorator is the one shape where the annotation is **wider** than what inference produces rather than a restatement of it. `MethodDecorator` declares three parameters; `return () => {};` infers `() => void`. A decoration site passes what the declared signature promises, so removing the annotation is not meaning-preserving — every use of the factory becomes `TS1329: 'Log()' accepts too few arguments to be used as a decorator here`:
@@ -388,6 +428,23 @@ export class Authorizer {
 const log = (message: string): void => {
   console.log(message);
 };
+
+// A resource-handle result: the object carries the closure that releases what
+// the call allocated, and `enforce-memoize-async` reads the annotation before
+// deciding not to cache the method
+type Admission = { readonly reservedMb: number; readonly release: () => void };
+
+export class ExecutionGovernor {
+  public async admit(spec: JobSpec): Promise<Admission> {
+    const release = this.store.claim(spec);
+    return { reservedMb: spec.reservedMb, release };
+  }
+}
+
+// A handle allocated by a plain function is kept for the same reason
+export function openHandle(): { fd: number; close: () => void } {
+  return openFile();
+}
 ```
 
 ## Options
