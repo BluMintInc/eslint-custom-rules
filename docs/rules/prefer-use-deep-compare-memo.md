@@ -152,6 +152,81 @@ a string costs an injected dependency, a new import and a hook that cannot help.
 - A call that edit does *not* rewrite keeps the import bound — one the rule never reports, one behind a disable directive (suppression is applied after a rule emits its reports, so that fix never runs), or one whose scope binds `useDeepCompareMemo` to something else. Unbinding on such a call's behalf would leave it spelling a name nothing binds.
 - The injected `import { useDeepCompareMemo } …` is placed below the file's prologue — a `'use client'` / `'use server'` directive, a `#!` shebang, a header comment — and above the first existing import. A directive is a directive only while it is the **first** statement, so an import spliced above one would silently demote it to an ordinary expression statement: still valid TypeScript, still reported clean by ESLint, but no longer read by the bundler. Where the anchor shares its line with the prologue the import is written inline after it rather than above it, which costs the displaced statement its indentation and keeps the file's meaning.
 - The report stands without a fix whenever the rewrite would strand something the fix cannot safely unbind — a locally declared `useMemo` however it is spelled (`function useMemo` and `const useMemo = ...` alike, since a declaration's own initializer does not count as a use of it), an import behind a directive comment, or a name that also occurs outside the rewritten call. Rewrite those by hand.
+- The rename lengthens the line it lands on by eleven columns, so a call the width no longer fits is written in Prettier's broken argument list instead. See [Options](#options).
+
+## Options
+
+- `printWidth` (default `80`): Column the autofix wraps the converted call at.
+
+```js
+'@blumintinc/blumint/prefer-use-deep-compare-memo': ['error', {
+  // Column the autofix wraps the converted call at
+  printWidth: 80,
+}]
+```
+
+### `printWidth`
+
+Type: `number`
+
+Default: `80`
+
+The column the autofix wraps at, matching Prettier's option of the same name.
+Set it to your formatter's `printWidth` so the fixed source is already in the
+shape the formatter would produce; a lint run carrying `--fix` otherwise leaves
+the tree failing `prettier --check`.
+
+The conversion renames a seven-character callee to an eighteen-character one, so
+every rewrite widens its line by exactly eleven columns — and the callback and
+the dependency list are both arbitrary source text, so the emitted width grows
+with the input. At the default width that makes any `useMemo(...)` call written
+on one line past column 69 overflow. The import insertion and the orphaned-import
+removal land on other lines, so the rename is the only edit this measurement has
+to account for.
+
+The fixer therefore measures the line before writing it. Within the width the
+call stays flat; past it the call is written in Prettier's canonical broken form,
+one argument per line:
+
+```tsx
+const formatted = useDeepCompareMemo(
+  () => ({ name: userConfig.name }),
+  [userConfig],
+);
+```
+
+The measurement runs in both directions on purpose. Prettier collapses a
+hand-broken call that fits back onto one line, so wrapping unconditionally would
+trade one `prettier --check` failure for its mirror image on every short call.
+
+The measured line is the line Prettier prints, which is not quite the line the
+file holds: a trailing `//` comment is a line suffix Prettier never counts when
+deciding whether a statement fits, so it is subtracted, while a trailing
+`/* … */` comment occupies columns like any other text and is kept. The same
+statement is left flat at 124 columns with a line comment and broken at 88 with a
+block comment, and this rule follows both.
+
+Some shapes stay flat deliberately even past the width, because re-rendering
+them writes something other than the call the source spells:
+
+- **A call already broken across lines.** Its own line breaks live inside the
+  argument text a re-render copies verbatim, so re-indenting the arguments would
+  leave every continuation line at its original column.
+- **A zero-parameter callback with a block body.** That is Prettier's React-hook
+  shape: it keeps the callee and the dependency array on the outer lines and
+  breaks only the block between them, so one argument per line is not what it
+  prints.
+- **A comment inside the call.** It sits between tokens a re-render rewrites, so
+  it would be moved off the argument it annotates. A formatting nicety does not
+  justify relocating an author's comment.
+- **Two convertible calls, one nested in the other.** Whichever is re-rendered,
+  its replacement spans the other's edit, and ESLint rejects overlapping fixes
+  outright — which would cost both call sites their fix. Both ends decline, so
+  the pair is left as two renames for the formatter to settle; breaking only the
+  inner one inside a flat outer call is a layout Prettier prints for neither.
+- **An argument list that is not a callback plus a dependency array.** Prettier
+  hugs a trailing array behind a third argument rather than giving each argument
+  its own line, so the two-argument shape is the only one this fixer prints.
 
 ### When Not To Use It
 
