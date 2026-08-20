@@ -217,9 +217,18 @@ function hoistPastArrow(
     comments.length > 1 ||
     requiresLineBreakAfter(last) ||
     LINE_TERMINATOR.test(rest.charAt(0));
+  // The depth question is whether this run ends a line, not whether some
+  // comment's own text holds a terminator: a `//` comment can never hold one,
+  // yet it closes its line just as hard, and a run that closes a line is
+  // written where prettier writes a broken arrow body — one step in (#2069).
+  // `hugsArrow` still answers for the run whose break is the fixer's own
+  // choice, since a bracketed body it kept beside the arrow gains nothing from
+  // one; a run ending a line leaves the body no such option, which is why that
+  // carve-out is reached only through `bodyStartsALine` being false.
+  const endsALine =
+    comments.some(spansMultipleLines) || requiresLineBreakAfter(last);
   const ownsLine =
-    comments.some(spansMultipleLines) &&
-    (bodyStartsALine || !hugsArrow(source, returnType));
+    endsALine && (bodyStartsALine || !hugsArrow(source, returnType));
 
   const subjectIndent = subjectIndentOf(source, returnType);
   const indent = ownsLine ? `${subjectIndent}${INDENT_STEP}` : subjectIndent;
