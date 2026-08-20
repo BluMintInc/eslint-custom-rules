@@ -1572,9 +1572,10 @@ const getUser = () /**
         output: `
 type User = { id: string };
 declare function fetchUser(): User;
-const getUser = () => /**
- * why this exists
- */ fetchUser() as User;
+const getUser = () =>
+  /**
+   * why this exists
+   */ fetchUser() as User;
 `,
       },
       {
@@ -1638,9 +1639,10 @@ const getUser = (): /**
         output: `
 type User = { id: string };
 declare function fetchUser(): User;
-const getUser = () => /**
- * doc
- */ fetchUser() as User;
+const getUser = () =>
+  /**
+   * doc
+   */ fetchUser() as User;
 `,
       },
       {
@@ -1656,9 +1658,10 @@ const getUser = (): User /**
         output: `
 type User = { id: string };
 declare function fetchUser(): User;
-const getUser = () => /**
- * doc
- */ fetchUser() as User;
+const getUser = () =>
+  /**
+   * doc
+   */ fetchUser() as User;
 `,
       },
       {
@@ -1692,9 +1695,10 @@ const getUser = async () /**
         output: `
 type User = { id: string };
 declare function fetchUser(): Promise<User>;
-const getUser = async () => /**
- * doc
- */ fetchUser() as Promise<User>;
+const getUser = async () =>
+  /**
+   * doc
+   */ fetchUser() as Promise<User>;
 `,
       },
       {
@@ -1710,9 +1714,10 @@ const outer = () => (() /**
         output: `
 type User = { id: string };
 declare function fetchUser(): User;
-const outer = () => (() => /**
- * doc
- */ fetchUser() as User);
+const outer = () => (() =>
+  /**
+   * doc
+   */ fetchUser() as User);
 `,
       },
       {
@@ -1731,9 +1736,10 @@ class Repo {
 type User = { id: string };
 declare function fetchUser(): User;
 class Repo {
-  getUser = () => /**
-   * doc
-   */ fetchUser() as User;
+  getUser = () =>
+    /**
+     * doc
+     */ fetchUser() as User;
 }
 `,
       },
@@ -1753,13 +1759,17 @@ const repo = {
 type User = { id: string };
 declare function fetchUser(): User;
 const repo = {
-  getUser: () => /**
-   * doc
-   */ fetchUser() as User,
+  getUser: () =>
+    /**
+     * doc
+     */ fetchUser() as User,
 };
 `,
       },
       {
+        // Issue #2066: a body that opens a brace keeps the arrow's own line —
+        // it closes back at the declaration's depth, so breaking ahead of it
+        // buys nothing. The gutter is still aligned to where the comment lands.
         name: 'an arrow with a block body carries its comment past the arrow',
         code: `
 type User = { id: string };
@@ -1782,6 +1792,35 @@ const getUser = () => /**
 `,
       },
       {
+        // Issue #2066: the comment is re-emitted at the depth an arrow body is
+        // written at — one step past the declaration it belongs to, not the
+        // arrow's own column, which a multi-line annotation leaves sitting on
+        // the comment's one-space gutter. The gutter travels with it.
+        name: 'a nested declaration carries its comment to its own depth',
+        code: `
+type User = { id: string };
+declare function fetchUser(): User;
+function outer() {
+  const getUser = (): /**
+ * doc
+ */ User => fetchUser() as User;
+  return getUser;
+}
+`,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+type User = { id: string };
+declare function fetchUser(): User;
+function outer() {
+  const getUser = () =>
+    /**
+     * doc
+     */ fetchUser() as User;
+  return getUser;
+}
+`,
+      },
+      {
         name: 'a generic arrow carries its comment past the arrow',
         code: `
 type Box<T> = { value: T };
@@ -1794,9 +1833,10 @@ const build = <T,>() /**
         output: `
 type Box<T> = { value: T };
 declare function make<T>(): Box<T>;
-const build = <T,>() => /**
- * doc
- */ make<T>() as Box<T>;
+const build = <T,>() =>
+  /**
+   * doc
+   */ make<T>() as Box<T>;
 `,
       },
       {
@@ -1814,9 +1854,10 @@ const getUser = () /* a */ /**
         output: `
 type User = { id: string };
 declare function fetchUser(): User;
-const getUser = () /* a */ => /**
- * b
- */ fetchUser() as User;
+const getUser = () /* a */ =>
+  /**
+   * b
+   */ fetchUser() as User;
 `,
       },
       {
@@ -1832,9 +1873,10 @@ const getUser = () /**
         output: `
 type User = { id: string };
 declare function fetchUser(): User;
-const getUser = () => /**
- * doc
- */ /* body */ fetchUser() as User;
+const getUser = () =>
+  /**
+   * doc
+   */ /* body */ fetchUser() as User;
 `,
       },
       {
@@ -1858,12 +1900,14 @@ const second = () /**
         output: `
 type User = { id: string };
 declare function fetchUser(): User;
-const first = () => /**
- * one
- */ fetchUser() as User;
-const second = () => /**
- * two
- */ fetchUser() as User;
+const first = () =>
+  /**
+   * one
+   */ fetchUser() as User;
+const second = () =>
+  /**
+   * two
+   */ fetchUser() as User;
 `,
       },
       {
@@ -1884,9 +1928,10 @@ const getUser = () /**
 type User = { id: string };
 declare function fetchUser(): User;
 const cached = fetchUser() as User;
-const getUser = () => /**
- * doc
- */ fetchUser() as User;
+const getUser = () =>
+  /**
+   * doc
+   */ fetchUser() as User;
 `,
       },
       {
