@@ -18,6 +18,7 @@ import {
   resolveInEnclosingScopes,
   statementsOf,
 } from '../utils/lexicalScope';
+import { declaresResourceHandleResult } from '../utils/resourceHandleType';
 import {
   Edit,
   indentAt,
@@ -1136,6 +1137,39 @@ function declaresVoidResult(returnType: TSESTree.TSTypeAnnotation): boolean {
   );
 }
 
+/**
+ * Returns true when the annotation declares that the function hands back a
+ * RESOURCE HANDLE: an object result carrying a function-valued member, which is
+ * the closure that releases whatever the call allocated.
+ *
+ * `declaresVoidResult` above answers the same objection for the opposite shape,
+ * and the reasoning transfers verbatim. This annotation is not a restatement of
+ * a result either — it is the evidence a sibling rule's correctness decision
+ * rests on. `enforce-memoize-async` reads exactly this shape and declines to
+ * demand `@Memoize()` on the method, because a memoized handle factory serves
+ * every caller after the first the FIRST caller's live lease and the release
+ * closure bound to it: N concurrent callers hold one lease between them while
+ * the pool accounts for N, and whichever caller finishes first disposes a
+ * resource the others still believe they own.
+ *
+ * Stripping the annotation therefore destroys information rather than removing
+ * redundancy, and it destroys it unattended: `eslint --fix` re-lints until the
+ * output settles, so the strip and the memoization it re-arms land in the same
+ * run. Nothing downstream catches what that re-arms, because the failure is
+ * silent and load-dependent — it needs concurrent callers to show itself, so a
+ * green suite stays green and the corruption surfaces under load.
+ *
+ * The predicate is SHARED with the owner (`../utils/resourceHandleType`) rather
+ * than restated here. A shape one rule exempts while the other strips is the
+ * whole defect; a shape one rule strips while the other exempts is the same
+ * defect pointing the other way, so the two cannot be allowed to drift apart.
+ */
+function isResourceHandleReturnType(
+  returnType: TSESTree.TSTypeAnnotation,
+): boolean {
+  return declaresResourceHandleResult(returnType);
+}
+
 // TypeScript's built-in decorator signatures. A factory annotated with one of
 // these is the one shape where the annotation is WIDER than what inference
 // produces rather than a restatement of it: `MethodDecorator` accepts three
@@ -1778,6 +1812,7 @@ export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
             isTypeGuardFunction(node) ||
             isReadonlyWideningReturnType(returnType) ||
             isAllowedVoidReturnType(returnType) ||
+            isResourceHandleReturnType(returnType) ||
             isDecoratorFactory(node, returnType) ||
             isOverloadImplementation(node) ||
             (mergedOptions.allowRecursiveFunctions &&
@@ -1802,6 +1837,7 @@ export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
             isTypeGuardFunction(node) ||
             isReadonlyWideningReturnType(returnType) ||
             isAllowedVoidReturnType(returnType) ||
+            isResourceHandleReturnType(returnType) ||
             isDecoratorFactory(node, returnType) ||
             (mergedOptions.allowRecursiveFunctions &&
               isRecursiveFunction(node)) ||
@@ -1821,6 +1857,7 @@ export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
             isTypeGuardFunction(node) ||
             isReadonlyWideningReturnType(returnType) ||
             isAllowedVoidReturnType(returnType) ||
+            isResourceHandleReturnType(returnType) ||
             isDecoratorFactory(node, returnType) ||
             isReturnTypeRequiredByRecursion(node)
           ) {
@@ -1856,6 +1893,7 @@ export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
             isTypeGuardFunction(node.value) ||
             isReadonlyWideningReturnType(returnType) ||
             isAllowedVoidReturnType(returnType) ||
+            isResourceHandleReturnType(returnType) ||
             isDecoratorFactory(node, returnType) ||
             isOverloadImplementationMethod(node) ||
             (mergedOptions.allowOverloadedFunctions &&
