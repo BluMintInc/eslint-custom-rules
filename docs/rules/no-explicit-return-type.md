@@ -311,7 +311,45 @@ export const buildCount = () =>
   1;
 ```
 
-A body that opens a bracket — an object, an array, a block, JSX — keeps the arrow's line when the only thing breaking it is a multi-line block comment, since such a body closes back at the declaration's own depth and gains nothing from the break; the comment is spliced in after the `=>` and re-aligned to the declaration's column instead. A line comment leaves it no such choice — it would swallow the opening bracket — so the body goes onto the next line with the comment.
+A body that opens a bracket — an object, an array, a block — keeps the arrow's line when the only thing breaking it is a multi-line block comment, since such a body closes back at the declaration's own depth and gains nothing from the break; the comment is spliced in after the `=>` and re-aligned to the declaration's column instead. A line comment leaves it no such choice — it would swallow the opening bracket — so the body goes onto the next line with the comment.
+
+**JSX is the exception.** Prettier does not leave a JSX arrow body beside the `=>` once the line has to break: it wraps the body in parentheses and drops it to a line inside them. The carried comment therefore goes inside those parentheses, immediately ahead of the body — reusing a pair the source already wrote, and adding one where it has none.
+
+```tsx
+// before
+export const Row = (): /**
+ * doc
+ */ JSX.Element => <div />;
+
+// after --fix
+export const Row = () => (
+  /**
+   * doc
+   */ <div />
+);
+```
+
+A body the source already parenthesized keeps that pair rather than gaining a second one, and the comment is re-aligned to the body's own column inside it:
+
+```tsx
+// before
+export const Row = (): /**
+ * doc
+ */ JSX.Element => (
+  <div className="a">
+    <span />
+  </div>
+);
+
+// after --fix
+export const Row = () => (
+  /**
+   * doc
+   */ <div className="a">
+    <span />
+  </div>
+);
+```
 
 A comment that fits on one line trips no restricted production and is left exactly where it was written (`() /* doc */: number => 1` → `() /* doc */ => 1`), and a function declaration, method or function expression ends its parameter list at a body rather than an arrow, so its comments never move.
 
