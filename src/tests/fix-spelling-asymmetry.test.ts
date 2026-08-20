@@ -1158,6 +1158,25 @@ const DETECTION_EXEMPT: Record<string, string> = {
  * spelling, not of the rule's reach.
  */
 const FIX_EXEMPT: Record<string, string> = {
+  // Its remedy gives the dependency array a leading own-line comment, which
+  // forces prettier to expand the whole argument list — so the fixer must write
+  // the arguments' post-expansion indent, and it derives that from the indent of
+  // the line the hook call's statement starts (#2065). A statement sharing its
+  // line with text ahead of it offers no such indent, and recovering one would
+  // mean re-printing the enclosing block: text the fixer does not own, which is
+  // the deletion class #1877 guards against. So it declines outright.
+  //
+  // Only a block body collapsed onto one line — `=> { return useCallback(...); }`
+  // — puts the statement there, and that is a shape prettier never prints:
+  // measured, all three findings here are prettier-UNSTABLE at the repo's
+  // settings, while the same body printed the way prettier prints it is fixed
+  // exactly like the concise spelling. The split is prettier-stable input vs
+  // not, not concise vs block, so it cannot reach agora, which lints
+  // prettier-formatted source. Because this entry un-gates the rule's other
+  // arms (#1839), the boundary itself is pinned in the rule's own suite —
+  // 'the expansion declines exactly on a body prettier would reprint'.
+  'enforce-stable-hash-spread-props':
+    'the forced argument expansion needs a statement that starts its own line; a one-line block body denies it one',
   // Its remedy is a hoisted `const <hash> = useMemo(...)` declaration placed
   // immediately above the statement holding the hook call, so an
   // expression-bodied arrow has nowhere to put it — `findInsertionPoint`
