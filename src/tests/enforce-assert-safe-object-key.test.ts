@@ -2,9 +2,44 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { ESLint, Linter, Rule } from 'eslint';
+import * as typescriptParser from '@typescript-eslint/parser';
 import type { TSESLint } from '@typescript-eslint/utils';
 import { ruleTesterTs } from '../utils/ruleTester';
 import { enforceAssertSafeObjectKey } from '../rules/enforce-assert-safe-object-key';
+
+/**
+ * The suites are named rather than passed inline so that the re-parse guard at
+ * the end of this file can lint every fixture they declare. A fixer whose
+ * replacement range is wrong emits text that does not parse, and a fixture diff
+ * cannot see that: RuleTester compares strings (#2067).
+ */
+type AssertSafeTests = TSESLint.RunTests<
+  'useAssertSafe',
+  [{ readonly assertSafeImportPath?: string }]
+>;
+
+const IMPORT_LINE = `import { assertSafe } from 'functions/src/util/assertSafe';`;
+
+/**
+ * The message a parse of `code` fails with, or null when it parses. The fixer's
+ * output has to be a program, which a fixture's string comparison never checks.
+ *
+ * `range` and `loc` are not decoration: without them the parser throws on
+ * perfectly good code, which would read as a corrupt output everywhere below.
+ */
+const parseFailure = (code: string): string | null => {
+  try {
+    typescriptParser.parse(code, {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      range: true,
+      loc: true,
+    });
+    return null;
+  } catch (error) {
+    return (error as Error).message;
+  }
+};
 
 const buildMessage = (key: string) =>
   `Dynamic object key "${key}" is used without assertSafe() validation. Unvalidated keys can resolve to unexpected properties (including prototype fields) and make lookups fragile or unsafe. Wrap the key with assertSafe(${key}) before accessing the object.`;
@@ -14,7 +49,7 @@ const lintError = (key: string): TSESLint.TestCaseError<'useAssertSafe'> =>
     message: buildMessage(key),
   } as unknown as TSESLint.TestCaseError<'useAssertSafe'>);
 
-ruleTesterTs.run('enforce-assert-safe-object-key', enforceAssertSafeObjectKey, {
+const MAIN_TESTS: AssertSafeTests = {
   valid: [
     {
       code: `
@@ -3831,7 +3866,13 @@ class Reader {
       `,
     },
   ],
-});
+};
+
+ruleTesterTs.run(
+  'enforce-assert-safe-object-key',
+  enforceAssertSafeObjectKey,
+  MAIN_TESTS,
+);
 
 // Issue #1933: `private rankOf(): number` and `#rankOf(): number` are the same
 // privacy under two spellings, and TypeScript forbids writing both at once
@@ -3843,14 +3884,11 @@ class Reader {
 // The fence matters as much as the carve-out: `PrivateIdentifier.name` is the
 // bare name with no `#`, so `#rank` and a public `rank` in the same class must
 // stay separate declarations or crediting one would silence a read of the other.
-ruleTesterTs.run(
-  'enforce-assert-safe-object-key: ECMA private class members (issue #1933)',
-  enforceAssertSafeObjectKey,
-  {
-    valid: [
-      {
-        name: 'a `: number` return type on a `#` method is numeric proof at the call site',
-        code: `
+const PRIVATE_MEMBER_TESTS: AssertSafeTests = {
+  valid: [
+    {
+      name: 'a `: number` return type on a `#` method is numeric proof at the call site',
+      code: `
 class Reader {
   constructor(private readonly mapping) {}
   #rankOf(seed): number {
@@ -3862,10 +3900,10 @@ class Reader {
   }
 }
       `,
-      },
-      {
-        name: 'a call to a `: number`-returning `#` method is numeric in key position',
-        code: `
+    },
+    {
+      name: 'a call to a `: number`-returning `#` method is numeric in key position',
+      code: `
 class Reader {
   constructor(private readonly mapping) {}
   #rankOf(seed): number {
@@ -3876,10 +3914,10 @@ class Reader {
   }
 }
       `,
-      },
-      {
-        name: 'a `#` field annotated `: number` is numeric at the use site',
-        code: `
+    },
+    {
+      name: 'a `#` field annotated `: number` is numeric at the use site',
+      code: `
 class Reader {
   readonly #rank: number = 1;
   constructor(private readonly mapping) {}
@@ -3888,10 +3926,10 @@ class Reader {
   }
 }
       `,
-      },
-      {
-        name: 'a `#` getter returning `: number` is numeric at the read site',
-        code: `
+    },
+    {
+      name: 'a `#` getter returning `: number` is numeric at the read site',
+      code: `
 class Reader {
   constructor(private readonly mapping) {}
   get #rank(): number {
@@ -3902,11 +3940,11 @@ class Reader {
   }
 }
       `,
-      },
-      {
-        // A setter constrains writes, not reads, on either spelling of privacy.
-        name: 'a `#` getter paired with a `#` setter keeps its numeric proof',
-        code: `
+    },
+    {
+      // A setter constrains writes, not reads, on either spelling of privacy.
+      name: 'a `#` getter paired with a `#` setter keeps its numeric proof',
+      code: `
 class Reader {
   constructor(private readonly mapping) {}
   get #rank(): number {
@@ -3918,10 +3956,10 @@ class Reader {
   }
 }
       `,
-      },
-      {
-        name: 'a `: number`-returning `#` arrow class field is numeric at the call site',
-        code: `
+    },
+    {
+      name: 'a `: number`-returning `#` arrow class field is numeric at the call site',
+      code: `
 class Reader {
   constructor(private readonly mapping) {}
   #rankOf = (seed): number => seed + 1;
@@ -3930,10 +3968,10 @@ class Reader {
   }
 }
       `,
-      },
-      {
-        name: 'an optionally-called `: number` `#` method keeps its proof',
-        code: `
+    },
+    {
+      name: 'an optionally-called `: number` `#` method keeps its proof',
+      code: `
 class Reader {
   constructor(private readonly mapping) {}
   #rankOf(seed): number {
@@ -3944,10 +3982,10 @@ class Reader {
   }
 }
       `,
-      },
-      {
-        name: 'a `static #` method is numeric through a static `this`',
-        code: `
+    },
+    {
+      name: 'a `static #` method is numeric through a static `this`',
+      code: `
 class Reader {
   static mapping = {};
   static #rankOf(seed): number {
@@ -3958,10 +3996,10 @@ class Reader {
   }
 }
       `,
-      },
-      {
-        name: 'a `static #` method reached by the class name is numeric',
-        code: `
+    },
+    {
+      name: 'a `static #` method reached by the class name is numeric',
+      code: `
 class Reader {
   static mapping = {};
   static #rankOf(seed): number {
@@ -3972,12 +4010,12 @@ class Reader {
   }
 }
       `,
-      },
-      {
-        // The array-ish name is read off the property, and `#items` names the
-        // very collection `items` does.
-        name: 'a `#` field carrying an array-ish name reads as a positional lookup',
-        code: `
+    },
+    {
+      // The array-ish name is read off the property, and `#items` names the
+      // very collection `items` does.
+      name: 'a `#` field carrying an array-ish name reads as a positional lookup',
+      code: `
 class Reader {
   #items = [];
   read(i) {
@@ -3985,12 +4023,12 @@ class Reader {
   }
 }
       `,
-      },
-    ],
-    invalid: [
-      {
-        name: 'a `: string` return type on a `#` method proves nothing',
-        code: `
+    },
+  ],
+  invalid: [
+    {
+      name: 'a `: string` return type on a `#` method proves nothing',
+      code: `
 class Reader {
   constructor(private readonly mapping) {}
   #rankOf(seed): string {
@@ -4002,8 +4040,8 @@ class Reader {
   }
 }
       `,
-        errors: [lintError('rank')],
-        output: `
+      errors: [lintError('rank')],
+      output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 class Reader {
   constructor(private readonly mapping) {}
@@ -4016,10 +4054,10 @@ class Reader {
   }
 }
       `,
-      },
-      {
-        name: 'an unannotated `#` field initialized to a number proves nothing',
-        code: `
+    },
+    {
+      name: 'an unannotated `#` field initialized to a number proves nothing',
+      code: `
 class Reader {
   constructor(private readonly mapping) {}
   #rank = 1;
@@ -4028,8 +4066,8 @@ class Reader {
   }
 }
       `,
-        errors: [lintError('this.#rank')],
-        output: `
+      errors: [lintError('this.#rank')],
+      output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 class Reader {
   constructor(private readonly mapping) {}
@@ -4039,13 +4077,13 @@ class Reader {
   }
 }
       `,
-      },
-      {
-        // `PrivateIdentifier.name` drops the `#`, so a name-only match would
-        // credit this public `rank: string` read with the `#rank: number`
-        // annotation it never resolves to.
-        name: 'a `: number` `#` field proves nothing about the public field spelled the same',
-        code: `
+    },
+    {
+      // `PrivateIdentifier.name` drops the `#`, so a name-only match would
+      // credit this public `rank: string` read with the `#rank: number`
+      // annotation it never resolves to.
+      name: 'a `: number` `#` field proves nothing about the public field spelled the same',
+      code: `
 class Reader {
   constructor(private readonly mapping) {}
   #rank: number = 1;
@@ -4055,8 +4093,8 @@ class Reader {
   }
 }
       `,
-        errors: [lintError('this.rank')],
-        output: `
+      errors: [lintError('this.rank')],
+      output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 class Reader {
   constructor(private readonly mapping) {}
@@ -4067,10 +4105,10 @@ class Reader {
   }
 }
       `,
-      },
-      {
-        name: 'a `: number` public field proves nothing about the `#` field spelled the same',
-        code: `
+    },
+    {
+      name: 'a `: number` public field proves nothing about the `#` field spelled the same',
+      code: `
 class Reader {
   constructor(private readonly mapping) {}
   rank: number = 1;
@@ -4080,8 +4118,8 @@ class Reader {
   }
 }
       `,
-        errors: [lintError('this.#rank')],
-        output: `
+      errors: [lintError('this.#rank')],
+      output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 class Reader {
   constructor(private readonly mapping) {}
@@ -4092,12 +4130,12 @@ class Reader {
   }
 }
       `,
-      },
-      {
-        // A `#` member of another class is unreachable by syntax, and its
-        // annotation is never read for a same-named member of this one.
-        name: 'a `: number` `#` field of another class proves nothing',
-        code: `
+    },
+    {
+      // A `#` member of another class is unreachable by syntax, and its
+      // annotation is never read for a same-named member of this one.
+      name: 'a `: number` `#` field of another class proves nothing',
+      code: `
 class Ranked {
   #rank: number = 1;
 }
@@ -4109,8 +4147,8 @@ class Reader {
   }
 }
       `,
-        errors: [lintError('this.rank')],
-        output: `
+      errors: [lintError('this.rank')],
+      output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 class Ranked {
   #rank: number = 1;
@@ -4123,9 +4161,14 @@ class Reader {
   }
 }
       `,
-      },
-    ],
-  },
+    },
+  ],
+};
+
+ruleTesterTs.run(
+  'enforce-assert-safe-object-key: ECMA private class members (issue #1933)',
+  enforceAssertSafeObjectKey,
+  PRIVATE_MEMBER_TESTS,
 );
 
 // Issue #1875: a typed discriminant indexing a Record whose declared keys cover
@@ -4139,14 +4182,11 @@ class Reader {
 // fallback into a render-time crash. These cases pin the carve-out and, just as
 // deliberately, its edges: both sides must be annotated, the coverage must be
 // syntactically provable, and every conversion spelling keeps reporting.
-ruleTesterTs.run(
-  'enforce-assert-safe-object-key: compiler-bounded Record lookups (issue #1875)',
-  enforceAssertSafeObjectKey,
-  {
-    valid: [
-      {
-        name: 'a key sharing the record key alias is exempt (the #1875 post-fix shape)',
-        code: `
+const BOUNDED_RECORD_TESTS: AssertSafeTests = {
+  valid: [
+    {
+      name: 'a key sharing the record key alias is exempt (the #1875 post-fix shape)',
+      code: `
 type Kind = 'live' | 'simulated';
 export const layer = (kind: Kind) => {
   const RESULT_BY_KIND: Record<Kind, string | undefined> = {
@@ -4156,60 +4196,60 @@ export const layer = (kind: Kind) => {
   return RESULT_BY_KIND[kind];
 };
       `,
-      },
-      {
-        name: 'inline literal unions matching on both sides are exempt',
-        code: `
+    },
+    {
+      name: 'inline literal unions matching on both sides are exempt',
+      code: `
 const read = (m: Record<'live' | 'simulated', string>, kind: 'live' | 'simulated') => m[kind];
       `,
-      },
-      {
-        name: 'a key narrowed to a single literal of the record union is exempt',
-        code: `
+    },
+    {
+      name: 'a key narrowed to a single literal of the record union is exempt',
+      code: `
 const read = (m: Record<'live' | 'simulated', string>, kind: 'simulated') => m[kind];
       `,
-      },
-      {
-        name: 'an in-file alias key into its spelled-out union record is exempt',
-        code: `
+    },
+    {
+      name: 'an in-file alias key into its spelled-out union record is exempt',
+      code: `
 type Kind = 'live' | 'simulated';
 const R: Record<'live' | 'simulated', number> = { live: 1, simulated: 2 };
 export const read = (kind: Kind) => R[kind];
       `,
-      },
-      {
-        name: 'an inline union key into an aliased record key type is exempt',
-        code: `
+    },
+    {
+      name: 'an inline union key into an aliased record key type is exempt',
+      code: `
 type Kind = 'live' | 'simulated';
 const R: Record<Kind, number> = { live: 1, simulated: 2 };
 export const read = (kind: 'live' | 'simulated') => R[kind];
       `,
-      },
-      {
-        name: 'an imported alias shared by key and record is exempt on name identity',
-        code: `
+    },
+    {
+      name: 'an imported alias shared by key and record is exempt on name identity',
+      code: `
 import { Kind } from './kinds';
 export const read = (m: Record<Kind, string>, kind: Kind) => m[kind];
       `,
-      },
-      {
-        name: 'a type-only imported alias shared by key and record is exempt',
-        code: `
+    },
+    {
+      name: 'a type-only imported alias shared by key and record is exempt',
+      code: `
 import type { Kind } from './kinds';
 export const read = (m: Record<Kind, string>, kind: Kind) => m[kind];
       `,
-      },
-      {
-        name: 'an alias derived from an as-const values array is exempt (closed domain)',
-        code: `
+    },
+    {
+      name: 'an alias derived from an as-const values array is exempt (closed domain)',
+      code: `
 const KINDS = ['live', 'simulated'] as const;
 type Kind = (typeof KINDS)[number];
 export const read = (m: Record<Kind, string>, kind: Kind) => m[kind];
       `,
-      },
-      {
-        name: 'a string enum shared by key and record is exempt',
-        code: `
+    },
+    {
+      name: 'a string enum shared by key and record is exempt',
+      code: `
 enum Status {
   Active = 'active',
   Closed = 'closed',
@@ -4217,49 +4257,49 @@ enum Status {
 const LABELS: Record<Status, string> = { [Status.Active]: 'a', [Status.Closed]: 'c' };
 export const labelOf = (status: Status) => LABELS[status];
       `,
-      },
-      {
-        name: 'Readonly<Record<...>> keeps the key domain and the exemption',
-        code: `
+    },
+    {
+      name: 'Readonly<Record<...>> keeps the key domain and the exemption',
+      code: `
 type Kind = 'live' | 'simulated';
 const read = (m: Readonly<Record<Kind, string>>, kind: Kind) => m[kind];
       `,
-      },
-      {
-        name: 'Partial<Record<...>> keeps the key domain and the exemption',
-        code: `
+    },
+    {
+      name: 'Partial<Record<...>> keeps the key domain and the exemption',
+      code: `
 type Kind = 'live' | 'simulated';
 const read = (m: Partial<Record<Kind, string>>, kind: Kind) => m[kind];
       `,
-      },
-      {
-        name: 'an in-file alias of the whole Record annotation is read through',
-        code: `
+    },
+    {
+      name: 'an in-file alias of the whole Record annotation is read through',
+      code: `
 type Kind = 'live' | 'simulated';
 type Lookup = Record<Kind, number>;
 const R: Lookup = { live: 1, simulated: 2 };
 export const read = (kind: Kind) => R[kind];
       `,
-      },
-      {
-        name: 'an optionally chained bounded lookup is exempt',
-        code: `
+    },
+    {
+      name: 'an optionally chained bounded lookup is exempt',
+      code: `
 type Kind = 'live' | 'simulated';
 const read = (m: Record<Kind, string> | undefined, kind: Kind) => m?.[kind];
       `,
-      },
-      {
-        name: 'a bounded key on the write side of an assignment is exempt',
-        code: `
+    },
+    {
+      name: 'a bounded key on the write side of an assignment is exempt',
+      code: `
 type Kind = 'live' | 'simulated';
 const write = (m: Record<Kind, number>, kind: Kind) => {
   m[kind] = 1;
 };
       `,
-      },
-      {
-        name: 'an annotated let stays bounded across reassignment',
-        code: `
+    },
+    {
+      name: 'an annotated let stays bounded across reassignment',
+      code: `
 type Kind = 'live' | 'simulated';
 const R: Record<Kind, number> = { live: 1, simulated: 2 };
 export const read = (flag: boolean) => {
@@ -4270,216 +4310,216 @@ export const read = (flag: boolean) => {
   return R[kind];
 };
       `,
-      },
-      {
-        name: 'a parameter default does not disturb the annotation proof',
-        code: `
+    },
+    {
+      name: 'a parameter default does not disturb the annotation proof',
+      code: `
 type Kind = 'live' | 'simulated';
 const R: Record<Kind, number> = { live: 1, simulated: 2 };
 export const read = (kind: Kind = 'live') => R[kind];
       `,
-      },
-      {
-        name: 'a member read off the bounded lookup result is exempt',
-        code: `
+    },
+    {
+      name: 'a member read off the bounded lookup result is exempt',
+      code: `
 type Kind = 'live' | 'simulated';
 const read = (m: Record<Kind, { label: string }>, kind: Kind) => m[kind].label;
       `,
-      },
-      {
-        name: 'an erasing wrapper on a bounded key is read through to the binding',
-        code: `
+    },
+    {
+      name: 'an erasing wrapper on a bounded key is read through to the binding',
+      code: `
 type Kind = 'live' | 'simulated';
 const read = (m: Record<Kind, string>, kind: Kind) => m[kind!];
       `,
-      },
-      {
-        name: 'a numeric literal union key into its own record is exempt',
-        code: `
+    },
+    {
+      name: 'a numeric literal union key into its own record is exempt',
+      code: `
 const read = (m: Record<1 | 2, string>, slot: 1 | 2) => m[slot];
       `,
-      },
-      {
-        // The mixed spelling prefer-union-from-const-array's rewrite leaves
-        // behind: the key's alias is array-derived while the record still
-        // spells the union out. The array's `as const` elements are the
-        // literal set the subset comparison reads.
-        name: 'an as-const array-derived key into a spelled-out union record is exempt',
-        code: `
+    },
+    {
+      // The mixed spelling prefer-union-from-const-array's rewrite leaves
+      // behind: the key's alias is array-derived while the record still
+      // spells the union out. The array's `as const` elements are the
+      // literal set the subset comparison reads.
+      name: 'an as-const array-derived key into a spelled-out union record is exempt',
+      code: `
 const KINDS = ['live', 'simulated'] as const;
 type Kind = (typeof KINDS)[number];
 const R: Record<'live' | 'simulated', number> = { live: 1, simulated: 2 };
 export const read = (kind: Kind) => R[kind];
       `,
-      },
-      {
-        // Name identity carries the exemption even where the array's
-        // as-const-ness cannot settle the domain: both sides are the same
-        // alias, so the compiler holds the key inside the record's declared
-        // keys whatever that alias resolves to.
-        name: 'a shared alias over a non-as-const array is exempt on name identity',
-        code: `
+    },
+    {
+      // Name identity carries the exemption even where the array's
+      // as-const-ness cannot settle the domain: both sides are the same
+      // alias, so the compiler holds the key inside the record's declared
+      // keys whatever that alias resolves to.
+      name: 'a shared alias over a non-as-const array is exempt on name identity',
+      code: `
 const KINDS = ['live', 'simulated'];
 type Kind = (typeof KINDS)[number];
 export const read = (m: Record<Kind, string>, kind: Kind) => m[kind];
       `,
-      },
-    ],
-    invalid: [
-      {
-        // The documented core trigger: an explicit string conversion keeps
-        // reporting even when both bindings are bounded — the conversion is
-        // what the rule exists to flag, and assertSafe subsumes it.
-        name: 'String() conversion of a bounded key still reports',
-        code: `
+    },
+  ],
+  invalid: [
+    {
+      // The documented core trigger: an explicit string conversion keeps
+      // reporting even when both bindings are bounded — the conversion is
+      // what the rule exists to flag, and assertSafe subsumes it.
+      name: 'String() conversion of a bounded key still reports',
+      code: `
 type Kind = 'live' | 'simulated';
 const read = (m: Record<Kind, string>, kind: Kind) => m[String(kind)];
       `,
-        errors: [lintError('kind')],
-        output: `
+      errors: [lintError('kind')],
+      output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 type Kind = 'live' | 'simulated';
 const read = (m: Record<Kind, string>, kind: Kind) => m[assertSafe(kind)];
       `,
-      },
-      {
-        // The other documented trigger: simple interpolation is an explicit
-        // conversion by another spelling.
-        name: 'template interpolation of a bounded key still reports',
-        code: `
+    },
+    {
+      // The other documented trigger: simple interpolation is an explicit
+      // conversion by another spelling.
+      name: 'template interpolation of a bounded key still reports',
+      code: `
 type Kind = 'live' | 'simulated';
 const read = (m: Record<Kind, string>, kind: Kind) => m[\`\${kind}\`];
       `,
-        errors: [lintError('kind')],
-        output: `
+      errors: [lintError('kind')],
+      output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 type Kind = 'live' | 'simulated';
 const read = (m: Record<Kind, string>, kind: Kind) => m[assertSafe(kind)];
       `,
-      },
-      {
-        name: 'an unannotated key into a bounded record still reports',
-        code: `
+    },
+    {
+      name: 'an unannotated key into a bounded record still reports',
+      code: `
 const R: Record<'live' | 'simulated', number> = { live: 1, simulated: 2 };
 export const read = (kind) => R[kind];
       `,
-        errors: [lintError('kind')],
-        output: `
+      errors: [lintError('kind')],
+      output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 const R: Record<'live' | 'simulated', number> = { live: 1, simulated: 2 };
 export const read = (kind) => R[assertSafe(kind)];
       `,
-      },
-      {
-        // An `: string` key admits '__proto__'; the record's closed key set
-        // cannot vouch for a key the compiler lets range over every string.
-        name: 'a string-typed key into a bounded record still reports',
-        code: `
+    },
+    {
+      // An `: string` key admits '__proto__'; the record's closed key set
+      // cannot vouch for a key the compiler lets range over every string.
+      name: 'a string-typed key into a bounded record still reports',
+      code: `
 const R: Record<'live' | 'simulated', number> = { live: 1, simulated: 2 };
 export const read = (kind: string) => R[kind];
       `,
-        errors: [lintError('kind')],
-        output: `
+      errors: [lintError('kind')],
+      output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 const R: Record<'live' | 'simulated', number> = { live: 1, simulated: 2 };
 export const read = (kind: string) => R[assertSafe(kind)];
       `,
-      },
-      {
-        // A laundering assertion on the key is peeled; the BINDING's open type
-        // is what gets judged, so the assertion is no way into the carve-out.
-        name: 'an assertion cannot launder an open key into the exemption',
-        code: `
+    },
+    {
+      // A laundering assertion on the key is peeled; the BINDING's open type
+      // is what gets judged, so the assertion is no way into the carve-out.
+      name: 'an assertion cannot launder an open key into the exemption',
+      code: `
 type Kind = 'live' | 'simulated';
 const R: Record<Kind, number> = { live: 1, simulated: 2 };
 export const read = (kind: string) => R[kind as Kind];
       `,
-        errors: [lintError('kind as Kind')],
-        output: `
+      errors: [lintError('kind as Kind')],
+      output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 type Kind = 'live' | 'simulated';
 const R: Record<Kind, number> = { live: 1, simulated: 2 };
 export const read = (kind: string) => R[assertSafe(kind as Kind)];
       `,
-      },
-      {
-        name: 'a key union wider than the record union still reports',
-        code: `
+    },
+    {
+      name: 'a key union wider than the record union still reports',
+      code: `
 const R: Record<'live' | 'simulated', number> = { live: 1, simulated: 2 };
 export const read = (kind: 'live' | 'simulated' | 'replay') => R[kind];
       `,
-        errors: [lintError('kind')],
-        output: `
+      errors: [lintError('kind')],
+      output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 const R: Record<'live' | 'simulated', number> = { live: 1, simulated: 2 };
 export const read = (kind: 'live' | 'simulated' | 'replay') => R[assertSafe(kind)];
       `,
-      },
-      {
-        // Record<string, V> declares no closed key set, so a literal-union key
-        // has nothing syntactic to be covered BY — the pairing stays reported.
-        name: 'a union key into Record<string, ...> still reports',
-        code: `
+    },
+    {
+      // Record<string, V> declares no closed key set, so a literal-union key
+      // has nothing syntactic to be covered BY — the pairing stays reported.
+      name: 'a union key into Record<string, ...> still reports',
+      code: `
 const read = (m: Record<string, number>, kind: 'live' | 'simulated') => m[kind];
       `,
-        errors: [lintError('kind')],
-        output: `
+      errors: [lintError('kind')],
+      output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 const read = (m: Record<string, number>, kind: 'live' | 'simulated') => m[assertSafe(kind)];
       `,
-      },
-      {
-        // Name identity is trusted only until the alias resolves to an open
-        // domain: `type K = string` re-opens the surface the rule guards.
-        name: 'a shared alias that resolves to string still reports',
-        code: `
+    },
+    {
+      // Name identity is trusted only until the alias resolves to an open
+      // domain: `type K = string` re-opens the surface the rule guards.
+      name: 'a shared alias that resolves to string still reports',
+      code: `
 type K = string;
 const R: Record<K, number> = {};
 export const read = (k: K) => R[k];
       `,
-        errors: [lintError('k')],
-        output: `
+      errors: [lintError('k')],
+      output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 type K = string;
 const R: Record<K, number> = {};
 export const read = (k: K) => R[assertSafe(k)];
       `,
-      },
-      {
-        // A literal union that itself names a prototype field is a declared
-        // route to the surface assertSafe guards, not a proof of safety.
-        name: 'a shared alias whose union names __proto__ still reports',
-        code: `
+    },
+    {
+      // A literal union that itself names a prototype field is a declared
+      // route to the surface assertSafe guards, not a proof of safety.
+      name: 'a shared alias whose union names __proto__ still reports',
+      code: `
 type K = '__proto__' | 'safe';
 const R: Record<K, number> = { __proto__: 1, safe: 2 };
 export const read = (k: K) => R[k];
       `,
-        errors: [lintError('k')],
-        output: `
+      errors: [lintError('k')],
+      output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 type K = '__proto__' | 'safe';
 const R: Record<K, number> = { __proto__: 1, safe: 2 };
 export const read = (k: K) => R[assertSafe(k)];
       `,
-      },
-      {
-        // `K extends string` admits an instantiation at `string` itself, so a
-        // generic lookup helper keeps being reported.
-        name: 'a generic key constrained to string still reports',
-        code: `
+    },
+    {
+      // `K extends string` admits an instantiation at `string` itself, so a
+      // generic lookup helper keeps being reported.
+      name: 'a generic key constrained to string still reports',
+      code: `
 export const get = <K extends string>(m: Record<K, number>, k: K) => m[k];
       `,
-        errors: [lintError('k')],
-        output: `
+      errors: [lintError('k')],
+      output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 export const get = <K extends string>(m: Record<K, number>, k: K) => m[assertSafe(k)];
       `,
-      },
-      {
-        // The nearest binding is what gets judged: an inner open-typed shadow
-        // must not inherit the outer bounded parameter's proof.
-        name: 'a shadowing open-typed binding still reports',
-        code: `
+    },
+    {
+      // The nearest binding is what gets judged: an inner open-typed shadow
+      // must not inherit the outer bounded parameter's proof.
+      name: 'a shadowing open-typed binding still reports',
+      code: `
 type Kind = 'live' | 'simulated';
 const R: Record<Kind, number> = { live: 1, simulated: 2 };
 export const outer = (kind: Kind) => {
@@ -4487,8 +4527,8 @@ export const outer = (kind: Kind) => {
   return inner(kind);
 };
       `,
-        errors: [lintError('kind')],
-        output: `
+      errors: [lintError('kind')],
+      output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 type Kind = 'live' | 'simulated';
 const R: Record<Kind, number> = { live: 1, simulated: 2 };
@@ -4497,95 +4537,100 @@ export const outer = (kind: Kind) => {
   return inner(kind);
 };
       `,
-      },
-      {
-        // The record proof rides on a binding's own annotation; a record
-        // reached as a field makes no resolvable claim here, so the
-        // conservative answer stands. Deliberately a false positive the
-        // carve-out does not chase.
-        name: 'a bounded record reached as a field still reports',
-        code: `
+    },
+    {
+      // The record proof rides on a binding's own annotation; a record
+      // reached as a field makes no resolvable claim here, so the
+      // conservative answer stands. Deliberately a false positive the
+      // carve-out does not chase.
+      name: 'a bounded record reached as a field still reports',
+      code: `
 type Kind = 'live' | 'simulated';
 const read = (wrap: { map: Record<Kind, number> }, kind: Kind) => wrap.map[kind];
       `,
-        errors: [lintError('kind')],
-        output: `
+      errors: [lintError('kind')],
+      output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 type Kind = 'live' | 'simulated';
 const read = (wrap: { map: Record<Kind, number> }, kind: Kind) => wrap.map[assertSafe(kind)];
       `,
-      },
-      {
-        // An index signature admits every string key, so it is not the closed
-        // claim `Record<K, V>` makes.
-        name: 'an index-signature annotation is not a bounded record',
-        code: `
+    },
+    {
+      // An index signature admits every string key, so it is not the closed
+      // claim `Record<K, V>` makes.
+      name: 'an index-signature annotation is not a bounded record',
+      code: `
 type Kind = 'live' | 'simulated';
 const R: { [k: string]: number } = {};
 export const read = (kind: Kind) => R[kind];
       `,
-        errors: [lintError('kind')],
-        output: `
+      errors: [lintError('kind')],
+      output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 type Kind = 'live' | 'simulated';
 const R: { [k: string]: number } = {};
 export const read = (kind: Kind) => R[assertSafe(kind)];
       `,
-      },
-      {
-        // Without an annotation the record's key set lives in the value, which
-        // this syntactic proof does not read. Deliberately conservative.
-        name: 'an unannotated record initializer still reports',
-        code: `
+    },
+    {
+      // Without an annotation the record's key set lives in the value, which
+      // this syntactic proof does not read. Deliberately conservative.
+      name: 'an unannotated record initializer still reports',
+      code: `
 type Kind = 'live' | 'simulated';
 const R = { live: 1, simulated: 2 };
 export const read = (kind: Kind) => R[kind];
       `,
-        errors: [lintError('kind')],
-        output: `
+      errors: [lintError('kind')],
+      output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 type Kind = 'live' | 'simulated';
 const R = { live: 1, simulated: 2 };
 export const read = (kind: Kind) => R[assertSafe(kind)];
       `,
-      },
-      {
-        // Without `as const` the array's type widens to `string[]`, so the
-        // derived alias IS `string` — an open domain no spelled-out record
-        // union can vouch for.
-        name: 'a non-as-const array-derived key into a spelled-out record still reports',
-        code: `
+    },
+    {
+      // Without `as const` the array's type widens to `string[]`, so the
+      // derived alias IS `string` — an open domain no spelled-out record
+      // union can vouch for.
+      name: 'a non-as-const array-derived key into a spelled-out record still reports',
+      code: `
 const KINDS = ['live', 'simulated'];
 type Kind = (typeof KINDS)[number];
 const R: Record<'live' | 'simulated', number> = { live: 1, simulated: 2 };
 export const read = (kind: Kind) => R[kind];
       `,
-        errors: [lintError('kind')],
-        output: `
+      errors: [lintError('kind')],
+      output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 const KINDS = ['live', 'simulated'];
 type Kind = (typeof KINDS)[number];
 const R: Record<'live' | 'simulated', number> = { live: 1, simulated: 2 };
 export const read = (kind: Kind) => R[assertSafe(kind)];
       `,
-      },
-      {
-        // The exemption covers the bounded inner lookup only; the open key on
-        // the chained outer lookup keeps its report.
-        name: 'only the bounded half of a chained double lookup is exempt',
-        code: `
+    },
+    {
+      // The exemption covers the bounded inner lookup only; the open key on
+      // the chained outer lookup keeps its report.
+      name: 'only the bounded half of a chained double lookup is exempt',
+      code: `
 type Kind = 'live' | 'simulated';
 const read = (m: Record<Kind, Record<string, number>>, kind: Kind, other: string) => m[kind][other];
       `,
-        errors: [lintError('other')],
-        output: `
+      errors: [lintError('other')],
+      output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 type Kind = 'live' | 'simulated';
 const read = (m: Record<Kind, Record<string, number>>, kind: Kind, other: string) => m[kind][assertSafe(other)];
       `,
-      },
-    ],
-  },
+    },
+  ],
+};
+
+ruleTesterTs.run(
+  'enforce-assert-safe-object-key: compiler-bounded Record lookups (issue #1875)',
+  enforceAssertSafeObjectKey,
+  BOUNDED_RECORD_TESTS,
 );
 
 // Issue #1408: RuleTester applies a single fix pass and never shows the file
@@ -4598,11 +4643,7 @@ describe('enforce-assert-safe-object-key: inline disables and the import carrier
 
   const lint = (code: string) => {
     const linter = new Linter();
-    linter.defineParser(
-      '@typescript-eslint/parser',
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      require('@typescript-eslint/parser'),
-    );
+    linter.defineParser('@typescript-eslint/parser', typescriptParser);
     linter.defineRule(
       RULE_ID,
       enforceAssertSafeObjectKey as unknown as Rule.RuleModule,
@@ -4758,11 +4799,7 @@ describe('enforce-assert-safe-object-key: an existing assertSafe binding (issue 
 
   const lint = (code: string) => {
     const linter = new Linter();
-    linter.defineParser(
-      '@typescript-eslint/parser',
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      require('@typescript-eslint/parser'),
-    );
+    linter.defineParser('@typescript-eslint/parser', typescriptParser);
     linter.defineRule(
       RULE_ID,
       enforceAssertSafeObjectKey as unknown as Rule.RuleModule,
@@ -5048,5 +5085,923 @@ describe('enforce-assert-safe-object-key: the nearest manifest decides the exten
     );
 
     expect(specifiersOf(output)).toEqual(['../functions/src/util/assertSafe']);
+  });
+});
+
+// Issue #2067: ESLint merges the fixes of one report into a single edit
+// spanning [first start, last end]. The `import { assertSafe }` this rule
+// injects is anchored at the top of the file, so bundling it with the wrap made
+// the emitted edit claim everything from the file's first statement to the
+// middle of the key's own access — a span that sorts ahead of every competing
+// fix and wins against all of them, but only as far as its end. A formatter
+// rewriting that same access spreads its edits across the whole of it, so its
+// edits inside the span were discarded and its edits past the key were kept,
+// and the halves did not fit together: `--fix` emitted a file that does not
+// parse. The wrap therefore spans the ACCESS it rewrites, whose text it
+// re-emits verbatim around the wrapped key. These cases pin that text on every
+// shape the span has to reproduce.
+const SPAN_TESTS: AssertSafeTests = {
+  valid: [
+    {
+      name: 'a wrapped key on its own line after a parenthesized assertion',
+      code: [
+        IMPORT_LINE,
+        'declare const result: unknown;',
+        'declare const KEY: string;',
+        'const entry = (result as Record<string, { event: unknown }>)[',
+        '  assertSafe(KEY)',
+        '];',
+      ].join('\n'),
+    },
+    {
+      name: 'a wrapped key in the shape prettier prints the assertion in',
+      code: [
+        IMPORT_LINE,
+        'declare const result: unknown;',
+        'declare const KEY: string;',
+        'const entry = (',
+        '  result as Record<',
+        '    string,',
+        '    { event: unknown }',
+        '  >',
+        ')[assertSafe(KEY)];',
+      ].join('\n'),
+    },
+    {
+      name: 'a wrapped key on its own line in an optional-chained access',
+      code: [
+        IMPORT_LINE,
+        'declare const store: Record<string, unknown> | undefined;',
+        'declare const KEY: string;',
+        'const entry = store?.[',
+        '  assertSafe(KEY)',
+        '];',
+      ].join('\n'),
+    },
+    {
+      name: 'a wrapped call-valued key on its own line',
+      code: [
+        IMPORT_LINE,
+        'declare const store: Record<string, unknown>;',
+        'declare const id: string;',
+        'declare function resolveKey(id: string): string;',
+        'const entry = store[',
+        '  assertSafe(resolveKey(id))',
+        '];',
+      ].join('\n'),
+    },
+    {
+      name: 'a string literal key on its own line needs no wrap',
+      code: [
+        'declare const store: Record<string, unknown>;',
+        'const entry = store[',
+        "  'alpha'",
+        '];',
+      ].join('\n'),
+    },
+    {
+      name: 'a numeric literal key on its own line needs no wrap',
+      code: [
+        'declare const rows: unknown[];',
+        'const entry = rows[',
+        '  0',
+        '];',
+      ].join('\n'),
+    },
+    {
+      name: 'an array-like receiver indexed on its own line needs no wrap',
+      code: [
+        'declare const items: unknown[];',
+        'declare const index: number;',
+        'const entry = items[',
+        '  index',
+        '];',
+      ].join('\n'),
+    },
+    {
+      name: 'a key the syntax proves numeric needs no wrap across lines',
+      code: [
+        'declare const store: Record<string, unknown>;',
+        'const read = (offset: number) =>',
+        '  store[',
+        '    offset + 1',
+        '  ];',
+      ].join('\n'),
+    },
+    {
+      name: 'a wrapped key across lines in an `in` comparison',
+      code: [
+        IMPORT_LINE,
+        'declare const store: Record<string, unknown>;',
+        'declare const id: string;',
+        'const present =',
+        '  assertSafe(id)',
+        '  in store;',
+      ].join('\n'),
+    },
+    {
+      name: 'a wrapped computed property key across lines',
+      code: [
+        IMPORT_LINE,
+        'declare const id: string;',
+        'const row = {',
+        '  [',
+        '    assertSafe(id)',
+        '  ]: 1,',
+        '};',
+      ].join('\n'),
+    },
+    {
+      name: 'both levels of a nested access already wrapped',
+      code: [
+        IMPORT_LINE,
+        'declare const store: Record<string, unknown>;',
+        'declare const lookup: Record<string, string>;',
+        'declare const KEY: string;',
+        'const entry = store[',
+        '  assertSafe(lookup[assertSafe(KEY)])',
+        '];',
+      ].join('\n'),
+    },
+    {
+      name: 'a comment inside the brackets of a wrapped access',
+      code: [
+        IMPORT_LINE,
+        'declare const store: Record<string, unknown>;',
+        'declare const KEY: string;',
+        'const entry = store[',
+        '  // the caller picked this',
+        '  assertSafe(KEY)',
+        '];',
+      ].join('\n'),
+    },
+  ],
+  invalid: [
+    {
+      // The reproduction from issue #2067, verbatim.
+      name: 'a key on its own line after a parenthesized type assertion',
+      code: [
+        'declare const result: unknown;',
+        'declare const KEY: string;',
+        'const entry = (result as Record<string, { event: unknown }>)[',
+        '  KEY',
+        '];',
+      ].join('\n'),
+      errors: 1,
+      output: [
+        IMPORT_LINE,
+        'declare const result: unknown;',
+        'declare const KEY: string;',
+        'const entry = (result as Record<string, { event: unknown }>)[',
+        '  assertSafe(KEY)',
+        '];',
+      ].join('\n'),
+    },
+    {
+      name: 'the same assertion with the bracket and the key on one line',
+      code: [
+        'declare const result: unknown;',
+        'declare const KEY: string;',
+        'const entry = (result as Record<string, { event: unknown }>)[KEY];',
+      ].join('\n'),
+      errors: 1,
+      output: [
+        IMPORT_LINE,
+        'declare const result: unknown;',
+        'declare const KEY: string;',
+        'const entry = (result as Record<string, { event: unknown }>)[assertSafe(KEY)];',
+      ].join('\n'),
+    },
+    {
+      name: 'the assertion in the shape prettier prints it in',
+      code: [
+        'declare const result: unknown;',
+        'declare const KEY: string;',
+        'const entry = (',
+        '  result as Record<',
+        '    string,',
+        '    { event: unknown; props: { id: string } }',
+        '  >',
+        ')[KEY];',
+      ].join('\n'),
+      errors: 1,
+      output: [
+        IMPORT_LINE,
+        'declare const result: unknown;',
+        'declare const KEY: string;',
+        'const entry = (',
+        '  result as Record<',
+        '    string,',
+        '    { event: unknown; props: { id: string } }',
+        '  >',
+        ')[assertSafe(KEY)];',
+      ].join('\n'),
+    },
+    {
+      name: 'a plain identifier receiver with the key on its own line',
+      code: [
+        'declare const store: Record<string, unknown>;',
+        'declare const KEY: string;',
+        'const entry = store[',
+        '  KEY',
+        '];',
+      ].join('\n'),
+      errors: 1,
+      output: [
+        IMPORT_LINE,
+        'declare const store: Record<string, unknown>;',
+        'declare const KEY: string;',
+        'const entry = store[',
+        '  assertSafe(KEY)',
+        '];',
+      ].join('\n'),
+    },
+    {
+      name: 'a plain identifier receiver on one line',
+      code: [
+        'declare const store: Record<string, unknown>;',
+        'declare const KEY: string;',
+        'const entry = store[KEY];',
+      ].join('\n'),
+      errors: 1,
+      output: [
+        IMPORT_LINE,
+        'declare const store: Record<string, unknown>;',
+        'declare const KEY: string;',
+        'const entry = store[assertSafe(KEY)];',
+      ].join('\n'),
+    },
+    {
+      // The outer access contains the inner one, so the two spans overlap and
+      // only the outer wrap survives the pass. The inner key is reported all
+      // the same and lands on the next pass, which is what the multi-pass
+      // fixture below asserts.
+      name: 'a nested access as the key wraps outside-in',
+      code: [
+        'declare const store: Record<string, unknown>;',
+        'declare const lookup: Record<string, string>;',
+        'declare const KEY: string;',
+        'const entry = store[',
+        '  lookup[KEY]',
+        '];',
+      ].join('\n'),
+      errors: 2,
+      output: [
+        IMPORT_LINE,
+        'declare const store: Record<string, unknown>;',
+        'declare const lookup: Record<string, string>;',
+        'declare const KEY: string;',
+        'const entry = store[',
+        '  assertSafe(lookup[KEY])',
+        '];',
+      ].join('\n'),
+    },
+    {
+      name: 'an optional-chained access with the key on its own line',
+      code: [
+        'declare const store: Record<string, unknown> | undefined;',
+        'declare const KEY: string;',
+        'const entry = store?.[',
+        '  KEY',
+        '];',
+      ].join('\n'),
+      errors: 1,
+      output: [
+        IMPORT_LINE,
+        'declare const store: Record<string, unknown> | undefined;',
+        'declare const KEY: string;',
+        'const entry = store?.[',
+        '  assertSafe(KEY)',
+        '];',
+      ].join('\n'),
+    },
+    {
+      name: 'a computed key that is itself a call, on its own line',
+      code: [
+        'declare const store: Record<string, unknown>;',
+        'declare const id: string;',
+        'declare function resolveKey(id: string): string;',
+        'const entry = store[',
+        '  resolveKey(id)',
+        '];',
+      ].join('\n'),
+      errors: 1,
+      output: [
+        IMPORT_LINE,
+        'declare const store: Record<string, unknown>;',
+        'declare const id: string;',
+        'declare function resolveKey(id: string): string;',
+        'const entry = store[',
+        '  assertSafe(resolveKey(id))',
+        '];',
+      ].join('\n'),
+    },
+    {
+      name: 'a member-expression key on its own line',
+      code: [
+        'declare const store: Record<string, unknown>;',
+        'declare const source: { key: string };',
+        'const entry = store[',
+        '  source.key',
+        '];',
+      ].join('\n'),
+      errors: 1,
+      output: [
+        IMPORT_LINE,
+        'declare const store: Record<string, unknown>;',
+        'declare const source: { key: string };',
+        'const entry = store[',
+        '  assertSafe(source.key)',
+        '];',
+      ].join('\n'),
+    },
+    {
+      // The span re-emits everything between the brackets that is not the key,
+      // so a comment the author put there has to come through untouched.
+      name: 'a comment between the bracket and the key',
+      code: [
+        'declare const store: Record<string, unknown>;',
+        'declare const KEY: string;',
+        'const entry = store[',
+        '  // the caller picked this',
+        '  KEY',
+        '];',
+      ].join('\n'),
+      errors: 1,
+      output: [
+        IMPORT_LINE,
+        'declare const store: Record<string, unknown>;',
+        'declare const KEY: string;',
+        'const entry = store[',
+        '  // the caller picked this',
+        '  assertSafe(KEY)',
+        '];',
+      ].join('\n'),
+    },
+    {
+      name: 'a trailing comment between the key and its closing bracket',
+      code: [
+        'declare const store: Record<string, unknown>;',
+        'declare const KEY: string;',
+        'const entry = store[',
+        '  KEY // the caller picked this',
+        '];',
+      ].join('\n'),
+      errors: 1,
+      output: [
+        IMPORT_LINE,
+        'declare const store: Record<string, unknown>;',
+        'declare const KEY: string;',
+        'const entry = store[',
+        '  assertSafe(KEY) // the caller picked this',
+        '];',
+      ].join('\n'),
+    },
+    {
+      name: 'a comment between the receiver and the bracket',
+      code: [
+        'declare const store: Record<string, unknown>;',
+        'declare const KEY: string;',
+        'const entry = store /* dynamic */[KEY];',
+      ].join('\n'),
+      errors: 1,
+      output: [
+        IMPORT_LINE,
+        'declare const store: Record<string, unknown>;',
+        'declare const KEY: string;',
+        'const entry = store /* dynamic */[assertSafe(KEY)];',
+      ].join('\n'),
+    },
+    {
+      name: 'a computed property key across lines',
+      code: [
+        'declare const id: string;',
+        'const row = {',
+        '  [',
+        '    String(id)',
+        '  ]: 1,',
+        '};',
+      ].join('\n'),
+      errors: 1,
+      output: [
+        IMPORT_LINE,
+        'declare const id: string;',
+        'const row = {',
+        '  [',
+        '    assertSafe(id)',
+        '  ]: 1,',
+        '};',
+      ].join('\n'),
+    },
+    {
+      name: 'an `in` comparison split across lines',
+      code: [
+        'declare const store: Record<string, unknown>;',
+        'declare const id: string;',
+        'const present =',
+        '  `${id}`',
+        '  in store;',
+      ].join('\n'),
+      errors: 1,
+      output: [
+        IMPORT_LINE,
+        'declare const store: Record<string, unknown>;',
+        'declare const id: string;',
+        'const present =',
+        '  assertSafe(id)',
+        '  in store;',
+      ].join('\n'),
+    },
+    {
+      name: 'an access in assignment-target position across lines',
+      code: [
+        'declare const store: Record<string, unknown>;',
+        'declare const KEY: string;',
+        'store[',
+        '  KEY',
+        '] = 1;',
+      ].join('\n'),
+      errors: 1,
+      output: [
+        IMPORT_LINE,
+        'declare const store: Record<string, unknown>;',
+        'declare const KEY: string;',
+        'store[',
+        '  assertSafe(KEY)',
+        '] = 1;',
+      ].join('\n'),
+    },
+    {
+      name: 'a template literal key on its own line',
+      code: [
+        'declare const store: Record<string, unknown>;',
+        'declare const id: string;',
+        'const entry = store[',
+        '  `${id}`',
+        '];',
+      ].join('\n'),
+      errors: 1,
+      output: [
+        IMPORT_LINE,
+        'declare const store: Record<string, unknown>;',
+        'declare const id: string;',
+        'const entry = store[',
+        '  assertSafe(id)',
+        '];',
+      ].join('\n'),
+    },
+    {
+      name: 'an asserted key on its own line keeps its assertion',
+      code: [
+        'declare const store: Record<string, unknown>;',
+        'declare const raw: unknown;',
+        'const entry = store[',
+        '  raw as string',
+        '];',
+      ].join('\n'),
+      errors: 1,
+      output: [
+        IMPORT_LINE,
+        'declare const store: Record<string, unknown>;',
+        'declare const raw: unknown;',
+        'const entry = store[',
+        '  assertSafe(raw as string)',
+        '];',
+      ].join('\n'),
+    },
+    {
+      name: 'a non-null asserted key on its own line keeps its assertion',
+      code: [
+        'declare const store: Record<string, unknown>;',
+        'declare const maybe: string | undefined;',
+        'const entry = store[',
+        '  maybe!',
+        '];',
+      ].join('\n'),
+      errors: 1,
+      output: [
+        IMPORT_LINE,
+        'declare const store: Record<string, unknown>;',
+        'declare const maybe: string | undefined;',
+        'const entry = store[',
+        '  assertSafe(maybe!)',
+        '];',
+      ].join('\n'),
+    },
+    {
+      name: 'an awaited key on its own line keeps the await inside the wrap',
+      code: [
+        'declare const store: Record<string, unknown>;',
+        'declare function keyOf(): Promise<string>;',
+        'export const read = async () =>',
+        '  store[',
+        '    await keyOf()',
+        '  ];',
+      ].join('\n'),
+      errors: 1,
+      output: [
+        IMPORT_LINE,
+        'declare const store: Record<string, unknown>;',
+        'declare function keyOf(): Promise<string>;',
+        'export const read = async () =>',
+        '  store[',
+        '    assertSafe(await keyOf())',
+        '  ];',
+      ].join('\n'),
+    },
+    {
+      // Two accesses of one chain nest, so their spans overlap and the inner
+      // one — the narrower of two edits starting at the same offset — is the
+      // one ESLint keeps. The outer key is reported and wraps on the next pass.
+      name: 'a chained double lookup wraps inside-out',
+      code: [
+        IMPORT_LINE,
+        'declare const store: Record<string, Record<string, unknown>>;',
+        'declare const outerKey: string;',
+        'declare const innerKey: string;',
+        'const entry = store[outerKey][innerKey];',
+      ].join('\n'),
+      errors: 2,
+      output: [
+        IMPORT_LINE,
+        'declare const store: Record<string, Record<string, unknown>>;',
+        'declare const outerKey: string;',
+        'declare const innerKey: string;',
+        'const entry = store[assertSafe(outerKey)][innerKey];',
+      ].join('\n'),
+    },
+    {
+      // The same access with the import already present, so the wrap is the
+      // whole of the report's edit: the span still has to reach the closing
+      // bracket, which is where the second corruption in #2067 landed.
+      name: 'a key on its own line in a file that already imports the helper',
+      code: [
+        IMPORT_LINE,
+        'declare const result: unknown;',
+        'declare const KEY: string;',
+        'const entry = (result as Record<string, { event: unknown }>)[',
+        '  KEY',
+        '];',
+      ].join('\n'),
+      errors: 1,
+      output: [
+        IMPORT_LINE,
+        'declare const result: unknown;',
+        'declare const KEY: string;',
+        'const entry = (result as Record<string, { event: unknown }>)[',
+        '  assertSafe(KEY)',
+        '];',
+      ].join('\n'),
+    },
+    {
+      // Sibling accesses do not nest, so both wraps land in one pass.
+      name: 'two sibling accesses in one statement both wrap in one pass',
+      code: [
+        'declare const store: Record<string, unknown>;',
+        'declare const first: string;',
+        'declare const second: string;',
+        'const pair = [store[first], store[second]];',
+      ].join('\n'),
+      errors: 2,
+      output: [
+        IMPORT_LINE,
+        'declare const store: Record<string, unknown>;',
+        'declare const first: string;',
+        'declare const second: string;',
+        'const pair = [store[assertSafe(first)], store[assertSafe(second)]];',
+      ].join('\n'),
+    },
+  ],
+};
+
+ruleTesterTs.run(
+  'enforce-assert-safe-object-key: the fix owns the access it rewrites (issue #2067)',
+  enforceAssertSafeObjectKey,
+  SPAN_TESTS,
+);
+
+// Issue #2067: the corruption this rule shipped was invisible to every fixture
+// above, because a fixture compares one rule's output against a string. It took
+// a second fixer competing for the same lines — the formatter agora runs beside
+// this plugin — to show it: ESLint discarded the competitor's edits that fell
+// inside this rule's merged span and kept the ones past its end, and the halves
+// did not fit together. These cases drive the real multi-pass `Linter` with both
+// fixers configured and assert the one property a fixture cannot: the file
+// ESLint writes parses.
+describe('enforce-assert-safe-object-key --fix beside a formatter (issue #2067)', () => {
+  const RULE_ID = '@blumintinc/blumint/enforce-assert-safe-object-key';
+  const FORMATTER_ID = 'prettier/prettier';
+  const FILENAME = path.join(
+    process.cwd(),
+    'functions/src/webhooks/extractProcessorProps.test.ts',
+  );
+  const FORMATTER_OPTIONS = {
+    parser: 'typescript',
+    singleQuote: true,
+    trailingComma: 'all',
+  };
+
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const formatterRule = require('eslint-plugin-prettier').rules
+    .prettier as Rule.RuleModule;
+
+  /**
+   * The same formatter, reporting from `Program:exit` instead of `Program`.
+   *
+   * Which of two fixes ESLint keeps at one location is decided by the order the
+   * reports arrive in, and that order is the order the rules' visitors fire —
+   * so this rule loses the race to a formatter that reports on the way in and
+   * wins it against one that reports on the way out. Both are formatters a
+   * consumer plausibly runs, and the file has to parse either way.
+   */
+  const deferredFormatterRule: Rule.RuleModule = {
+    meta: formatterRule.meta,
+    create(context) {
+      const visitor = formatterRule.create(context) as unknown as Record<
+        string,
+        (node: unknown) => void
+      >;
+      return {
+        'Program:exit'(node) {
+          visitor.Program(node);
+        },
+      };
+    },
+  };
+
+  const makeLinter = (formatter: Rule.RuleModule = formatterRule) => {
+    const linter = new Linter();
+    linter.defineParser('@typescript-eslint/parser', typescriptParser);
+    linter.defineRule(
+      RULE_ID,
+      enforceAssertSafeObjectKey as unknown as Rule.RuleModule,
+    );
+    linter.defineRule(FORMATTER_ID, formatter);
+    return linter;
+  };
+
+  const configFor = (rules: Linter.RulesRecord): Linter.Config => ({
+    parser: '@typescript-eslint/parser',
+    parserOptions: {
+      ecmaVersion: 2022 as const,
+      sourceType: 'module' as const,
+    },
+    rules,
+  });
+
+  const RULE_ONLY: Linter.RulesRecord = { [RULE_ID]: 'error' };
+  const FORMATTER_ONLY: Linter.RulesRecord = {
+    [FORMATTER_ID]: ['error', FORMATTER_OPTIONS],
+  };
+  const BOTH: Linter.RulesRecord = { ...RULE_ONLY, ...FORMATTER_ONLY };
+
+  // The key sits on its own line because the access ahead of it is too wide for
+  // the print width — which is exactly the state that makes the formatter want
+  // to rewrite the whole access, and the discriminator the issue reported.
+  const UNFORMATTED = [
+    "export const KEY = 'a' as const;",
+    '',
+    'export function readIt(result: unknown) {',
+    '  const entry = (result as Record<string, { event: unknown; props: { integration: unknown; messageId: string } }>)[',
+    '    KEY',
+    '  ];',
+    '  return entry;',
+    '}',
+  ].join('\n');
+
+  const UNFORMATTED_WITH_IMPORT = [
+    "import { assertSafe } from '../util/assertSafe';",
+    UNFORMATTED,
+  ].join('\n');
+
+  it('the formatter really competes, on both sides of the key', () => {
+    // Without this the composition below proves nothing: a formatter that
+    // reports no fix, or reports one fix, cannot be split in half.
+    const fixes = makeLinter()
+      .verify(UNFORMATTED, configFor(FORMATTER_ONLY), FILENAME)
+      .map((message) => message.fix)
+      .filter((fix): fix is NonNullable<typeof fix> => !!fix);
+    expect(fixes.length).toBeGreaterThanOrEqual(3);
+
+    const keyStart = UNFORMATTED.indexOf('    KEY') + 4;
+    expect(fixes.some((fix) => fix.range[0] < keyStart)).toBe(true);
+    expect(fixes.some((fix) => fix.range[0] > keyStart)).toBe(true);
+  });
+
+  it('this rule alone wraps the key', () => {
+    const fixed = makeLinter().verifyAndFix(
+      UNFORMATTED,
+      configFor(RULE_ONLY),
+      FILENAME,
+    );
+    expect(fixed.output).toContain('assertSafe(KEY)');
+  });
+
+  it('emits a file that parses when the import rides along', () => {
+    const fixed = makeLinter().verifyAndFix(
+      UNFORMATTED,
+      configFor(BOTH),
+      FILENAME,
+    );
+
+    expect(fixed.output).toContain('assertSafe(KEY)');
+    expect(fixed.output).toContain(
+      "import { assertSafe } from '../util/assertSafe';",
+    );
+    expect(parseFailure(fixed.output)).toBeNull();
+    expect(fixed.messages.filter((message) => message.fatal)).toEqual([]);
+    // The `)[KEY]` tail the issue reported surviving beside the wrap.
+    expect(fixed.output).not.toContain(')[KEY]');
+  });
+
+  it('emits a file that parses when the helper is already imported', () => {
+    const fixed = makeLinter().verifyAndFix(
+      UNFORMATTED_WITH_IMPORT,
+      configFor(BOTH),
+      FILENAME,
+    );
+
+    expect(fixed.output).toContain('assertSafe(KEY)');
+    expect(parseFailure(fixed.output)).toBeNull();
+    expect(fixed.messages.filter((message) => message.fatal)).toEqual([]);
+  });
+
+  it('emits a file that parses when the formatter reports last', () => {
+    // The arm where this rule WINS the race: its fix is applied and the
+    // formatter's competing edits are the ones discarded. Both files below are
+    // the shapes #2067 measured — the second is the one the real file was
+    // corrupted into, with the assertion's closing `>` consumed.
+    for (const source of [UNFORMATTED, UNFORMATTED_WITH_IMPORT]) {
+      const fixed = makeLinter(deferredFormatterRule).verifyAndFix(
+        source,
+        configFor(BOTH),
+        FILENAME,
+      );
+
+      expect(fixed.output).toContain('assertSafe(KEY)');
+      expect(parseFailure(fixed.output)).toBeNull();
+      expect(fixed.messages.filter((message) => message.fatal)).toEqual([]);
+    }
+  });
+
+  it('the deferred formatter really reports after this rule', () => {
+    // Without this the arm above proves nothing: it is the report ORDER that
+    // puts this rule's fix ahead of the formatter's.
+    const order = makeLinter(deferredFormatterRule)
+      .verify(UNFORMATTED, configFor(BOTH), FILENAME)
+      .filter((message) => message.line === 5)
+      .map((message) => message.ruleId);
+
+    expect(order).toEqual([RULE_ID, FORMATTER_ID]);
+  });
+
+  it('leaves the formatter nothing left to say', () => {
+    const fixed = makeLinter().verifyAndFix(
+      UNFORMATTED,
+      configFor(BOTH),
+      FILENAME,
+    );
+
+    expect(
+      makeLinter().verify(fixed.output, configFor(BOTH), FILENAME),
+    ).toEqual([]);
+  });
+
+  it('the parse check sees the corruption the issue reported', () => {
+    // The planted control for every `parseFailure(...) === null` above: the
+    // output #2067 measured, which wrote the wrap over the wrong span and left
+    // the original `)[KEY]` tail behind.
+    const corrupted = [
+      "import { assertSafe } from '../util/assertSafe';",
+      "export const KEY = 'a' as const;",
+      '',
+      'export function readIt(result: unknown) {',
+      '  const entry = (result as Record<string, { event: unknown }>)[',
+      '    assertSafe(KEY)',
+      '  )[KEY];',
+      '  return entry;',
+      '}',
+    ].join('\n');
+
+    expect(parseFailure(corrupted)).not.toBeNull();
+  });
+});
+
+// Issue #2067: a wrong replacement range is invisible in a fixture diff — the
+// output string simply differs — but fatal in a file. This sweep re-lints what
+// the fixer writes for EVERY invalid fixture this file declares and requires it
+// to parse.
+describe('enforce-assert-safe-object-key: every fixed fixture parses (issue #2067)', () => {
+  const RULE_ID = '@blumintinc/blumint/enforce-assert-safe-object-key';
+
+  const makeLinter = (rule: Rule.RuleModule) => {
+    const linter = new Linter();
+    linter.defineParser('@typescript-eslint/parser', typescriptParser);
+    linter.defineRule(RULE_ID, rule);
+    return linter;
+  };
+
+  type Fixture = {
+    code: string;
+    filename?: string;
+    options?: readonly unknown[];
+    parserOptions?: Linter.ParserOptions;
+  };
+
+  const FIXTURES: Fixture[] = [
+    MAIN_TESTS,
+    PRIVATE_MEMBER_TESTS,
+    BOUNDED_RECORD_TESTS,
+    SPAN_TESTS,
+  ].flatMap((suite) => suite.invalid as unknown as Fixture[]);
+
+  const fixWith = (rule: Rule.RuleModule, fixture: Fixture) =>
+    makeLinter(rule).verifyAndFix(
+      fixture.code,
+      {
+        parser: '@typescript-eslint/parser',
+        parserOptions: {
+          ecmaVersion: 2022 as const,
+          sourceType: 'module' as const,
+          ...fixture.parserOptions,
+        },
+        rules: {
+          [RULE_ID]: fixture.options
+            ? ['error', ...(fixture.options as unknown[])]
+            : 'error',
+        },
+      } as Linter.Config,
+      fixture.filename ?? 'file.ts',
+    );
+
+  const subject = enforceAssertSafeObjectKey as unknown as Rule.RuleModule;
+
+  it('sweeps every invalid fixture, and most of them are rewritten', () => {
+    // Floors just under the measured values: a suite that stops declaring
+    // fixtures, or a rule that stops fixing them, would otherwise leave the
+    // assertion below passing over nothing.
+    expect(FIXTURES.length).toBeGreaterThanOrEqual(205);
+
+    const rewritten = FIXTURES.filter(
+      (fixture) => fixWith(subject, fixture).output !== fixture.code,
+    );
+    expect(rewritten.length).toBeGreaterThanOrEqual(190);
+  });
+
+  it('emits text that parses for every invalid fixture', () => {
+    const broken = FIXTURES.map((fixture) => {
+      const fixed = fixWith(subject, fixture);
+      return { fixture, failure: parseFailure(fixed.output) };
+    }).filter((entry) => entry.failure !== null);
+
+    expect(
+      broken.map((entry) => `${entry.failure}: ${entry.fixture.code}`),
+    ).toEqual([]);
+  });
+
+  it('reports nothing fatal on what it wrote', () => {
+    const fatal = FIXTURES.flatMap((fixture) =>
+      fixWith(subject, fixture).messages.filter((message) => message.fatal),
+    );
+    expect(fatal).toEqual([]);
+  });
+
+  it('the sweep catches a fixer whose range is wrong', () => {
+    // The planted positive control. This fixer wraps the key with the call it
+    // never closes — the same class of defect as writing the wrap over a span
+    // that ends short of the closing bracket — and the sweep above has to see
+    // it, or its clean result means nothing.
+    const brokenFixer: Rule.RuleModule = {
+      meta: {
+        type: 'problem',
+        fixable: 'code',
+        schema: [],
+        messages: { useAssertSafe: 'planted' },
+      },
+      create(context) {
+        return {
+          MemberExpression(node) {
+            const member = node as unknown as {
+              computed: boolean;
+              property: { type: string };
+            };
+            if (!member.computed || member.property.type === 'Literal') {
+              return;
+            }
+            context.report({
+              node: member.property as never,
+              messageId: 'useAssertSafe',
+              fix: (fixer) =>
+                fixer.insertTextBefore(member.property as never, 'assertSafe('),
+            });
+          },
+        };
+      },
+    };
+
+    const broken = FIXTURES.filter(
+      (fixture) => parseFailure(fixWith(brokenFixer, fixture).output) !== null,
+    );
+    expect(broken.length).toBeGreaterThanOrEqual(150);
   });
 });

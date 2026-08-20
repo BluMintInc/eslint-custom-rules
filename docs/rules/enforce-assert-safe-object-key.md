@@ -446,6 +446,36 @@ const first = obj[id]; // left alone
 const second = obj[id]; // fixed, and carries the import
 ```
 
+### What the fix rewrites
+
+The fix replaces the **whole access** — `obj[key]`, `[key]` of a computed
+property, or the whole `key in obj` comparison — re-emitting every character of
+it verbatim except the key, which gains its `assertSafe(...)` wrap. The emitted
+text is the same as if only the key had been replaced, so comments and line
+breaks inside the brackets survive untouched:
+
+```js
+const entry = store[
+  // the caller picked this
+  assertSafe(KEY) // ← only the key changed
+];
+```
+
+Claiming the access rather than the key alone is what keeps the fix composable.
+ESLint merges the edits of one report into a single replacement spanning from
+the first to the last, and this rule's report carries the injected
+`import { assertSafe } from '...';` alongside the wrap — so the edit already
+reaches from the top of the file to the key. An edit that stopped at the key
+stopped in the middle of the access, which is precisely the region a formatter
+rewrites as a set of edits: ESLint discarded the formatter's edits inside the
+span and kept the ones past its end, and the two halves did not fit together
+(#2067).
+
+One consequence is visible under `--fix`: accesses that **nest** — `store[lookup[key]]`,
+`store[outer][inner]` — have overlapping spans, so ESLint applies one of them
+per pass. `eslint --fix` runs passes until nothing changes, so every level is
+wrapped by the time it stops.
+
 ### When the fix is withheld
 
 The fix wraps the key in a bare `assertSafe(...)` call and inserts
