@@ -77,6 +77,23 @@ export const COMMENT_FIDELITY_BASELINE: Record<string, string> = {
   // `src/tests/require-memo.test.ts`, so the own-corpus guard keeps it honest.
   'require-memo :: TRANSFORM_DIVERGED':
     'chooses its shape by measured header width, which a comment in the parameter list legitimately changes; both shapes preserve the comment (#2054)',
+  // WIDTH, same class as require-memo above. Renaming `useMemo` to
+  // `useDeepCompareMemo` adds eleven columns to the call's line, so the fixer
+  // measures that line and writes Prettier's broken argument list when the
+  // rename would overflow it (#2064). A BLOCK comment on that line occupies
+  // columns there like any other text, and Prettier counts it the same way —
+  // measured, it breaks the identical statement at 88 columns with a trailing
+  // `/* … */` and leaves it flat without. Both shapes are valid and BOTH CARRY
+  // THE COMMENT, so the remedy is not a decline: ignoring those columns would
+  // emit the over-wide line #2064 exists to prevent.
+  // The mirror case is NOT excused and is fixed rather than baselined: Prettier
+  // prints a trailing `//` comment as a line suffix that never counts toward
+  // fitting (measured, flat at 124 columns), so the rule subtracts one before
+  // measuring and a line-comment perturbation produces no divergence at all.
+  // Anchored by the straddling fixture pair and the trailing-comment pair in
+  // `src/tests/prefer-use-deep-compare-memo.test.ts`.
+  'prefer-use-deep-compare-memo :: TRANSFORM_DIVERGED':
+    'chooses its shape by measured line width, which a block comment on the call line legitimately changes exactly as it changes the answer Prettier itself gives; both shapes preserve the comment (#2064)',
   // WIDTH/LAYOUT, same class as require-memo above. Having replaced a wide
   // conditional with a short lookup, the fixer joins the enclosing statement
   // back onto one line when the shortened statement fits, because that is what

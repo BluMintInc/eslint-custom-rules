@@ -103,7 +103,10 @@ const Comp = ({ userConfig }) => {
         output: `
 import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
 const Comp = ({ userConfig }) => {
-  const formatted = useDeepCompareMemo(() => ({ name: userConfig.name }), [userConfig]);
+  const formatted = useDeepCompareMemo(
+    () => ({ name: userConfig.name }),
+    [userConfig],
+  );
   return <div>{formatted.name}</div>;
 };
 `,
@@ -180,7 +183,10 @@ const Comp = ({ userConfig }) => {
 
 import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
 const Comp = ({ userConfig }) => {
-  const formatted = useDeepCompareMemo(() => ({ name: userConfig.name }), [userConfig]);
+  const formatted = useDeepCompareMemo(
+    () => ({ name: userConfig.name }),
+    [userConfig],
+  );
   return <div>{formatted.name}</div>;
 };
 `,
@@ -198,7 +204,10 @@ const Comp = ({ userConfig }) => {
         output: `#!/usr/bin/env node
 import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
 const Comp = ({ userConfig }) => {
-  const formatted = useDeepCompareMemo(() => ({ name: userConfig.name }), [userConfig]);
+  const formatted = useDeepCompareMemo(
+    () => ({ name: userConfig.name }),
+    [userConfig],
+  );
   return <div>{formatted.name}</div>;
 };
 `,
@@ -216,7 +225,10 @@ const Comp = ({ userConfig }) => {
         output: `// @ts-nocheck
 import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
 const Comp = ({ userConfig }) => {
-  const formatted = useDeepCompareMemo(() => ({ name: userConfig.name }), [userConfig]);
+  const formatted = useDeepCompareMemo(
+    () => ({ name: userConfig.name }),
+    [userConfig],
+  );
   return <div>{formatted.name}</div>;
 };
 `,
@@ -238,7 +250,10 @@ const Comp = ({ userConfig }) => {
 
 import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
 const Comp = ({ userConfig }) => {
-  const formatted = useDeepCompareMemo(() => ({ name: userConfig.name }), [userConfig]);
+  const formatted = useDeepCompareMemo(
+    () => ({ name: userConfig.name }),
+    [userConfig],
+  );
   return <div>{formatted.name}</div>;
 };
 `,
@@ -282,7 +297,10 @@ import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
 import { ComponentType, FC } from 'react';
 const withFormatted = (Wrapped: ComponentType<{ name: string }>): FC<{ userConfig: { name: string } }> => {
   return ({ userConfig }) => {
-    const formatted = useDeepCompareMemo(() => ({ name: userConfig.name }), [userConfig]);
+    const formatted = useDeepCompareMemo(
+      () => ({ name: userConfig.name }),
+      [userConfig],
+    );
     return <Wrapped {...formatted} />;
   };
 };
@@ -312,7 +330,10 @@ import {
   FC,
 } from 'react';
 const Comp = ({ userConfig }) => {
-  const formatted = useDeepCompareMemo(() => ({ name: userConfig.name }), [userConfig]);
+  const formatted = useDeepCompareMemo(
+    () => ({ name: userConfig.name }),
+    [userConfig],
+  );
   return <div>{formatted.name}</div>;
 };
 export type Wrapped = ComponentType<Record<string, never>> | FC;
@@ -334,7 +355,10 @@ import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
 import { useState } from 'react';
 const Comp = ({ userConfig }) => {
   const [open, setOpen] = useState(false);
-  const formatted = useDeepCompareMemo(() => ({ name: userConfig.name }), [userConfig]);
+  const formatted = useDeepCompareMemo(
+    () => ({ name: userConfig.name }),
+    [userConfig],
+  );
   return <div onClick={() => setOpen(!open)}>{open ? formatted.name : null}</div>;
 };
 `,
@@ -356,7 +380,10 @@ const Comp = ({ userConfig, count }) => {
 import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
 import { useMemo } from 'react';
 const Comp = ({ userConfig, count }) => {
-  const formatted = useDeepCompareMemo(() => ({ name: userConfig.name }), [userConfig]);
+  const formatted = useDeepCompareMemo(
+    () => ({ name: userConfig.name }),
+    [userConfig],
+  );
   const doubled = useMemo(() => count * 2, [count]);
   return <div>{formatted.name}{doubled}</div>;
 };
@@ -382,7 +409,10 @@ import { useMemo } from 'react';
 const Comp = ({ userConfig, other }) => {
   // eslint-disable-next-line
   const kept = useMemo(() => ({ name: other.name }), [other]);
-  const formatted = useDeepCompareMemo(() => ({ name: userConfig.name }), [userConfig]);
+  const formatted = useDeepCompareMemo(
+    () => ({ name: userConfig.name }),
+    [userConfig],
+  );
   return <div>{formatted.name}{kept.name}</div>;
 };
 `,
@@ -402,7 +432,10 @@ const Comp = ({ userConfig }) => {
 import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
 import React from 'react';
 const Comp = ({ userConfig }) => {
-  const formatted = useDeepCompareMemo(() => ({ name: userConfig.name }), [userConfig]);
+  const formatted = useDeepCompareMemo(
+    () => ({ name: userConfig.name }),
+    [userConfig],
+  );
   return <div>{formatted.name}</div>;
 };
 `,
@@ -422,7 +455,10 @@ const Comp = ({ userConfig }) => {
 import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
 import React from 'react';
 const Comp = ({ userConfig }) => {
-  const formatted = useDeepCompareMemo(() => ({ name: userConfig.name }), [userConfig]);
+  const formatted = useDeepCompareMemo(
+    () => ({ name: userConfig.name }),
+    [userConfig],
+  );
   return <div>{formatted.name}</div>;
 };
 `,
@@ -443,7 +479,10 @@ const Comp = ({ userConfig }) => {
         errors: [error],
         output: `'use client'; import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
 const Comp = ({ userConfig }) => {
-  const formatted = useDeepCompareMemo(() => ({ name: userConfig.name }), [userConfig]);
+  const formatted = useDeepCompareMemo(
+    () => ({ name: userConfig.name }),
+    [userConfig],
+  );
   return <div>{formatted.name}</div>;
 };
 `,
@@ -458,7 +497,10 @@ const Comp = ({ userConfig }) => {
         errors: [error],
         output: `'use client'; import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
 const Comp = ({ userConfig }) => {
-  const formatted = useDeepCompareMemo(() => ({ name: userConfig.name }), [userConfig]);
+  const formatted = useDeepCompareMemo(
+    () => ({ name: userConfig.name }),
+    [userConfig],
+  );
   return <div>{formatted.name}</div>;
 };
 `,
@@ -478,8 +520,297 @@ const Comp = ({ userConfig }) => {
         output: `'use client';
 import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
 const Comp = ({ userConfig }) => {
-  const formatted = useDeepCompareMemo(() => ({ name: userConfig.name }), [userConfig]);
+  const formatted = useDeepCompareMemo(
+    () => ({ name: userConfig.name }),
+    [userConfig],
+  );
   return <div>{formatted.name}</div>;
+};
+`,
+      },
+      // ---------------------------------------------------------------------
+      // Issue #2064: `useDeepCompareMemo` is eleven characters longer than
+      // `useMemo`, so the rename widens the line it lands on without ever
+      // measuring it. agora runs this plugin's `--fix` over prettier-formatted
+      // source and `prettier --check` in CI, so every emitted line is measured
+      // against width 80 — the repo's own Prettier settings — and each layout
+      // below is what Prettier prints for that input.
+      // ---------------------------------------------------------------------
+      {
+        // 69 columns in, exactly 80 out: the widest line the rename can produce
+        // and still be what Prettier prints. Wrapping here would be the mirror
+        // failure, since Prettier collapses a hand-broken call that fits.
+        name: 'issue #2064: a 69-column call stays on one line',
+        code: `
+import { useMemo } from 'react';
+const Comp = ({ userCfg }) => {
+  const heading = useMemo(() => ({ name: userCfg.name }), [userCfg]);
+  return <div />;
+};
+`,
+        errors: [error],
+        output: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+const Comp = ({ userCfg }) => {
+  const heading = useDeepCompareMemo(() => ({ name: userCfg.name }), [userCfg]);
+  return <div />;
+};
+`,
+      },
+      {
+        // One column over the case above — the predicate is `> printWidth`.
+        name: 'issue #2064: a 70-column call breaks its argument list open',
+        code: `
+import { useMemo } from 'react';
+const Comp = ({ userCfg }) => {
+  const subtitle = useMemo(() => ({ name: userCfg.name }), [userCfg]);
+  return <div />;
+};
+`,
+        errors: [error],
+        output: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+const Comp = ({ userCfg }) => {
+  const subtitle = useDeepCompareMemo(
+    () => ({ name: userCfg.name }),
+    [userCfg],
+  );
+  return <div />;
+};
+`,
+      },
+      {
+        // Prettier prints a trailing `//` comment as a line suffix that never
+        // counts toward whether the statement fits — measured, it leaves this
+        // statement flat at 124 columns. Counting those columns would break a
+        // call Prettier leaves alone, the mirror of the defect being fixed.
+        name: 'issue #2064: a trailing line comment does not count toward the width',
+        code: `
+import { useMemo } from 'react';
+const Comp = ({ userCfg }) => {
+  const heading = useMemo(() => ({ name: userCfg.name }), [userCfg]); // note
+  return <div />;
+};
+`,
+        errors: [error],
+        output: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+const Comp = ({ userCfg }) => {
+  const heading = useDeepCompareMemo(() => ({ name: userCfg.name }), [userCfg]); // note
+  return <div />;
+};
+`,
+      },
+      {
+        // The same line one comment syntax apart. A block comment occupies
+        // columns like any other text, and Prettier counts it: measured, it
+        // breaks this identical statement at 88 columns. The comment rides along
+        // on the closing line, where Prettier also puts it.
+        name: 'issue #2064: a trailing block comment does count toward the width',
+        code: `
+import { useMemo } from 'react';
+const Comp = ({ userCfg }) => {
+  const heading = useMemo(() => ({ name: userCfg.name }), [userCfg]); /* note */
+  return <div />;
+};
+`,
+        errors: [error],
+        output: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+const Comp = ({ userCfg }) => {
+  const heading = useDeepCompareMemo(
+    () => ({ name: userCfg.name }),
+    [userCfg],
+  ); /* note */
+  return <div />;
+};
+`,
+      },
+      {
+        // A member callee is thirteen characters, not seven, so the delta is
+        // read off the callee rather than assumed: this 77-column line reaches
+        // 82 and not 88.
+        name: 'issue #2064: a React.useMemo callee measures its own width',
+        code: `
+import React from 'react';
+const Comp = ({ userCfg }) => {
+  const subtitleForCard = React.useMemo(() => ({ n: userCfg.n }), [userCfg]);
+  return <div />;
+};
+`,
+        errors: [error],
+        output: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+import React from 'react';
+const Comp = ({ userCfg }) => {
+  const subtitleForCard = useDeepCompareMemo(
+    () => ({ n: userCfg.n }),
+    [userCfg],
+  );
+  return <div />;
+};
+`,
+      },
+      {
+        // The break is written from the callee's own text onward, so a type
+        // argument list rides along instead of being deleted.
+        name: 'issue #2064: type arguments survive the break',
+        code: `
+import { useMemo } from 'react';
+type Row = { name: string };
+const Comp = ({ userCfg }) => {
+  const subtitle = useMemo<Row>(() => ({ name: userCfg.name }), [userCfg]);
+  return <div />;
+};
+`,
+        errors: [error],
+        output: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+type Row = { name: string };
+const Comp = ({ userCfg }) => {
+  const subtitle = useDeepCompareMemo<Row>(
+    () => ({ name: userCfg.name }),
+    [userCfg],
+  );
+  return <div />;
+};
+`,
+      },
+      {
+        // Prettier's React-hook shape: a zero-parameter arrow with a block body
+        // keeps the callee and the dependency array on the outer lines and
+        // breaks only the block between them. One argument per line is not what
+        // it prints, so the rename stays in place and the formatter settles the
+        // layout on its own pass.
+        name: 'issue #2064: a block-bodied callback keeps the rename in place',
+        code: `
+import { useMemo } from 'react';
+const Comp = ({ cfg }) => {
+  const rowLabelForTheCard = useMemo(() => { return cfg.label; }, [cfg]);
+  return <div />;
+};
+`,
+        errors: [error],
+        output: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+const Comp = ({ cfg }) => {
+  const rowLabelForTheCard = useDeepCompareMemo(() => { return cfg.label; }, [cfg]);
+  return <div />;
+};
+`,
+      },
+      {
+        // A call the author already broke carries its own line breaks inside
+        // the argument text a re-render copies verbatim, so re-indenting the
+        // arguments would leave every continuation line at its original column.
+        name: 'issue #2064: a call already broken across lines keeps its layout',
+        code: `
+import { useMemo } from 'react';
+const Comp = ({ userCfg }) => {
+  const subtitleForTheCardHeadingRowOfTheProfilePanel = useMemo(() => ({
+    name: userCfg.name,
+  }), [userCfg]);
+  return <div />;
+};
+`,
+        errors: [error],
+        output: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+const Comp = ({ userCfg }) => {
+  const subtitleForTheCardHeadingRowOfTheProfilePanel = useDeepCompareMemo(() => ({
+    name: userCfg.name,
+  }), [userCfg]);
+  return <div />;
+};
+`,
+      },
+      {
+        // A comment inside the call sits between tokens the re-render rewrites,
+        // so it would be moved off the argument it annotates. Carrying it costs
+        // an over-width line the formatter fixes; relocating it costs the
+        // author's meaning (#2045).
+        name: 'issue #2064: a comment inside the call keeps the rename in place',
+        code: `
+import { useMemo } from 'react';
+const Comp = ({ userCfg }) => {
+  const subtitle = useMemo(/* keep */ () => ({ n: userCfg.n }), [userCfg]);
+  return <div />;
+};
+`,
+        errors: [error],
+        output: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+const Comp = ({ userCfg }) => {
+  const subtitle = useDeepCompareMemo(/* keep */ () => ({ n: userCfg.n }), [userCfg]);
+  return <div />;
+};
+`,
+      },
+      {
+        // Whichever of the two is re-rendered, its replacement spans the other's
+        // edit, and ESLint rejects overlapping fixes outright — taking both
+        // reports' fix down with them. Both ends decline, so the pair is left as
+        // two renames for a formatter to settle: breaking only the inner one
+        // inside a flat outer call is a layout Prettier prints for neither.
+        name: 'issue #2064: nested convertible calls both keep the rename in place',
+        code: `
+import { useMemo } from 'react';
+const Comp = () => {
+  const subtitle = useMemo(() => useMemo(() => 1, [{ a: 1 }]), [{ b: 2 }]);
+  return <div />;
+};
+`,
+        errors: [error, error],
+        output: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+const Comp = () => {
+  const subtitle = useDeepCompareMemo(() => useDeepCompareMemo(() => 1, [{ a: 1 }]), [{ b: 2 }]);
+  return <div />;
+};
+`,
+      },
+      {
+        // The option is read, not merely declared: the same source that stays
+        // flat at the default width breaks here.
+        name: 'issue #2064: a lowered printWidth breaks a call that fits at 80',
+        options: [{ printWidth: 40 }],
+        code: `
+import { useMemo } from 'react';
+const Comp = ({ userCfg }) => {
+  const heading = useMemo(() => ({ name: userCfg.name }), [userCfg]);
+  return <div />;
+};
+`,
+        errors: [error],
+        output: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+const Comp = ({ userCfg }) => {
+  const heading = useDeepCompareMemo(
+    () => ({ name: userCfg.name }),
+    [userCfg],
+  );
+  return <div />;
+};
+`,
+      },
+      {
+        // The other direction, so the option is pinned as a live measurement
+        // rather than a one-way switch: the source that breaks at 80 stays flat.
+        name: 'issue #2064: a raised printWidth keeps a call that breaks at 80 on one line',
+        options: [{ printWidth: 120 }],
+        code: `
+import { useMemo } from 'react';
+const Comp = ({ userCfg }) => {
+  const subtitle = useMemo(() => ({ name: userCfg.name }), [userCfg]);
+  return <div />;
+};
+`,
+        errors: [error],
+        output: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+const Comp = ({ userCfg }) => {
+  const subtitle = useDeepCompareMemo(() => ({ name: userCfg.name }), [userCfg]);
+  return <div />;
 };
 `,
       },
@@ -1569,14 +1900,18 @@ describe('prefer-use-deep-compare-memo: the injected import stays below the prol
     );
   });
 
-  it('leaves the own-line spelling byte-identical to its prior output', () => {
+  // #1959 pinned the own-line branch byte for byte because it is the spelling
+  // the widened insertion had to leave alone. The directive, the import and the
+  // indentation are still exactly what that issue fixed; only the call itself
+  // moved, into the broken argument list #2064 measures it into.
+  it('pins the own-line spelling byte for byte', () => {
     expect(
       expectDirectiveSurvives(
         `'use client';\nimport { useMemo } from 'react';\n${BODY}`,
         'use client',
       ),
     ).toBe(
-      `'use client';\nimport { useDeepCompareMemo } from '@blumintinc/use-deep-compare';\nconst Comp = ({ userConfig }) => {\n  const formatted = useDeepCompareMemo(() => ({ name: userConfig.name }), [userConfig]);\n  return <div>{formatted.name}</div>;\n};\n`,
+      `'use client';\nimport { useDeepCompareMemo } from '@blumintinc/use-deep-compare';\nconst Comp = ({ userConfig }) => {\n  const formatted = useDeepCompareMemo(\n    () => ({ name: userConfig.name }),\n    [userConfig],\n  );\n  return <div>{formatted.name}</div>;\n};\n`,
     );
   });
 

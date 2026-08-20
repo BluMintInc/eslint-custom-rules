@@ -1,4 +1,9 @@
-import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
+import {
+  AST_NODE_TYPES,
+  AST_TOKEN_TYPES,
+  TSESLint,
+  TSESTree,
+} from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 import { ASTHelpers } from '../utils/ASTHelpers';
 import {
@@ -18,6 +23,31 @@ type TsType = import('typescript').Type;
 
 const DEEP_COMPARE_MODULE = '@blumintinc/use-deep-compare';
 const DEEP_COMPARE_HOOK = 'useDeepCompareMemo';
+
+export type MessageIds = 'preferUseDeepCompareMemo';
+
+type Options = [
+  {
+    printWidth?: number;
+  },
+];
+
+type Context = TSESLint.RuleContext<MessageIds, Options>;
+
+/**
+ * Prettier's own default. The conversion renames a callee inside a statement a
+ * formatter owns, and `useDeepCompareMemo` is eleven characters longer than
+ * `useMemo`, so any call written on one line past this width minus eleven is
+ * pushed over it — failing `prettier --check` until the next `prettier --write`
+ * reformats the fixer's output (#2064).
+ */
+const DEFAULT_PRINT_WIDTH = 80;
+
+/**
+ * Prettier's default `tabWidth`. A call written on one line breaks nothing
+ * across lines yet, so it offers no nesting step of its own to copy.
+ */
+const DEFAULT_INDENT_STEP = '  ';
 
 // Consider these as memoizing hooks producing stable references
 const MEMOIZING_HOOKS = new Set([
@@ -122,7 +152,7 @@ type PrimitivenessVerdict = 'primitive' | 'nonPrimitive' | 'unproven';
  * answer `string` at the site React actually compares.
  */
 function primitivenessByType(
-  context: TSESLint.RuleContext<'preferUseDeepCompareMemo', []>,
+  context: Context,
   expr: TSESTree.Expression,
 ): PrimitivenessVerdict {
   const services = context.parserServices;
@@ -432,7 +462,7 @@ function readsOnlyPrimitiveMembers(
  * for the reference.
  */
 function soleDefinitionOf(
-  context: TSESLint.RuleContext<'preferUseDeepCompareMemo', []>,
+  context: Context,
   node: TSESTree.Node,
   name: string,
 ): TSESLint.Scope.Definition | null {
@@ -453,7 +483,7 @@ function soleDefinitionOf(
  * proof promotes a dependency here (#1979).
  */
 function isProvablyPrimitiveDependency(
-  context: TSESLint.RuleContext<'preferUseDeepCompareMemo', []>,
+  context: Context,
   call: TSESTree.CallExpression,
   callback: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression,
   dep: TSESTree.Identifier,
@@ -471,9 +501,7 @@ function isProvablyPrimitiveDependency(
   );
 }
 
-function collectMemoizedIdentifiers(
-  context: TSESLint.RuleContext<'preferUseDeepCompareMemo', []>,
-): Set<string> {
+function collectMemoizedIdentifiers(context: Context): Set<string> {
   const memoized = new Set<string>();
   const sourceCode = context.sourceCode;
   const program = sourceCode.ast;
@@ -611,6 +639,194 @@ function emitsResolvableHook(
 }
 
 /**
+ * The leading whitespace of the line a node starts on.
+ *
+ * Prettier closes a broken argument list at the column the statement opens at,
+ * which is this whitespace whether the call leads its line (`useMemo(`) or sits
+ * behind an assignment (`const formatted = useMemo(`).
+ */
+function lineIndentOf(
+  sourceCode: TSESLint.SourceCode,
+  node: TSESTree.Node,
+): string {
+  const line = sourceCode.lines[node.loc.start.line - 1] ?? '';
+  const indent = /^[ \t]*/.exec(line);
+  return indent ? indent[0] : '';
+}
+
+/**
+ * The width the call's line reaches once the callee is renamed.
+ *
+ * The rename is the only edit that moves this line: the import insertion lands
+ * at the file's prologue and the orphan-import removal inside an import
+ * declaration, both of which are elsewhere. The delta is read off the callee
+ * rather than assumed, because a `React.useMemo` callee is thirteen characters
+ * where a bare `useMemo` is seven.
+ *
+ * A trailing line comment is subtracted and a trailing block comment is not,
+ * because that is the asymmetry prettier itself prints: a line comment is
+ * emitted as a suffix that never counts toward whether the statement fits —
+ * measured, left flat at 124 columns — while a block comment occupies columns
+ * like any other text and breaks the same statement at 88. Counting a line
+ * comment would break statements prettier leaves alone, which is the mirror of
+ * the defect this measurement exists to fix.
+ */
+function widthAfterRename(
+  sourceCode: TSESLint.SourceCode,
+  call: TSESTree.CallExpression,
+): number {
+  const startLine = call.loc.start.line;
+  const line = sourceCode.lines[startLine - 1] ?? '';
+  // A line comment runs to the end of its line, so its column is where the
+  // printed statement stops.
+  const suffix = sourceCode
+    .getAllComments()
+    .find(
+      (comment) =>
+        comment.type === AST_TOKEN_TYPES.Line &&
+        comment.loc.start.line === startLine,
+    );
+  const printed = suffix
+    ? line.slice(0, suffix.loc.start.column).trimEnd()
+    : line;
+  const calleeWidth = call.callee.range[1] - call.callee.range[0];
+  return printed.length - calleeWidth + DEEP_COMPARE_HOOK.length;
+}
+
+/**
+ * Everything the source writes between the callee and the first argument —
+ * type arguments, an optional-call marker, the opening parenthesis. Copying it
+ * verbatim is what keeps `useMemo<T>(…)` and `useMemo?.(…)` intact through a
+ * re-render that only authors line breaks.
+ */
+function argumentListOpenerOf(
+  sourceCode: TSESLint.SourceCode,
+  call: TSESTree.CallExpression,
+): string {
+  return sourceCode
+    .getText()
+    .slice(call.callee.range[1], call.arguments[0].range[0])
+    .trimEnd();
+}
+
+/**
+ * Whether the converted call can be re-rendered across lines as the very call
+ * the source already spells.
+ *
+ * Each arm below is a DELIBERATE decline rather than a fall-through: the
+ * in-place rename is emitted instead, leaving a line prettier will rewrap but
+ * losing nothing the author wrote. A formatting nicety does not justify
+ * relocating a comment or guessing at a layout prettier does not print (#2045).
+ */
+function isReprintableCall(
+  sourceCode: TSESLint.SourceCode,
+  call: TSESTree.CallExpression,
+  batch: readonly TSESTree.CallExpression[],
+): boolean {
+  // A call already broken across lines carries the author's own breaks inside
+  // the argument text this re-render copies verbatim, so every continuation
+  // line would keep its original column while its opening line moved.
+  if (call.loc.start.line !== call.loc.end.line) return false;
+
+  // Prettier gives an argument list its own line per argument only while the
+  // trailing argument is not one it hugs. At three arguments ending in an
+  // array it breaks the array open instead and leaves the rest flat, which is
+  // a different shape — and `useMemo` is a two-argument hook, so declining
+  // there withholds nothing real.
+  if (call.arguments.length !== 2) return false;
+  const [callback, deps] = call.arguments;
+  if (deps.type !== AST_NODE_TYPES.ArrayExpression) return false;
+
+  // A zero-parameter arrow with a block body is prettier's React-hook shape: it
+  // keeps the callee, the closing brace and the dependency array on the outer
+  // lines and breaks only the block between them. One argument per line is not
+  // what it prints there.
+  if (
+    callback.type === AST_NODE_TYPES.ArrowFunctionExpression &&
+    callback.body.type === AST_NODE_TYPES.BlockStatement
+  ) {
+    return false;
+  }
+
+  // A comment inside the call sits between tokens this re-render rewrites, so
+  // it would be moved off the argument it annotates or dropped outright.
+  if (sourceCode.getCommentsInside(call).length > 0) return false;
+
+  // One convertible call nested inside another: whichever of the two is
+  // re-rendered, its replacement spans the other's edit, and ESLint rejects
+  // overlapping fixes outright — taking the whole conversion, and with it every
+  // report's fix, down with them. Both ends of the nesting decline, so the pair
+  // is left as two renames on one over-width line for a formatter to settle,
+  // rather than as an inner break inside a flat outer call, which is a layout
+  // prettier prints for neither.
+  if (
+    batch.some(
+      (other) =>
+        other !== call &&
+        other.range[0] < call.range[1] &&
+        call.range[0] < other.range[1],
+    )
+  ) {
+    return false;
+  }
+
+  // The opener is copied rather than authored, so it has to end where the
+  // argument list begins for the re-render to still be this call.
+  return argumentListOpenerOf(sourceCode, call).endsWith('(');
+}
+
+/**
+ * The call rewritten the way prettier prints an argument list it cannot fit:
+ * one argument per line at a single nesting step, a trailing comma on each, and
+ * the closing parenthesis back at the statement's own column.
+ */
+function reprintCallBroken(
+  sourceCode: TSESLint.SourceCode,
+  call: TSESTree.CallExpression,
+): string {
+  const indent = lineIndentOf(sourceCode, call);
+  return [
+    `${DEEP_COMPARE_HOOK}${argumentListOpenerOf(sourceCode, call)}`,
+    ...call.arguments.map(
+      (argument) =>
+        `${indent}${DEFAULT_INDENT_STEP}${sourceCode.getText(argument)},`,
+    ),
+    `${indent})`,
+  ].join('\n');
+}
+
+/**
+ * The edit that converts one call site.
+ *
+ * Renaming in place is the whole conversion wherever the line still fits, and
+ * that measurement runs in both directions on purpose: prettier collapses a
+ * hand-broken call that fits back onto one line, so wrapping unconditionally
+ * would trade one `prettier --check` failure for its mirror image on every
+ * short call (#2064).
+ */
+function convertCallFix(
+  sourceCode: TSESLint.SourceCode,
+  fixer: TSESLint.RuleFixer,
+  call: TSESTree.CallExpression,
+  batch: readonly TSESTree.CallExpression[],
+  printWidth: number,
+): TSESLint.RuleFix {
+  const renameInPlace = () => fixer.replaceText(call.callee, DEEP_COMPARE_HOOK);
+
+  // Within the width the flat call is exactly what prettier prints, so breaking
+  // it open here would be the mirror failure rather than a fix.
+  if (widthAfterRename(sourceCode, call) <= printWidth) return renameInPlace();
+
+  // Over the width, and the call carries something the re-render would not
+  // reproduce. Declining is a decision taken here rather than a case that falls
+  // through: the line stays over the width until a formatter reaches it, which
+  // costs less than deleting a comment or printing a layout prettier does not.
+  if (!isReprintableCall(sourceCode, call, batch)) return renameInPlace();
+
+  return fixer.replaceText(call, reprintCallBroken(sourceCode, call));
+}
+
+/**
  * The single fix that converts every call in `calls`, imports the hook once, and
  * unbinds whatever the conversions stop reading.
  *
@@ -623,27 +839,33 @@ function emitsResolvableHook(
  * unbinding is ever claimed on the strength of an edit that does not happen.
  */
 function convertCallsFixes(
-  context: TSESLint.RuleContext<'preferUseDeepCompareMemo', []>,
+  context: Context,
   fixer: TSESLint.RuleFixer,
   calls: readonly ConvertibleCall[],
+  printWidth: number,
 ): TSESLint.RuleFix[] | null {
+  const sourceCode = context.sourceCode;
   // The callees are the text this fix deletes, so they are also the text
   // whatever carried the hook stops being read from: `useMemo` for a bare call,
   // `React` for a member call. A binding left with no reference at all is
   // unbound here, in this same fix — stripping its last use and keeping the
   // declaration trades this rule's report for an unused-import one, and nothing
   // re-reports that debt once the rewrite has resolved the original violation.
+  //
+  // A conversion that re-renders its whole call still deletes exactly the same
+  // callee, so the removal plan reads the callee ranges either way.
   const importRemoval = planOrphanedImportRemoval(
-    context.sourceCode,
+    sourceCode,
     calls.map((call) => call.node.callee.range),
   );
   // No plan means a binding is orphaned yet cannot be unbound safely, so the
   // rewrite stays too: the report without a fixer is the lesser damage.
   if (!importRemoval) return null;
 
+  const batch = calls.map((call) => call.node);
   return [
-    ...calls.map((call) =>
-      fixer.replaceText(call.node.callee, DEEP_COMPARE_HOOK),
+    ...batch.map((call) =>
+      convertCallFix(sourceCode, fixer, call, batch, printWidth),
     ),
     ...ensureDeepCompareImportFixes(context, fixer),
     ...importRemoval.map((range) => fixer.removeRange([range[0], range[1]])),
@@ -651,7 +873,7 @@ function convertCallsFixes(
 }
 
 function ensureDeepCompareImportFixes(
-  context: TSESLint.RuleContext<'preferUseDeepCompareMemo', []>,
+  context: Context,
   fixer: TSESLint.RuleFixer,
 ): TSESLint.RuleFix[] {
   const sourceCode = context.sourceCode;
@@ -683,10 +905,7 @@ function ensureDeepCompareImportFixes(
   ];
 }
 
-function isImportedIdentifier(
-  context: TSESLint.RuleContext<'preferUseDeepCompareMemo', []>,
-  name: string,
-): boolean {
+function isImportedIdentifier(context: Context, name: string): boolean {
   const sourceCode = context.sourceCode;
   const program = sourceCode.ast;
   for (const node of program.body) {
@@ -774,9 +993,7 @@ function identifierUsedAsObjectOrArray(
   return false;
 }
 
-export type MessageIds = 'preferUseDeepCompareMemo';
-
-export const preferUseDeepCompareMemo = createRule<[], MessageIds>({
+export const preferUseDeepCompareMemo = createRule<Options, MessageIds>({
   name: 'prefer-use-deep-compare-memo',
   meta: {
     type: 'suggestion',
@@ -786,14 +1003,29 @@ export const preferUseDeepCompareMemo = createRule<[], MessageIds>({
       recommended: 'error',
     },
     fixable: 'code',
-    schema: [],
+    schema: [
+      {
+        type: 'object',
+        properties: {
+          printWidth: {
+            type: 'number',
+            minimum: 1,
+          },
+        },
+        additionalProperties: false,
+      },
+    ],
     messages: {
       preferUseDeepCompareMemo:
         'Dependency array for "{{hook}}" includes objects/arrays that change identity each render, so React treats them as changed and reruns the memoized computation, triggering avoidable renders. Use useDeepCompareMemo (or memoize those dependencies first) so comparisons use deep equality and the memo stays stable.',
     },
   },
-  defaultOptions: [],
-  create(context) {
+  defaultOptions: [{}],
+  create(context, [options]) {
+    const printWidth =
+      typeof options.printWidth === 'number' && options.printWidth > 0
+        ? options.printWidth
+        : DEFAULT_PRINT_WIDTH;
     const memoizedIds = collectMemoizedIdentifiers(context);
 
     // Reporting is deferred to Program:exit because the import rewrite depends
@@ -912,7 +1144,8 @@ export const preferUseDeepCompareMemo = createRule<[], MessageIds>({
             },
             fix:
               call === carrier
-                ? (fixer) => convertCallsFixes(context, fixer, converted)
+                ? (fixer) =>
+                    convertCallsFixes(context, fixer, converted, printWidth)
                 : null,
           });
         }
