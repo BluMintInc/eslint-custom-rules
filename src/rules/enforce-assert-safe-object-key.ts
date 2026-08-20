@@ -755,6 +755,57 @@ function foldKeyDomains(domains: readonly KeyDomain[]): KeyDomain {
 }
 
 /**
+ * The span of the access a written key belongs to: `obj[key]` including the
+ * object and both brackets, `[key]` for a computed property (whose value is an
+ * expression of its own), and the whole comparison for `key in obj`. Null where
+ * the key sits in none of those, which leaves the wrap to span the key alone.
+ *
+ * This is the unit a fix that rewrites a key has to claim. The key's own range
+ * stops short of the `]` that closes the access, and a fixer that reformats the
+ * access spreads its edits across the whole of it — so a span ending between
+ * the key and its bracket splits that set in half. Claiming the access instead
+ * leaves a competing rewrite of it either wholly discarded (and re-made against
+ * the fixed text on a later pass) or wholly applied, both of which parse.
+ */
+function accessSpan(
+  sourceCode: Readonly<TSESLint.SourceCode>,
+  written: TSESTree.Node,
+): [number, number] | null {
+  const { parent } = written;
+  if (!parent) {
+    return null;
+  }
+  if (
+    parent.type === AST_NODE_TYPES.MemberExpression &&
+    parent.computed &&
+    parent.property === written
+  ) {
+    return [parent.range[0], parent.range[1]];
+  }
+  if (
+    parent.type === AST_NODE_TYPES.Property &&
+    parent.computed &&
+    parent.key === written
+  ) {
+    // A computed property's range runs past its key to the end of its value,
+    // which the wrap has no business claiming; the bracket that closes the key
+    // is where this access ends.
+    const closing = sourceCode.getTokenAfter(written);
+    return closing?.value === ']'
+      ? [parent.range[0], closing.range[1]]
+      : [written.range[0], written.range[1]];
+  }
+  if (
+    parent.type === AST_NODE_TYPES.BinaryExpression &&
+    parent.operator === 'in' &&
+    parent.left === written
+  ) {
+    return [parent.range[0], parent.range[1]];
+  }
+  return null;
+}
+
+/**
  * An enum is a compiler-checked finite set. Members with literal initializers
  * enumerate their runtime key strings (which is what lets the forbidden-name
  * screen and subset comparison see them); a computed or auto-numbered member
@@ -984,6 +1035,51 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
     };
 
     /**
+     * The wrap of the key, emitted over the whole access the key belongs to
+     * rather than over the key alone.
+     *
+     * ESLint merges the fixes of one report into a single edit spanning
+     * [first start, last end], splicing the original text back in between. The
+     * import anchor sits at the top of the file, so bundling it with the wrap
+     * turns a three-character edit into one that claims everything from the
+     * file's first statement to the end of the key — which is a point in the
+     * middle of the access, before the `]` that closes it. That span sorts
+     * ahead of every competing fix and wins the race against all of them, but
+     * only up to its end. A fixer whose edits are coherent only as a set (a
+     * formatter re-wrapping one access across several lines is the common
+     * case) then has the edits inside the span discarded and the edits past
+     * its end applied, and the two halves do not fit together: the emitted
+     * file does not parse.
+     *
+     * Ending the span where the access ends puts every edit of such a
+     * competing rewrite on one side of the boundary — either wholly inside the
+     * span (discarded whole, and re-made against the fixed text on the next
+     * pass) or wholly outside it. Both parse. The re-emitted head and tail are
+     * copied verbatim from the source, so the text this fix produces is
+     * character-for-character what replacing the key alone produced.
+     */
+    const wrapKey = (
+      fixer: TSESLint.RuleFixer,
+      node: TSESTree.Node,
+      argText: string,
+    ): TSESLint.RuleFix => {
+      const replacement = `assertSafe(${argText})`;
+      const span = accessSpan(context.sourceCode, node);
+      if (!span) {
+        return fixer.replaceText(node, replacement);
+      }
+      const [start, end] = span;
+      const { text } = context.sourceCode;
+      return fixer.replaceTextRange(
+        [start, end],
+        `${text.slice(start, node.range[0])}${replacement}${text.slice(
+          node.range[1],
+          end,
+        )}`,
+      );
+    };
+
+    /**
      * Helper function to create fixes for a node
      */
     const createFixes = (
@@ -993,13 +1089,14 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
     ): TSESLint.RuleFix[] => {
       const fixes: TSESLint.RuleFix[] = [];
 
-      if (!importClaimed && !importsAssertSafe(context.sourceCode.ast)) {
+      const carriesImport =
+        !importClaimed && !importsAssertSafe(context.sourceCode.ast);
+      if (carriesImport) {
         fixes.push(addAssertSafeImport(fixer));
         importClaimed = true;
       }
 
-      // Replace the node with assertSafe(argText)
-      fixes.push(fixer.replaceText(node, `assertSafe(${argText})`));
+      fixes.push(wrapKey(fixer, node, argText));
 
       return fixes;
     };
