@@ -768,7 +768,9 @@ function useJoinLabel(isPendingToJoinTeam: boolean) {
         const spaced = /* inline rationale */ 3 + 4;
       `,
     },
-    // A comment inside the dependency array outlives the array it annotated.
+    // A comment inside the dependency array outlives the array it annotated,
+    // and rides past the semicolon: a comment written behind the expression
+    // annotates the statement, which is where prettier prints it (#2079).
     {
       code: `
         const doubled = useMemo(() => 2 * 2, [/* deliberately empty */]);
@@ -776,7 +778,7 @@ function useJoinLabel(isPendingToJoinTeam: boolean) {
       parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
       errors: [{ messageId: 'uselessUseMemoPrimitive' }],
       output: `
-        const doubled = 2 * 2 /* deliberately empty */;
+        const doubled = 2 * 2; /* deliberately empty */
       `,
     },
     // A comment sitting immediately before the dependency array.
@@ -787,7 +789,7 @@ function useJoinLabel(isPendingToJoinTeam: boolean) {
       parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
       errors: [{ messageId: 'uselessUseMemoPrimitive' }],
       output: `
-        const tripled = 3 * 3 /* no dependencies */;
+        const tripled = 3 * 3; /* no dependencies */
       `,
     },
     // A comment ahead of the callback, before any of the machinery it
@@ -803,9 +805,10 @@ function useJoinLabel(isPendingToJoinTeam: boolean) {
       `,
     },
     // A comment after the return statement stays on the expression's side of
-    // it, so the emission ends in a line comment while the source semicolon
-    // still stands on that line. The parentheses are what let the break the
-    // comment needs fall before the semicolon rather than moving it.
+    // it, and the semicolon that closed the statement comes with the emission
+    // so the comment can land behind it. That is where prettier puts a trailing
+    // comment, and it leaves the break the comment needs at the end of the
+    // statement, where nothing is left for it to swallow (#2079).
     {
       code: `
         const flagged = useMemo(() => {
@@ -815,8 +818,7 @@ function useJoinLabel(isPendingToJoinTeam: boolean) {
       parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
       errors: [{ messageId: 'uselessUseMemoPrimitive' }],
       output: `
-        const flagged = (!value // trailing note
-        );
+        const flagged = !value; // trailing note
       `,
     },
     // #1877: a comment appended to the line the report lands on sits inside
@@ -874,7 +876,9 @@ function useJoinLabel(isPendingToJoinTeam: boolean) {
     },
     // Every stranded position at once: each comment keeps the side of the
     // expression it was written on, and the line breaks fall only where a
-    // comment demands one.
+    // comment demands one. The two written behind the expression ride past the
+    // semicolon together and return to the statement's own indentation, which
+    // is the depth prettier gives a comment that outlives its statement.
     {
       code: `
         const label = useMemo(() => { // opening note
@@ -887,8 +891,8 @@ function useJoinLabel(isPendingToJoinTeam: boolean) {
       output: `
         const label =
           // opening note
-          /* second */ flag ? 'yes' : 'no' // trailing note
-          /* deps note */;
+          /* second */ flag ? 'yes' : 'no'; // trailing note
+        /* deps note */
       `,
     },
     // The carried comments are anchored to the line the call opens on, and sit
@@ -1369,7 +1373,10 @@ export function useNullValue() {
     },
     // A carried comment that owns its line keeps the parentheses: after
     // `return`, the line terminator it introduces is a restricted production,
-    // and bare the function would return `undefined` instead (#1963).
+    // and bare the function would return `undefined` instead (#1963). The group
+    // is laid out the way prettier prints one that has to break — interior a
+    // level in, closing parenthesis alone on its line (#2079) — and the
+    // directive still governs the line the expression stands on.
     {
       code: `
 function useLabel(flag: boolean) {
@@ -1384,8 +1391,9 @@ function useLabel(flag: boolean) {
       output: `
 function useLabel(flag: boolean) {
   return (
-  // eslint-disable-next-line no-restricted-syntax
-  flag ? 'a' : 'b');
+    // eslint-disable-next-line no-restricted-syntax
+    flag ? 'a' : 'b'
+  );
 }
 `,
     },
@@ -1408,8 +1416,9 @@ function pickLabel(flag: boolean) {
       output: `
 function pickLabel(flag: boolean) {
   return (
-  // documents the fallback
-  flag ? 'a' : 'b');
+    // documents the fallback
+    flag ? 'a' : 'b'
+  );
 }
 `,
     },
@@ -1428,8 +1437,9 @@ function reject(flag: boolean) {
       output: `
 function reject(flag: boolean) {
   throw (
-  // documents the message
-  flag ? 'a' : 'b');
+    // documents the message
+    flag ? 'a' : 'b'
+  );
 }
 `,
     },
@@ -1438,6 +1448,13 @@ function reject(flag: boolean) {
     // and an unmodelled position parenthesises by default. Measured — dropping
     // the restricted-production arm leaves this case passing while the two
     // above fail — so it pins the outcome rather than the reason.
+    //
+    // This is the one emission the layout work of #2079 leaves prettier
+    // unhappy with, and deliberately so: prettier 2.7.1 reprints ANY
+    // parenthesised `yield` argument without its parentheses and drops the
+    // carried comment onto the `yield` line, which is ASI. The describe block
+    // below runs both spellings and gets `'a'` from this one and `undefined`
+    // from prettier's, so matching the formatter here would cost the value.
     {
       code: `
 function* labels(flag: boolean) {
@@ -1452,8 +1469,9 @@ function* labels(flag: boolean) {
       output: `
 function* labels(flag: boolean) {
   yield (
-  // documents the fallback
-  flag ? 'a' : 'b');
+    // documents the fallback
+    flag ? 'a' : 'b'
+  );
 }
 `,
     },
@@ -1478,7 +1496,9 @@ const message =
     },
     // A comment ending the emission keeps the parentheses only where source
     // shares the line it would otherwise swallow. Given the line to itself it
-    // swallows nothing, so the position decides as it does anywhere else.
+    // swallows nothing, so the position decides as it does anywhere else. No
+    // punctuator closes the argument here, so the comment stays inside the
+    // emission rather than riding past one.
     {
       code: `
 const value = call(
@@ -1493,6 +1513,65 @@ const value = call(
 const value = call(
   1 // documents the cap
 );
+`,
+    },
+    // The same argument with the trailing comma prettier writes: the comma
+    // closes the argument, so the comment rides past it and lands where
+    // prettier prints a trailing comment on a list element (#2079).
+    {
+      code: `
+const value = call(
+  useMemo(() => {
+    return 1; // documents the cap
+  }, []),
+);
+`,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+      errors: [{ messageId: 'uselessUseMemoPrimitive' }],
+      output: `
+const value = call(
+  1, // documents the cap
+);
+`,
+    },
+    // A punctuator with source still behind it is not taken over: moving the
+    // comment past it would put a line comment ahead of that source and
+    // swallow it. The emission keeps the comment, and with it the parentheses
+    // that stop the break from displacing the argument that follows.
+    {
+      code: `
+const value = call(
+  useMemo(() => {
+    return 1; // documents the cap
+  }, []), other
+);
+`,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+      errors: [{ messageId: 'uselessUseMemoPrimitive' }],
+      output: `
+const value = call(
+  (
+    1 // documents the cap
+  ), other
+);
+`,
+    },
+    // A comma takes only the comments that need a line of their own. Measured
+    // against this repo's prettier: a line comment on a list element is printed
+    // after the comma, a block comment on one before it. Moving this one past
+    // the comma would swap one layout prettier rewrites for another.
+    {
+      code: `
+const o = {
+  a: useMemo(() => 1, [/* deliberately empty */]),
+};
+`,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+      errors: [{ messageId: 'uselessUseMemoPrimitive' }],
+      output: `
+const o = {
+  a: 1 /* deliberately empty */,
+};
 `,
     },
   ],
@@ -1645,8 +1724,9 @@ flag ? 'a' : 'b');
     const { output } = fix(ANCHOR_PERTURBED);
     expect(output).toBe(`function useNullValue() {
   return (
-  // fidelityProbe
-  null);
+    // fidelityProbe
+    null
+  );
 }
 `);
     // The comment is CARRIED, not consumed: the divergence the baseline entry
@@ -1663,6 +1743,301 @@ flag ? 'a' : 'b');
 }
 `;
     expect(evaluate(unparenthesized, 'useNullValue()')).toBeUndefined();
+  });
+});
+
+/**
+ * The LAYOUT of an emission that carries a comment (#2079).
+ *
+ * #2071 settled which emissions take parentheses; what it left wrong is where
+ * the comment and the punctuation around it land. Three shapes were measured
+ * against this repo's prettier and all three came back rewritten, so every file
+ * the fixer touched failed `prettier --check` over layout alone.
+ *
+ * The oracle is that prettier, so the claim is measured rather than eyeballed —
+ * and each shape carries its own non-vacuity control: the emission the rule made
+ * BEFORE the fix, which the same oracle has to reject.
+ *
+ * Two further claims are not claims about a formatter and get their own oracles:
+ * a directive carried through the parenthesised shape is asserted by LINTING the
+ * emission and watching the suppression still happen, and the parentheses that
+ * shape keeps are asserted by RUNNING both spellings.
+ */
+describe('no-useless-usememo-primitives carried-comment layout', () => {
+  const RULE_ID = '@blumintinc/blumint/no-useless-usememo-primitives';
+
+  const makeLinter = () => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      RULE_ID,
+      noUselessUsememoPrimitives as unknown as Rule.RuleModule,
+    );
+    return linter;
+  };
+
+  const fix = (code: string) =>
+    makeLinter().verifyAndFix(code, {
+      parser: '@typescript-eslint/parser',
+      parserOptions: {
+        ecmaVersion: 2020 as const,
+        sourceType: 'module' as const,
+      },
+      rules: { [RULE_ID]: 'error' },
+    } as Linter.Config);
+
+  const PRETTIER_OPTIONS: prettier.Options = {
+    parser: 'typescript',
+    printWidth: 80,
+    tabWidth: 2,
+    singleQuote: true,
+    semi: true,
+    trailingComma: 'all',
+  };
+
+  const isFixedPoint = (text: string) =>
+    prettier.format(text, PRETTIER_OPTIONS) === text;
+
+  /**
+   * (a) A comment written behind the expression. It annotates the statement, so
+   * prettier prints it after the semicolon that closes the statement.
+   */
+  const TRAILING_BLOCK = `const tripled = useMemo(() => 3 * 3, /* no dependencies */ []);\n`;
+
+  it('(a) carries a trailing block comment past the terminator', () => {
+    const { output } = fix(TRAILING_BLOCK);
+    expect(output).toBe('const tripled = 3 * 3; /* no dependencies */\n');
+    expect(isFixedPoint(output)).toBe(true);
+    expect(output).toContain('/* no dependencies */');
+  });
+
+  it('(a) is not vacuous: the comment inside the statement is what prettier rewrites', () => {
+    expect(isFixedPoint(TRAILING_BLOCK)).toBe(true);
+    expect(isFixedPoint('const tripled = 3 * 3 /* no dependencies */;\n')).toBe(
+      false,
+    );
+  });
+
+  /**
+   * (a) at a COMMA, where prettier wants the opposite of what a semicolon gets.
+   * The carve-out is what keeps the emission from trading one layout prettier
+   * rewrites for another, so the control asserts both directions of the
+   * asymmetry rather than only the emission.
+   */
+  const PROPERTY_BLOCK = `const o = {
+  a: useMemo(() => 1, /* deliberately empty */ []),
+};
+`;
+
+  it('(a) leaves a block comment before the comma it was written before', () => {
+    const { output } = fix(PROPERTY_BLOCK);
+    expect(output).toBe(`const o = {
+  a: 1 /* deliberately empty */,
+};
+`);
+    expect(isFixedPoint(output)).toBe(true);
+  });
+
+  it('(a) is not vacuous: prettier wants a comma comment on the other side of one', () => {
+    expect(isFixedPoint(PROPERTY_BLOCK)).toBe(true);
+    // Past the comma is what prettier rewrites here, and before the semicolon
+    // is what it rewrites above: the two punctuators genuinely disagree.
+    expect(
+      isFixedPoint('const o = {\n  a: 1, /* deliberately empty */\n};\n'),
+    ).toBe(false);
+    expect(
+      isFixedPoint('const o = {\n  a: 1 /* deliberately empty */,\n};\n'),
+    ).toBe(true);
+  });
+
+  it('(a) still takes a comma for a comment that needs its own line', () => {
+    const { output } = fix(`const value = call(
+  useMemo(() => {
+    return 1; // documents the cap
+  }, []),
+);
+`);
+    expect(output).toBe(`const value = call(
+  1, // documents the cap
+);
+`);
+    expect(isFixedPoint(output)).toBe(true);
+  });
+
+  /**
+   * (b) The same in line-comment form, where the break the comment needs used to
+   * be held open by parentheses so it could fall before the semicolon.
+   */
+  const TRAILING_LINE = `const flagged = useMemo(() => {
+  return !value; // trailing note
+}, [value]);
+`;
+
+  it('(b) drops the parentheses once the comment rides past the terminator', () => {
+    const { output } = fix(TRAILING_LINE);
+    expect(output).toBe('const flagged = !value; // trailing note\n');
+    expect(isFixedPoint(output)).toBe(true);
+    expect(output).toContain('// trailing note');
+  });
+
+  it('(b) is not vacuous: the parenthesised spelling is the one prettier rewrites', () => {
+    expect(isFixedPoint(TRAILING_LINE)).toBe(true);
+    expect(isFixedPoint('const flagged = (!value // trailing note\n);\n')).toBe(
+      false,
+    );
+  });
+
+  /**
+   * (c) The restricted production, where the parentheses stay and only their
+   * layout was wrong. The carried comment is a directive, so this shape also
+   * pins that the suppression survives the move.
+   */
+  const DIRECTIVE = `function useLabel(flag: boolean) {
+  return useMemo(() => {
+    // eslint-disable-next-line no-restricted-syntax
+    return flag ? 'a' : 'b';
+  }, [flag]);
+}
+`;
+
+  const EXPECTED_DIRECTIVE = `function useLabel(flag: boolean) {
+  return (
+    // eslint-disable-next-line no-restricted-syntax
+    flag ? 'a' : 'b'
+  );
+}
+`;
+
+  it('(c) indents the parenthesised group the way prettier prints one', () => {
+    const { output } = fix(DIRECTIVE);
+    expect(output).toBe(EXPECTED_DIRECTIVE);
+    expect(isFixedPoint(output)).toBe(true);
+  });
+
+  it('(c) is not vacuous: the group anchored at the call is what prettier rewrites', () => {
+    expect(isFixedPoint(DIRECTIVE)).toBe(true);
+    expect(
+      isFixedPoint(`function useLabel(flag: boolean) {
+  return (
+  // eslint-disable-next-line no-restricted-syntax
+  flag ? 'a' : 'b');
+}
+`),
+    ).toBe(false);
+  });
+
+  /**
+   * Whether the directive still governs the expression is a question about
+   * ESLint's own line accounting, so it is asked of ESLint: the emission is
+   * linted under the rule the directive names, and the report has to be gone.
+   */
+  const lintRestrictedSyntax = (code: string) => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule('no-restricted-syntax', {
+      create: (context) => ({
+        ConditionalExpression: (node) =>
+          context.report({ node, message: 'ternary' }),
+      }),
+    } as unknown as Rule.RuleModule);
+    return linter.verify(code, {
+      parser: '@typescript-eslint/parser',
+      parserOptions: {
+        ecmaVersion: 2020 as const,
+        sourceType: 'module' as const,
+      },
+      rules: { 'no-restricted-syntax': 'error' },
+    } as Linter.Config);
+  };
+
+  it('(c) keeps the directive governing the line the expression stands on', () => {
+    expect(lintRestrictedSyntax(fix(DIRECTIVE).output)).toEqual([]);
+  });
+
+  it('(c) is not vacuous: the same emission without the directive reports', () => {
+    const undirected = EXPECTED_DIRECTIVE.replace(
+      '    // eslint-disable-next-line no-restricted-syntax\n',
+      '',
+    );
+    expect(undirected).not.toContain('eslint-disable-next-line');
+    expect(lintRestrictedSyntax(undirected)).toHaveLength(1);
+  });
+
+  /**
+   * The parentheses the restricted production keeps are still load-bearing at
+   * the re-indented layout, which is a claim about what the code EVALUATES to.
+   */
+  const evaluate = (source: string, call: string) =>
+    // eslint-disable-next-line @typescript-eslint/no-implied-eval, no-new-func
+    new Function(`${source}\nreturn ${call};`)();
+
+  it('(c) still returns the value at the re-indented layout', () => {
+    const emitted = EXPECTED_DIRECTIVE.replace(': boolean', '');
+    expect(evaluate(emitted, 'useLabel(true)')).toBe('a');
+  });
+
+  it('(c) is not vacuous: the same layout unparenthesised yields undefined', () => {
+    expect(
+      evaluate(
+        `function useLabel(flag) {
+  return
+    // eslint-disable-next-line no-restricted-syntax
+    flag ? 'a' : 'b';
+}
+`,
+        'useLabel(true)',
+      ),
+    ).toBeUndefined();
+  });
+
+  /**
+   * The one emission this repo's prettier still objects to, kept on purpose.
+   *
+   * Prettier 2.7.1 reprints ANY parenthesised `yield` argument without its
+   * parentheses and folds the carried comment onto the `yield` line — a
+   * restricted production, so ASI ends the `yield` there. Its preferred
+   * spelling therefore yields `undefined` where the emitted one yields the
+   * value, which is measured below rather than argued: the formatter is wrong
+   * here, and the fixer declines to follow it.
+   */
+  const YIELD_EMISSION = `function* labels(flag) {
+  yield (
+    // documents the fallback
+    flag ? 'a' : 'b'
+  );
+}
+`;
+
+  it('leaves the yield emission where prettier disagrees with the grammar', () => {
+    const { output } = fix(`function* labels(flag) {
+  yield useMemo(() => {
+    // documents the fallback
+    return flag ? 'a' : 'b';
+  }, [flag]);
+}
+`);
+    expect(output).toBe(YIELD_EMISSION);
+    expect(isFixedPoint(output)).toBe(false);
+  });
+
+  it('is not vacuous: prettier’s preferred yield spelling loses the value', () => {
+    const first = (source: string) => {
+      // eslint-disable-next-line @typescript-eslint/no-implied-eval, no-new-func
+      const generator = new Function(`${source}\nreturn labels;`)();
+      return generator(true).next().value;
+    };
+    expect(first(YIELD_EMISSION)).toBe('a');
+    expect(
+      first(prettier.format(YIELD_EMISSION, PRETTIER_OPTIONS)),
+    ).toBeUndefined();
   });
 });
 

@@ -19,7 +19,8 @@
   - Respects generator callbacks—they always return iterators, so inlining yielded primitives would change the return type and behavior.
   - Does not apply when the callback includes function calls if `ignoreCallExpressions` is enabled (default) to avoid flagging intentionally expensive computations.
 - **Auto-fix**: Replaces `useMemo(() => EXPR, [deps])` with `EXPR` and removes the dependency array. A comment inside the `useMemo` call but outside the returned expression — such as an `eslint-disable-next-line` directive on the return statement — is carried into the replacement rather than destroyed, so a suppressed rule is never silently re-enabled. Each comment keeps the side of the expression it was written on, and one whose meaning depends on the line it occupies (a line comment, or a block-comment `eslint-disable-next-line`) keeps a line of its own so it still covers the inlined expression. The presence of a comment therefore never changes whether the fix applies.
-- **Auto-fix — parentheses**: The replacement is parenthesised only where the position it lands in needs it. A pair the position does not need is text written into an otherwise formatted file, and `prettier` deletes it again, so every fixed file would fail `prettier --check`. Parentheses are kept where dropping them would change the parse or the meaning — `useMemo(() => 1, []).toFixed(2)` becomes `(1).toFixed(2)` because `1.toFixed(2)` is not a number followed by a method, `useMemo(() => 1 ?? 2, []) || fallback` becomes `(1 ?? 2) || fallback` because `??` cannot sit beside `||`, and a conditional used as a concise arrow body keeps them because prettier writes them back there. A carried comment that owns its line puts a line terminator in the middle of the replacement, and keeps the parentheses only where that terminator is not inert. Two positions qualify. One is a restricted production — the argument of `return`, `throw` or `yield`, or the operand of a postfix `++`/`--` — where a bare terminator ends the construct through automatic semicolon insertion, so a `return` would hand back `undefined` and leave the expression standing as dead code. The other is an emission ending in a line-bound comment with source still on that line for it to swallow. Anywhere else the terminator is whitespace, so the landing position decides exactly as it does for an uncommented emission.
+- **Auto-fix — where a carried comment lands**: A comment written behind the expression annotates the statement the call stood in, so it rides past the `;` or `,` that closes it: `useMemo(() => 3 * 3, /* no deps */ [])` becomes `3 * 3; /* no deps */`, not `3 * 3 /* no deps */;`. That is where `prettier` prints such a comment, and it also gives a line comment the end of the statement to break at, so the parentheses that used to hold that break open are no longer needed. A punctuator with source still behind it on the line is left alone — a line comment moved past it would swallow that source — and the comment stays inside the replacement instead.
+- **Auto-fix — parentheses**: The replacement is parenthesised only where the position it lands in needs it. A pair the position does not need is text written into an otherwise formatted file, and `prettier` deletes it again, so every fixed file would fail `prettier --check`. Parentheses are kept where dropping them would change the parse or the meaning — `useMemo(() => 1, []).toFixed(2)` becomes `(1).toFixed(2)` because `1.toFixed(2)` is not a number followed by a method, `useMemo(() => 1 ?? 2, []) || fallback` becomes `(1 ?? 2) || fallback` because `??` cannot sit beside `||`, and a conditional used as a concise arrow body keeps them because prettier writes them back there. A carried comment that owns its line puts a line terminator in the middle of the replacement, and keeps the parentheses only where that terminator is not inert. Two positions qualify. One is a restricted production — the argument of `return`, `throw` or `yield`, or the operand of a postfix `++`/`--` — where a bare terminator ends the construct through automatic semicolon insertion, so a `return` would hand back `undefined` and leave the expression standing as dead code. The other is an emission ending in a line-bound comment with source still on that line for it to swallow. Anywhere else the terminator is whitespace, so the landing position decides exactly as it does for an uncommented emission. Where the pair does stay, the group is laid out the way prettier prints a parenthesised group that has to break: the interior one level in from the statement, and the closing parenthesis alone on its own line.
 - **Auto-fix — imports**: The unwrap deletes the callee and the dependency array, so an import read only from there loses its last reference. The same fix drops that import, because a rewrite that strands a binding turns a clean file into one that fails `no-unused-vars` and `noUnusedLocals`, and the resolved report leaves nothing to re-raise the debt. Every unwrap in a file ships as one fix for the same reason: with two calls sharing one `useMemo` import, neither unwrap is the binding's last use on its own.
 
 ```tsx
@@ -45,6 +46,18 @@ export const useThing = () => useMemo(() => 1, []);
 export const useThing = () => 1;
 ```
 
+A comment written behind the expression follows the statement's terminator:
+
+```tsx
+// Before
+const isFlagged = useMemo(() => {
+  return !value; // trailing note
+}, [value]);
+
+// After — the note trails the statement, as it did before the unwrap
+const isFlagged = !value; // trailing note
+```
+
 The parentheses stay exactly where the landing position needs them:
 
 ```tsx
@@ -53,6 +66,27 @@ const width = useMemo(() => (isWide ? 'wide' : 'narrow'), [isWide]).length;
 
 // After — a member access binds tighter than the conditional it now reads
 const width = (isWide ? 'wide' : 'narrow').length;
+```
+
+After `return` a carried comment's line terminator would end the statement, so
+the pair stays — laid out the way prettier prints a group that has to break:
+
+```tsx
+// Before
+function useLabel(flag: boolean) {
+  return useMemo(() => {
+    // eslint-disable-next-line no-restricted-syntax
+    return flag ? 'a' : 'b';
+  }, [flag]);
+}
+
+// After — the directive still governs the line the ternary stands on
+function useLabel(flag: boolean) {
+  return (
+    // eslint-disable-next-line no-restricted-syntax
+    flag ? 'a' : 'b'
+  );
+}
 ```
 
 A binding kept alive by anything else stays, and an import the returned
