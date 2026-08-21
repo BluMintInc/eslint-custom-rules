@@ -187,6 +187,47 @@ describe('prefer-type-over-interface default-export AST shape', () => {
   });
 });
 
+/**
+ * Issue #2080. Prettier answers an alias line wider than `printWidth` with a
+ * deeper layout — first arm on its own line, chain indented one level further —
+ * and that answer depends on a width the rule cannot read off the source. The
+ * fix is therefore offered up to the boundary and withheld past it, keyed on
+ * the rule's own `printWidth` option.
+ *
+ * The fixtures are built by repetition rather than written out, so the column
+ * counts below stay checkable by eye and a stray character cannot move a
+ * boundary case silently to the other side of it.
+ */
+const NAME = 'N'.repeat(10);
+/** `type NNNNNNNNNN = <60 B> &` is exactly 80 columns; 61 makes it 81. */
+const ARM_AT_WIDTH = 60;
+const ARM_PAST_WIDTH = 61;
+
+const reflowSource = (armLength: number) =>
+  `interface ${NAME} extends ${'B'.repeat(armLength)}, C {
+  id: string;
+}`;
+
+const reflowOutput = (armLength: number) =>
+  `type ${NAME} = ${'B'.repeat(armLength)} &
+  C & {
+    id: string;
+  };`;
+
+/**
+ * The same boundary under tab indentation, where the tab is worth `tabWidth`
+ * columns to the formatter. Counting it as one character puts the boundary a
+ * column per nesting level too far out, which emits onto a line the formatter
+ * reflows — so `\ttype T = <67 B> &` is the 80-column case here, not `<68 B>`.
+ */
+const TAB_ARM_AT_WIDTH = 67;
+const TAB_ARM_PAST_WIDTH = 68;
+
+const tabbedSource = (armLength: number) =>
+  `namespace N {\n\tinterface T extends ${'B'.repeat(
+    armLength,
+  )}, C {\n\t\tid: string;\n\t}\n}`;
+
 ruleTesterTs.run('prefer-type-over-interface', preferTypeOverInterface, {
   valid: [
     'type SomeType = { field: string; };',
@@ -1046,6 +1087,105 @@ export default Opts;`),
         'namespace Internal { export type Helper = { id: string }; }',
       ),
     },
+    // Issue #2080, at the boundary and one column past it. The pair is the
+    // DEFAULT half of the option's evidence: nothing is configured here, so an
+    // option that silently stopped being consulted would have to move one of
+    // these two.
+    {
+      code: reflowSource(ARM_AT_WIDTH),
+      errors: [{ messageId: 'preferType', data: { interfaceName: NAME } }],
+      output: asParseable(reflowOutput(ARM_AT_WIDTH)),
+    },
+    {
+      code: reflowSource(ARM_PAST_WIDTH),
+      errors: [
+        {
+          messageId: 'preferTypeOverflowsPrintWidth',
+          data: { interfaceName: NAME, aliasLineWidth: 81, printWidth: 80 },
+        },
+      ],
+      output: null,
+    },
+    // The same two sources with the option carrying a width that is not the
+    // default, each flipping the verdict its default arm above records. An
+    // option that changed nothing would leave both of these matching their
+    // default-options twins.
+    {
+      code: reflowSource(ARM_PAST_WIDTH),
+      options: [{ printWidth: 120 }],
+      errors: [{ messageId: 'preferType', data: { interfaceName: NAME } }],
+      output: asParseable(reflowOutput(ARM_PAST_WIDTH)),
+    },
+    {
+      code: reflowSource(ARM_AT_WIDTH),
+      options: [{ printWidth: 40 }],
+      errors: [
+        {
+          messageId: 'preferTypeOverflowsPrintWidth',
+          data: { interfaceName: NAME, aliasLineWidth: 80, printWidth: 40 },
+        },
+      ],
+      output: null,
+    },
+    // The alias line is not always the header alone. A lone heritage clause
+    // keeps the object hugged to it, so the line runs through the body's first
+    // line — `type Member = <63 P> & {` is 81 columns — and the measurement has
+    // to follow it there.
+    {
+      code: `interface Member extends ${'P'.repeat(63)} {
+  role: string;
+}`,
+      errors: [
+        {
+          messageId: 'preferTypeOverflowsPrintWidth',
+          data: { interfaceName: 'Member', aliasLineWidth: 81, printWidth: 80 },
+        },
+      ],
+      output: null,
+    },
+    {
+      code: `interface Member extends ${'P'.repeat(62)} {
+  role: string;
+}`,
+      errors: [{ messageId: 'preferType', data: { interfaceName: 'Member' } }],
+      output: asParseable(`type Member = ${'P'.repeat(62)} & {
+  role: string;
+};`),
+    },
+    // A body the emission keeps on one line carries the terminator on the alias
+    // line too, so `type Blank = <70 A> & B & {};` measures 93 — the arm where
+    // dropping the `;` from the measurement would put the boundary a column out.
+    {
+      code: `interface Blank extends ${'A'.repeat(70)}, B {}`,
+      errors: [
+        {
+          messageId: 'preferTypeOverflowsPrintWidth',
+          data: { interfaceName: 'Blank', aliasLineWidth: 93, printWidth: 80 },
+        },
+      ],
+      output: null,
+    },
+    // The tab pair. A tab is one character and two columns, so a measurement
+    // counting characters would put both of these on the fixed side.
+    {
+      code: tabbedSource(TAB_ARM_AT_WIDTH),
+      errors: [{ messageId: 'preferType', data: { interfaceName: 'T' } }],
+      output: asParseable(
+        `namespace N {\n\ttype T = ${'B'.repeat(
+          TAB_ARM_AT_WIDTH,
+        )} &\n\t\tC & {\n\t\t\tid: string;\n\t\t};\n}`,
+      ),
+    },
+    {
+      code: tabbedSource(TAB_ARM_PAST_WIDTH),
+      errors: [
+        {
+          messageId: 'preferTypeOverflowsPrintWidth',
+          data: { interfaceName: 'T', aliasLineWidth: 81, printWidth: 80 },
+        },
+      ],
+      output: null,
+    },
   ],
 });
 
@@ -1512,18 +1652,13 @@ describe('prefer-type-over-interface emits prettier-stable output', () => {
   });
 
   /**
-   * RESIDUAL GAP, pinned rather than left silent. The per-arm layout above is
-   * width-independent, which is why the fixer can emit it. Once the alias line
-   * itself — `type Name = firstArm &` — passes `printWidth`, prettier answers
-   * with a different layout: the first arm drops onto its own line and the
-   * whole chain indents a level deeper. That answer IS a width response, and
-   * the rule cannot measure it: `printWidth` belongs to the consumer's
-   * formatter configuration, which no rule context carries. Keying on 80 would
-   * emit the deep layout for a consumer formatting at 100, turning a correct
-   * emission into a wrong one.
-   *
-   * The boundary is pinned at both sides so that a fixer which starts guessing
-   * a width is visible either way.
+   * The per-arm layout above is width-independent, which is why the fixer can
+   * emit it. Once the alias line itself — `type Name = firstArm &` — passes
+   * `printWidth`, prettier answers with a different layout: the first arm drops
+   * onto its own line and the whole chain indents a level deeper. That answer
+   * IS a width response, so the fix is withheld there and the report stands
+   * (#2080). The boundary is pinned at both sides, so a fixer that starts
+   * emitting past it — or stops emitting short of it — is visible either way.
    */
   const nameAt = (armLength: number) =>
     `interface ${'N'.repeat(10)} extends ${'B'.repeat(
@@ -1536,14 +1671,57 @@ describe('prefer-type-over-interface emits prettier-stable output', () => {
     expect(isPrettierClean(output)).toBe(true);
   });
 
-  it('leaves the deeper layout prettier picks past printWidth to the formatter', () => {
-    const output = fix(prettier.format(nameAt(61), PRETTIER_OPTIONS));
+  it('declines the rewrite once the alias line would pass printWidth', () => {
+    const source = prettier.format(nameAt(61), PRETTIER_OPTIONS);
+    // One column more than the case above, which is the whole difference.
+    expect(`type ${'N'.repeat(10)} = ${'B'.repeat(61)} &`).toHaveLength(81);
+    expect(fix(source)).toBe(source);
+    expect(isPrettierClean(source)).toBe(true);
+  });
+
+  /**
+   * The counterfactual, kept as a control: the text the fixer emitted while it
+   * wrote the shallow layout at any width. Without it, "declines" would pass
+   * for a rule that had simply stopped converting anything.
+   */
+  it('control: the shallow layout past printWidth is prettier-unclean', () => {
+    const shallow = `type ${'N'.repeat(10)} = ${'B'.repeat(
+      61,
+    )} &\n  C & {\n    id: string;\n  };\n`;
+    expect(shallow.split('\n')[0]).toHaveLength(81);
+    expect(isPrettierClean(shallow)).toBe(false);
+    expect(prettier.format(shallow, PRETTIER_OPTIONS)).toContain(' =\n  BBB');
+  });
+
+  /**
+   * The width the fix measures against is the rule's own option, because the
+   * formatter's is not readable from a rule context. A consumer formatting at
+   * 120 gets the conversion the default declines, and the emission is stable
+   * against a 120-column formatter — the half a decline-only assertion cannot
+   * show.
+   */
+  it('emits past 80 when the option carries the consumer’s width', () => {
+    const wide: prettier.Options = { ...PRETTIER_OPTIONS, printWidth: 120 };
+    const source = prettier.format(nameAt(61), wide);
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      RULE_ID,
+      preferTypeOverInterface as unknown as Rule.RuleModule,
+    );
+    const output = linter.verifyAndFix(
+      source,
+      { ...CONFIG, rules: { [RULE_ID]: ['error', { printWidth: 120 }] } },
+      'shapes.ts',
+    ).output;
+
+    expect(output).not.toBe(source);
     expect(output.split('\n')[0]).toHaveLength(81);
-    // The emission is the same width-independent layout; prettier answers the
-    // overflow by indenting the chain, which is the residue.
-    expect(output).toContain(' &\n  C & {\n    id: string;\n  };');
-    expect(isPrettierClean(output)).toBe(false);
-    expect(prettier.format(output, PRETTIER_OPTIONS)).toContain(' =\n  BBB');
+    expect(prettier.format(output, wide)).toBe(output);
   });
 
   /**

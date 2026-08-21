@@ -65,7 +65,31 @@ FROM t`;
 
 ### Autofix limitation: an alias line wider than `printWidth`
 
-The layout above is width-independent, which is what lets the fix emit it. Prettier answers one case differently: when the alias line itself — `type Name = firstClause &` — passes `printWidth`, it drops the first clause onto its own line and indents the whole chain a level deeper. That answer is a response to the width, and the width belongs to the consumer's formatter configuration, which a lint rule cannot read. Keying the emission on 80 columns would emit the deeper layout for a project formatting at 100, so the fix leaves this one to the formatter: a heritage clause long enough to overflow the alias line on its own is reflowed by the next `prettier --write`.
+The layout above is width-independent, which is what lets the fix emit it. Prettier answers one case differently: when the alias line itself — `type Name = firstClause &` — passes `printWidth`, it drops the first clause onto its own line and indents the whole chain a level deeper:
+
+```typescript
+// reported, but not autofixed: `type TeamMember = <first clause> &` is 81 columns
+interface TeamMember
+  extends AuditableArchivableSearchableTeamMemberBaseProfileRecordShape,
+    Auditable {
+  role: string;
+}
+```
+
+```typescript
+// the conversion, applied by hand and laid out by the formatter
+type TeamMember =
+  AuditableArchivableSearchableTeamMemberBaseProfileRecordShape &
+    Auditable & {
+      role: string;
+    };
+```
+
+That deeper layout is a response to the width, so the rewrite is withheld there: the declaration is still reported, with no autofix, and the message names the width it measured and the width it measured against.
+
+The fix is withheld rather than emitted because the two ways of being wrong are not symmetric. The width lives in the consumer's formatter configuration, which no rule context carries, so the rule can only measure against the `printWidth` option below. Set too high, either design writes a line the formatter rejects. Set too low — which is the default's own position in any project formatting at 100 or 120 — emitting the deeper layout puts files out of format that were fine before, while withholding the fix costs only a conversion the author still makes by hand. Measured over 582 alias shapes whose head passes 80: emitting prettier's deeper layout at the default width leaves 160 of them out of format for a consumer at `printWidth: 100` and 320 at `printWidth: 120`, where withholding leaves none. This rule prefers a missed fix to a broken file.
+
+The measured line is the one the rewrite would open the declaration on, which is not always the alias head alone: a lone heritage clause keeps the object hugged to it, so the line runs on through the body's first line, and a body the emission keeps on one line carries the alias terminator there too. Indentation counts as the columns it occupies, as does an `export` prefix — but not `declare`, which the rewrite drops. A tab is measured at prettier's default `tabWidth` of 2, for the same reason `printWidth` defaults to 80; a project indenting with wider tabs compensates by lowering `printWidth`.
 
 ### Autofix limitation: comments in the declaration header
 
@@ -217,6 +241,25 @@ type TeamMember = UserProfile & {
   role: string;
 };
 ```
+
+## Options
+
+### `printWidth`
+
+The column at which the autofix stops emitting, defaulting to `80` — prettier's own default, and the width of a project that has never configured one. Set it to the width your formatter uses so conversions that fit that width keep their autofix:
+
+```json
+{
+  "rules": {
+    "@blumintinc/blumint/prefer-type-over-interface": [
+      "error",
+      { "printWidth": 120 }
+    ]
+  }
+}
+```
+
+The option moves the boundary in both directions. At `120`, a declaration whose alias line measures 81 columns is converted, because a 120-column formatter leaves that line where the fix put it. At `40`, one measuring 80 is reported without a fix instead. It changes nothing else. A declaration whose alias line fits is converted identically at every width, and no width silences anything: an interface the option puts past the boundary is still reported, with the message explaining the overflow instead of the autofix performing the conversion.
 
 ## Why prefer types over interfaces?
 
