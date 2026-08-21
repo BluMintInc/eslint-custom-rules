@@ -1,11 +1,15 @@
-import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
+import {
+  AST_NODE_TYPES,
+  AST_TOKEN_TYPES,
+  TSESLint,
+  TSESTree,
+} from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 import { createSuppressionChecker } from '../utils/disableDirectives';
 import { planOrphanedImportRemoval, TextRange } from '../utils/importRemoval';
 import {
   ReplacementSegment,
   joinSegmentBody,
-  joinSegments,
   requiresLineBreakAfter,
   requiresOwnLine,
 } from '../utils/replacementSegments';
@@ -27,6 +31,43 @@ type MessageIds = 'uselessUseMemoPrimitive';
 
 /** One rewrite the fix performs: `range` becomes `text`. */
 type Edit = { range: TSESTree.Range; text: string };
+
+/** The replacement one call collapses to, and the span it takes over. */
+type Replacement = { text: string; range: TSESTree.Range };
+
+/** The repository's prettier `tabWidth`, and so the depth a nested line takes. */
+const INDENT_UNIT = '  ';
+
+/**
+ * Assembles the parenthesized replacement the way prettier prints a
+ * parenthesized group that has to break: every carried line one level in from
+ * the position the group opens at, and the closing parenthesis alone on a line
+ * at that position's own indentation.
+ *
+ * The shared `joinSegments` anchors every line at the indentation it is handed —
+ * the call's own — and leaves the closing parenthesis trailing the last carried
+ * line. Prettier reprints both, so a file the fixer touched fails
+ * `prettier --check` over layout alone (#2079). The re-layout stays here because
+ * the helper is shared with rules whose emissions prettier already accepts.
+ *
+ * A group with no break in it stays on one line, which is where prettier keeps
+ * it too.
+ */
+function joinParenthesizedSegments(
+  segments: readonly ReplacementSegment[],
+  indent: string,
+): string {
+  if (!segments.some((segment) => segment.breakAfter)) {
+    return `(${joinSegmentBody(segments, indent)})`;
+  }
+  const interior = `${indent}${INDENT_UNIT}`;
+  return `(\n${interior}${joinSegmentBody(segments, interior)}\n${indent})`;
+}
+
+/** The indentation of the line the given position sits on. */
+function indentOfLine(line: string): string {
+  return /^[\t ]*/.exec(line)?.[0] ?? '';
+}
 
 /** A `useMemo` call the rule reports, held until `Program:exit`. */
 type Violation = {
@@ -465,15 +506,58 @@ export const noUselessUsememoPrimitives = createRule<Options, MessageIds>({
     }
 
     /**
-     * The text the call collapses to. Inlining replaces the entire
-     * `useMemo(...)` call with the returned expression's text, so any comment
-     * inside the call but outside that expression — an eslint-disable-next-line
-     * directive on the return statement among them — has no representation in
-     * the replacement. Dropping one changes which rules report on the file
-     * (#1591), and declining the fix whenever one is present makes a comment
-     * decide whether the rule rewrites at all (#1877). Both are avoided by
-     * carrying every such comment into the replacement, where the directives
-     * among them keep the line relationship they were written with.
+     * The punctuator a comment carried from behind the expression may move past.
+     *
+     * Such a comment annotates the statement the call stood in, and prettier
+     * prints it AFTER the token that closes that statement — `const x = 1; /* c
+     * *\/`, never `const x = 1 /* c *\/;`. Leaving it inside the statement is
+     * layout prettier rewrites, so the fixed file fails `prettier --check`
+     * (#2079).
+     *
+     * A comma is a weaker claim and takes only the comments that need a line of
+     * their own. Measured against this repo's prettier: a line comment on a list
+     * element is printed after the comma, while a block comment on one is
+     * printed before it — the opposite of what a semicolon gets. Moving a block
+     * comment past a comma would trade one layout prettier rewrites for another.
+     *
+     * Only a punctuator with nothing but line ending behind it may be taken
+     * over: a line-bound comment landing after it would otherwise swallow
+     * whatever shared that line. Asking for the next token INCLUDING comments
+     * also keeps a comment the fixer does not own from being stepped over.
+     */
+    function absorbableClosingPunctuator(
+      node: TSESTree.CallExpression,
+      trailingComments: readonly TSESTree.Comment[],
+    ): TSESTree.Token | null {
+      const next = sourceCode.getTokenAfter(node, { includeComments: true });
+      if (
+        !next ||
+        next.type !== AST_TOKEN_TYPES.Punctuator ||
+        (next.value !== ';' && next.value !== ',')
+      ) {
+        return null;
+      }
+      if (
+        next.value === ',' &&
+        !trailingComments.every(requiresLineBreakAfter)
+      ) {
+        return null;
+      }
+      const line = sourceCode.lines[next.loc.end.line - 1] ?? '';
+      return line.slice(next.loc.end.column).trim() === '' ? next : null;
+    }
+
+    /**
+     * The text the call collapses to, and the span that text takes over.
+     * Inlining replaces the entire `useMemo(...)` call with the returned
+     * expression's text, so any comment inside the call but outside that
+     * expression — an eslint-disable-next-line directive on the return statement
+     * among them — has no representation in the replacement. Dropping one
+     * changes which rules report on the file (#1591), and declining the fix
+     * whenever one is present makes a comment decide whether the rule rewrites
+     * at all (#1877). Both are avoided by carrying every such comment into the
+     * replacement, where the directives among them keep the line relationship
+     * they were written with.
      *
      * The parentheses around that replacement are a separate question, decided
      * per landing position by `requiresParenthesesInline`: a pair the position
@@ -481,10 +565,10 @@ export const noUselessUsememoPrimitives = createRule<Options, MessageIds>({
      * prettier deletes it again, so every fixed file fails `prettier --check`
      * (#2071).
      */
-    function replacementTextFor(
+    function replacementFor(
       node: TSESTree.CallExpression,
       returnedExpression: TSESTree.Expression,
-    ): string {
+    ): Replacement {
       const expressionText = sourceCode.getText(returnedExpression);
       const needsParentheses = (text: string) =>
         requiresParenthesesInline({
@@ -502,9 +586,12 @@ export const noUselessUsememoPrimitives = createRule<Options, MessageIds>({
             comment.range[1] > returnedExpression.range[1],
         );
       if (strandedComments.length === 0) {
-        return needsParentheses(expressionText)
-          ? `(${expressionText})`
-          : expressionText;
+        return {
+          text: needsParentheses(expressionText)
+            ? `(${expressionText})`
+            : expressionText,
+          range: node.range,
+        };
       }
 
       // A comment inside the call lies wholly on one side of the expression,
@@ -516,29 +603,64 @@ export const noUselessUsememoPrimitives = createRule<Options, MessageIds>({
       });
       const isBefore = (comment: TSESTree.Comment) =>
         comment.range[0] < returnedExpression.range[0];
+      const leadingComments = strandedComments.filter(isBefore);
+      const trailingComments = strandedComments.filter(
+        (comment) => !isBefore(comment),
+      );
+
+      // A comment behind the expression rides past the punctuator that closes
+      // the statement where one is available, so it lands where prettier puts
+      // it. Where none is, it stays inside the replacement and the parentheses
+      // below keep the break it needs from displacing the source that follows.
+      const closingPunctuator =
+        trailingComments.length > 0
+          ? absorbableClosingPunctuator(node, trailingComments)
+          : null;
+      const carriedComments = closingPunctuator
+        ? leadingComments
+        : strandedComments;
       const segments: ReplacementSegment[] = [
-        ...strandedComments.filter(isBefore).map(toSegment),
+        ...leadingComments.map(toSegment),
         { text: expressionText, breakAfter: false },
-        ...strandedComments
-          .filter((comment) => !isBefore(comment))
-          .map(toSegment),
+        ...(closingPunctuator ? [] : trailingComments.map(toSegment)),
       ];
 
       // The call can start mid-line, so the indentation of the line it opens on
       // is the only anchor the carried comments have.
-      const startLine = sourceCode.lines[node.loc.start.line - 1] ?? '';
-      const indent = /^[\t ]*/.exec(startLine)?.[0] ?? '';
+      const indent = indentOfLine(
+        sourceCode.lines[node.loc.start.line - 1] ?? '',
+      );
 
       // Where code already opened the line, every line the replacement adds
       // continues a statement that is already open, and prettier indents such a
       // line one level in from the statement it belongs to. Matching that is
       // what makes the unparenthesised emission a prettier fixed point rather
-      // than merely a shorter one (#2071). Inside parentheses prettier
-      // re-indents the whole group, so that arm keeps the line the call opens
-      // on as its anchor.
+      // than merely a shorter one (#2071).
       const continuesOpenLine = hasSourceBeforeOnLine(node);
-      const carriedIndent = continuesOpenLine ? `${indent}  ` : indent;
+      const carriedIndent = continuesOpenLine
+        ? `${indent}${INDENT_UNIT}`
+        : indent;
       const body = joinSegmentBody(segments, carriedIndent);
+
+      /** The replacement, followed by whatever rode past the punctuator. */
+      const withTail = (core: string): Replacement => {
+        if (!closingPunctuator) {
+          return { text: core, range: node.range };
+        }
+        // A comment that takes a line of its own out here belongs to the
+        // statement rather than to the expression, so it returns to the
+        // indentation of the line the punctuator closes.
+        const tail = joinSegmentBody(
+          trailingComments.map(toSegment),
+          indentOfLine(
+            sourceCode.lines[closingPunctuator.loc.end.line - 1] ?? '',
+          ),
+        );
+        return {
+          text: `${core}${closingPunctuator.value} ${tail}`,
+          range: [node.range[0], closingPunctuator.range[1]],
+        };
+      };
 
       // A comment that owns its line puts a line terminator in the middle of
       // the replacement, and the parentheses are what make that terminator
@@ -555,17 +677,17 @@ export const noUselessUsememoPrimitives = createRule<Options, MessageIds>({
       // Anywhere else the terminator is inert, so the landing position decides
       // the parentheses exactly as it does for an uncommented emission: a pair
       // the position does not ask for is text prettier deletes again (#2071).
-      const ownsALine = strandedComments.some(requiresOwnLine);
+      const ownsALine = carriedComments.some(requiresOwnLine);
       const endsWithLineBoundComment = segments[segments.length - 1].breakAfter;
       if (
         ownsALine &&
         (isRestrictedProduction(node) ||
           (endsWithLineBoundComment && hasSourceAfterOnLine(node)))
       ) {
-        return joinSegments(segments, indent);
+        return withTail(joinParenthesizedSegments(segments, indent));
       }
       if (needsParentheses(body)) {
-        return joinSegments(segments, indent);
+        return withTail(joinParenthesizedSegments(segments, indent));
       }
 
       // A leading comment that owns its line takes the break that gives it one
@@ -576,7 +698,7 @@ export const noUselessUsememoPrimitives = createRule<Options, MessageIds>({
       // anything does.
       const leading =
         segments[0].breakAfter && continuesOpenLine ? `\n${carriedIndent}` : '';
-      return `${leading}${body}`;
+      return withTail(`${leading}${body}`);
     }
 
     /**
@@ -589,18 +711,15 @@ export const noUselessUsememoPrimitives = createRule<Options, MessageIds>({
      * is the separator the break replaces — and it strands no binding, since
      * whitespace carries no reference for the orphaned-import analysis to read.
      */
-    function editRangeFor(
-      node: TSESTree.CallExpression,
-      text: string,
-    ): TSESTree.Range {
+    function editRangeFor({ text, range }: Replacement): TSESTree.Range {
       if (!text.startsWith('\n')) {
-        return node.range;
+        return range;
       }
-      let start = node.range[0];
+      let start = range[0];
       while (start > 0 && /[\t ]/.test(sourceCode.text[start - 1])) {
         start -= 1;
       }
-      return [start, node.range[1]];
+      return [start, range[1]];
     }
 
     /**
@@ -617,12 +736,12 @@ export const noUselessUsememoPrimitives = createRule<Options, MessageIds>({
      */
     function planViolation(violation: Violation): PlannedViolation {
       const { node, returnedExpression } = violation;
-      const text = replacementTextFor(node, returnedExpression);
+      const replacement = replacementFor(node, returnedExpression);
       return {
         violation,
         edit: {
-          range: editRangeFor(node, text),
-          text,
+          range: editRangeFor(replacement),
+          text: replacement.text,
         },
         removed: [
           [node.range[0], returnedExpression.range[0]],
