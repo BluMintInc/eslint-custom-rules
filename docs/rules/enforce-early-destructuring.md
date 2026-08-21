@@ -28,12 +28,16 @@ A nested object pattern is hoisted verbatim — the fixer does not add `= {}` to
 ```typescript
 // Input
 useEffect(() => {
-  const { profile: { name, age } } = user;
+  const {
+    profile: { name, age },
+  } = user;
   renderProfile(name, age);
 }, [user]);
 
 // Fixed
-const { profile: { name, age } } = (user) ?? {};
+const {
+  profile: { name, age },
+} = user ?? {};
 
 useEffect(() => {
   renderProfile(name, age);
@@ -43,6 +47,33 @@ useEffect(() => {
 TypeScript checks a destructuring default against every binding element beneath it, so `{ profile: { name, age } = {} }` reports [TS2525](https://typescript.tv/errors/#ts2525) once per name: `{}` supplies no value for `name` or `age` and neither carries a default of its own. Emitting that default turned compiling input into non-compiling output. The guard it provided was partial anyway — a `profile` that is explicitly `null` still throws — so the plain hoist is used instead, which reproduces the original statement's runtime behavior exactly. Nested array patterns still get `= []`, which TypeScript does not push down onto the element bindings.
 
 If the hoisted object can be nullish at render time, guard it at the source (`useMemo`, a default prop, or an early return) rather than relying on the destructuring pattern.
+
+### Nested patterns are written expanded
+
+Prettier breaks an object pattern onto one property per line as soon as any
+property's value is itself an object pattern, whatever the width. The hoisted
+declaration is emitted in that shape directly, so `eslint --fix` output is text
+the formatter leaves alone:
+
+```typescript
+// Fixed
+const {
+  id,
+  profile: { name },
+} = user ?? {};
+```
+
+Two shapes deliberately stay on one line, because prettier keeps them there:
+
+```typescript
+// A flat pattern that fits.
+const { id, name } = user ?? {};
+
+// A nested pattern under a default — including the `= []` this rule
+// synthesizes for an array pattern.
+const { profile: { name } = {} } = user ?? {};
+const { items: [first, second] = [] } = response ?? {};
+```
 
 ### Nested patterns behind a guard stay put
 

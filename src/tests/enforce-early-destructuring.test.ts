@@ -1,4 +1,5 @@
 import { Linter, Rule } from 'eslint';
+import * as prettier from 'prettier';
 import * as ts from 'typescript';
 import { ruleTesterJsx } from '../utils/ruleTester';
 import { enforceEarlyDestructuring } from '../rules/enforce-early-destructuring';
@@ -274,7 +275,9 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
         `,
       output: `
           const MyComponent = ({ user }) => {
-            const { profile: { name, age } } = user ?? {};
+            const {
+              profile: { name, age },
+            } = user ?? {};
             useEffect(() => {
               renderProfile(name, age);
             }, [name, age]);
@@ -297,7 +300,9 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
         `,
       output: `
           const Profile = ({ user }: { user: User }) => {
-            const { profile: { name, age } } = user ?? {};
+            const {
+              profile: { name, age },
+            } = user ?? {};
             useEffect(() => {
               renderProfile(name, age);
             }, [name, age]);
@@ -317,7 +322,10 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
         `,
       output: `
           const MyComponent = ({ user }) => {
-            const { id, profile: { name } } = user ?? {};
+            const {
+              id,
+              profile: { name },
+            } = user ?? {};
             useEffect(() => {
               render(id, name);
             }, [id, name]);
@@ -336,7 +344,11 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
         `,
       output: `
           const MyComponent = ({ user }) => {
-            const { profile: { address: { city } } } = user ?? {};
+            const {
+              profile: {
+                address: { city },
+              },
+            } = user ?? {};
             useEffect(() => {
               render(city);
             }, [city]);
@@ -357,7 +369,9 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
         `,
       output: `
           const MyComponent = ({ user }) => {
-            const { profile: { name = 'Anonymous', age } } = user ?? {};
+            const {
+              profile: { name = 'Anonymous', age },
+            } = user ?? {};
             useEffect(() => {
               renderProfile(name, age);
             }, [name, age]);
@@ -399,7 +413,9 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
         `,
       output: `
           const MyComponent = ({ user }: { user?: User }) => {
-            const { profile: { name } } = user! ?? {};
+            const {
+              profile: { name },
+            } = user! ?? {};
             useEffect(() => {
               renderProfile(name);
             }, [name]);
@@ -912,7 +928,10 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
         `,
       output: `
           const MyComponent = ({ user }) => {
-            const { profile: { name }, profile: { age } } = user ?? {};
+            const {
+              profile: { name },
+              profile: { age },
+            } = user ?? {};
             useEffect(() => {
               doSomething(name, age);
             }, [name, age]);
@@ -1193,7 +1212,9 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
   }, [user]);
 };`,
       output: `const MyComponent = ({ user }) => {
-  const { profile: { name, age } } = user ?? {};
+  const {
+    profile: { name, age },
+  } = user ?? {};
   useEffect(() => {
     renderProfile(name, age);
   }, [name, age]);
@@ -1458,7 +1479,9 @@ describe('enforce-early-destructuring: an unrelated guard licenses a nested dest
 };
 `,
       hoisted: `const MyComponent = ({ user, ready }) => {
-  const { profile: { name, age } } = user ?? {};
+  const {
+    profile: { name, age },
+  } = user ?? {};
   useEffect(() => {
     if (ready) {
       renderProfile(name, age);
@@ -1480,7 +1503,9 @@ describe('enforce-early-destructuring: an unrelated guard licenses a nested dest
 };
 `,
       hoisted: `const MyComponent = ({ user, ready }) => {
-  const { profile: { name, age } } = user ?? {};
+  const {
+    profile: { name, age },
+  } = user ?? {};
   useEffect(() => {
     if (!ready) return;
     renderProfile(name, age);
@@ -1502,7 +1527,11 @@ describe('enforce-early-destructuring: an unrelated guard licenses a nested dest
 };
 `,
       hoisted: `const MyComponent = ({ user, isLoaded }) => {
-  const { profile: { address: { city } } } = user ?? {};
+  const {
+    profile: {
+      address: { city },
+    },
+  } = user ?? {};
   useEffect(() => {
     if (isLoaded) {
       renderCity(city);
@@ -1525,7 +1554,9 @@ describe('enforce-early-destructuring: an unrelated guard licenses a nested dest
 };
 `,
       hoisted: `const MyComponent = ({ cfg, ready }: { cfg?: Config; ready: boolean }) => {
-  const { a: { b } } = cfg! ?? {};
+  const {
+    a: { b },
+  } = cfg! ?? {};
   useEffect(() => {
     if (ready) {
       use(b);
@@ -1550,7 +1581,9 @@ describe('enforce-early-destructuring: an unrelated guard licenses a nested dest
 };
 `,
       hoisted: `const MyComponent = ({ user }) => {
-  const { profile: { name } } = user ?? {};
+  const {
+    profile: { name },
+  } = user ?? {};
   useEffect(() => {
     try {
       renderProfile(name);
@@ -1597,5 +1630,334 @@ describe('enforce-early-destructuring: an unrelated guard licenses a nested dest
     // `?? {}` rescues the root, and a flat pattern binds nothing below it, so the
     // hoisted read survives the same props that break every nested arm above.
     expect(renderError(result.output, props)).toBeNull();
+  });
+});
+
+// Issue #2081: the hoisted declaration was always written flat, but prettier
+// breaks an object pattern the moment any property's value is itself an object
+// pattern, whatever the width (`printObject`'s `shouldBreak`). A width budget
+// cannot see that rule, so 8 of this rule's own fixtures emitted text the very
+// next formatter run rewrote. The arms below pin BOTH directions: the shapes
+// prettier expands, and the shapes it deliberately keeps flat.
+ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
+  valid: [],
+  invalid: [
+    {
+      name: 'emits a nested object pattern expanded, as prettier prints it',
+      code: `const MyComponent = ({ user }) => {
+  useEffect(() => {
+    const {
+      id,
+      profile: { name },
+    } = user;
+    render(id, name);
+  }, [user]);
+};`,
+      output: `const MyComponent = ({ user }) => {
+  const {
+    id,
+    profile: { name },
+  } = user ?? {};
+  useEffect(() => {
+    render(id, name);
+  }, [id, name]);
+};`,
+      errors: [{ messageId: 'hoistDestructuring' }],
+    },
+    {
+      name: 'keeps a flat pattern that fits on one line flat',
+      code: `const MyComponent = ({ user }) => {
+  useEffect(() => {
+    const { id, name } = user;
+    render(id, name);
+  }, [user]);
+};`,
+      output: `const MyComponent = ({ user }) => {
+  const { id, name } = user ?? {};
+  useEffect(() => {
+    render(id, name);
+  }, [id, name]);
+};`,
+      errors: [{ messageId: 'hoistDestructuring' }],
+    },
+    {
+      // Measured against prettier, not assumed: an ARRAY-pattern value leaves
+      // this rule as `key: [...] = []`, an assignment pattern, and prettier's
+      // break rule looks only at a value that IS a pattern. So the shape that
+      // would expand when authored bare stays flat once the `= []` is there.
+      name: 'keeps a nested array pattern flat, because the emitted `= []` does',
+      code: `const MyComponent = ({ response }) => {
+  useEffect(() => {
+    const {
+      tags: [first, second],
+    } = response;
+    render(first, second);
+  }, [response]);
+};`,
+      output: `const MyComponent = ({ response }) => {
+  const { tags: [first, second] = [] } = response ?? {};
+  useEffect(() => {
+    render(first, second);
+  }, [first, second]);
+};`,
+      errors: [{ messageId: 'hoistDestructuring' }],
+    },
+    {
+      // A forced break propagates outward through every enclosing group, so an
+      // object pattern buried inside an array expands the array AND the root,
+      // even though neither breaks on its own account.
+      name: 'expands outward from an object pattern nested inside an array',
+      code: `const MyComponent = ({ response }) => {
+  useEffect(() => {
+    const {
+      items: [
+        {
+          meta: { id },
+        },
+      ],
+    } = response;
+    render(id);
+  }, [response]);
+};`,
+      output: `const MyComponent = ({ response }) => {
+  const {
+    items: [
+      {
+        meta: { id },
+      },
+    ] = [],
+  } = response ?? {};
+  useEffect(() => {
+    render(id);
+  }, [id]);
+};`,
+      errors: [{ messageId: 'hoistDestructuring' }],
+    },
+    {
+      // Prettier's one exception: a pattern that is the LEFT of a default is
+      // exempt from the nesting break, so an authored `= {}` keeps it flat.
+      name: 'keeps a nested pattern under an authored default flat',
+      code: `const MyComponent = ({ user }) => {
+  useEffect(() => {
+    const { profile: { name } = {} } = user;
+    render(name);
+  }, [user]);
+};`,
+      output: `const MyComponent = ({ user }) => {
+  const { profile: { name } = {} } = user ?? {};
+  useEffect(() => {
+    render(name);
+  }, [name]);
+};`,
+      errors: [{ messageId: 'hoistDestructuring' }],
+    },
+    {
+      // A trailing comma after a rest element is a syntax error, so the expanded
+      // layout has to withhold the one it adds after every other property.
+      name: 'omits the trailing comma after a rest element in an expanded pattern',
+      code: `const MyComponent = ({ user }) => {
+  useEffect(() => {
+    const {
+      profile: {
+        theme: { mode },
+        ...rest
+      },
+    } = user;
+    render(mode, rest);
+  }, [user]);
+};`,
+      output: `const MyComponent = ({ user }) => {
+  const {
+    profile: {
+      theme: { mode },
+      ...rest
+    },
+  } = user ?? {};
+  useEffect(() => {
+    render(mode, rest);
+  }, [mode, rest]);
+};`,
+      errors: [{ messageId: 'hoistDestructuring' }],
+    },
+    {
+      // Writing the pattern expanded made the hoisted declaration a MULTI-LINE
+      // span, which put comments authored inside it into the range the fixer
+      // removes wholesale. The statement is what moves, so its comments move
+      // with it rather than being deleted (#2081).
+      name: 'carries a comment written inside the destructure to the hoist',
+      code: `const MyComponent = ({ user }) => {
+  useEffect(() => {
+    const {
+      /* the shape the API returns */
+      id,
+      profile: { name },
+    } = user;
+    render(id, name);
+  }, [user]);
+};`,
+      output: `const MyComponent = ({ user }) => {
+  /* the shape the API returns */
+  const {
+    id,
+    profile: { name },
+  } = user ?? {};
+  useEffect(() => {
+    render(id, name);
+  }, [id, name]);
+};`,
+      errors: [{ messageId: 'hoistDestructuring' }],
+    },
+    {
+      // The severe half: a carried LINE comment has to end its own line, or it
+      // comments out the declaration it was carried in front of.
+      name: 'carries a line comment onto a line of its own',
+      code: `const MyComponent = ({ user }) => {
+  useEffect(() => {
+    const {
+      // id is the row key
+      id,
+      profile: { name },
+    } = user;
+    render(id, name);
+  }, [user]);
+};`,
+      output: `const MyComponent = ({ user }) => {
+  // id is the row key
+  const {
+    id,
+    profile: { name },
+  } = user ?? {};
+  useEffect(() => {
+    render(id, name);
+  }, [id, name]);
+};`,
+      errors: [{ messageId: 'hoistDestructuring' }],
+    },
+    {
+      // A comment on the line ABOVE the declaration is outside the removal
+      // range, so it is left where its neighbour is rather than travelling.
+      name: 'leaves a comment above the declaration where it was',
+      code: `const MyComponent = ({ user }) => {
+  useEffect(() => {
+    /* about the render below */
+    const {
+      id,
+      profile: { name },
+    } = user;
+    render(id, name);
+  }, [user]);
+};`,
+      output: `const MyComponent = ({ user }) => {
+  const {
+    id,
+    profile: { name },
+  } = user ?? {};
+  useEffect(() => {
+    /* about the render below */
+    render(id, name);
+  }, [id, name]);
+};`,
+      errors: [{ messageId: 'hoistDestructuring' }],
+    },
+    {
+      name: 'indents an expanded pattern to the depth of the insertion site',
+      code: `export const useThing = ({ user }) => {
+  const inner = () => {
+    useEffect(() => {
+      const {
+        profile: {
+          address: { city },
+        },
+      } = user;
+      render(city);
+    }, [user]);
+  };
+  return inner;
+};`,
+      output: `export const useThing = ({ user }) => {
+  const inner = () => {
+    const {
+      profile: {
+        address: { city },
+      },
+    } = user ?? {};
+    useEffect(() => {
+      render(city);
+    }, [city]);
+  };
+  return inner;
+};`,
+      errors: [{ messageId: 'hoistDestructuring' }],
+    },
+  ],
+});
+
+// The fixtures above pin the exact emission; this block asks the formatter
+// itself whether that emission is text it would leave alone. The repo ships
+// prettier 2.7.1 and agora runs 2.8.8; the two were measured to print
+// `printObject`'s nesting break identically, so the local binary is a faithful
+// stand-in for the consumer's on this shape.
+describe('enforce-early-destructuring: the hoisted pattern is a prettier fixed point (issue #2081)', () => {
+  const format = (code: string) =>
+    prettier.format(code, {
+      parser: 'typescript',
+      semi: true,
+      trailingComma: 'all',
+      singleQuote: true,
+      tabWidth: 2,
+      printWidth: 80,
+    });
+
+  const NESTED = `const MyComponent = ({ user }) => {
+  useEffect(() => {
+    const {
+      id,
+      profile: { name },
+    } = user;
+    render(id, name);
+  }, [user]);
+};
+`;
+
+  it('would have caught the bug: the flat emission is rejected by the oracle', () => {
+    // Verbatim output of the pre-fix fixer, kept as a planted positive control
+    // so a regression cannot pass this block silently. Both halves matter: it
+    // re-lints CLEAN, so a report-counting guard scores it a success, while the
+    // formatter rewrites it on sight.
+    const flatEmission = `const MyComponent = ({ user }) => {
+  const { id, profile: { name } } = user ?? {};
+  useEffect(() => {
+    render(id, name);
+  }, [id, name]);
+};
+`;
+    expect(verify(flatEmission)).toHaveLength(0);
+    expect(format(flatEmission)).not.toBe(flatEmission);
+  });
+
+  it('leaves canonical input canonical and emits a fixed point', () => {
+    // Non-vacuity: an input the formatter already disagreed with, or that the
+    // rule declined, would satisfy the fixed-point assertion for free.
+    expect(format(NESTED)).toBe(NESTED);
+    const result = fix(NESTED);
+    expect(result.fixed).toBe(true);
+    expect(result.output).not.toBe(NESTED);
+    expect(format(result.output)).toBe(result.output);
+  });
+
+  it('leaves an already-hoisted expanded pattern byte-for-byte alone', () => {
+    const code = `const MyComponent = ({ user }) => {
+  const {
+    id,
+    profile: { name },
+  } = user ?? {};
+  useEffect(() => {
+    render(id, name);
+  }, [id, name]);
+};
+`;
+    expect(format(code)).toBe(code);
+    expect(verify(code)).toHaveLength(0);
+    expect(fix(code).output).toBe(code);
   });
 });
