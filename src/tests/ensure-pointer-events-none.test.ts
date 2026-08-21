@@ -751,6 +751,19 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
         };
       `,
     },
+
+    // Valid case: an empty pseudo-element object declares no position, so there
+    // is nothing to report — and, by construction, nothing for the fixer's
+    // empty-object guard to write a property into.
+    `
+const style = {
+  '&::before': {},
+};
+`,
+    // Valid case: the same object written on one line
+    `
+const style = { '&::after': {} };
+`,
   ],
   invalid: [
     // Invalid case: pseudo-element with position: absolute but no pointer-events
@@ -772,7 +785,8 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
             content: '""',
             position: 'absolute',
             width: '100%',
-            height: '100%', pointerEvents: 'none'
+            height: '100%',
+            pointerEvents: 'none'
           }
         };
       `,
@@ -796,7 +810,8 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
             content: '""',
             position: 'fixed',
             top: 0,
-            left: 0, pointerEvents: 'none'
+            left: 0,
+            pointerEvents: 'none'
           }
         };
       `,
@@ -842,7 +857,8 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
               content: '""',
               position: 'absolute',
               width: '100%',
-              height: '100%', pointerEvents: 'none'
+              height: '100%',
+              pointerEvents: 'none'
             }
           }} />
         );
@@ -867,7 +883,8 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
             content: '""',
             position: 'absolute',
             width: '100%',
-            height: '100%', pointerEvents: 'none'
+            height: '100%',
+            pointerEvents: 'none'
           }
         };
       `,
@@ -891,7 +908,8 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
             content: '""',
             position: 'absolute',
             width: '100%',
-            height: '100%', pointerEvents: 'none'
+            height: '100%',
+            pointerEvents: 'none'
           }
         });
       `,
@@ -918,7 +936,8 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
               content: '""',
               position: 'absolute',
               width: '100%',
-              height: '100%', pointerEvents: 'none'
+              height: '100%',
+              pointerEvents: 'none'
             }
           }
         };
@@ -955,7 +974,8 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
                     content: '""',
                     position: 'absolute',
                     width: '100%',
-                    height: '100%', pointerEvents: 'none'
+                    height: '100%',
+                    pointerEvents: 'none'
                   }
                 }
               }
@@ -977,7 +997,8 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
       output: `
         const style = {
           '&::before': {
-            position: 'absolute', pointerEvents: 'none',
+            position: 'absolute',
+            pointerEvents: 'none',
           }
         };
       `,
@@ -1004,7 +1025,8 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
             content: '""',
             position: 'absolute',
             width: '100%',
-            height: '100%', pointerEvents: 'none'
+            height: '100%',
+            pointerEvents: 'none'
           },
           '&:hover': { color: 'red' }
         };
@@ -1043,7 +1065,8 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
             content: '""',
             position: 'absolute',
             width: '100%',
-            height: '100%', pointerEvents: 'none'
+            height: '100%',
+            pointerEvents: 'none'
           }
         };
       `,
@@ -1075,7 +1098,8 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
             content: '""',
             position: 'absolute',
             width: '100%',
-            height: '100%', pointerEvents: 'none'
+            height: '100%',
+            pointerEvents: 'none'
           }
         };
         const Component = () => (
@@ -1114,7 +1138,8 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
                     content: '""',
                     position: 'absolute',
                     width: '100%',
-                    height: '100%', pointerEvents: 'none'
+                    height: '100%',
+                    pointerEvents: 'none'
                   }
                 }
               }
@@ -1145,7 +1170,8 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
               content: '""',
               position: 'absolute',
               width: '100%',
-              height: '100%', pointerEvents: 'none'
+              height: '100%',
+              pointerEvents: 'none'
             }
           }
         ];
@@ -1173,7 +1199,8 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
               content: '""',
               position: 'absolute',
               width: '100%',
-              height: '100%', pointerEvents: 'none'
+              height: '100%',
+              pointerEvents: 'none'
             }
           };
         }
@@ -1199,7 +1226,8 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
             content: '""',
             position: 'absolute', // This is absolute positioning
             width: '100%', // Full width
-            height: '100%', pointerEvents: 'none' // Full height
+            height: '100%', // Full height
+            pointerEvents: 'none'
             // Missing pointer-events: none
           }
         };
@@ -1224,7 +1252,8 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
         const style={
           '&::before':{
             content:'""',position:'absolute',
-            width:'100%',height:'100%', pointerEvents: 'none'
+            width:'100%',height:'100%',
+            pointerEvents: 'none'
           }
         };
       `,
@@ -1257,7 +1286,8 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
             top: 0,
             left: 0,
             right: 0,
-            bottom: 0, pointerEvents: 'none'
+            bottom: 0,
+            pointerEvents: 'none'
           }
         };
       `,
@@ -1281,7 +1311,8 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
             content: '""',
             position: 'absolute',
             top: '10px',
-            left: 0, pointerEvents: 'none'
+            left: 0,
+            pointerEvents: 'none'
           }
         };
       `,
@@ -1306,7 +1337,8 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
             content: '""',
             position: 'absolute',
             top: '-6px',
-            bottom: '10px', pointerEvents: 'none'
+            bottom: '10px',
+            pointerEvents: 'none'
           }
         };
       `,
@@ -1330,7 +1362,8 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
             content: '""',
             position: 'absolute',
             width: '100%',
-            height: '100%', pointerEvents: 'none'
+            height: '100%',
+            pointerEvents: 'none'
           }
         };
       `,
@@ -1347,7 +1380,13 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
       errors: [pointerEventsError('::after')],
       output: `
         const style = {
-          '&::after': { content: '""', position: 'absolute', inset: 0, zIndex: 0, pointerEvents: 'none' }
+          '&::after': {
+            content: '""',
+            position: 'absolute',
+            inset: 0,
+            zIndex: 0,
+            pointerEvents: 'none',
+          }
         };
       `,
     },
@@ -1362,7 +1401,12 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
       errors: [pointerEventsError('::before')],
       output: `
         const style = {
-          '&::before': { content: '""', position: 'absolute', inset: '-8px 4px', pointerEvents: 'none' }
+          '&::before': {
+            content: '""',
+            position: 'absolute',
+            inset: '-8px 4px',
+            pointerEvents: 'none',
+          }
         };
       `,
     },
@@ -1376,7 +1420,12 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
       errors: [pointerEventsError('::before')],
       output: `
         const style = {
-          '&::before': { content: '""', position: 'absolute', inset: '8px', pointerEvents: 'none' }
+          '&::before': {
+            content: '""',
+            position: 'absolute',
+            inset: '8px',
+            pointerEvents: 'none',
+          }
         };
       `,
     },
@@ -1399,7 +1448,8 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
             content: '""',
             position: 'absolute',
             insetInline: '-8px',
-            insetBlock: '8px', pointerEvents: 'none'
+            insetBlock: '8px',
+            pointerEvents: 'none'
           }
         };
       `,
@@ -1416,7 +1466,12 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
       output: `
         const X = 4;
         const style = {
-          '&::before': { content: '""', position: 'absolute', inset: \`\${X}px\`, pointerEvents: 'none' }
+          '&::before': {
+            content: '""',
+            position: 'absolute',
+            inset: \`\${X}px\`,
+            pointerEvents: 'none',
+          }
         };
       `,
     },
@@ -1440,7 +1495,8 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
             content: '""',
             position: \`absolute\`,
             width: '100%',
-            height: '100%', pointerEvents: 'none'
+            height: '100%',
+            pointerEvents: 'none'
           }
         };
       `,
@@ -1455,7 +1511,12 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
       errors: [pointerEventsError('::after')],
       output: `
         const style = {
-          '&::after': { content: '""', position: \`fixed\`, width: '100%', pointerEvents: 'none' }
+          '&::after': {
+            content: '""',
+            position: \`fixed\`,
+            width: '100%',
+            pointerEvents: 'none',
+          }
         };
       `,
     },
@@ -1470,7 +1531,12 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
       errors: [pointerEventsError('::after')],
       output: `
         const style = {
-          [\`&::after\`]: { content: '""', position: 'absolute', width: '100%', pointerEvents: 'none' }
+          [\`&::after\`]: {
+            content: '""',
+            position: 'absolute',
+            width: '100%',
+            pointerEvents: 'none',
+          }
         };
       `,
     },
@@ -1484,7 +1550,12 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
       errors: [pointerEventsError('::before')],
       output: `
         const style = {
-          '&::before': { content: '""', [\`position\`]: 'absolute', width: '100%', pointerEvents: 'none' }
+          '&::before': {
+            content: '""',
+            [\`position\`]: 'absolute',
+            width: '100%',
+            pointerEvents: 'none',
+          }
         };
       `,
     },
@@ -1652,7 +1723,12 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
       errors: [pointerEventsError('::before')],
       output: `
         const style = {
-          '&::before': { content: '""', position: 'absolute' as const, width: '100%', pointerEvents: 'none' }
+          '&::before': {
+            content: '""',
+            position: 'absolute' as const,
+            width: '100%',
+            pointerEvents: 'none',
+          }
         };
       `,
     },
@@ -1666,7 +1742,12 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
       errors: [pointerEventsError('::after')],
       output: `
         const style = {
-          '&::after': { content: '""', position: <const>'fixed', width: '100%', pointerEvents: 'none' }
+          '&::after': {
+            content: '""',
+            position: <const>'fixed',
+            width: '100%',
+            pointerEvents: 'none',
+          }
         };
       `,
     },
@@ -1681,7 +1762,12 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
       errors: [pointerEventsError('::before')],
       output: `
         const style = {
-          ['&::before' as const]: { content: '""', position: 'absolute', width: '100%', pointerEvents: 'none' }
+          ['&::before' as const]: {
+            content: '""',
+            position: 'absolute',
+            width: '100%',
+            pointerEvents: 'none',
+          }
         };
       `,
     },
@@ -1696,9 +1782,308 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
       errors: [pointerEventsError('::before')],
       output: `
         const style = {
-          '&::before': { content: '""', position: 'absolute', inset: '8px' as const, pointerEvents: 'none' }
+          '&::before': {
+            content: '""',
+            position: 'absolute',
+            inset: '8px' as const,
+            pointerEvents: 'none',
+          }
         };
       `,
+    },
+
+    // Invalid case (#2085): the inserted property goes on a line of its own, at
+    // the column the object's other properties sit at. Spliced onto the end of
+    // `position: 'absolute',` instead, it puts two properties on one line of an
+    // otherwise one-property-per-line object — a layout Prettier immediately
+    // undoes, so the fix lands non-canonical source in the consumer's repo.
+    {
+      code: `
+const style = {
+  '&::before': {
+    position: 'absolute',
+  },
+};
+`,
+      errors: [pointerEventsError('::before')],
+      output: `
+const style = {
+  '&::before': {
+    position: 'absolute',
+    pointerEvents: 'none',
+  },
+};
+`,
+    },
+    // Invalid case: an object written without a trailing comma keeps that style
+    // — the comma the insertion needs goes on the property before it, and the
+    // appended property is left bare.
+    {
+      code: `
+const style = {
+  '&::before': {
+    content: '""',
+    position: 'absolute'
+  }
+};
+`,
+      errors: [pointerEventsError('::before')],
+      output: `
+const style = {
+  '&::before': {
+    content: '""',
+    position: 'absolute',
+    pointerEvents: 'none'
+  }
+};
+`,
+    },
+    // Invalid case: a comment trailing the last property documents THAT
+    // property, so the insertion goes after it rather than between the property
+    // and its comment.
+    {
+      code: `
+const style = {
+  '&::before': {
+    position: 'absolute', // anchored to the tile
+  },
+};
+`,
+      errors: [pointerEventsError('::before')],
+      output: `
+const style = {
+  '&::before': {
+    position: 'absolute', // anchored to the tile
+    pointerEvents: 'none',
+  },
+};
+`,
+    },
+    // Invalid case: the same with no trailing comma — the comma is written
+    // before the comment, where the layout puts it.
+    {
+      code: `
+const style = {
+  '&::after': {
+    position: 'fixed' // pinned to the viewport
+  }
+};
+`,
+      errors: [pointerEventsError('::after')],
+      output: `
+const style = {
+  '&::after': {
+    position: 'fixed', // pinned to the viewport
+    pointerEvents: 'none'
+  }
+};
+`,
+    },
+    // Invalid case: the last property shares a line with the one before it, so
+    // the column comes from the line the properties are laid out on rather than
+    // from the last property's own column.
+    {
+      code: `
+const style = {
+  '&::before': {
+    content: '""', position: 'absolute',
+  },
+};
+`,
+      errors: [pointerEventsError('::before')],
+      output: `
+const style = {
+  '&::before': {
+    content: '""', position: 'absolute',
+    pointerEvents: 'none',
+  },
+};
+`,
+    },
+    // Invalid case: the indentation is read from the file, not assumed — a
+    // four-space file gets four spaces.
+    {
+      code: `
+const style = {
+    '&::before': {
+        position: 'absolute',
+    },
+};
+`,
+      errors: [pointerEventsError('::before')],
+      output: `
+const style = {
+    '&::before': {
+        position: 'absolute',
+        pointerEvents: 'none',
+    },
+};
+`,
+    },
+    // Invalid case: a tab-indented file gets tabs, for the same reason.
+    {
+      code: "const style = {\n\t'&::after': {\n\t\tposition: 'fixed',\n\t},\n};\n",
+      errors: [pointerEventsError('::after')],
+      output:
+        "const style = {\n\t'&::after': {\n\t\tposition: 'fixed',\n\t\tpointerEvents: 'none',\n\t},\n};\n",
+    },
+    // Invalid case: depth changes nothing — the column still comes from the
+    // properties of the object being fixed.
+    {
+      code: `
+const theme = {
+  components: {
+    Overlay: {
+      styleOverrides: {
+        root: {
+          '&::after': {
+            content: '""',
+            position: 'absolute',
+          },
+        },
+      },
+    },
+  },
+};
+`,
+      errors: [pointerEventsError('::after')],
+      output: `
+const theme = {
+  components: {
+    Overlay: {
+      styleOverrides: {
+        root: {
+          '&::after': {
+            content: '""',
+            position: 'absolute',
+            pointerEvents: 'none',
+          },
+        },
+      },
+    },
+  },
+};
+`,
+    },
+    // Invalid case: an object genuinely written on one line keeps both
+    // properties there — Prettier leaves such an object alone while it fits, so
+    // breaking it would be churn of the fixer's own making.
+    {
+      code: `
+const style = {
+  '&::after': { content: '""', position: 'fixed' },
+};
+`,
+      errors: [pointerEventsError('::after')],
+      output: `
+const style = {
+  '&::after': { content: '""', position: 'fixed', pointerEvents: 'none' },
+};
+`,
+    },
+    // Invalid case: past the print width the one-line layout is no longer one a
+    // formatter would keep, so the object is laid out one property per line —
+    // which is what the formatter would otherwise do to the emitted line.
+    {
+      code: `
+const style = {
+  '&::before': { content: '""', position: 'absolute', width: '100%', top: 0 },
+};
+`,
+      errors: [pointerEventsError('::before')],
+      output: `
+const style = {
+  '&::before': {
+    content: '""',
+    position: 'absolute',
+    width: '100%',
+    top: 0,
+    pointerEvents: 'none',
+  },
+};
+`,
+    },
+    // Invalid case: the same object under a wider `printWidth` stays on its
+    // line, because that is what a formatter configured that way prints.
+    {
+      code: `
+const style = {
+  '&::before': { content: '""', position: 'absolute', width: '100%', top: 0 },
+};
+`,
+      options: [{ printWidth: 120 }],
+      errors: [pointerEventsError('::before')],
+      output: `
+const style = {
+  '&::before': { content: '""', position: 'absolute', width: '100%', top: 0, pointerEvents: 'none' },
+};
+`,
+    },
+    // Invalid case: the mirror — an object that fits at the default width is
+    // broken under a narrower `printWidth`.
+    {
+      code: `
+const style = {
+  '&::after': { content: '""', position: 'fixed' },
+};
+`,
+      options: [{ printWidth: 40 }],
+      errors: [pointerEventsError('::after')],
+      output: `
+const style = {
+  '&::after': {
+    content: '""',
+    position: 'fixed',
+    pointerEvents: 'none',
+  },
+};
+`,
+    },
+    // Invalid case: a comment trailing the object's line is not counted toward
+    // the width, so the object is appended in place exactly as it is without
+    // the comment. Counting it would make the same input fix two different
+    // ways depending on whether a comment happens to sit next to it.
+    {
+      code: `
+const style = {
+  '&::after': { content: '""', position: 'fixed' }, // anchored overlay
+};
+`,
+      errors: [pointerEventsError('::after')],
+      output: `
+const style = {
+  '&::after': { content: '""', position: 'fixed', pointerEvents: 'none' }, // anchored overlay
+};
+`,
+    },
+    // Invalid case: an unbroken container opens on the object's own line, so
+    // breaking the object would drag the container with it and the formatter
+    // would re-lay out both. The property is appended in place instead and the
+    // layout is left to the formatter.
+    {
+      code: `
+const style = { '&::before': { content: '""', position: 'absolute', width: '100%' } };
+`,
+      errors: [pointerEventsError('::before')],
+      output: `
+const style = { '&::before': { content: '""', position: 'absolute', width: '100%', pointerEvents: 'none' } };
+`,
+    },
+    // Invalid case: a comment inside a one-line object has no unambiguous home
+    // once the properties are spread over several lines, so the re-layout stands
+    // down there too and the comment is left exactly where its author put it.
+    {
+      code: `
+const style = {
+  '&::before': { content: '""', /* full bleed */ position: 'absolute', width: '100%' },
+};
+`,
+      errors: [pointerEventsError('::before')],
+      output: `
+const style = {
+  '&::before': { content: '""', /* full bleed */ position: 'absolute', width: '100%', pointerEvents: 'none' },
+};
+`,
     },
   ],
 });
