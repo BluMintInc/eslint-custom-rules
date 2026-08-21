@@ -1,4 +1,9 @@
-import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
+import {
+  AST_NODE_TYPES,
+  AST_TOKEN_TYPES,
+  TSESLint,
+  TSESTree,
+} from '@typescript-eslint/utils';
 import * as ts from 'typescript';
 import { createRule } from '../utils/createRule';
 
@@ -528,6 +533,120 @@ function collectNegations(
   }
 }
 
+/**
+ * Answers whether the position a node occupies accepts an arbitrary expression,
+ * so that dropping in a bare `||` cannot re-associate against a neighbouring
+ * operator. Slots not ranked here fall through to grouping: an extra pair of
+ * parentheses is a formatting nit, while a missing pair silently rewrites the
+ * guard.
+ */
+function landsInLooseSlot(node: TSESTree.Node, parent: TSESTree.Node): boolean {
+  switch (parent.type) {
+    /**
+     * Slots whose grammar already delimits the expression — the mandatory
+     * parentheses of `if (…)`, `while (…)`, `switch (…)`, the semicolons of
+     * `for (;…;)`, a statement boundary, brackets, a template hole.
+     */
+    case AST_NODE_TYPES.ExpressionStatement:
+    case AST_NODE_TYPES.ReturnStatement:
+    case AST_NODE_TYPES.ThrowStatement:
+    case AST_NODE_TYPES.IfStatement:
+    case AST_NODE_TYPES.WhileStatement:
+    case AST_NODE_TYPES.DoWhileStatement:
+    case AST_NODE_TYPES.ForStatement:
+    case AST_NODE_TYPES.ForInStatement:
+    case AST_NODE_TYPES.ForOfStatement:
+    case AST_NODE_TYPES.SwitchStatement:
+    case AST_NODE_TYPES.SwitchCase:
+    case AST_NODE_TYPES.ArrayExpression:
+    case AST_NODE_TYPES.SpreadElement:
+    case AST_NODE_TYPES.TemplateLiteral:
+    case AST_NODE_TYPES.JSXExpressionContainer:
+    case AST_NODE_TYPES.VariableDeclarator:
+      return true;
+    /**
+     * `?:`, `=` and `,` all bind looser than `||`, so a `||` operand parses
+     * whole in every one of their slots.
+     */
+    case AST_NODE_TYPES.ConditionalExpression:
+    case AST_NODE_TYPES.SequenceExpression:
+      return true;
+    case AST_NODE_TYPES.AssignmentExpression:
+      return parent.right === node;
+    /** A concise arrow body is an `AssignmentExpression` position. */
+    case AST_NODE_TYPES.ArrowFunctionExpression:
+      return parent.body === node;
+    case AST_NODE_TYPES.Property:
+      return parent.value === node;
+    /** Arguments are comma-delimited; a callee is a member of the operand. */
+    case AST_NODE_TYPES.CallExpression:
+    case AST_NODE_TYPES.NewExpression:
+      return parent.arguments.some((argument) => argument === node);
+    /** Only the bracketed half of a member access delimits its expression. */
+    case AST_NODE_TYPES.MemberExpression:
+      return parent.computed && parent.property === node;
+    /**
+     * `||` is the operator the replacement is built from, and regrouping
+     * same-operator `||` preserves both the value and the short-circuit order,
+     * so neither side needs grouping. `&&` binds tighter, and `??` may not be
+     * mixed with `||` unparenthesized at all — both demand it.
+     */
+    case AST_NODE_TYPES.LogicalExpression:
+      return parent.operator === '||';
+    default:
+      return false;
+  }
+}
+
+/**
+ * Reports whether a matched pair of parentheses already hugs the node. A `(`
+ * token immediately before an expression opens a group that the first unmatched
+ * `)` after it closes, and the node itself is balanced, so an adjacent `)` is
+ * necessarily that partner. Explicit author parentheses and the argument list of
+ * a single-argument call both land here.
+ */
+function isSurroundedByParentheses(
+  node: TSESTree.Node,
+  sourceCode: Readonly<TSESLint.SourceCode>,
+): boolean {
+  const before = sourceCode.getTokenBefore(node);
+  const after = sourceCode.getTokenAfter(node);
+  return (
+    before?.type === AST_TOKEN_TYPES.Punctuator &&
+    before.value === '(' &&
+    after?.type === AST_TOKEN_TYPES.Punctuator &&
+    after.value === ')'
+  );
+}
+
+/**
+ * The fixer emits a bare `||` expression, which binds looser than everything but
+ * `?:`, assignment and comma, so whether it needs parentheses is a property of
+ * where it LANDS, not of the text itself. Wrapping unconditionally emitted
+ * `while ((!data || Object.keys(data).length === 0))` — a pair prettier strips on
+ * sight, so `--fix` left source no formatter would print (#2082). Never wrapping
+ * is the worse error: `a && !data` would become
+ * `a && !data || Object.keys(data).length === 0`, which is a different guard.
+ *
+ * The shared `requiresParenthesesInline` helper answers the same question for a
+ * replacement it can see as a node; this fixer composes its emission as text, and
+ * the one operator it ever emits is `||`, which collapses the question to the two
+ * checks below.
+ */
+function replacementNeedsParentheses(
+  node: TSESTree.Node,
+  sourceCode: Readonly<TSESLint.SourceCode>,
+): boolean {
+  const { parent } = node;
+  if (!parent) {
+    return false;
+  }
+  if (isSurroundedByParentheses(node, sourceCode)) {
+    return false;
+  }
+  return !landsInLooseSlot(node, parent);
+}
+
 function getRootCondition(node: TSESTree.Node): TSESTree.Expression | null {
   let current: TSESTree.Node | undefined = node;
   while (current && current.parent) {
@@ -674,7 +793,10 @@ export const enforceEmptyObjectCheck: TSESLint.RuleModule<MessageIds, Options> =
           },
           fix(fixer) {
             const identifierText = sourceCode.getText(identifier);
-            const replacement = `(${node.operator}${identifierText} || Object.keys(${identifierText}).length === 0)`;
+            const guard = `${node.operator}${identifierText} || Object.keys(${identifierText}).length === 0`;
+            const replacement = replacementNeedsParentheses(node, sourceCode)
+              ? `(${guard})`
+              : guard;
             return fixer.replaceText(node, replacement);
           },
         });
