@@ -1,8 +1,26 @@
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import {
+  AST_NODE_TYPES,
+  AST_TOKEN_TYPES,
+  TSESLint,
+  TSESTree,
+} from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'missingPointerEventsNone';
-type Options = [];
+
+/**
+ * `printWidth` is optional in the schema and required here: `applyDefault` deep
+ * merges `defaultOptions` into whatever the consumer passes, so by the time the
+ * fixer reads it the value is always present.
+ */
+type Options = [{ printWidth: number }];
+
+/**
+ * Matches Prettier's own default. The fixer writes a property into an object a
+ * formatter owns, so a layout it emits past this width is re-laid-out on the
+ * next `prettier --write` — and fails `prettier --check` in the meantime.
+ */
+const DEFAULT_PRINT_WIDTH = 80;
 
 /**
  * Checks if a string contains a pseudo-element selector (::before or ::after)
@@ -198,6 +216,286 @@ function classifyOffsetValue(node: TSESTree.Node): OffsetSign {
   return 'unknown';
 }
 
+/** The property the fixer adds, carrying no separator of its own. */
+const POINTER_EVENTS_PROPERTY = "pointerEvents: 'none'";
+
+/** The separator-plus-property an inline append writes. */
+const INLINE_APPENDED = `, ${POINTER_EVENTS_PROPERTY}`;
+
+/** Leading whitespace of a one-based source line. */
+function indentOfLine(sourceCode: TSESLint.SourceCode, line: number): string {
+  const text = sourceCode.lines[line - 1] ?? '';
+  return /^[ \t]*/.exec(text)?.[0] ?? '';
+}
+
+/**
+ * The width of a line counting only the code on it, with any comment the line
+ * carries masked out.
+ *
+ * A comment carries no semantics, so it must not decide the layout: measuring
+ * the raw line makes the same object fix one way bare and the other way with a
+ * comment trailing it, which is the divergence `comment-fix-fidelity` forbids.
+ */
+function codeWidthOfLine(
+  sourceCode: TSESLint.SourceCode,
+  line: number,
+): number {
+  const text = sourceCode.lines[line - 1] ?? '';
+  const onLine = sourceCode
+    .getAllComments()
+    .filter(
+      (comment) =>
+        comment.loc.start.line <= line && comment.loc.end.line >= line,
+    );
+  if (onLine.length === 0) return text.length;
+
+  const kept = [...text];
+  for (const comment of onLine) {
+    const from = comment.loc.start.line === line ? comment.loc.start.column : 0;
+    const to =
+      comment.loc.end.line === line ? comment.loc.end.column : text.length;
+    for (let column = from; column < to && column < kept.length; column++) {
+      kept[column] = '';
+    }
+  }
+  return kept.join('').trimEnd().length;
+}
+
+/**
+ * The column an object lays its properties out at, read from the last property
+ * that begins a line of its own. Reading it from the properties rather than
+ * from the object keeps the inserted line aligned with the ones already there
+ * whatever the file's indentation is: an object opened mid-line
+ * (`'&::before': {`) indents its properties past its own column, so the
+ * object's column is not the answer.
+ */
+function propertyIndentOf(
+  sourceCode: TSESLint.SourceCode,
+  properties: readonly TSESTree.ObjectLiteralElement[],
+): string {
+  for (let index = properties.length - 1; index >= 0; index--) {
+    const property = properties[index];
+    const indent = indentOfLine(sourceCode, property.loc.start.line);
+    if (indent.length === property.loc.start.column) return indent;
+  }
+  // No property begins a line, so the layout offers no column to match. The
+  // indentation of the line the last property sits on is the closest thing to
+  // the depth the object is written at.
+  const last = properties[properties.length - 1];
+  return indentOfLine(sourceCode, last.loc.start.line);
+}
+
+/**
+ * The nesting step the file writes, read from the nearest enclosing object that
+ * is already broken across lines: the distance between its own column and the
+ * column its properties sit at. Reading the step from a neighbour rather than
+ * assuming two spaces keeps an emitted layout in the author's units, and a
+ * neighbour is a far better witness than a whole-file census — a rule runs on
+ * fragments as well as files.
+ *
+ * Null where no enclosing object is broken, which withdraws the re-layout
+ * altogether: with nothing to copy, any step is a guess.
+ */
+function nestingStepOf(
+  sourceCode: TSESLint.SourceCode,
+  node: TSESTree.ObjectExpression,
+): string | null {
+  for (
+    let current: TSESTree.Node | undefined = node.parent;
+    current;
+    current = current.parent
+  ) {
+    if (current.type !== AST_NODE_TYPES.ObjectExpression) continue;
+    if (current.properties.length === 0) continue;
+    const ownIndent = indentOfLine(sourceCode, current.loc.start.line);
+    const propertyIndent = propertyIndentOf(sourceCode, current.properties);
+    if (
+      propertyIndent.length > ownIndent.length &&
+      propertyIndent.startsWith(ownIndent)
+    ) {
+      return propertyIndent.slice(ownIndent.length);
+    }
+  }
+  return null;
+}
+
+/**
+ * Whether an unbroken enclosing brace opens on the object's own line, ahead of
+ * it. Such a container cannot keep its layout once the object inside it breaks
+ * across lines — it no longer fits on one line either — so a formatter re-lays
+ * out the whole construct and discards whatever the fixer emitted. JSX carries
+ * the same tell: `style={{` puts two of those braces on the line.
+ *
+ * A brace inside a string or a template on that line reads the same way, which
+ * only ever costs a re-layout the formatter performs anyway.
+ */
+function enclosedByUnbrokenContainer(
+  sourceCode: TSESLint.SourceCode,
+  node: TSESTree.ObjectExpression,
+): boolean {
+  const line = sourceCode.lines[node.loc.start.line - 1] ?? '';
+  return line.slice(0, node.loc.start.column).includes('{');
+}
+
+/**
+ * Writes the new property on a line of its own at the column the object's other
+ * properties occupy. Splicing it onto the end of the last property's text
+ * instead puts two properties on one line of an otherwise one-property-per-line
+ * object, which a formatter immediately undoes (#2085).
+ */
+function insertOnOwnLine(
+  fixer: TSESLint.RuleFixer,
+  sourceCode: TSESLint.SourceCode,
+  node: TSESTree.ObjectExpression,
+  lastProperty: TSESTree.ObjectLiteralElement,
+  lastPropertyToken: TSESTree.Token,
+): TSESLint.RuleFix {
+  const indent = propertyIndentOf(sourceCode, node.properties);
+  const tokenAfter = sourceCode.getTokenAfter(lastProperty);
+  const trailingComma =
+    tokenAfter &&
+    tokenAfter.value === ',' &&
+    tokenAfter.range[1] <= node.range[1]
+      ? tokenAfter
+      : null;
+
+  // A comment trailing the last property on its own line documents the property
+  // it follows. The insertion goes after it, so the comment keeps the property
+  // it describes instead of being re-attached to the appended one.
+  let anchor: TSESTree.Token = trailingComma ?? lastPropertyToken;
+  for (;;) {
+    const next = sourceCode.getTokenAfter(anchor, { includeComments: true });
+    if (!next || next.range[1] > node.range[1]) break;
+    if (
+      next.type !== AST_TOKEN_TYPES.Line &&
+      next.type !== AST_TOKEN_TYPES.Block
+    ) {
+      break;
+    }
+    if (next.loc.start.line !== anchor.loc.end.line) break;
+    anchor = next;
+  }
+
+  // Everything between the last property and the anchor is reproduced verbatim,
+  // so a comment the span absorbs survives the rewrite unedited.
+  const absorbed = sourceCode
+    .getText()
+    .slice(lastPropertyToken.range[1], anchor.range[1]);
+  // An object that already ends its last property with a comma keeps that
+  // style, and one written without a trailing comma keeps that.
+  const separator = trailingComma ? '' : ',';
+  const terminator = trailingComma ? ',' : '';
+  return fixer.replaceTextRange(
+    [lastPropertyToken.range[1], anchor.range[1]],
+    `${separator}${absorbed}\n${indent}${POINTER_EVENTS_PROPERTY}${terminator}`,
+  );
+}
+
+/**
+ * Lays a one-line object out one property per line and appends the new property
+ * to it. This is what a formatter does to a one-line object that no longer fits,
+ * so emitting the appended property inline there would land a layout the next
+ * `prettier --write` rewrites.
+ *
+ * Returns null where the rewrite cannot be made faithfully, leaving the caller
+ * to append inline: a broken layout the formatter discards is no worse than the
+ * one it replaces, while a lost comment is not recoverable.
+ */
+function breakAcrossLines(
+  fixer: TSESLint.RuleFixer,
+  sourceCode: TSESLint.SourceCode,
+  node: TSESTree.ObjectExpression,
+): TSESLint.RuleFix[] | null {
+  // A comment inside a one-line object has no unambiguous home once the
+  // properties are spread over several lines.
+  if (sourceCode.getCommentsInside(node).length > 0) return null;
+  if (enclosedByUnbrokenContainer(sourceCode, node)) return null;
+
+  const properties = node.properties;
+  const openingBrace = sourceCode.getFirstToken(node);
+  const closingBrace = sourceCode.getLastToken(node);
+  const lastProperty = properties[properties.length - 1];
+  const lastPropertyToken = sourceCode.getLastToken(lastProperty);
+  if (!openingBrace || !closingBrace || !lastPropertyToken) return null;
+
+  const nestingStep = nestingStepOf(sourceCode, node);
+  if (nestingStep === null) return null;
+  const objectIndent = indentOfLine(sourceCode, node.loc.start.line);
+  const innerIndent = objectIndent + nestingStep;
+
+  const fixes = [
+    fixer.replaceTextRange(
+      [openingBrace.range[1], properties[0].range[0]],
+      `\n${innerIndent}`,
+    ),
+  ];
+  for (let index = 0; index + 1 < properties.length; index++) {
+    const separator = sourceCode.getTokenAfter(properties[index]);
+    if (!separator || separator.value !== ',') return null;
+    fixes.push(
+      fixer.replaceTextRange(
+        [separator.range[1], properties[index + 1].range[0]],
+        `\n${innerIndent}`,
+      ),
+    );
+  }
+  // The emitted trailing comma is what Prettier's default `trailingComma`
+  // setting prints for a multi-line object, and the one-line form the object
+  // arrives in carries no trailing comma to read a preference from.
+  fixes.push(
+    fixer.replaceTextRange(
+      [lastPropertyToken.range[1], closingBrace.range[0]],
+      `,\n${innerIndent}${POINTER_EVENTS_PROPERTY},\n${objectIndent}`,
+    ),
+  );
+  return fixes;
+}
+
+/**
+ * Adds `pointerEvents: 'none'` to a style object in the layout the object is
+ * already written in.
+ */
+function appendPointerEventsNone(
+  fixer: TSESLint.RuleFixer,
+  sourceCode: TSESLint.SourceCode,
+  node: TSESTree.ObjectExpression,
+  printWidth: number,
+): TSESLint.RuleFix | TSESLint.RuleFix[] | null {
+  const properties = node.properties;
+  if (properties.length === 0) return null;
+
+  const lastProperty = properties[properties.length - 1];
+  const lastPropertyToken = sourceCode.getLastToken(lastProperty);
+  const closingBrace = sourceCode.getLastToken(node);
+  if (!lastPropertyToken || !closingBrace) return null;
+
+  // A closing brace on a line of its own is the tell that the object is written
+  // one property per line, so the new property joins that column.
+  if (closingBrace.loc.start.line !== lastProperty.loc.end.line) {
+    return insertOnOwnLine(
+      fixer,
+      sourceCode,
+      node,
+      lastProperty,
+      lastPropertyToken,
+    );
+  }
+
+  // The object ends on the line its last property does. A formatter keeps such
+  // an object on one line for as long as it fits, so the property is appended
+  // there — and the width that decides is measured on the line the appended
+  // text actually lands on.
+  const landingWidth = codeWidthOfLine(sourceCode, lastProperty.loc.end.line);
+  if (landingWidth + INLINE_APPENDED.length <= printWidth) {
+    return fixer.insertTextAfter(lastPropertyToken, INLINE_APPENDED);
+  }
+
+  return (
+    breakAcrossLines(fixer, sourceCode, node) ??
+    fixer.insertTextAfter(lastPropertyToken, INLINE_APPENDED)
+  );
+}
+
 function formatSelector(selector?: string): string {
   if (!selector) return 'pseudo-element';
   const trimmedSelector = selector.trim();
@@ -227,7 +525,19 @@ export const ensurePointerEventsNone = createRule<Options, MessageIds>({
       recommended: 'error',
     },
     fixable: 'code',
-    schema: [],
+    schema: [
+      {
+        type: 'object',
+        properties: {
+          printWidth: {
+            type: 'integer',
+            minimum: 1,
+            default: DEFAULT_PRINT_WIDTH,
+          },
+        },
+        additionalProperties: false,
+      },
+    ],
     messages: {
       missingPointerEventsNone:
         'What\'s wrong: pseudo-element "{{selector}}" uses absolute or fixed positioning without pointer-events: none. ' +
@@ -235,8 +545,8 @@ export const ensurePointerEventsNone = createRule<Options, MessageIds>({
         'How to fix: add pointer-events: none so the pseudo-element stays decorative and does not intercept interactions.',
     },
   },
-  defaultOptions: [],
-  create(context) {
+  defaultOptions: [{ printWidth: DEFAULT_PRINT_WIDTH }] as Options,
+  create(context, [{ printWidth }]) {
     // Track style objects that have position: absolute or fixed
     const absolutePositionedStyles = new Map<
       TSESTree.ObjectExpression,
@@ -368,21 +678,12 @@ export const ensurePointerEventsNone = createRule<Options, MessageIds>({
             // decides what the opaque value resolves to.
             if (stylesWithUnreadablePointerEvents.get(node)) return null;
 
-            // Find the last property in the object
-            const sourceCode = context.sourceCode;
-            const properties = node.properties;
-            if (properties.length === 0) return null;
-
-            const lastProperty = properties[properties.length - 1];
-            const lastPropertyToken = sourceCode.getLastToken(lastProperty);
-
-            if (lastPropertyToken) {
-              return fixer.insertTextAfter(
-                lastPropertyToken,
-                `, pointerEvents: 'none'`,
-              );
-            }
-            return null;
+            return appendPointerEventsNone(
+              fixer,
+              context.sourceCode,
+              node,
+              printWidth,
+            );
           },
         });
       }

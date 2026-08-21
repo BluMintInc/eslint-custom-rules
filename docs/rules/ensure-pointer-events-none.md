@@ -41,6 +41,104 @@ A pseudo-element may already declare `pointerEvents` with a value the rule canno
 
 Resolve such a report by hand — write the value the overlay actually needs (`pointerEvents: 'none'`), or set `pointerEvents: 'auto'` to record that it is deliberately interactive.
 
+### The autofix writes the property in the object's own layout
+
+The fix adds `pointerEvents: 'none'` to the pseudo-element's style object, and where it writes the property follows the layout already there. A formatter owns that layout: a fix it has to re-lay-out lands non-canonical source in the repo before a human reads the report, and surfaces as unexplained formatting churn in the next diff.
+
+An object written one property per line gets the new property on a line of its own, at the column its siblings occupy. That column is read from the siblings, so a four-space file gets four spaces and a tab-indented file gets a tab.
+
+```ts
+// before
+const style = {
+  '&::before': {
+    position: 'absolute',
+  },
+};
+```
+
+```ts
+// after --fix
+const style = {
+  '&::before': {
+    position: 'absolute',
+    pointerEvents: 'none',
+  },
+};
+```
+
+An object genuinely written on one line keeps both properties there, for as long as the result fits inside [`printWidth`](#printwidth) — that is where a formatter leaves it.
+
+```ts
+// before
+const style = {
+  '&::after': { content: '""', position: 'fixed' },
+};
+```
+
+```ts
+// after --fix
+const style = {
+  '&::after': { content: '""', position: 'fixed', pointerEvents: 'none' },
+};
+```
+
+Past that width the one-line form is no longer a layout a formatter would keep, so the object is written one property per line instead — which is what the formatter would otherwise do to the appended line.
+
+```ts
+// before
+const style = {
+  '&::before': { content: '""', position: 'absolute', width: '100%', top: 0 },
+};
+```
+
+```ts
+// after --fix
+const style = {
+  '&::before': {
+    content: '""',
+    position: 'absolute',
+    width: '100%',
+    top: 0,
+    pointerEvents: 'none',
+  },
+};
+```
+
+Two shapes keep the appended-in-place form at every width, because re-laying them out would cost more than the churn it saves: an object holding a comment, which has no unambiguous home once the properties are spread over several lines, and an object whose container opens on the same line (`const style = { '&::before': { ... } };`), which cannot keep its own layout once the object inside it breaks.
+
+A comment trailing the last property stays with the property it documents: the new property goes after the comment, and the comma the insertion needs goes before it.
+
+```ts
+// after --fix
+const style = {
+  '&::before': {
+    position: 'absolute', // anchored to the tile
+    pointerEvents: 'none',
+  },
+};
+```
+
+## Options
+
+### `printWidth`
+
+The column the autofix lays out against, defaulting to `80` — Prettier's own default, and the width of a project that has never configured one. Set it to the width your formatter uses:
+
+```json
+{
+  "rules": {
+    "@blumintinc/blumint/ensure-pointer-events-none": [
+      "error",
+      { "printWidth": 120 }
+    ]
+  }
+}
+```
+
+It moves one boundary, in both directions: the width past which a one-line style object is written out one property per line rather than taking the new property inline. At `120`, an object whose appended line measures 101 columns keeps that line; at `40`, one measuring 74 columns is written out instead. It changes nothing else — no width silences a report, and an object already written one property per line is fixed identically at every width.
+
+The width is measured over the code on the line, with any comment the line carries masked out. A comment carries no semantics, so counting its characters would let the same object fix one way bare and another way with a comment trailing it.
+
 ## Exceptions
 
 ### Hit-slop touch-target extensions
