@@ -19,6 +19,7 @@
   - Respects generator callbacks—they always return iterators, so inlining yielded primitives would change the return type and behavior.
   - Does not apply when the callback includes function calls if `ignoreCallExpressions` is enabled (default) to avoid flagging intentionally expensive computations.
 - **Auto-fix**: Replaces `useMemo(() => EXPR, [deps])` with `EXPR` and removes the dependency array. A comment inside the `useMemo` call but outside the returned expression — such as an `eslint-disable-next-line` directive on the return statement — is carried into the replacement rather than destroyed, so a suppressed rule is never silently re-enabled. Each comment keeps the side of the expression it was written on, and one whose meaning depends on the line it occupies (a line comment, or a block-comment `eslint-disable-next-line`) keeps a line of its own so it still covers the inlined expression. The presence of a comment therefore never changes whether the fix applies.
+- **Auto-fix — parentheses**: The replacement is parenthesised only where the position it lands in needs it. A pair the position does not need is text written into an otherwise formatted file, and `prettier` deletes it again, so every fixed file would fail `prettier --check`. Parentheses are kept where dropping them would change the parse or the meaning — `useMemo(() => 1, []).toFixed(2)` becomes `(1).toFixed(2)` because `1.toFixed(2)` is not a number followed by a method, `useMemo(() => 1 ?? 2, []) || fallback` becomes `(1 ?? 2) || fallback` because `??` cannot sit beside `||`, and a conditional used as a concise arrow body keeps them because prettier writes them back there. A carried comment that owns its line puts a line terminator in the middle of the replacement, and keeps the parentheses only where that terminator is not inert. Two positions qualify. One is a restricted production — the argument of `return`, `throw` or `yield`, or the operand of a postfix `++`/`--` — where a bare terminator ends the construct through automatic semicolon insertion, so a `return` would hand back `undefined` and leave the expression standing as dead code. The other is an emission ending in a line-bound comment with source still on that line for it to swallow. Anywhere else the terminator is whitespace, so the landing position decides exactly as it does for an uncommented emission.
 - **Auto-fix — imports**: The unwrap deletes the callee and the dependency array, so an import read only from there loses its last reference. The same fix drops that import, because a rewrite that strands a binding turns a clean file into one that fails `no-unused-vars` and `noUnusedLocals`, and the resolved report leaves nothing to re-raise the debt. Every unwrap in a file ships as one fix for the same reason: with two calls sharing one `useMemo` import, neither unwrap is the binding's last use on its own.
 
 ```tsx
@@ -29,9 +30,9 @@ const label = useMemo(() => {
 }, [isPending]);
 
 // After — the directive still covers the ternary it was written for
-const label = (
+const label =
   // eslint-disable-next-line no-restricted-syntax
-  isPending ? 'Pending Response' : 'Request to Join');
+  isPending ? 'Pending Response' : 'Request to Join';
 ```
 
 ```tsx
@@ -42,6 +43,16 @@ export const useThing = () => useMemo(() => 1, []);
 
 // After — the specifier the unwrap orphaned goes with it
 export const useThing = () => 1;
+```
+
+The parentheses stay exactly where the landing position needs them:
+
+```tsx
+// Before
+const width = useMemo(() => (isWide ? 'wide' : 'narrow'), [isWide]).length;
+
+// After — a member access binds tighter than the conditional it now reads
+const width = (isWide ? 'wide' : 'narrow').length;
 ```
 
 A binding kept alive by anything else stays, and an import the returned

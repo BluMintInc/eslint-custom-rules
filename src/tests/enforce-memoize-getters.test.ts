@@ -2,6 +2,7 @@ import { Linter, Rule } from 'eslint';
 import * as ts from 'typescript';
 import { ruleTesterTs } from '../utils/ruleTester';
 import { enforceMemoizeGetters } from '../rules/enforce-memoize-getters';
+import { noExplicitReturnType } from '../rules/no-explicit-return-type';
 
 ruleTesterTs.run('enforce-memoize-getters', enforceMemoizeGetters, {
   valid: [
@@ -55,11 +56,15 @@ ruleTesterTs.run('enforce-memoize-getters', enforceMemoizeGetters, {
         }
       `,
     },
-    // Different decorator present alongside Memoize
+    // Different decorator present alongside Memoize. The neighbouring
+    // decorator carries no return annotation: the subject here is the
+    // decorator beside `@Memoize()`, and an annotation on the scaffolding is a
+    // shape `no-explicit-return-type` reports on — a sibling disagreeing with
+    // a fixture this rule blesses, over text neither rule is being tested for.
     {
       code: `
         import { Memoize } from '@blumintinc/typescript-memoize';
-        function Other(): any {}
+        function Other() {}
         class Example {
           @Other
           @Memoize()
@@ -427,9 +432,13 @@ ruleTesterTs.run('enforce-memoize-getters', enforceMemoizeGetters, {
       `,
     },
     {
+      // The callee is declared without a return annotation for the reason the
+      // decorator fixture above carries none: it is scaffolding holding the
+      // class expression under test, and an annotation on it is a shape
+      // `no-explicit-return-type` reports on a fixture this rule blesses.
       name: 'a getter in a class expression passed as an argument is not reported',
       code: `
-        declare function register(constructor: unknown): void;
+        function register(constructor: unknown) {}
         register(class {
           private get fetcher() { return {}; }
         });
@@ -468,6 +477,302 @@ ruleTesterTs.run('enforce-memoize-getters', enforceMemoizeGetters, {
         export const Service = class {
           private get fetcher() { return {}; }
         };
+      `,
+    },
+    // ------------------------------------------------------------------
+    // Issue #2074: a getter whose declared result is a RESOURCE HANDLE — an
+    // object carrying the closure that releases what the read allocated —
+    // allocates that handle for the reader taking it. Memoized, every later
+    // read receives the FIRST reader's live lease and the release closure
+    // bound to it: the first `release()` frees it while the remaining readers
+    // keep running against budget nobody accounts for. The signal is
+    // STRUCTURAL rather than a name allowlist, and the predicate is shared
+    // with `enforce-memoize-async` (#2068) and `no-explicit-return-type`
+    // (#2073) so the exemption and the annotation it reads cannot drift apart.
+    // ------------------------------------------------------------------
+    {
+      name: 'the issue reproduction: both handle getters are exempt',
+      code: `
+        type Admission = { readonly reservedMb: number; readonly release: () => void };
+
+        class ExecutionGovernor {
+          private get admission(): Admission {
+            return this.store.claim(this.spec);
+          }
+
+          private get lease(): { id: string; release: () => void } {
+            const id = this.store.claim();
+            return { id, release: () => this.store.free(id) };
+          }
+        }
+      `,
+    },
+    {
+      name: 'an inline handle with a release closure is exempt',
+      code: `
+        class Pool {
+          private get lease(): { id: string; release: () => void } {
+            const id = this.store.claim();
+            return { id, release: () => this.store.free(id) };
+          }
+        }
+      `,
+    },
+    {
+      // The disposer's spelling is not what is read — the shape is.
+      name: 'an inline handle with a dispose closure is exempt',
+      code: `
+        class Sessions {
+          private get session(): { socket: Socket; dispose: () => Promise<void> } {
+            return this.transport.open();
+          }
+        }
+      `,
+    },
+    {
+      // A computed symbol key, which no name allowlist could read at all.
+      name: 'a handle whose disposer is [Symbol.dispose] is exempt',
+      code: `
+        class Files {
+          private get temp(): { path: string; [Symbol.dispose](): void } {
+            return makeTempFile();
+          }
+        }
+      `,
+    },
+    {
+      name: 'a readonly handle is exempt',
+      code: `
+        class Governor {
+          private get admission(): { readonly reservedMb: number; readonly release: () => void } {
+            return this.store.claim(this.spec);
+          }
+        }
+      `,
+    },
+    {
+      // A method signature (`release(): void`) is callable by construction.
+      name: 'a method-signature disposer is exempt',
+      code: `
+        class Leases {
+          private get lease(): { id: string; release(): void } {
+            return this.store.take();
+          }
+        }
+      `,
+    },
+    {
+      name: 'an optional disposer is exempt',
+      code: `
+        class Leases {
+          private get lease(): { id: string; release?: () => void } {
+            return this.store.take();
+          }
+        }
+      `,
+    },
+    {
+      // One union arm carrying the closure is enough: the reader handed that
+      // arm is the one harmed.
+      name: 'a disposer hidden in a union is exempt',
+      code: `
+        class Leases {
+          private get lease(): { id: string; release: (() => void) | undefined } {
+            return this.store.take();
+          }
+        }
+      `,
+    },
+    {
+      name: 'a nullable handle result is exempt',
+      code: `
+        class Pool {
+          private get lease(): { id: string; release: () => void } | null {
+            return this.store.tryClaim();
+          }
+        }
+      `,
+    },
+    {
+      name: 'a handle mixed into an intersection is exempt',
+      code: `
+        type Metered = { reservedMb: number };
+
+        class Governor {
+          private get admission(): Metered & { release: () => void } {
+            return this.store.claim(this.spec);
+          }
+        }
+      `,
+    },
+    {
+      // A handle type is named far more often than it is spelled inline, so a
+      // test reading only `TSTypeLiteral` would keep memoizing the identical
+      // getter one `type Admission = { … }` later.
+      name: 'a handle reached through a same-file type alias is exempt',
+      code: `
+        type Admission = { reservedMb: number; release: () => void };
+
+        export class ExecutionGovernor {
+          private get admission(): Admission {
+            return this.store.claim(this.spec);
+          }
+        }
+      `,
+    },
+    {
+      // Type declarations hoist, so an alias written below the class it serves
+      // is in scope for it.
+      name: 'a handle alias declared after the class is exempt',
+      code: `
+        export class ExecutionGovernor {
+          private get admission(): Admission {
+            return this.store.claim(this.spec);
+          }
+        }
+
+        type Admission = { reservedMb: number; release: () => void };
+      `,
+    },
+    {
+      name: 'a handle reached through a same-file interface is exempt',
+      code: `
+        export interface Subscription {
+          topic: string;
+          unsubscribe: () => void;
+        }
+
+        export class Bus {
+          private get subscription(): Subscription {
+            return this.transport.subscribe(this.topic);
+          }
+        }
+      `,
+    },
+    {
+      // The alias is declared beside the class inside the factory, so only a
+      // scope-chain walk — not a scan of `Program.body` — finds it. The class
+      // is a DECLARATION, so the class-expression carve-out does not answer
+      // for this fixture.
+      name: 'a handle alias declared in an enclosing function body is exempt',
+      code: `
+        export function makeGovernor() {
+          type Admission = { reservedMb: number; release: () => void };
+
+          class Governor {
+            private get admission(): Admission {
+              return this.store.claim(this.spec);
+            }
+          }
+
+          return new Governor();
+        }
+      `,
+    },
+    {
+      name: 'a handle whose disposer is typed by a same-file function alias is exempt',
+      code: `
+        type Release = () => void;
+        type Admission = { reservedMb: number; release: Release };
+
+        export class Governor {
+          private get admission(): Admission {
+            return this.store.claim(this.spec);
+          }
+        }
+      `,
+    },
+    {
+      name: 'a nested handle is exempt',
+      code: `
+        class Governor {
+          private get admission(): { spec: JobSpec; admission: { release: () => void } } {
+            return this.store.claim(this.spec);
+          }
+        }
+      `,
+    },
+    {
+      // A single-argument result container wraps a value without changing what
+      // the value IS, so the lease inside it is still the reader's lease.
+      name: 'a Readonly-wrapped handle is exempt',
+      code: `
+        type Admission = { reservedMb: number; release: () => void };
+
+        class Governor {
+          private get admission(): Readonly<Admission> {
+            return this.store.claim(this.spec);
+          }
+        }
+      `,
+    },
+    {
+      name: 'a promised handle is exempt',
+      code: `
+        type Admission = { reservedMb: number; release: () => void };
+
+        class Governor {
+          private get admission(): Promise<Admission> {
+            return this.store.claim(this.spec);
+          }
+        }
+      `,
+    },
+    {
+      // A batch of leases is a batch of reader-owned leases: the container
+      // they are handed back in does not change who owns them.
+      name: 'an array of handles is exempt',
+      code: `
+        type Admission = { reservedMb: number; release: () => void };
+
+        class Governor {
+          private get admissions(): Admission[] {
+            return this.store.claimAll(this.specs);
+          }
+        }
+      `,
+    },
+    {
+      name: 'a readonly array of handles is exempt',
+      code: `
+        type Admission = { reservedMb: number; release: () => void };
+
+        class Governor {
+          private get admissions(): readonly Admission[] {
+            return this.store.claimAll(this.specs);
+          }
+        }
+      `,
+    },
+    {
+      name: 'a handle alias that chains through another alias is exempt',
+      code: `
+        type Lease = { id: string; release: () => void };
+        type Admission = Lease;
+
+        class Governor {
+          private get admission(): Admission {
+            return this.store.claim(this.spec);
+          }
+        }
+      `,
+    },
+    {
+      // The carve-out drops the getter entirely, so a class of only handle
+      // getters must not gain `import { Memoize }` either.
+      name: 'a class of only handle getters pulls in no import',
+      code: `
+        type Admission = { reservedMb: number; release: () => void };
+
+        export class Governor {
+          private get admission(): Admission {
+            return this.store.claim(this.spec);
+          }
+
+          private get defaultAdmission(): Admission {
+            return this.store.claim(DEFAULT_SPEC);
+          }
+        }
       `,
     },
   ],
@@ -1753,6 +2058,350 @@ class UserAccount { @Memoize() private get a() { return 1; } @Memoize() private 
         };
       `,
     },
+    // ------------------------------------------------------------------
+    // Issue #2074, the other direction. The handle carve-out keys on an object
+    // result carrying a callable, NOT on the presence of a written return
+    // annotation: a carve-out that read "annotated at all" would switch the
+    // rule off for every author who types a return type, which is most of
+    // them. Each fixture below carries the import already, so the only edit
+    // under test is the decorator the rule still demands.
+    // ------------------------------------------------------------------
+    {
+      name: 'a plain data result still reports',
+      code: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class Repo {
+          private get row(): { id: string; name: string } {
+            return this.api.get(this.id);
+          }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoizeGetter' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class Repo {
+          @Memoize()
+          private get row(): { id: string; name: string } {
+            return this.api.get(this.id);
+          }
+        }
+      `,
+    },
+    {
+      name: 'a primitive result still reports',
+      code: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class Repo {
+          private get name(): string {
+            return this.api.name(this.id);
+          }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoizeGetter' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class Repo {
+          @Memoize()
+          private get name(): string {
+            return this.api.name(this.id);
+          }
+        }
+      `,
+    },
+    {
+      name: 'an alias resolving to a plain object still reports',
+      code: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        type Row = { id: string; count: number };
+        class Repo {
+          private get row(): Row {
+            return this.api.get(this.id);
+          }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoizeGetter' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        type Row = { id: string; count: number };
+        class Repo {
+          @Memoize()
+          private get row(): Row {
+            return this.api.get(this.id);
+          }
+        }
+      `,
+    },
+    {
+      name: 'an interface of plain data still reports',
+      code: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        interface Row {
+          id: string;
+          count: number;
+        }
+        class Repo {
+          private get row(): Row {
+            return this.api.get(this.id);
+          }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoizeGetter' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        interface Row {
+          id: string;
+          count: number;
+        }
+        class Repo {
+          @Memoize()
+          private get row(): Row {
+            return this.api.get(this.id);
+          }
+        }
+      `,
+    },
+    {
+      // A bare callable result is not a handle: the closure is the whole
+      // result, with no resource paired to it whose accounting a shared
+      // reference corrupts. A compiled formatter is exactly what memoizing is
+      // for.
+      name: 'a bare callable result still reports',
+      code: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class Templates {
+          private get compile(): () => string {
+            return compileTemplate(this.name);
+          }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoizeGetter' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class Templates {
+          @Memoize()
+          private get compile(): () => string {
+            return compileTemplate(this.name);
+          }
+        }
+      `,
+    },
+    {
+      // A lookup table of handlers is not a lease: a second reader shares it
+      // without losing anything the first one owned.
+      name: 'an index signature of callables still reports',
+      code: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class Handlers {
+          private get handlers(): { [event: string]: () => void } {
+            return this.registry.all();
+          }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoizeGetter' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class Handlers {
+          @Memoize()
+          private get handlers(): { [event: string]: () => void } {
+            return this.registry.all();
+          }
+        }
+      `,
+    },
+    {
+      // A getter signature is a property access wearing a parameter list, so
+      // the object it belongs to carries no callable member.
+      name: 'a getter signature member still reports',
+      code: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class Repo {
+          private get row(): { get name(): string } {
+            return this.api.get(this.id);
+          }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoizeGetter' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class Repo {
+          @Memoize()
+          private get row(): { get name(): string } {
+            return this.api.get(this.id);
+          }
+        }
+      `,
+    },
+    {
+      // `Function` is a type REFERENCE resolving nowhere in the file, not a
+      // written function type, so it declares no callable this rule can read.
+      name: 'a member typed as bare Function still reports',
+      code: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class Repo {
+          private get row(): { id: string; release: Function } {
+            return this.api.get(this.id);
+          }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoizeGetter' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class Repo {
+          @Memoize()
+          private get row(): { id: string; release: Function } {
+            return this.api.get(this.id);
+          }
+        }
+      `,
+    },
+    {
+      // A two-argument container describes a registry the getter looked
+      // handles up in rather than a handle the read allocated.
+      name: 'a map keyed to handles still reports',
+      code: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        type Admission = { reservedMb: number; release: () => void };
+        class Governor {
+          private get all(): Map<string, Admission> {
+            return this.store.all();
+          }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoizeGetter' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        type Admission = { reservedMb: number; release: () => void };
+        class Governor {
+          @Memoize()
+          private get all(): Map<string, Admission> {
+            return this.store.all();
+          }
+        }
+      `,
+    },
+    {
+      // Annotation-driven, as this rule's other decisions are: a body that
+      // happens to build a handle declares no intent to honour, and the rule
+      // reads no type information.
+      name: 'an unannotated handle factory still reports',
+      code: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class Pool {
+          private get lease() {
+            const id = this.store.claim();
+            return { id, release: () => this.store.free(id) };
+          }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoizeGetter' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class Pool {
+          @Memoize()
+          private get lease() {
+            const id = this.store.claim();
+            return { id, release: () => this.store.free(id) };
+          }
+        }
+      `,
+    },
+    {
+      // Resolution is lexical and same-file, so a handle type imported from
+      // elsewhere is unreadable here and the getter keeps reporting. The
+      // author's remedy is the disable directive, which is deliberate and
+      // reviewable.
+      name: 'a handle type imported from another module still reports',
+      code: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        import { Admission } from './types';
+        class Governor {
+          private get admission(): Admission {
+            return this.store.claim(this.spec);
+          }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoizeGetter' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        import { Admission } from './types';
+        class Governor {
+          @Memoize()
+          private get admission(): Admission {
+            return this.store.claim(this.spec);
+          }
+        }
+      `,
+    },
+    {
+      // A same-named alias declared in the nearer scope is the one the
+      // annotation denotes, so an outer handle alias must not answer for it.
+      name: 'an inner plain alias shadowing an outer handle alias still reports',
+      code: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        type Admission = { reservedMb: number; release: () => void };
+        export function makeGovernor() {
+          type Admission = { reservedMb: number };
+
+          class Governor {
+            private get admission(): Admission {
+              return this.store.reserve(this.spec);
+            }
+          }
+
+          return new Governor();
+        }
+      `,
+      errors: [{ messageId: 'requireMemoizeGetter' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        type Admission = { reservedMb: number; release: () => void };
+        export function makeGovernor() {
+          type Admission = { reservedMb: number };
+
+          class Governor {
+            @Memoize()
+            private get admission(): Admission {
+              return this.store.reserve(this.spec);
+            }
+          }
+
+          return new Governor();
+        }
+      `,
+    },
+    {
+      // The carve-out is per getter, not per class: an exempt handle getter
+      // beside a data getter must leave the data getter reported, and the
+      // import rides on the surviving violation.
+      name: 'a data getter beside an exempt handle getter still reports',
+      code: `
+        type Admission = { reservedMb: number; release: () => void };
+        export class Governor {
+          private get admission(): Admission {
+            return this.store.claim(this.spec);
+          }
+
+          private get reservedMb(): number {
+            return this.spec.reservedMb;
+          }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoizeGetter' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        type Admission = { reservedMb: number; release: () => void };
+        export class Governor {
+          private get admission(): Admission {
+            return this.store.claim(this.spec);
+          }
+
+          @Memoize()
+          private get reservedMb(): number {
+            return this.spec.reservedMb;
+          }
+        }
+      `,
+    },
   ],
 });
 
@@ -2558,5 +3207,140 @@ describe('enforce-memoize-getters: the injected import stays below the prologue 
     expect(verify(preFixOutput)).toHaveLength(0);
     expect(preFixOutput).toContain(`'use client';`);
     expect(leadingDirective(preFixOutput)).not.toBe('use client');
+  });
+});
+
+// Issue #2074: the handle carve-out above reads a written return annotation,
+// and `no-explicit-return-type` — enabled alongside this rule in the
+// recommended config, and fixable — deletes annotations it reads as
+// restatements of the result. Because `eslint --fix` re-lints until the output
+// settles, a strip and the memoization it re-arms would land in the same
+// unattended run. Linting both rules together is the only way to see that:
+// each rule in isolation behaves exactly as documented. This is #1562 two
+// carve-outs later, answered the same way — on the reader side (#2073), from
+// the predicate both rules import.
+describe('enforce-memoize-getters: the handle exemption survives recommended-config --fix (issue #2074)', () => {
+  const RULE_ID = '@blumintinc/blumint/enforce-memoize-getters';
+  const RETURN_TYPE_RULE_ID = '@blumintinc/blumint/no-explicit-return-type';
+  const FILENAME = 'Governor.ts';
+
+  const LINT_CONFIG = {
+    parser: '@typescript-eslint/parser',
+    parserOptions: {
+      ecmaVersion: 2022 as const,
+      sourceType: 'module' as const,
+    },
+    rules: {
+      [RULE_ID]: 'error' as const,
+      [RETURN_TYPE_RULE_ID]: 'error' as const,
+    },
+  };
+
+  const lintBoth = (code: string) => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      RULE_ID,
+      enforceMemoizeGetters as unknown as Rule.RuleModule,
+    );
+    linter.defineRule(
+      RETURN_TYPE_RULE_ID,
+      noExplicitReturnType as unknown as Rule.RuleModule,
+    );
+    return linter.verifyAndFix(code, LINT_CONFIG, FILENAME).output;
+  };
+
+  const ISSUE_REPRODUCTION = `type Admission = { readonly reservedMb: number; readonly release: () => void };
+
+class ExecutionGovernor {
+  private get admission(): Admission {
+    return this.store.claim(this.spec);
+  }
+
+  private get lease(): { id: string; release: () => void } {
+    const id = this.store.claim();
+    return { id, release: () => this.store.free(id) };
+  }
+}
+`;
+
+  it('leaves the issue reproduction byte-identical', () => {
+    expect(lintBoth(ISSUE_REPRODUCTION)).toBe(ISSUE_REPRODUCTION);
+  });
+
+  it('never memoizes a getter whose result is a handle', () => {
+    const output = lintBoth(ISSUE_REPRODUCTION);
+
+    expect(output).not.toContain('@Memoize');
+    expect(output).not.toContain('@blumintinc/typescript-memoize');
+  });
+
+  it('keeps the annotation the carve-out reads', () => {
+    const output = lintBoth(ISSUE_REPRODUCTION);
+
+    // The annotation is the entirety of the evidence: stripped, the getter is
+    // an ordinary lazy factory again and the decorator lands on the next pass.
+    expect(output).toContain('private get admission(): Admission');
+    expect(output).toContain(
+      'private get lease(): { id: string; release: () => void }',
+    );
+  });
+
+  it('still memoizes a data getter in the same file, and imports once', () => {
+    // Reachability control: both rules are live in this harness, so the
+    // silence above is a decision rather than a rule that never ran. The
+    // reader strips the data getter's inferable annotation and this rule
+    // decorates it, while the handle getter beside it keeps both.
+    const output = lintBoth(`type Admission = { reservedMb: number; release: () => void };
+
+export class Governor {
+  private get admission(): Admission {
+    return this.store.claim(this.spec);
+  }
+
+  private get reservedMb(): number {
+    return this.spec.reservedMb;
+  }
+}
+`);
+
+    expect(output.match(/@Memoize\(\)/g)).toHaveLength(1);
+    expect(output).toContain('private get reservedMb() {');
+    expect(output).toContain('private get admission(): Admission');
+    expect(
+      output.match(
+        /import \{ Memoize \} from '@blumintinc\/typescript-memoize';/g,
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('would have caught the bug: the pre-fix output decorates the handle getters', () => {
+    // Verbatim composed output before the carve-out landed, kept as a planted
+    // positive control so this block cannot decay into passing vacuously.
+    const preFixOutput = `import { Memoize } from '@blumintinc/typescript-memoize';
+type Admission = { readonly reservedMb: number; readonly release: () => void };
+
+class ExecutionGovernor {
+  @Memoize()
+  private get admission(): Admission {
+    return this.store.claim(this.spec);
+  }
+
+  @Memoize()
+  private get lease(): { id: string; release: () => void } {
+    const id = this.store.claim();
+    return { id, release: () => this.store.free(id) };
+  }
+}
+`;
+
+    // It re-lints CLEAN — a report-counting oracle scores it a success — while
+    // every later read of either getter holds the first reader's lease.
+    expect(lintBoth(preFixOutput)).toBe(preFixOutput);
+    expect(preFixOutput.match(/@Memoize\(\)/g)).toHaveLength(2);
   });
 });

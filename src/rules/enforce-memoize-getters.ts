@@ -9,6 +9,7 @@ import {
   importInsertionAnchor,
   insertAtImportAnchor,
 } from '../utils/importInsertion';
+import { declaresResourceHandleResult } from '../utils/resourceHandleType';
 
 type MessageIds = 'requireMemoizeGetter';
 type Options = [];
@@ -518,6 +519,26 @@ export const enforceMemoizeGetters = createRule<Options, MessageIds>({
         // decorators normally, and `export default class { … }` is a
         // declaration despite having no name.
         if (classBody?.parent?.type === AST_NODE_TYPES.ClassExpression) return;
+
+        // A getter that hands back a resource handle — an object carrying the
+        // closure that releases what the read allocated — allocates that handle
+        // for the reader taking it. Memoized, every later read receives the
+        // FIRST reader's live lease and the release closure bound to it: the
+        // first `release()` frees it while the remaining readers keep running
+        // against budget nobody accounts for, and one reader's `finally` block
+        // disposes another reader's resource. The failure is silent and
+        // load-dependent, so the fixer would apply it unattended under `--fix`
+        // past a green concurrency suite.
+        //
+        // The predicate is SHARED with `enforce-memoize-async` and with
+        // `no-explicit-return-type`, which preserves exactly this annotation
+        // rather than stripping it as a restatement of the result. Split
+        // predicates would not merely drift, they would cancel: a shape this
+        // rule exempts and the reader strips loses the carve-out inside a
+        // single unattended `eslint --fix` run.
+        if (declaresResourceHandleResult(node.value.returnType)) {
+          return;
+        }
 
         // A getter whose value is a fresh read of live external state is not a
         // lazy factory: memoizing it pins the first observation forever, so the

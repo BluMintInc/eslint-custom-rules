@@ -4,9 +4,15 @@ import { createSuppressionChecker } from '../utils/disableDirectives';
 import { planOrphanedImportRemoval, TextRange } from '../utils/importRemoval';
 import {
   ReplacementSegment,
+  joinSegmentBody,
   joinSegments,
   requiresLineBreakAfter,
+  requiresOwnLine,
 } from '../utils/replacementSegments';
+import {
+  isRestrictedProduction,
+  requiresParenthesesInline,
+} from '../utils/inlineExpressionParens';
 import { classifyExpressionType } from '../utils/tsTypeClassifier';
 
 type Options = [
@@ -440,6 +446,25 @@ export const noUselessUsememoPrimitives = createRule<Options, MessageIds>({
     const isReportSuppressed = createSuppressionChecker(context);
 
     /**
+     * Whether source the fixer does not own shares the line the call ends on.
+     * A carried comment emitted last swallows the rest of its line, so text
+     * still standing there is what makes the line break after it mandatory.
+     */
+    function hasSourceAfterOnLine(node: TSESTree.CallExpression): boolean {
+      const endLine = sourceCode.lines[node.loc.end.line - 1] ?? '';
+      return endLine.slice(node.loc.end.column).trim() !== '';
+    }
+
+    /**
+     * Whether code precedes the call on the line it opens on, which makes every
+     * line the replacement adds a continuation of a statement already open.
+     */
+    function hasSourceBeforeOnLine(node: TSESTree.CallExpression): boolean {
+      const startLine = sourceCode.lines[node.loc.start.line - 1] ?? '';
+      return startLine.slice(0, node.loc.start.column).trim() !== '';
+    }
+
+    /**
      * The text the call collapses to. Inlining replaces the entire
      * `useMemo(...)` call with the returned expression's text, so any comment
      * inside the call but outside that expression — an eslint-disable-next-line
@@ -449,12 +474,26 @@ export const noUselessUsememoPrimitives = createRule<Options, MessageIds>({
      * decide whether the rule rewrites at all (#1877). Both are avoided by
      * carrying every such comment into the replacement, where the directives
      * among them keep the line relationship they were written with.
+     *
+     * The parentheses around that replacement are a separate question, decided
+     * per landing position by `requiresParenthesesInline`: a pair the position
+     * does not need is text the fixer writes into a formatted file, and
+     * prettier deletes it again, so every fixed file fails `prettier --check`
+     * (#2071).
      */
     function replacementTextFor(
       node: TSESTree.CallExpression,
       returnedExpression: TSESTree.Expression,
     ): string {
       const expressionText = sourceCode.getText(returnedExpression);
+      const needsParentheses = (text: string) =>
+        requiresParenthesesInline({
+          replacement: returnedExpression,
+          replaced: node,
+          text,
+          sourceText: sourceCode.text,
+        });
+
       const strandedComments = sourceCode
         .getCommentsInside(node)
         .filter(
@@ -463,7 +502,9 @@ export const noUselessUsememoPrimitives = createRule<Options, MessageIds>({
             comment.range[1] > returnedExpression.range[1],
         );
       if (strandedComments.length === 0) {
-        return `(${expressionText})`;
+        return needsParentheses(expressionText)
+          ? `(${expressionText})`
+          : expressionText;
       }
 
       // A comment inside the call lies wholly on one side of the expression,
@@ -487,7 +528,79 @@ export const noUselessUsememoPrimitives = createRule<Options, MessageIds>({
       // is the only anchor the carried comments have.
       const startLine = sourceCode.lines[node.loc.start.line - 1] ?? '';
       const indent = /^[\t ]*/.exec(startLine)?.[0] ?? '';
-      return joinSegments(segments, indent);
+
+      // Where code already opened the line, every line the replacement adds
+      // continues a statement that is already open, and prettier indents such a
+      // line one level in from the statement it belongs to. Matching that is
+      // what makes the unparenthesised emission a prettier fixed point rather
+      // than merely a shorter one (#2071). Inside parentheses prettier
+      // re-indents the whole group, so that arm keeps the line the call opens
+      // on as its anchor.
+      const continuesOpenLine = hasSourceBeforeOnLine(node);
+      const carriedIndent = continuesOpenLine ? `${indent}  ` : indent;
+      const body = joinSegmentBody(segments, carriedIndent);
+
+      // A comment that owns its line puts a line terminator in the middle of
+      // the replacement, and the parentheses are what make that terminator
+      // inert. Two positions need that, and only those two.
+      //
+      // In a restricted production the terminator is read as the end of the
+      // construct: bare after `return`, ASI hands back `undefined` and leaves
+      // the expression standing as dead code (#1963). And an emission ending in
+      // a line-bound comment needs the break that follows it, which inside the
+      // parentheses stops short of source sharing that line — unparenthesised,
+      // that break would displace source the fixer does not own onto a line of
+      // its own, and dropping it would comment the source out instead.
+      //
+      // Anywhere else the terminator is inert, so the landing position decides
+      // the parentheses exactly as it does for an uncommented emission: a pair
+      // the position does not ask for is text prettier deletes again (#2071).
+      const ownsALine = strandedComments.some(requiresOwnLine);
+      const endsWithLineBoundComment = segments[segments.length - 1].breakAfter;
+      if (
+        ownsALine &&
+        (isRestrictedProduction(node) ||
+          (endsWithLineBoundComment && hasSourceAfterOnLine(node)))
+      ) {
+        return joinSegments(segments, indent);
+      }
+      if (needsParentheses(body)) {
+        return joinSegments(segments, indent);
+      }
+
+      // A leading comment that owns its line takes the break that gives it one
+      // from the call's own position, so it never shares a line with the code
+      // the source already wrote there. The break the last segment asks for is
+      // left off: it exists to keep a line-bound comment from swallowing what
+      // follows it, and the arm above already keeps the parentheses wherever
+      // anything does.
+      const leading =
+        segments[0].breakAfter && continuesOpenLine ? `\n${carriedIndent}` : '';
+      return `${leading}${body}`;
+    }
+
+    /**
+     * The span the rewrite takes over.
+     *
+     * An emission opening with a line break leaves the whitespace that stood
+     * between it and the code before it at the end of a line, and a line ending
+     * in spaces is no more a prettier fixed point than a redundant pair of
+     * parentheses is (#2071). Taking that whitespace along costs nothing — it
+     * is the separator the break replaces — and it strands no binding, since
+     * whitespace carries no reference for the orphaned-import analysis to read.
+     */
+    function editRangeFor(
+      node: TSESTree.CallExpression,
+      text: string,
+    ): TSESTree.Range {
+      if (!text.startsWith('\n')) {
+        return node.range;
+      }
+      let start = node.range[0];
+      while (start > 0 && /[\t ]/.test(sourceCode.text[start - 1])) {
+        start -= 1;
+      }
+      return [start, node.range[1]];
     }
 
     /**
@@ -504,11 +617,12 @@ export const noUselessUsememoPrimitives = createRule<Options, MessageIds>({
      */
     function planViolation(violation: Violation): PlannedViolation {
       const { node, returnedExpression } = violation;
+      const text = replacementTextFor(node, returnedExpression);
       return {
         violation,
         edit: {
-          range: node.range,
-          text: replacementTextFor(node, returnedExpression),
+          range: editRangeFor(node, text),
+          text,
         },
         removed: [
           [node.range[0], returnedExpression.range[0]],

@@ -1,4 +1,5 @@
 import { Linter, Rule } from 'eslint';
+import * as prettier from 'prettier';
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { parse } from '@typescript-eslint/parser';
 import { preferTypeOverInterface } from '../rules/prefer-type-over-interface';
@@ -343,6 +344,72 @@ declare global {
 }`,
   ],
   invalid: [
+    // Issue #2072: converting a declaration into an assignment changes what
+    // ends it. An interface body's `}` closes the declaration by itself, while
+    // a type alias needs a statement terminator — one ASI supplies invisibly,
+    // so the emission parses and no linter objects, and one prettier writes
+    // out. Consumers gate on `prettier --check` after this plugin's `--fix`,
+    // which made the omission fail every conversion the rule performed.
+    {
+      code: `interface Simple {
+  role: string;
+}`,
+      errors: [{ messageId: 'preferType', data: { interfaceName: 'Simple' } }],
+      output: asParseable(`type Simple = {
+  role: string;
+};`),
+    },
+    // One heritage clause is the arm prettier keeps on the alias line, so the
+    // terminator is the only thing between it and a clean format check.
+    {
+      code: `interface Member extends Profile {
+  role: string;
+}`,
+      errors: [{ messageId: 'preferType', data: { interfaceName: 'Member' } }],
+      output: asParseable(`type Member = Profile & {
+  role: string;
+};`),
+    },
+    // An empty body has no member to terminate and still needs the `;`.
+    {
+      code: 'interface Blank {}',
+      errors: [{ messageId: 'preferType', data: { interfaceName: 'Blank' } }],
+      output: asParseable('type Blank = {};'),
+    },
+    // The author may have terminated the declaration already — TypeScript
+    // reads that `;` as an empty statement following the interface — and `};;`
+    // is a prettier failure of its own, so the token after the body is read
+    // rather than assumed.
+    {
+      code: 'interface Terminated { role: string };',
+      errors: [
+        { messageId: 'preferType', data: { interfaceName: 'Terminated' } },
+      ],
+      output: asParseable('type Terminated = { role: string };'),
+    },
+    {
+      code: `interface Settled {
+  role: string;
+};`,
+      errors: [{ messageId: 'preferType', data: { interfaceName: 'Settled' } }],
+      output: asParseable(`type Settled = {
+  role: string;
+};`),
+    },
+    // A comment between the body and the `;` does not hide the terminator: the
+    // token scan steps over comments, so this arm must not double up either.
+    {
+      code: 'interface Guarded { role: string } /* done */;',
+      errors: [{ messageId: 'preferType', data: { interfaceName: 'Guarded' } }],
+      output: asParseable('type Guarded = { role: string } /* done */;'),
+    },
+    // The terminator lands against the brace, ahead of a trailing comment, so
+    // the comment is neither swallowed by the alias nor pushed past the `;`.
+    {
+      code: 'interface Tagged { role: string } // note',
+      errors: [{ messageId: 'preferType', data: { interfaceName: 'Tagged' } }],
+      output: asParseable('type Tagged = { role: string }; // note'),
+    },
     {
       code: 'interface SomeInterface { field: string; }',
       errors: [
@@ -351,7 +418,7 @@ declare global {
           data: { interfaceName: 'SomeInterface' },
         },
       ],
-      output: asParseable('type SomeInterface = { field: string; }'),
+      output: asParseable('type SomeInterface = { field: string; };'),
     },
     {
       code: 'interface AnotherInterface extends SomeInterface { otherField: number; }',
@@ -362,7 +429,7 @@ declare global {
         },
       ],
       output: asParseable(
-        'type AnotherInterface = SomeInterface & { otherField: number; }',
+        'type AnotherInterface = SomeInterface & { otherField: number; };',
       ),
     },
     // Issue #1403 reproduction: the fixer must place `=` after the
@@ -383,7 +450,7 @@ export interface Filter<T> {
 
 export type Filter<T> = {
   filter: FilterFunction<T>;
-}`),
+};`),
     },
     // Single type parameter
     {
@@ -394,7 +461,7 @@ export type Filter<T> = {
           data: { interfaceName: 'Box' },
         },
       ],
-      output: asParseable('type Box<T> = { value: T; }'),
+      output: asParseable('type Box<T> = { value: T; };'),
     },
     // Multiple type parameters
     {
@@ -405,7 +472,7 @@ export type Filter<T> = {
           data: { interfaceName: 'Pair' },
         },
       ],
-      output: asParseable('type Pair<T, U> = { first: T; second: U; }'),
+      output: asParseable('type Pair<T, U> = { first: T; second: U; };'),
     },
     // Constrained type parameter
     {
@@ -416,7 +483,7 @@ export type Filter<T> = {
           data: { interfaceName: 'Named' },
         },
       ],
-      output: asParseable('type Named<T extends string> = { name: T; }'),
+      output: asParseable('type Named<T extends string> = { name: T; };'),
     },
     // Defaulted type parameter
     {
@@ -427,7 +494,7 @@ export type Filter<T> = {
           data: { interfaceName: 'Wrapper' },
         },
       ],
-      output: asParseable('type Wrapper<T = unknown> = { value: T; }'),
+      output: asParseable('type Wrapper<T = unknown> = { value: T; };'),
     },
     // Combined constrained + additional type parameter
     {
@@ -439,7 +506,7 @@ export type Filter<T> = {
         },
       ],
       output: asParseable(
-        'type Lookup<T extends keyof U, U> = { key: T; source: U; }',
+        'type Lookup<T extends keyof U, U> = { key: T; source: U; };',
       ),
     },
     // Generic interface with a heritage clause
@@ -451,7 +518,7 @@ export type Filter<T> = {
           data: { interfaceName: 'Derived' },
         },
       ],
-      output: asParseable('type Derived<T> = Base<T> & { extra: T; }'),
+      output: asParseable('type Derived<T> = Base<T> & { extra: T; };'),
     },
     // Constrained type parameter combined with a heritage clause: the
     // heritage `extends` must be removed, not the constraint's `extends`.
@@ -464,7 +531,7 @@ export type Filter<T> = {
         },
       ],
       output: asParseable(
-        'type Special<T extends string> = Base & { value: T; }',
+        'type Special<T extends string> = Base & { value: T; };',
       ),
     },
     // Multiline generic interface with members referencing the parameter
@@ -482,7 +549,7 @@ export type Filter<T> = {
       output: asParseable(`type Repository<T extends { id: string }> = {
   findById(id: string): T | undefined;
   save(entity: T): void;
-}`),
+};`),
     },
     // Issue #1406 reproduction: two heritage clauses must be joined with `&`,
     // not left separated by the `,` the interface syntax used.
@@ -497,11 +564,11 @@ export interface A extends B, C {
         { messageId: 'preferType', data: { interfaceName: 'C' } },
         { messageId: 'preferType', data: { interfaceName: 'A' } },
       ],
-      output: asParseable(`type B = { b: string }
-type C = { c: string }
+      output: asParseable(`type B = { b: string };
+type C = { c: string };
 export type A = B & C & {
   a: string;
-}`),
+};`),
     },
     // Three heritage clauses
     {
@@ -512,7 +579,7 @@ export type A = B & C & {
           data: { interfaceName: 'A' },
         },
       ],
-      output: asParseable('type A = B & C & D & { a: string; }'),
+      output: asParseable('type A = B & C & D & { a: string; };'),
     },
     // Generic heritage alongside a plain one: type arguments must round-trip
     {
@@ -523,7 +590,7 @@ export type A = B & C & {
           data: { interfaceName: 'A' },
         },
       ],
-      output: asParseable('type A<T> = B<T> & C & { a: T; }'),
+      output: asParseable('type A<T> = B<T> & C & { a: T; };'),
     },
     // Qualified (namespaced) heritage names
     {
@@ -534,7 +601,7 @@ export type A = B & C & {
           data: { interfaceName: 'A' },
         },
       ],
-      output: asParseable('type A = ns.B & C & { a: string; }'),
+      output: asParseable('type A = ns.B & C & { a: string; };'),
     },
     // Deeply qualified plus multiple generic arguments
     {
@@ -545,7 +612,7 @@ export type A = B & C & {
           data: { interfaceName: 'A' },
         },
       ],
-      output: asParseable('type A = outer.inner.B<T, U> & C<T> & { a: T; }'),
+      output: asParseable('type A = outer.inner.B<T, U> & C<T> & { a: T; };'),
     },
     // Heritage clauses spread across lines collapse onto the alias line
     {
@@ -562,7 +629,7 @@ export type A = B & C & {
       ],
       output: asParseable(`type A = B & C & {
   a: string;
-}`),
+};`),
     },
     // A constrained type parameter must not be mistaken for heritage when
     // several heritage clauses follow it.
@@ -574,7 +641,7 @@ export type A = B & C & {
           data: { interfaceName: 'A' },
         },
       ],
-      output: asParseable('type A<T extends string> = B & C & { a: T; }'),
+      output: asParseable('type A<T extends string> = B & C & { a: T; };'),
     },
     // No whitespace anywhere in the header still yields a spaced `=`
     {
@@ -585,7 +652,7 @@ export type A = B & C & {
           data: { interfaceName: 'A' },
         },
       ],
-      output: asParseable('type A = {a:string}'),
+      output: asParseable('type A = {a:string};'),
     },
     // Comments outside the rewritten header spans survive the fix
     {
@@ -604,7 +671,7 @@ interface A extends B, C {
 type A = B & C & {
   // member comment
   a: string;
-}`),
+};`),
     },
     // Comments *inside* the rewritten header spans cannot be relocated
     // safely, so the rule reports without fixing rather than deleting them.
@@ -661,7 +728,7 @@ type A = B & C & {
           data: { interfaceName: 'User' },
         },
       ],
-      output: asParseable('type User = { id: string; }'),
+      output: asParseable('type User = { id: string; };'),
     },
     // A plain namespace augments nothing — it declares its own scope — so a
     // type alias is a working replacement and the report stands.
@@ -674,7 +741,7 @@ type A = B & C & {
         },
       ],
       output: asParseable(
-        'namespace Internal { type Helper = { id: string } }',
+        'namespace Internal { type Helper = { id: string }; }',
       ),
     },
     // `declare namespace Internal` reports for the same reason: `declare` only
@@ -691,7 +758,7 @@ type A = B & C & {
         },
       ],
       output: asParseable(
-        'declare namespace Internal { type Helper = { id: string } }',
+        'declare namespace Internal { type Helper = { id: string }; }',
       ),
     },
     // `declare module Foo` (identifier id) is the legacy spelling of
@@ -705,7 +772,7 @@ type A = B & C & {
         },
       ],
       output: asParseable(
-        'declare module Foo { type Helper = { id: string } }',
+        'declare module Foo { type Helper = { id: string }; }',
       ),
     },
     // A namespace merely *named* `global` is not the global augmentation
@@ -718,7 +785,7 @@ type A = B & C & {
           data: { interfaceName: 'Helper' },
         },
       ],
-      output: asParseable('namespace global { type Helper = { id: string } }'),
+      output: asParseable('namespace global { type Helper = { id: string }; }'),
     },
     // The exemption is scoped to the block: a sibling interface outside the
     // augmentation still reports, and the augmented one is left alone.
@@ -736,7 +803,7 @@ interface LocalOnly { id: string }`,
       output: asParseable(`declare module '@mui/material/styles' {
   interface Theme { border: string }
 }
-type LocalOnly = { id: string }`),
+type LocalOnly = { id: string };`),
     },
     // Issue #1583 counter-cases: merging is a property of the declaration
     // space, so the exemption keys on the declaring scope and not on a count
@@ -757,11 +824,11 @@ function two() {
         { messageId: 'preferType', data: { interfaceName: 'Config' } },
       ],
       output: asParseable(`function one() {
-  type Config = { a: string }
+  type Config = { a: string };
   return null as unknown as Config;
 }
 function two() {
-  type Config = { b: string }
+  type Config = { b: string };
   return null as unknown as Config;
 }`),
     },
@@ -778,10 +845,10 @@ function two() {
         { messageId: 'preferType', data: { interfaceName: 'Local' } },
       ],
       output: asParseable(`{
-  type Local = { a: string }
+  type Local = { a: string };
 }
 {
-  type Local = { b: string }
+  type Local = { b: string };
 }`),
     },
     // ...and for two sibling namespaces, whose bodies are separate scopes.
@@ -792,8 +859,8 @@ namespace Second { interface Shared { b: string } }`,
         { messageId: 'preferType', data: { interfaceName: 'Shared' } },
         { messageId: 'preferType', data: { interfaceName: 'Shared' } },
       ],
-      output: asParseable(`namespace First { type Shared = { a: string } }
-namespace Second { type Shared = { b: string } }`),
+      output: asParseable(`namespace First { type Shared = { a: string }; }
+namespace Second { type Shared = { b: string }; }`),
     },
     // The exemption is per-name: an unmerged interface sharing a file with a
     // merged pair still reports, and the merged pair is left intact.
@@ -804,7 +871,7 @@ interface Solo { c: string }`,
       errors: [{ messageId: 'preferType', data: { interfaceName: 'Solo' } }],
       output: asParseable(`interface Merged { a: string }
 interface Merged { b: string }
-type Solo = { c: string }`),
+type Solo = { c: string };`),
     },
     // A co-declaration under a *different* name exempts nothing: the check is
     // per-name, not "this scope contains more than one declaration".
@@ -815,7 +882,7 @@ interface Standalone { id: string }`,
         { messageId: 'preferType', data: { interfaceName: 'Standalone' } },
       ],
       output: asParseable(`function handler() {}
-type Standalone = { id: string }`),
+type Standalone = { id: string };`),
     },
     // Issue #1850: a default-exported interface still reports — the conversion
     // is available to the author — but carries NO fix, because there is no
@@ -932,19 +999,19 @@ interface Local { b: string }`,
         { messageId: 'preferType', data: { interfaceName: 'Local' } },
       ],
       output: asParseable(`export default interface Opts { a?: string }
-type Local = { b: string }`),
+type Local = { b: string };`),
     },
     // NEGATIVE CONTROLS: every other export form still reports AND still
     // autofixes. These are the arms the decline must not reach.
     {
       code: 'export interface Opts { a?: string }',
       errors: [{ messageId: 'preferType', data: { interfaceName: 'Opts' } }],
-      output: asParseable('export type Opts = { a?: string }'),
+      output: asParseable('export type Opts = { a?: string };'),
     },
     {
       code: 'interface Opts { a?: string }',
       errors: [{ messageId: 'preferType', data: { interfaceName: 'Opts' } }],
-      output: asParseable('type Opts = { a?: string }'),
+      output: asParseable('type Opts = { a?: string };'),
     },
     // `declare` marks the declaration ambient and is dropped by the rewrite,
     // which changes nothing: an interface and a type alias are both type-only
@@ -952,7 +1019,7 @@ type Local = { b: string }`),
     {
       code: 'declare interface Opts { a?: string }',
       errors: [{ messageId: 'preferType', data: { interfaceName: 'Opts' } }],
-      output: asParseable('type Opts = { a?: string }'),
+      output: asParseable('type Opts = { a?: string };'),
     },
     // An interface declared then default-exported by NAME is not a
     // default-exported interface: the keyword sits in its own statement, the
@@ -962,7 +1029,7 @@ type Local = { b: string }`),
       code: `interface Opts { a?: string }
 export default Opts;`,
       errors: [{ messageId: 'preferType', data: { interfaceName: 'Opts' } }],
-      output: asParseable(`type Opts = { a?: string }
+      output: asParseable(`type Opts = { a?: string };
 export default Opts;`),
     },
     // A namespaced interface is fixable as before; `export default` is the
@@ -971,7 +1038,7 @@ export default Opts;`),
       code: 'namespace Internal { export interface Helper { id: string } }',
       errors: [{ messageId: 'preferType', data: { interfaceName: 'Helper' } }],
       output: asParseable(
-        'namespace Internal { export type Helper = { id: string } }',
+        'namespace Internal { export type Helper = { id: string }; }',
       ),
     },
   ],
@@ -1061,7 +1128,7 @@ declare global {
   it('control: an ordinary interface is still rewritten to a type alias', () => {
     expect(reportCount('interface User { id: string }')).toBe(1);
     expect(fix('interface User { id: string }')).toBe(
-      'type User = { id: string }',
+      'type User = { id: string };',
     );
   });
 
@@ -1188,13 +1255,190 @@ function two() {
 `;
     expect(reportCount(code)).toBe(2);
     expect(fix(code)).toBe(`function one() {
-  type Config = { a: string }
+  type Config = { a: string };
   return null as unknown as Config;
 }
 function two() {
-  type Config = { b: string }
+  type Config = { b: string };
   return null as unknown as Config;
 }
 `);
   });
+});
+
+/**
+ * Issue #2072: the emission parses with or without the terminator, because ASI
+ * closes the alias, so nothing in the lint pipeline can see the omission — a
+ * parse assertion, a report count and a messageId all read the defect as
+ * success. The oracle therefore has to be prettier itself, which is what
+ * consumers run over the tree after this plugin's `--fix`.
+ *
+ * Each pre-image is asserted prettier-clean before it is used: comparing an
+ * emission against prettier proves nothing when the input was unformatted to
+ * begin with, since the rule copies the body through verbatim.
+ */
+describe('prefer-type-over-interface emits prettier-stable output', () => {
+  const RULE_ID = '@blumintinc/blumint/prefer-type-over-interface';
+
+  const CONFIG = {
+    parser: '@typescript-eslint/parser',
+    parserOptions: {
+      ecmaVersion: 2020 as const,
+      sourceType: 'module' as const,
+    },
+    rules: { [RULE_ID]: 'error' as const },
+  };
+
+  const fix = (code: string) => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      RULE_ID,
+      preferTypeOverInterface as unknown as Rule.RuleModule,
+    );
+    return linter.verifyAndFix(code, CONFIG, 'shapes.ts').output;
+  };
+
+  // The repo's settings, which are the ones the consumer's `prettier --check`
+  // runs with.
+  const PRETTIER_OPTIONS: prettier.Options = {
+    parser: 'typescript',
+    printWidth: 80,
+    tabWidth: 2,
+    singleQuote: true,
+    semi: true,
+    trailingComma: 'all',
+  };
+
+  const isPrettierClean = (text: string): boolean =>
+    prettier.format(text, PRETTIER_OPTIONS) === text;
+
+  /**
+   * Prettier always expands a non-empty interface body, so a prettier-clean
+   * interface is always multi-line. That is the shape a formatted consumer tree
+   * actually holds, which makes these the conversions that run in production.
+   */
+  const PRETTIER_CLEAN_SOURCES: [string, string][] = [
+    ['the simplest conversion', 'interface Simple {\n  role: string;\n}\n'],
+    [
+      'an exported interface',
+      'export interface Simple {\n  role: string;\n}\n',
+    ],
+    ['a generic interface', 'interface Box<T> {\n  value: T;\n}\n'],
+    [
+      'a single heritage clause',
+      'interface Member extends Profile {\n  role: string;\n}\n',
+    ],
+    ['an empty body', 'interface Blank {}\n'],
+    [
+      'method members',
+      'interface Repository {\n  findById(id: string): string | undefined;\n  save(entity: string): void;\n}\n',
+    ],
+    [
+      'a namespaced interface',
+      'namespace Internal {\n  interface Helper {\n    id: string;\n  }\n}\n',
+    ],
+    [
+      'two interfaces, one extending the other',
+      'interface UserProfile {\n  id: string;\n}\n\ninterface TeamMember extends UserProfile {\n  role: string;\n}\n',
+    ],
+  ];
+
+  it.each(PRETTIER_CLEAN_SOURCES)(
+    'rewrites %s into prettier-clean output',
+    (_label, source) => {
+      expect(isPrettierClean(source)).toBe(true);
+      const output = fix(source);
+      // A fixer that declined would leave a prettier-clean pre-image behind and
+      // pass the format assertion without converting anything.
+      expect(output).not.toBe(source);
+      expect(output).toContain('type ');
+      expect(output).toBe(prettier.format(output, PRETTIER_OPTIONS));
+    },
+  );
+
+  // The control that makes those assertions non-vacuous: prettier has to be
+  // able to see the defect. This is the exact text the fixer emitted before the
+  // terminator was added.
+  it('control: the unterminated emission is detected as prettier-unclean', () => {
+    const unterminated = 'type Simple = {\n  role: string;\n}\n';
+    expect(isPrettierClean(unterminated)).toBe(false);
+    expect(prettier.format(unterminated, PRETTIER_OPTIONS)).toBe(
+      'type Simple = {\n  role: string;\n};\n',
+    );
+  });
+
+  const ALREADY_TERMINATED: [string, string][] = [
+    [
+      'a one-line body the author terminated',
+      'interface Terminated { role: string };\n',
+    ],
+    [
+      'a multi-line body the author terminated',
+      'interface Settled {\n  role: string;\n};\n',
+    ],
+    [
+      'a comment between the body and the terminator',
+      'interface Guarded { role: string } /* done */;\n',
+    ],
+  ];
+
+  it.each(ALREADY_TERMINATED)(
+    'leaves %s with a single terminator',
+    (_label, source) => {
+      const output = fix(source);
+      expect(output).toContain('type ');
+      expect(output).not.toContain(';;');
+    },
+  );
+
+  // Without this the assertion above would also hold for inputs that carry no
+  // terminator at all, where nothing could double in the first place.
+  it('control: every already-terminated pre-image really does carry a `;`', () => {
+    for (const [, source] of ALREADY_TERMINATED) {
+      expect(source).toMatch(/\}\s*(?:\/\*[\s\S]*?\*\/\s*)?;/);
+    }
+  });
+
+  /**
+   * KNOWN GAP, pinned rather than left silent, and tracked on its own in
+   * #2077. Prettier breaks an intersection carrying an object-literal member
+   * one arm per line and indents the object, however the joined line measures
+   * against `printWidth`. Reproducing that layout means re-indenting the body
+   * the fixer deliberately copies through untouched — every member line, and
+   * any template literal or block comment inside it — which is a separate
+   * decision from the terminator.
+   *
+   * The divergence starts at the SECOND heritage clause; one clause stays on
+   * the alias line and is covered by the prettier-clean cases above. The
+   * expectations below carry prettier's measured output at 2.7.1, so closing
+   * the gap turns them red instead of leaving the emission quietly wrong.
+   */
+  it.each([
+    [
+      'two heritage clauses',
+      'interface TeamMember extends UserProfile, Auditable {\n  role: string;\n}\n',
+      'type TeamMember = UserProfile & Auditable & {\n  role: string;\n};\n',
+      'type TeamMember = UserProfile &\n  Auditable & {\n    role: string;\n  };\n',
+    ],
+    [
+      'three heritage clauses',
+      'interface TeamMember extends UserProfile, Auditable, Archivable {\n  role: string;\n}\n',
+      'type TeamMember = UserProfile & Auditable & Archivable & {\n  role: string;\n};\n',
+      'type TeamMember = UserProfile &\n  Auditable &\n  Archivable & {\n    role: string;\n  };\n',
+    ],
+  ])(
+    'terminates %s but still emits the joined intersection prettier reflows',
+    (_label, source, emitted, reflowed) => {
+      expect(isPrettierClean(source)).toBe(true);
+      expect(fix(source)).toBe(emitted);
+      expect(prettier.format(emitted, PRETTIER_OPTIONS)).toBe(reflowed);
+      // The gap is the layout alone: the terminator did land.
+      expect(emitted).toContain('};\n');
+    },
+  );
 });

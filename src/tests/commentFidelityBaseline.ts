@@ -140,6 +140,31 @@ export const COMMENT_FIDELITY_BASELINE: Record<string, string> = {
   //      consumed.
   'enforce-stable-hash-spread-props :: TRANSFORM_DIVERGED':
     'declines the argument-list re-emission when a comment sits between the arguments (output byte-identical, report stands); and a marker inserted between an existing exhaustive-deps disable and its hook retargets that directive, so a fresh one is legitimately emitted (#2065)',
+  // RESTRICTED PRODUCTION. A correctness constraint rather than a layout
+  // choice, and confined to one arm of the fix: the call standing where a line
+  // terminator ends the construct — the argument of `return`, `throw` or
+  // `yield`, or the operand of a postfix `++`. The unwrap carries every comment
+  // stranded inside the call, and a comment that owns its line puts a line
+  // terminator in the middle of what is written; the parentheses are what keep
+  // that terminator inert. Bare, `return` followed by a terminator is ASI: the
+  // function hands back `undefined` and the inlined expression stands as dead
+  // code (#1963). MEASURED BY EXECUTION rather than asserted —
+  // `src/tests/no-useless-usememo-primitives.test.ts` runs both spellings of the
+  // emitted output and gets the value from the parenthesised one and
+  // `undefined` from the bare one.
+  // BOTH SHAPES CARRY THE COMMENT, so nothing is consumed and the remedy is not
+  // a decline: the perturbed variant is parenthesised and the unperturbed one is
+  // not, and the token streams differ by exactly that pair.
+  // The arm is narrow on purpose. Outside a restricted production the same
+  // carried comment drops the parentheses, because a pair the landing position
+  // never asked for is text prettier deletes again, which fails
+  // `prettier --check` on every fixed file (#2071) — an unconditional wrapper
+  // here would reintroduce that for `return useMemo(...)`, the rule shape most
+  // real code is written in. Anchored by the `useNullValue` fixture in
+  // `src/tests/no-useless-usememo-primitives.test.ts`: a
+  // `return useMemo(() => { ... }, [])` carrying no comment of its own, which
+  // the probe trailing-marker variant turns into the parenthesised shape, so the
+  // own-corpus guard keeps this entry honest.
   // FORMATTING. The divergence is line wrapping and trailing commas only.
   // Verified by formatting both outputs with agora's pinned prettier (2.8.8,
   // not this repo's 2.7.1) and comparing code tokens: all cases converge. agora
