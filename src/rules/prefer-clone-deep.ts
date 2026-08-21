@@ -397,7 +397,16 @@ export const preferCloneDeep = createRule<[], MessageIds>({
         entries.push(`${indent}${keyTextOf(prop)}: ${valueText}`);
       }
 
-      return entries.join(',\n');
+      // Every entry, including the last, carries its own terminator: an object
+      // with entries is only ever emitted across multiple lines (the single-line
+      // spelling `{}` has no entries at all), and prettier's `trailingComma:
+      // 'all'` demands a comma after the final property of a multi-line object.
+      // Joining with ',\n' instead left the last property of every emitted
+      // object, at every nesting depth, unterminated, so prettier rewrote the
+      // fix the moment it landed (#2088). Spreads never reach here — the loop
+      // above declines any property that is not a plain `init` Property — so no
+      // rest element can pick up an illegal trailing comma.
+      return entries.map((entry) => `${entry},`).join('\n');
     }
 
     /**

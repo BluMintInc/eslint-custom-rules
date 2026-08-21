@@ -19,8 +19,8 @@ const CLONE_DEEP_IMPORT = `import { cloneDeep } from 'functions/src/util/cloneDe
 const backendCode = `const merged = { ...a, nested: { ...a.nested, value: 42 } };`;
 const MERGED_OUTPUT = `const merged = cloneDeep(a, {
   nested: {
-    value: 42
-  }
+    value: 42,
+  },
 } as const);`;
 
 ruleTesterTs.run('prefer-clone-deep', preferCloneDeep, {
@@ -293,9 +293,9 @@ ruleTesterTs.run('prefer-clone-deep', preferCloneDeep, {
         const result = cloneDeep(baseObj, {
           data: {
             nested: {
-              value: 42
-            }
-          }
+              value: 42,
+            },
+          },
         } as const);
       `,
     },
@@ -333,14 +333,14 @@ ruleTesterTs.run('prefer-clone-deep', preferCloneDeep, {
           membership: cloneDeep(membershipIncomplete, {
             sender: {
               request: {
-                status: 'accepted'
-              }
+                status: 'accepted',
+              },
             },
             receiver: {
               request: {
-                status: 'accepted'
-              }
-            }
+                status: 'accepted',
+              },
+            },
           } as const),
         };
       `,
@@ -379,8 +379,8 @@ ruleTesterTs.run('prefer-clone-deep', preferCloneDeep, {
                   enabled: true
                 }
               }
-            ]
-          }
+            ],
+          },
         } as const);
       `,
     },
@@ -409,10 +409,10 @@ ruleTesterTs.run('prefer-clone-deep', preferCloneDeep, {
           [key]: {
             nested: {
               ['dynamic' + key]: {
-                value: 42
-              }
-            }
-          }
+                value: 42,
+              },
+            },
+          },
         } as const);
       `,
     },
@@ -447,12 +447,12 @@ ruleTesterTs.run('prefer-clone-deep', preferCloneDeep, {
               content: {
                 form: {
                   values: {
-                    submitted: true
-                  }
-                }
-              }
-            }
-          }
+                    submitted: true,
+                  },
+                },
+              },
+            },
+          },
         } as const);
       `,
     },
@@ -502,9 +502,9 @@ ruleTesterTs.run('prefer-clone-deep', preferCloneDeep, {
         const obj = cloneDeep(baseObj, {
           [\`\${prefix}Config\`]: {
             nested: {
-              value: 42
-            }
-          }
+              value: 42,
+            },
+          },
         } as const);
       `,
     },
@@ -528,9 +528,9 @@ ruleTesterTs.run('prefer-clone-deep', preferCloneDeep, {
         const config = cloneDeep(baseConfig, {
           features: {
             advanced: {
-              enabled: true
-            }
-          }
+              enabled: true,
+            },
+          },
         } as const);
       `,
     },
@@ -641,8 +641,8 @@ const merged = { ...a, nested: { ...a.nested, [key]: 42, value } };`,
 const merged = cloneDeep(a, {
   nested: {
     [key]: 42,
-    value: value
-  }
+    value: value,
+  },
 } as const);`,
     },
     // A nested object whose only content is the redundant base spread collapses
@@ -653,7 +653,7 @@ const merged = { ...a, nested: { ...a.nested } };`,
       errors: [expectPreferCloneDeepError],
       output: `${CLONE_DEEP_IMPORT}
 const merged = cloneDeep(a, {
-  nested: {}
+  nested: {},
 } as const);`,
     },
     // Regression #1300: an outer literal without its own spread is no longer
@@ -674,8 +674,8 @@ const wrapper = {
   keep: 1,
   child: cloneDeep(a, {
     nested: {
-      value: 42
-    }
+      value: 42,
+    },
   } as const),
 };`,
     },
@@ -695,8 +695,8 @@ const merged = { ...a, 'my-key': { ...a['my-key'], value: 42 } };`,
       output: `${CLONE_DEEP_IMPORT}
 const merged = cloneDeep(a, {
   'my-key': {
-    value: 42
-  }
+    value: 42,
+  },
 } as const);`,
     },
     // Member-expression bases are supported (the #365 shape).
@@ -707,8 +707,8 @@ const merged = { ...this.props.base, nested: { ...this.props.base.nested, value:
       output: `${CLONE_DEEP_IMPORT}
 const merged = cloneDeep(this.props.base, {
   nested: {
-    value: 42
-  }
+    value: 42,
+  },
 } as const);`,
     },
     // Regression #1364: a default import of the helper already provides the
@@ -752,12 +752,12 @@ const both = { one: { ...x, n: { ...x.n, v: 1 } }, two: { ...y, m: { ...y.m, v: 
       output: `${CLONE_DEEP_IMPORT}
 const both = { one: cloneDeep(x, {
   n: {
-    v: 1
-  }
+    v: 1,
+  },
 } as const), two: cloneDeep(y, {
   m: {
-    v: 2
-  }
+    v: 2,
+  },
 } as const) };`,
     },
     // Regression #1371: a nested spread of a DIFFERENT sub-path of the same
@@ -779,9 +779,9 @@ const m = { ...a, x: { y: { ...a.x.y, v: 1 } } };`,
 const m = cloneDeep(a, {
   x: {
     y: {
-      v: 1
-    }
-  }
+      v: 1,
+    },
+  },
 } as const);`,
     },
     // Regression #1371: a computed sub-path of the base counts as a sub-path.
@@ -792,8 +792,8 @@ const m = { ...a, [k]: { ...a[k], v: 1 } };`,
       output: `${CLONE_DEEP_IMPORT}
 const m = cloneDeep(a, {
   [k]: {
-    v: 1
-  }
+    v: 1,
+  },
 } as const);`,
     },
     // Regression #1364: a shadowing binding in an enclosing scope also blocks
@@ -888,8 +888,8 @@ const merged = { ...props, sx: { ...props?.sx, color: 'red' } };`,
       output: `${CLONE_DEEP_IMPORT}
 const merged = cloneDeep(props, {
   sx: {
-    color: 'red'
-  }
+    color: 'red',
+  },
 } as const);`,
     },
     // Regression #1396: the same file with the helper imported is fixed, which
@@ -902,8 +902,8 @@ const merged = { ...base, sx: { ...base.sx, color: 'red' } };`,
       output: `${CLONE_DEEP_IMPORT}
 const merged = cloneDeep(base, {
   sx: {
-    color: 'red'
-  }
+    color: 'red',
+  },
 } as const);`,
     },
     // Regression #2011 / #2032: a `const` assertion is legal only on a literal,
@@ -930,9 +930,9 @@ const result = {
 const result = cloneDeep(baseObj, {
   data: {
     nested: {
-      value: 42
-    }
-  }
+      value: 42,
+    },
+  },
 } as const);`,
     },
     // Regression #2032: the exact text `global-const-style` leaves behind on
@@ -954,9 +954,9 @@ const RESULT = {
 const RESULT = cloneDeep(baseObj, {
   data: {
     nested: {
-      value: 42
-    }
-  }
+      value: 42,
+    },
+  },
 } as const);`,
     },
     // Regression #2032: the single-line spelling absorbs its assertion too.
@@ -967,8 +967,8 @@ const result = { ...a, nested: { ...a.nested, value: 42 } } as const;`,
       output: `${CLONE_DEEP_IMPORT}
 const result = cloneDeep(a, {
   nested: {
-    value: 42
-  }
+    value: 42,
+  },
 } as const);`,
     },
     // Regression #2032: the declaration kind does not change the rewrite.
@@ -979,8 +979,8 @@ let result = { ...a, b: { ...a.b, c: 1 } } as const;`,
       output: `${CLONE_DEEP_IMPORT}
 let result = cloneDeep(a, {
   b: {
-    c: 1
-  }
+    c: 1,
+  },
 } as const);`,
     },
     {
@@ -990,8 +990,8 @@ var result = { ...a, b: { ...a.b, c: 1 } } as const;`,
       output: `${CLONE_DEEP_IMPORT}
 var result = cloneDeep(a, {
   b: {
-    c: 1
-  }
+    c: 1,
+  },
 } as const);`,
     },
     // Regression #2032: a returned literal carries the same assertion and
@@ -1006,8 +1006,8 @@ function build() {
 function build() {
   return cloneDeep(a, {
     b: {
-      c: 1
-    }
+      c: 1,
+    },
   } as const);
 }`,
     },
@@ -1021,8 +1021,8 @@ const result = ({ ...a, b: { ...a.b, c: 1 } } as const);`,
       output: `${CLONE_DEEP_IMPORT}
 const result = (cloneDeep(a, {
   b: {
-    c: 1
-  }
+    c: 1,
+  },
 } as const));`,
     },
     // Regression #2032: the rewritten literal is the inner one here (the #365
@@ -1035,8 +1035,8 @@ const result = { key: ({ ...a, nested: { ...a.nested, value: 42 } } as const) };
       output: `${CLONE_DEEP_IMPORT}
 const result = { key: (cloneDeep(a, {
   nested: {
-    value: 42
-  }
+    value: 42,
+  },
 } as const)) };`,
     },
     // Regression #2032: nested `const` assertions — one on the rewritten
@@ -1049,8 +1049,8 @@ const result = { key: ({ ...a, nested: { ...a.nested, value: 42 } } as const) } 
       output: `${CLONE_DEEP_IMPORT}
 const result = { key: (cloneDeep(a, {
   nested: {
-    value: 42
-  }
+    value: 42,
+  },
 } as const)) } as const;`,
     },
     // Regression #2032: links AFTER the `const` assertion are legal on a call
@@ -1062,8 +1062,8 @@ const result = { ...a, nested: { ...a.nested, value: 42 } } as const as Foo;`,
       output: `${CLONE_DEEP_IMPORT}
 const result = cloneDeep(a, {
   nested: {
-    value: 42
-  }
+    value: 42,
+  },
 } as const) as Foo;`,
     },
     {
@@ -1073,8 +1073,8 @@ const result = { ...a, nested: { ...a.nested, value: 42 } } as const satisfies F
       output: `${CLONE_DEEP_IMPORT}
 const result = cloneDeep(a, {
   nested: {
-    value: 42
-  }
+    value: 42,
+  },
 } as const) satisfies Foo;`,
     },
     {
@@ -1084,8 +1084,8 @@ const result = ({ ...a, nested: { ...a.nested, value: 42 } } as const)!;`,
       output: `${CLONE_DEEP_IMPORT}
 const result = (cloneDeep(a, {
   nested: {
-    value: 42
-  }
+    value: 42,
+  },
 } as const))!;`,
     },
     // Regression #2011: a `const` assertion BEHIND another link is not the
@@ -1128,8 +1128,8 @@ const result = { ...a, nested: { ...a.nested, value: 42 } } as Foo;`,
       output: `${CLONE_DEEP_IMPORT}
 const result = cloneDeep(a, {
   nested: {
-    value: 42
-  }
+    value: 42,
+  },
 } as const) as Foo;`,
     },
     // Regression #2011: so is `satisfies Foo`.
@@ -1140,8 +1140,8 @@ const result = { ...a, nested: { ...a.nested, value: 42 } } satisfies Foo;`,
       output: `${CLONE_DEEP_IMPORT}
 const result = cloneDeep(a, {
   nested: {
-    value: 42
-  }
+    value: 42,
+  },
 } as const) satisfies Foo;`,
     },
     // Regression #2011: an assertion on an ENCLOSING literal survives the
@@ -1154,8 +1154,8 @@ const result = { key: { ...a, nested: { ...a.nested, value: 42 } } } as const;`,
       output: `${CLONE_DEEP_IMPORT}
 const result = { key: cloneDeep(a, {
   nested: {
-    value: 42
-  }
+    value: 42,
+  },
 } as const) } as const;`,
     },
     // Regression #2011 control: the deeply nested shape from the issue with no
@@ -1177,9 +1177,65 @@ const result = {
 const result = cloneDeep(baseObj, {
   data: {
     nested: {
-      value: 42
+      value: 42,
+    },
+  },
+} as const);`,
+    },
+    // Regression #2088: the emission is multi-line, and prettier's
+    // `trailingComma: 'all'` terminates the final property of a multi-line
+    // object. Every depth of the rebuilt overrides carries the comma — the
+    // innermost value, each closing brace, and the outermost entry — so the fix
+    // lands as text prettier already agrees with instead of churn it rewrites.
+    {
+      code: `${CLONE_DEEP_IMPORT}
+const settings = {
+  ...base,
+  version: 2,
+  ui: {
+    ...base.ui,
+    theme: 'dark',
+    panel: {
+      ...base.ui.panel,
+      width: 10,
+      inner: {
+        ...base.ui.panel.inner,
+        depth: 4
+      }
     }
   }
+};`,
+      errors: [expectPreferCloneDeepError],
+      output: `${CLONE_DEEP_IMPORT}
+const settings = cloneDeep(base, {
+  version: 2,
+  ui: {
+    theme: 'dark',
+    panel: {
+      width: 10,
+      inner: {
+        depth: 4,
+      },
+    },
+  },
+} as const);`,
+    },
+    // Regression #2088: an override that collapses to the empty object is the
+    // one emission printed on a single line, and `{,}` does not parse. The
+    // terminator belongs to the ENTRY, so an empty override still ends with a
+    // comma outside its braces and never gains one inside them — pinned both as
+    // a middle entry and as the last one.
+    {
+      code: `${CLONE_DEEP_IMPORT}
+const merged = { ...a, first: { ...a.first }, second: { ...a.second, value: 1 }, third: { ...a.third } };`,
+      errors: [expectPreferCloneDeepError],
+      output: `${CLONE_DEEP_IMPORT}
+const merged = cloneDeep(a, {
+  first: {},
+  second: {
+    value: 1,
+  },
+  third: {},
 } as const);`,
     },
   ],
