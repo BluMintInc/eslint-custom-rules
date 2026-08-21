@@ -366,7 +366,7 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
       ],
       output: `
         function processUserData(userData) {
-          if ((!userData || Object.keys(userData).length === 0)) {
+          if (!userData || Object.keys(userData).length === 0) {
             return null;
           }
           return userData.name || 'Unknown';
@@ -387,13 +387,15 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
       ],
       output: `
         const config = getConfig();
-        if ((!config || Object.keys(config).length === 0)) {
+        if (!config || Object.keys(config).length === 0) {
           useDefaultConfig();
         } else {
           applyConfig(config);
         }
         `,
     },
+    // An `&&` operand keeps its parentheses: `&&` binds tighter than the `||`
+    // the fixer emits, so dropping them would rewrite the guard (#2082).
     {
       code: `
         if (!response && shouldLog) {
@@ -411,6 +413,124 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
     },
     {
       code: `
+        const responseData = getResponse();
+        if (shouldLog && !responseData) {
+          logResponse(responseData);
+        }
+        `,
+      errors: [
+        {
+          messageId: 'missingEmptyObjectCheck',
+          data: { name: 'responseData' },
+        },
+      ],
+      output: `
+        const responseData = getResponse();
+        if (shouldLog && (!responseData || Object.keys(responseData).length === 0)) {
+          logResponse(responseData);
+        }
+        `,
+    },
+    // `??` refuses to sit beside `||` unparenthesized at all, so the grouping is
+    // a grammar requirement here rather than a precedence one.
+    {
+      code: `
+        const fallbackData = getData();
+        if (isReady ?? !fallbackData) {
+          handle(fallbackData);
+        }
+        `,
+      errors: [
+        {
+          messageId: 'missingEmptyObjectCheck',
+          data: { name: 'fallbackData' },
+        },
+      ],
+      output: `
+        const fallbackData = getData();
+        if (isReady ?? (!fallbackData || Object.keys(fallbackData).length === 0)) {
+          handle(fallbackData);
+        }
+        `,
+    },
+    // Parentheses the author already wrote enclose the emission, so the fixer
+    // adds none of its own rather than nesting a second redundant pair.
+    {
+      code: `
+        const cachedData = read();
+        if (isReady && (!cachedData)) {
+          refresh(cachedData);
+        }
+        `,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'cachedData' } },
+      ],
+      output: `
+        const cachedData = read();
+        if (isReady && (!cachedData || Object.keys(cachedData).length === 0)) {
+          refresh(cachedData);
+        }
+        `,
+    },
+    // The nearest enclosing operator decides, not the outermost one: an `&&`
+    // nested inside an `||` still demands the grouping.
+    {
+      code: `
+        const meta = read();
+        if (isStale || (isReady && !meta)) {
+          refresh(meta);
+        }
+        `,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'meta' } },
+      ],
+      output: `
+        const meta = read();
+        if (isStale || (isReady && (!meta || Object.keys(meta).length === 0))) {
+          refresh(meta);
+        }
+        `,
+    },
+    // A ternary branch nested under `&&` takes no parentheses of its own: `?:`
+    // binds looser than `||`, and the branch is already delimited by `?` and `:`.
+    {
+      code: `
+        const meta = read();
+        if (isReady && (flag ? !meta : isStale)) {
+          refresh(meta);
+        }
+        `,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'meta' } },
+      ],
+      output: `
+        const meta = read();
+        if (isReady && (flag ? !meta || Object.keys(meta).length === 0 : isStale)) {
+          refresh(meta);
+        }
+        `,
+    },
+    // The RIGHT operand of `||` needs no grouping either: regrouping a run of
+    // `||` preserves both the value and the short-circuit order.
+    {
+      code: `
+        const metaInfo = read();
+        if (isStale || !metaInfo) {
+          refresh(metaInfo);
+        }
+        `,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'metaInfo' } },
+      ],
+      output: `
+        const metaInfo = read();
+        if (isStale || !metaInfo || Object.keys(metaInfo).length === 0) {
+          refresh(metaInfo);
+        }
+        `,
+    },
+    {
+      code: `
         const name = !userProfile ? 'anonymous' : userProfile.name;
         `,
       errors: [
@@ -420,7 +540,7 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
         },
       ],
       output: `
-        const name = (!userProfile || Object.keys(userProfile).length === 0) ? 'anonymous' : userProfile.name;
+        const name = !userProfile || Object.keys(userProfile).length === 0 ? 'anonymous' : userProfile.name;
         `,
     },
     {
@@ -435,7 +555,7 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
       ],
       output: `
         let options = load();
-        while ((!options || Object.keys(options).length === 0)) {
+        while (!options || Object.keys(options).length === 0) {
           options = retry();
         }
         `,
@@ -454,7 +574,7 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
         let data;
         do {
           data = read();
-        } while ((!data || Object.keys(data).length === 0));
+        } while (!data || Object.keys(data).length === 0);
         `,
     },
     {
@@ -469,7 +589,7 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
       ],
       output: `
         let config;
-        for (; (!config || Object.keys(config).length === 0); ) {
+        for (; !config || Object.keys(config).length === 0; ) {
           config = getConfig();
         }
         `,
@@ -487,7 +607,7 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
       ],
       output: `
         const payload: Record<string, unknown> | undefined = getPayload();
-        if ((!payload || Object.keys(payload).length === 0)) {
+        if (!payload || Object.keys(payload).length === 0) {
           return handle(payload);
         }
         `,
@@ -507,7 +627,7 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
       ],
       output: `
         const requestContext = getContext();
-        if ((!requestContext || Object.keys(requestContext).length === 0) || requestContext.user) {
+        if (!requestContext || Object.keys(requestContext).length === 0 || requestContext.user) {
           return requestContext;
         }
         `,
@@ -525,7 +645,7 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
       ],
       output: `
         const resultBag = getBag();
-        if ((!resultBag || Object.keys(resultBag).length === 0)) {
+        if (!resultBag || Object.keys(resultBag).length === 0) {
           return null;
         }
         `,
@@ -546,7 +666,7 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
       ],
       output: `
         const responsePayload = getResponse();
-        if ((!responsePayload || Object.keys(responsePayload).length === 0)) {
+        if (!responsePayload || Object.keys(responsePayload).length === 0) {
           return;
         }
         `,
@@ -571,7 +691,7 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
       ],
       output: `
         const count: Record<string, unknown> | undefined = getCount();
-        if ((!count || Object.keys(count).length === 0)) {
+        if (!count || Object.keys(count).length === 0) {
           return handle(count);
         }
         `,
@@ -598,7 +718,7 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
       output: `
         type Mixed = { required: string } | Record<string, unknown>;
         const mixed: Mixed = getPayload();
-        if ((!mixed || Object.keys(mixed).length === 0)) {
+        if (!mixed || Object.keys(mixed).length === 0) {
           return handle(mixed);
         }
         `,
@@ -625,7 +745,7 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
       output: `
         type Payload = { a?: string } & { b?: string };
         const payload: Payload | undefined = getPayload();
-        if ((!payload || Object.keys(payload).length === 0)) {
+        if (!payload || Object.keys(payload).length === 0) {
           return handle(payload);
         }
         `,
@@ -640,7 +760,7 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
         { messageId: 'missingEmptyObjectCheck', data: { name: 'payload' } },
       ],
       output: `
-        if ((!payload || Object.keys(payload).length === 0) ? handleEmpty() : handlePayload(payload)) {
+        if (!payload || Object.keys(payload).length === 0 ? handleEmpty() : handlePayload(payload)) {
           process();
         }
         `,
@@ -655,7 +775,7 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
         { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
       ],
       output: `
-        if (flag ? (!config || Object.keys(config).length === 0) : hasConfig(config)) {
+        if (flag ? !config || Object.keys(config).length === 0 : hasConfig(config)) {
           apply(config);
         }
         `,
@@ -670,7 +790,7 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
         { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
       ],
       output: `
-        if (flag ? hasConfig(config) : (!config || Object.keys(config).length === 0)) {
+        if (flag ? hasConfig(config) : !config || Object.keys(config).length === 0) {
           apply(config);
         }
         `,
@@ -688,7 +808,7 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
       ],
       output: `
         const config = getConfig();
-        if ((!config || Object.keys(config).length === 0)) {
+        if (!config || Object.keys(config).length === 0) {
           apply(config);
         }
         `,
@@ -703,7 +823,7 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
         { messageId: 'missingEmptyObjectCheck', data: { name: 'payload' } },
       ],
       output: `
-        if ((!payload || Object.keys(payload).length === 0) || Object.keys(payload).length > 5) {
+        if (!payload || Object.keys(payload).length === 0 || Object.keys(payload).length > 5) {
           handle(payload);
         }
         `,
@@ -720,7 +840,7 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
       ],
       output: `
         const payload = getPayload();
-        if ((!payload || Object.keys(payload).length === 0) || Object.keys(payload).length < 0) {
+        if (!payload || Object.keys(payload).length === 0 || Object.keys(payload).length < 0) {
           handle(payload);
         }
         `,
@@ -737,7 +857,7 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
       ],
       output: `
         const payload = getPayload();
-        if ((!payload || Object.keys(payload).length === 0) || 0 > Object.keys(payload).length) {
+        if (!payload || Object.keys(payload).length === 0 || 0 > Object.keys(payload).length) {
           handle(payload);
         }
         `,
@@ -754,7 +874,7 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
       ],
       output: `
         const config = load();
-        if ((!config || Object.keys(config).length === 0) || Object.keys(config).length === 10) {
+        if (!config || Object.keys(config).length === 0 || Object.keys(config).length === 10) {
           return config;
         }
         `,
@@ -771,7 +891,7 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
       ],
       output: `
         const payload = getPayload();
-        if ((!payload || Object.keys(payload).length === 0) || !!Object.keys(payload).length) {
+        if (!payload || Object.keys(payload).length === 0 || !!Object.keys(payload).length) {
           return handle(payload);
         }
         `,
@@ -791,7 +911,7 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
       ],
       output: `
         const islandData = fetchIsland();
-        if ((!islandData || Object.keys(islandData).length === 0)) {
+        if (!islandData || Object.keys(islandData).length === 0) {
           return islandData;
         }
         `,
@@ -823,7 +943,7 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
       ],
       output: `
         declare const incoming: { a?: string } | undefined;
-        if ((!incoming || Object.keys(incoming).length === 0)) {
+        if (!incoming || Object.keys(incoming).length === 0) {
           throw new Error('missing payload');
         }
         `,
@@ -850,7 +970,7 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
       output: `
         type OptionalOnly = { retries?: number; verbose?: boolean };
         declare const banner: OptionalOnly | undefined;
-        if ((!banner || Object.keys(banner).length === 0)) {
+        if (!banner || Object.keys(banner).length === 0) {
           throw new Error('missing banner');
         }
         `,
@@ -883,7 +1003,7 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
         }
         type WidgetSlot = WidgetConstructor | { fallback?: string };
         declare const slot: WidgetSlot | undefined;
-        if ((!slot || Object.keys(slot).length === 0)) {
+        if (!slot || Object.keys(slot).length === 0) {
           throw new Error('missing slot');
         }
         `,
@@ -907,7 +1027,7 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
       ],
       output: `
         const payload = getPayload();
-        if ((!payload || Object.keys(payload).length === 0) || Object.keys(payload)?.length > 5) {
+        if (!payload || Object.keys(payload).length === 0 || Object.keys(payload)?.length > 5) {
           handle(payload);
         }
         `,
@@ -924,7 +1044,7 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
       ],
       output: `
         const userData = getUser();
-        if ((!userData || Object.keys(userData).length === 0) || Object.keys(otherData)?.length === 0) {
+        if (!userData || Object.keys(userData).length === 0 || Object.keys(otherData)?.length === 0) {
           handle(userData);
         }
         `,
@@ -941,7 +1061,7 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
       ],
       output: `
         const userData = getUser();
-        if ((!userData || Object.keys(userData).length === 0) || Object.values(userData)?.length === 0) {
+        if (!userData || Object.keys(userData).length === 0 || Object.values(userData)?.length === 0) {
           handle(userData);
         }
         `,
@@ -958,7 +1078,7 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
       ],
       output: `
         const payload = getPayload();
-        if ((!payload || Object.keys(payload).length === 0) || !(Object.keys(payload)?.length === 0)) {
+        if (!payload || Object.keys(payload).length === 0 || !(Object.keys(payload)?.length === 0)) {
           handle(payload);
         }
         `,
@@ -975,7 +1095,7 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
       ],
       output: `
         const payload = getPayload();
-        if ((!payload || Object.keys(payload).length === 0) || !!Object.keys(payload)?.length) {
+        if (!payload || Object.keys(payload).length === 0 || !!Object.keys(payload)?.length) {
           return handle(payload);
         }
         `,
@@ -992,7 +1112,7 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
       ],
       output: `
         const payload = getPayload();
-        if ((!payload || Object.keys(payload).length === 0) || isEmpty?.(otherPayload)) {
+        if (!payload || Object.keys(payload).length === 0 || isEmpty?.(otherPayload)) {
           return;
         }
         `,
@@ -1009,7 +1129,7 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
       ],
       output: `
         const config = load();
-        if ((!config || Object.keys(config).length === 0) || Object.keys(config)?.length === 10) {
+        if (!config || Object.keys(config).length === 0 || Object.keys(config)?.length === 10) {
           return config;
         }
         `,

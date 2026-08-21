@@ -6,6 +6,7 @@ type MessageIds = 'hoistDestructuring';
 type DestructuringProperty = {
   key: string;
   text: string;
+  node: TSESTree.Property | TSESTree.RestElement;
   order: number;
   bindingNames: Set<string>;
   referenceNames: Set<string>;
@@ -623,6 +624,10 @@ function collectProperties(
     acc.set(text, {
       key: keyText,
       text,
+      // The node is carried through because the emitted layout depends on the
+      // indentation of the insertion site, which is not known until every
+      // group's properties have been collected and deduplicated.
+      node: property,
       order: property.range ? property.range[0] : acc.size,
       bindingNames: bindingNamesOfDestructuringProperty(property),
       referenceNames: referenceNamesOfDestructuringProperty(
@@ -633,56 +638,178 @@ function collectProperties(
   }
 }
 
+/**
+ * Prettier's own indentation step for the emitted pattern. Two spaces matches
+ * the repo's `tabWidth`, which agora shares.
+ */
+const INDENT_UNIT = '  ';
+
+/**
+ * Whether the emitted text for a pattern's value carries a forced break outward.
+ * Prettier propagates a forced break through every enclosing group, so an object
+ * pattern buried inside an array still expands the pattern holding that array.
+ */
+function patternValueForcesBreak(node: TSESTree.Node): boolean {
+  if (node.type === AST_NODE_TYPES.ObjectPattern) {
+    return propertiesForceBreak(node.properties, false);
+  }
+
+  if (node.type === AST_NODE_TYPES.ArrayPattern) {
+    return arrayPatternForcesBreak(node);
+  }
+
+  if (node.type === AST_NODE_TYPES.AssignmentPattern) {
+    // Prettier exempts a pattern that is the left of a default from its own
+    // nesting rule, so `{ a: { b } = {} }` prints flat. A break arriving from
+    // deeper still travels through it.
+    const left = node.left;
+    if (left.type === AST_NODE_TYPES.ObjectPattern) {
+      return propertiesForceBreak(left.properties, true);
+    }
+    if (left.type === AST_NODE_TYPES.ArrayPattern) {
+      return arrayPatternForcesBreak(left);
+    }
+    return false;
+  }
+
+  if (node.type === AST_NODE_TYPES.RestElement) {
+    return patternValueForcesBreak(node.argument);
+  }
+
+  return false;
+}
+
+/** An array pattern has no nesting rule of its own; it only inherits a break. */
+function arrayPatternForcesBreak(pattern: TSESTree.ArrayPattern): boolean {
+  // A hole is `null` in the element list and prints as a bare separator, so it
+  // can never carry a break of its own.
+  return pattern.elements.some((element) =>
+    element ? patternValueForcesBreak(element) : false,
+  );
+}
+
+/**
+ * Whether prettier prints an object pattern built from these properties
+ * EXPANDED — one property per line with a trailing comma.
+ *
+ * Prettier breaks such a pattern as soon as any property's value is itself an
+ * object or array pattern, whatever the width (`printObject`'s `shouldBreak`).
+ * A width budget cannot see that rule, so emitting the flat spelling hands agora
+ * source that `eslint --fix` produces and the very next formatter run rewrites
+ * (#2081). `isDefaultLeft` carries prettier's single exception, described in
+ * patternValueForcesBreak.
+ *
+ * Only an object-pattern VALUE triggers the rule here: an array-pattern value
+ * leaves formatPropertyText as `key: [...] = []`, an assignment pattern, which
+ * prettier keeps flat.
+ */
+function propertiesForceBreak(
+  properties: readonly (TSESTree.Property | TSESTree.RestElement)[],
+  isDefaultLeft: boolean,
+): boolean {
+  const breaksOnOwnNesting =
+    !isDefaultLeft &&
+    properties.some(
+      (property) =>
+        property.type === AST_NODE_TYPES.Property &&
+        property.value.type === AST_NODE_TYPES.ObjectPattern,
+    );
+
+  return (
+    breaksOnOwnNesting ||
+    properties.some((property) =>
+      patternValueForcesBreak(
+        property.type === AST_NODE_TYPES.Property
+          ? property.value
+          : property.argument,
+      ),
+    )
+  );
+}
+
+/**
+ * Lays parts out the way prettier does: flat with inner spaces for an object and
+ * none for an array, or one part per line indented a step in. A rest element
+ * takes no trailing comma — that spelling is a syntax error, not a style choice.
+ */
+function joinPatternParts(
+  parts: string[],
+  delimiters: '{}' | '[]',
+  broken: boolean,
+  indent: string,
+): string {
+  const [open, close] = delimiters;
+
+  if (!broken) {
+    if (delimiters === '[]') {
+      return `[${parts.join(', ')}]`;
+    }
+    return parts.length ? `{ ${parts.join(', ')} }` : '{}';
+  }
+
+  const childIndent = `${indent}${INDENT_UNIT}`;
+  const lastIndex = parts.length - 1;
+  const body = parts
+    .map((part, index) => {
+      const comma = index === lastIndex && part.startsWith('...') ? '' : ',';
+      return `${childIndent}${part}${comma}`;
+    })
+    .join('\n');
+
+  return `${open}\n${body}\n${indent}${close}`;
+}
+
 function renderArrayPatternWithDefaults(
   pattern: TSESTree.ArrayPattern,
   sourceCode: TSESLint.SourceCode,
+  indent: string,
 ): string {
+  const broken = arrayPatternForcesBreak(pattern);
+  const childIndent = broken ? `${indent}${INDENT_UNIT}` : indent;
+
   const elements = pattern.elements.map((element) => {
     if (!element) return '';
     if (element.type === AST_NODE_TYPES.Identifier) {
       return sourceCode.getText(element);
     }
     if (element.type === AST_NODE_TYPES.AssignmentPattern) {
-      const left = element.left;
-      const leftText =
-        left.type === AST_NODE_TYPES.ObjectPattern
-          ? renderObjectPatternWithDefaults(left, sourceCode)
-          : left.type === AST_NODE_TYPES.ArrayPattern
-          ? renderArrayPatternWithDefaults(left, sourceCode)
-          : sourceCode.getText(left);
+      const leftText = renderPatternLeft(element.left, sourceCode, childIndent);
       return `${leftText} = ${sourceCode.getText(element.right)}`;
     }
     if (element.type === AST_NODE_TYPES.ObjectPattern) {
       // No synthesized `= {}` here either, for the reason spelled out in
       // formatPropertyText: the default is checked against the bindings under it.
-      return renderObjectPatternWithDefaults(element, sourceCode);
+      return renderObjectPatternWithDefaults(
+        element,
+        sourceCode,
+        childIndent,
+        false,
+      );
     }
     if (element.type === AST_NODE_TYPES.ArrayPattern) {
-      const nested = renderArrayPatternWithDefaults(element, sourceCode);
+      const nested = renderArrayPatternWithDefaults(
+        element,
+        sourceCode,
+        childIndent,
+      );
       return `${nested} = []`;
     }
     if (element.type === AST_NODE_TYPES.RestElement) {
-      const argument = element.argument;
-      if (argument.type === AST_NODE_TYPES.ObjectPattern) {
-        return `...${renderObjectPatternWithDefaults(argument, sourceCode)}`;
-      }
-      if (argument.type === AST_NODE_TYPES.ArrayPattern) {
-        return `...${renderArrayPatternWithDefaults(argument, sourceCode)}`;
-      }
-      return `...${sourceCode.getText(argument)}`;
+      return renderRestElementProperty(element, sourceCode, childIndent);
     }
     return sourceCode.getText(element);
   });
 
-  return `[${elements.join(', ')}]`;
+  return joinPatternParts(elements, '[]', broken, indent);
 }
 
 function formatPropertyText(
   property: TSESTree.Property | TSESTree.RestElement,
   sourceCode: TSESLint.SourceCode,
+  indent: string,
 ): string {
   if (property.type === AST_NODE_TYPES.RestElement) {
-    return renderRestElementProperty(property, sourceCode);
+    return renderRestElementProperty(property, sourceCode, indent);
   }
 
   if (property.shorthand) {
@@ -693,7 +820,13 @@ function formatPropertyText(
   const value = property.value;
 
   if (value.type === AST_NODE_TYPES.AssignmentPattern) {
-    return renderPropertyWithAssignment(property, value, keyText, sourceCode);
+    return renderPropertyWithAssignment(
+      property,
+      value,
+      keyText,
+      sourceCode,
+      indent,
+    );
   }
 
   if (value.type === AST_NODE_TYPES.ObjectPattern) {
@@ -704,25 +837,23 @@ function formatPropertyText(
     // The default also only ever guarded a nullish parent (an explicitly `null`
     // one still throws), so dropping it costs a partial runtime guard and buys
     // back the invariant that compiling input yields compiling output.
-    const nested = renderObjectPatternWithDefaults(value, sourceCode);
+    const nested = renderObjectPatternWithDefaults(
+      value,
+      sourceCode,
+      indent,
+      false,
+    );
     return `${keyText}: ${nested}`;
   }
 
   if (value.type === AST_NODE_TYPES.ArrayPattern) {
     // An array pattern's `= []` default is safe to synthesize: TypeScript does
     // not push it down onto the element bindings the way it does for objects.
-    const nested = renderArrayPatternWithDefaults(value, sourceCode);
+    const nested = renderArrayPatternWithDefaults(value, sourceCode, indent);
     return `${keyText}: ${nested} = []`;
   }
 
   return `${keyText}: ${sourceCode.getText(value)}`;
-}
-
-function renderObjectProperty(
-  property: TSESTree.Property,
-  sourceCode: TSESLint.SourceCode,
-): string {
-  return formatPropertyText(property, sourceCode);
 }
 
 function renderPropertyKey(
@@ -739,6 +870,7 @@ function renderPropertyWithAssignment(
   value: TSESTree.AssignmentPattern,
   keyText: string,
   sourceCode: TSESLint.SourceCode,
+  indent: string,
 ): string {
   const left = value.left;
   if (
@@ -752,20 +884,21 @@ function renderPropertyWithAssignment(
     )}`;
   }
 
-  const leftText = renderPatternLeft(left, sourceCode);
+  const leftText = renderPatternLeft(left, sourceCode, indent);
   return `${keyText}: ${leftText} = ${sourceCode.getText(value.right)}`;
 }
 
 function renderPatternLeft(
   node: TSESTree.Node,
   sourceCode: TSESLint.SourceCode,
+  indent: string,
 ): string {
   if (node.type === AST_NODE_TYPES.ObjectPattern) {
-    return renderObjectPatternWithDefaults(node, sourceCode);
+    return renderObjectPatternWithDefaults(node, sourceCode, indent, true);
   }
 
   if (node.type === AST_NODE_TYPES.ArrayPattern) {
-    return renderArrayPatternWithDefaults(node, sourceCode);
+    return renderArrayPatternWithDefaults(node, sourceCode, indent);
   }
 
   return sourceCode.getText(node);
@@ -774,13 +907,19 @@ function renderPatternLeft(
 function renderRestElementProperty(
   property: TSESTree.RestElement,
   sourceCode: TSESLint.SourceCode,
+  indent: string,
 ): string {
   const argument = property.argument;
   if (argument.type === AST_NODE_TYPES.ObjectPattern) {
-    return `...${renderObjectPatternWithDefaults(argument, sourceCode)}`;
+    return `...${renderObjectPatternWithDefaults(
+      argument,
+      sourceCode,
+      indent,
+      false,
+    )}`;
   }
   if (argument.type === AST_NODE_TYPES.ArrayPattern) {
-    return `...${renderArrayPatternWithDefaults(argument, sourceCode)}`;
+    return `...${renderArrayPatternWithDefaults(argument, sourceCode, indent)}`;
   }
   return `...${sourceCode.getText(argument)}`;
 }
@@ -788,27 +927,47 @@ function renderRestElementProperty(
 function renderObjectPatternWithDefaults(
   pattern: TSESTree.ObjectPattern,
   sourceCode: TSESLint.SourceCode,
+  indent: string,
+  isDefaultLeft: boolean,
 ): string {
-  const properties = pattern.properties.map((property) => {
-    if (property.type === AST_NODE_TYPES.Property) {
-      return renderObjectProperty(property, sourceCode);
-    }
-
-    if (property.type === AST_NODE_TYPES.RestElement) {
-      return renderRestElementProperty(property, sourceCode);
-    }
-
-    return sourceCode.getText(property);
-  });
-
-  return `{ ${properties.join(', ')} }`;
+  return renderPatternFromProperties(
+    pattern.properties,
+    sourceCode,
+    indent,
+    isDefaultLeft,
+  );
 }
 
+/**
+ * The hoisted pattern is assembled from properties that may come from several
+ * source declarations, so the layout decision is taken over a property LIST
+ * rather than over any single authored pattern.
+ */
+function renderPatternFromProperties(
+  properties: readonly (TSESTree.Property | TSESTree.RestElement)[],
+  sourceCode: TSESLint.SourceCode,
+  indent: string,
+  isDefaultLeft: boolean,
+): string {
+  const broken = propertiesForceBreak(properties, isDefaultLeft);
+  const childIndent = broken ? `${indent}${INDENT_UNIT}` : indent;
+  const parts = properties.map((property) =>
+    formatPropertyText(property, sourceCode, childIndent),
+  );
+
+  return joinPatternParts(parts, '{}', broken, indent);
+}
+
+/**
+ * The dedup key for a collected property. Rendered at column zero so the key is
+ * a property of the property alone: the indentation the emission finally uses is
+ * decided later, once every group's properties are known.
+ */
 function getSafePropertyText(
   property: TSESTree.Property | TSESTree.RestElement,
   sourceCode: TSESLint.SourceCode,
 ): string {
-  return formatPropertyText(property, sourceCode);
+  return formatPropertyText(property, sourceCode, '');
 }
 
 function dependencyElements(
@@ -980,6 +1139,41 @@ function removalRange(
     return [range[0], range[1] + 1];
   }
   return [range[0], range[1]];
+}
+
+/**
+ * The comments removing `declarations` would delete outright.
+ *
+ * `removalRange` takes the whole statement — every line of it once the pattern
+ * is written expanded — so a comment authored inside the destructure goes with
+ * it. That comment belongs to the statement being MOVED, not to the callback the
+ * statement is leaving, so the hoist carries it rather than dropping it (#2081).
+ * A comment on the line above the declaration is untouched here: the removal
+ * starts at the declaration's own line, so it stays where its neighbour is.
+ */
+function carriedCommentsOf(
+  declarations: TSESTree.VariableDeclaration[],
+  sourceCode: TSESLint.SourceCode,
+): string[] {
+  const spans = declarations.map((declaration) =>
+    removalRange(declaration, sourceCode),
+  );
+  const text = sourceCode.getText();
+
+  const carried: string[] = [];
+  for (const comment of sourceCode.getAllComments()) {
+    const range = comment.range;
+    if (!range) continue;
+    const [start, end] = range;
+    const swallowed = spans.some(
+      ([spanStart, spanEnd]) => start >= spanStart && end <= spanEnd,
+    );
+    if (swallowed) {
+      carried.push(text.slice(start, end));
+    }
+  }
+
+  return carried;
 }
 
 function isAnyFunctionLikeNode(node: TSESTree.Node): boolean {
@@ -1485,7 +1679,7 @@ function generateHoistingFixes(
 ): TSESLint.RuleFix[] {
   const { declarationsToRemove, initsToIgnore, reservedNames } = validation;
   const indent = getIndentation(insertionStatement, sourceCode);
-  const hoistedLines: string[] = [];
+  const hoistedEntries: { comments: string[]; declaration: string }[] = [];
   const baseUsageByObject = new Map<string, boolean>();
 
   for (const [depKey, group] of groups.entries()) {
@@ -1521,13 +1715,19 @@ function generateHoistingFixes(
     const sortedProps = Array.from(group.properties.values()).sort(
       (a, b) => a.order - b.order,
     );
-    const pattern = `{ ${sortedProps.map((p) => p.text).join(', ')} }`;
-    hoistedLines.push(
-      `const ${pattern} = ${nullishSourceText(
+    const pattern = renderPatternFromProperties(
+      sortedProps.map((property) => property.node),
+      sourceCode,
+      indent,
+      false,
+    );
+    hoistedEntries.push({
+      comments: carriedCommentsOf(group.declarations, sourceCode),
+      declaration: `const ${pattern} = ${nullishSourceText(
         group.objectText,
         group.inits[0],
       )} ?? {};`,
-    );
+    });
   }
 
   reservedNamesByScope.set(scope, updatedReservedNames);
@@ -1550,16 +1750,26 @@ function generateHoistingFixes(
   const ownsItsLine = /^[\t ]*$/.test(
     text.slice(lineStart, insertionStatement.range![0]),
   );
+  // A carried comment always ends its own line. On the own-line branch that is
+  // just the surrounding layout; on the inline branch it is load-bearing, since
+  // a `//` comment joined onto one line would comment out the declaration and
+  // the hook call after it.
+  const ownLineText = hoistedEntries
+    .flatMap((entry) => [...entry.comments, entry.declaration])
+    .map((line) => `${indent}${line}`)
+    .join('\n');
+  const inlineComments = hoistedEntries.flatMap((entry) => entry.comments);
+  const inlineDeclarations = hoistedEntries
+    .map((entry) => entry.declaration)
+    .join(' ');
+  const inlineText = inlineComments.length
+    ? `${inlineComments.join('\n')}\n${inlineDeclarations} `
+    : `${inlineDeclarations} `;
+
   const fixes = [
     ownsItsLine
-      ? fixer.insertTextBeforeRange(
-          [lineStart, lineStart],
-          `${hoistedLines.map((line) => `${indent}${line}`).join('\n')}\n`,
-        )
-      : fixer.insertTextBefore(
-          insertionStatement,
-          `${hoistedLines.join(' ')} `,
-        ),
+      ? fixer.insertTextBeforeRange([lineStart, lineStart], `${ownLineText}\n`)
+      : fixer.insertTextBefore(insertionStatement, inlineText),
     fixer.replaceText(depsArray, `[${newDepTexts.join(', ')}]`),
   ];
 

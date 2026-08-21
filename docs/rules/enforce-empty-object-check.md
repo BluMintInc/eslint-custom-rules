@@ -78,6 +78,30 @@ function buildNotification(id: string) {
 }
 ```
 
+### ✅ Parentheses in the fix
+
+The fix emits `!obj || Object.keys(obj).length === 0` and groups it in
+parentheses only where the position it lands in needs them. `||` binds looser
+than nearly every other operator, so the grouping is load-bearing beside an `&&`
+and mandatory beside a `??` (which may not mix with `||` unparenthesized at
+all), and superfluous wherever the surrounding syntax already delimits the
+expression — an `if`, `while`, `do…while` or `for` header, a ternary branch,
+another `||` operand, or parentheses the author already wrote. Grouping
+unconditionally would emit a pair prettier deletes, so `--fix` would leave
+source no formatter prints.
+
+```ts
+// Directly inside the `if` parentheses: the header already groups it.
+if (!userConfig || Object.keys(userConfig).length === 0) {
+  useDefaults();
+}
+
+// Beside `&&`, which binds tighter: the parentheses carry the meaning.
+if (isReady && (!userConfig || Object.keys(userConfig).length === 0)) {
+  useDefaults();
+}
+```
+
 ## Options
 
 ```json
