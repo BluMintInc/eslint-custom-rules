@@ -684,7 +684,8 @@ ds.set({
 `,
         errors: [{ messageId: 'enforceFieldPathSyntax' }],
       },
-      // A multiline leaf value is spliced verbatim
+      // A multiline leaf value keeps its own nesting but lands at the depth its
+      // new enclosing scope implies, so prettier has nothing left to re-indent
       {
         code: `
 const ds = new DocSetter();
@@ -701,9 +702,9 @@ ds.set({
 const ds = new DocSetter();
 ds.set({
   'data.tags': [
-      'a',
-      'b',
-    ],
+    'a',
+    'b',
+  ],
 });
 `,
         errors: [{ messageId: 'enforceFieldPathSyntax' }],
@@ -738,6 +739,235 @@ ds.set({
 const ds = new DocSetter();
 ds.set({
   'id.nested': 1,
+});
+`,
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+      },
+      // Issue #2083: the body lifted out of the nested object lands two columns
+      // shallower, so every line it brings with it has to move with it. Leaving
+      // them at their old depth emits text prettier rewrites on sight.
+      {
+        code: `
+const ds = new DocSetter();
+ds.set({
+  handlers: {
+    *onDone() {
+      yield 1;
+    },
+  },
+});
+`,
+        output: `
+const ds = new DocSetter();
+ds.set({
+  'handlers.onDone': function* () {
+    yield 1;
+  },
+});
+`,
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+      },
+      // Nesting inside the moved span is relative, so a multi-level body shifts
+      // as a block rather than collapsing onto one column
+      {
+        code: `
+const ds = new DocSetter();
+ds.set({
+  settings: {
+    display: {
+      render() {
+        if (dark) {
+          return 'dark';
+        }
+        return 'light';
+      },
+    },
+  },
+});
+`,
+        output: `
+const ds = new DocSetter();
+ds.set({
+  'settings.display.render': function () {
+    if (dark) {
+      return 'dark';
+    }
+    return 'light';
+  },
+});
+`,
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+      },
+      // The delta is read from the landing column, not assumed to be one nesting
+      // step outwards: a leaf written shallower than its own key moves DEEPER
+      {
+        code: `
+const ds = new DocSetter();
+ds.set({
+      data: {
+  tags: [
+    'a',
+  ],
+      },
+});
+`,
+        output: `
+const ds = new DocSetter();
+ds.set({
+      'data.tags': [
+        'a',
+      ],
+});
+`,
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+      },
+      // Padding a blank line would leave trailing whitespace, which is a
+      // fixed-point failure of its own
+      {
+        code: `
+const ds = new DocSetter();
+ds.set({
+      handlers: {
+  onDone() {
+    const a = 1;
+
+    return a;
+  },
+      },
+});
+`,
+        output: `
+const ds = new DocSetter();
+ds.set({
+      'handlers.onDone': function () {
+        const a = 1;
+
+        return a;
+      },
+});
+`,
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+      },
+      // Leading whitespace inside a template literal is part of the string's
+      // VALUE, so the moved body is re-indented around it and the literal
+      // survives byte for byte
+      {
+        code: `
+const ds = new DocSetter();
+ds.set({
+  handlers: {
+    onDone() {
+      return \`first
+  second
+third\`;
+    },
+  },
+});
+`,
+        output: `
+const ds = new DocSetter();
+ds.set({
+  'handlers.onDone': function () {
+    return \`first
+  second
+third\`;
+  },
+});
+`,
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+      },
+      // The same holds when the literal is the relocated leaf itself
+      {
+        code: `
+const ds = new DocSetter();
+ds.set({
+  data: {
+    body: \`first
+  second
+third\`,
+  },
+});
+`,
+        output: `
+const ds = new DocSetter();
+ds.set({
+  'data.body': \`first
+  second
+third\`,
+});
+`,
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+      },
+      // A tab-indented span shifts by whole tabs; measuring the delta in columns
+      // would rewrite the file's indentation style
+      {
+        code: '\nconst ds = new DocSetter();\nds.set({\n\tdata: {\n\t\ttags: [\n\t\t\t1,\n\t\t],\n\t},\n});\n',
+        output:
+          "\nconst ds = new DocSetter();\nds.set({\n\t'data.tags': [\n\t\t1,\n\t],\n});\n",
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+      },
+      // Tabs landing in a space-indented object share no prefix to add or
+      // remove, so the span is left where it was rather than guessing a width
+      {
+        code: '\nconst ds = new DocSetter();\nds.set({\n  data: {\n\t\ttags: [\n\t\t\t1,\n\t\t],\n  },\n});\n',
+        output:
+          "\nconst ds = new DocSetter();\nds.set({\n  'data.tags': [\n\t\t\t1,\n\t\t],\n});\n",
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+      },
+      // A hoisted comment is relocated text too: a `*`-aligned block realigns to
+      // the depth it lands at, exactly as prettier would print it
+      {
+        code: `
+const ds = new DocSetter();
+ds.set({
+  settings: {
+    display: {
+      /**
+       * Theme is user scoped.
+       */
+      theme: 'dark',
+    },
+  },
+});
+`,
+        output: `
+const ds = new DocSetter();
+ds.set({
+  /**
+   * Theme is user scoped.
+   */
+  'settings.display.theme': 'dark',
+});
+`,
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+      },
+      // A string continued with a backslash spans lines the same way a template
+      // literal does, and its second line is likewise part of the value
+      {
+        code: "\nconst ds = new DocSetter();\nds.set({\n  handlers: {\n    onDone() {\n      return 'foo \\\nbar';\n    },\n  },\n});\n",
+        output:
+          "\nconst ds = new DocSetter();\nds.set({\n  'handlers.onDone': function () {\n    return 'foo \\\nbar';\n  },\n});\n",
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+      },
+      // A block comment that is not `*`-aligned carries prose in its interior
+      // whitespace, so it is reproduced verbatim
+      {
+        code: `
+const ds = new DocSetter();
+ds.set({
+  settings: {
+    /* theme
+       is user scoped */
+    theme: 'dark',
+  },
+});
+`,
+        output: `
+const ds = new DocSetter();
+ds.set({
+  /* theme
+       is user scoped */
+  'settings.theme': 'dark',
 });
 `,
         errors: [{ messageId: 'enforceFieldPathSyntax' }],
@@ -879,5 +1109,82 @@ describe('enforce-fieldpath-syntax-in-docsetter: the fixed payload parses (issue
     expect(() =>
       parses(payload("'handlers.onDone': function () { return 1; }")),
     ).not.toThrow();
+  });
+});
+
+// Issue #2083: the fixer lifts a nested value to a new column, and a relocated
+// span's continuation lines have to move with it or prettier rewrites the fix on
+// sight. Re-indenting is a layout edit, so it must stop at the boundary of any
+// text whose leading whitespace is DATA. RuleTester compares strings, which
+// makes it a fine oracle for byte identity — the assertion below states the
+// invariant the string comparison is standing in for.
+describe('enforce-fieldpath-syntax-in-docsetter: relocation keeps data intact (issue #2083)', () => {
+  const RULE_ID = '@blumintinc/blumint/enforce-fieldpath-syntax-in-docsetter';
+
+  const lint = (code: string) => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      RULE_ID,
+      enforceFieldPathSyntaxInDocSetter as unknown as Rule.RuleModule,
+    );
+    return linter.verifyAndFix(
+      code,
+      {
+        parser: '@typescript-eslint/parser',
+        parserOptions: {
+          ecmaVersion: 2020 as const,
+          sourceType: 'module' as const,
+        },
+        rules: { [RULE_ID]: 'error' as const },
+      },
+      'save.ts',
+    ).output;
+  };
+
+  const LITERAL = ['`first', '  second', 'third`'].join('\n');
+
+  it('carries a multi-line template literal through the move byte for byte', () => {
+    const source = [
+      'const ds = new DocSetter();',
+      'ds.set({',
+      '  handlers: {',
+      '    onDone() {',
+      `      return ${LITERAL};`,
+      '    },',
+      '  },',
+      '});',
+      '',
+    ].join('\n');
+
+    const output = lint(source);
+
+    // Non-vacuity: a fixer that declined would preserve the literal trivially
+    expect(output).not.toBe(source);
+    expect(output).toContain("'handlers.onDone': function () {");
+    expect(output).toContain(LITERAL);
+  });
+
+  it('moves the surrounding body even though the literal is pinned', () => {
+    const output = lint(
+      [
+        'const ds = new DocSetter();',
+        'ds.set({',
+        '  handlers: {',
+        '    onDone() {',
+        `      return ${LITERAL};`,
+        '    },',
+        '  },',
+        '});',
+        '',
+      ].join('\n'),
+    );
+
+    // The `return` line rode two columns outwards with its new enclosing scope
+    expect(output).toContain(`\n    return ${LITERAL.split('\n')[0]}`);
   });
 });

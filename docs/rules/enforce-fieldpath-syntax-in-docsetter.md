@@ -177,6 +177,34 @@ await docSetter.set({
 
 A getter or setter is left alone instead: its body runs on access rather than holding a value, so no FieldPath entry can carry it. A method referencing `super` is left alone too, because `super` resolves through the enclosing object literal and a function expression has nothing for it to resolve through.
 
+### Indentation of the relocated value
+
+Flattening lifts a nested value out to its parent's column. A multi-line value carries the indentation of the depth it was written at, so every line after the first is shifted by the same amount — the landing column minus the column the value opened at — which moves the span while preserving the nesting inside it:
+
+```javascript
+const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
+await docSetter.set({
+  handlers: {
+    *onDone() {
+      yield 1;
+    },
+  },
+});
+// Becomes:
+// await docSetter.set({
+//   'handlers.onDone': function* () {
+//     yield 1;
+//   },
+// });
+```
+
+Two kinds of line are left exactly where they are, because their leading whitespace is content rather than layout:
+
+- lines inside a multi-line template literal, where the indentation is part of the string's value
+- the interior of a block comment that is not `*`-aligned, where the indentation is part of the prose
+
+A `*`-aligned block comment is realigned along with the code it is attached to. A span whose indentation mixes tabs and spaces with the landing column has no delta expressible as whitespace, so it is left at its original depth rather than being rewritten with a guessed tab width.
+
 ### Mixed Nesting
 
 You can mix already-flattened paths with nested objects:
@@ -198,6 +226,7 @@ This rule provides automatic fixes that convert nested object syntax into FieldP
 1. Rewrite only the properties that need flattening, so every other property keeps its position, its comments, and its indentation byte-for-byte
 1. Carry comments found inside a flattened property onto the rewritten property, which keeps `eslint-disable-next-line` directives covering the code they were written for
 1. Re-emit a method shorthand as a function expression, since a FieldPath key needs a value in expression position
+1. Re-indent the relocated value to the column it lands in, so the fix is already formatted the way Prettier would print it
 1. Decline to rewrite a nested property that cannot be flattened losslessly — one containing a spread, a computed key, an accessor, a method referencing `super`, or nothing at all. The violation is still reported so you can flatten it by hand instead of receiving a fix that drops payload fields.
 
 ## When Not to Use

@@ -210,6 +210,76 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
       return sourceCode.getText(property.value);
     }
 
+    type FieldPathEntry = {
+      key: string;
+      valueText: string;
+      /** Line the copied value text was laid out against. */
+      sourceLine: number;
+      /** Absolute source lines whose leading whitespace must not be shifted. */
+      frozenLines: ReadonlySet<number>;
+    };
+
+    // A block comment whose continuation lines are `*`-aligned is layout that
+    // moves with the code around it — prettier realigns those stars to the
+    // comment's new column. Any other block comment is prose whose interior
+    // prettier reproduces verbatim.
+    function isStarAligned(comment: TSESTree.Comment): boolean {
+      return comment.value
+        .split('\n')
+        .slice(1)
+        .every((line) => {
+          const trimmed = line.trim();
+          return trimmed === '' || trimmed.startsWith('*');
+        });
+    }
+
+    const NO_FROZEN_LINES: ReadonlySet<number> = new Set();
+
+    // Lines inside the relocated span whose leading whitespace is data rather
+    // than layout: a template literal and a line-continued string carry it in
+    // the string's value, and a non-aligned block comment carries it in text
+    // this fixer does not own. Shifting either would be a correctness defect,
+    // not a formatting one.
+    function frozenLinesOf(
+      value: TSESTree.Node,
+      sourceCode: TSESLint.SourceCode,
+    ): ReadonlySet<number> {
+      // A value occupying one line brings no continuation lines to shift
+      if (value.loc.start.line === value.loc.end.line) {
+        return NO_FROZEN_LINES;
+      }
+
+      const frozen = new Set<number>();
+
+      const freezeInterior = (loc: TSESTree.SourceLocation) => {
+        for (let line = loc.start.line + 1; line <= loc.end.line; line++) {
+          frozen.add(line);
+        }
+      };
+
+      for (const token of sourceCode.getTokens(value)) {
+        if (
+          (token.type === AST_TOKEN_TYPES.Template ||
+            token.type === AST_TOKEN_TYPES.String) &&
+          token.loc.start.line !== token.loc.end.line
+        ) {
+          freezeInterior(token.loc);
+        }
+      }
+
+      for (const comment of sourceCode.getCommentsInside(value)) {
+        if (
+          comment.type === AST_TOKEN_TYPES.Block &&
+          comment.loc.start.line !== comment.loc.end.line &&
+          !isStarAligned(comment)
+        ) {
+          freezeInterior(comment.loc);
+        }
+      }
+
+      return frozen;
+    }
+
     // Collect the FieldPath entries a nested property flattens into, or bail out
     // when flattening would silently drop payload data (spreads, computed keys,
     // accessors, unsupported key literals) or would produce nothing at all.
@@ -219,8 +289,8 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
       obj: TSESTree.ObjectExpression,
       prefix: string,
       sourceCode: TSESLint.SourceCode,
-    ): [string, string][] | null {
-      const entries: [string, string][] = [];
+    ): FieldPathEntry[] | null {
+      const entries: FieldPathEntry[] = [];
 
       for (const property of obj.properties) {
         // A getter or setter is declined even though it is spelled like a
@@ -259,7 +329,14 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
           return null;
         }
 
-        entries.push([fullKey, valueText]);
+        entries.push({
+          key: fullKey,
+          valueText,
+          // The copied text was laid out against the line its value opens on,
+          // which is the depth every continuation line is relative to
+          sourceLine: property.value.loc.start.line,
+          frozenLines: frozenLinesOf(property.value, sourceCode),
+        });
       }
 
       return entries.length > 0 ? entries : null;
@@ -267,6 +344,55 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
 
     function getLineIndent(line: string): string {
       return /^[\t ]*/u.exec(line)?.[0] ?? '';
+    }
+
+    // Flattening lifts a nested value out to its parent's column, but the text
+    // copied with it still carries the indentation of the depth it was written
+    // at, so every line after the first lands too deep (or too shallow) and
+    // prettier immediately rewrites the fix (#2083). Shifting all of them by the
+    // same delta moves the span to its landing depth while preserving the
+    // relative nesting inside it.
+    function reindentRelocated(
+      text: string,
+      fromIndent: string,
+      toIndent: string,
+      firstLine: number,
+      frozenLines: ReadonlySet<number>,
+    ): string {
+      const lines = text.split('\n');
+      if (fromIndent === toIndent || lines.length === 1) {
+        return text;
+      }
+
+      // Tabs and spaces that share no prefix have no delta expressible as
+      // whitespace, and picking a tab width would rewrite the file's own
+      // indentation style, so such a span is left where it was
+      const deepening = toIndent.startsWith(fromIndent);
+      const shallowing = fromIndent.startsWith(toIndent);
+      if (!deepening && !shallowing) {
+        return text;
+      }
+
+      const added = deepening ? toIndent.slice(fromIndent.length) : '';
+      const removed = shallowing ? fromIndent.slice(toIndent.length) : '';
+
+      return lines
+        .map((line, offset) => {
+          // The first line is emitted at the landing column by the caller, and
+          // a frozen line's leading whitespace belongs to a string or a comment
+          if (offset === 0 || frozenLines.has(firstLine + offset)) {
+            return line;
+          }
+          if (deepening) {
+            // Padding a blank line would leave trailing whitespace prettier
+            // strips, which is itself a fixed-point failure
+            return line.trim() === '' ? line : `${added}${line}`;
+          }
+          // A line shallower than the delta cannot absorb it; leaving it put
+          // keeps the fix from eating indentation that is not the span's
+          return line.startsWith(removed) ? line.slice(removed.length) : line;
+        })
+        .join('\n');
     }
 
     // Indentation of the property when it is the first thing on its line, which
@@ -288,37 +414,83 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
         : `/*${comment.value}*/`;
     }
 
+    // A hoisted comment is relocated text like any other, so its continuation
+    // lines move to the landing depth too (#2083). Only a `*`-aligned block has
+    // continuation lines that are layout; every other block comment's interior
+    // is prose prettier reproduces byte for byte, and so is frozen here.
+    function printRelocatedComment(
+      comment: TSESTree.Comment,
+      landingIndent: string,
+      sourceCode: TSESLint.SourceCode,
+    ): string {
+      const frozenLines = new Set<number>();
+      if (!isStarAligned(comment)) {
+        for (
+          let line = comment.loc.start.line + 1;
+          line <= comment.loc.end.line;
+          line++
+        ) {
+          frozenLines.add(line);
+        }
+      }
+
+      return reindentRelocated(
+        printComment(comment),
+        getLineIndent(sourceCode.lines[comment.loc.start.line - 1] ?? ''),
+        landingIndent,
+        comment.loc.start.line,
+        frozenLines,
+      );
+    }
+
     // Render the dot-path replacement for a single nested property. Comments
     // living inside the property are re-emitted ahead of the flattened entries
     // so directives such as eslint-disable-next-line keep covering the rewritten
     // code rather than being destroyed by the fix.
     function renderFlattenedProperty(
       property: TSESTree.Property,
-      entries: [string, string][],
+      entries: FieldPathEntry[],
       sourceCode: TSESLint.SourceCode,
     ): string {
       const comments = sourceCode.getCommentsInside(property);
-      const commentTexts = comments.map(printComment);
-      const printedEntries = entries.map(
-        ([key, value]) => `${needsQuoting(key) ? `'${key}'` : key}: ${value}`,
-      );
       const ownLineIndent = getOwnLineIndent(property, sourceCode);
       // A carried line comment would swallow the rest of the line, so anything
       // holding one has to be laid out across multiple lines
       const carriesLineComment = comments.some(
         (comment) => comment.type === AST_TOKEN_TYPES.Line,
       );
+      const propertyLineIndent = getLineIndent(
+        sourceCode.lines[property.loc.start.line - 1] ?? '',
+      );
+      // Column every entry is emitted at, and so the depth the text moving with
+      // it has to be re-indented against. A property sharing its line keeps the
+      // enclosing line's depth; one broken apart by a carried line comment gains
+      // a nesting step, read from the object literal it is already inside.
+      const landingIndent =
+        ownLineIndent ??
+        (carriesLineComment ? `${propertyLineIndent}  ` : propertyLineIndent);
+
+      const commentTexts = comments.map((comment) =>
+        printRelocatedComment(comment, landingIndent, sourceCode),
+      );
+      const printedEntries = entries.map((entry) => {
+        const valueText = reindentRelocated(
+          entry.valueText,
+          getLineIndent(sourceCode.lines[entry.sourceLine - 1] ?? ''),
+          landingIndent,
+          entry.sourceLine,
+          entry.frozenLines,
+        );
+        return `${
+          needsQuoting(entry.key) ? `'${entry.key}'` : entry.key
+        }: ${valueText}`;
+      });
 
       if (ownLineIndent === null && !carriesLineComment) {
         return [...commentTexts, printedEntries.join(', ')].join(' ');
       }
 
-      const indent =
-        ownLineIndent ??
-        `${getLineIndent(
-          sourceCode.lines[property.loc.start.line - 1] ?? '',
-        )}  `;
-      const separator = `\n${indent}`;
+      const separator = `\n${landingIndent}`;
       return [...commentTexts, printedEntries.join(`,${separator}`)].join(
         separator,
       );
