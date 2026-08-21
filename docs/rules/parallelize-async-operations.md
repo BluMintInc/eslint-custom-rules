@@ -380,6 +380,51 @@ for (const r of results) {
 
 A comment between the merged awaits is re-hosted on its own line directly above the `Promise.all` element built from the statement it annotated, so an `eslint-disable-next-line` directive keeps suppressing the code that survives inside the array. When no placement can preserve what a comment governs — a trailing comment on a merged statement's own line (e.g. `// eslint-disable-line`), a comment between `await` and its operand, or a directive above a `const x = await ...` whose identifier moves into the destructuring pattern — the fix is declined and only the report is emitted, so no comment is ever silently deleted.
 
+### Autofix layout
+
+The fix authors a whole statement that a formatter owns, so it emits the layout Prettier would print rather than a fixed one.
+
+The operand array is joined onto one line while the statement fits inside [`printWidth`](#printwidth), and broken open one operand per line only past it. Wrapping unconditionally is not the safe direction: unlike an object literal, whose author-chosen expansion Prettier preserves, an array Prettier considers short enough is collapsed straight back onto one line, so a blanket wrap comes back rewritten on the next format run.
+
+```typescript
+// before
+async function loadPair() {
+  await alpha();
+  await beta();
+}
+
+// after --fix
+async function loadPair() {
+  await Promise.all([alpha(), beta()]);
+}
+```
+
+Once the destructuring pattern grows long enough that the call can no longer start on its line, Prettier breaks after the `=` instead of opening the array, and the fix follows:
+
+```typescript
+async function loadDashboard() {
+  const [leaderboardSnapshotEntries, tournamentSnapshotEntries] =
+    await Promise.all([one(), two()]);
+}
+```
+
+An operand that moves into the array is re-indented to the depth it lands at, so its own continuation lines travel with it. Re-indenting stops at any token that owns its lines — a multi-line template literal, a string written with a backslash continuation, a block comment — because that whitespace is data the program produces rather than layout:
+
+```typescript
+// after --fix
+async function seedFixtures() {
+  await Promise.all([
+    runQuery(`
+SELECT *
+  FROM users
+`),
+    withConnection(async (connection) => {
+      connection.release();
+    }),
+  ]);
+}
+```
+
 ## How to fix a violation
 
 - Wrap the independent await targets in a single `Promise.all([...])`.
@@ -432,6 +477,26 @@ A boolean (default: `true`) that exempts test files from the rule, as described 
       "error",
       {
         "ignoreTestFiles": false
+      }
+    ]
+  }
+}
+```
+
+### `printWidth`
+
+A number (default: `80`) giving the column the autofix lays the rewritten statement out against, as described in [Autofix layout](#autofix-layout). It has no effect on which sequences are reported.
+
+The width lives in the consumer's formatter configuration, which no rule context carries, so a project formatting at 100 or 120 states it here. Set too low, a statement that would have fit is emitted broken open and the formatter joins it back; set too high, an overflowing statement is emitted on one line and the formatter breaks it. Either way the fix still applies — only the diff churns on the next `prettier --write`.
+
+**Example configuration:**
+```json
+{
+  "rules": {
+    "@blumintinc/blumint/parallelize-async-operations": [
+      "error",
+      {
+        "printWidth": 120
       }
     ]
   }
