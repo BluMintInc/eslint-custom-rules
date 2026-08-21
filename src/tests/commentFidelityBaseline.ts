@@ -165,6 +165,8 @@ export const COMMENT_FIDELITY_BASELINE: Record<string, string> = {
   // `return useMemo(() => { ... }, [])` carrying no comment of its own, which
   // the probe trailing-marker variant turns into the parenthesised shape, so the
   // own-corpus guard keeps this entry honest.
+  'no-useless-usememo-primitives :: TRANSFORM_DIVERGED':
+    'parenthesises the inlined expression when a carried comment puts a line terminator inside a restricted production, where bare ASI would return `undefined` instead (#1963); both shapes carry the comment, so nothing is consumed (#2071)',
   // FORMATTING. The divergence is line wrapping and trailing commas only.
   // Verified by formatting both outputs with agora's pinned prettier (2.8.8,
   // not this repo's 2.7.1) and comparing code tokens: all cases converge. agora
