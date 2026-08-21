@@ -67,14 +67,38 @@ function isInsideModuleAugmentation(node: TSESTree.Node): boolean {
 const DEFAULT_INDENT_UNIT = '  ';
 
 /**
+ * Prettier's own default. The rule cannot read the consumer's formatter
+ * configuration, so the width it measures against is a rule option, and the
+ * default is the value a project that has never set one is formatted at.
+ */
+const DEFAULT_PRINT_WIDTH = 80;
+
+/**
+ * The columns a tab occupies in the width measurement, which is prettier's
+ * default `tabWidth` for the same reason `printWidth` defaults to 80: the
+ * formatter's setting is unreadable from here, so the measurement adopts the
+ * value a project that has never configured one is formatted at. Counting a tab
+ * as a single column instead puts a tab-indented file's boundary one column per
+ * nesting level too far out, which is a fix emitted onto a line the formatter
+ * reflows. A project indenting with wider tabs compensates by lowering
+ * `printWidth`.
+ */
+const DEFAULT_TAB_WIDTH = 2;
+
+/** Everything on `offset`'s line before it, indentation and keywords alike. */
+function linePrefixAt(sourceCode: TSESLint.SourceCode, offset: number): string {
+  const lineStart = sourceCode.text.lastIndexOf('\n', offset - 1) + 1;
+  return sourceCode.text.slice(lineStart, offset);
+}
+
+/**
  * The whitespace opening the line `offset` sits on. Read from the line start
  * rather than from the node, so a declaration the parent prefixes — `export
  * interface X` — still reports the indentation of its statement rather than an
  * empty string.
  */
 function lineIndentAt(sourceCode: TSESLint.SourceCode, offset: number): string {
-  const lineStart = sourceCode.text.lastIndexOf('\n', offset - 1) + 1;
-  return /^[ \t]*/.exec(sourceCode.text.slice(lineStart, offset))?.[0] ?? '';
+  return /^[ \t]*/.exec(linePrefixAt(sourceCode, offset))?.[0] ?? '';
 }
 
 /**
@@ -177,7 +201,86 @@ function needsIntersectionReflow(
     .includes('\n');
 }
 
-type MessageIds = 'preferType' | 'preferTypeDefaultExport';
+type RewritePlan = {
+  /** The declaration header — the name, plus any type-parameter list. */
+  header: TSESTree.Node;
+  /** Everything between the header and the body, replaced in one step. */
+  headerText: string;
+  reflow: boolean;
+  /** One level of indentation, as the body already spells it. */
+  unit: string;
+  /** Columns the rewrite puts on the line the alias opens. */
+  aliasLineWidth: number;
+};
+
+/**
+ * What the rewrite would emit, measured before anything is reported so the
+ * width can decide whether a fix is offered at all.
+ *
+ * The alias line is the rewrite's own contribution to the line the declaration
+ * opens: whatever already precedes the declaration on that line and survives
+ * the rewrite — indentation, and an `export` prefix, but not the `declare` the
+ * keyword swap consumes — then the alias head, and, when the emission puts no
+ * break of its own there, the body's first line and the terminator the alias
+ * needs.
+ */
+function planRewrite(
+  sourceCode: TSESLint.SourceCode,
+  node: TSESTree.TSInterfaceDeclaration,
+): RewritePlan {
+  const header = node.typeParameters ?? node.id;
+  const heritage = node.extends ?? [];
+  // `getText` round-trips type arguments and qualified names, so
+  // `extends ns.B<T>, C` becomes `ns.B<T> & C`.
+  const arms = heritage.map((clause) => sourceCode.getText(clause));
+
+  const baseIndent = lineIndentAt(sourceCode, node.range[0]);
+  const reflow = needsIntersectionReflow(sourceCode, node, heritage);
+  const unit = reflow
+    ? indentUnitOf(sourceCode, node, baseIndent)
+    : DEFAULT_INDENT_UNIT;
+  const joined = arms.length > 0 ? ` = ${arms.join(' & ')} & ` : ' = ';
+  const headerText = reflow
+    ? ` = ${arms.join(` &\n${baseIndent}${unit}`)} & `
+    : joined;
+
+  const aliasHead = `${linePrefixAt(
+    sourceCode,
+    node.range[0],
+  )}type ${sourceCode.text.slice(
+    node.id.range[0],
+    header.range[1],
+  )}${headerText}`;
+  const headBreak = aliasHead.indexOf('\n');
+  const bodyText = sourceCode.text.slice(...node.body.range);
+  const bodyBreak = bodyText.indexOf('\n');
+  const aliasLine =
+    headBreak !== -1
+      ? aliasHead.slice(0, headBreak)
+      : aliasHead +
+        (bodyBreak === -1 ? `${bodyText};` : bodyText.slice(0, bodyBreak));
+
+  return {
+    header,
+    headerText,
+    reflow,
+    unit,
+    aliasLineWidth: aliasLine.replace(/\t/g, ' '.repeat(DEFAULT_TAB_WIDTH))
+      .length,
+  };
+}
+
+type MessageIds =
+  | 'preferType'
+  | 'preferTypeDefaultExport'
+  | 'preferTypeOverflowsPrintWidth';
+
+/**
+ * `printWidth` is optional in the schema and required here: `applyDefault` deep
+ * merges `defaultOptions` into whatever the consumer passes, so by the time the
+ * visitor reads it the value is always present.
+ */
+type Options = [{ printWidth: number }];
 
 /**
  * `export default interface X {…}` is the only spelling TypeScript has for a
@@ -215,7 +318,7 @@ function isDefaultExported(node: TSESTree.TSInterfaceDeclaration): boolean {
  * table.
  */
 function isMergedDeclaration(
-  context: Readonly<TSESLint.RuleContext<MessageIds, never[]>>,
+  context: Readonly<TSESLint.RuleContext<MessageIds, Options>>,
   node: TSESTree.TSInterfaceDeclaration,
 ): boolean {
   // The variable is located by the definition that points back at *this*
@@ -234,7 +337,7 @@ function isMergedDeclaration(
   return declared !== undefined && declared.defs.length > 1;
 }
 
-export const preferTypeOverInterface: TSESLint.RuleModule<MessageIds, never[]> =
+export const preferTypeOverInterface: TSESLint.RuleModule<MessageIds, Options> =
   createRule({
     name: 'prefer-type-over-interface',
     meta: {
@@ -243,7 +346,19 @@ export const preferTypeOverInterface: TSESLint.RuleModule<MessageIds, never[]> =
         description: 'Prefer using type alias over interface',
         recommended: 'error',
       },
-      schema: [],
+      schema: [
+        {
+          type: 'object',
+          properties: {
+            printWidth: {
+              type: 'integer',
+              minimum: 1,
+              default: DEFAULT_PRINT_WIDTH,
+            },
+          },
+          additionalProperties: false,
+        },
+      ],
       messages: {
         preferType:
           'Interface "{{interfaceName}}" should be declared as a type alias. ' +
@@ -254,12 +369,17 @@ export const preferTypeOverInterface: TSESLint.RuleModule<MessageIds, never[]> =
           'Interfaces can merge across declarations and extend in chains, which fragments the resulting shape across files and makes composition harder to predict and trace. ' +
           'TypeScript has no default-exported type alias — `export default type {{interfaceName}} = ...` is a syntax error — so the conversion takes two statements: `type {{interfaceName}} = { field: string };` followed by `export type { {{interfaceName}} as default };`, which keeps every existing `import {{interfaceName}} from ...` working. ' +
           'A named `export type {{interfaceName}} = ...` works too, once the import sites are switched to `import type { {{interfaceName}} }`.',
+        preferTypeOverflowsPrintWidth:
+          'Interface "{{interfaceName}}" should be declared as a type alias, but the alias line the autofix would write is {{aliasLineWidth}} columns wide against a printWidth of {{printWidth}}, so no autofix is offered here. ' +
+          'Interfaces can merge across declarations and extend in chains, which fragments the resulting shape across files and makes composition harder to predict and trace. ' +
+          'Past that width a formatter drops the first intersection arm onto its own line and indents the whole chain a level deeper, and that layout is an answer to the width rather than to the shape — emitting it would put the file out of format for every project formatted at a different width. ' +
+          "Convert by hand — `type {{interfaceName}} = First & Second & { field: string };` — and let the formatter lay the intersection out, or set this rule's `printWidth` option to the width your formatter uses so the autofix comes back.",
       },
       fixable: 'code',
     },
-    defaultOptions: [],
+    defaultOptions: [{ printWidth: DEFAULT_PRINT_WIDTH }] as Options,
 
-    create(context) {
+    create(context, [{ printWidth }]) {
       return {
         TSInterfaceDeclaration(node: TSESTree.TSInterfaceDeclaration) {
           if (isInsideModuleAugmentation(node)) {
@@ -290,6 +410,31 @@ export const preferTypeOverInterface: TSESLint.RuleModule<MessageIds, never[]> =
             return;
           }
 
+          const sourceCode = context.sourceCode;
+          const plan = planRewrite(sourceCode, node);
+
+          // The per-arm intersection layout the fix emits is the formatter's
+          // answer at every width at or above the line it writes. Past that the
+          // formatter answers differently — first arm on its own line, chain
+          // indented a level deeper — and which answer is right depends on a
+          // `printWidth` that lives in the consumer's formatter configuration,
+          // not in the source. Guessing it wrong in the emitting direction
+          // leaves a file that fails `prettier --check`; guessing it wrong here
+          // costs only a conversion the author still makes by hand, with the
+          // report and its remedy standing (#2080).
+          if (plan.aliasLineWidth > printWidth) {
+            context.report({
+              node,
+              messageId: 'preferTypeOverflowsPrintWidth',
+              data: {
+                interfaceName: node.id.name,
+                aliasLineWidth: plan.aliasLineWidth,
+                printWidth,
+              },
+            });
+            return;
+          }
+
           context.report({
             node,
             messageId: 'preferType',
@@ -297,11 +442,10 @@ export const preferTypeOverInterface: TSESLint.RuleModule<MessageIds, never[]> =
               interfaceName: node.id.name,
             },
             fix(fixer) {
-              const sourceCode = context.sourceCode;
               // The `=` must land after the entire declaration header (the
               // name plus any type-parameter list); anchoring on the
               // identifier alone emits unparseable `type Name =<T> {`.
-              const header = node.typeParameters ?? node.id;
+              const { header } = plan;
               const keywordSpan: TSESTree.Range = [
                 node.range[0],
                 node.id.range[0],
@@ -335,30 +479,18 @@ export const preferTypeOverInterface: TSESLint.RuleModule<MessageIds, never[]> =
                 return null;
               }
 
-              const heritage = node.extends ?? [];
-              // `getText` round-trips type arguments and qualified names, so
-              // `extends ns.B<T>, C` becomes `ns.B<T> & C`.
-              const arms = heritage.map((clause) => sourceCode.getText(clause));
+              const edits = [
+                fixer.replaceTextRange(keywordSpan, 'type '),
+                fixer.replaceTextRange(headerSpan, plan.headerText),
+              ];
 
-              const edits = [fixer.replaceTextRange(keywordSpan, 'type ')];
-
-              if (needsIntersectionReflow(sourceCode, node, heritage)) {
-                const baseIndent = lineIndentAt(sourceCode, node.range[0]);
-                const unit = indentUnitOf(sourceCode, node, baseIndent);
-                const armIndent = `${baseIndent}${unit}`;
-
+              if (plan.reflow) {
                 // The object literal lands one level deeper than the alias, so
                 // every line the body already occupies moves with it. The body
                 // is shifted by inserting the extra level at each line's start
                 // rather than by rewriting the body: an insertion cannot drop a
                 // comment, a member, or any formatting the author chose.
-                edits.push(
-                  fixer.replaceTextRange(
-                    headerSpan,
-                    ` = ${arms.join(` &\n${armIndent}`)} & `,
-                  ),
-                );
-
+                const { unit } = plan;
                 const protectedLines = tokenInteriorLines(
                   sourceCode,
                   node.body,
@@ -384,13 +516,6 @@ export const preferTypeOverInterface: TSESLint.RuleModule<MessageIds, never[]> =
                     fixer.insertTextBeforeRange([lineStart, lineStart], unit),
                   );
                 }
-              } else {
-                edits.push(
-                  fixer.replaceTextRange(
-                    headerSpan,
-                    arms.length > 0 ? ` = ${arms.join(' & ')} & ` : ' = ',
-                  ),
-                );
               }
 
               // Converting a declaration into an assignment changes what ends
