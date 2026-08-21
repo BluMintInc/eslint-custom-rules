@@ -8,6 +8,7 @@ type Options = [
   {
     sideEffectPatterns?: Array<string | RegExp>;
     ignoreTestFiles?: boolean;
+    printWidth?: number;
   },
 ];
 
@@ -31,6 +32,169 @@ const TEST_FILE_DIRECTORY = /(^|\/)(__tests__|__mocks__)\//;
  */
 const isTestFile = (filename: string) =>
   TEST_FILE_SUFFIX.test(filename) || TEST_FILE_DIRECTORY.test(filename);
+
+/**
+ * Matches prettier's own default. The autofix authors a whole statement a
+ * formatter owns, so a layout it emits that prettier would not is rewritten on
+ * the next `prettier --write` — and fails `prettier --check` in the meantime.
+ */
+const DEFAULT_PRINT_WIDTH = 80;
+
+/**
+ * The two columns prettier can open the rewritten call at. It prefers hugging
+ * the sole array argument (`...all([`) and falls back to expanding the argument
+ * list (`...all(`) only once the hugged opening line overflows, which is a
+ * one-column band but a real one.
+ */
+const CALL_HEAD = 'await Promise.all(';
+const ARRAY_HEAD = `${CALL_HEAD}[`;
+
+type PromiseAllLayoutSpec = {
+  /** Column the replacement text starts at, which prettier measures from. */
+  startColumn: number;
+  /** Leading whitespace every continuation line has to carry itself. */
+  indent: string;
+  indentUnit: string;
+  printWidth: number;
+  /** Whether the operands may legally share one line at any width. */
+  canFlatten: boolean;
+  /** The operands joined for the one-line form. */
+  flatElements: string;
+  /** The operands one per line at the given depth, with trailing commas. */
+  renderList: (listIndent: string) => string;
+  /** `null` for a bare `await Promise.all([...])` with nothing destructured. */
+  declKind: string | null;
+  ids: string[];
+};
+
+/**
+ * Reproduces the layout prettier would print for the rewritten statement.
+ *
+ * Prettier decides between five shapes here, not two, and the extra three all
+ * belong to the destructured form: it breaks after the `=`, or breaks the
+ * pattern itself, once the pattern grows long enough that the right-hand side
+ * can no longer start on the same line. Emitting the wrapped array
+ * unconditionally is wrong in the other direction — an array prettier considers
+ * short enough is collapsed straight back onto one line, unlike an object,
+ * whose author-chosen expansion it preserves.
+ */
+function layOutPromiseAll(spec: PromiseAllLayoutSpec): string {
+  const {
+    startColumn,
+    indent,
+    indentUnit,
+    printWidth,
+    canFlatten,
+    flatElements,
+    renderList,
+    declKind,
+    ids,
+  } = spec;
+
+  const flatCall = `${ARRAY_HEAD}${flatElements}]);`;
+
+  const huggedCall = (blockIndent: string) =>
+    `${ARRAY_HEAD}\n${renderList(blockIndent + indentUnit)}\n${blockIndent}]);`;
+
+  const expandedCall = (blockIndent: string) => {
+    const argumentIndent = blockIndent + indentUnit;
+    const flatArray = `[${flatElements}],`;
+    const argument =
+      canFlatten && argumentIndent.length + flatArray.length <= printWidth
+        ? `${argumentIndent}${flatArray}`
+        : `${argumentIndent}[\n${renderList(
+            argumentIndent + indentUnit,
+          )}\n${argumentIndent}],`;
+    return `${CALL_HEAD}\n${argument}\n${blockIndent});`;
+  };
+
+  const call = (column: number, blockIndent: string) => {
+    if (canFlatten && column + flatCall.length <= printWidth) {
+      return flatCall;
+    }
+    if (column + ARRAY_HEAD.length <= printWidth) {
+      return huggedCall(blockIndent);
+    }
+    if (column + CALL_HEAD.length <= printWidth) {
+      return expandedCall(blockIndent);
+    }
+    return huggedCall(blockIndent);
+  };
+
+  if (declKind === null) {
+    return call(startColumn, indent);
+  }
+
+  const pattern = `${declKind} [${ids.join(', ')}]`;
+  // The column just past `<pattern> =`, which is where prettier decides whether
+  // the right-hand side can start on this line at all. It measures only as far
+  // as the call's first break point, so the `[` of a hugged array is not part
+  // of that question.
+  const afterOperator = startColumn + pattern.length + 2;
+  if (afterOperator + 1 + CALL_HEAD.length <= printWidth) {
+    return `${pattern} = ${call(afterOperator + 1, indent)}`;
+  }
+  if (afterOperator <= printWidth) {
+    const rhsIndent = indent + indentUnit;
+    return `${pattern} =\n${rhsIndent}${call(rhsIndent.length, rhsIndent)}`;
+  }
+  const brokenPattern = `${declKind} [\n${indent}${indentUnit}${ids.join(
+    `,\n${indent}${indentUnit}`,
+  )},\n${indent}]`;
+  // `] = ` puts the right-hand side four columns past the closing bracket.
+  return `${brokenPattern} = ${call(indent.length + 4, indent)}`;
+}
+
+/**
+ * Whether prettier breaks the operand array open no matter how short it is.
+ *
+ * Two shapes do that: an array whose elements are all multi-property objects or
+ * all multi-element arrays, and any operand carrying a non-empty block or class
+ * body, which prettier always prints across lines.
+ */
+function alwaysBreaksInPrettier(
+  expressions: TSESTree.AwaitExpression[],
+): boolean {
+  const operands = expressions.map((expression) => expression.argument);
+  const allBreakingObjects = operands.every(
+    (operand) =>
+      operand.type === AST_NODE_TYPES.ObjectExpression &&
+      operand.properties.length > 1,
+  );
+  const allBreakingArrays = operands.every(
+    (operand) =>
+      operand.type === AST_NODE_TYPES.ArrayExpression &&
+      operand.elements.length > 1,
+  );
+  if (allBreakingObjects || allBreakingArrays) {
+    return true;
+  }
+  return operands.some((operand) => containsExpandedBody(operand));
+}
+
+/**
+ * Whether the subtree holds a body prettier always prints across lines, so an
+ * operand whose source happens to sit on one line still cannot share one.
+ */
+function containsExpandedBody(value: unknown): boolean {
+  if (Array.isArray(value)) {
+    return value.some((entry) => containsExpandedBody(entry));
+  }
+  if (!ASTHelpers.isNode(value)) {
+    return false;
+  }
+  const node = value as TSESTree.Node;
+  if (
+    (node.type === AST_NODE_TYPES.BlockStatement ||
+      node.type === AST_NODE_TYPES.ClassBody) &&
+    node.body.length > 0
+  ) {
+    return true;
+  }
+  return Object.entries(node).some(
+    ([key, child]) => key !== 'parent' && containsExpandedBody(child),
+  );
+}
 
 const defaultOptions: Options = [
   {
@@ -85,6 +249,10 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
           ignoreTestFiles: {
             type: 'boolean',
           },
+          printWidth: {
+            type: 'number',
+            minimum: 1,
+          },
         },
         additionalProperties: false,
       },
@@ -106,6 +274,13 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
     }
 
     const sourceCode = context.sourceCode;
+    // The width the autofix lays the rewritten statement out against. It lives
+    // in the consumer's formatter configuration, which no rule context carries,
+    // so a project formatting at 100 or 120 states it here.
+    const printWidth =
+      typeof options?.printWidth === 'number' && options.printWidth > 0
+        ? options.printWidth
+        : DEFAULT_PRINT_WIDTH;
     // Compiling with a bare `new RegExp` throws while the rule is being built,
     // which aborts the whole lint run — every file, every other rule — with a
     // message naming neither this option nor the offending pattern. The schema
@@ -2043,6 +2218,63 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
     }
 
     /**
+     * Line offsets inside a node's own text whose leading whitespace is DATA
+     * rather than layout, and so must survive the move byte for byte.
+     *
+     * A token that spans lines — a multi-line template literal, a string
+     * written with a backslash continuation, a block comment — owns every line
+     * after its first. Re-indenting inside a template literal silently changes
+     * the string the program produces, which is why the operands used to be
+     * spliced in verbatim; protecting exactly those lines is what makes
+     * re-indenting the rest safe.
+     */
+    function dataLineOffsetsOf(node: TSESTree.Node): Set<number> {
+      const offsets = new Set<number>();
+      for (const token of sourceCode.getTokens(node, {
+        includeComments: true,
+      })) {
+        for (
+          let line = token.loc.start.line + 1;
+          line <= token.loc.end.line;
+          line++
+        ) {
+          offsets.add(line - node.loc.start.line);
+        }
+      }
+      return offsets;
+    }
+
+    /**
+     * Rewrites the continuation lines of a relocated operand from the depth it
+     * had before the move to the depth it lands at.
+     *
+     * Only a line that still carries the whole of the statement's original
+     * indentation is touched, so a line already shallower than its statement
+     * (and any line `dataLineOffsets` protects) is left exactly as written.
+     */
+    function reindentOperand(
+      text: string,
+      fromIndent: string,
+      toIndent: string,
+      dataLineOffsets: Set<number>,
+    ): string {
+      if (fromIndent === toIndent || !text.includes('\n')) {
+        return text;
+      }
+      return text
+        .split('\n')
+        .map((line, offset) => {
+          if (offset === 0 || dataLineOffsets.has(offset)) {
+            return line;
+          }
+          return line.startsWith(fromIndent)
+            ? `${toIndent}${line.slice(fromIndent.length)}`
+            : line;
+        })
+        .join('\n');
+    }
+
+    /**
      * Generates a fix for sequential awaits
      *
      * Returns null when the sequential awaits cannot be safely rewritten as a Promise.all.
@@ -2171,25 +2403,67 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
       // so a tab-indented file does not end up with mixed tabs and spaces. The
       // space fallback is two wide to match the repo's prettier config.
       const indentUnit = baseIndent.includes('\t') ? '\t' : '  ';
-      const elementIndent = `${baseIndent}${indentUnit}`;
-      // Arguments are spliced in verbatim: an argument spanning multiple lines
-      // keeps its original interior indentation because that interior can be
-      // the contents of a template literal, where whitespace is significant
-      // data rather than formatting and re-indenting would silently change the
-      // produced string.
-      const elementsText = awaitArguments
-        .map((argumentText, index) => {
-          // Each re-hosted comment lands on its own line directly above the
-          // element, which is the only placement where a disable-next-line
-          // directive keeps suppressing it.
-          const leadingText = (hostedComments[index] ?? [])
-            .map(
-              (comment) => `${sourceCode.getText(comment)}\n${elementIndent}`,
-            )
-            .join('');
-          return `${leadingText}${argumentText}`;
-        })
-        .join(`,\n${elementIndent}`);
+
+      // Where each operand sat before the move, so its continuation lines can
+      // be shifted by the difference to wherever it lands.
+      const operandIndents = awaitExpressions.map((expr) =>
+        getIndentationOf(expr),
+      );
+      const operandDataLines = awaitExpressions.map((expr) =>
+        dataLineOffsetsOf(expr.argument),
+      );
+
+      // One element per line at `listIndent`, each re-indented to that depth and
+      // carrying a trailing comma: prettier writes the trailing comma itself
+      // under `trailingComma: 'all'`, so omitting it makes the output churn on
+      // the next format run just as surely as the wrong layout does.
+      const renderList = (listIndent: string) =>
+        awaitArguments
+          .map((argumentText, index) => {
+            // Each re-hosted comment lands on its own line directly above the
+            // element, which is the only placement where a disable-next-line
+            // directive keeps suppressing it.
+            const leadingText = (hostedComments[index] ?? [])
+              .map((comment) => `${sourceCode.getText(comment)}\n${listIndent}`)
+              .join('');
+            const body = reindentOperand(
+              argumentText,
+              operandIndents[index] ?? baseIndent,
+              listIndent,
+              operandDataLines[index] ?? new Set<number>(),
+            );
+            return `${listIndent}${leadingText}${body},`;
+          })
+          .join('\n');
+
+      // Prettier collapses an array literal it considers short enough, so a
+      // blanket one-element-per-line emission is rewritten on the next format
+      // run. Emitting the joined form while it fits and breaking only on
+      // overflow is the array half of the asymmetry `prefer-union-from-const-array`
+      // already implements for its `as const` list.
+      //
+      // Three shapes can never be joined, whatever the width: a re-hosted line
+      // comment would swallow the rest of the line, an operand whose own text
+      // spans lines is already broken, and prettier force-breaks an array whose
+      // elements are all multi-property objects or multi-element arrays.
+      const canFlatten =
+        hostedComments.every((comments) => comments.length === 0) &&
+        !awaitArguments.some((argumentText) => /[\r\n]/.test(argumentText)) &&
+        !alwaysBreaksInPrettier(awaitExpressions);
+
+      const spec = {
+        // Prettier measures from the column the statement actually starts at,
+        // which is the replacement's own start rather than the line's indent
+        // when an earlier statement shares the line. A tab counts as the single
+        // column prettier's own width measurement gives it.
+        startColumn: awaitNodes[0].loc.start.column,
+        indent: baseIndent,
+        indentUnit,
+        printWidth,
+        canFlatten,
+        flatElements: awaitArguments.join(', '),
+        renderList,
+      };
 
       let promiseAllText: string;
 
@@ -2202,12 +2476,25 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
           return null;
         }
 
-        const destructuringPattern = idsText.join(', ');
-        const declKind = Array.from(declKinds)[0];
-        promiseAllText = `${declKind} [${destructuringPattern}] = await Promise.all([\n${elementIndent}${elementsText}\n${baseIndent}]);`;
+        // A trailing run of empty slots is a trailing comma in the pattern —
+        // `const [first, ]` — which prettier deletes. Every earlier hole has to
+        // stay: it is what keeps the surviving names aligned with their
+        // operands.
+        const patternIds = [...idsText];
+        while (
+          patternIds.length > 0 &&
+          patternIds[patternIds.length - 1] === ''
+        ) {
+          patternIds.pop();
+        }
+
+        promiseAllText = layOutPromiseAll({
+          ...spec,
+          declKind: Array.from(declKinds)[0] as string,
+          ids: patternIds,
+        });
       } else {
-        // Simple Promise.all without variable assignments
-        promiseAllText = `await Promise.all([\n${elementIndent}${elementsText}\n${baseIndent}]);`;
+        promiseAllText = layOutPromiseAll({ ...spec, declKind: null, ids: [] });
       }
 
       return fixer.replaceTextRange([startPos, endPos], promiseAllText);

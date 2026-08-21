@@ -29,7 +29,7 @@ const ORDER_DEPENDENT_AWAITS_FIXED = `
 async function submit() {
   await Promise.all([
     userEvent.click(screen.getByText('go')),
-    waitFor(() => { expect(screen.getByText('done')).toBeInTheDocument(); })
+    waitFor(() => { expect(screen.getByText('done')).toBeInTheDocument(); }),
   ]);
 }
 `;
@@ -58,10 +58,7 @@ async function persist(entry) {
 // `flush` stops acting as an ordering barrier.
 const BUILT_IN_SIDE_EFFECT_FIXED = `
 async function persist(entry) {
-  await Promise.all([
-    writeEntry(entry),
-    flush()
-  ]);
+  await Promise.all([writeEntry(entry), flush()]);
 }
 `;
 
@@ -78,10 +75,7 @@ async function sync(a, b) {
 
 const CUSTOM_SIDE_EFFECT_FIXED = `
 async function sync(a, b) {
-  await Promise.all([
-    uploadAvatar(a),
-    archiveEntry(b)
-  ]);
+  await Promise.all([uploadAvatar(a), archiveEntry(b)]);
 }
 `;
 
@@ -1632,10 +1626,7 @@ async function sequentialForOf(documents, setter) {
         export const readBoth = async () => {
           const refA = makeRef();
           const refB = makeRef();
-          const [a, b] = await Promise.all([
-            refA.get(),
-            refB.get()
-          ]);
+          const [a, b] = await Promise.all([refA.get(), refB.get()]);
           return { a, b };
         };
       `,
@@ -1655,7 +1646,7 @@ async function sequentialForOf(documents, setter) {
       async function cleanUpReferences(params, ref) {
         await Promise.all([
           realtimeDb.ref(buildPath(params)).remove(),
-          realtimeDb.ref(ref).remove()
+          realtimeDb.ref(ref).remove(),
         ]);
 
         return true;
@@ -1677,7 +1668,7 @@ async function sequentialForOf(documents, setter) {
       async function methodChaining() {
         await Promise.all([
           db.collection('users').doc(id1).delete(),
-          db.collection('profiles').doc(id2).delete()
+          db.collection('profiles').doc(id2).delete(),
         ]);
         return true;
       }
@@ -1704,7 +1695,7 @@ async function sequentialForOf(documents, setter) {
         await Promise.all([
           operation1(),
           // Second operation
-          operation2()
+          operation2(),
         ]);
         return true;
       }
@@ -1729,7 +1720,7 @@ async function saveAll(a, b) {
   await Promise.all([
     writeProfile(a),
     // eslint-disable-next-line no-console
-    logResult(b)
+    logResult(b),
   ]);
   return true;
 }
@@ -1801,7 +1792,7 @@ async function loadBoth() {
   const [first, second] = await Promise.all([
     fetchFirst(),
     // second fetch is independent of the first
-    fetchSecond()
+    fetchSecond(),
   ]);
   return [first, second];
 }
@@ -1823,10 +1814,10 @@ async function loadAndLog(b) {
       errors: [{ messageId: 'parallelizeAsyncOperations' }],
       output: `
 async function loadAndLog(b) {
-  const [first, ] = await Promise.all([
+  const [first] = await Promise.all([
     fetchFirst(),
     // eslint-disable-next-line no-console
-    logResult(b)
+    logResult(b),
   ]);
   return first;
 }
@@ -1846,10 +1837,7 @@ async function saveAll(a, b) {
       errors: [{ messageId: 'parallelizeAsyncOperations' }],
       output: `
 async function saveAll(a, b) {
-  await Promise.all([
-    writeProfile(/* keep: primary */ a),
-    logResult(b)
-  ]);
+  await Promise.all([writeProfile(/* keep: primary */ a), logResult(b)]);
   return true;
 }
 `,
@@ -1874,7 +1862,7 @@ async function saveAll(a, b) {
     writeProfile(a),
     // logging is temporary until the migration completes
     // eslint-disable-next-line no-console
-    logResult(b)
+    logResult(b),
   ]);
   return true;
 }
@@ -1894,11 +1882,7 @@ async function saveAll(a, b) {
       errors: [error(3)],
       output: `
       async function threeSequentialAwaits() {
-        await Promise.all([
-          operation1(),
-          operation2(),
-          operation3()
-        ]);
+        await Promise.all([operation1(), operation2(), operation3()]);
         return true;
       }
       `,
@@ -1916,10 +1900,7 @@ async function saveAll(a, b) {
       errors: [error(2)],
       output: `
       async function mixedAwaitStyles() {
-        const [, result] = await Promise.all([
-          operation1(),
-          operation2()
-        ]);
+        const [, result] = await Promise.all([operation1(), operation2()]);
         return result;
       }
       `,
@@ -1937,10 +1918,7 @@ async function saveAll(a, b) {
       errors: [error(2)],
       output: `
       const arrowFunction = async () => {
-        await Promise.all([
-          operation1(),
-          operation2()
-        ]);
+        await Promise.all([operation1(), operation2()]);
         return true;
       };
       `,
@@ -1961,10 +1939,7 @@ async function saveAll(a, b) {
       output: `
       class MyClass {
         async classMethod() {
-          await Promise.all([
-            operation1(),
-            operation2()
-          ]);
+          await Promise.all([operation1(), operation2()]);
           return true;
         }
       }
@@ -1984,11 +1959,7 @@ async function saveAll(a, b) {
       errors: [error(3)],
       output: `
       async function simpleSequentialAwaits() {
-        await Promise.all([
-          fetchData1(),
-          fetchData2(),
-          fetchData3()
-        ]);
+        await Promise.all([fetchData1(), fetchData2(), fetchData3()]);
         return 'done';
       }
       `,
@@ -2006,10 +1977,7 @@ async function saveAll(a, b) {
       errors: [error(2)],
       output: `
       async function independentVariableAssignments() {
-        const [data1, data2] = await Promise.all([
-          fetchData1(),
-          fetchData2()
-        ]);
+        const [data1, data2] = await Promise.all([fetchData1(), fetchData2()]);
         return { data1, data2 };
       }
       `,
@@ -2031,7 +1999,7 @@ async function saveAll(a, b) {
         await Promise.all([
           processFile(file1),
           processFile(file2),
-          processFile(file3)
+          processFile(file3),
         ]);
         return 'processed';
       }
@@ -2051,11 +2019,7 @@ async function saveAll(a, b) {
       errors: [error(3)],
       output: `
       async function mixedCallTypes() {
-        await Promise.all([
-          api.method1(),
-          standaloneFunction(),
-          obj.method2()
-        ]);
+        await Promise.all([api.method1(), standaloneFunction(), obj.method2()]);
         return 'mixed';
       }
       `,
@@ -2074,10 +2038,7 @@ async function saveAll(a, b) {
       output: `
       async function awaitsAtEnd() {
         const setup = doSomeSetup();
-        await Promise.all([
-          operation1(),
-          operation2()
-        ]);
+        await Promise.all([operation1(), operation2()]);
       }
       `,
     },
@@ -2098,10 +2059,7 @@ async function saveAll(a, b) {
       output: `
       async function withWhitespace() {
 
-        await Promise.all([
-          operation1(),
-          operation2()
-        ]);
+        await Promise.all([operation1(), operation2()]);
 
         return true;
       }
@@ -2122,7 +2080,7 @@ async function saveAll(a, b) {
       async function withTemplateLiterals() {
         await Promise.all([
           fetch(\`/api/\${endpoint1}\`),
-          fetch(\`/api/\${endpoint2}\`)
+          fetch(\`/api/\${endpoint2}\`),
         ]);
         return 'fetched';
       }
@@ -2144,10 +2102,7 @@ async function saveAll(a, b) {
       output: `
       async function nestedBlock() {
         if (condition) {
-          await Promise.all([
-            operation1(),
-            operation2()
-          ]);
+          await Promise.all([operation1(), operation2()]);
         }
         return true;
       }
@@ -2172,7 +2127,7 @@ async function saveAll(a, b) {
           operation1(),
           operation2(),
           operation3(),
-          operation4()
+          operation4(),
         ]);
         return true;
       }
@@ -2192,11 +2147,7 @@ async function saveAll(a, b) {
       errors: [error(3)],
       output: `
       async function independentAssignments() {
-        const [a, b, c] = await Promise.all([
-          fetchA(),
-          fetchB(),
-          fetchC()
-        ]);
+        const [a, b, c] = await Promise.all([fetchA(), fetchB(), fetchC()]);
         return { a, b, c };
       }
       `,
@@ -2215,10 +2166,10 @@ async function saveAll(a, b) {
       errors: [error(3)],
       output: `
       async function mixedStyles() {
-        const [, data, ] = await Promise.all([
+        const [, data] = await Promise.all([
           sendNotification(),
           fetchData(),
-          logActivity()
+          logActivity(),
         ]);
         return data;
       }
@@ -2241,7 +2192,7 @@ async function saveAll(a, b) {
         await Promise.all([
           cache.clear(),
           database.connect(),
-          logger.initialize()
+          logger.initialize(),
         ]);
         return 'initialized';
       }
@@ -2264,7 +2215,7 @@ async function saveAll(a, b) {
         await Promise.all([
           api.users.getAll(),
           api.posts.getRecent(),
-          api.comments.getLatest()
+          api.comments.getLatest(),
         ]);
         return 'fetched';
       }
@@ -2285,7 +2236,7 @@ async function saveAll(a, b) {
       async function functionExpressions() {
         await Promise.all([
           (async () => { return 'first'; })(),
-          (async () => { return 'second'; })()
+          (async () => { return 'second'; })(),
         ]);
         return 'done';
       }
@@ -2306,7 +2257,7 @@ async function saveAll(a, b) {
       async function conditionalExpressions() {
         await Promise.all([
           condition ? fetchA() : fetchB(),
-          otherCondition ? fetchC() : fetchD()
+          otherCondition ? fetchC() : fetchD(),
         ]);
         return 'fetched';
       }
@@ -2327,7 +2278,7 @@ async function saveAll(a, b) {
       async function logicalExpressions() {
         await Promise.all([
           shouldFetch && fetchData(),
-          shouldProcess || processData()
+          shouldProcess || processData(),
         ]);
         return 'processed';
       }
@@ -2348,7 +2299,7 @@ async function saveAll(a, b) {
       async function newExpressions() {
         await Promise.all([
           new Promise(resolve => setTimeout(resolve, 100)),
-          new Promise(resolve => setTimeout(resolve, 200))
+          new Promise(resolve => setTimeout(resolve, 200)),
         ]);
         return 'delayed';
       }
@@ -2367,10 +2318,7 @@ async function saveAll(a, b) {
       errors: [error(2)],
       output: `
       async function taggedTemplateLiterals() {
-        await Promise.all([
-          sql\`SELECT * FROM users\`,
-          sql\`SELECT * FROM posts\`
-        ]);
+        await Promise.all([sql\`SELECT * FROM users\`, sql\`SELECT * FROM posts\`]);
         return 'queried';
       }
       `,
@@ -2389,11 +2337,7 @@ async function saveAll(a, b) {
       errors: [error(3)],
       output: `
       async function arrayAccess() {
-        await Promise.all([
-          operations[0](),
-          operations[1](),
-          operations[2]()
-        ]);
+        await Promise.all([operations[0](), operations[1](), operations[2]()]);
         return 'executed';
       }
       `,
@@ -2411,10 +2355,7 @@ async function saveAll(a, b) {
       errors: [error(2)],
       output: `
       async function* asyncGenerator() {
-        await Promise.all([
-          operation1(),
-          operation2()
-        ]);
+        await Promise.all([operation1(), operation2()]);
         yield 'done';
       }
       `,
@@ -2436,7 +2377,7 @@ async function saveAll(a, b) {
         const [x, y, z] = await Promise.all([
           getValue1(),
           getValue2(),
-          getValue3()
+          getValue3(),
         ]);
         return x + y + z;
       }
@@ -2455,10 +2396,7 @@ async function saveAll(a, b) {
       errors: [error(2)],
       output: `
       async function unaryExpressions() {
-        await Promise.all([
-          +getValue1(),
-          -getValue2()
-        ]);
+        await Promise.all([+getValue1(), -getValue2()]);
         return 'calculated';
       }
       `,
@@ -2478,10 +2416,7 @@ async function saveAll(a, b) {
       errors: [error(2)],
       output: `
       async function independentReads() {
-        const [a, b] = await Promise.all([
-          fetchA(),
-          fetchB()
-        ]);
+        const [a, b] = await Promise.all([fetchA(), fetchB()]);
         return { a, b };
       }
       `,
@@ -2500,10 +2435,7 @@ async function saveAll(a, b) {
       errors: [error(2)],
       output: `
       async function independentSideEffects() {
-        await Promise.all([
-          logEvent(x),
-          sendEmail(y)
-        ]);
+        await Promise.all([logEvent(x), sendEmail(y)]);
         return true;
       }
       `,
@@ -2524,10 +2456,7 @@ async function saveAll(a, b) {
       errors: [error(2)],
       output: `
       async function assignedGuardStillFlagged() {
-        const [ok, other] = await Promise.all([
-          validateThing(x),
-          fetchOther()
-        ]);
+        const [ok, other] = await Promise.all([validateThing(x), fetchOther()]);
         return { ok, other };
       }
       `,
@@ -2548,10 +2477,7 @@ async function saveAll(a, b) {
       errors: [error(2)],
       output: `
       async function independentFetches() {
-        await Promise.all([
-          fetchUser(),
-          fetchSettings()
-        ]);
+        await Promise.all([fetchUser(), fetchSettings()]);
         return true;
       }
       `,
@@ -2571,10 +2497,7 @@ async function saveAll(a, b) {
       errors: [error(2)],
       output: `
       async function refreshTokenNotLeadingVerb() {
-        await Promise.all([
-          getRefreshToken(),
-          getSettings()
-        ]);
+        await Promise.all([getRefreshToken(), getSettings()]);
         return true;
       }
       `,
@@ -2595,10 +2518,7 @@ async function saveAll(a, b) {
       errors: [error(2)],
       output: `
       async function refreshFirstThenIndependentRead() {
-        await Promise.all([
-          refreshUser(),
-          fetchSettings()
-        ]);
+        await Promise.all([refreshUser(), fetchSettings()]);
         return true;
       }
       `,
@@ -2617,10 +2537,7 @@ async function saveAll(a, b) {
       errors: [error(2)],
       output: `
       async function pushNotLeadingVerb() {
-        await Promise.all([
-          getPushToken(),
-          getSettings()
-        ]);
+        await Promise.all([getPushToken(), getSettings()]);
       }
       `,
     },
@@ -2637,10 +2554,7 @@ async function saveAll(a, b) {
       errors: [error(2)],
       output: `
       async function redirectNotLeadingVerb() {
-        await Promise.all([
-          fetchRedirectRules(),
-          fetchFeatureFlags()
-        ]);
+        await Promise.all([fetchRedirectRules(), fetchFeatureFlags()]);
       }
       `,
     },
@@ -2657,10 +2571,7 @@ async function saveAll(a, b) {
       errors: [error(2)],
       output: `
       async function routerLikeReceiverNames() {
-        await Promise.all([
-          navigator.getBattery(),
-          historyLog.append(entry)
-        ]);
+        await Promise.all([navigator.getBattery(), historyLog.append(entry)]);
       }
       `,
     },
@@ -2754,10 +2665,7 @@ async function saveAll(a, b) {
       errors: [error(2)],
       output: `
       async function aggregateThenUnrelated(ops, payload) {
-        await Promise.all([
-          Promise.all(ops),
-          recordMetrics(payload)
-        ]);
+        await Promise.all([Promise.all(ops), recordMetrics(payload)]);
       }
       `,
     },
@@ -2773,10 +2681,7 @@ async function saveAll(a, b) {
       errors: [error(2)],
       output: `
       async function inlineAggregateThenUnrelated() {
-        await Promise.all([
-          Promise.all([dropA(), dropB()]),
-          recordMetrics()
-        ]);
+        await Promise.all([Promise.all([dropA(), dropB()]), recordMetrics()]);
       }
       `,
     },
@@ -2793,10 +2698,7 @@ async function saveAll(a, b) {
       errors: [error(2)],
       output: `
       async function promiseResolveIsNotAnAggregate(marker) {
-        await Promise.all([
-          Promise.resolve(marker),
-          recordMetrics(marker)
-        ]);
+        await Promise.all([Promise.resolve(marker), recordMetrics(marker)]);
       }
       `,
     },
@@ -2815,7 +2717,7 @@ async function saveAll(a, b) {
       async function callbackAwaitsStillParallelize(items, others) {
         await Promise.all([
           Promise.all(items.map(async (item) => await store(item))),
-          recordCompletion(others)
+          recordCompletion(others),
         ]);
       }
       `,
@@ -2835,10 +2737,7 @@ async function topLevelDepth() {
       errors: [error(2)],
       output: `
 async function topLevelDepth() {
-  await Promise.all([
-    alpha(),
-    beta()
-  ]);
+  await Promise.all([alpha(), beta()]);
 }
 `,
     },
@@ -2856,10 +2755,7 @@ const registerHandlers = () => {
       output: `
 const registerHandlers = () => {
   onReady(async () => {
-    await Promise.all([
-      alpha(),
-      beta()
-    ]);
+    await Promise.all([alpha(), beta()]);
   });
 };
 `,
@@ -2880,10 +2776,7 @@ const buildLoader = () => {
       output: `
 const buildLoader = () => {
   const load = async () => {
-    const [alpha, beta] = await Promise.all([
-      loadAlpha(),
-      loadBeta()
-    ]);
+    const [alpha, beta] = await Promise.all([loadAlpha(), loadBeta()]);
     return { alpha, beta };
   };
 };
@@ -2911,7 +2804,7 @@ async function multiLineTemplateArgument() {
 SELECT *
   FROM users
 \`),
-    recordMetrics()
+    recordMetrics(),
   ]);
 }
 `,
@@ -2921,8 +2814,10 @@ SELECT *
     {
       code: 'async function tabIndented() {\n\tawait alpha();\n\tawait beta();\n}\n',
       errors: [error(2)],
-      output:
-        'async function tabIndented() {\n\tawait Promise.all([\n\t\talpha(),\n\t\tbeta()\n\t]);\n}\n',
+      output: `async function tabIndented() {
+	await Promise.all([alpha(), beta()]);
+}
+`,
     },
     // Controls for the closure-write barrier. It keys on a write that a LATER
     // await actually reads, so callbacks that write bindings nothing downstream
@@ -2945,7 +2840,7 @@ async function writeDistinctBindings(runnerA, runnerB) {
   let beta;
   await Promise.all([
     runnerA.execute(async () => { alpha = computeAlpha(); }),
-    runnerB.execute(async () => { beta = computeBeta(); })
+    runnerB.execute(async () => { beta = computeBeta(); }),
   ]);
   report(alpha, beta);
 }
@@ -2967,7 +2862,7 @@ async function writeUnreadBinding(runner, sink, payload) {
   let scratch;
   await Promise.all([
     runner.execute(async () => { scratch = computeScratch(); }),
-    sink.persist(payload)
+    sink.persist(payload),
   ]);
 }
 `,
@@ -2993,11 +2888,11 @@ async function shadowedLocalWrite(runner, sink) {
   let tally = 0;
   await Promise.all([
     runner.execute(async () => {
-    let tally;
-    tally = computeTally();
-    record(tally);
-  }),
-    sink.persist(tally)
+      let tally;
+      tally = computeTally();
+      record(tally);
+    }),
+    sink.persist(tally),
   ]);
 }
 `,
@@ -3022,10 +2917,10 @@ async function localDeclarationIsNotAWrite(runner, sink) {
   const captured = loadCaptured();
   await Promise.all([
     runner.execute(async () => {
-    const captured = computeCaptured();
-    stash(captured);
-  }),
-    sink.persist(captured)
+      const captured = computeCaptured();
+      stash(captured);
+    }),
+    sink.persist(captured),
   ]);
 }
 `,
@@ -3052,9 +2947,9 @@ class DistinctSlotExit {
   async run(db) {
     await Promise.all([
       db.runTransaction(async (transaction) => {
-      this.alpha = new TeamMutator(transaction);
-    }),
-      this.beta?.deleteIfEmptied()
+        this.alpha = new TeamMutator(transaction);
+      }),
+      this.beta?.deleteIfEmptied(),
     ]);
   }
 }
@@ -3081,9 +2976,9 @@ class SameSpelledExit {
   async run(db, mutator) {
     await Promise.all([
       db.runTransaction(async (transaction) => {
-      this.mutator = new TeamMutator(transaction);
-    }),
-      mutator.deleteIfEmptied()
+        this.mutator = new TeamMutator(transaction);
+      }),
+      mutator.deleteIfEmptied(),
     ]);
   }
 }
@@ -3113,10 +3008,7 @@ async function foldWithoutAccumulatorAwait(documents) {
       output: `
 async function foldWithoutAccumulatorAwait(documents) {
   await documents.reduce(async (acc, doc) => {
-    await Promise.all([
-      loadDoc(doc),
-      store(doc)
-    ]);
+    await Promise.all([loadDoc(doc), store(doc)]);
     return acc;
   }, Promise.resolve());
 }
@@ -3138,10 +3030,7 @@ async function foldAwaitingTheElement(documents) {
       output: `
 async function foldAwaitingTheElement(documents) {
   await documents.reduce(async (acc, doc) => {
-    await Promise.all([
-      doc,
-      notify(doc)
-    ]);
+    await Promise.all([doc, notify(doc)]);
     return acc;
   }, Promise.resolve());
 }
@@ -3169,10 +3058,7 @@ async function independentRunAfterTheBarrier(documents, setter) {
     await promise;
     await setter.store(doc);
     const derived = compute(doc);
-    await Promise.all([
-      logStart(derived),
-      logFinish(derived)
-    ]);
+    await Promise.all([logStart(derived), logFinish(derived)]);
   }, Promise.resolve());
 }
 `,
@@ -3196,10 +3082,7 @@ async function localShadowNamedPromise(documents) {
 async function localShadowNamedPromise(documents) {
   await documents.reduce(async (acc, doc) => {
     const promise = loadDoc(doc);
-    await Promise.all([
-      promise,
-      store(doc)
-    ]);
+    await Promise.all([promise, store(doc)]);
     return acc;
   }, Promise.resolve());
 }
@@ -3220,10 +3103,7 @@ async function mapCallbackAwaitingItsElement(documents) {
       output: `
 async function mapCallbackAwaitingItsElement(documents) {
   await Promise.all(documents.map(async (doc, index) => {
-    await Promise.all([
-      doc,
-      store(index)
-    ]);
+    await Promise.all([doc, store(index)]);
   }));
 }
 `,
@@ -3243,10 +3123,7 @@ function forEachCallbackParamNamedPromise(documents) {
       output: `
 function forEachCallbackParamNamedPromise(documents) {
   documents.forEach(async (promise, index) => {
-    await Promise.all([
-      promise,
-      store(index)
-    ]);
+    await Promise.all([promise, store(index)]);
   });
 }
 `,
@@ -3263,10 +3140,7 @@ async function plainFunctionParamNamedPromise(promise, doc) {
       errors: [error(2)],
       output: `
 async function plainFunctionParamNamedPromise(promise, doc) {
-  await Promise.all([
-    promise,
-    store(doc)
-  ]);
+  await Promise.all([promise, store(doc)]);
 }
 `,
     },
@@ -3285,10 +3159,7 @@ async function foldCallbackBoundToAName(documents) {
       errors: [error(2)],
       output: `
 const step = async (acc, doc) => {
-  await Promise.all([
-    acc,
-    store(doc)
-  ]);
+  await Promise.all([acc, store(doc)]);
 };
 async function foldCallbackBoundToAName(documents) {
   await documents.reduce(step, Promise.resolve());
@@ -3311,10 +3182,7 @@ async function accumulatorAwaitedLast(documents) {
       output: `
 async function accumulatorAwaitedLast(documents) {
   await documents.reduce(async (acc, doc) => {
-    await Promise.all([
-      store(doc),
-      acc
-    ]);
+    await Promise.all([store(doc), acc]);
   }, Promise.resolve());
 }
 `,
@@ -3333,10 +3201,7 @@ async function nonFoldMethodNamedReduceBy(documents) {
       output: `
 async function nonFoldMethodNamedReduceBy(documents) {
   await documents.reduceBy(async (acc, doc) => {
-    await Promise.all([
-      acc,
-      store(doc)
-    ]);
+    await Promise.all([acc, store(doc)]);
   }, Promise.resolve());
 }
 `,
@@ -3357,10 +3222,7 @@ async function secondParameterNamedPromise(documents) {
       output: `
 async function secondParameterNamedPromise(documents) {
   await documents.reduce(async (acc, promise, index) => {
-    await Promise.all([
-      promise,
-      store(index)
-    ]);
+    await Promise.all([promise, store(index)]);
     return acc;
   }, Promise.resolve());
 }
@@ -3969,7 +3831,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
         async run() {
           const [people, articles] = await Promise.all([
             this.users.read(),
-            this.posts.read()
+            this.posts.read(),
           ]);
           return [people, articles];
         }
@@ -3991,10 +3853,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
       output: `
       class Holder {
         async run(svc) {
-          const [remote, local] = await Promise.all([
-            svc.read(),
-            this.read()
-          ]);
+          const [remote, local] = await Promise.all([svc.read(), this.read()]);
           return [remote, local];
         }
       }
@@ -4014,7 +3873,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
       async function freeCalls() {
         const [people, articles] = await Promise.all([
           fetchUsers(),
-          fetchPosts()
+          fetchPosts(),
         ]);
         return [people, articles];
       }
@@ -4034,7 +3893,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
       async function divergingChains(app) {
         const [people, articles] = await Promise.all([
           app.services.users.read(),
-          app.services.posts.read()
+          app.services.posts.read(),
         ]);
         return [people, articles];
       }
@@ -4061,7 +3920,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
         async run() {
           const [first, second] = await Promise.all([
             this.handlers[0].read(),
-            this.handlers[1].read()
+            this.handlers[1].read(),
           ]);
           return [first, second];
         }
@@ -4087,7 +3946,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
         async run(pathA, pathB) {
           await Promise.all([
             this.realtimeDb.ref(pathA).remove(),
-            this.realtimeDb.ref(pathB).remove()
+            this.realtimeDb.ref(pathB).remove(),
           ]);
         }
       }
@@ -4110,7 +3969,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
         async run() {
           const [value, other] = await Promise.all([
             this.read(),
-            loadSettings()
+            loadSettings(),
           ]);
           return [value, other];
         }
@@ -4132,7 +3991,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
       async function distinctBareReceivers(api, db) {
         const [people, articles] = await Promise.all([
           api.getUsers(),
-          db.getPosts()
+          db.getPosts(),
         ]);
         return [people, articles];
       }
@@ -4162,7 +4021,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
         async run() {
           const [people, articles] = await Promise.all([
             super.users.read(),
-            this.posts.read()
+            this.posts.read(),
           ]);
           return [people, articles];
         }
@@ -4185,10 +4044,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
       output: `
       class Child extends Base {
         async run(svc) {
-          const [remote, local] = await Promise.all([
-            svc.read(),
-            super.read()
-          ]);
+          const [remote, local] = await Promise.all([svc.read(), super.read()]);
           return [remote, local];
         }
       }
@@ -4213,7 +4069,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
         async run(api) {
           const [remote, local] = await Promise.all([
             api.this.read(),
-            this.read()
+            this.read(),
           ]);
           return [remote, local];
         }
@@ -4237,7 +4093,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
         async run(api) {
           const [remote, local] = await Promise.all([
             api['super'].read(),
-            super.read()
+            super.read(),
           ]);
           return [remote, local];
         }
@@ -4262,7 +4118,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
         async run() {
           const [value, other] = await Promise.all([
             super.read(),
-            loadSettings()
+            loadSettings(),
           ]);
           return [value, other];
         }
@@ -4299,7 +4155,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
           public async run() {
             const [a, b] = await Promise.all([
               this.#alpha.fetchOne(),
-              this.#beta.fetchTwo()
+              this.#beta.fetchTwo(),
             ]);
             return [a, b];
           }
@@ -4328,7 +4184,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
           public async run() {
             const [a, b] = await Promise.all([
               fetchAlpha(this.#alphaId),
-              fetchBeta(this.#betaId)
+              fetchBeta(this.#betaId),
             ]);
             return [a, b];
           }
@@ -4359,7 +4215,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
           public async run() {
             const [people, articles] = await Promise.all([
               this.#svc.read(),
-              this.svc.read()
+              this.svc.read(),
             ]);
             return [people, articles];
           }
@@ -4387,7 +4243,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
           public async run() {
             await Promise.all([
               persistDrafts(this.#batchManagerA),
-              emitEvents(this.#batchManagerB)
+              emitEvents(this.#batchManagerB),
             ]);
           }
         }
@@ -4419,7 +4275,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
           public async run() {
             await Promise.all([
               runInBand(async (tx) => { this.#mutator = makeMutator(tx); }),
-              this.#other.deleteIfEmptied()
+              this.#other.deleteIfEmptied(),
             ]);
           }
         }
@@ -4573,10 +4429,7 @@ async function run() {
       errors: [error(2)],
       output: `
 async function run() {
-  await Promise.all([
-    operation1(),
-    operation2()
-  ]);
+  await Promise.all([operation1(), operation2()]);
 }
 `,
     },
@@ -4594,10 +4447,7 @@ async function run() {
       errors: [error(2)],
       output: `
 async function run() {
-  await Promise.all([
-    api.users.getAll(),
-    api.posts.getRecent()
-  ]);
+  await Promise.all([api.users.getAll(), api.posts.getRecent()]);
 }
 `,
     },
@@ -4616,10 +4466,7 @@ async function run() {
       output: `
 async function run() {
   const config = buildConfig();
-  await Promise.all([
-    start(),
-    send(config.api.key)
-  ]);
+  await Promise.all([start(), send(config.api.key)]);
 }
 `,
     },
@@ -4637,10 +4484,7 @@ async function run() {
       errors: [error(2)],
       output: `
 async function run() {
-  await Promise.all([
-    warmCache(),
-    send(payload.id)
-  ]);
+  await Promise.all([warmCache(), send(payload.id)]);
 }
 `,
     },
@@ -4657,10 +4501,7 @@ async function run() {
       errors: [error(2)],
       output: `
 async function run() {
-  await Promise.all([
-    warmCache(),
-    withRetry(() => send(payload.data.id))
-  ]);
+  await Promise.all([warmCache(), withRetry(() => send(payload.data.id))]);
 }
 `,
     },
@@ -4688,10 +4529,7 @@ async function signIn() {
   session.token = 'abc';
 }
 async function run() {
-  const [attempts, ] = await Promise.all([
-    signIn(),
-    post(telemetry)
-  ]);
+  const [attempts] = await Promise.all([signIn(), post(telemetry)]);
   return attempts;
 }
 `,
@@ -4841,7 +4679,7 @@ class C {
   async run() {
     await Promise.all([
       eachPage(async (d) => { this.alpha.set(d, 1); }),
-      this.beta.take()
+      this.beta.take(),
     ]);
   }
 }
@@ -4869,7 +4707,7 @@ class C {
   async run(src: Map<string, number>) {
     await Promise.all([
       eachPage(async (d) => { src.set(d, 1); }),
-      this.storeAll()
+      this.storeAll(),
     ]);
   }
   async storeAll() {
@@ -4901,7 +4739,7 @@ class C {
   async run() {
     await Promise.all([
       eachPage(async (d) => { d.take(); }),
-      this.storeAll()
+      this.storeAll(),
     ]);
   }
   async storeAll() {
@@ -4933,14 +4771,237 @@ class C {
 class C {
   private readonly acc = new Map<string, number>();
   async run() {
-    await Promise.all([
-      this.acc.set('a', 1),
-      this.storeAll()
-    ]);
+    await Promise.all([this.acc.set('a', 1), this.storeAll()]);
   }
   async storeAll() {
     return this.acc.size;
   }
+}
+`,
+    },
+  ],
+});
+
+// The autofix authors a whole statement that a formatter owns, so its layout
+// has to be the one prettier would print. Two properties are asserted here:
+// the array is joined while the statement fits and broken open only past the
+// print width, and a relocated operand's continuation lines land at the depth
+// they move to. Every `output` below is a fixed point of prettier at the width
+// the case configures. (#2087)
+ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
+  valid: [],
+  invalid: [
+    // Prettier collapses an array literal short enough to fit, so a rewrite
+    // emitted one operand per line comes straight back joined.
+    {
+      code: `
+async function loadPair() {
+  await alpha();
+  await beta();
+}
+`,
+      errors: [error(2)],
+      output: `
+async function loadPair() {
+  await Promise.all([alpha(), beta()]);
+}
+`,
+    },
+    // The wide side of the boundary, one column under the print width: the
+    // joined statement is exactly 80 columns.
+    {
+      code: `
+async function loadPair() {
+  await fetchPrimaryXXXXXXXXXXXXXXXXXXXXXXXX();
+  await fetchSecondary();
+}
+`,
+      errors: [error(2)],
+      output: `
+async function loadPair() {
+  await Promise.all([fetchPrimaryXXXXXXXXXXXXXXXXXXXXXXXX(), fetchSecondary()]);
+}
+`,
+    },
+    // One column over, and nothing else changed: the array breaks open, and
+    // every element carries the trailing comma prettier writes under
+    // `trailingComma: 'all'`.
+    {
+      code: `
+async function loadPair() {
+  await fetchPrimaryXXXXXXXXXXXXXXXXXXXXXXXXX();
+  await fetchSecondary();
+}
+`,
+      errors: [error(2)],
+      output: `
+async function loadPair() {
+  await Promise.all([
+    fetchPrimaryXXXXXXXXXXXXXXXXXXXXXXXXX(),
+    fetchSecondary(),
+  ]);
+}
+`,
+    },
+    // A relocated operand moves one level deeper, so its own continuation lines
+    // move with it instead of keeping the depth they had before the move.
+    {
+      code: `
+const registerJobs = () => {
+  scheduler.on('ready', async () => {
+    await runIngest(async (batch) => {
+      batch.commitAll();
+    });
+    await runReport(() => {
+      report.flush();
+    });
+  });
+};
+`,
+      errors: [error(2)],
+      output: `
+const registerJobs = () => {
+  scheduler.on('ready', async () => {
+    await Promise.all([
+      runIngest(async (batch) => {
+        batch.commitAll();
+      }),
+      runReport(() => {
+        report.flush();
+      }),
+    ]);
+  });
+};
+`,
+    },
+    // The same move across a declaration, where the names travel into the
+    // destructuring pattern.
+    {
+      code: `
+const buildLoader = () => {
+  const load = async () => {
+    const alpha = await loadAlpha(async (page) => {
+      page.collect();
+    });
+    const beta = await loadBeta();
+    return { alpha, beta };
+  };
+};
+`,
+      errors: [error(2)],
+      output: `
+const buildLoader = () => {
+  const load = async () => {
+    const [alpha, beta] = await Promise.all([
+      loadAlpha(async (page) => {
+        page.collect();
+      }),
+      loadBeta(),
+    ]);
+    return { alpha, beta };
+  };
+};
+`,
+    },
+    // Re-indenting stops at the boundary of a token that owns its own lines: the
+    // template literal's interior is the string the query is sent as, so it
+    // stays byte for byte while the callback beside it moves.
+    {
+      code: `
+async function seedFixtures() {
+  await runQuery(\`
+SELECT *
+  FROM users
+\`);
+  await withConnection(async (connection) => {
+    connection.release();
+  });
+}
+`,
+      errors: [error(2)],
+      output: `
+async function seedFixtures() {
+  await Promise.all([
+    runQuery(\`
+SELECT *
+  FROM users
+\`),
+    withConnection(async (connection) => {
+      connection.release();
+    }),
+  ]);
+}
+`,
+    },
+    // Once the destructuring pattern is long enough that the call can no longer
+    // start on its line, prettier breaks after the `=` rather than opening the
+    // array.
+    {
+      code: `
+async function loadDashboard() {
+  const leaderboardSnapshotEntries = await one();
+  const tournamentSnapshotEntries = await two();
+}
+`,
+      errors: [error(2)],
+      output: `
+async function loadDashboard() {
+  const [leaderboardSnapshotEntries, tournamentSnapshotEntries] =
+    await Promise.all([one(), two()]);
+}
+`,
+    },
+    // The one-column band between those two: `await Promise.all(` still fits but
+    // the hugged `[` does not, so the sole array argument moves onto its own
+    // line inside an expanded argument list.
+    {
+      code: `
+async function loadDashboard() {
+  const leaderboardSnapshotAll = await one();
+  const tournamentSnapshotEntries = await two();
+}
+`,
+      errors: [error(2)],
+      output: `
+async function loadDashboard() {
+  const [leaderboardSnapshotAll, tournamentSnapshotEntries] = await Promise.all(
+    [one(), two()],
+  );
+}
+`,
+    },
+    // `printWidth` narrows the same statement into the broken form...
+    {
+      code: `
+async function syncCaches() {
+  await warmProductCache();
+  await warmCategoryCache();
+}
+`,
+      options: [{ printWidth: 60 }],
+      errors: [error(2)],
+      output: `
+async function syncCaches() {
+  await Promise.all([
+    warmProductCache(),
+    warmCategoryCache(),
+  ]);
+}
+`,
+    },
+    // ...and widens a statement that breaks at the default back onto one line.
+    {
+      code: `
+async function rebuildEverything() {
+  await rebuildLeaderboardSnapshot();
+  await rebuildTournamentSnapshot();
+}
+`,
+      options: [{ printWidth: 120 }],
+      errors: [error(2)],
+      output: `
+async function rebuildEverything() {
+  await Promise.all([rebuildLeaderboardSnapshot(), rebuildTournamentSnapshot()]);
 }
 `,
     },
