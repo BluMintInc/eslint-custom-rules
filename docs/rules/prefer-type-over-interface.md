@@ -21,26 +21,6 @@ interface TeamMember extends UserProfile, Auditable, Archivable {
 }
 
 // after
-type TeamMember = UserProfile & Auditable & Archivable & {
-  role: string;
-};
-```
-
-The fix also terminates the declaration. An interface body's closing `}` ends the declaration on its own, while a type alias is an assignment that needs a statement terminator, so the rewrite appends `;` after the body. Automatic semicolon insertion would cover the omission — the emission parses either way, which is why no linter can see it — but a formatter writes the terminator, so leaving it out puts every converted declaration out of format. When the source already terminated the declaration (`interface Options { ... };`, where TypeScript reads the `;` as an empty statement), the token after the body is read and no second `;` is added.
-
-### Autofix limitation: intersection layout with two or more heritage clauses
-
-The heritage list is converted into a single `&`-joined intersection on the alias line. Prettier lays out an intersection whose last member is an object literal differently once there are two or more preceding arms: it puts one arm per line and indents the object, whether or not the joined line fits inside `printWidth`. Converting
-
-```typescript
-interface TeamMember extends UserProfile, Auditable, Archivable {
-  role: string;
-}
-```
-
-therefore leaves a declaration Prettier reflows into:
-
-```typescript
 type TeamMember = UserProfile &
   Auditable &
   Archivable & {
@@ -48,7 +28,44 @@ type TeamMember = UserProfile &
   };
 ```
 
-Emitting that form means re-indenting the interface body, which the fix deliberately copies through untouched so that template literals and comments inside it survive verbatim. Running the formatter after `eslint --fix` settles the layout. A single heritage clause is unaffected — Prettier keeps `type Member = Profile & {` on one line — as is a conversion with no heritage clause at all.
+The fix also terminates the declaration. An interface body's closing `}` ends the declaration on its own, while a type alias is an assignment that needs a statement terminator, so the rewrite appends `;` after the body. Automatic semicolon insertion would cover the omission — the emission parses either way, which is why no linter can see it — but a formatter writes the terminator, so leaving it out puts every converted declaration out of format. When the source already terminated the declaration (`interface Options { ... };`, where TypeScript reads the `;` as an empty statement), the token after the body is read and no second `;` is added.
+
+### Intersection layout with two or more heritage clauses
+
+Prettier lays out an intersection whose last member is an object literal one arm per line, indenting the object, once there are two or more preceding arms — whether or not the joined line fits inside `printWidth`. That layout belongs to the shape rather than to an overflow, so the fix emits it directly and the output passes `prettier --check` without a formatter run.
+
+One heritage clause stays on the alias line (`type Member = Profile & {`), as does a conversion with no heritage clause at all. An object literal the author kept hugged never joins the per-line layout either, so an empty body or a body written on one line keeps the joined form:
+
+```typescript
+// before
+interface Blank extends Auditable, Archivable {}
+
+// after
+type Blank = Auditable & Archivable & {};
+```
+
+The body shifts one level to follow the object, and it shifts by insertion rather than by being reprinted, so every byte the author wrote survives. Two interiors are exempt from the shift because their whitespace is content, not layout: a multi-line template literal — where an inserted space would change the string the program computes — and a block comment whose continuation lines do not open with `*`, which the formatter also leaves alone. A JSDoc block is realigned with the member it annotates, which is what the formatter does with it.
+
+```typescript
+// before
+interface Templated extends Auditable, Archivable {
+  query: `SELECT
+  *
+FROM t`;
+}
+
+// after
+type Templated = Auditable &
+  Archivable & {
+    query: `SELECT
+  *
+FROM t`;
+  };
+```
+
+### Autofix limitation: an alias line wider than `printWidth`
+
+The layout above is width-independent, which is what lets the fix emit it. Prettier answers one case differently: when the alias line itself — `type Name = firstClause &` — passes `printWidth`, it drops the first clause onto its own line and indents the whole chain a level deeper. That answer is a response to the width, and the width belongs to the consumer's formatter configuration, which a lint rule cannot read. Keying the emission on 80 columns would emit the deeper layout for a project formatting at 100, so the fix leaves this one to the formatter: a heritage clause long enough to overflow the alias line on its own is reflowed by the next `prettier --write`.
 
 ### Autofix limitation: comments in the declaration header
 
