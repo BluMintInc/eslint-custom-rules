@@ -67,15 +67,152 @@ function isComment(token: TSESTree.Token): boolean {
 }
 
 /**
+ * How many blank lines the text ends on. The characters after the final
+ * terminator are the partial line the removal starts on, not a line of its own.
+ */
+function trailingBlankLines(text: string): number {
+  const lines = text.split('\n');
+  lines.pop();
+
+  let count = 0;
+  for (let index = lines.length - 1; index >= 0; index--) {
+    if (lines[index].trim() !== '') break;
+    count++;
+  }
+  return count;
+}
+
+/** The run of whole blank lines starting at `from`, and where it ends. */
+function blankLineRun(
+  text: string,
+  from: number,
+): { end: number; count: number } {
+  let end = from;
+  let count = 0;
+
+  for (;;) {
+    const terminator = text.indexOf('\n', end);
+    if (terminator === -1 || text.slice(end, terminator).trim() !== '') {
+      return { end, count };
+    }
+    end = terminator + 1;
+    count++;
+  }
+}
+
+/**
+ * What ELSE the fix carrying a removal does, which is what decides how much
+ * blank space that removal owns. Both fields describe edits of the SAME fix —
+ * anything a different report will apply is outside this planner's reach and
+ * must not be declared here.
+ *
+ * Omitting a field claims the fix does not do that thing. The claim matters:
+ * a fix that writes an import back over the one it deletes leaves the file
+ * opening on that import, not on the statement below, so a planner told nothing
+ * about the write would take a blank line prettier keeps.
+ */
+export type RemovalContext = {
+  /** Other spans the fix deletes. */
+  alsoRemoved?: readonly TextRange[];
+  /** Positions the fix writes text at. */
+  insertions?: readonly number[];
+};
+
+/** `text` up to `to` with `excised` taken out, in source order. */
+function survivingPrefix(
+  text: string,
+  to: number,
+  excised: readonly TextRange[],
+): string {
+  const spans = [...excised]
+    .filter(([spanStart, spanEnd]) => spanEnd > 0 && spanStart < to)
+    .sort((left, right) => left[0] - right[0]);
+
+  let result = '';
+  let cursor = 0;
+  for (const [spanStart, spanEnd] of spans) {
+    if (spanEnd <= cursor) continue;
+    if (spanStart > cursor) {
+      result += text.slice(cursor, Math.min(spanStart, to));
+    }
+    cursor = Math.max(cursor, spanEnd);
+    if (cursor >= to) return result;
+  }
+  return result + text.slice(cursor, to);
+}
+
+/**
+ * `end` widened over the blank lines a deletion would otherwise strand, held to
+ * prettier's own rule: no blank line at the start or end of a file, at most one
+ * between statements (#2078).
+ *
+ * The blank line under an import is the separator between it and the module
+ * body — it belongs to the removed statement's layout, so an import deleted off
+ * the top of a file that keeps it leaves the file opening on a blank line, which
+ * prettier strips and `prettier --check` then fails on.
+ *
+ * Only the SURPLUS goes. A deletion in the middle of a file leaves the single
+ * blank line that separated its neighbours, because that separator is layout the
+ * fixer does not own; eating it would reflow code unrelated to the report.
+ *
+ * What sits above the join is the text that survives `context.alsoRemoved` plus
+ * whatever `context.insertions` writes into the removed span: the second of two
+ * imports stripped together lands at the top of the file, while an import
+ * written back over the one being deleted keeps the file from starting there at
+ * all. Neither field widens the span itself, so removals planned side by side
+ * stay adjacent rather than overlapping.
+ */
+function blankLineAdjustedEnd(
+  text: string,
+  start: number,
+  end: number,
+  context: RemovalContext,
+): number {
+  const run = blankLineRun(text, end);
+
+  // Whitespace is all that survives the deletion, so the tail goes whole: a file
+  // does not end on blank lines. A trailing comment is not whitespace and so
+  // keeps its separator here.
+  if (text.slice(run.end).trim() === '') return text.length;
+
+  const insertions = context.insertions ?? [];
+  const writesAtJoin = insertions.some(
+    (position) => position >= start && position <= end,
+  );
+  const before = survivingPrefix(text, start, context.alsoRemoved ?? []);
+  const opensFile =
+    !writesAtJoin &&
+    !insertions.some((position) => position < start) &&
+    before.trim() === '';
+
+  const allowed = opensFile ? 0 : 1;
+  const preceding = writesAtJoin ? 0 : trailingBlankLines(before);
+  const surplus = preceding + run.count - allowed;
+  if (surplus <= 0) return end;
+
+  let cursor = end;
+  for (let taken = Math.min(run.count, surplus); taken > 0; taken--) {
+    cursor = text.indexOf('\n', cursor) + 1;
+  }
+  return cursor;
+}
+
+/**
  * The slice to delete for a statement that loses its last binding. The whole
  * line goes when the statement owns it, trailing same-line comments included:
  * those describe the declaration that is going away, and a
  * `// eslint-disable-line` among them would otherwise outlive its subject. A
  * statement sharing its line with other code gives up only its own characters.
+ *
+ * The blank lines a removal would strand go with it, up to what prettier would
+ * keep — see {@link blankLineAdjustedEnd}. `context` describes the rest of the
+ * same fix so that judgement reads the layout the file is left with; it is read
+ * only, and never widens the span beyond the blank lines that follow.
  */
 export function statementRemovalRange(
   source: ImportRemovalSource,
   declaration: TSESTree.Node,
+  context: RemovalContext = {},
 ): TextRange | null {
   const commentsBefore = source.getCommentsBefore(declaration);
   const boundComment = commentsBefore[commentsBefore.length - 1];
@@ -110,7 +247,11 @@ export function statementRemovalRange(
   }
 
   const lineEnd = source.text.indexOf('\n', cursor.range[1]);
-  return [start, lineEnd === -1 ? source.text.length : lineEnd + 1];
+  if (lineEnd === -1) return [start, source.text.length];
+  return [
+    start,
+    blankLineAdjustedEnd(source.text, start, lineEnd + 1, context),
+  ];
 }
 
 export type Removable = { range: TextRange; removed: boolean };
@@ -183,6 +324,15 @@ function bracesRange(
   return open && close ? [open.range[0], close.range[1]] : null;
 }
 
+/** Whether unbinding `specifiers` leaves the declaration with none at all. */
+function collapsesEntirely(
+  declaration: TSESTree.ImportDeclaration,
+  specifiers: readonly ImportBindingSpecifier[],
+): boolean {
+  const removed = new Set<TSESTree.ImportClause>(specifiers);
+  return declaration.specifiers.every((specifier) => removed.has(specifier));
+}
+
 /**
  * The text ranges that unbind `specifiers` from their shared declaration, or
  * `null` when no removal is provably safe. All specifiers of the declaration
@@ -193,10 +343,14 @@ function bracesRange(
  * Any comment inside the declaration declines the removal outright: the ranges
  * computed here span separators, so a comment nested among the specifiers
  * would be swallowed or stranded depending on where it sits.
+ *
+ * `context` carries the rest of the same fix through to
+ * {@link statementRemovalRange}, which needs it only for blank-line layout.
  */
 export function planImportBindingRemoval(
   source: ImportRemovalSource,
   specifiers: readonly ImportBindingSpecifier[],
+  context: RemovalContext = {},
 ): TextRange[] | null {
   const [first] = specifiers;
   if (!first) return [];
@@ -213,8 +367,8 @@ export function planImportBindingRemoval(
   if (source.getCommentsInside(declaration).length > 0) return null;
 
   const removed = new Set<TSESTree.ImportClause>(specifiers);
-  if (declaration.specifiers.every((specifier) => removed.has(specifier))) {
-    const range = statementRemovalRange(source, declaration);
+  if (collapsesEntirely(declaration, specifiers)) {
+    const range = statementRemovalRange(source, declaration, context);
     return range ? [range] : null;
   }
 
@@ -638,12 +792,17 @@ export type OrphanUnbinder = (
  * with `createSuppressionChecker` so that a suppressed one is never counted on.
  * {@link importBindingReferences} exposes the reference sets such a caller needs
  * to work out which edits belong in the same batch.
+ *
+ * A fix that also WRITES text owes one thing more: the positions it writes at,
+ * via `context.insertions`. They decide nothing about what is deleted, only how
+ * much blank space the deletion carries with it — see {@link RemovalContext}.
  */
 export function planOrphanedImportRemoval(
   source: ImportRemovalSource,
   removed: readonly TextRange[],
+  context: RemovalContext = {},
 ): TextRange[] | null {
-  return planOrphanedBindingRemoval(source, removed);
+  return planOrphanedBindingRemoval(source, removed, undefined, context);
 }
 
 /**
@@ -664,6 +823,7 @@ export function planOrphanedBindingRemoval(
   source: ImportRemovalSource,
   removed: readonly TextRange[],
   unbind?: OrphanUnbinder,
+  context: RemovalContext = {},
 ): TextRange[] | null {
   const orphaned = orphanedBindings(source, removed);
   if (orphaned.length === 0) return [];
@@ -709,9 +869,26 @@ export function planOrphanedBindingRemoval(
     }
   }
 
+  // Every slice this plan collapses, so each declaration's blank-line accounting
+  // reads the layout the whole fix leaves rather than the layout it starts from.
+  //
+  // The SLICE, not the declaration's own range: a declaration node stops short
+  // of its line terminator, and a prefix holding the orphaned terminators of
+  // statements that are going away reads as blank lines that no longer exist.
+  const collapsing: TextRange[] = [];
+  for (const [declaration, group] of byDeclaration) {
+    if (!collapsesEntirely(declaration, group)) continue;
+    const slice = statementRemovalRange(source, declaration);
+    if (slice) collapsing.push(slice);
+  }
+  const layout: RemovalContext = {
+    ...context,
+    alsoRemoved: [...(context.alsoRemoved ?? []), ...collapsing],
+  };
+
   const ranges: TextRange[] = [];
   for (const group of byDeclaration.values()) {
-    const plan = planImportBindingRemoval(source, group);
+    const plan = planImportBindingRemoval(source, group, layout);
     if (!plan) return null;
     ranges.push(...plan);
   }

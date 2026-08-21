@@ -950,7 +950,6 @@ export const useThing = () => {
       parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
       errors: [{ messageId: 'uselessUseMemoPrimitive' }],
       output: `
-
 export const useThing = () => {
   return 1;
 };
@@ -989,7 +988,6 @@ export const useB = () => useMemo(() => 2, []);
         { messageId: 'uselessUseMemoPrimitive' },
       ],
       output: `
-
 export const useA = () => 1;
 export const useB = () => 2;
 `,
@@ -1005,7 +1003,6 @@ export const useA = () => useMemo(() => 1, []);
       parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
       errors: [{ messageId: 'uselessUseMemoPrimitive' }],
       output: `
-
 export const useA = () => 1;
 `,
     },
@@ -1038,7 +1035,6 @@ export const useA = () => React.useMemo(() => 1, []);
       parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
       errors: [{ messageId: 'uselessUseMemoPrimitive' }],
       output: `
-
 export const useA = () => 1;
 `,
     },
@@ -1087,7 +1083,6 @@ export const useA = () => useMemo(() => 1, [LIMIT]);
       parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
       errors: [{ messageId: 'uselessUseMemoPrimitive' }],
       output: `
-
 export const useA = () => 1;
 `,
     },
@@ -1174,7 +1169,6 @@ export const useA = () => useMemo(() => 1, [useMemo(() => 2, [])]);
         { messageId: 'uselessUseMemoPrimitive' },
       ],
       output: `
-
 export const useA = () => 1;
 `,
     },
@@ -1669,5 +1663,157 @@ flag ? 'a' : 'b');
 }
 `;
     expect(evaluate(unparenthesized, 'useNullValue()')).toBeUndefined();
+  });
+});
+
+/**
+ * The blank line an orphaned import leaves behind (#2078).
+ *
+ * A React module opens with its imports, a blank line, then the body. Deleting
+ * the import the fix orphaned used to leave that blank line as the file's first
+ * character, and prettier strips a leading blank line — so every fixed file of
+ * this shape failed `prettier --check`. The claim is about a FORMATTER, so it is
+ * measured against this repo's own prettier rather than eyeballed.
+ *
+ * The boundary matters as much as the defect: a removal in the MIDDLE of a file
+ * still owns nothing but its own line, because the blank line separating its
+ * neighbours is layout the fixer never wrote.
+ */
+describe('no-useless-usememo-primitives blank lines under a removed import', () => {
+  const RULE_ID = '@blumintinc/blumint/no-useless-usememo-primitives';
+
+  const fix = (code: string) => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      RULE_ID,
+      noUselessUsememoPrimitives as unknown as Rule.RuleModule,
+    );
+    return linter.verifyAndFix(code, {
+      parser: '@typescript-eslint/parser',
+      parserOptions: {
+        ecmaVersion: 2020 as const,
+        sourceType: 'module' as const,
+      },
+      rules: { [RULE_ID]: 'error' },
+    } as Linter.Config);
+  };
+
+  const PRETTIER_OPTIONS: prettier.Options = {
+    parser: 'typescript',
+    printWidth: 80,
+    tabWidth: 2,
+    singleQuote: true,
+    semi: true,
+    trailingComma: 'all',
+  };
+
+  const isFixedPoint = (text: string) =>
+    prettier.format(text, PRETTIER_OPTIONS) === text;
+
+  const LEADING_IMPORT = `import { useMemo } from 'react';
+
+export const useA = () => useMemo(() => 1, []);
+`;
+
+  it('emits a file prettier leaves alone when the import opened it', () => {
+    const { output } = fix(LEADING_IMPORT);
+    expect(output).toBe('export const useA = () => 1;\n');
+    expect(isFixedPoint(output)).toBe(true);
+  });
+
+  it('is not vacuous: the leading blank line is what prettier rewrites', () => {
+    expect(isFixedPoint(LEADING_IMPORT)).toBe(true);
+    expect(isFixedPoint('\nexport const useA = () => 1;\n')).toBe(false);
+  });
+
+  // The over-correction guard: this holds BEFORE the fix as well as after, so
+  // it fails the moment a removal starts eating a separator it never wrote.
+  it('keeps the single blank line a removal in the middle of a file leaves', () => {
+    const { output } = fix(`export const LIMIT = 10;
+import { useMemo } from 'react';
+
+export const useA = () => useMemo(() => 1, []);
+`);
+    expect(output).toBe(`export const LIMIT = 10;
+
+export const useA = () => 1;
+`);
+    expect(isFixedPoint(output)).toBe(true);
+  });
+
+  it('keeps the blank line that separated the neighbours of the import', () => {
+    const { output } = fix(`export const LIMIT = 10;
+
+import { useMemo } from 'react';
+
+export const useA = () => useMemo(() => 1, []);
+`);
+    expect(output).toBe(`export const LIMIT = 10;
+
+export const useA = () => 1;
+`);
+    expect(isFixedPoint(output)).toBe(true);
+  });
+
+  it('leaves the line below an import with no blank line under it', () => {
+    const { output } = fix(`import { useMemo } from 'react';
+export const useA = () => useMemo(() => 1, []);
+`);
+    expect(output).toBe('export const useA = () => 1;\n');
+    expect(isFixedPoint(output)).toBe(true);
+  });
+
+  it('leaves a second import line where it stands', () => {
+    const { output } = fix(`import { useMemo } from 'react';
+import { LIMIT } from './constants';
+
+export const useA = () => useMemo(() => 1, []);
+export const limit = LIMIT;
+`);
+    expect(output).toBe(`import { LIMIT } from './constants';
+
+export const useA = () => 1;
+export const limit = LIMIT;
+`);
+    expect(isFixedPoint(output)).toBe(true);
+  });
+
+  it('leaves an import a surviving consumer still reads', () => {
+    const { output } = fix(`import { useMemo } from 'react';
+
+export const useA = () => useMemo(() => 1, []);
+export const useB = () => useMemo(() => ({ a: 1 }), []);
+`);
+    expect(output).toBe(`import { useMemo } from 'react';
+
+export const useA = () => 1;
+export const useB = () => useMemo(() => ({ a: 1 }), []);
+`);
+    expect(isFixedPoint(output)).toBe(true);
+  });
+
+  it('leaves the blank line when only one specifier of the import goes', () => {
+    const { output } = fix(`import { useMemo, useState } from 'react';
+
+export const useA = () => {
+  const [value] = useState(0);
+  const label = useMemo(() => 'a', []);
+  return label + value;
+};
+`);
+    expect(output).toBe(`import { useState } from 'react';
+
+export const useA = () => {
+  const [value] = useState(0);
+  const label = 'a';
+  return label + value;
+};
+`);
+    expect(isFixedPoint(output)).toBe(true);
   });
 });

@@ -282,7 +282,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useTuple(slug: string) {
         return [slug, slug.toUpperCase()];
       }
@@ -299,7 +298,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useTupleLiteral() {
         return [1, 2, 3] as const;
       }
@@ -317,7 +315,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function usePrimitiveArray() {
         const values: number[] = [1, 2, 3];
         return values;
@@ -335,7 +332,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useEmptyArray() {
         return [];
       }
@@ -354,7 +350,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
 
-
       export function useLeadingBlank(value: number) {
         return value;
       }
@@ -371,7 +366,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useNegated(flag: boolean) {
         return !(flag);
       }
@@ -388,7 +382,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useNegative(value: number) {
         return -(value);
       }
@@ -409,7 +402,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
         { messageId: 'primitiveMemo' },
       ],
       output: `
-
       export function useInvalidPattern(value: string) {
         return value;
       }
@@ -425,7 +417,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export const useFlag = (values: string[]) =>
         values.every(Boolean);
       `,
@@ -441,7 +432,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useNext(count: number) {
         return count + 1;
       }
@@ -458,7 +448,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function usePlainLabel() {
         return 'ready';
       }
@@ -475,7 +464,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useUnion(flag: boolean) {
         return flag ? 'ready' : false;
       }
@@ -492,7 +480,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useReadonly(values: ReadonlyArray<number>) {
         return values[0] ?? 0;
       }
@@ -510,7 +497,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useStored(slug: string) {
         const memoized = slug;
         return memoized;
@@ -530,7 +516,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useAssigned(flag: boolean) {
         let result: boolean;
         result = flag;
@@ -551,7 +536,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useCompoundAssigned(flag: boolean) {
         let result = 1;
         result += flag ? 1 : 2;
@@ -572,7 +556,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useConditional(flag: boolean, fallback: string) {
         return flag
           ? 'on'
@@ -591,7 +574,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useTernaryTest(flag: boolean) {
         return (flag || 0) ? 'yes' : 'no';
       }
@@ -608,7 +590,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useNestedTernary(flag: boolean) {
         return (flag ? 1 : 2) ? 'on' : 'off';
       }
@@ -625,7 +606,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useLogicalLeft(value?: string) {
         return (value && value.toUpperCase()) || 'NONE';
       }
@@ -642,7 +622,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useLogicalAnd(flag: boolean, label: string) {
         return (flag || label.length > 0) && label;
       }
@@ -661,7 +640,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useBlock(slug: string) {
         return slug;
       }
@@ -678,7 +656,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useParenthesized(value: string) {
         return value;
       }
@@ -716,7 +693,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useAssert(flag: boolean, fallback: boolean) {
         return (flag || fallback) as boolean;
       }
@@ -736,7 +712,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useSequence(first: number, second: number) {
         const memoized = (first, second);
         return memoized;
@@ -755,7 +730,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export const useArrowSequence = (first: number, second: number) =>
         (first, second);
       `,
@@ -771,7 +745,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useValue(slug: string) {
         return slug;
       }
@@ -788,7 +761,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useMath(value: number) {
         return (value + 1) * 2;
       }
@@ -805,7 +777,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useArrayWrapper(flag: boolean) {
         return [flag || !flag];
       }
@@ -822,7 +793,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useObjectWrapper(flag: boolean) {
         return { value: flag ? 1 : 2 };
       }
@@ -839,7 +809,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useSatisfies(value: string) {
         return value satisfies string;
       }
@@ -856,7 +825,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useSatisfiesLogical(flag: boolean, fallback: boolean) {
         return (flag || fallback) satisfies boolean;
       }
@@ -874,7 +842,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useDestructured() {
         const [value] = [1];
         return value;
@@ -893,7 +860,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useTupleDestructured() {
         const [a] = [1] as [number];
         return a;
@@ -912,7 +878,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useComplexDestructuring() {
         const [a, [b, c]] = [1, [2, 3]] as const;
         return { a, b, c };
@@ -931,7 +896,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useRestDestructuring() {
         const [first, ...rest] = [1, 2, 3];
         return { first, rest };
@@ -950,7 +914,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useObjectDestructuring() {
         const { 0: a, ...rest } = [1, 2, 3] as const;
         return { a, rest };
@@ -969,7 +932,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useAssignmentPattern() {
         const [a = 1] = [2] as const;
         return a;
@@ -1035,7 +997,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
         { messageId: 'primitiveMemo' },
       ],
       output: `
-
       export function useInvalidConfig() {
         return 1;
       }
@@ -1084,7 +1045,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useUndefinedValue() {
         return undefined;
       }
@@ -1103,7 +1063,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useNullValue() {
         return null;
       }
@@ -1120,7 +1079,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useNullishBranches(flag: boolean, fallback: string) {
         return (flag ? undefined : null) ?? fallback;
       }
@@ -1143,7 +1101,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useTaggedNothing(slug: string) {
         const tag = 'ready';
         return slug === tag ? undefined : null;
@@ -1163,7 +1120,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useFunctionCallback() {
         return undefined;
       }
@@ -1180,7 +1136,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useVoidZero() {
         return void 0;
       }
@@ -1197,7 +1152,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useNamespaceMissing() {
         return undefined;
       }
@@ -1268,7 +1222,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useBlockCommentBeforeReturn() {
         return /* keep me */ undefined;
       }
@@ -1288,7 +1241,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useLineCommentBeforeReturn() {
         // keep me
         return undefined;
@@ -1308,7 +1260,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useTrailingCommentAfterExpression() {
         return undefined // keep me
         ;
@@ -1329,7 +1280,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useCommentBeforeCloseBrace() {
         return undefined /* keep me */;
       }
@@ -1349,7 +1299,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useCommentInDependencyArray(flag: boolean) {
         return flag // keep me
         ;
@@ -1367,7 +1316,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useCommentBeforeArrow() {
         return /* keep me */ undefined;
       }
@@ -1384,7 +1332,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useCommentBetweenArguments() {
         return undefined /* keep me */;
       }
@@ -1410,7 +1357,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       // statement and return `undefined` instead of the expression (#1963). It
       // is hoisted above the statement, verbatim, rather than dropped.
       output: `
-
       export function useJsDocInCallback() {
         /**
            * Why this value is nothing.
@@ -1435,7 +1381,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useJsDocBeforeNull() {
         /**
            * The doc.
@@ -1456,7 +1401,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useMultiLineCommentBeforeArrow(flag: boolean) {
         /* first
         second */
@@ -1480,7 +1424,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       // A block comment written on one line folds inline safely: the grammar
       // sees no line terminator, so `return` keeps its argument.
       output: `
-
       export function useSingleLineBlockBeforeReturn(flag: boolean) {
         return /* keep me inline */ flag;
       }
@@ -1502,7 +1445,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useMultiLineAndLineComments(flag: boolean) {
         /* first
           still first */
@@ -1528,7 +1470,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       // Parentheses make the carried line terminator harmless, so the comment
       // needs no line of its own and rides within the replacement.
       output: `
-
       export function useMultiLineCommentInsideParens(flag: boolean) {
         return !(/* first
           still first */ flag);
@@ -1552,7 +1493,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       // After the expression has begun, a line terminator cannot trip the
       // restricted production, so a trailing comment stays where it was written.
       output: `
-
       export function useMultiLineTrailingComment(flag: boolean) {
         return flag /* trailing
           still trailing */;
@@ -1574,7 +1514,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useManyComments(flag: boolean) {
         // first
         return /* second */ flag // third
@@ -1593,7 +1532,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useConciseBodyLeadingComment() {
         return /* keep me */ undefined;
       }
@@ -1610,7 +1548,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useCommentInParameterList() {
         return /* keep me */ undefined;
       }
@@ -1630,7 +1567,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useFunctionCallbackComment() {
         // keep me
         return null;
@@ -1651,7 +1587,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useNamespaceCallbackComment() {
         // keep me
         return undefined;
@@ -1673,7 +1608,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export const useAliasedCommentedMemo = () => {
         const value = /* keep me */ undefined;
         return value;
@@ -1699,7 +1633,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useStoredLineComment() {
         // keep me
         const memoized = undefined;
@@ -1725,7 +1658,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useNegatedCommented(flag: boolean) {
         void flag;
         return !(
@@ -1751,7 +1683,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useDirectiveLineComment() {
         // eslint-disable-next-line no-restricted-syntax
         return undefined;
@@ -1774,7 +1705,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useDirectiveBlockComment() {
         /* eslint-disable-next-line no-restricted-syntax */
         return undefined;
@@ -1855,7 +1785,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useCommentInsideExpression(flag: boolean) {
         return flag ? undefined : /* inner */ null;
       }
@@ -1875,7 +1804,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       /** Documented hook. */
       export function useCommentsAroundCall() {
         // above the call
@@ -1897,7 +1825,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useNamespace() {
         return undefined;
       }
@@ -1943,7 +1870,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-
       export function useStarNamespace() {
         return 1;
       }
@@ -1966,7 +1892,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }, { messageId: 'primitiveMemo' }],
       output: `
-
       export function useFirst() {
         return 1;
       }
@@ -2023,7 +1948,6 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }, { messageId: 'primitiveMemo' }],
       output: `
-
       export function useNamed(slug: string) {
         return slug;
       }
@@ -2212,8 +2136,7 @@ export function useLabel(flag: boolean) {
 }
 `,
         errors: [{ messageId: 'primitiveMemo' }],
-        output: `
-export function useLabel(flag: boolean) {
+        output: `export function useLabel(flag: boolean) {
   return flag;
 }
 `,
