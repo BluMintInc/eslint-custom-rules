@@ -41,6 +41,9 @@ class Example {
 - Recognizes `@Memoize`, `@Memoize()`, and namespaced forms like `@ns.Memoize()`.
 - Auto-fix adds `@Memoize()` and imports `Memoize` from `@blumintinc/typescript-memoize` if missing, without duplicating existing imports or aliases.
 - Getters that sample live external state are exempt automatically (see below).
+- Getters declared to hand back a resource handle — an object carrying the
+  closure that releases what the read allocated — are exempt automatically (see
+  below).
 
 ### Where the decorator is written
 
@@ -189,6 +192,116 @@ a targeted disable comment on the getter:
 ```ts
 // eslint-disable-next-line @blumintinc/blumint/enforce-memoize-getters -- ephemeral by design
 private get screen() { return externalState; }
+```
+
+### Getters that hand back a resource handle
+
+A getter whose declared result carries a **function-valued member** — the
+closure that releases whatever the read allocated — is never reported. Such a
+getter allocates a lease for the reader taking it, so it must run per read.
+Memoized, every later read receives the **first** reader's live lease and the
+release closure bound to it: N readers hold one lease between them while the
+pool accounts for N, the first `release()` frees it while the rest keep running
+against budget nobody accounts for, and one reader's `finally` block disposes
+another reader's resource. The failure is silent and load-dependent, so `--fix`
+would ship it past a green concurrency suite. The
+[live-state exemption](#getters-that-read-live-external-state) cannot reach this
+shape: `this.store.claim(spec)` is neither I/O nor a non-deterministic builtin.
+
+```ts
+type Admission = { readonly reservedMb: number; readonly release: () => void };
+
+class ExecutionGovernor {
+  // ✅ not reported: each read needs its own lease and its own release
+  private get admission(): Admission {
+    return this.store.claim(this.spec);
+  }
+
+  // ✅ not reported: the same shape written inline
+  private get lease(): { id: string; release: () => void } {
+    const id = this.store.claim();
+    return { id, release: () => this.store.free(id) };
+  }
+
+  // ❌ still reported: a quota reading is data, and data is what a cache is for
+  private get quota(): { reservedMb: number; limitMb: number } {
+    return this.store.quota(this.poolId);
+  }
+}
+```
+
+The shapes the annotation can take:
+
+| annotation | read as a handle |
+|---|---|
+| `{ id: string; release: () => void }` | yes |
+| `{ id: string; release(): void }` — a method signature | yes |
+| `{ path: string; [Symbol.dispose](): void }` | yes |
+| `readonly release: () => void`, `release?: () => void`, `release: (() => void) \| undefined` | yes |
+| `Admission`, where `Admission` is a `type` or `interface` declared in the same file | yes |
+| `Admission[]`, `readonly Admission[]`, `Readonly<Admission>`, `Promise<Admission>` | yes |
+| `Base & { release: () => void }`, `Admission \| null` | yes |
+| `{ spec: JobSpec; admission: { release: () => void } }` — nested | yes |
+| `{ id: string; name: string }` | no |
+| `() => string` | no |
+| `Map<string, Admission>` | no |
+
+The test is **structural, not a list of member names.** `release`, `dispose`,
+`close` and `unsubscribe` are the spellings that come to mind, but `free`,
+`cancel`, `destroy`, `abort` and `[Symbol.dispose]` are the same member, and a
+list omitting any of them re-reports the very getter the carve-out exists for —
+the harmful direction, since the report carries a fixer that applies unattended.
+Reading the shape instead costs the opposite error: an object that merely
+bundles a callback with its data goes unreported. That is the cheaper error, and
+a small one, because a getter whose result carries a closure is already sharing
+that closure's captured state with every reader a cache would serve. One union
+arm carrying the closure is enough, because the reader handed that arm is the
+one harmed.
+
+Because the decision is read off the annotation, the annotation has to survive
+the same `eslint --fix` run.
+[`no-explicit-return-type`](./no-explicit-return-type.md) preserves a
+handle-shaped return type for exactly this reason, from the same predicate
+(`src/utils/resourceHandleType.ts`) that
+[`enforce-memoize-async`](./enforce-memoize-async.md) reads, so the three rules
+cannot disagree about what a handle is. Without that, `--fix` would strip the
+annotation and then memoize the getter it had just stopped being able to
+recognise, in one unattended pass.
+
+Like the other carve-outs, this reads the **declared annotation**: the rule is
+syntactic and does not require `parserOptions.project`. A written return type is
+not itself an exemption — these all keep reporting:
+
+- A **bare callable result** (`() => string`). The closure is the whole result,
+  with no resource paired to it whose accounting a shared reference corrupts. It
+  is how a compiled template, a prepared query or a resolved renderer comes
+  back, and computing one once is the point of asking.
+- A handle type **imported from another module**
+  (`import { Admission } from './types'`). Resolution is lexical and same-file,
+  so a name declared elsewhere is unreadable here.
+- An **unannotated** getter whose body happens to build a handle. Without an
+  annotation there is no declaration of intent to honour, and inferring one
+  would need type information this rule does not take.
+- An **index signature** of callables (`{ [event: string]: () => void }`), which
+  is a lookup table of handlers a second reader shares without losing anything
+  the first one owned, and a **getter signature** (`{ get name(): string }`),
+  which is a property access wearing a parameter list.
+- A **two-argument container** (`Map<string, Admission>`), which describes a
+  registry the getter looked handles up in rather than a handle the read
+  allocated.
+
+To exempt one of those, declare the handle type in the file that returns it, or
+suppress the report deliberately:
+
+```ts
+import { Admission } from './types';
+
+class Governor {
+  // eslint-disable-next-line @blumintinc/blumint/enforce-memoize-getters -- every read claims its own lease
+  private get admission(): Admission {
+    return this.store.claim(this.spec);
+  }
+}
 ```
 
 ### Interaction with inline disable comments
