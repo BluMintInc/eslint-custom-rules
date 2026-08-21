@@ -566,9 +566,10 @@ export interface A extends B, C {
       ],
       output: asParseable(`type B = { b: string };
 type C = { c: string };
-export type A = B & C & {
-  a: string;
-};`),
+export type A = B &
+  C & {
+    a: string;
+  };`),
     },
     // Three heritage clauses
     {
@@ -614,7 +615,9 @@ export type A = B & C & {
       ],
       output: asParseable('type A = outer.inner.B<T, U> & C<T> & { a: T; };'),
     },
-    // Heritage clauses spread across lines collapse onto the alias line
+    // Heritage clauses spread across lines are re-laid-out from the
+    // declaration's own indentation, not from the lines the author wrapped
+    // them onto.
     {
       code: `interface A
   extends B,
@@ -627,9 +630,10 @@ export type A = B & C & {
           data: { interfaceName: 'A' },
         },
       ],
-      output: asParseable(`type A = B & C & {
-  a: string;
-};`),
+      output: asParseable(`type A = B &
+  C & {
+    a: string;
+  };`),
     },
     // A constrained type parameter must not be mistaken for heritage when
     // several heritage clauses follow it.
@@ -668,10 +672,11 @@ interface A extends B, C {
         },
       ],
       output: asParseable(`// leading comment
-type A = B & C & {
-  // member comment
-  a: string;
-};`),
+type A = B &
+  C & {
+    // member comment
+    a: string;
+  };`),
     },
     // Comments *inside* the rewritten header spans cannot be relocated
     // safely, so the rule reports without fixing rather than deleting them.
@@ -1405,40 +1410,248 @@ describe('prefer-type-over-interface emits prettier-stable output', () => {
   });
 
   /**
-   * KNOWN GAP, pinned rather than left silent, and tracked on its own in
-   * #2077. Prettier breaks an intersection carrying an object-literal member
-   * one arm per line and indents the object, however the joined line measures
-   * against `printWidth`. Reproducing that layout means re-indenting the body
-   * the fixer deliberately copies through untouched — every member line, and
-   * any template literal or block comment inside it — which is a separate
-   * decision from the terminator.
+   * Prettier breaks an intersection carrying an object-literal member one arm
+   * per line and indents the object, however the joined line measures against
+   * `printWidth` — the layout belongs to the shape, not to an overflow. The
+   * break starts at the SECOND heritage clause; one clause stays on the alias
+   * line and is covered by the prettier-clean cases above.
    *
-   * The divergence starts at the SECOND heritage clause; one clause stays on
-   * the alias line and is covered by the prettier-clean cases above. The
-   * expectations below carry prettier's measured output at 2.7.1, so closing
-   * the gap turns them red instead of leaving the emission quietly wrong.
+   * The expectations carry prettier's measured output at 2.7.1 byte for byte,
+   * so the emission is pinned to the layout rather than to the weaker claim
+   * that some formatter run would accept it (#2077).
    */
   it.each([
     [
       'two heritage clauses',
       'interface TeamMember extends UserProfile, Auditable {\n  role: string;\n}\n',
-      'type TeamMember = UserProfile & Auditable & {\n  role: string;\n};\n',
       'type TeamMember = UserProfile &\n  Auditable & {\n    role: string;\n  };\n',
     ],
     [
       'three heritage clauses',
       'interface TeamMember extends UserProfile, Auditable, Archivable {\n  role: string;\n}\n',
-      'type TeamMember = UserProfile & Auditable & Archivable & {\n  role: string;\n};\n',
       'type TeamMember = UserProfile &\n  Auditable &\n  Archivable & {\n    role: string;\n  };\n',
     ],
-  ])(
-    'terminates %s but still emits the joined intersection prettier reflows',
-    (_label, source, emitted, reflowed) => {
-      expect(isPrettierClean(source)).toBe(true);
-      expect(fix(source)).toBe(emitted);
-      expect(prettier.format(emitted, PRETTIER_OPTIONS)).toBe(reflowed);
-      // The gap is the layout alone: the terminator did land.
-      expect(emitted).toContain('};\n');
-    },
-  );
+    [
+      'four heritage clauses',
+      'interface Wide extends A, B, C, D {\n  role: string;\n}\n',
+      'type Wide = A &\n  B &\n  C &\n  D & {\n    role: string;\n  };\n',
+    ],
+    [
+      'two heritage clauses carrying type arguments',
+      'interface Box<T> extends Base<T>, ns.Other {\n  value: T;\n}\n',
+      'type Box<T> = Base<T> &\n  ns.Other & {\n    value: T;\n  };\n',
+    ],
+    [
+      'two heritage clauses on an exported interface',
+      'export interface TeamMember extends UserProfile, Auditable {\n  role: string;\n}\n',
+      'export type TeamMember = UserProfile &\n  Auditable & {\n    role: string;\n  };\n',
+    ],
+    [
+      'a body whose members are methods',
+      'interface Repo extends A, B {\n  findById(id: string): string | undefined;\n  save(entity: string): void;\n}\n',
+      'type Repo = A &\n  B & {\n    findById(id: string): string | undefined;\n    save(entity: string): void;\n  };\n',
+    ],
+    [
+      'a nested object member, which shifts with the rest of the body',
+      'interface Nested extends A, B {\n  meta: {\n    id: string;\n  };\n}\n',
+      'type Nested = A &\n  B & {\n    meta: {\n      id: string;\n    };\n  };\n',
+    ],
+    [
+      'an interface indented inside a namespace',
+      'namespace Internal {\n  interface Helper extends A, B {\n    id: string;\n  }\n}\n',
+      'namespace Internal {\n  type Helper = A &\n    B & {\n      id: string;\n    };\n}\n',
+    ],
+  ])('reflows %s the way prettier lays them out', (_label, source, emitted) => {
+    expect(isPrettierClean(source)).toBe(true);
+    expect(fix(source)).toBe(emitted);
+    expect(isPrettierClean(emitted)).toBe(true);
+  });
+
+  // The control that keeps the reflow assertions non-vacuous: prettier has to
+  // be able to see the defect. This is the exact text the fixer emitted while
+  // it joined every arm onto the alias line.
+  it('control: the joined intersection is detected as prettier-unclean', () => {
+    const joined =
+      'type TeamMember = UserProfile & Auditable & {\n  role: string;\n};\n';
+    expect(isPrettierClean(joined)).toBe(false);
+    expect(prettier.format(joined, PRETTIER_OPTIONS)).toBe(
+      'type TeamMember = UserProfile &\n  Auditable & {\n    role: string;\n  };\n',
+    );
+  });
+
+  /**
+   * The arms prettier keeps joined. A lone clause stays on the alias line, and
+   * an object literal the author kept hugged — empty, or written on one line —
+   * never joins the per-line layout, so reflowing those would be the defect in
+   * the opposite direction.
+   */
+  it.each([
+    [
+      'a single heritage clause',
+      'interface Member extends Profile {\n  role: string;\n}\n',
+      'type Member = Profile & {\n  role: string;\n};\n',
+    ],
+    [
+      'two heritage clauses over an empty body',
+      'interface Blank extends A, B {}\n',
+      'type Blank = A & B & {};\n',
+    ],
+    [
+      'two heritage clauses over a hugged one-line body',
+      'interface Inline extends A, B { role: string }\n',
+      'type Inline = A & B & { role: string };\n',
+    ],
+    [
+      'no heritage clause at all',
+      'interface Simple {\n  role: string;\n}\n',
+      'type Simple = {\n  role: string;\n};\n',
+    ],
+  ])('keeps %s on one line', (_label, source, emitted) => {
+    expect(fix(source)).toBe(emitted);
+    expect(isPrettierClean(emitted)).toBe(true);
+  });
+
+  /**
+   * RESIDUAL GAP, pinned rather than left silent. The per-arm layout above is
+   * width-independent, which is why the fixer can emit it. Once the alias line
+   * itself — `type Name = firstArm &` — passes `printWidth`, prettier answers
+   * with a different layout: the first arm drops onto its own line and the
+   * whole chain indents a level deeper. That answer IS a width response, and
+   * the rule cannot measure it: `printWidth` belongs to the consumer's
+   * formatter configuration, which no rule context carries. Keying on 80 would
+   * emit the deep layout for a consumer formatting at 100, turning a correct
+   * emission into a wrong one.
+   *
+   * The boundary is pinned at both sides so that a fixer which starts guessing
+   * a width is visible either way.
+   */
+  const nameAt = (armLength: number) =>
+    `interface ${'N'.repeat(10)} extends ${'B'.repeat(
+      armLength,
+    )}, C {\n  id: string;\n}\n`;
+
+  it('is stable up to an alias line of exactly printWidth columns', () => {
+    const output = fix(prettier.format(nameAt(60), PRETTIER_OPTIONS));
+    expect(output.split('\n')[0]).toHaveLength(80);
+    expect(isPrettierClean(output)).toBe(true);
+  });
+
+  it('leaves the deeper layout prettier picks past printWidth to the formatter', () => {
+    const output = fix(prettier.format(nameAt(61), PRETTIER_OPTIONS));
+    expect(output.split('\n')[0]).toHaveLength(81);
+    // The emission is the same width-independent layout; prettier answers the
+    // overflow by indenting the chain, which is the residue.
+    expect(output).toContain(' &\n  C & {\n    id: string;\n  };');
+    expect(isPrettierClean(output)).toBe(false);
+    expect(prettier.format(output, PRETTIER_OPTIONS)).toContain(' =\n  BBB');
+  });
+
+  /**
+   * The re-indent shifts the body's layout, never its content. A template
+   * literal's interior is the runtime string, so an inserted space would change
+   * the value the program computes — a corruption no formatter or parser would
+   * report.
+   */
+  it('leaves the interior of a multi-line template literal byte-identical', () => {
+    const source =
+      'interface Templated extends A, B {\n  query: `SELECT\n  *\nFROM t`;\n}\n';
+    expect(isPrettierClean(source)).toBe(true);
+
+    const output = fix(source);
+    expect(output).toBe(
+      'type Templated = A &\n  B & {\n    query: `SELECT\n  *\nFROM t`;\n  };\n',
+    );
+    expect(isPrettierClean(output)).toBe(true);
+
+    // Read back off the emission rather than off the expectation above, so the
+    // assertion cannot be satisfied by a literal that was rewritten in both
+    // places at once.
+    const literal = /`([^`]*)`/.exec(output)?.[1];
+    expect(literal).toBe('SELECT\n  *\nFROM t');
+    expect(/`([^`]*)`/.exec(source)?.[1]).toBe(literal);
+  });
+
+  // A string literal type can carry a line continuation, where the newline and
+  // everything the fixer might insert after it belong to the string.
+  it('leaves a string type carrying a line continuation byte-identical', () => {
+    const output = fix(
+      "interface Continued extends A, B {\n  label: 'first\\\nsecond';\n}\n",
+    );
+    expect(output).toBe(
+      "type Continued = A &\n  B & {\n    label: 'first\\\nsecond';\n  };\n",
+    );
+    expect(isPrettierClean(output)).toBe(true);
+  });
+
+  /**
+   * Comment fidelity across the reflow. A comment inside the body travels with
+   * the member it annotates; a comment on a heritage clause sits in the span
+   * the header rewrite replaces wholesale, so the fixer declines rather than
+   * delete it, and the whole declaration is left for the author.
+   */
+  it('carries a body comment through the re-indent', () => {
+    const source =
+      'interface Commented extends A, B {\n  // why this member exists\n  role: string;\n}\n';
+    expect(isPrettierClean(source)).toBe(true);
+    expect(fix(source)).toBe(
+      'type Commented = A &\n  B & {\n    // why this member exists\n    role: string;\n  };\n',
+    );
+  });
+
+  it('realigns a JSDoc block in the body the way prettier does', () => {
+    const source =
+      'interface Doc extends A, B {\n  /**\n   * Why the member exists.\n   */\n  role: string;\n}\n';
+    expect(isPrettierClean(source)).toBe(true);
+
+    const output = fix(source);
+    expect(output).toBe(
+      'type Doc = A &\n  B & {\n    /**\n     * Why the member exists.\n     */\n    role: string;\n  };\n',
+    );
+    expect(isPrettierClean(output)).toBe(true);
+    expect(output).toContain('Why the member exists.');
+  });
+
+  // A block comment whose continuation lines do not open with `*` is one the
+  // formatter leaves alone, so the re-indent must leave it alone too: its
+  // interior is prose the author laid out.
+  it('leaves a non-JSDoc block comment interior untouched', () => {
+    const output = fix(
+      'interface Doc extends A, B {\n  /* first\n     second */\n  role: string;\n}\n',
+    );
+    expect(output).toBe(
+      'type Doc = A &\n  B & {\n    /* first\n     second */\n    role: string;\n  };\n',
+    );
+    expect(isPrettierClean(output)).toBe(true);
+  });
+
+  it('declines the rewrite when a comment sits on a heritage clause', () => {
+    const source =
+      'interface Commented extends A /* base */, B {\n  id: string;\n}\n';
+    // Withheld whole: the comment survives because nothing was written.
+    expect(fix(source)).toBe(source);
+    expect(source).toContain('/* base */');
+  });
+
+  // Indenting a blank line would leave trailing whitespace behind, which is a
+  // format failure of its own.
+  it('leaves a blank line between members blank', () => {
+    const source =
+      'interface Spaced extends A, B {\n  role: string;\n\n  id: string;\n}\n';
+    expect(isPrettierClean(source)).toBe(true);
+
+    const output = fix(source);
+    expect(output).toBe(
+      'type Spaced = A &\n  B & {\n    role: string;\n\n    id: string;\n  };\n',
+    );
+    expect(output).not.toMatch(/[ \t]+\n/);
+    expect(isPrettierClean(output)).toBe(true);
+  });
+
+  // The body shifts by the level the body itself uses, so a source indented
+  // some other way does not acquire a second style mid-declaration.
+  it('shifts the body by the indentation unit the body already uses', () => {
+    expect(fix('interface Wide extends A, B {\n    id: string;\n}\n')).toBe(
+      'type Wide = A &\n    B & {\n        id: string;\n    };\n',
+    );
+  });
 });

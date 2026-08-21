@@ -64,6 +64,119 @@ function isInsideModuleAugmentation(node: TSESTree.Node): boolean {
   return false;
 }
 
+const DEFAULT_INDENT_UNIT = '  ';
+
+/**
+ * The whitespace opening the line `offset` sits on. Read from the line start
+ * rather than from the node, so a declaration the parent prefixes — `export
+ * interface X` — still reports the indentation of its statement rather than an
+ * empty string.
+ */
+function lineIndentAt(sourceCode: TSESLint.SourceCode, offset: number): string {
+  const lineStart = sourceCode.text.lastIndexOf('\n', offset - 1) + 1;
+  return /^[ \t]*/.exec(sourceCode.text.slice(lineStart, offset))?.[0] ?? '';
+}
+
+/**
+ * One level of indentation as the body already spells it, so a source written
+ * with four spaces or tabs shifts by its own unit instead of acquiring a second
+ * style. A body whose first member is not indented past the declaration says
+ * nothing about the unit, so the formatter's default stands in.
+ */
+function indentUnitOf(
+  sourceCode: TSESLint.SourceCode,
+  node: TSESTree.TSInterfaceDeclaration,
+  baseIndent: string,
+): string {
+  const firstMember = node.body.body[0];
+  if (!firstMember) {
+    return DEFAULT_INDENT_UNIT;
+  }
+  const memberIndent = lineIndentAt(sourceCode, firstMember.range[0]);
+  return memberIndent.startsWith(baseIndent) &&
+    memberIndent.length > baseIndent.length
+    ? memberIndent.slice(baseIndent.length)
+    : DEFAULT_INDENT_UNIT;
+}
+
+/**
+ * Prettier realigns the continuation lines of a block comment only when every
+ * one of them opens with `*` — the JSDoc shape. Any other block comment keeps
+ * its interior byte for byte, and so must the rewrite: those bytes are the
+ * author's, and an intersection carrying either form is stable whichever way
+ * the interior sits.
+ */
+function isRealignedBlockComment(value: string): boolean {
+  const lines = `*${value}*`.split('\n');
+  return lines.length > 1 && lines.every((line) => line.trimStart()[0] === '*');
+}
+
+/**
+ * Lines whose leading whitespace belongs to a token rather than to the layout:
+ * the interior of a multi-line template literal (where an inserted space
+ * changes the runtime string), of a string carrying a line continuation, and of
+ * a block comment the formatter leaves alone. Shifting those would rewrite text
+ * the fixer does not own.
+ *
+ * Only lines *after* a token's first are protected. A line that merely starts
+ * inside a substitution — the `}` closing `${...}` — carries code, not string
+ * content, so it indents with the rest.
+ */
+function tokenInteriorLines(
+  sourceCode: TSESLint.SourceCode,
+  body: TSESTree.TSInterfaceBody,
+): Set<number> {
+  const interior = new Set<number>();
+  for (const token of sourceCode.getTokens(body, { includeComments: true })) {
+    if (token.loc.start.line === token.loc.end.line) {
+      continue;
+    }
+    if (
+      token.type === AST_TOKEN_TYPES.Block &&
+      isRealignedBlockComment(token.value)
+    ) {
+      continue;
+    }
+    for (
+      let line = token.loc.start.line + 1;
+      line <= token.loc.end.line;
+      line++
+    ) {
+      interior.add(line);
+    }
+  }
+  return interior;
+}
+
+/**
+ * Prettier breaks an intersection whose last member is an object literal one
+ * arm per line and indents the object, however the joined line measures against
+ * `printWidth` — that layout is the shape's, not a response to overflow. The
+ * break starts at the SECOND arm, so a lone heritage clause stays on the alias
+ * line.
+ *
+ * The object joins that layout only when the formatter expands it, which for a
+ * type literal happens exactly when the source put a line break between `{` and
+ * the first member. A body the author kept on one line stays hugged, and the
+ * joined intersection is what the formatter writes there (#2077).
+ */
+function needsIntersectionReflow(
+  sourceCode: TSESLint.SourceCode,
+  node: TSESTree.TSInterfaceDeclaration,
+  heritage: TSESTree.TSInterfaceHeritage[],
+): boolean {
+  if (heritage.length < 2) {
+    return false;
+  }
+  const firstMember = node.body.body[0];
+  if (!firstMember) {
+    return false;
+  }
+  return sourceCode.text
+    .slice(node.body.range[0], firstMember.range[0])
+    .includes('\n');
+}
+
 type MessageIds = 'preferType' | 'preferTypeDefaultExport';
 
 /**
@@ -225,17 +338,60 @@ export const preferTypeOverInterface: TSESLint.RuleModule<MessageIds, never[]> =
               const heritage = node.extends ?? [];
               // `getText` round-trips type arguments and qualified names, so
               // `extends ns.B<T>, C` becomes `ns.B<T> & C`.
-              const intersection = heritage
-                .map((clause) => sourceCode.getText(clause))
-                .join(' & ');
+              const arms = heritage.map((clause) => sourceCode.getText(clause));
 
-              const edits = [
-                fixer.replaceTextRange(keywordSpan, 'type '),
-                fixer.replaceTextRange(
-                  headerSpan,
-                  heritage.length > 0 ? ` = ${intersection} & ` : ' = ',
-                ),
-              ];
+              const edits = [fixer.replaceTextRange(keywordSpan, 'type ')];
+
+              if (needsIntersectionReflow(sourceCode, node, heritage)) {
+                const baseIndent = lineIndentAt(sourceCode, node.range[0]);
+                const unit = indentUnitOf(sourceCode, node, baseIndent);
+                const armIndent = `${baseIndent}${unit}`;
+
+                // The object literal lands one level deeper than the alias, so
+                // every line the body already occupies moves with it. The body
+                // is shifted by inserting the extra level at each line's start
+                // rather than by rewriting the body: an insertion cannot drop a
+                // comment, a member, or any formatting the author chose.
+                edits.push(
+                  fixer.replaceTextRange(
+                    headerSpan,
+                    ` = ${arms.join(` &\n${armIndent}`)} & `,
+                  ),
+                );
+
+                const protectedLines = tokenInteriorLines(
+                  sourceCode,
+                  node.body,
+                );
+                for (
+                  let line = node.body.loc.start.line + 1;
+                  line <= node.body.loc.end.line;
+                  line++
+                ) {
+                  // A blank line gains trailing whitespace if it is indented,
+                  // which is a format failure of its own.
+                  if (
+                    protectedLines.has(line) ||
+                    sourceCode.lines[line - 1].trim() === ''
+                  ) {
+                    continue;
+                  }
+                  const lineStart = sourceCode.getIndexFromLoc({
+                    line,
+                    column: 0,
+                  });
+                  edits.push(
+                    fixer.insertTextBeforeRange([lineStart, lineStart], unit),
+                  );
+                }
+              } else {
+                edits.push(
+                  fixer.replaceTextRange(
+                    headerSpan,
+                    arms.length > 0 ? ` = ${arms.join(' & ')} & ` : ' = ',
+                  ),
+                );
+              }
 
               // Converting a declaration into an assignment changes what ends
               // it: the interface body's `}` closes the declaration on its
