@@ -1601,13 +1601,23 @@ export const useLatestCallback = createRule<Options, MessageIds>({
             //
             // A null from BOTH is a demand to withhold: a binding is left
             // unreferenced that neither oracle can unbind safely.
+            //
+            // The hook's own import lands on the react declaration this plan
+            // may delete (see `insertImportFixes`), so the planner is told that
+            // position: a file whose react import is replaced rather than just
+            // dropped still opens on an import, and the blank line beneath it
+            // stays (issue #2078).
+            const layout = {
+              insertions: latestCallbackImport ? [] : [statement.range[0]],
+            };
             const wholePlan = planOrphanedImportRemoval(
               sourceCode,
               erasedSpans(true),
+              layout,
             );
             const unbindings =
               wholePlan ??
-              planOrphanedImportRemoval(sourceCode, erasedSpans(false));
+              planOrphanedImportRemoval(sourceCode, erasedSpans(false), layout);
             if (!unbindings) {
               return null;
             }

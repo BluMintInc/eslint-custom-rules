@@ -750,8 +750,7 @@ function C() {
       { assumeAllUseAreMemoized: boolean },
     ],
     errors: [redundantError('doThing')],
-    output: `
-function doThing() {}
+    output: `function doThing() {}
 
 function C() {
   const handle = doThing;
@@ -1391,8 +1390,7 @@ function C() {
       { assumeAllUseAreMemoized: boolean },
     ],
     errors: [redundantError('submit')],
-    output: `
-function C() {
+    output: `function C() {
   const { submit } = useEventHandlers();
   const h = submit;
   return <button onClick={h}/>;
@@ -1410,8 +1408,7 @@ function C() {
       { assumeAllUseAreMemoized: boolean },
     ],
     errors: [redundantError('submit')],
-    output: `
-function C() {
+    output: `function C() {
   const { submit } = useEventHandlers();
   const h = submit;
   return <button onClick={h}/>;
@@ -1429,8 +1426,7 @@ function C() {
       { assumeAllUseAreMemoized: boolean },
     ],
     errors: [redundantError('submit')],
-    output: `
-function C() {
+    output: `function C() {
   const { submit } = useEventHandlers();
   const h = submit;
   return <button onClick={h}/>;
@@ -1448,8 +1444,7 @@ function C() {
       { assumeAllUseAreMemoized: boolean },
     ],
     errors: [redundantError('submit')],
-    output: `
-function C() {
+    output: `function C() {
   const { submit } = useEventHandlers();
   const h = submit;
   return <button onClick={h}/>;
@@ -1469,8 +1464,7 @@ function C() {
       { assumeAllUseAreMemoized: boolean },
     ],
     errors: [redundantError('preventDefaultAction')],
-    output: `
-function C() {
+    output: `function C() {
   const { preventDefaultAction } = useEventHandlers();
   const h = preventDefaultAction;
   return <button onClick={h}/>;

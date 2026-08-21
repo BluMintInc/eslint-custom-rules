@@ -306,6 +306,131 @@ describe('planImportBindingRemoval', () => {
   });
 });
 
+/**
+ * Prettier writes no blank line at the start or end of a file and at most one
+ * between statements, so a removal that leaves more than that emits text
+ * `prettier --check` rejects (issue #2078). These pin the whole boundary: what
+ * the removal owns, and — the failure mode that matters more — what it does not.
+ */
+describe('blank lines a statement removal leaves', () => {
+  const dropA = (
+    code: string,
+    context?: Parameters<typeof planImportBindingRemoval>[2],
+  ) => {
+    const source = sourceOf(code);
+    const ranges = planImportBindingRemoval(
+      source,
+      specifiersOf(source, 'A') as never,
+      context,
+    );
+    expect(ranges).not.toBeNull();
+    return applyRemovals(code, ranges as TextRange[]);
+  };
+
+  it('takes the blank line under an import that opened the file', () => {
+    expect(dropA("import { A } from './a';\n\nexport const value = 1;\n")).toBe(
+      'export const value = 1;\n',
+    );
+  });
+
+  it('takes every blank line under an import that opened the file', () => {
+    expect(
+      dropA("import { A } from './a';\n\n\n\nexport const value = 1;\n"),
+    ).toBe('export const value = 1;\n');
+  });
+
+  it('keeps the blank line that separated the neighbours of a removal', () => {
+    expect(
+      dropA(
+        "const first = 1;\nimport { A } from './a';\n\nconst second = 2;\n",
+      ),
+    ).toBe('const first = 1;\n\nconst second = 2;\n');
+  });
+
+  it('leaves one blank line where a removal would double them', () => {
+    expect(
+      dropA(
+        "const first = 1;\nimport { A } from './a';\n\n\nconst second = 2;\n",
+      ),
+    ).toBe('const first = 1;\n\nconst second = 2;\n');
+  });
+
+  it('leaves one blank line when the removal is fenced by two', () => {
+    expect(
+      dropA(
+        "const first = 1;\n\nimport { A } from './a';\n\nconst second = 2;\n",
+      ),
+    ).toBe('const first = 1;\n\nconst second = 2;\n');
+  });
+
+  it('keeps the line below an import with no blank line under it', () => {
+    expect(dropA("import { A } from './a';\nconst value = 1;\n")).toBe(
+      'const value = 1;\n',
+    );
+  });
+
+  it('keeps a second import line intact', () => {
+    expect(
+      dropA(
+        "import { A } from './a';\nimport { B } from './b';\n\nconst v = B;\n",
+      ),
+    ).toBe("import { B } from './b';\n\nconst v = B;\n");
+  });
+
+  it('keeps the blank line when only one specifier of the import goes', () => {
+    expect(dropA("import { A, B } from './a';\n\nconst v = B;\n")).toBe(
+      "import { B } from './a';\n\nconst v = B;\n",
+    );
+  });
+
+  it('takes the trailing blank lines of a removal that ends the file', () => {
+    expect(dropA("const value = 1;\nimport { A } from './a';\n\n\n")).toBe(
+      'const value = 1;\n',
+    );
+  });
+
+  it('keeps the separator above a comment that follows the removal', () => {
+    expect(
+      dropA("const value = 1;\nimport { A } from './a';\n\n// keep me\n"),
+    ).toBe('const value = 1;\n\n// keep me\n');
+  });
+
+  // A fix that writes an import back over the one it deletes leaves the file
+  // opening on that import, so the blank line beneath is still a separator
+  // between two statements rather than a gap at the top of the file.
+  it('keeps the blank line when the same fix writes text into the removal', () => {
+    expect(
+      dropA("import { A } from './a';\n\nexport const value = 1;\n", {
+        insertions: [0],
+      }),
+    ).toBe('\nexport const value = 1;\n');
+  });
+
+  it('takes the blank line when the fix writes text below the removal', () => {
+    expect(
+      dropA("import { A } from './a';\n\nexport const value = 1;\n", {
+        insertions: [26],
+      }),
+    ).toBe('export const value = 1;\n');
+  });
+
+  it('unbinds two imports off the top of a file as one opening', () => {
+    const code =
+      "import type { A } from './a';\nimport type { B } from './b';\n\nexport const v: Record<A, B> = {};\n";
+    expect(stripAndUnbind(code, ': Record<A, B>')).toBe(
+      'export const v = {};\n',
+    );
+  });
+
+  it('keeps the separator when two unbound imports sit under a survivor', () => {
+    const code =
+      "import { keep } from './keep';\nimport type { A } from './a';\nimport type { B } from './b';\n\nexport const v: Record<A, B> = keep;\n";
+    expect(stripAndUnbind(code, ': Record<A, B>')).toBe(
+      "import { keep } from './keep';\n\nexport const v = keep;\n",
+    );
+  });
+});
+
 describe('removeImportBindingFixes', () => {
   it('turns the plan into fixes over the same ranges', () => {
     const code = "import { A, B } from './a';\n";

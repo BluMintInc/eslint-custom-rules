@@ -1587,8 +1587,7 @@ export const buildUser = (id: string): User => {
           data: { functionKind: 'arrow function "buildUser"' },
         },
       ],
-      output: `
-export const buildUser = (id: string) => {
+      output: `export const buildUser = (id: string) => {
   return { id };
 };
 `,
@@ -1643,8 +1642,7 @@ export const cloneUser = (id: string): User => ({ id });
           data: { functionKind: 'arrow function "cloneUser"' },
         },
       ],
-      output: `
-export const buildUser = (id: string) => ({ id });
+      output: `export const buildUser = (id: string) => ({ id });
 export const cloneUser = (id: string) => ({ id });
 `,
     },
@@ -1742,8 +1740,7 @@ export const cloneUser = (): Record<Role, User> => ({});
           data: { functionKind: 'arrow function "cloneUser"' },
         },
       ],
-      output: `
-export const buildUser = () => ({});
+      output: `export const buildUser = () => ({});
 export const cloneUser = () => ({});
 `,
     },
@@ -1791,8 +1788,7 @@ export const cloneUser = (): Wrapper => ({ id: '2' });
           data: { functionKind: 'arrow function "cloneUser"' },
         },
       ],
-      output: `
-export const buildUser = () => ({ id: '1' });
+      output: `export const buildUser = () => ({ id: '1' });
 export const cloneUser = () => ({ id: '2' });
 `,
     },
@@ -1814,8 +1810,7 @@ export const cloneUser = (): Wrapper => ({ id: '2' });
           data: { functionKind: 'arrow function "cloneUser"' },
         },
       ],
-      output: `
-export const buildUser = () => ({ id: '1' });
+      output: `export const buildUser = () => ({ id: '1' });
 export const cloneUser = () => ({ id: '2' });
 `,
     },
@@ -1968,8 +1963,7 @@ export const cloneUser = (): UserModel => ({});
           data: { functionKind: 'arrow function "cloneUser"' },
         },
       ],
-      output: `
-export const buildUser = () => ({});
+      output: `export const buildUser = () => ({});
 export const cloneUser = () => ({});
 `,
     },
@@ -2016,8 +2010,7 @@ export const cloneUser = (): User => ({});
           data: { functionKind: 'arrow function "cloneUser"' },
         },
       ],
-      output: `
-export const buildUser = () => ({});
+      output: `export const buildUser = () => ({});
 export const cloneUser = () => ({});
 `,
     },
@@ -2039,8 +2032,7 @@ export const reload = (): Api.User => ({ id: 2 });
           data: { functionKind: 'arrow function "reload"' },
         },
       ],
-      output: `
-export const load = () => ({ id: 1 });
+      output: `export const load = () => ({ id: 1 });
 export const reload = () => ({ id: 2 });
 `,
     },
@@ -2092,8 +2084,7 @@ export class Repository {
           data: { functionKind: 'class method "load"' },
         },
       ],
-      output: `
-export class Repository {
+      output: `export class Repository {
   find() {
     return {} as never;
   }
@@ -2124,8 +2115,7 @@ export const outer = (): User => {
           data: { functionKind: 'arrow function "inner"' },
         },
       ],
-      output: `
-export const outer = () => {
+      output: `export const outer = () => {
   const inner = () => ({});
   return inner();
 };
@@ -2445,8 +2435,7 @@ export class Repository {
           data: { functionKind: 'class method "find"' },
         },
       ],
-      output: `
-export function buildUser() {
+      output: `export function buildUser() {
   return {} as never;
 }
 
@@ -2483,8 +2472,7 @@ export const cloneUser = (): User => {};
           data: { functionKind: 'arrow function "cloneUser"' },
         },
       ],
-      output: `
-// builds nothing
+      output: `// builds nothing
 export const buildUser = () => {};
 
 /* clones nothing */
@@ -2641,8 +2629,7 @@ export const buildUser = (): Record<Role, User> => ({});
           data: { functionKind: 'arrow function "buildUser"' },
         },
       ],
-      output: `
-export const buildUser = () => ({});
+      output: `export const buildUser = () => ({});
 `,
     },
 
@@ -2678,8 +2665,7 @@ export function buildUser(id: string): User {
           data: { functionKind: 'function "buildUser"' },
         },
       ],
-      output: `
-export function buildUser(id: string) {
+      output: `export function buildUser(id: string) {
   return { id };
 }
 `,
@@ -2697,8 +2683,7 @@ export const buildUser = (): UserModel => ({});
           data: { functionKind: 'arrow function "buildUser"' },
         },
       ],
-      output: `
-export const buildUser = () => ({});
+      output: `export const buildUser = () => ({});
 `,
     },
 
@@ -2714,8 +2699,7 @@ export const buildUser = (): User => ({});
           data: { functionKind: 'arrow function "buildUser"' },
         },
       ],
-      output: `
-export const buildUser = () => ({});
+      output: `export const buildUser = () => ({});
 `,
     },
 
@@ -2749,8 +2733,7 @@ export const load = (): Api.User => ({ id: 1 });
           data: { functionKind: 'arrow function "load"' },
         },
       ],
-      output: `
-export const load = () => ({ id: 1 });
+      output: `export const load = () => ({ id: 1 });
 `,
     },
 
@@ -2911,8 +2894,7 @@ export const buildUser = (): User => ({});
           data: { functionKind: 'arrow function "buildUser"' },
         },
       ],
-      output: `
-export const buildUser = () => ({});
+      output: `export const buildUser = () => ({});
 `,
     },
 
@@ -3002,8 +2984,7 @@ export const buildUser = (id: string): User => ({ id });
           data: { functionKind: 'arrow function "buildUser"' },
         },
       ],
-      output: `
-export const buildUser = (id: string) => ({ id });
+      output: `export const buildUser = (id: string) => ({ id });
 `,
     },
 
@@ -3180,8 +3161,7 @@ export const buildUser = (): Wrapper => ({ id: '1' }), cloneUser = (): Wrapper =
           data: { functionKind: 'arrow function "cloneUser"' },
         },
       ],
-      output: `
-export const buildUser = () => ({ id: '1' }), cloneUser = () => ({ id: '2' });
+      output: `export const buildUser = () => ({ id: '1' }), cloneUser = () => ({ id: '2' });
 `,
     },
 
@@ -3206,8 +3186,7 @@ export const cloneUser = (): Wrapper => ({ id: '2' });
           data: { functionKind: 'arrow function "cloneUser"' },
         },
       ],
-      output: `
-export const buildUser = () => ({ id: '1' });
+      output: `export const buildUser = () => ({ id: '1' });
 export const cloneUser = () => ({ id: '2' });
 `,
     },

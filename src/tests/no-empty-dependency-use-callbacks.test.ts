@@ -948,7 +948,6 @@ export const Button = () => {
 `,
     errors: [{ messageId: 'preferUtilityFunction' as const }],
     output: `
-
 const onClick = () => {
   console.log('hi');
 };

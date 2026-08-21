@@ -777,7 +777,6 @@ export const List = ({ items }) => (
 `,
       errors: [nestedKeyError('span'), nestedKeyError('b')],
       output: `
-
 export const List = ({ items }) => (
   <div>
     {items.map((item) => (
@@ -839,7 +838,6 @@ export const List = ({ items }) => (
 `,
       errors: [nestedKeyError('span')],
       output: `
-
 export const List = ({ items }) => (
   <div>
     {items.map((item) => (
@@ -869,7 +867,6 @@ export const List = ({ items }) => (
 `,
       errors: [nestedKeyError('span')],
       output: `
-
 export const List = ({ items }) => (
   <div>
     {items.map((item) => (
@@ -899,7 +896,6 @@ export const List = ({ items }) => (
 `,
       errors: [nestedKeyError('span')],
       output: `
-
 export const List = ({ items }) => (
   <div>
     {items.map((item) => (

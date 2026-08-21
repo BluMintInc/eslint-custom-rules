@@ -682,6 +682,42 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
      * declares, so any other name would be written as an import that resolves
      * nowhere.
      */
+    function importDeclarationsOf(): TSESTree.ImportDeclaration[] {
+      return sourceCode.ast.body.filter(
+        (statement): statement is TSESTree.ImportDeclaration =>
+          statement.type === AST_NODE_TYPES.ImportDeclaration,
+      );
+    }
+
+    /**
+     * Where {@link planFastDeepEqualImport} lands its statement, told to the
+     * removal planner so the blank line under a deleted microdiff import is
+     * judged against a file that opens on the replacement rather than on the
+     * module body (issue #2078).
+     *
+     * The anchor positions are a superset of the one the fixer picks, since which
+     * declarations the plan deletes is not known until it exists. Naming a
+     * position the fix does not use only leaves a blank line standing, which is
+     * the layout the file already had.
+     */
+    function fastDeepEqualImportSites(): number[] {
+      if (hasFastDeepEqualImport) return [];
+
+      const importDeclarations = importDeclarationsOf();
+      const microdiffImports = importDeclarations.filter((declaration) =>
+        MICRODIFF_MODULES.has(String(declaration.source.value)),
+      );
+      if (microdiffImports.length > 0) {
+        return [
+          ...microdiffImports.map((declaration) => declaration.range[0]),
+          microdiffImports[0].range[1],
+        ];
+      }
+
+      const last = importDeclarations[importDeclarations.length - 1];
+      return [last ? last.range[1] : 0];
+    }
+
     function planFastDeepEqualImport(
       fixer: TSESLint.RuleFixer,
       removalRanges: readonly TextRange[],
@@ -691,10 +727,7 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
       }
 
       const importStatement = fastDeepEqualImport(fastDeepEqualImportName);
-      const importDeclarations = sourceCode.ast.body.filter(
-        (statement): statement is TSESTree.ImportDeclaration =>
-          statement.type === AST_NODE_TYPES.ImportDeclaration,
-      );
+      const importDeclarations = importDeclarationsOf();
       const removalStartOf = (declaration: TSESTree.ImportDeclaration) =>
         removalRanges.find(
           (range) =>
@@ -957,6 +990,7 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
             ? planOrphanedImportRemoval(
                 sourceCode,
                 planned.flatMap((entry) => entry.removed),
+                { insertions: fastDeepEqualImportSites() },
               )
             : null;
         const removalRanges = importRemoval ?? [];
