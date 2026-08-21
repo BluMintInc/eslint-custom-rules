@@ -1,5 +1,91 @@
 [
   {
+    "version": "1.20.171",
+    "date": "2026-08-21T14:37:57.307Z",
+    "rules": [
+      {
+        "name": "enforce-assert-safe-object-key",
+        "changeType": "fix",
+        "issues": [
+          2067
+        ],
+        "summary": "own the whole access when wrapping a key (closes #2067)"
+      },
+      {
+        "name": "enforce-memoize-async",
+        "changeType": "fix",
+        "issues": [
+          2068
+        ],
+        "summary": "stop demanding @Memoize() on a resource-handle factory (closes #2068)"
+      },
+      {
+        "name": "enforce-memoize-getters",
+        "changeType": "fix",
+        "issues": [
+          2074
+        ],
+        "summary": "exempt a getter that hands back a resource handle (closes #2074)"
+      },
+      {
+        "name": "enforce-stable-hash-spread-props",
+        "changeType": "fix",
+        "issues": [
+          2065
+        ],
+        "summary": "own the argument list when inserting the exhaustive-deps disable (closes #2065)"
+      },
+      {
+        "name": "no-explicit-return-type",
+        "changeType": "fix",
+        "issues": [
+          2066,
+          2069,
+          2070,
+          2073
+        ],
+        "summary": "carry a stranded comment into the parens a JSX arrow body takes (closes #2070); indent the body one step when a hoisted line comment forces the break (closes #2069); preserve a resource-handle return annotation (closes #2073); break and re-align a carried multi-line comment past the arrow (closes #2066)"
+      },
+      {
+        "name": "no-redundant-annotation-assertion",
+        "changeType": "fix",
+        "issues": [
+          1832,
+          2069,
+          2070
+        ],
+        "summary": "pin the JSX arms of the shared arrow-gap planner; carry the shared line-comment indent fix"
+      },
+      {
+        "name": "no-useless-usememo-primitives",
+        "changeType": "fix",
+        "issues": [
+          2071,
+          2079
+        ],
+        "summary": "lay a carried comment out where prettier prints it (closes #2079); parenthesise the inlined expression only where its landing position needs it (closes #2071)"
+      },
+      {
+        "name": "prefer-type-over-interface",
+        "changeType": "fix",
+        "issues": [
+          2072,
+          2077,
+          2080
+        ],
+        "summary": "withhold the autofix past a configurable printWidth (closes #2080); emit the heritage intersection in the layout prettier prints (closes #2077); terminate the emitted type alias (closes #2072)"
+      },
+      {
+        "name": "prefer-use-deep-compare-memo",
+        "changeType": "fix",
+        "issues": [
+          2064
+        ],
+        "summary": "measure the line the rename widens before writing it (closes #2064)"
+      }
+    ]
+  },
+  {
     "version": "1.20.170",
     "date": "2026-08-19T23:48:20.873Z",
     "rules": [
