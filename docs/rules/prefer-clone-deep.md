@@ -79,6 +79,13 @@ specifier that names it (`functions/src/util/cloneDeep`, `../util/cloneDeep`,
 `./cloneDeep`, …), as either a named or a default import. That import is the
 proof that the call the fix writes resolves.
 
+The overrides object is emitted across multiple lines with every entry
+terminated, including the last one at each nesting depth. Prettier's
+`trailingComma: 'all'` requires that comma, so the emitted text is a fixed point
+of the formatter and the fix lands without formatting churn behind it. The one
+single-line emission is `{}`, for an override that collapses to nothing; its
+terminator belongs to the surrounding entry, never inside the braces.
+
 The rule never writes an import of its own. Which specifier reaches the helper —
 or whether the helper exists at all — belongs to the consuming project, so a
 guessed import trades working code for a build error. Where the file does not
@@ -136,9 +143,9 @@ const result = {
     ...baseObj.data,
     nested: {
       ...baseObj.data.nested,
-      value: 42
-    }
-  }
+      value: 42,
+    },
+  },
 };
 
 const membership = {
@@ -172,9 +179,9 @@ import { cloneDeep } from 'functions/src/util/cloneDeep';
 const result = cloneDeep(baseObj, {
   data: {
     nested: {
-      value: 42
-    }
-  }
+      value: 42,
+    },
+  },
 } as const);
 
 const membership = {
