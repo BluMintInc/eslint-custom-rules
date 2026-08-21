@@ -1,5 +1,10 @@
 import { createRule } from '../utils/createRule';
-import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
+import {
+  AST_NODE_TYPES,
+  AST_TOKEN_TYPES,
+  TSESLint,
+  TSESTree,
+} from '@typescript-eslint/utils';
 
 /**
  * A module augmentation targets either an external module
@@ -224,13 +229,33 @@ export const preferTypeOverInterface: TSESLint.RuleModule<MessageIds, never[]> =
                 .map((clause) => sourceCode.getText(clause))
                 .join(' & ');
 
-              return [
+              const edits = [
                 fixer.replaceTextRange(keywordSpan, 'type '),
                 fixer.replaceTextRange(
                   headerSpan,
                   heritage.length > 0 ? ` = ${intersection} & ` : ' = ',
                 ),
               ];
+
+              // Converting a declaration into an assignment changes what ends
+              // it: the interface body's `}` closes the declaration on its
+              // own, while a type alias needs a statement terminator. ASI
+              // covers the omission, so the emission parses and no linter
+              // objects — but prettier writes the `;`, and consumers gate on
+              // `prettier --check` after this plugin's `--fix`.
+              //
+              // The token after the body is read rather than assumed: an
+              // author who wrote `interface X { … };` already left one there,
+              // and `};;` is a prettier failure of its own.
+              const tokenAfterBody = sourceCode.getTokenAfter(node.body);
+              const isAlreadyTerminated =
+                tokenAfterBody?.type === AST_TOKEN_TYPES.Punctuator &&
+                tokenAfterBody.value === ';';
+              if (!isAlreadyTerminated) {
+                edits.push(fixer.insertTextAfter(node.body, ';'));
+              }
+
+              return edits;
             },
           });
         },

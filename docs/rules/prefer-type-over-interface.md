@@ -26,6 +26,30 @@ type TeamMember = UserProfile & Auditable & Archivable & {
 };
 ```
 
+The fix also terminates the declaration. An interface body's closing `}` ends the declaration on its own, while a type alias is an assignment that needs a statement terminator, so the rewrite appends `;` after the body. Automatic semicolon insertion would cover the omission — the emission parses either way, which is why no linter can see it — but a formatter writes the terminator, so leaving it out puts every converted declaration out of format. When the source already terminated the declaration (`interface Options { ... };`, where TypeScript reads the `;` as an empty statement), the token after the body is read and no second `;` is added.
+
+### Autofix limitation: intersection layout with two or more heritage clauses
+
+The heritage list is converted into a single `&`-joined intersection on the alias line. Prettier lays out an intersection whose last member is an object literal differently once there are two or more preceding arms: it puts one arm per line and indents the object, whether or not the joined line fits inside `printWidth`. Converting
+
+```typescript
+interface TeamMember extends UserProfile, Auditable, Archivable {
+  role: string;
+}
+```
+
+therefore leaves a declaration Prettier reflows into:
+
+```typescript
+type TeamMember = UserProfile &
+  Auditable &
+  Archivable & {
+    role: string;
+  };
+```
+
+Emitting that form means re-indenting the interface body, which the fix deliberately copies through untouched so that template literals and comments inside it survive verbatim. Running the formatter after `eslint --fix` settles the layout. A single heritage clause is unaffected — Prettier keeps `type Member = Profile & {` on one line — as is a conversion with no heritage clause at all.
+
 ### Autofix limitation: comments in the declaration header
 
 The fix rewrites the text spanning the `interface` keyword, the name and the heritage list in one step, so a comment placed inside that span has nowhere to go. Rather than delete it, the rule reports the declaration without offering a fix when a comment sits between `interface` and the opening brace:
