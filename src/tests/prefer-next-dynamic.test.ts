@@ -51,7 +51,7 @@ const EmojiPicker = dynamic(
     const mod = await import('@emoji-mart/react');
     return mod.default;
   },
-  { ssr: false }
+  { ssr: false },
 );
 const App = () => <EmojiPicker/>;`,
     },
@@ -73,7 +73,7 @@ const Picker = dynamic(
     const mod = await import('@emoji-mart/react');
     return mod.Picker;
   },
-  { ssr: false }
+  { ssr: false },
 );
 const App = () => <Picker/>;`,
     },
@@ -95,7 +95,7 @@ const EmojiPicker = dynamic(
     const mod = await import('@emoji-mart/react');
     return mod.default;
   },
-  { ssr: false }
+  { ssr: false },
 );
 const App = () => <EmojiPicker/>;`,
     },
@@ -117,7 +117,7 @@ const A = 1, EmojiPicker = dynamic(
     const mod = await import('@emoji-mart/react');
     return mod.default;
   },
-  { ssr: false }
+  { ssr: false },
 );
 const App = () => <EmojiPicker/>;`,
     },
@@ -139,7 +139,7 @@ const EmojiPicker = dynamic(
     const mod = await import('@emoji-mart/react');
     return mod.default;
   },
-  { ssr: false }
+  { ssr: false },
 );
 const App = () => <EmojiPicker/>;`,
     },
@@ -161,7 +161,7 @@ const Picker = dynamic(
     const mod = await import('@emoji-mart/react');
     return mod.Picker;
   },
-  { ssr: false }
+  { ssr: false },
 );
 const App = () => <Picker/>;`,
     },
@@ -183,7 +183,7 @@ const EmojiPicker = dynamic(
     const mod = await import('@emoji-mart/react');
     return mod.default;
   },
-  { ssr: false }
+  { ssr: false },
 );
 const App = () => <EmojiPicker/>;`,
     },
@@ -200,7 +200,7 @@ const EmojiPicker = dyn(
     const mod = await import('@emoji-mart/react');
     return mod.default;
   },
-  { ssr: false }
+  { ssr: false },
 );
 const App = () => <EmojiPicker/>;`,
     },
@@ -222,7 +222,7 @@ let EmojiPicker = dynamic(
     const mod = await import('@emoji-mart/react');
     return mod.default;
   },
-  { ssr: false }
+  { ssr: false },
 );
 const App = () => <EmojiPicker/>;`,
     },
@@ -240,7 +240,7 @@ const EmojiPicker = dynamic(
     const mod = await import('@emoji-mart/react');
     return mod.default;
   },
-  { ssr: false }
+  { ssr: false },
 );
 const App = () => <EmojiPicker/>;`,
     },
@@ -331,9 +331,58 @@ const EmojiPicker = dynamic(
     const mod = await import('@emoji-mart/react');
     return mod.default;
   },
-  { ssr: false }
+  { ssr: false },
 );
 function unrelated() { const dynamic = 1; return dynamic; }
+const App = () => <EmojiPicker/>;`,
+    },
+    // Aliased destructure binds the local name to the named export, and the
+    // emitted argument list carries the trailing comma `trailingComma: 'all'`
+    // requires of a multi-line call, so the fix survives a reformat unchanged.
+    {
+      code: `import { useDynamic } from '../../hooks/useDynamic';
+const { Picker: Emoji } = useDynamic(import('@emoji-mart/react'));
+const App = () => <Emoji/>;`,
+      errors: [
+        {
+          messageId: 'preferNextDynamic',
+          data: { componentName: 'Emoji' },
+        },
+      ],
+      output: `import dynamic from 'next/dynamic';
+
+const Emoji = dynamic(
+  async () => {
+    const mod = await import('@emoji-mart/react');
+    return mod.Picker;
+  },
+  { ssr: false },
+);
+const App = () => <Emoji/>;`,
+    },
+    // The inserted import lands after a directive prologue, and the emitted
+    // call still carries its trailing comma
+    {
+      code: `'use client';
+import { useDynamic } from '../../hooks/useDynamic';
+const EmojiPicker = useDynamic(import('@emoji-mart/react'));
+const App = () => <EmojiPicker/>;`,
+      errors: [
+        {
+          messageId: 'preferNextDynamic',
+          data: { componentName: 'EmojiPicker' },
+        },
+      ],
+      output: `'use client';
+import dynamic from 'next/dynamic';
+
+const EmojiPicker = dynamic(
+  async () => {
+    const mod = await import('@emoji-mart/react');
+    return mod.default;
+  },
+  { ssr: false },
+);
 const App = () => <EmojiPicker/>;`,
     },
   ],

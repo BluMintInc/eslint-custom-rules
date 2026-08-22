@@ -208,12 +208,18 @@ function buildDynamicExpression(
 
   const returnExpr = namedExportKey ? `mod.${namedExportKey}` : 'mod.default';
 
+  // The loader body always holds two statements, so this argument list can
+  // never print on one line: prettier breaks every argument out and, under the
+  // consumer's `trailingComma: 'all'`, prints the comma below. Emitting it
+  // makes the fix a prettier fixed point instead of text prettier rewrites on
+  // the next format. A single-line list is the opposite case, which is why the
+  // import statements this rule emits carry no trailing comma.
   const dynamicText = `${dynamicIdent}(
   async () => {
     const mod = await import(${importArgText});
     return ${returnExpr};
   },
-  { ssr: false }
+  { ssr: false },
 )`;
   return dynamicText;
 }
