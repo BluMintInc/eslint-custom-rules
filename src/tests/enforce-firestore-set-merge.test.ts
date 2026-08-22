@@ -1202,10 +1202,10 @@ export async function save(args) {
           private readonly batchManager = new BatchManager();
           public sync(notificationRef, updates) {
             this.batchManager.set({
-          ref: notificationRef,
-          data: updates,
-          merge: true,
-        });
+              ref: notificationRef,
+              data: updates,
+              merge: true,
+            });
           }
         }
       `,
@@ -1226,10 +1226,10 @@ export async function save(args) {
           private readonly batchManager = new SomethingElse();
           public sync(notificationRef, updates) {
             this.batchManager.set({
-          ref: notificationRef,
-          data: updates,
-          merge: true,
-        });
+              ref: notificationRef,
+              data: updates,
+              merge: true,
+            });
           }
         }
       `,
@@ -1255,10 +1255,10 @@ export async function save(args) {
           private readonly batchManager = new BatchManager();
           public sync(notificationRef, updates) {
             this.batchManager.set({
-          ref: notificationRef,
-          data: updates,
-          merge: true,
-        });
+              ref: notificationRef,
+              data: updates,
+              merge: true,
+            });
           }
         }
       `,
@@ -1288,10 +1288,10 @@ export async function save(args) {
           private readonly batchManager = new BatchManager();
           public sync(notificationRef, updates) {
             this.batchManager.set({
-          ref: notificationRef,
-          data: updates,
-          merge: true,
-        });
+              ref: notificationRef,
+              data: updates,
+              merge: true,
+            });
           }
         }
       `,
@@ -1322,10 +1322,10 @@ export async function save(args) {
           class FirestoreSyncer extends BaseSyncer {
             public sync(notificationRef, updates) {
               this.batchManager.set({
-          ref: notificationRef,
-          data: updates,
-          merge: true,
-        });
+                ref: notificationRef,
+                data: updates,
+                merge: true,
+              });
             }
           }
           return FirestoreSyncer;
@@ -1354,10 +1354,10 @@ export async function save(args) {
           export class FirestoreSyncer extends BaseSyncer {
             public sync(notificationRef, updates) {
               this.batchManager.set({
-          ref: notificationRef,
-          data: updates,
-          merge: true,
-        });
+                ref: notificationRef,
+                data: updates,
+                merge: true,
+              });
             }
           }
         }
@@ -1397,10 +1397,10 @@ export async function save(args) {
           class FirestoreSyncer extends BaseSyncer {
             public sync(notificationRef, updates) {
               this.batchManager.set({
-          ref: notificationRef,
-          data: updates,
-          merge: true,
-        });
+                ref: notificationRef,
+                data: updates,
+                merge: true,
+              });
             }
           }
           return FirestoreSyncer;
@@ -1436,10 +1436,10 @@ export async function save(args) {
         export class FirestoreSyncer extends BaseSyncer {
           public sync(notificationRef, updates) {
             this.batchManager.set({
-          ref: notificationRef,
-          data: updates,
-          merge: true,
-        });
+              ref: notificationRef,
+              data: updates,
+              merge: true,
+            });
           }
         }
       `,
@@ -1467,6 +1467,72 @@ export async function save(args) {
       `,
       errors: [{ messageId: 'preferSetMerge' }],
       output: null,
+    },
+    // The BatchManager arm rebuilds the argument list from the receiver and the
+    // two arguments, so it copies nothing BETWEEN them. A comment in one of
+    // those gaps would be dropped — and a dropped directive silently re-enables
+    // what it suppressed (#1877) — so the rewrite is withheld and the report
+    // left standing instead.
+    {
+      code: `
+        this.batchManager.update(notificationRef, /* keep me */ { unread: 0 });
+      `,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: null,
+    },
+    {
+      code: `
+        this.batchManager.update(/* keep me */ notificationRef, { unread: 0 });
+      `,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: null,
+    },
+    {
+      code: `
+        this.batchManager.update(notificationRef, { unread: 0 } /* keep me */);
+      `,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: null,
+    },
+    {
+      code: `
+        this.batchManager.update(
+          notificationRef,
+          // eslint-disable-next-line no-magic-numbers
+          { unread: 0 },
+        );
+      `,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: null,
+    },
+    // A comment INSIDE the receiver or either argument travels with the text it
+    // annotates, so it is carried and the rewrite proceeds. Without these the
+    // decline above could widen to every comment and nothing would notice.
+    {
+      code: `
+        this.batchManager.update(notificationRef, { /* keep me */ unread: 0 });
+      `,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+        this.batchManager.set({
+          ref: notificationRef,
+          data: { /* keep me */ unread: 0 },
+          merge: true,
+        });
+      `,
+    },
+    {
+      code: `
+        this./* keep me */batchManager.update(notificationRef, { unread: 0 });
+      `,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+        this./* keep me */batchManager.set({
+          ref: notificationRef,
+          data: { unread: 0 },
+          merge: true,
+        });
+      `,
     },
     // Issue #1763: the file's `<x>.firestore()` handle is the only evidence a
     // bare-identifier receiver has, and it is idiomatically exported rather than
@@ -1645,6 +1711,288 @@ export async function save(args) {
         const db = admin?.firestore()!;
         await someRef.set({ theme: 'dark' }, { merge: true });
       `,
+    },
+    // Issue #2084: the BatchManager descriptor is emitted across lines, so its
+    // depth is a property of the call site rather than a constant. A fixed
+    // indent is right for exactly one nesting level and leaves prettier to
+    // re-indent the whole call everywhere else, so the fix is not a fixed point.
+    // Each case below pins one call-site depth; the fixtures deliberately sit at
+    // column 0 so the depth under test is the code's own, not the template's.
+    {
+      code: `this.batchManager.update(notificationRef, updates);`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `this.batchManager.set({
+  ref: notificationRef,
+  data: updates,
+  merge: true,
+});`,
+    },
+    {
+      code: `
+class NotificationSyncer {
+  public sync(notificationRef, updates) {
+    this.batchManager.update(notificationRef, updates);
+  }
+}
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+class NotificationSyncer {
+  public sync(notificationRef, updates) {
+    this.batchManager.set({
+      ref: notificationRef,
+      data: updates,
+      merge: true,
+    });
+  }
+}
+`,
+    },
+    {
+      code: `
+function syncAll(notificationRef, updates) {
+  if (updates) {
+    this.batchManager.update(notificationRef, updates);
+  }
+}
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+function syncAll(notificationRef, updates) {
+  if (updates) {
+    this.batchManager.set({
+      ref: notificationRef,
+      data: updates,
+      merge: true,
+    });
+  }
+}
+`,
+    },
+    {
+      code: `
+function syncAll(refs, updates) {
+  if (updates) {
+    for (const notificationRef of refs) {
+      this.batchManager.update(notificationRef, updates);
+    }
+  }
+}
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+function syncAll(refs, updates) {
+  if (updates) {
+    for (const notificationRef of refs) {
+      this.batchManager.set({
+        ref: notificationRef,
+        data: updates,
+        merge: true,
+      });
+    }
+  }
+}
+`,
+    },
+    {
+      code: `
+refs.forEach((notificationRef) => {
+  this.batchManager.update(notificationRef, updates);
+});
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+refs.forEach((notificationRef) => {
+  this.batchManager.set({
+    ref: notificationRef,
+    data: updates,
+    merge: true,
+  });
+});
+`,
+    },
+    // A relocated argument carries the indentation of the depth it was written
+    // at, so its continuation lines have to move with it. The interior of the
+    // data object lands two columns deeper than the `data:` key that now
+    // introduces it.
+    {
+      code: `
+class NotificationSyncer {
+  public sync(notificationRef) {
+    this.batchManager.update(notificationRef, {
+      unread: 0,
+      lastSeen: Date.now(),
+    });
+  }
+}
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+class NotificationSyncer {
+  public sync(notificationRef) {
+    this.batchManager.set({
+      ref: notificationRef,
+      data: {
+        unread: 0,
+        lastSeen: Date.now(),
+      },
+      merge: true,
+    });
+  }
+}
+`,
+    },
+    // The reference argument is relocated by the same rewrite, so a chain broken
+    // across lines shifts with it too.
+    {
+      code: `
+class NotificationSyncer {
+  public sync(userId, updates) {
+    this.batchManager.update(db
+      .collection('notifications')
+      .doc(userId), updates);
+  }
+}
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+class NotificationSyncer {
+  public sync(userId, updates) {
+    this.batchManager.set({
+      ref: db
+        .collection('notifications')
+        .doc(userId),
+      data: updates,
+      merge: true,
+    });
+  }
+}
+`,
+    },
+    // An argument written deeper than its landing depth is shifted the other
+    // way, so the descriptor stays internally consistent rather than keeping the
+    // continuation column the call happened to use.
+    {
+      code: `
+class NotificationSyncer {
+  public sync(notificationRef) {
+    this.batchManager.update(notificationRef,
+        {
+          unread: 0,
+        });
+  }
+}
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+class NotificationSyncer {
+  public sync(notificationRef) {
+    this.batchManager.set({
+      ref: notificationRef,
+      data: {
+        unread: 0,
+      },
+      merge: true,
+    });
+  }
+}
+`,
+    },
+    // The leading whitespace of a template literal's continuation lines is part
+    // of the string's VALUE, so shifting it would change what the call writes.
+    // Those lines are reproduced byte for byte while the code around them moves.
+    {
+      code: `
+class NotificationSyncer {
+  public sync(notificationRef) {
+    this.batchManager.update(notificationRef, {
+      summary: \`first line
+  second line\`,
+      unread: 0,
+    });
+  }
+}
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+class NotificationSyncer {
+  public sync(notificationRef) {
+    this.batchManager.set({
+      ref: notificationRef,
+      data: {
+        summary: \`first line
+  second line\`,
+        unread: 0,
+      },
+      merge: true,
+    });
+  }
+}
+`,
+    },
+    // A block comment whose continuation lines are not `*`-aligned is prose the
+    // fixer does not own, so its interior is preserved byte for byte as well.
+    {
+      code: `
+class NotificationSyncer {
+  public sync(notificationRef) {
+    this.batchManager.update(notificationRef, {
+      /* keep this note
+   ragged continuation */
+      unread: 0,
+    });
+  }
+}
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+class NotificationSyncer {
+  public sync(notificationRef) {
+    this.batchManager.set({
+      ref: notificationRef,
+      data: {
+        /* keep this note
+   ragged continuation */
+        unread: 0,
+      },
+      merge: true,
+    });
+  }
+}
+`,
+    },
+    // A `*`-aligned block IS layout, and prettier realigns its stars to the
+    // comment's new column, so this one moves with the code.
+    {
+      code: `
+class NotificationSyncer {
+  public sync(notificationRef) {
+    this.batchManager.update(notificationRef, {
+      /**
+       * Cleared whenever the tray is opened.
+       */
+      unread: 0,
+    });
+  }
+}
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+class NotificationSyncer {
+  public sync(notificationRef) {
+    this.batchManager.set({
+      ref: notificationRef,
+      data: {
+        /**
+         * Cleared whenever the tray is opened.
+         */
+        unread: 0,
+      },
+      merge: true,
+    });
+  }
+}
+`,
     },
   ],
 });
