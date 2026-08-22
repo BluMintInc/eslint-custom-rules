@@ -117,6 +117,37 @@ export const COMMENT_FIDELITY_BASELINE: Record<string, string> = {
   // entry because it is measured by the same gate, on the same span.
   'prefer-map-over-conditional-dispatch :: TRANSFORM_DIVERGED':
     'declines a layout widening — the shortened-statement join, or the now-redundant parentheses — when a comment sits in the span it would absorb; Prettier makes the same layout choice, and every shape keeps both the conversion and the comment (#2060, #2063)',
+  // WIDTH/LAYOUT, same class as require-memo above, and both arms track what
+  // Prettier itself does with the merged call (#2086). The merged argument list
+  // is emitted flat while it fits the print width and one argument per line —
+  // with the trailing comma a formatter writes into any list it breaks — once it
+  // does not, so a comment changes the layout in exactly two ways:
+  //
+  //   1. A LINE comment (19 of the 20 cases). It cannot ride on a single-line
+  //      argument list at all: folded onto one line it would swallow the closing
+  //      parenthesis and the rest of the call. The list therefore has to break,
+  //      whatever its width. Measured, Prettier breaks the identical call one
+  //      argument per line for the identical reason.
+  //   2. A single-line BLOCK comment (1 case). It rides along inline and changes
+  //      nothing — the `/* leading note */ alpha` and `alpha /* inline note */`
+  //      fixtures are flat in both shapes — UNLESS its columns push the merged
+  //      call past the width, which is the fixture straddling 80 columns at
+  //      `arr.push(alphaAlpha, …, eeeeeeeeeeeeee)`: flat at 74 columns and
+  //      broken at 94 once the marker is added. A comment occupies columns like
+  //      any other text and Prettier counts it the same way — measured, it
+  //      breaks that same call at 94 and leaves it flat at 74.
+  //
+  // BOTH SHAPES CARRY THE COMMENT, so nothing is consumed and the remedy is not
+  // a decline: measured across 216 comparisons over this rule's own fixtures,
+  // the marker survives every diverging output (0 lost), and every one of those
+  // outputs is a fixed point of agora's pinned Prettier (2.8.8, not this repo's
+  // 2.7.1). Ignoring the width would re-emit the always-expanded list that #2086
+  // exists to remove, which Prettier collapsed again on 19 fixtures.
+  // Anchored by the straddling fixture pair and the inline-block-comment
+  // fixtures in `src/tests/flatten-push-calls.test.ts`, so the own-corpus guard
+  // keeps this entry honest.
+  'flatten-push-calls :: TRANSFORM_DIVERGED':
+    'chooses its shape by measured print width, and must break the list outright for a line comment that would otherwise swallow the rest of the call; Prettier makes both choices identically and every shape carries the comment (#2086)',
   // DECLINE, plus one arm where the marker is genuinely not neutral. Two
   // classes reproduce here, both verified against the rule's own fixtures with
   // the probe replayed by hand (#2065):
