@@ -777,15 +777,45 @@ function couldBeNullish(
  * ECMAScript forbids `??` from sharing an expression with an unparenthesized
  * `&&`/`||`. Source-level parentheses are not part of an ESTree node's range,
  * so rewriting a whole LogicalExpression drops the parens around its operands —
- * exactly the ones the operator swap makes mandatory. Re-adding them around any
- * logical operand is unconditionally safe: the sub-expression was already
- * evaluated as a unit, so redundant parens cannot change semantics.
+ * exactly the ones the operator swap makes mandatory.
+ *
+ * A `??` operand is the exception: `??` chains with itself without parentheses,
+ * and it is associative, so reading `a ?? (b ?? c)` as `a ?? b ?? c` yields the
+ * same result from the same operands evaluated in the same order. Parenthesizing
+ * it emits text prettier immediately rewrites, which lands non-canonical source
+ * in a repository whose lint runs `--fix` before a human sees the report.
  */
 function parenthesizeLogical(
   text: string,
   operand: TSESTree.Expression | TSESTree.PrivateIdentifier,
 ): string {
-  return operand.type === AST_NODE_TYPES.LogicalExpression ? `(${text})` : text;
+  return operand.type === AST_NODE_TYPES.LogicalExpression &&
+    operand.operator !== '??'
+    ? `(${text})`
+    : text;
+}
+
+/**
+ * The pair of source-level parentheses wrapping the node, which live outside the
+ * node's own range.
+ */
+function enclosingParens(
+  node: TSESTree.Node,
+  sourceCode: Readonly<TSESLint.SourceCode>,
+): [TSESTree.Token, TSESTree.Token] | null {
+  const before = sourceCode.getTokenBefore(node);
+  const after = sourceCode.getTokenAfter(node);
+  if (
+    !before ||
+    !after ||
+    before.type !== AST_TOKEN_TYPES.Punctuator ||
+    before.value !== '(' ||
+    after.type !== AST_TOKEN_TYPES.Punctuator ||
+    after.value !== ')'
+  ) {
+    return null;
+  }
+  return [before, after];
 }
 
 /**
@@ -797,16 +827,45 @@ function isParenthesized(
   node: TSESTree.Node,
   sourceCode: Readonly<TSESLint.SourceCode>,
 ): boolean {
-  const before = sourceCode.getTokenBefore(node);
-  const after = sourceCode.getTokenAfter(node);
-  return (
-    !!before &&
-    !!after &&
-    before.type === AST_TOKEN_TYPES.Punctuator &&
-    before.value === '(' &&
-    after.type === AST_TOKEN_TYPES.Punctuator &&
-    after.value === ')'
-  );
+  return enclosingParens(node, sourceCode) !== null;
+}
+
+/**
+ * The span the fix replaces: the node, widened over parentheses the operator
+ * swap makes redundant.
+ *
+ * A `||` can only be an operand of `??` when parentheses separate them, so those
+ * parens survive into the fixed source even though `??` needs none against a
+ * `??` parent. Left there they are text prettier strips, so the fix claims them
+ * and emits the chain flat.
+ *
+ * The widened span swallows the margins between each paren and the node, which
+ * `getCommentsInside(node)` never reports — a comment written there would be
+ * deleted rather than carried, so its presence withdraws the widening and keeps
+ * the (harmless) parens instead.
+ */
+function replacementRange(
+  node: TSESTree.LogicalExpression,
+  sourceCode: Readonly<TSESLint.SourceCode>,
+): TSESTree.Range {
+  const { parent } = node;
+  if (
+    !parent ||
+    parent.type !== AST_NODE_TYPES.LogicalExpression ||
+    parent.operator !== '??'
+  ) {
+    return node.range;
+  }
+  const parens = enclosingParens(node, sourceCode);
+  if (!parens) {
+    return node.range;
+  }
+  const [open, close] = parens;
+  const text = sourceCode.getText();
+  const marginsAreBlank =
+    text.slice(open.range[1], node.range[0]).trim() === '' &&
+    text.slice(node.range[1], close.range[0]).trim() === '';
+  return marginsAreBlank ? [open.range[0], close.range[1]] : node.range;
 }
 
 /**
@@ -1041,8 +1100,8 @@ export const preferNullishCoalescingBooleanProps = createRule<[], MessageIds>({
                 const trailing = segments[segments.length - 1].breakAfter
                   ? `\n${indent}`
                   : '';
-                const replacement = fixer.replaceText(
-                  node,
+                const replacement = fixer.replaceTextRange(
+                  replacementRange(node, sourceCode),
                   `${body}${trailing}`,
                 );
                 if (!keyword || hoisted.length === 0) {

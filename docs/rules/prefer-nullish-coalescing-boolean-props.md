@@ -18,9 +18,17 @@ This rule keeps logical OR (`||`) available inside boolean contexts (JSX boolean
 
 **How to fix**: Replace `left || right` with `left ?? right` unless the expression is strictly boolean. The fixer applies this automatically.
 
-**Parentheses around logical operands are preserved**: ECMAScript rejects `??` sharing an expression with an unparenthesized `&&` or `||`, so the fixer parenthesizes any operand that is itself a logical expression — `(a && b) || c` becomes `(a && b) ?? c`, never the unparseable `a && b ?? c`.
+**The parentheses `??` requires are kept, and only those**: ECMAScript rejects `??` sharing an expression with an unparenthesized `&&` or `||`, so an operand that is itself an `&&` or `||` comes back parenthesized — `(a && b) || c` becomes `(a && b) ?? c`, never the unparseable `a && b ?? c`. A `??` operand needs no such separation: `??` chains with itself, and it is associative, so the flat chain evaluates the same operands in the same order. `(a ?? b) || c` becomes `a ?? b ?? c`, not `(a ?? b) ?? c`. Parentheses that existed only to hold a `||` apart from a neighbouring `??` go the same way once the swap removes the reason for them, so `(a || b) ?? c` becomes `a ?? b ?? c`.
 
-**Long `||` chains convert one link per pass**: the links of `a || b || c` overlap, so a single `--fix` pass rewrites the innermost link and parenthesizes it (`(a ?? b) || c`) to keep the half-converted chain parseable. The remaining links are reported again and convert on subsequent passes, which `eslint --fix` runs automatically.
+**Long `||` chains convert one link per pass**: the links of `a || b || c` overlap, so a single `--fix` pass rewrites the innermost link and parenthesizes it (`(a ?? b) || c`) to keep the half-converted chain parseable. The remaining links are reported again and convert on subsequent passes, which `eslint --fix` runs automatically, and the scaffolding parentheses come off as the last link converts:
+
+```ts
+// Before
+const value = a || b || c;
+
+// After `--fix`
+const value = a ?? b ?? c;
+```
 
 **Comments between the operands are carried, not dropped**: the fix rebuilds the expression from each operand's text, so a comment written around the operator — or inside parentheses the rebuild discards — has no operand to travel with. Each one is re-emitted on the side of the operator its author put it on:
 

@@ -1144,8 +1144,11 @@ export const chosen = size ?? 5;
         ],
         output: `const value = (a || b) ?? (c || d);`,
       },
-      // An operand that is already `??` needs no parens for legality, but keeping
-      // them is harmless and preserves the author's grouping verbatim.
+      // ===== REGRESSION TESTS FOR ISSUE #2090 =====
+      // A `??` operand needs no parens: `??` chains with itself and is
+      // associative, so the flat form evaluates the same operands in the same
+      // order. Parenthesizing it emits text prettier deletes on the next
+      // format, which is churn in a repository that runs `--fix` before review.
       {
         code: `const value = (a ?? b) || c;`,
         errors: [
@@ -1154,7 +1157,7 @@ export const chosen = size ?? 5;
             data: { left: 'a ?? b', right: 'c' },
           },
         ],
-        output: `const value = (a ?? b) ?? c;`,
+        output: `const value = a ?? b ?? c;`,
       },
       {
         code: `const value = a || (b ?? c);`,
@@ -1164,7 +1167,87 @@ export const chosen = size ?? 5;
             data: { left: 'a', right: 'b ?? c' },
           },
         ],
-        output: `const value = a ?? (b ?? c);`,
+        output: `const value = a ?? b ?? c;`,
+      },
+      {
+        code: `const value = (a ?? b) || (c ?? d);`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a ?? b', right: 'c ?? d' },
+          },
+        ],
+        output: `const value = a ?? b ?? c ?? d;`,
+      },
+      // The parens a `||` needed to sit beside a `??` are the swap's own residue:
+      // once both sides read `??` nothing separates them, so the fix claims them
+      // and emits the chain flat.
+      {
+        code: `const value = (a || b) ?? c;`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a', right: 'b' },
+          },
+        ],
+        output: `const value = a ?? b ?? c;`,
+      },
+      {
+        code: `const value = a ?? (b || c);`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'b', right: 'c' },
+          },
+        ],
+        output: `const value = a ?? b ?? c;`,
+      },
+      // Only the outermost pair goes: the `&&` inside still may not share an
+      // expression with `??`, so its parens are load-bearing.
+      {
+        code: `const value = ((a && b) || c) ?? d;`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a && b', right: 'c' },
+          },
+        ],
+        output: `const value = (a && b) ?? c ?? d;`,
+      },
+      // A `??` under a `&&`/`||` parent keeps the parens that parent requires;
+      // dropping them here is a SyntaxError, not churn.
+      {
+        code: `const value = x && ((a ?? b) || c);`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a ?? b', right: 'c' },
+          },
+        ],
+        output: `const value = x && (a ?? b ?? c);`,
+      },
+      // A comment in the margin between a paren and the operand has no operand
+      // to travel with, and the widened span would delete it. Its presence
+      // withdraws the widening: the redundant paren is the cheaper loss.
+      {
+        code: `const value = (/* keep me */ a || b) ?? c;`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a', right: 'b' },
+          },
+        ],
+        output: `const value = (/* keep me */ a ?? b) ?? c;`,
+      },
+      {
+        code: `const value = (a || b /* keep me */) ?? c;`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a', right: 'b' },
+          },
+        ],
+        output: `const value = (a ?? b /* keep me */) ?? c;`,
       },
       // Shape taken from a real consumer site
       // (functions/src/util/propagation/PropagationHandlerBuilderRtdb.ts).
@@ -1458,6 +1541,20 @@ describe('prefer-nullish-coalescing-boolean-props emits parseable code', () => {
     `const value = g((a && b) || c, other);`,
     `const value = () => (a || b) || c;`,
     `const value = ('k' in strategy && strategy.k) || !!strategy.t;`,
+    // Shapes whose parentheses the swap makes redundant (#2090). Dropping a
+    // pair is only safe where the grammar tolerates the flat chain, so every
+    // one of them is driven to convergence and re-parsed.
+    `const value = (a || b) ?? c;`,
+    `const value = a ?? (b || c);`,
+    `const value = (a ?? b) || (c ?? d);`,
+    `const value = ((a && b) || c) ?? d;`,
+    `const value = a ?? ((b && c) || d);`,
+    `const value = x && ((a ?? b) || c);`,
+    `const value = x || (a || b);`,
+    `const value = ((a || b) || c).toString();`,
+    'const value = `x${a || b || c}`;',
+    `const value = (/* keep me */ a || b) ?? c;`,
+    `const value = (a || b /* keep me */) ?? c;`,
     // Partial-chain shape from a real consumer site (src/middleware.ts).
     `async function middleware(request) {
   return (
@@ -1497,5 +1594,84 @@ describe('prefer-nullish-coalescing-boolean-props emits parseable code', () => {
   it('detects a mixed ?? / || program as a fatal parse error', () => {
     const { messages } = fixAll('const value = a || b ?? c;');
     expect(messages.some((message) => message.fatal)).toBe(true);
+  });
+
+  // ===== REGRESSION TESTS FOR ISSUE #2090 =====
+  // A per-report `output:` only pins one pass, and a `||` chain converts one
+  // link per pass — the redundant parens appear at the END of that sequence.
+  // These pin the CONVERGED text, so neither a paren the swap makes redundant
+  // nor one the grammar demands can drift.
+  //
+  // Each pair is one direction of the same question: the left column is what
+  // `--fix` writes, and every entry with parentheses in it keeps them because
+  // `??` may not share an expression with an unparenthesized `&&`/`||`. The
+  // parse assertion above covers the same inputs, so an over-eager removal
+  // fails twice: once as wrong text, once as a fatal parse.
+  const CONVERGED_CASES: [string, string][] = [
+    // Redundant: `??` chains with itself, so the flat form is the canonical one.
+    [`const value = a || b || c;`, `const value = a ?? b ?? c;`],
+    [`const value = a || b || c || d;`, `const value = a ?? b ?? c ?? d;`],
+    [`const value = (a || b) || c;`, `const value = a ?? b ?? c;`],
+    [`const value = a || (b || c);`, `const value = a ?? b ?? c;`],
+    [`const value = (a || b) || (c || d);`, `const value = a ?? b ?? c ?? d;`],
+    [`const value = (a ?? b) || c;`, `const value = a ?? b ?? c;`],
+    [`const value = a || (b ?? c);`, `const value = a ?? b ?? c;`],
+    [`const value = (a ?? b) || (c ?? d);`, `const value = a ?? b ?? c ?? d;`],
+    [`const value = (a || b) ?? c;`, `const value = a ?? b ?? c;`],
+    [`const value = a ?? (b || c);`, `const value = a ?? b ?? c;`],
+    [`const value = x || (a || b);`, `const value = x ?? a ?? b;`],
+    [
+      `const value = ((a || b) || c).toString();`,
+      `const value = (a ?? b ?? c).toString();`,
+    ],
+    [`const value = () => (a || b) || c;`, `const value = () => a ?? b ?? c;`],
+    [
+      `const value = cond ? (a || b) || c : d;`,
+      `const value = cond ? a ?? b ?? c : d;`,
+    ],
+    ['const value = `x${a || b || c}`;', 'const value = `x${a ?? b ?? c}`;'],
+    // Required: removing any of these parens is a SyntaxError, not churn.
+    [`const value = (a && b) || c;`, `const value = (a && b) ?? c;`],
+    [`const value = a || (b && c);`, `const value = a ?? (b && c);`],
+    [`const value = x && (a || b);`, `const value = x && (a ?? b);`],
+    [
+      `const value = x && ((a ?? b) || c);`,
+      `const value = x && (a ?? b ?? c);`,
+    ],
+    [
+      `const value = ((a && b) || c) ?? d;`,
+      `const value = (a && b) ?? c ?? d;`,
+    ],
+    [
+      `const value = a ?? ((b && c) || d);`,
+      `const value = a ?? (b && c) ?? d;`,
+    ],
+    [
+      `const value = g((a && b) || c, other);`,
+      `const value = g((a && b) ?? c, other);`,
+    ],
+    // A comment in the margin between a paren and the operand has no operand to
+    // travel with, so the parens stay rather than take the comment with them.
+    [
+      `const value = (/* keep me */ a || b) ?? c;`,
+      `const value = (/* keep me */ a ?? b) ?? c;`,
+    ],
+    [
+      `const value = (a || b /* keep me */) ?? c;`,
+      `const value = (a ?? b /* keep me */) ?? c;`,
+    ],
+  ];
+
+  it.each(CONVERGED_CASES)('converges %s to %s', (code, expected) => {
+    expect(fixAll(code).output).toBe(expected);
+  });
+
+  // Non-vacuity: every pair must be a rewrite the fixer actually performed.
+  // A table of unchanged inputs would assert nothing.
+  it('rewrites every converged case it is handed', () => {
+    const unchanged = CONVERGED_CASES.filter(
+      ([code]) => code === fixAll(code).output,
+    );
+    expect(unchanged).toEqual([]);
   });
 });
