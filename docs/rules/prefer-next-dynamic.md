@@ -22,13 +22,15 @@ Enforce Next.js `dynamic()` for dynamically importing React components instead o
 
 ```tsx
 import { useDynamic } from '../../hooks/useDynamic';
-
 const EmojiPicker = useDynamic(import('@emoji-mart/react'));
-const App = () => <EmojiPicker/>;
-// Note: If this value were never rendered as <EmojiPicker />, the rule would not flag it.
+const App = () => <EmojiPicker />;
 ```
 
+Were `EmojiPicker` never rendered as `<EmojiPicker />`, the rule would not flag it.
+
 #### Examples of correct code
+
+Running `--fix` over the block above produces exactly this:
 
 ```tsx
 import dynamic from 'next/dynamic';
@@ -38,13 +40,15 @@ const EmojiPicker = dynamic(
     const mod = await import('@emoji-mart/react');
     return mod.default;
   },
-  { ssr: false }
+  { ssr: false },
 );
-
-const App = () => <EmojiPicker/>;
+const App = () => <EmojiPicker />;
 ```
 
 ##### Named export
+
+Destructuring the loaded module names the export the loader returns, so
+`const { Picker } = useDynamic(import('@emoji-mart/react'))` is fixed to:
 
 ```tsx
 import dynamic from 'next/dynamic';
@@ -54,8 +58,9 @@ const Picker = dynamic(
     const mod = await import('@emoji-mart/react');
     return mod.Picker;
   },
-  { ssr: false }
+  { ssr: false },
 );
+const App = () => <Picker />;
 ```
 
 ### What this rule checks
@@ -75,38 +80,24 @@ const Component = dynamic(
     const mod = await import('lib');
     return mod.default; // or mod.NamedExport for destructured cases
   },
-  { ssr: false }
+  { ssr: false },
 );
 ```
 
 - Adds `import dynamic from 'next/dynamic';` when not present.
 - Removes `useDynamic` import when no longer used.
 
+The argument list is emitted across several lines, so it carries the trailing
+comma `trailingComma: 'all'` requires. Without it a formatter rewrites the fix
+on the next pass, leaving `--fix` and `--check` fighting over the same file. The
+emitted import statement is a single line and carries no trailing comma.
+
 ### Edge Cases / Notes
 
 - **Non-Component Imports**: Skips when the variable is never used in JSX, avoiding false positives for utilities.
 - **Named Exports**: When destructuring (e.g., `{ Picker }`), the fixer returns `mod.Picker`.
 - **Incorrect dynamic usage**: The fixer ensures an async loader and applies `{ ssr: false }`.
-- **Multiple declarators**: Safely replaces only the matching declarator in comma-separated declarations.
-
-  Before:
-
-  ```ts
-  const { Picker }, other = useDynamic(import('@emoji-mart/react')), something = 1;
-  ```
-
-  After:
-
-  ```ts
-  const Picker = dynamic(
-    async () => {
-      const mod = await import('@emoji-mart/react');
-      return mod.Picker;
-    },
-    { ssr: false },
-  );
-  const something = 1;
-  ```
+- **Multiple declarators**: Only the matching declarator is rewritten; its siblings and the surrounding declaration keep their existing text. Given `const A = 1, { Picker } = useDynamic(import('@emoji-mart/react')), other = 2;` the fixer replaces the middle declarator with `Picker = dynamic(...)` and leaves `A` and `other` in place — it does not split the declaration into separate statements.
 
 ### Options
 
