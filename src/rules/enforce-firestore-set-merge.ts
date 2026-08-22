@@ -16,6 +16,7 @@ import {
   requiresLineBreakAfter,
 } from '../utils/replacementSegments';
 import { declarationOf, resolveInEnclosingScopes } from '../utils/lexicalScope';
+import { reindentRelocated } from '../utils/reindentRelocated';
 
 type MessageIds = 'preferSetMerge';
 
@@ -774,14 +775,45 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
         if (args.length < 2) {
           return null;
         }
+        // This branch is the one rewrite that cannot edit the call in place: it
+        // rebuilds the argument list from the text of the pieces it keeps, so
+        // anything BETWEEN those pieces is not copied anywhere. A comment
+        // sitting between the two arguments is dropped that way, and a dropped
+        // `eslint-disable` silently re-enables the rule it was suppressing
+        // (#1877). Withholding the fix leaves the report, so the developer is
+        // still told — and still restructures the call, by hand and with the
+        // comment in view.
+        const carried = [callee.object, args[0], args[1]];
+        const dropsComment = sourceCode
+          .getCommentsInside(node)
+          .some(
+            (comment) =>
+              !carried.some(
+                (span) =>
+                  comment.range[0] >= span.range[0] &&
+                  comment.range[1] <= span.range[1],
+              ),
+          );
+        if (dropsComment) {
+          return null;
+        }
+        // The descriptor is emitted across lines, so its body has to land at the
+        // depth the call itself sits at. A constant indent is only ever right
+        // for one call site and leaves prettier to re-indent every other one.
+        const indent = indentAt(node.range[0]);
+        const body = `${indent}  `;
         return [
           fixer.replaceText(
             node,
-            `${objectText}.set({
-          ref: ${sourceCode.getText(args[0])},
-          data: ${sourceCode.getText(args[1])},
-          merge: true,
-        })`,
+            `${objectText}.set({\n` +
+              `${body}ref: ${reindentRelocated(args[0], body, sourceCode)},\n` +
+              `${body}data: ${reindentRelocated(
+                args[1],
+                body,
+                sourceCode,
+              )},\n` +
+              `${body}merge: true,\n` +
+              `${indent}})`,
           ),
         ];
       }

@@ -78,6 +78,36 @@ await setDoc(ref, { theme: 'dark' }, { merge: true });
 - Adds `setDoc` alongside `updateDoc` instead when any reference to `updateDoc` survives the pass, because a multi-rule `--fix` can drop a sibling violation's fix and strand that reference on a removed binding. An existing `firebase/firestore` import is extended rather than duplicated.
 - Declines to fix when `setDoc` is already bound to something else, since the added import would collide with that declaration (TS2440/TS2300) and a narrower-scope shadow would rebind the emitted call to the local value with no diagnostic at all. A `setDoc` imported from a *different* firestore entry point counts as something else: `firebase-admin`'s API is not the modular SDK's, so emitting the call against it would call another function.
 
+### Indentation of the batch manager descriptor
+
+A `batchManager` call is the one shape whose arguments are genuinely restructured rather than extended: `update(ref, data)` carries two positional arguments where `set` takes a single descriptor object. That object is emitted across several lines, so its body lands two columns deeper than the line the call opens on and its closing brace lands at that line's own column, at whatever depth the call sits:
+
+```ts
+// before
+class Syncer {
+  public sync(notificationRef, updates) {
+    this.batchManager.update(notificationRef, updates);
+  }
+}
+
+// after
+class Syncer {
+  public sync(notificationRef, updates) {
+    this.batchManager.set({
+      ref: notificationRef,
+      data: updates,
+      merge: true,
+    });
+  }
+}
+```
+
+An argument that itself spans lines is relocated text, so it travels the same way: every line after its first is shifted by the difference between the column it opened at and the column it is emitted at, which moves the span while preserving the nesting inside it.
+
+Three kinds of line are held back, because their leading whitespace is data rather than layout and shifting it would be a correctness defect rather than a formatting one: the interior of a multi-line template literal, that of a line-continued string, and that of a block comment whose continuation lines are not `*`-aligned — prose this fixer does not own, which prettier reproduces byte for byte. A `*`-aligned block is layout, and prettier realigns those stars to the comment's new column, so it moves. A span whose old and new indentation share no prefix (tabs against spaces) has no delta expressible as whitespace and is left where it was, rather than have the fix pick a tab width and rewrite the file's indentation style.
+
+Because this is the one rewrite that rebuilds an argument list rather than editing it in place, it copies the receiver and the two arguments and nothing between them. A comment in one of those gaps — before the first argument, between the two, or after the last — has nowhere to go, and a dropped `eslint-disable` silently re-enables the rule it was suppressing. The fix is withheld there: the file is left byte-identical and keeps its report, so the call is restructured by hand with the comment in view. A comment *inside* the receiver or either argument travels with the text it annotates and is preserved, so only a comment in a gap declines.
+
 ### Retiring the `updateDoc` entry
 
 The rewrite strips a reference. When it strips the LAST one, the entry it came

@@ -178,6 +178,18 @@ export const COMMENT_FIDELITY_BASELINE: Record<string, string> = {
     'trailing-comma/wrapping divergence that agora prettier normalizes to an identical token stream',
   'use-latest-callback :: TRANSFORM_DIVERGED':
     'wrapping-only divergence that agora prettier normalizes to an identical token stream',
+  // DECLINE. The batch manager arm is the rule's one rewrite that cannot edit
+  // the call in place: `update(ref, data)` carries two positional arguments
+  // where `set` takes a single descriptor, so the argument list is rebuilt from
+  // the text of the receiver and the two arguments. That rebuild copies nothing
+  // BETWEEN those pieces, and a comment sitting between the arguments is
+  // dropped by it — a dropped `eslint-disable` silently re-enables the rule it
+  // suppressed (#1877). The rule refuses the rewrite there, so the file keeps
+  // its report and is left byte-identical. Only this arm declines: the other
+  // rewrites edit the method name and the argument tail in place, which is why
+  // a comment anywhere else is untouched.
+  'enforce-firestore-set-merge :: TRANSFORM_DIVERGED':
+    'declines the batchManager restructure rather than drop a comment sitting between the arguments it rebuilds from (#1877); output is byte-identical to the input and the report stands',
 
   // IN-NODE. The marker lands inside a node the fixer replaces or deletes
   // wholesale, so the comment goes with its subject. Verified mechanically:
