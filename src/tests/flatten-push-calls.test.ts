@@ -138,12 +138,7 @@ ruleTesterTs.run('flatten-push-calls', flattenPushCalls, {
       `,
       output: `
       const arr = [];
-      arr.push(
-        a,
-        b,
-        c,
-        d
-      );
+      arr.push(a, b, c, d);
       `,
       errors: [{ messageId: 'flattenPushCalls' }],
     },
@@ -156,11 +151,7 @@ ruleTesterTs.run('flatten-push-calls', flattenPushCalls, {
       `,
       output: `
       const arr = [];
-      arr.push(
-        a,
-        ...rest,
-        b
-      );
+      arr.push(a, ...rest, b);
       `,
       errors: [{ messageId: 'flattenPushCalls' }],
     },
@@ -177,11 +168,7 @@ ruleTesterTs.run('flatten-push-calls', flattenPushCalls, {
       output: `
       class Demo {
         configure(fnA: () => void, fnB: () => void) {
-          this.handlers.push(
-            fnA,
-            fnB,
-            fnC
-          );
+          this.handlers.push(fnA, fnB, fnC);
         }
       }
       `,
@@ -195,11 +182,7 @@ ruleTesterTs.run('flatten-push-calls', flattenPushCalls, {
       `,
       output: `
       const state = { user: { items: [] } };
-      state.user.items.push(
-        first,
-        second,
-        third
-      );
+      state.user.items.push(first, second, third);
       `,
       errors: [{ messageId: 'flattenPushCalls' }],
     },
@@ -213,11 +196,7 @@ ruleTesterTs.run('flatten-push-calls', flattenPushCalls, {
       `,
       output: `
       const items = [];
-      items.push(
-        a,
-        /* keep track */
-        b
-      );
+      items.push(a, /* keep track */ b);
       `,
       errors: [{ messageId: 'flattenPushCalls' }],
     },
@@ -235,7 +214,7 @@ ruleTesterTs.run('flatten-push-calls', flattenPushCalls, {
         a,
         // ensure the second item is grouped
         b,
-        c
+        c,
       );
       `,
       errors: [{ messageId: 'flattenPushCalls' }],
@@ -251,7 +230,7 @@ ruleTesterTs.run('flatten-push-calls', flattenPushCalls, {
       arr.push(
         a,
         // keep info
-        b
+        b,
       );
       `,
       errors: [{ messageId: 'flattenPushCalls' }],
@@ -279,11 +258,7 @@ ruleTesterTs.run('flatten-push-calls', flattenPushCalls, {
       output: `
       function build() {
         const handlers = [];
-        handlers.push(
-          fnA,
-          fnB,
-          fnC
-        );
+        handlers.push(fnA, fnB, fnC);
       }
       `,
       errors: [{ messageId: 'flattenPushCalls' }],
@@ -340,7 +315,7 @@ ruleTesterTs.run('flatten-push-calls', flattenPushCalls, {
         {
           value: 1,
         },
-        other
+        other,
       );
       `,
       errors: [{ messageId: 'flattenPushCalls' }],
@@ -367,11 +342,7 @@ ruleTesterTs.run('flatten-push-calls', flattenPushCalls, {
       `,
       output: `
       const arr = [];
-      arr.push(
-        a,
-        b
-        /* trailing */
-      );
+      arr.push(a, b /* trailing */);
       `,
       errors: [{ messageId: 'flattenPushCalls' }],
     },
@@ -389,7 +360,7 @@ ruleTesterTs.run('flatten-push-calls', flattenPushCalls, {
       arr.push(
         // eslint-disable-next-line no-console
         firstItem,
-        secondItem
+        secondItem,
       );
       `,
       errors: [{ messageId: 'flattenPushCalls' }],
@@ -408,7 +379,7 @@ ruleTesterTs.run('flatten-push-calls', flattenPushCalls, {
       arr.push(
         first,
         // eslint-disable-next-line no-console
-        second
+        second,
       );
       `,
       errors: [{ messageId: 'flattenPushCalls' }],
@@ -425,7 +396,7 @@ ruleTesterTs.run('flatten-push-calls', flattenPushCalls, {
       const arr = [];
       arr.push(
         alpha, // keep alpha
-        beta
+        beta,
       );
       `,
       errors: [{ messageId: 'flattenPushCalls' }],
@@ -438,10 +409,7 @@ ruleTesterTs.run('flatten-push-calls', flattenPushCalls, {
       `,
       output: `
       const arr = [];
-      arr.push(
-        alpha, /* inline note */
-        beta
-      );
+      arr.push(alpha /* inline note */, beta);
       `,
       errors: [{ messageId: 'flattenPushCalls' }],
     },
@@ -458,7 +426,7 @@ ruleTesterTs.run('flatten-push-calls', flattenPushCalls, {
       const arr = [];
       arr.push(
         alpha,
-        beta
+        beta,
         // afterthought
       );
       `,
@@ -480,7 +448,7 @@ ruleTesterTs.run('flatten-push-calls', flattenPushCalls, {
         one,
         // middle matters
         two,
-        three
+        three,
       );
       `,
       errors: [{ messageId: 'flattenPushCalls' }],
@@ -493,11 +461,7 @@ ruleTesterTs.run('flatten-push-calls', flattenPushCalls, {
       `,
       output: `
       const arr = [];
-      arr.push(
-        /* leading note */
-        alpha,
-        beta
-      );
+      arr.push(/* leading note */ alpha, beta);
       `,
       errors: [{ messageId: 'flattenPushCalls' }],
     },
@@ -519,7 +483,7 @@ ruleTesterTs.run('flatten-push-calls', flattenPushCalls, {
          * Alpha is special.
          */
         alpha,
-        beta
+        beta,
       );
       `,
       errors: [{ messageId: 'flattenPushCalls' }],
@@ -542,7 +506,7 @@ ruleTesterTs.run('flatten-push-calls', flattenPushCalls, {
         a,
         // second
         b,
-        c
+        c,
       );
       `,
       errors: [{ messageId: 'flattenPushCalls' }],
@@ -556,11 +520,7 @@ ruleTesterTs.run('flatten-push-calls', flattenPushCalls, {
       `,
       output: `
       const items = [];
-      items.push(
-        a,
-        /* placeholder */
-        b
-      );
+      items.push(a, /* placeholder */ b);
       `,
       errors: [{ messageId: 'flattenPushCalls' }],
     },
@@ -600,6 +560,149 @@ ruleTesterTs.run('flatten-push-calls', flattenPushCalls, {
       arr.push(beta);
       `,
       output: null,
+      errors: [{ messageId: 'flattenPushCalls' }],
+    },
+    {
+      // The merged call lands on column 80 exactly, the last column prettier
+      // leaves alone, so it stays on one line.
+      code: `
+      const arr = [];
+      arr.push(alphaAlpha);
+      arr.push(bravoBravo);
+      arr.push(charlieChar);
+      arr.push(deltaDelta);
+      arr.push(eeeeeeeeeeeeee);
+      `,
+      output: `
+      const arr = [];
+      arr.push(alphaAlpha, bravoBravo, charlieChar, deltaDelta, eeeeeeeeeeeeee);
+      `,
+      errors: [{ messageId: 'flattenPushCalls' }],
+    },
+    {
+      // One column wider than the previous case, so the list breaks — with the
+      // trailing comma prettier writes into any argument list it splits.
+      code: `
+      const arr = [];
+      arr.push(alphaAlpha);
+      arr.push(bravoBravo);
+      arr.push(charlieChar);
+      arr.push(deltaDelta);
+      arr.push(eeeeeeeeeeeeeee);
+      `,
+      output: `
+      const arr = [];
+      arr.push(
+        alphaAlpha,
+        bravoBravo,
+        charlieChar,
+        deltaDelta,
+        eeeeeeeeeeeeeee,
+      );
+      `,
+      errors: [{ messageId: 'flattenPushCalls' }],
+    },
+    {
+      // Two arguments overflow just as readily as many, so the count of
+      // arguments cannot decide the layout on its own.
+      code: `
+      const arr = [];
+      arr.push(alphaAlphaAlphaAlphaAlphaAlphaAlphaAlpha);
+      arr.push(bravoBravoBravoBravoBravoBravoBravoBravo);
+      `,
+      output: `
+      const arr = [];
+      arr.push(
+        alphaAlphaAlphaAlphaAlphaAlphaAlphaAlpha,
+        bravoBravoBravoBravoBravoBravoBravoBravo,
+      );
+      `,
+      errors: [{ messageId: 'flattenPushCalls' }],
+    },
+    {
+      // The very argument list that fits at column 6 overflows four columns
+      // deeper, so the call's own column decides the layout.
+      code: `
+      class Demo {
+        run() {
+          arr.push(alphaAlpha);
+          arr.push(bravoBravo);
+          arr.push(charlieChar);
+          arr.push(deltaDelta);
+          arr.push(eeeeeeeeeeeeee);
+        }
+      }
+      `,
+      output: `
+      class Demo {
+        run() {
+          arr.push(
+            alphaAlpha,
+            bravoBravo,
+            charlieChar,
+            deltaDelta,
+            eeeeeeeeeeeeee,
+          );
+        }
+      }
+      `,
+      errors: [{ messageId: 'flattenPushCalls' }],
+    },
+    {
+      // A line comment cannot ride on a collapsed list: it would swallow the
+      // rest of the call, so the list stays broken however short it is.
+      code: `
+      const arr = [];
+      arr.push(a);
+      // keep b explained
+      arr.push(b);
+      `,
+      output: `
+      const arr = [];
+      arr.push(
+        a,
+        // keep b explained
+        b,
+      );
+      `,
+      errors: [{ messageId: 'flattenPushCalls' }],
+    },
+    {
+      // A single-line block comment survives the collapse, staying glued to the
+      // argument it trails and ahead of the separating comma.
+      code: `
+      const arr = [];
+      arr.push(alpha /* note */);
+      arr.push(beta);
+      arr.push(gamma);
+      `,
+      output: `
+      const arr = [];
+      arr.push(alpha /* note */, beta, gamma);
+      `,
+      errors: [{ messageId: 'flattenPushCalls' }],
+    },
+    {
+      // A block comment carrying newlines keeps the list broken, since it
+      // cannot be folded onto one line.
+      code: `
+      const arr = [];
+      arr.push(
+        /* first
+        second */
+        alpha
+      );
+      arr.push(beta);
+      `,
+      output: `
+      const arr = [];
+      arr.push(
+        /* first
+        second */
+        alpha,
+        beta,
+      );
+      `,
       errors: [{ messageId: 'flattenPushCalls' }],
     },
   ],

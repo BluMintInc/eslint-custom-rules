@@ -17,6 +17,14 @@ type PushCallStatement = {
 
 const PUSH_METHOD_NAME = 'push';
 
+/**
+ * Prettier collapses an argument list that fits its print width, so a merged
+ * call emitted one-argument-per-line below this column count is rewritten the
+ * moment the formatter runs. Matching the default width keeps the fix
+ * canonical.
+ */
+const PRINT_WIDTH = 80;
+
 function getRangeStart(
   node: TSESTree.Node,
   sourceCode: TSESLint.SourceCode,
@@ -466,7 +474,8 @@ export const flattenPushCalls = createRule<[], MessageIds>({
     /** An argument rendered with its comments split around the separating comma. */
     type RenderedArgument = {
       body: string;
-      suffix: string;
+      beforeComma: string;
+      afterComma: string;
     };
 
     function buildChunks(call: TSESTree.CallExpression): ArgumentChunk[] {
@@ -554,26 +563,69 @@ export const flattenPushCalls = createRule<[], MessageIds>({
       });
     }
 
-    function shouldUseMultilineFormat(
-      segments: PushSegment[],
-      totalArgs: number,
-    ): boolean {
-      /**
-       * Comments must go on their own lines: a line comment collapsed into a
-       * single-line argument list would swallow the rest of the call.
-       */
-      const hasAttachedComments = segments.some(
-        (segment) =>
-          segment.comments.length > 0 ||
-          segment.chunks.some(
-            (chunk) => chunk.leading.length > 0 || chunk.trailing.length > 0,
-          ),
+    /**
+     * A comment survives a collapse onto one line only as a single-line block
+     * comment: a line comment would swallow the rest of the call, and a block
+     * comment carrying newlines keeps the list broken either way.
+     */
+    function isInlineSafeComment(comment: TSESTree.Comment): boolean {
+      return (
+        comment.type === AST_TOKEN_TYPES.Block &&
+        !sourceCode.getText(comment).includes('\n')
       );
+    }
+
+    function collectComments(segments: PushSegment[]): TSESTree.Comment[] {
+      return segments.flatMap((segment) => [
+        ...segment.comments,
+        ...segment.chunks.flatMap((chunk) => [
+          ...chunk.leading,
+          ...chunk.trailing,
+        ]),
+      ]);
+    }
+
+    function canRenderSingleLine(segments: PushSegment[]): boolean {
       const hasMultilineArgument = segments.some((segment) =>
         segment.chunks.some((chunk) => chunk.text.includes('\n')),
       );
+      if (hasMultilineArgument) return false;
 
-      return hasAttachedComments || hasMultilineArgument || totalArgs > 2;
+      return collectComments(segments).every(isInlineSafeComment);
+    }
+
+    function renderSingleLineArguments(segments: PushSegment[]): string {
+      const parts: string[] = [];
+      let pendingComments: string[] = [];
+
+      segments.forEach((segment) => {
+        pendingComments = pendingComments.concat(
+          segment.comments.map((comment) => sourceCode.getText(comment)),
+        );
+
+        segment.chunks.forEach((chunk) => {
+          const rendered = [
+            ...pendingComments,
+            ...chunk.leading.map((comment) => sourceCode.getText(comment)),
+            chunk.text,
+            ...chunk.trailing.map((comment) => sourceCode.getText(comment)),
+          ];
+          pendingComments = [];
+          parts.push(rendered.join(' '));
+        });
+      });
+
+      /**
+       * Comments trailing the final argument have no following argument to lead,
+       * so they ride along behind it.
+       */
+      if (pendingComments.length > 0 && parts.length > 0) {
+        parts[parts.length - 1] = [parts[parts.length - 1], ...pendingComments]
+          .join(' ')
+          .trimEnd();
+      }
+
+      return parts.join(', ');
     }
 
     function detectSemicolon(
@@ -586,41 +638,35 @@ export const flattenPushCalls = createRule<[], MessageIds>({
       );
     }
 
-    function formatArguments(
-      segments: PushSegment[],
-      shouldUseMultiline: boolean,
-      argumentIndent: string,
-    ): RenderedArgument[] {
-      if (!shouldUseMultiline) {
-        return segments.flatMap((segment) =>
-          segment.chunks.map((chunk) => ({ body: chunk.text, suffix: '' })),
-        );
-      }
-
-      return formatMultilineArguments(segments, argumentIndent);
-    }
-
     /**
-     * Trailing comments render after the separating comma so a line comment
-     * cannot comment the comma out.
+     * A comment sharing the argument's line stays glued to the argument ahead of
+     * the separating comma, mirroring how prettier prints one — except for a
+     * line comment, which has to follow the comma or it would comment it out.
      */
     function formatTrailingComments(
       chunk: ArgumentChunk,
       argumentIndent: string,
-    ): string {
+    ): Pick<RenderedArgument, 'beforeComma' | 'afterComma'> {
       let previousLine = chunk.endLine;
+      let beforeComma = '';
+      const afterComma: string[] = [];
 
-      return chunk.trailing
-        .map((comment) => {
-          const text = sourceCode.getText(comment);
-          const rendered =
-            comment.loc.start.line === previousLine
-              ? ` ${text}`
-              : `\n${indentComment(text, argumentIndent)}`;
-          previousLine = comment.loc.end.line;
-          return rendered;
-        })
-        .join('');
+      chunk.trailing.forEach((comment) => {
+        const text = sourceCode.getText(comment);
+        const sharesLine = comment.loc.start.line === previousLine;
+        previousLine = comment.loc.end.line;
+
+        if (sharesLine && isInlineSafeComment(comment)) {
+          beforeComma += ` ${text}`;
+          return;
+        }
+
+        afterComma.push(
+          sharesLine ? ` ${text}` : `\n${indentComment(text, argumentIndent)}`,
+        );
+      });
+
+      return { beforeComma, afterComma: afterComma.join('') };
     }
 
     function formatMultilineArguments(
@@ -645,7 +691,7 @@ export const flattenPushCalls = createRule<[], MessageIds>({
 
           renderedArguments.push({
             body: bodyLines.join('\n'),
-            suffix: formatTrailingComments(chunk, argumentIndent),
+            ...formatTrailingComments(chunk, argumentIndent),
           });
         });
       });
@@ -664,41 +710,48 @@ export const flattenPushCalls = createRule<[], MessageIds>({
       const lastIndex = renderedArguments.length - 1;
       const last = renderedArguments[lastIndex];
       renderedArguments[lastIndex] = {
-        body: `${last.body}${last.suffix}\n${pendingComments.join('\n')}`,
-        suffix: '',
+        ...last,
+        afterComma: `${last.afterComma}\n${pendingComments.join('\n')}`,
       };
 
       return renderedArguments;
     }
 
-    function buildFinalReplacement(
+    /**
+     * Every argument keeps a comma, the last one included: prettier writes a
+     * trailing comma into any argument list it breaks across lines.
+     */
+    function buildMultilineReplacement(
       calleeText: string,
       renderedArguments: RenderedArgument[],
-      shouldUseMultiline: boolean,
       baseIndent: string,
       hasSemicolon: boolean,
     ): string {
-      const argsText = shouldUseMultiline
-        ? `\n${renderedArguments
-            .map(
-              (argument, index) =>
-                `${argument.body}${
-                  index < renderedArguments.length - 1 ? ',' : ''
-                }${argument.suffix}`,
-            )
-            .join('\n')}\n${baseIndent}`
-        : renderedArguments.map((argument) => argument.body).join(', ');
+      const argsText = renderedArguments
+        .map(
+          (argument) =>
+            `${argument.body}${argument.beforeComma},${argument.afterComma}`,
+        )
+        .join('\n');
 
-      return `${calleeText}(${argsText})${hasSemicolon ? ';' : ''}`;
+      return `${calleeText}(\n${argsText}\n${baseIndent})${
+        hasSemicolon ? ';' : ''
+      }`;
+    }
+
+    function buildSingleLineReplacement(
+      calleeText: string,
+      segments: PushSegment[],
+      hasSemicolon: boolean,
+    ): string {
+      return `${calleeText}(${renderSingleLineArguments(segments)})${
+        hasSemicolon ? ';' : ''
+      }`;
     }
 
     function buildReplacement(group: PushCallStatement[]): string | null {
       const first = group[0];
       const last = group[group.length - 1];
-      const totalArgs = group.reduce(
-        (count, item) => count + item.call.arguments.length,
-        0,
-      );
       const preferredCallee = getPreferredCallee(group);
 
       const segments = buildSegments(group);
@@ -711,23 +764,33 @@ export const flattenPushCalls = createRule<[], MessageIds>({
       );
       if (unhostableComments.length > 0) return null;
 
-      const shouldUseMultiline = shouldUseMultilineFormat(segments, totalArgs);
+      const hasSemicolon = detectSemicolon(first, last);
+      const singleLine = canRenderSingleLine(segments)
+        ? buildSingleLineReplacement(
+            preferredCallee.calleeText,
+            segments,
+            hasSemicolon,
+          )
+        : null;
+      /**
+       * The call starts at its own column rather than at the line indent, so a
+       * statement sharing a line (a `case` clause, say) is measured where it
+       * actually sits.
+       */
+      const startColumn = first.statement.loc.start.column;
+
       const baseIndent = getLineIndent(first.statement, sourceCode);
       const argumentIndent = `${baseIndent}  `;
-      const renderedArguments = formatArguments(
-        segments,
-        shouldUseMultiline,
-        argumentIndent,
-      );
-      const hasSemicolon = detectSemicolon(first, last);
 
-      const replacement = buildFinalReplacement(
-        preferredCallee.calleeText,
-        renderedArguments,
-        shouldUseMultiline,
-        baseIndent,
-        hasSemicolon,
-      );
+      const replacement =
+        singleLine !== null && startColumn + singleLine.length <= PRINT_WIDTH
+          ? singleLine
+          : buildMultilineReplacement(
+              preferredCallee.calleeText,
+              formatMultilineArguments(segments, argumentIndent),
+              baseIndent,
+              hasSemicolon,
+            );
 
       const currentText = sourceCode
         .getText()
