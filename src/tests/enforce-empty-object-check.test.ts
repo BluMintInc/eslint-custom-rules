@@ -426,7 +426,10 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
       ],
       output: `
         const responseData = getResponse();
-        if (shouldLog && (!responseData || Object.keys(responseData).length === 0)) {
+        if (
+          shouldLog &&
+          (!responseData || Object.keys(responseData).length === 0)
+        ) {
           logResponse(responseData);
         }
         `,
@@ -448,7 +451,10 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
       ],
       output: `
         const fallbackData = getData();
-        if (isReady ?? (!fallbackData || Object.keys(fallbackData).length === 0)) {
+        if (
+          isReady ??
+          (!fallbackData || Object.keys(fallbackData).length === 0)
+        ) {
           handle(fallbackData);
         }
         `,
@@ -505,7 +511,10 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
       ],
       output: `
         const meta = read();
-        if (isReady && (flag ? !meta || Object.keys(meta).length === 0 : isStale)) {
+        if (
+          isReady &&
+          (flag ? !meta || Object.keys(meta).length === 0 : isStale)
+        ) {
           refresh(meta);
         }
         `,
@@ -540,7 +549,10 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
         },
       ],
       output: `
-        const name = !userProfile || Object.keys(userProfile).length === 0 ? 'anonymous' : userProfile.name;
+        const name =
+          !userProfile || Object.keys(userProfile).length === 0
+            ? 'anonymous'
+            : userProfile.name;
         `,
     },
     {
@@ -627,7 +639,11 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
       ],
       output: `
         const requestContext = getContext();
-        if (!requestContext || Object.keys(requestContext).length === 0 || requestContext.user) {
+        if (
+          !requestContext ||
+          Object.keys(requestContext).length === 0 ||
+          requestContext.user
+        ) {
           return requestContext;
         }
         `,
@@ -760,7 +776,11 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
         { messageId: 'missingEmptyObjectCheck', data: { name: 'payload' } },
       ],
       output: `
-        if (!payload || Object.keys(payload).length === 0 ? handleEmpty() : handlePayload(payload)) {
+        if (
+          !payload || Object.keys(payload).length === 0
+            ? handleEmpty()
+            : handlePayload(payload)
+        ) {
           process();
         }
         `,
@@ -775,7 +795,9 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
         { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
       ],
       output: `
-        if (flag ? !config || Object.keys(config).length === 0 : hasConfig(config)) {
+        if (
+          flag ? !config || Object.keys(config).length === 0 : hasConfig(config)
+        ) {
           apply(config);
         }
         `,
@@ -790,7 +812,9 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
         { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
       ],
       output: `
-        if (flag ? hasConfig(config) : !config || Object.keys(config).length === 0) {
+        if (
+          flag ? hasConfig(config) : !config || Object.keys(config).length === 0
+        ) {
           apply(config);
         }
         `,
@@ -823,7 +847,11 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
         { messageId: 'missingEmptyObjectCheck', data: { name: 'payload' } },
       ],
       output: `
-        if (!payload || Object.keys(payload).length === 0 || Object.keys(payload).length > 5) {
+        if (
+          !payload ||
+          Object.keys(payload).length === 0 ||
+          Object.keys(payload).length > 5
+        ) {
           handle(payload);
         }
         `,
@@ -840,7 +868,11 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
       ],
       output: `
         const payload = getPayload();
-        if (!payload || Object.keys(payload).length === 0 || Object.keys(payload).length < 0) {
+        if (
+          !payload ||
+          Object.keys(payload).length === 0 ||
+          Object.keys(payload).length < 0
+        ) {
           handle(payload);
         }
         `,
@@ -857,7 +889,11 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
       ],
       output: `
         const payload = getPayload();
-        if (!payload || Object.keys(payload).length === 0 || 0 > Object.keys(payload).length) {
+        if (
+          !payload ||
+          Object.keys(payload).length === 0 ||
+          0 > Object.keys(payload).length
+        ) {
           handle(payload);
         }
         `,
@@ -874,7 +910,11 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
       ],
       output: `
         const config = load();
-        if (!config || Object.keys(config).length === 0 || Object.keys(config).length === 10) {
+        if (
+          !config ||
+          Object.keys(config).length === 0 ||
+          Object.keys(config).length === 10
+        ) {
           return config;
         }
         `,
@@ -891,7 +931,11 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
       ],
       output: `
         const payload = getPayload();
-        if (!payload || Object.keys(payload).length === 0 || !!Object.keys(payload).length) {
+        if (
+          !payload ||
+          Object.keys(payload).length === 0 ||
+          !!Object.keys(payload).length
+        ) {
           return handle(payload);
         }
         `,
@@ -1027,7 +1071,11 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
       ],
       output: `
         const payload = getPayload();
-        if (!payload || Object.keys(payload).length === 0 || Object.keys(payload)?.length > 5) {
+        if (
+          !payload ||
+          Object.keys(payload).length === 0 ||
+          Object.keys(payload)?.length > 5
+        ) {
           handle(payload);
         }
         `,
@@ -1044,7 +1092,11 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
       ],
       output: `
         const userData = getUser();
-        if (!userData || Object.keys(userData).length === 0 || Object.keys(otherData)?.length === 0) {
+        if (
+          !userData ||
+          Object.keys(userData).length === 0 ||
+          Object.keys(otherData)?.length === 0
+        ) {
           handle(userData);
         }
         `,
@@ -1061,7 +1113,11 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
       ],
       output: `
         const userData = getUser();
-        if (!userData || Object.keys(userData).length === 0 || Object.values(userData)?.length === 0) {
+        if (
+          !userData ||
+          Object.keys(userData).length === 0 ||
+          Object.values(userData)?.length === 0
+        ) {
           handle(userData);
         }
         `,
@@ -1078,7 +1134,11 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
       ],
       output: `
         const payload = getPayload();
-        if (!payload || Object.keys(payload).length === 0 || !(Object.keys(payload)?.length === 0)) {
+        if (
+          !payload ||
+          Object.keys(payload).length === 0 ||
+          !(Object.keys(payload)?.length === 0)
+        ) {
           handle(payload);
         }
         `,
@@ -1095,7 +1155,11 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
       ],
       output: `
         const payload = getPayload();
-        if (!payload || Object.keys(payload).length === 0 || !!Object.keys(payload)?.length) {
+        if (
+          !payload ||
+          Object.keys(payload).length === 0 ||
+          !!Object.keys(payload)?.length
+        ) {
           return handle(payload);
         }
         `,
@@ -1112,7 +1176,11 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
       ],
       output: `
         const payload = getPayload();
-        if (!payload || Object.keys(payload).length === 0 || isEmpty?.(otherPayload)) {
+        if (
+          !payload ||
+          Object.keys(payload).length === 0 ||
+          isEmpty?.(otherPayload)
+        ) {
           return;
         }
         `,
@@ -1129,8 +1197,334 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
       ],
       output: `
         const config = load();
-        if (!config || Object.keys(config).length === 0 || Object.keys(config)?.length === 10) {
+        if (
+          !config ||
+          Object.keys(config).length === 0 ||
+          Object.keys(config)?.length === 10
+        ) {
           return config;
+        }
+        `,
+    },
+    /**
+     * Print-width coverage (#2095). The widened condition can push the statement
+     * it lives in past the print width, and Prettier answers that by breaking
+     * the header one operand per line. Every emission below is a fixed point of
+     * Prettier 2.8.8 — agora's pin, which is the binary that decides whether a
+     * `--fix` run leaves the tree failing `prettier --check`.
+     */
+    {
+      name: 'an over-wide if header breaks one operand per line',
+      code: `
+        const requestPayload = getPayload();
+        if (!requestPayload || Object.keys(requestPayload).length > 5) {
+          handle(requestPayload);
+        }
+        `,
+      errors: [
+        {
+          messageId: 'missingEmptyObjectCheck',
+          data: { name: 'requestPayload' },
+        },
+      ],
+      output: `
+        const requestPayload = getPayload();
+        if (
+          !requestPayload ||
+          Object.keys(requestPayload).length === 0 ||
+          Object.keys(requestPayload).length > 5
+        ) {
+          handle(requestPayload);
+        }
+        `,
+    },
+    {
+      name: 'an over-wide while header breaks one operand per line',
+      code: `
+        let optionsRecord = load();
+        while (!optionsRecord || retryCounterValue < maximumRetryCount) {
+          optionsRecord = retry();
+        }
+        `,
+      errors: [
+        {
+          messageId: 'missingEmptyObjectCheck',
+          data: { name: 'optionsRecord' },
+        },
+      ],
+      output: `
+        let optionsRecord = load();
+        while (
+          !optionsRecord ||
+          Object.keys(optionsRecord).length === 0 ||
+          retryCounterValue < maximumRetryCount
+        ) {
+          optionsRecord = retry();
+        }
+        `,
+    },
+    {
+      name: 'an over-wide do-while trailer breaks one operand per line',
+      code: `
+        let dataRecord;
+        do {
+          dataRecord = read();
+        } while (!dataRecord || retryCounterValue < maximumRetryCount);
+        `,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'dataRecord' } },
+      ],
+      output: `
+        let dataRecord;
+        do {
+          dataRecord = read();
+        } while (
+          !dataRecord ||
+          Object.keys(dataRecord).length === 0 ||
+          retryCounterValue < maximumRetryCount
+        );
+        `,
+    },
+    /**
+     * A parenthesized operand that no longer fits breaks INSIDE its own
+     * parentheses, with the closing one glued to the last line — the layout
+     * Prettier gives a group, which differs from the one it gives the chain that
+     * holds it.
+     */
+    {
+      name: 'a grouped operand breaks inside its own parentheses',
+      code: `
+        const metaConfigInfo = read();
+        if (isStaleAlready || (isReadyToGo && !metaConfigInfo)) {
+          refresh(metaConfigInfo);
+        }
+        `,
+      errors: [
+        {
+          messageId: 'missingEmptyObjectCheck',
+          data: { name: 'metaConfigInfo' },
+        },
+      ],
+      output: `
+        const metaConfigInfo = read();
+        if (
+          isStaleAlready ||
+          (isReadyToGo &&
+            (!metaConfigInfo || Object.keys(metaConfigInfo).length === 0))
+        ) {
+          refresh(metaConfigInfo);
+        }
+        `,
+    },
+    /**
+     * An assignment breaks after the `=` and lets the conditional break beneath
+     * it; a `return` keeps its argument on the keyword's line and breaks only
+     * the conditional. The two layouts differ, so both are pinned.
+     */
+    {
+      name: 'an over-wide assignment breaks after the equals sign',
+      code: `
+        someHolderObject.displayName = !userProfile ? 'anonymous' : userProfile.name;
+        `,
+      errors: [
+        {
+          messageId: 'missingEmptyObjectCheck',
+          data: { name: 'userProfile' },
+        },
+      ],
+      output: `
+        someHolderObject.displayName =
+          !userProfile || Object.keys(userProfile).length === 0
+            ? 'anonymous'
+            : userProfile.name;
+        `,
+    },
+    {
+      name: 'an over-wide return breaks only the conditional',
+      code: `
+        function pick() {
+          return !userProfile ? 'anonymous' : userProfile.displayName;
+        }
+        `,
+      errors: [
+        {
+          messageId: 'missingEmptyObjectCheck',
+          data: { name: 'userProfile' },
+        },
+      ],
+      output: `
+        function pick() {
+          return !userProfile || Object.keys(userProfile).length === 0
+            ? 'anonymous'
+            : userProfile.displayName;
+        }
+        `,
+    },
+    /**
+     * A header Prettier has ALREADY broken is the common case once a condition
+     * overflows, so the emitter re-lays it out rather than splicing a one-line
+     * guard into the broken form.
+     */
+    {
+      name: 'a header already broken by Prettier is laid out again',
+      code: `
+        if (
+          !payloadRecord ? handleEmptyPayload() : handlePayloadNow(payloadRecord)
+        ) {
+          process();
+        }
+        `,
+      errors: [
+        {
+          messageId: 'missingEmptyObjectCheck',
+          data: { name: 'payloadRecord' },
+        },
+      ],
+      output: `
+        if (
+          !payloadRecord || Object.keys(payloadRecord).length === 0
+            ? handleEmptyPayload()
+            : handlePayloadNow(payloadRecord)
+        ) {
+          process();
+        }
+        `,
+    },
+    /**
+     * The decline boundary. Each shape below is one whose break Prettier decides
+     * by a rule this emitter does not author — it opens a call's argument list,
+     * lays a second declarator out under the first, or moves a non-block clause
+     * to its own line — so the fix stays the minimal replacement rather than
+     * emitting a line `prettier --check` would reject. Declining is not a lost
+     * fix: the guard is still added, exactly as it was before the width was
+     * measured at all.
+     */
+    {
+      name: 'a comment inside the condition keeps the minimal replacement',
+      code: `
+        if (!payload /* keep me */ || Object.keys(payload).length > 5) {
+          handle(payload);
+        }
+        `,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'payload' } },
+      ],
+      output: `
+        if (!payload || Object.keys(payload).length === 0 /* keep me */ || Object.keys(payload).length > 5) {
+          handle(payload);
+        }
+        `,
+    },
+    {
+      name: 'a non-block clause keeps the minimal replacement',
+      code: `
+        if (!payloadContext || Object.keys(payloadContext).length > 5) return handle();
+        `,
+      errors: [
+        {
+          messageId: 'missingEmptyObjectCheck',
+          data: { name: 'payloadContext' },
+        },
+      ],
+      output: `
+        if (!payloadContext || Object.keys(payloadContext).length === 0 || Object.keys(payloadContext).length > 5) return handle();
+        `,
+    },
+    {
+      name: 'a second declarator keeps the minimal replacement',
+      code: `
+        const first = 1,
+          second = !userProfile ? 'anonymous' : userProfile.name;
+        `,
+      errors: [
+        {
+          messageId: 'missingEmptyObjectCheck',
+          data: { name: 'userProfile' },
+        },
+      ],
+      output: `
+        const first = 1,
+          second = !userProfile || Object.keys(userProfile).length === 0 ? 'anonymous' : userProfile.name;
+        `,
+    },
+    {
+      name: 'an operand too wide for its own line keeps the minimal replacement',
+      code: `
+        if (!payloadInfo || someVeryLongPredicateName(argumentOne, argumentTwo, argumentThree, four)) {
+          handle(payloadInfo);
+        }
+        `,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'payloadInfo' } },
+      ],
+      output: `
+        if (!payloadInfo || Object.keys(payloadInfo).length === 0 || someVeryLongPredicateName(argumentOne, argumentTwo, argumentThree, four)) {
+          handle(payloadInfo);
+        }
+        `,
+    },
+    /**
+     * `printWidth` drives the emission in BOTH directions, against the same
+     * fixture pairs: raised, an 86-column header that breaks at the default
+     * stays on one line; lowered, a 61-column header that fits at the default
+     * breaks. The middle case is the control that pins the default.
+     */
+    {
+      name: 'a raised printWidth keeps an 86-column header on one line',
+      options: [{ printWidth: 120 }],
+      code: `
+        const payload = getPayload();
+        if (!payload || Object.keys(payload).length > 5) {
+          handle(payload);
+        }
+        `,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'payload' } },
+      ],
+      output: `
+        const payload = getPayload();
+        if (!payload || Object.keys(payload).length === 0 || Object.keys(payload).length > 5) {
+          handle(payload);
+        }
+        `,
+    },
+    {
+      name: 'a lowered printWidth breaks a header that fits at the default',
+      options: [{ printWidth: 60 }],
+      code: `
+        const userData = getUser();
+        if (!userData) {
+          handle(userData);
+        }
+        `,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'userData' } },
+      ],
+      output: `
+        const userData = getUser();
+        if (
+          !userData ||
+          Object.keys(userData).length === 0
+        ) {
+          handle(userData);
+        }
+        `,
+    },
+    {
+      name: 'the same header stays on one line at the default printWidth',
+      code: `
+        const userData = getUser();
+        if (!userData) {
+          handle(userData);
+        }
+        `,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'userData' } },
+      ],
+      output: `
+        const userData = getUser();
+        if (!userData || Object.keys(userData).length === 0) {
+          handle(userData);
         }
         `,
     },

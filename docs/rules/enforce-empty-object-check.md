@@ -102,6 +102,53 @@ if (isReady && (!userConfig || Object.keys(userConfig).length === 0)) {
 }
 ```
 
+### Line breaks in the fix
+
+The guard roughly doubles the width of the condition it widens, which regularly
+pushes the statement holding it past the print width. Prettier answers that by
+breaking the statement header, so a fix that only ever emitted one line left
+source `prettier --check` rejects — and a lint run carrying `--fix` then landed
+non-canonical source before a human read the report.
+
+Past [`printWidth`](#printwidth) the fixer therefore owns the whole condition and
+emits the break itself:
+
+```ts
+// before
+if (!payload || Object.keys(payload).length > 5) {
+  handle(payload);
+}
+```
+
+```ts
+// after --fix
+if (
+  !payload ||
+  Object.keys(payload).length === 0 ||
+  Object.keys(payload).length > 5
+) {
+  handle(payload);
+}
+```
+
+The same applies to a `while` header, the `} while (…)` trailer of a `do…while`,
+a conditional in an assignment (which breaks after the `=`) and one in a `return`
+(which does not):
+
+```ts
+// after --fix
+const displayName =
+  !userProfile || Object.keys(userProfile).length === 0
+    ? 'anonymous'
+    : userProfile.name;
+```
+
+Where the break is one this fixer does not author — a second declarator, a clause
+that is not a block, an operand too wide for its own line, or a condition
+carrying a comment — the fix stays the minimal replacement and leaves the
+re-wrap to the formatter. Declining costs only the layout: the guard is added
+either way.
+
 ## Options
 
 ```json
@@ -111,7 +158,8 @@ if (isReady && (!userConfig || Object.keys(userConfig).length === 0)) {
     {
       "objectNamePattern": ["Config", "Data", "Info", "Payload"],
       "ignoreInLoops": false,
-      "emptyCheckFunctions": ["isEmpty"]
+      "emptyCheckFunctions": ["isEmpty"],
+      "printWidth": 80
     }
   ]
 }
@@ -120,6 +168,43 @@ if (isReady && (!userConfig || Object.keys(userConfig).length === 0)) {
 - `objectNamePattern` (string[], default includes Config/Data/Info/Settings/Options/Props/State/Response/Result/Payload/Map/Record/Object/Obj/Details/Meta/Profile/Request/Params/Context): additional suffixes to treat as object-like when type info is unavailable.
 - `ignoreInLoops` (boolean, default `false`): skip reporting inside loop conditions to avoid extra `Object.keys` calls in hot paths.
 - `emptyCheckFunctions` (string[], default `["isEmpty"]`): additional functions (identifier or property names) that already perform emptiness checks; merged with the default so adding custom helpers keeps recognition of `isEmpty`.
+- `printWidth` (number, default `80`): the column the autofix wraps the widened condition at.
+
+### `printWidth`
+
+Type: `number`
+
+Default: `80`
+
+The column the autofix wraps at, matching Prettier's option of the same name.
+Set it to your formatter's `printWidth` so the fixed source is already in the
+shape the formatter would produce; a lint run carrying `--fix` otherwise leaves
+the tree failing `prettier --check`.
+
+The option changes the emission in both directions. Raised, a condition that
+would have been broken stays on one line:
+
+```ts
+// printWidth: 120 — 86 columns, so no break
+if (!payload || Object.keys(payload).length === 0 || Object.keys(payload).length > 5) {
+  handle(payload);
+}
+```
+
+Lowered, a condition that fits at the default is broken:
+
+```ts
+// printWidth: 60 — 65 columns, so it breaks
+if (
+  !userDataRecord ||
+  Object.keys(userDataRecord).length === 0
+) {
+  handle(userDataRecord);
+}
+```
+
+Only the fix moves: the option decides layout, never whether a guard is
+reported.
 
 ## When Not To Use It
 
