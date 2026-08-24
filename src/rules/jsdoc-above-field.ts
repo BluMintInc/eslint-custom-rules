@@ -19,11 +19,14 @@ type Options = [
 type MessageIds = 'moveJsdocAbove';
 
 /**
- * Where a member's own code stops, ignoring the trailing `;`/`,` separator.
+ * Where a member's own code stops, ignoring the trailing `;`/`,` separator, and
+ * where that separator ends. Detection compares comment positions against both,
+ * so a member with no separator reports `separatorEnd === offset`.
  */
-type ContentEnd = {
+type FieldSpan = {
   offset: number;
   line: number;
+  separatorEnd: number;
 };
 
 type FieldNode =
@@ -120,6 +123,12 @@ export const jsdocAboveField = createRule<Options, MessageIds>({
       return 'type field';
     };
 
+    const isSeparatorToken = (
+      token: TSESTree.Token | null | undefined,
+    ): token is TSESTree.PunctuatorToken =>
+      token?.type === AST_TOKEN_TYPES.Punctuator &&
+      (token.value === ';' || token.value === ',');
+
     /**
      * A member's range and its end line both swallow its trailing separator,
      * while prettier canonicalises trailing JSDoc into the gap between the
@@ -128,46 +137,70 @@ export const jsdocAboveField = createRule<Options, MessageIds>({
      * `node.loc.end.line` past the field's own line — so both boundaries have
      * to come from the last non-separator token instead of the node, or the
      * rule goes blind on formatted source.
+     *
+     * Object literal properties are the mirror case: their `,` sits outside the
+     * `Property` range, so the separator has to be read from the token after the
+     * node instead of the token before its last one.
      */
-    const contentEndOf = (node: FieldNode): ContentEnd => {
+    const fieldSpanOf = (node: FieldNode): FieldSpan => {
       const lastToken = sourceCode.getLastToken(node);
-      const isSeparator =
-        lastToken?.type === AST_TOKEN_TYPES.Punctuator &&
-        (lastToken.value === ';' || lastToken.value === ',');
-      const beforeSeparator = isSeparator
-        ? sourceCode.getTokenBefore(lastToken)
-        : undefined;
 
-      if (!beforeSeparator) {
-        return { offset: node.range[1], line: node.loc.end.line };
+      if (isSeparatorToken(lastToken)) {
+        const beforeSeparator = sourceCode.getTokenBefore(lastToken);
+
+        if (beforeSeparator) {
+          return {
+            offset: beforeSeparator.range[1],
+            line: beforeSeparator.loc.end.line,
+            separatorEnd: lastToken.range[1],
+          };
+        }
       }
 
+      const tokenAfter = sourceCode.getTokenAfter(node);
+
       return {
-        offset: beforeSeparator.range[1],
-        line: beforeSeparator.loc.end.line,
+        offset: node.range[1],
+        line: node.loc.end.line,
+        separatorEnd: isSeparatorToken(tokenAfter)
+          ? tokenAfter.range[1]
+          : node.range[1],
       };
     };
 
-    const inlineJSDocOnSameLine = (
-      contentEnd: ContentEnd,
+    /**
+     * Attaches a trailing JSDoc block by token order rather than by line.
+     *
+     * Prettier reflows a multi-line block that trails a field onto its own
+     * line, ahead of the member's separator: the block that followed
+     * `timeout: number;` ends up between `timeout: number` and its `;`. Keying
+     * on the comment sharing the field's line makes the rule inert on exactly
+     * the formatted source it has to police, so a block the separator still
+     * follows counts as this member's however many lines down it starts.
+     *
+     * Past the separator the member has ended and position alone no longer
+     * identifies an owner: an own-line block there is the leading documentation
+     * of the next field, or a note about the enclosing shape. Only the same-line
+     * spelling can be claimed there, which is why that arm survives.
+     */
+    const trailingJSDocFor = (
+      span: FieldSpan,
     ): TSESTree.Comment | undefined => {
       return allComments.find((comment) => {
         if (!isJSDocBlock(comment)) {
           return false;
         }
 
-        if (comment.loc.start.line !== contentEnd.line) {
+        if (comment.range[0] < span.offset) {
           return false;
         }
 
-        if (comment.range[0] < contentEnd.offset) {
+        const precedesSeparator = comment.range[1] <= span.separatorEnd;
+        if (!precedesSeparator && comment.loc.start.line !== span.line) {
           return false;
         }
 
-        const between = sourceCode.text.slice(
-          contentEnd.offset,
-          comment.range[0],
-        );
+        const between = sourceCode.text.slice(span.offset, comment.range[0]);
 
         return /^[\s;,]*$/.test(between);
       });
@@ -262,7 +295,7 @@ export const jsdocAboveField = createRule<Options, MessageIds>({
     const reportInlineJSDoc = (
       node: FieldNode,
       comment: TSESTree.Comment,
-      contentEnd: ContentEnd,
+      span: FieldSpan,
     ) => {
       const insertTarget =
         node.type === AST_NODE_TYPES.PropertyDefinition &&
@@ -288,7 +321,7 @@ export const jsdocAboveField = createRule<Options, MessageIds>({
         : `${commentText}\n`;
 
       while (
-        removalStart > contentEnd.offset &&
+        removalStart > span.offset &&
         /\s/.test(sourceCode.text[removalStart - 1])
       ) {
         removalStart -= 1;
@@ -319,14 +352,14 @@ export const jsdocAboveField = createRule<Options, MessageIds>({
         return;
       }
 
-      const contentEnd = contentEndOf(node);
-      const jsdocComment = inlineJSDocOnSameLine(contentEnd);
+      const span = fieldSpanOf(node);
+      const jsdocComment = trailingJSDocFor(span);
 
       if (!jsdocComment) {
         return;
       }
 
-      reportInlineJSDoc(node, jsdocComment, contentEnd);
+      reportInlineJSDoc(node, jsdocComment, span);
     };
 
     return {
