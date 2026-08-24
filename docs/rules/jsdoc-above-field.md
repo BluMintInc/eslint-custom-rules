@@ -10,9 +10,19 @@ Ensures JSDoc-style comments live directly above the fields they describe (inter
 
 ## Rule Details
 
-Both orderings of the trailing comment and the member separator count as
-inline JSDoc: `phone?: string; /** … */` and the prettier-canonical
-`phone?: string /** … */;` describe the same field and are reported alike.
+A JSDoc block belongs to the field whose separator still follows it, whatever
+line it sits on. `phone?: string; /** … */`, the prettier-canonical
+`phone?: string /** … */;`, and the same block reflowed onto its own line ahead
+of the separator all document `phone` from below, and are reported alike.
+Prettier prints that last shape for any block that cannot share the field's
+line, so it is the spelling formatted source actually contains — matching on
+line sharing alone would leave the rule inert exactly there.
+
+Attachment stops at the separator. A block starting after the field's `;` or `,`
+on a later line is the leading documentation of whatever follows — or a note
+about the enclosing shape — and is left alone. That carve-out is also why a
+class field whose trailing block prettier parks _after_ its `;` goes unreported:
+that position is indistinguishable from leading documentation.
 
 ### ❌ Incorrect
 
@@ -24,6 +34,15 @@ export type User = {
 // Prettier rewrites the comment ahead of the separator — the same violation
 export type Contact = {
   phone?: string /** @remarks stored as +15551234567 */;
+};
+
+// A block too tall to share the line is reflowed onto its own — still a violation
+export type Session = {
+  timeout: number
+  /**
+   * @remarks milliseconds
+   * ensure positive
+   */;
 };
 
 interface Profile {
@@ -57,6 +76,13 @@ class Account {
 const config = {
   /** @remarks in milliseconds */
   retryDelay: 1000,
+};
+
+// Past the separator the block documents the NEXT field, so it stays put
+export type Contact = {
+  phone?: string;
+  /** @remarks shown in the UI */
+  displayName: string;
 };
 ```
 

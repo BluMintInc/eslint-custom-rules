@@ -96,6 +96,76 @@ interface Account {
     `class Sensor {
   reading!: number; // trailing note stays inline
 }`,
+
+    // Past the separator an own-line block is the NEXT field's leading
+    // documentation, so token-order attachment must stop at the separator
+    `type Contact = {
+  phone?: string;
+  /** @remarks display name shown in UI */
+  displayName: string;
+};`,
+
+    // Same carve-out with the members separated by newlines alone: without a
+    // separator token there is no gap for the block to sit inside
+    `type Contact = {
+  phone?: string
+  /** @remarks display name shown in UI */
+  displayName: string
+};`,
+
+    // Class fields keep the carve-out: prettier parks a trailing block after
+    // the field's `;`, exactly where a leading block for the next field lives
+    `class Account {
+  id!: string;
+  /** @remarks lowercased on write */
+  email!: string;
+}`,
+
+    // Object literal leading documentation stays leading documentation
+    {
+      code: `const options = {
+  retryDelay: 1000,
+  /** @remarks attempts before giving up */
+  retries: 3,
+};`,
+      options: [{ checkObjectLiterals: true }],
+    },
+
+    // A block after the last property's separator documents the shape
+    {
+      code: `const options = {
+  retryDelay: 1000,
+  /** @remarks tuning knobs live here */
+};`,
+      options: [{ checkObjectLiterals: true }],
+    },
+
+    // A blank line between the separator and the block does not attach it
+    `type Contact = {
+  phone?: string;
+
+  /** @remarks display name shown in UI */
+  displayName: string;
+};`,
+
+    // A nested literal's leading documentation belongs to the inner field
+    `type Contact = {
+  address: {
+    /** @remarks two-letter code */
+    country: string;
+  };
+};`,
+
+    // Documentation inside a member's own type annotation is not trailing
+    `type Handlers = {
+  onSelect: (/** @remarks row identifier */ id: string) => void;
+};`,
+
+    // Object literals stay unchecked by default, canonical spelling included
+    `const headers = {
+  accept: 'json'
+  /** @remarks header is lowercase */,
+};`,
   ],
   invalid: [
     {
@@ -375,6 +445,167 @@ interface Merged {
 };`,
       options: [{ checkObjectLiterals: true }],
       errors: [{ messageId: 'moveJsdocAbove' }],
+    },
+    // A block too wide to share the field's line is reflowed onto its own line
+    // ahead of the separator, which is the only spelling formatted source
+    // contains. Every case below is prettier 2.8.8's output for the same-line
+    // fixture above it.
+    {
+      code: `type Settings = {
+  timeout: number
+  /**
+   * @remarks milliseconds
+   * ensure positive
+   */;
+};`,
+      output: `type Settings = {
+  /**
+   * @remarks milliseconds
+   * ensure positive
+   */
+  timeout: number;
+};`,
+      errors: [{ messageId: 'moveJsdocAbove' }],
+    },
+    {
+      code: `type Example = {
+  value: string
+  /**
+   * @example
+   *   const x = 1;
+   *     const y = 2;
+   */;
+};`,
+      output: `type Example = {
+  /**
+   * @example
+   *   const x = 1;
+   *     const y = 2;
+   */
+  value: string;
+};`,
+      errors: [{ messageId: 'moveJsdocAbove' }],
+    },
+    {
+      code: `type Nested = {
+  field: string
+  /** @remarks
+   *   nested line 1
+   *     nested line 2
+   */;
+};`,
+      output: `type Nested = {
+  /** @remarks
+   * nested line 1
+   *   nested line 2
+   */
+  field: string;
+};`,
+      errors: [{ messageId: 'moveJsdocAbove' }],
+    },
+    {
+      code: `const headers = {
+  accept: 'json'
+  /**
+   * @remarks header is lowercase
+   */,
+};`,
+      output: `const headers = {
+  /**
+   * @remarks header is lowercase
+   */
+  accept: 'json',
+};`,
+      options: [{ checkObjectLiterals: true }],
+      errors: [{ messageId: 'moveJsdocAbove' }],
+    },
+    // The block sits between two fields, so the report has to name the one the
+    // separator still follows rather than the one below it
+    {
+      code: `interface Profile {
+  username: string
+  /**
+   * @remarks unique handle
+   * lowercase only
+   */;
+  displayName: string;
+}`,
+      output: `interface Profile {
+  /**
+   * @remarks unique handle
+   * lowercase only
+   */
+  username: string;
+  displayName: string;
+}`,
+      errors: [
+        {
+          messageId: 'moveJsdocAbove',
+          data: { name: 'username', kind: 'type field' },
+        },
+      ],
+    },
+    {
+      code: `class Session {
+  token!: string
+  /** @remarks JWT token */;
+  refresh!: string;
+}`,
+      output: `class Session {
+  /** @remarks JWT token */
+  token!: string;
+  refresh!: string;
+}`,
+      errors: [
+        {
+          messageId: 'moveJsdocAbove',
+          data: { name: 'token', kind: 'class field' },
+        },
+      ],
+    },
+    {
+      code: `class User {
+  @Column()
+  private readonly email?: string
+  /** @remarks must be lowercase */;
+}`,
+      output: `class User {
+  /** @remarks must be lowercase */
+  @Column()
+  private readonly email?: string;
+}`,
+      errors: [{ messageId: 'moveJsdocAbove' }],
+    },
+    {
+      code: `type Coordinates = {
+  latitude: number
+  /** @remarks decimal degrees */,
+  longitude: number,
+};`,
+      output: `type Coordinates = {
+  /** @remarks decimal degrees */
+  latitude: number,
+  longitude: number,
+};`,
+      errors: [{ messageId: 'moveJsdocAbove' }],
+    },
+    {
+      code: `type InlineDocs = {
+  size: number
+  /** sized in bytes */;
+  label: string
+  /** @remarks shown to users */;
+};`,
+      output: `type InlineDocs = {
+  /** sized in bytes */
+  size: number;
+  /** @remarks shown to users */
+  label: string;
+};`,
+      errors: [
+        { messageId: 'moveJsdocAbove' },
+        { messageId: 'moveJsdocAbove' },
+      ],
     },
   ],
 });
