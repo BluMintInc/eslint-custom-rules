@@ -972,6 +972,277 @@ ds.set({
 `,
         errors: [{ messageId: 'enforceFieldPathSyntax' }],
       },
+      // Issue #2096: a comment inside a leaf value rides along in that value's
+      // copied text, so hoisting it as well would emit it twice — once detached
+      // from the statement it documents
+      {
+        code: `
+const ds = new DocSetter();
+ds.set({
+  handlers: {
+    onDone() {
+      // keep
+      return 1;
+    },
+  },
+});
+`,
+        output: `
+const ds = new DocSetter();
+ds.set({
+  'handlers.onDone': function () {
+    // keep
+    return 1;
+  },
+});
+`,
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+      },
+      // A block comment inside the relocated body travels with it just as a line
+      // comment does
+      {
+        code: `
+const ds = new DocSetter();
+ds.set({
+  handlers: {
+    onDone() {
+      /* keep */
+      return 1;
+    },
+  },
+});
+`,
+        output: `
+const ds = new DocSetter();
+ds.set({
+  'handlers.onDone': function () {
+    /* keep */
+    return 1;
+  },
+});
+`,
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+      },
+      // The leaf value need not be a method shorthand: an arrow function's body
+      // is copied verbatim too
+      {
+        code: `
+const ds = new DocSetter();
+ds.set({
+  handlers: {
+    onDone: () => {
+      // keep
+      return 1;
+    },
+  },
+});
+`,
+        output: `
+const ds = new DocSetter();
+ds.set({
+  'handlers.onDone': () => {
+    // keep
+    return 1;
+  },
+});
+`,
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+      },
+      // Both channels at once: the comment between nested members is hoisted
+      // above the entry, the one inside the leaf body stays where it was, and
+      // neither is emitted twice
+      {
+        code: `
+const ds = new DocSetter();
+ds.set({
+  handlers: {
+    // hoisted
+    onDone() {
+      // keep
+      return 1;
+    },
+  },
+});
+`,
+        output: `
+const ds = new DocSetter();
+ds.set({
+  // hoisted
+  'handlers.onDone': function () {
+    // keep
+    return 1;
+  },
+});
+`,
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+      },
+      // A comment between the key and its nested value is outside every leaf, so
+      // it is still hoisted while the body comment stays put
+      {
+        code: `
+const ds = new DocSetter();
+ds.set({
+  handlers: /* nested */ {
+    onDone() {
+      // keep
+      return 1;
+    },
+  },
+});
+`,
+        output: `
+const ds = new DocSetter();
+ds.set({
+  /* nested */
+  'handlers.onDone': function () {
+    // keep
+    return 1;
+  },
+});
+`,
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+      },
+      // A directive inside the body governs the line beneath it, so duplicating
+      // it above the entry would suppress a line its author never covered
+      {
+        code: `
+const ds = new DocSetter();
+ds.set({
+  handlers: {
+    onDone() {
+      // eslint-disable-next-line no-console
+      console.log('x');
+    },
+  },
+});
+`,
+        output: `
+const ds = new DocSetter();
+ds.set({
+  'handlers.onDone': function () {
+    // eslint-disable-next-line no-console
+    console.log('x');
+  },
+});
+`,
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+      },
+      // A leaf that is a multi-line array literal carries its interior comment
+      // the same way a function body does
+      {
+        code: `
+const ds = new DocSetter();
+ds.set({
+  data: {
+    tags: [
+      // first
+      'a',
+      'b',
+    ],
+  },
+});
+`,
+        output: `
+const ds = new DocSetter();
+ds.set({
+  'data.tags': [
+    // first
+    'a',
+    'b',
+  ],
+});
+`,
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+      },
+      // A `*`-aligned block inside the body realigns with the code it moves
+      // with, and is not also hoisted
+      {
+        code: `
+const ds = new DocSetter();
+ds.set({
+  handlers: {
+    onDone() {
+      /**
+       * Keep me.
+       */
+      return 1;
+    },
+  },
+});
+`,
+        output: `
+const ds = new DocSetter();
+ds.set({
+  'handlers.onDone': function () {
+    /**
+     * Keep me.
+     */
+    return 1;
+  },
+});
+`,
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+      },
+      // A non-aligned block inside the body keeps its interior whitespace, which
+      // is prose rather than layout
+      {
+        code: `
+const ds = new DocSetter();
+ds.set({
+  handlers: {
+    onDone() {
+      /* keep
+         me */
+      return 1;
+    },
+  },
+});
+`,
+        output: `
+const ds = new DocSetter();
+ds.set({
+  'handlers.onDone': function () {
+    /* keep
+         me */
+    return 1;
+  },
+});
+`,
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+      },
+      // Each leaf keeps its own body comment; no comment migrates to a sibling
+      // entry or is repeated above the pair
+      {
+        code: `
+const ds = new DocSetter();
+ds.set({
+  handlers: {
+    onStart() {
+      // start
+      return 0;
+    },
+    onDone() {
+      // done
+      return 1;
+    },
+  },
+});
+`,
+        output: `
+const ds = new DocSetter();
+ds.set({
+  'handlers.onStart': function () {
+    // start
+    return 0;
+  },
+  'handlers.onDone': function () {
+    // done
+    return 1;
+  },
+});
+`,
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+      },
     ],
   },
 );
@@ -1186,5 +1457,216 @@ describe('enforce-fieldpath-syntax-in-docsetter: relocation keeps data intact (i
 
     // The `return` line rode two columns outwards with its new enclosing scope
     expect(output).toContain(`\n    return ${LITERAL.split('\n')[0]}`);
+  });
+});
+
+// Issue #2096: the fixer hoists comments above the flattened entry so directives
+// survive the splice, and copies each leaf value's text verbatim. A comment
+// inside a leaf value sits in both sets, and RuleTester's string comparison is a
+// poor witness for that — a duplicate reads as just another expected byte, and
+// the membership-based corpus fidelity guard (`output.includes(marker)`) passes
+// on a marker emitted twice. These cases count occurrences instead.
+describe('enforce-fieldpath-syntax-in-docsetter: a relocated comment is emitted once (issue #2096)', () => {
+  const RULE_ID = '@blumintinc/blumint/enforce-fieldpath-syntax-in-docsetter';
+
+  const lint = (code: string) => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      RULE_ID,
+      enforceFieldPathSyntaxInDocSetter as unknown as Rule.RuleModule,
+    );
+    return linter.verifyAndFix(
+      code,
+      {
+        parser: '@typescript-eslint/parser',
+        parserOptions: {
+          ecmaVersion: 2020 as const,
+          sourceType: 'module' as const,
+        },
+        rules: { [RULE_ID]: 'error' as const },
+      },
+      'save.ts',
+    ).output;
+  };
+
+  const occurrences = (text: string, marker: string) =>
+    text.split(marker).length - 1;
+
+  /** `[name, source, marker]` — every marker occurs exactly once in the input. */
+  const CARRIED_ONCE = [
+    [
+      'line comment in a method body',
+      [
+        'const ds = new DocSetter();',
+        'ds.set({',
+        '  handlers: {',
+        '    onDone() {',
+        '      // keep',
+        '      return 1;',
+        '    },',
+        '  },',
+        '});',
+        '',
+      ].join('\n'),
+      '// keep',
+    ],
+    [
+      'block comment in a method body',
+      [
+        'const ds = new DocSetter();',
+        'ds.set({',
+        '  handlers: {',
+        '    onDone() {',
+        '      /* keep */',
+        '      return 1;',
+        '    },',
+        '  },',
+        '});',
+        '',
+      ].join('\n'),
+      '/* keep */',
+    ],
+    [
+      'comment in an arrow function body',
+      [
+        'const ds = new DocSetter();',
+        'ds.set({',
+        '  handlers: {',
+        '    onDone: () => {',
+        '      // keep',
+        '      return 1;',
+        '    },',
+        '  },',
+        '});',
+        '',
+      ].join('\n'),
+      '// keep',
+    ],
+    [
+      'directive in a method body',
+      [
+        'const ds = new DocSetter();',
+        'ds.set({',
+        '  handlers: {',
+        '    onDone() {',
+        '      // eslint-disable-next-line no-console',
+        "      console.log('x');",
+        '    },',
+        '  },',
+        '});',
+        '',
+      ].join('\n'),
+      '// eslint-disable-next-line no-console',
+    ],
+    [
+      'comment in a multi-line array leaf',
+      [
+        'const ds = new DocSetter();',
+        'ds.set({',
+        '  data: {',
+        '    tags: [',
+        '      // first',
+        "      'a',",
+        '    ],',
+        '  },',
+        '});',
+        '',
+      ].join('\n'),
+      '// first',
+    ],
+    [
+      'comment in a leaf on a shared property line',
+      [
+        'const ds = new DocSetter();',
+        'ds.set({ handlers: {',
+        '  onDone() {',
+        '    // keep',
+        '    return 1;',
+        '  },',
+        '}, other: 1 });',
+        '',
+      ].join('\n'),
+      '// keep',
+    ],
+  ] as const;
+
+  it.each(CARRIED_ONCE)('emits once: %s', (_name, source, marker) => {
+    const output = lint(source);
+
+    // Non-vacuity: a fixer that declined would carry the marker once trivially
+    expect(output).not.toBe(source);
+    expect(occurrences(source, marker)).toBe(1);
+    expect(occurrences(output, marker)).toBe(1);
+  });
+
+  // Positive control for the other channel: the hoist this rule performs is what
+  // keeps a directive between nested members covering the rewritten line, so it
+  // has to keep happening — exactly once, and above the entry.
+  it('still hoists a comment between nested members, once', () => {
+    const source = [
+      'const ds = new DocSetter();',
+      'ds.set({',
+      '  roles: {',
+      '    // eslint-disable-next-line no-console',
+      "    contributor: console.log('x'),",
+      '  },',
+      '});',
+      '',
+    ].join('\n');
+
+    const output = lint(source);
+    const marker = '// eslint-disable-next-line no-console';
+
+    expect(output).not.toBe(source);
+    expect(occurrences(output, marker)).toBe(1);
+    expect(output.indexOf(marker)).toBeLessThan(
+      output.indexOf("'roles.contributor'"),
+    );
+  });
+
+  // Both channels in one property: each comment lands on its own side of the
+  // entry, so a fix that hoisted everything or hoisted nothing fails here.
+  it('separates the hoisted comment from the one inside the value', () => {
+    const output = lint(
+      [
+        'const ds = new DocSetter();',
+        'ds.set({',
+        '  handlers: {',
+        '    // hoisted',
+        '    onDone() {',
+        '      // keep',
+        '      return 1;',
+        '    },',
+        '  },',
+        '});',
+        '',
+      ].join('\n'),
+    );
+
+    expect(occurrences(output, '// hoisted')).toBe(1);
+    expect(occurrences(output, '// keep')).toBe(1);
+
+    const entry = output.indexOf("'handlers.onDone'");
+    expect(output.indexOf('// hoisted')).toBeLessThan(entry);
+    expect(output.indexOf('// keep')).toBeGreaterThan(entry);
+  });
+
+  // Without this the counting oracle above would pass on any output at all: it
+  // states that a duplicated marker — the emission the bug produced — counts as
+  // two rather than being smoothed into a membership check.
+  it('counts a duplicated marker as two', () => {
+    expect(
+      occurrences(
+        ['  // keep', "  'handlers.onDone': function () {", '    // keep'].join(
+          '\n',
+        ),
+        '// keep',
+      ),
+    ).toBe(2);
   });
 });
