@@ -544,7 +544,10 @@ ruleTesterTs.run('enforce-firestore-set-merge', enforceFirestoreSetMerge, {
     },
   ],
   invalid: [
-    // Invalid cases using update
+    // Invalid cases using update. Issue #2097: an argument written across lines
+    // cannot be printed flat, so the option cannot ride on the line the data
+    // object closes on — the whole list breaks, one argument per line, closing
+    // at the column the call opened at.
     {
       code: `
         const admin = require('firebase-admin');
@@ -560,11 +563,39 @@ ruleTesterTs.run('enforce-firestore-set-merge', enforceFirestoreSetMerge, {
         const admin = require('firebase-admin');
         const db = admin.firestore();
         const userRef = db.collection('users').doc(userId);
-        await userRef.set({
-          'preferences.theme': 'dark',
-          'preferences.fontSize': 14
-        }, { merge: true });
+        await userRef.set(
+          {
+            'preferences.theme': 'dark',
+            'preferences.fontSize': 14
+          },
+          { merge: true },
+        );
       `,
+    },
+    // Issue #2097's reproduction verbatim, at column 0 and already a fixed point
+    // of the consumer's formatter, so the expected output is the exact text that
+    // formatter prints rather than a shape merely close to it.
+    {
+      code: `const admin = require('firebase-admin');
+const db = admin.firestore();
+const userRef = db.collection('users').doc(userId);
+await userRef.update({
+  'preferences.theme': 'dark',
+  'preferences.fontSize': 14,
+});
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `const admin = require('firebase-admin');
+const db = admin.firestore();
+const userRef = db.collection('users').doc(userId);
+await userRef.set(
+  {
+    'preferences.theme': 'dark',
+    'preferences.fontSize': 14,
+  },
+  { merge: true },
+);
+`,
     },
     // A reference whose name merely contains `transaction` takes its data as the
     // first argument; reading a second argument that is not there used to splice
@@ -615,10 +646,14 @@ ruleTesterTs.run('enforce-firestore-set-merge', enforceFirestoreSetMerge, {
       output: `
         import { doc, setDoc } from 'firebase/firestore';
         const docRef = doc(db, 'users', userId);
-        await setDoc(docRef, {
-          'preferences.theme': 'dark',
-          'preferences.fontSize': 14
-        }, { merge: true });
+        await setDoc(
+          docRef,
+          {
+            'preferences.theme': 'dark',
+            'preferences.fontSize': 14
+          },
+          { merge: true },
+        );
       `,
     },
     // Invalid case with dynamic import
@@ -634,9 +669,13 @@ ruleTesterTs.run('enforce-firestore-set-merge', enforceFirestoreSetMerge, {
       output: `
         const { doc, setDoc } = await import('firebase/firestore');
         const docRef = doc(db, 'users', userId);
-        await setDoc(docRef, {
-          'preferences.theme': 'dark'
-        }, { merge: true });
+        await setDoc(
+          docRef,
+          {
+            'preferences.theme': 'dark'
+          },
+          { merge: true },
+        );
       `,
     },
     // Invalid case with aliased import: the emitted call name and the local name
@@ -653,9 +692,13 @@ ruleTesterTs.run('enforce-firestore-set-merge', enforceFirestoreSetMerge, {
       output: `
         import { setDoc } from 'firebase/firestore';
         const docRef = doc(db, 'users', userId);
-        await setDoc(docRef, {
-          theme: 'dark'
-        }, { merge: true });
+        await setDoc(
+          docRef,
+          {
+            theme: 'dark'
+          },
+          { merge: true },
+        );
       `,
     },
     // Issue #1439: the reported reproduction, verbatim.
@@ -913,8 +956,11 @@ export async function save(ref) {
 }
 `,
     },
-    // Comments inside the rewritten call survive: only the callee and the
-    // argument list's tail are spliced.
+    // Comments inside the rewritten call survive: only the callee, the argument
+    // list's separators and its tail are spliced. A line comment between the
+    // arguments is what forces the list to break in the first place, so the
+    // option lands on a line of its own rather than beside the argument the
+    // comment annotates (#2097).
     {
       code: `
 import { updateDoc } from 'firebase/firestore';
@@ -933,7 +979,8 @@ export async function save(ref) {
   await setDoc(
     ref,
     // keep this note
-    { theme: 'dark' }, { merge: true },
+    { theme: 'dark' },
+    { merge: true },
   );
 }
 `,
@@ -1128,9 +1175,13 @@ export async function save(args) {
       output: `
         await db.runTransaction(async (transaction) => {
           const userRef = db.collection('users').doc(userId);
-          transaction.set(userRef, {
-            'preferences.theme': 'dark'
-          }, { merge: true });
+          transaction.set(
+            userRef,
+            {
+              'preferences.theme': 'dark'
+            },
+            { merge: true },
+          );
         });
       `,
     },
@@ -1153,7 +1204,8 @@ export async function save(args) {
           transaction.set(
             userRef,
             // keep this note
-            { theme: 'dark' }, { merge: true }
+            { theme: 'dark' },
+            { merge: true },
           );
         });
       `,
@@ -1994,6 +2046,182 @@ class NotificationSyncer {
 }
 `,
     },
+    // Issue #2097: the option used to be appended inline, which left the data
+    // object hugged against the call. A formatter breaks EVERY argument of a
+    // list one of whose arguments cannot print flat, and closes such a list on a
+    // line of its own, so the emitted text was never what it prints. The cases
+    // below pin each regime: what forces the break, what must NOT be broken, and
+    // what the break may not disturb.
+    //
+    // A list that fits on one line keeps it. Breaking that one out would be the
+    // same defect pointing the other way.
+    {
+      code: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+const userRef = db.collection('users').doc(userId);
+await userRef.update({ theme: 'dark' });
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+const userRef = db.collection('users').doc(userId);
+await userRef.set({ theme: 'dark' }, { merge: true });
+`,
+    },
+    // The width answer is about the line as it will be EMITTED, not as it was
+    // read: this one fits at 71 columns and not at the 85 the option takes it
+    // to, so the list breaks although nothing in it was written across lines.
+    {
+      code: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+const userRef = db.collection('users').doc(userId);
+await userRef.update({ theme: 'dark', fontSize: 14, locale: 'en-US' });
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+const userRef = db.collection('users').doc(userId);
+await userRef.set(
+  { theme: 'dark', fontSize: 14, locale: 'en-US' },
+  { merge: true },
+);
+`,
+    },
+    // Arguments past the second ride along: the rewrite edits the separators of
+    // the list it found rather than rebuilding it from the two arguments it
+    // cares about.
+    {
+      code: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+const userRef = db.collection('users').doc(userId);
+await userRef.update(
+  {
+    theme: 'dark',
+  },
+  precondition,
+  extra,
+);
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+const userRef = db.collection('users').doc(userId);
+await userRef.set(
+  {
+    theme: 'dark',
+  },
+  precondition,
+  extra,
+  { merge: true },
+);
+`,
+    },
+    // The emitted depth is the call's own: the list lands one step past the line
+    // its parenthesis opens on and closes at that line's column, so an argument
+    // written across lines moves with it.
+    {
+      code: `
+export function syncAll(refs) {
+  const db = admin.firestore();
+  for (const userRef of refs) {
+    if (userRef) {
+      userRef.update({
+        theme: 'dark',
+      });
+    }
+  }
+}
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+export function syncAll(refs) {
+  const db = admin.firestore();
+  for (const userRef of refs) {
+    if (userRef) {
+      userRef.set(
+        {
+          theme: 'dark',
+        },
+        { merge: true },
+      );
+    }
+  }
+}
+`,
+    },
+    // A comment between the arguments of a list that stays flat is untouched,
+    // because the option is appended after the last argument and nothing
+    // between them is inside an edited range.
+    {
+      code: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+const userRef = db.collection('users').doc(userId);
+await userRef.update({ theme: 'dark' }, /* keep me */ pre);
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+const userRef = db.collection('users').doc(userId);
+await userRef.set({ theme: 'dark' }, /* keep me */ pre, { merge: true });
+`,
+    },
+    // A comment sits INSIDE the span of the argument it annotates, so a broken
+    // list rewrites only the separators around it and the comment survives at
+    // the position it was written — which is the whole point for a directive,
+    // whose meaning IS its position: it still binds the line it precedes.
+    {
+      code: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+const userRef = db.collection('users').doc(userId);
+await userRef.update(
+  // eslint-disable-next-line no-magic-numbers
+  { fontSize: 14 },
+);
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+const userRef = db.collection('users').doc(userId);
+await userRef.set(
+  // eslint-disable-next-line no-magic-numbers
+  { fontSize: 14 },
+  { merge: true },
+);
+`,
+    },
+    // Between the last argument and the closing parenthesis is the one gap the
+    // argument spans do not absorb, since a trailing comma may sit there. A
+    // comment past it would be inside a replaced range, so the list is left as
+    // it was written and the option appended in place rather than deleting one.
+    {
+      code: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+const userRef = db.collection('users').doc(userId);
+await userRef.update({
+  theme: 'dark',
+}, /* keep me */);
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+const userRef = db.collection('users').doc(userId);
+await userRef.set({
+  theme: 'dark',
+}, { merge: true }, /* keep me */);
+`,
+    },
   ],
 });
 
@@ -2282,7 +2510,8 @@ export async function save(ref) {
   await setDoc(
     ref,
     // eslint-disable-next-line no-console
-    { theme: console.log('dark') }, { merge: true },
+    { theme: console.log('dark') },
+    { merge: true },
   );
 }
 `);

@@ -216,9 +216,11 @@ export const COMMENT_FIDELITY_BASELINE: Record<string, string> = {
   // BETWEEN those pieces, and a comment sitting between the arguments is
   // dropped by it — a dropped `eslint-disable` silently re-enables the rule it
   // suppressed (#1877). The rule refuses the rewrite there, so the file keeps
-  // its report and is left byte-identical. Only this arm declines: the other
-  // rewrites edit the method name and the argument tail in place, which is why
-  // a comment anywhere else is untouched.
+  // its report and is left byte-identical. The other rewrites edit the method
+  // name and the argument list's separators in place — an argument's own text,
+  // comments absorbed, is never re-emitted — and they too decline rather than
+  // rewrite the one gap the spans do not absorb: a comment between the last
+  // argument and the closing parenthesis (#2097).
   'enforce-firestore-set-merge :: TRANSFORM_DIVERGED':
     'declines the batchManager restructure rather than drop a comment sitting between the arguments it rebuilds from (#1877); output is byte-identical to the input and the report stands',
   // WIDTH/LAYOUT, same class as flatten-push-calls above, and the shape tracks
