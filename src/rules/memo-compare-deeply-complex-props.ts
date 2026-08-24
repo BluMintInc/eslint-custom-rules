@@ -788,6 +788,319 @@ function isDomSourcedSymbol(sym: import('typescript').Symbol): boolean {
   });
 }
 
+/**
+ * Global error constructors, matched exactly on the structural path.
+ *
+ * An error instance exposes NO enumerable own properties — `name`, `message` and
+ * `stack` are all non-enumerable — so a structural deep equality (fast-deep-equal
+ * and every implementation like it) rates any two same-class errors as equal
+ * whatever they report. `compareDeeply('err')` therefore swallows a re-render
+ * carrying a genuinely different failure, which on a path where the error object
+ * IS the semantic signal is a correctness bug rather than a saved render.
+ *
+ * Carved out for the same reason DOM nodes are: deep equality is meaningless on
+ * a non-plain object, so the rule demands it only for plain-data shapes.
+ */
+const ERROR_TYPE_NAMES = new Set([
+  'Error',
+  'EvalError',
+  'RangeError',
+  'ReferenceError',
+  'SyntaxError',
+  'TypeError',
+  'URIError',
+  'AggregateError',
+  'DOMException',
+]);
+
+/**
+ * Matches the error naming convention as a family (`HttpError`, `FirebaseError`,
+ * `ErrnoException`, …). Used ONLY on the annotation fallback path, where the
+ * annotation resolves to `any` and no heritage chain exists to walk — a
+ * resolvable annotation is always decided structurally, so a plain-data type
+ * named `ValidationError` keeps its report.
+ */
+const ERROR_TYPE_NAME_PATTERN = /(?:Error|Exception)$/;
+
+function isErrorTypeName(name: string): boolean {
+  return ERROR_TYPE_NAMES.has(name) || ERROR_TYPE_NAME_PATTERN.test(name);
+}
+
+/**
+ * Origin gate for the structural path. Error constructors reach a project
+ * through a declaration file — `lib.es5.d.ts` for the built-ins, a dependency's
+ * `.d.ts` for the rest — so requiring one keeps a project-authored type that
+ * merely reuses the name `Error` reportable. A symbol with no declarations at
+ * all is admitted for the reason `isSymbolFromReactDeclarationFile` admits one:
+ * it means the global resolved to `any` because its lib is absent, which is
+ * evidence of an unresolved external, never of authored code.
+ */
+function isSymbolFromDeclarationFile(
+  sym: import('typescript').Symbol,
+): boolean {
+  const declarations = sym.declarations;
+  if (!declarations || declarations.length === 0) return true;
+  return declarations.some((decl) =>
+    /\.d\.[cm]?ts$/.test(decl.getSourceFile?.()?.fileName ?? ''),
+  );
+}
+
+/**
+ * Walks a type's base-class/heritage chain looking for a global error
+ * constructor, so an authored `class AppError extends Error` and a dependency's
+ * `interface ErrnoException extends Error` are both recognised through their
+ * ancestry rather than by their own name.
+ */
+function errorHeritageIncludesErrorBase(
+  type: Type,
+  checker: TypeChecker,
+  visited: Set<Type>,
+): boolean {
+  if (visited.has(type)) return false;
+  visited.add(type);
+
+  const sym =
+    (type as { aliasSymbol?: import('typescript').Symbol }).aliasSymbol ??
+    type.symbol;
+  if (
+    sym &&
+    ERROR_TYPE_NAMES.has(sym.escapedName as string) &&
+    isSymbolFromDeclarationFile(sym)
+  ) {
+    return true;
+  }
+
+  if (
+    typeof type.isClassOrInterface === 'function' &&
+    type.isClassOrInterface()
+  ) {
+    let baseTypes: readonly Type[] = [];
+    try {
+      baseTypes = checker.getBaseTypes(type);
+    } catch {
+      baseTypes = [];
+    }
+    return baseTypes.some((base) =>
+      errorHeritageIncludesErrorBase(base, checker, visited),
+    );
+  }
+
+  return false;
+}
+
+/**
+ * The element types of an array or tuple, or `null` when the type is neither.
+ * A container of errors compares just as degenerately as a lone one — two
+ * same-length lists of different errors are structurally equal element by
+ * element — so `Error[]` is carved out on the same grounds.
+ */
+function containerElementTypes(
+  type: Type,
+  checker: TypeChecker,
+): readonly Type[] | null {
+  if (!isArrayOrTupleType(checker, type)) return null;
+  try {
+    return (
+      checker.getTypeArguments?.(type as import('typescript').TypeReference) ??
+      null
+    );
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Returns true when `type` holds only error instances: an error, a union of
+ * errors and nullish members (`Error | null`, the shape an error prop almost
+ * always has), or an array/tuple of those. A mixed union such as
+ * `Error | { theme: string }` is NOT one — its object member still carries a
+ * plain-data shape whose deep comparison is meaningful.
+ */
+function isErrorType(
+  ts: typeof import('typescript'),
+  type: Type,
+  checker: TypeChecker,
+  visited: Set<Type>,
+): boolean {
+  if (visited.has(type)) return false;
+  visited.add(type);
+
+  const flags = type.flags ?? 0;
+  if ((flags & ts.TypeFlags.Union) !== 0) {
+    const nonNullishMembers = (type as UnionType).types.filter(
+      (member) =>
+        (member.flags &
+          (ts.TypeFlags.Null | ts.TypeFlags.Undefined | ts.TypeFlags.Void)) ===
+        0,
+    );
+    return (
+      nonNullishMembers.length > 0 &&
+      nonNullishMembers.every((member) =>
+        isErrorType(ts, member, checker, visited),
+      )
+    );
+  }
+
+  // A parameter constrained to an error (`<E extends Error>`) holds one at every
+  // instantiation, so its constraint answers for it — the same reading
+  // `checkTypeParameter` gives the complexity question.
+  if ((flags & ts.TypeFlags.TypeParameter) !== 0) {
+    const constraint = type.getConstraint?.();
+    return constraint ? isErrorType(ts, constraint, checker, visited) : false;
+  }
+
+  const elementTypes = containerElementTypes(type, checker);
+  if (elementTypes) {
+    return (
+      elementTypes.length > 0 &&
+      elementTypes.every((element) =>
+        isErrorType(ts, element, checker, visited),
+      )
+    );
+  }
+
+  return errorHeritageIncludesErrorBase(type, checker, new Set<Type>());
+}
+
+/** The rightmost identifier of an entity name (`NodeJS.ErrnoException` → `ErrnoException`). */
+function rightmostEntityName(
+  ts: typeof import('typescript'),
+  entityName: import('typescript').EntityName,
+): string | null {
+  if (ts.isIdentifier?.(entityName)) return entityName.text;
+  if (ts.isQualifiedName?.(entityName)) return entityName.right.text;
+  return null;
+}
+
+/**
+ * The generic array spellings, whose element type lives in a type argument
+ * rather than in an `ArrayTypeNode`.
+ */
+const ARRAY_TYPE_REFERENCE_NAMES = new Set(['Array', 'ReadonlyArray']);
+
+function arrayTypeReferenceArgument(
+  ts: typeof import('typescript'),
+  node: import('typescript').TypeNode,
+): import('typescript').TypeNode | null {
+  if (!ts.isTypeReferenceNode?.(node)) return null;
+  const name = rightmostEntityName(ts, node.typeName);
+  if (!name || !ARRAY_TYPE_REFERENCE_NAMES.has(name)) return null;
+  const typeArguments = node.typeArguments;
+  return typeArguments?.length === 1 ? typeArguments[0] : null;
+}
+
+/**
+ * Annotation-path error carve-out, parallel to `isAnnotationDomElementType`.
+ *
+ * The container spellings all differ syntactically — `Error[]` is an
+ * `ArrayTypeNode`, `readonly Error[]` wraps that in a `TypeOperatorNode`,
+ * `Array<Error>` is a `TypeReferenceNode` with a type argument — so each is
+ * unwrapped to the type it holds before the name underneath is judged.
+ *
+ * The written name decides only where the checker could NOT: a resolvable
+ * annotation is answered structurally, which is what keeps a project-authored
+ * `type ValidationError = { field: string }` reported despite its name.
+ */
+function isAnnotationErrorType(
+  annotationType: import('typescript').TypeNode,
+  checker: TypeChecker,
+  ts: typeof import('typescript'),
+): boolean {
+  try {
+    if (ts.isParenthesizedTypeNode?.(annotationType)) {
+      return isAnnotationErrorType(annotationType.type, checker, ts);
+    }
+
+    if (
+      ts.isTypeOperatorNode?.(annotationType) &&
+      annotationType.operator === ts.SyntaxKind.ReadonlyKeyword
+    ) {
+      return isAnnotationErrorType(annotationType.type, checker, ts);
+    }
+
+    if (ts.isArrayTypeNode?.(annotationType)) {
+      return isAnnotationErrorType(annotationType.elementType, checker, ts);
+    }
+
+    if (ts.isTupleTypeNode?.(annotationType)) {
+      return (
+        annotationType.elements.length > 0 &&
+        annotationType.elements.every((element) =>
+          isAnnotationErrorType(element, checker, ts),
+        )
+      );
+    }
+
+    if (ts.isUnionTypeNode?.(annotationType)) {
+      const nonNullishMembers = annotationType.types.filter((member) => {
+        if (
+          member.kind === ts.SyntaxKind.NullKeyword ||
+          member.kind === ts.SyntaxKind.UndefinedKeyword ||
+          member.kind === ts.SyntaxKind.VoidKeyword
+        ) {
+          return false;
+        }
+        if (ts.isLiteralTypeNode?.(member)) {
+          const lit = (member as import('typescript').LiteralTypeNode).literal;
+          if (
+            lit.kind === ts.SyntaxKind.NullKeyword ||
+            lit.kind === ts.SyntaxKind.UndefinedKeyword
+          ) {
+            return false;
+          }
+        }
+        return true;
+      });
+      return (
+        nonNullishMembers.length > 0 &&
+        nonNullishMembers.every((member) =>
+          isAnnotationErrorType(member, checker, ts),
+        )
+      );
+    }
+
+    const containerArgument = arrayTypeReferenceArgument(ts, annotationType);
+    if (containerArgument) {
+      return isAnnotationErrorType(containerArgument, checker, ts);
+    }
+
+    const resolvedType = checker.getTypeFromTypeNode?.(annotationType);
+    if (resolvedType) {
+      if (isErrorType(ts, resolvedType, checker, new Set<Type>())) return true;
+      if ((resolvedType.flags & ts.TypeFlags.Any) === 0) return false;
+    }
+
+    if (!ts.isTypeReferenceNode?.(annotationType)) return false;
+    const name = rightmostEntityName(ts, annotationType.typeName);
+    return name !== null && isErrorTypeName(name);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Returns true when the prop's declared type is, contains only, or extends an
+ * error. Both arms are consulted: the structural one answers whenever the
+ * checker resolved the type, the annotation one covers the case where it could
+ * not — an unresolvable import or an absent lib leaves the prop as `any` while
+ * its written annotation still names the error.
+ */
+function isErrorProperty(
+  prop: import('typescript').Symbol,
+  propType: Type,
+  checker: TypeChecker,
+  ts: typeof import('typescript'),
+): boolean {
+  if (isErrorType(ts, propType, checker, new Set<Type>())) return true;
+
+  const annotationType = extractAnnotationType(
+    extractPropertyDeclaration(prop),
+  );
+  return Boolean(
+    annotationType && isAnnotationErrorType(annotationType, checker, ts),
+  );
+}
+
 function isComplexType(
   ts: typeof import('typescript'),
   type: Type,
@@ -1231,6 +1544,13 @@ function isPropertyComplex(
   parentTypeFlags: number,
 ): boolean {
   const propType = getTypeFromSymbol(prop, checker, tsNode);
+
+  // Consulted ahead of every other arm, including the `any` heuristics: whether
+  // a deep comparison can say anything about this prop is a property of what it
+  // holds, not of how completely the checker managed to resolve it.
+  if (isErrorProperty(prop, propType, checker, ts)) {
+    return false;
+  }
 
   if (isComplexType(ts, propType, checker)) {
     return true;
