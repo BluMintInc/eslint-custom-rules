@@ -276,6 +276,87 @@ time and size, so adding props to a previously prop-less child takes effect on
 the next lint even under a long-lived host (the VS Code ESLint extension,
 `eslint_d`) — no restart required.
 
+### Framework-contract props
+
+A component whose props shape is dictated by an **external framework contract**
+has no composable source of truth on screen: the routing layer, not the rendered
+child, decides what it receives. Composing such props from the presentational
+child would invert the dependency — a styling prop added to the child would leak
+into a routing contract. A component annotated with one is therefore skipped.
+
+Two spellings qualify, and both are decided from syntax alone (no type
+information is required).
+
+**1. A type the framework itself exports.** A props type written against a type
+imported from `next` or a `next/*` subpath, reached bare or through `Pick`,
+`Omit`, `Readonly`, `Partial` or `Required`, under the exported name or a local
+rename:
+
+```tsx
+import type { NextPageContext } from 'next';
+
+export type ErrorPageContentProps = Readonly<Pick<NextPageContext, 'err'>>;
+
+export const ErrorPageContent = ({ err }: ErrorPageContentProps) => (
+  <UniversalAppStatus err={err} />
+);
+```
+
+**2. The `/_error` routing contract spelled out.** An object type whose **every**
+member is a property Next hands a custom `pages/_error` — `statusCode` typed
+`number` and `err` typed `Error` — is that contract written by hand. Each member
+may be widened by the absence the framework can hand instead (`| undefined`,
+`| null`, or an optional `?`), since that describes the same contract:
+
+```tsx
+export type ErrorPageContentProps = Readonly<{
+  statusCode: number | undefined;
+  err: Error | undefined;
+}>;
+
+export const ErrorPageContent = ({ statusCode, err }: ErrorPageContentProps) => (
+  <UniversalAppStatus statusCode={statusCode} err={err} />
+);
+```
+
+The carve-out is **universal, not existential**: the props type must be dictated
+upstream in its entirety. Every member of an intersection and every arm of a
+union must qualify, so a single prop of the author's own re-opens the question
+and the rule reports again — the rendered child is a candidate owner of that
+prop:
+
+```tsx
+// Still reported: `sx` is the author's own surface, which the child can own.
+export type ErrorPageContentProps = Readonly<Pick<NextPageContext, 'err'>> & {
+  sx?: SxProps;
+};
+```
+
+Nesting is deliberately not followed either. A framework contract sitting inside
+a property signature or an array element describes one **field's** shape, leaving
+the surrounding props the author's to compose (`{ context: NextPageContext;
+label: string }` still reports).
+
+Anything that merely resembles a framework contract keeps the composition
+requirement in force:
+
+- a contract **name** carrying a different type (`statusCode: string`,
+  `err: ApiFailure`, `err: Error | ApiFailure`);
+- a differently named prop (`error` rather than `err`);
+- an index signature, a method signature, or a computed key — none of them names
+  a contract property;
+- an empty props type, which declares no contract at all;
+- a framework-shaped name imported from anywhere but `next` / `next/*`
+  (a relative module, or a package such as `nextish-helpers`);
+- a framework name shadowed by an in-file type alias, which is what the
+  annotation actually resolves to;
+- `err: Error` in a file that binds `Error` itself — through an import, a type
+  alias, an interface or a class, in any scope. The contract member is credited
+  on its type, and the only type it names is the ambient `Error`; a file with its
+  own means the author's shape at that annotation, not the router's;
+- a namespace-qualified reference (`Next.NextPageContext`) — only the local name
+  a **named** import binds is credited.
+
 ### Where in-file declarations are resolved
 
 Every in-file name the rule resolves — the component's own `{Component}Props`
@@ -463,5 +544,7 @@ const DialogActions = ({ buttons }: DialogActionsProps) => (
 ## When to Disable
 
 - When a component intentionally does NOT expose any props from its child components (e.g., it fully controls all aspects of the child's configuration).
+- Props dictated by a framework contract need no disable — see
+  [Framework-contract props](#framework-contract-props).
 - For legacy components during migration. Enable the rule as `'warn'` first, then fix components incrementally.
 - When the child component's Props type is not importable (e.g., it's defined inline without an export).

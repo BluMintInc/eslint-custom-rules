@@ -1432,6 +1432,301 @@ function collectImportSpellings(
   return spellings;
 }
 
+/**
+ * Modules whose exported types are a framework contract. A props type written
+ * against one of them describes a shape the framework dictates, not a shape its
+ * author chose, so no rendered child can be its source of truth.
+ */
+const FRAMEWORK_MODULE = /^next(\/|$)/;
+
+/**
+ * The local spellings under which the file binds a framework module's types.
+ * Only named import specifiers count: a default or namespace import binds a
+ * value or a namespace object rather than a type a props alias is written
+ * against, so crediting one would key the carve-out on a name the framework
+ * never handed over.
+ */
+function collectFrameworkContractNames(program: TSESTree.Program): Set<string> {
+  const names = new Set<string>();
+  for (const stmt of program.body) {
+    if (
+      stmt.type !== AST_NODE_TYPES.ImportDeclaration ||
+      typeof stmt.source.value !== 'string' ||
+      !FRAMEWORK_MODULE.test(stmt.source.value)
+    ) {
+      continue;
+    }
+    for (const specifier of stmt.specifiers) {
+      if (specifier.type === AST_NODE_TYPES.ImportSpecifier) {
+        names.add(specifier.local.name);
+      }
+    }
+  }
+  return names;
+}
+
+/**
+ * Every type name the file binds itself — through an import, a type alias, an
+ * interface, a class or an enum — in any scope.
+ *
+ * A contract member is credited on its type as well as its name, and the only
+ * type the routing contract names is the ambient `Error`. A file that binds
+ * `Error` itself (`type Error = { message: string }`, `import type { Error }
+ * from '../errors'`) therefore annotates its AUTHOR's shape at `err: Error`, not
+ * the one the router hands over, and the composition requirement must stand.
+ *
+ * Collected file-wide rather than per enclosing scope because the two mistakes
+ * are not equally costly: a name bound elsewhere in the file at worst keeps the
+ * rule reporting, while missing one silently switches a recommended rule off.
+ */
+function collectLocallyBoundTypeNames(program: TSESTree.Program): Set<string> {
+  const names = new Set<string>();
+
+  function visit(node: TSESTree.Node | null | undefined): void {
+    if (!node || typeof node !== 'object') return;
+
+    switch (node.type) {
+      case AST_NODE_TYPES.ImportSpecifier:
+      case AST_NODE_TYPES.ImportDefaultSpecifier:
+      case AST_NODE_TYPES.ImportNamespaceSpecifier:
+        names.add(node.local.name);
+        break;
+      case AST_NODE_TYPES.TSTypeAliasDeclaration:
+      case AST_NODE_TYPES.TSInterfaceDeclaration:
+      case AST_NODE_TYPES.TSEnumDeclaration:
+        names.add(node.id.name);
+        break;
+      case AST_NODE_TYPES.ClassDeclaration:
+        if (node.id) {
+          names.add(node.id.name);
+        }
+        break;
+      default:
+        break;
+    }
+
+    for (const key of Object.keys(node)) {
+      if (key === 'parent') continue;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const child = (node as any)[key];
+      if (Array.isArray(child)) {
+        for (const item of child) {
+          if (item && typeof item === 'object' && 'type' in item) {
+            visit(item as TSESTree.Node);
+          }
+        }
+      } else if (child && typeof child === 'object' && 'type' in child) {
+        visit(child as TSESTree.Node);
+      }
+    }
+  }
+
+  visit(program);
+  return names;
+}
+
+/**
+ * The name spellings a file supplies to the carve-out, both properties of the
+ * module rather than of any one component.
+ */
+type ContractNames = {
+  /** Local spellings under which a `next` import binds a framework type. */
+  framework: Set<string>;
+  /** Every type name the file binds itself, which shadows an ambient one. */
+  localTypes: Set<string>;
+};
+
+/**
+ * Utility types that re-shape a contract without replacing it: what survives
+ * them is still the framework's surface, so the first type argument is the one
+ * to test. `Pick`/`Omit` carry their key list in the second argument, which
+ * names keys rather than a surface and is therefore never followed.
+ */
+const CONTRACT_WRAPPERS = new Set([
+  'Pick',
+  'Omit',
+  'Readonly',
+  'Partial',
+  'Required',
+]);
+
+/**
+ * The two spellings of "the framework handed nothing". Either widens a contract
+ * member without changing whose shape it is.
+ */
+const NULLISH_TYPE_NODES = new Set<AST_NODE_TYPES>([
+  AST_NODE_TYPES.TSUndefinedKeyword,
+  AST_NODE_TYPES.TSNullKeyword,
+]);
+
+/**
+ * Whether a member's annotation is the contract's own type, optionally widened
+ * by absence (`T | undefined`, `T | null`). A union carrying any other arm is a
+ * shape its author widened, which the framework never dictated.
+ */
+function matchesContractMemberType(
+  typeNode: TSESTree.TypeNode,
+  isContractType: (node: TSESTree.TypeNode) => boolean,
+): boolean {
+  if (typeNode.type === AST_NODE_TYPES.TSUnionType) {
+    return (
+      typeNode.types.some(isContractType) &&
+      typeNode.types.every(
+        (arm) => isContractType(arm) || NULLISH_TYPE_NODES.has(arm.type),
+      )
+    );
+  }
+  return isContractType(typeNode);
+}
+
+/**
+ * The props Next hands a custom `pages/_error`: `statusCode` from the page's
+ * `getInitialProps`, `err` from the router's `handleRouteInfoError`. Each is
+ * keyed on its type as well as its name, so a same-named prop of the author's
+ * own making (`err: ApiFailure`, `statusCode: HttpStatus`) is a shape they chose
+ * and keeps demanding composition.
+ *
+ * `statusCode` names a keyword type, which nothing can rebind. `err` names an
+ * ambient one, so its predicate has to ask the file whether `Error` still means
+ * the global: a name the file binds itself is the author's, and keying on the
+ * spelling alone would credit exactly the shape this table exists to exclude.
+ */
+const ROUTING_CONTRACT_MEMBERS = new Map<
+  string,
+  (typeNode: TSESTree.TypeNode, localTypeNames: Set<string>) => boolean
+>([
+  [
+    'statusCode',
+    (typeNode) =>
+      matchesContractMemberType(
+        typeNode,
+        (arm) => arm.type === AST_NODE_TYPES.TSNumberKeyword,
+      ),
+  ],
+  [
+    'err',
+    (typeNode, localTypeNames) =>
+      !localTypeNames.has('Error') &&
+      matchesContractMemberType(
+        typeNode,
+        (arm) =>
+          arm.type === AST_NODE_TYPES.TSTypeReference &&
+          getTypeReferenceName(arm) === 'Error',
+      ),
+  ],
+]);
+
+/**
+ * The name a property signature declares, or null for anything that is not a
+ * plain named property — an index signature, a method or call signature, and a
+ * computed key each describe a surface no contract table can vouch for.
+ */
+function contractPropertyName(member: TSESTree.TypeElement): string | null {
+  if (member.type !== AST_NODE_TYPES.TSPropertySignature || member.computed) {
+    return null;
+  }
+  const key = member.key;
+  if (key.type === AST_NODE_TYPES.Identifier) {
+    return key.name;
+  }
+  if (key.type === AST_NODE_TYPES.Literal && typeof key.value === 'string') {
+    return key.value;
+  }
+  return null;
+}
+
+/**
+ * Whether a props type's ENTIRE surface is dictated by an external framework
+ * contract, and so has no composable source of truth among the children the
+ * component renders. Two spellings qualify, and both are decided from syntax
+ * alone:
+ *
+ * - a reference to a type the framework itself exports (`NextPageContext`,
+ *   reached bare or through `Pick`/`Omit`/`Readonly`/`Partial`/`Required`);
+ * - an object type whose every member is a routing-contract property with the
+ *   contract's own type — the `{ statusCode, err }` a custom `pages/_error`
+ *   receives, which its author can neither rename nor extend.
+ *
+ * The quantifier over composite types is `every`, the opposite of the `some`
+ * the composition check uses, because the questions are opposites: composition
+ * asks whether ANY part of the props type inherits a child's surface, while this
+ * asks whether the props type is dictated upstream in its ENTIRETY. One authored
+ * member (`Pick<NextPageContext, 'err'> & { sx?: SxProps }`) makes the rendered
+ * child a candidate owner of that member again, so the requirement stands.
+ *
+ * Nesting is deliberately not followed: a contract inside a property signature
+ * or an array element describes one FIELD's shape, leaving the surrounding props
+ * the author's to compose.
+ */
+function isFrameworkContractPropsType(
+  typeNode: TSESTree.TypeNode,
+  scope: TSESTree.Node,
+  contractNames: ContractNames,
+  seenAliases: Set<string> = new Set<string>(),
+): boolean {
+  switch (typeNode.type) {
+    case AST_NODE_TYPES.TSTypeLiteral: {
+      // An empty object declares no contract at all.
+      if (typeNode.members.length === 0) {
+        return false;
+      }
+      return typeNode.members.every((member) => {
+        const name = contractPropertyName(member);
+        const matchesContract =
+          name === null ? undefined : ROUTING_CONTRACT_MEMBERS.get(name);
+        if (!matchesContract) {
+          return false;
+        }
+        const annotation = (member as TSESTree.TSPropertySignature)
+          .typeAnnotation;
+        return (
+          !!annotation &&
+          matchesContract(annotation.typeAnnotation, contractNames.localTypes)
+        );
+      });
+    }
+    case AST_NODE_TYPES.TSIntersectionType:
+    case AST_NODE_TYPES.TSUnionType: {
+      return typeNode.types.every((member) =>
+        isFrameworkContractPropsType(member, scope, contractNames, seenAliases),
+      );
+    }
+    case AST_NODE_TYPES.TSTypeReference: {
+      const name = getTypeReferenceName(typeNode);
+      if (!name) {
+        return false;
+      }
+      // An in-file alias of the same name shadows the import at the annotation
+      // site, so a locally declared `NextPageContext` says nothing about what
+      // the framework dictates.
+      const alias = findPropsTypeAliasByName(scope, name);
+      if (contractNames.framework.has(name) && !alias) {
+        return true;
+      }
+      if (CONTRACT_WRAPPERS.has(name)) {
+        const inner = typeNode.typeParameters?.params[0];
+        return (
+          !!inner &&
+          isFrameworkContractPropsType(inner, scope, contractNames, seenAliases)
+        );
+      }
+      if (!alias || seenAliases.has(name)) {
+        return false;
+      }
+      const nextSeen = new Set(seenAliases);
+      nextSeen.add(name);
+      return isFrameworkContractPropsType(
+        alias.typeAnnotation,
+        scope,
+        contractNames,
+        nextSeen,
+      );
+    }
+    default:
+      return false;
+  }
+}
+
 export const requirePropsComposition = createRule<Options, MessageIds>({
   name: 'require-props-composition',
   meta: {
@@ -1509,6 +1804,20 @@ export const requirePropsComposition = createRule<Options, MessageIds>({
     });
     if (!matchesTargetPath) {
       return {};
+    }
+
+    // Imports and declarations are a property of the module, so the
+    // framework-contract spellings are collected once per file rather than once
+    // per component.
+    let contractNames: ContractNames | null = null;
+    function getContractNames(prog: TSESTree.Program): ContractNames {
+      if (!contractNames) {
+        contractNames = {
+          framework: collectFrameworkContractNames(prog),
+          localTypes: collectLocallyBoundTypeNames(prog),
+        };
+      }
+      return contractNames;
     }
 
     return {
@@ -1692,6 +2001,21 @@ export const requirePropsComposition = createRule<Options, MessageIds>({
 
       // No props type resolvable — skip
       if (!propsTypeNode) {
+        return;
+      }
+
+      // Props whose shape is dictated by an external framework contract have no
+      // composable source of truth on screen: the routing layer, not the
+      // rendered child, decides what the component receives. Composing them from
+      // the presentational child would invert the dependency — a styling prop
+      // added to the child would leak into a routing contract (issue #2098).
+      if (
+        isFrameworkContractPropsType(
+          propsTypeNode,
+          declarationScope,
+          getContractNames(prog),
+        )
+      ) {
         return;
       }
 
