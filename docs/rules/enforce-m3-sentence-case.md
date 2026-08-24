@@ -8,7 +8,7 @@
 
 BluMint follows Material Design 3 (M3) guidelines, which mandate **sentence case** for all user-facing text. Sentence case means only the first letter of the first word (and proper nouns / brand names) is capitalised. This rule flags two patterns:
 
-1. **Title Case** — multiple words where any non-first word starts with an upper-case letter and is neither an ignored word (proper noun / brand) nor an acronym (e.g. "Back To App", "Full Name").
+1. **Title Case** — multiple words where any non-first word starts with an upper-case letter and is neither an ignored word (proper noun / brand), an acronym, nor an intercapped name (e.g. "Back To App", "Full Name").
 2. **ALL CAPS** — multi-word strings where all letters are upper-case (e.g. "SUBMIT FORM").
 
 Both patterns are flagged in JSX text content and in string literals passed to configured props (`label`, `title`, `placeholder`, `helperText`, `aria-label`, `alt`, and others).
@@ -26,14 +26,27 @@ The rule inspects `JSXText` nodes and string literals in JSX attributes whose na
 1. It is split at sentence-boundary punctuation (`. `, `? `, `! `, `: `).
 2. Each segment is checked for non-first words that start with an upper-case letter.
 3. Words in `ignoredWords` (proper nouns / brand names) and recognised acronyms are exempted.
-4. Strings in `allowList` and strings matching `ignorePatterns` are skipped entirely.
+4. Words carrying an upper-case letter away from their start are exempted — see below.
+5. Strings in `allowList` and strings matching `ignorePatterns` are skipped entirely.
+
+### Intercapped names are proper nouns
+
+Title Case capitalises a word's first letter and nothing else, so a capital anywhere else is positive evidence of a name rather than of Title Case: `BluBot`, `PayPal`, `TypeScript`, `WhatsApp`, `DigitalOcean`, `VSCode` and `McDonald` are all recognised by shape, wherever they sit in the string. This is what spares `ignoredWords` from having to enumerate every product, integration and third-party brand that ever reaches a label.
+
+The exemption is deliberately narrow:
+
+- A single leading capital is exactly what Title Case looks like, so `Blubot` and `Paypal` stay violations.
+- Shouting tokens are all upper-case by emphasis, not by name. `TERMS` is judged by the acronym and ALL CAPS handling, not by this exemption.
+- Hyphen- and apostrophe-joined tokens are judged segment by segment, so `Drag-And-Drop` is not excused by its own joins while `McDonald's` is.
+
+Brands with no interior capital — `Twitch`, `Discord`, `Valorant` — are not detectable by shape and still need an `ignoredWords` entry.
 
 ## Suggestions
 
 Every report carries an editor suggestion that rewrites the text in sentence case. The rewrite differs by violation type:
 
 - **ALL CAPS** — the whole string is lower-cased and the first letter of each sentence is capitalised (`THE USER'S FILE` → `The user's file`). Proper nouns are restored to their canonical spelling (`SIGN IN WITH GOOGLE` → `Sign in with Google`) and allowlisted acronyms keep their casing (`ENTER YOUR API KEY` → `Enter your API key`). Possessives stay intact — `USER'S` is a single word, not `USER` plus `'S`.
-- **Title Case** — non-first words that are neither acronyms nor proper nouns are lower-cased (`Back To App` → `Back to app`). Intra-word casing of the first word is preserved (`MacBook Pro Sale` → `MacBook pro sale`).
+- **Title Case** — non-first words that are neither acronyms nor proper nouns are lower-cased (`Back To App` → `Back to app`). An intercapped name is emitted verbatim wherever it sits, so the words around it are repaired without misspelling it (`Visit McDonald Today` → `Visit McDonald today`, `eSports Finals Today` → `eSports finals today`). Intra-word casing of the first word is likewise preserved (`MacBook Pro Sale` → `MacBook pro sale`).
 
 The replacement is re-escaped for the literal form it is written back into, so applying a suggestion never breaks parsing:
 
@@ -58,6 +71,10 @@ Template literals are treated as dynamic and are never checked or rewritten.
 <TextField placeholder="Enter Your Name" />;
 <img alt="User Profile Picture" />;
 
+// A single leading capital is Title Case — only interior capitals are exempt
+<Button label="Enable Blubot in chat" />;
+<Typography>Enable Drag-And-Drop mode</Typography>;
+
 // ALL CAPS
 <Button>SUBMIT FORM</Button>;
 <Typography>CLICK HERE TO CONTINUE</Typography>;
@@ -81,6 +98,13 @@ Template literals are treated as dynamic and are never checked or rewritten.
 <Typography>Sign in with Google</Typography>;
 <Typography>Welcome to BluMint</Typography>;
 <TextField label="Enter BluMint username" />;
+
+// Intercapped names are recognised by shape, so they need no configuration
+<Button label="Enable BluBot in chat" />;
+<Button label="Pay with PayPal" />;
+<Typography>Open in VSCode</Typography>;
+<Typography>Visit McDonald today</Typography>;
+<TextField label="Order a MacBook now" />;
 
 // Acronyms are always allowed
 <Typography>Connect via API</Typography>;
@@ -124,7 +148,7 @@ The JSX attribute names whose string values are validated. Attributes not in thi
 Type: `string[]`  
 Default: BluMint brand name and common platform/game names (Google, Apple, Discord, Twitch, etc.)
 
-Words that are exempt from the capitalisation check. Use this to add proper nouns or brand names specific to your project.
+Words that are exempt from the capitalisation check. Use this to add proper nouns or brand names specific to your project. Names carrying an interior capital (`BluBot`, `PayPal`) are already exempt by shape, so this option is for the brands that are not — `Twitch`, `Discord`, `Valorant`.
 
 ### `ignorePatterns`
 
