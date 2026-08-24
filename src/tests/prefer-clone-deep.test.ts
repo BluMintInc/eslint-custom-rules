@@ -747,18 +747,34 @@ ${backendCode}`,
     // under the single report on the enclosing literal.
     {
       code: `${CLONE_DEEP_IMPORT}
-const both = { one: { ...x, n: { ...x.n, v: 1 } }, two: { ...y, m: { ...y.m, v: 2 } } };`,
+const both = {
+  one: { ...x, n: { ...x.n, v: 1 } },
+  two: { ...y, m: { ...y.m, v: 2 } },
+};`,
       errors: [expectPreferCloneDeepError],
       output: `${CLONE_DEEP_IMPORT}
-const both = { one: cloneDeep(x, {
-  n: {
-    v: 1,
-  },
-} as const), two: cloneDeep(y, {
-  m: {
-    v: 2,
-  },
-} as const) };`,
+const both = {
+  one: cloneDeep(x, {
+    n: {
+      v: 1,
+    },
+  } as const),
+  two: cloneDeep(y, {
+    m: {
+      v: 2,
+    },
+  } as const),
+};`,
+    },
+    // Regression #2094: the same two siblings written on one line. Both
+    // rewrites would be spliced into a literal whose layout the fix does not
+    // own, so the fix is declined for the whole report rather than for one of
+    // the pair — a half-applied rewrite would be worse than none.
+    {
+      code: `${CLONE_DEEP_IMPORT}
+const both = { one: { ...x, n: { ...x.n, v: 1 } }, two: { ...y, m: { ...y.m, v: 2 } } };`,
+      errors: [expectPreferCloneDeepError],
+      output: null,
     },
     // Regression #1371: a nested spread of a DIFFERENT sub-path of the same
     // base is still a partial deep copy — `a`'s other sub-objects keep aliasing
@@ -1012,46 +1028,63 @@ function build() {
 }`,
     },
     // Regression #2032: parentheses are not AST nodes, so the assertion is
-    // still the literal's direct parent; the parentheses survive around the
-    // call.
+    // still the literal's direct parent. Regression #2094: the pair is absorbed
+    // with it, because the emitted call needs no parentheses of its own.
     {
       code: `${CLONE_DEEP_IMPORT}
 const result = ({ ...a, b: { ...a.b, c: 1 } } as const);`,
       errors: [expectPreferCloneDeepError],
       output: `${CLONE_DEEP_IMPORT}
-const result = (cloneDeep(a, {
+const result = cloneDeep(a, {
   b: {
     c: 1,
   },
-} as const));`,
+} as const);`,
     },
     // Regression #2032: the rewritten literal is the inner one here (the #365
     // membership shape), and it is the operand of the assertion, so the
-    // assertion is absorbed with it.
+    // assertion is absorbed with it. Regression #2094: the enclosing literal is
+    // written on one line, so the fix is declined and the report stands alone.
     {
       code: `${CLONE_DEEP_IMPORT}
 const result = { key: ({ ...a, nested: { ...a.nested, value: 42 } } as const) };`,
       errors: [expectPreferCloneDeepError],
+      output: null,
+    },
+    // Regression #2032: the same shape with the enclosing literal spelled
+    // across lines keeps its fix, so the assertion absorption stays pinned.
+    {
+      code: `${CLONE_DEEP_IMPORT}
+const result = {
+  key: ({ ...a, nested: { ...a.nested, value: 42 } } as const),
+};`,
+      errors: [expectPreferCloneDeepError],
       output: `${CLONE_DEEP_IMPORT}
-const result = { key: (cloneDeep(a, {
-  nested: {
-    value: 42,
-  },
-} as const)) };`,
+const result = {
+  key: cloneDeep(a, {
+    nested: {
+      value: 42,
+    },
+  } as const),
+};`,
     },
     // Regression #2032: nested `const` assertions — one on the rewritten
     // literal and one on the literal enclosing it. The inner one is absorbed;
     // the outer one still applies to an object literal and is kept.
     {
       code: `${CLONE_DEEP_IMPORT}
-const result = { key: ({ ...a, nested: { ...a.nested, value: 42 } } as const) } as const;`,
+const result = {
+  key: ({ ...a, nested: { ...a.nested, value: 42 } } as const),
+} as const;`,
       errors: [expectPreferCloneDeepError],
       output: `${CLONE_DEEP_IMPORT}
-const result = { key: (cloneDeep(a, {
-  nested: {
-    value: 42,
-  },
-} as const)) } as const;`,
+const result = {
+  key: cloneDeep(a, {
+    nested: {
+      value: 42,
+    },
+  } as const),
+} as const;`,
     },
     // Regression #2032: links AFTER the `const` assertion are legal on a call
     // expression, so they are kept while the `as const` itself is absorbed.
@@ -1082,11 +1115,11 @@ const result = cloneDeep(a, {
 const result = ({ ...a, nested: { ...a.nested, value: 42 } } as const)!;`,
       errors: [expectPreferCloneDeepError],
       output: `${CLONE_DEEP_IMPORT}
-const result = (cloneDeep(a, {
+const result = cloneDeep(a, {
   nested: {
     value: 42,
   },
-} as const))!;`,
+} as const)!;`,
     },
     // Regression #2011: a `const` assertion BEHIND another link is not the
     // literal's direct parent, so it cannot be absorbed without dropping the
@@ -1149,14 +1182,27 @@ const result = cloneDeep(a, {
     // rewritten literal is the inner one, which carries no assertion.
     {
       code: `${CLONE_DEEP_IMPORT}
-const result = { key: { ...a, nested: { ...a.nested, value: 42 } } } as const;`,
+const result = {
+  key: { ...a, nested: { ...a.nested, value: 42 } },
+} as const;`,
       errors: [expectPreferCloneDeepError],
       output: `${CLONE_DEEP_IMPORT}
-const result = { key: cloneDeep(a, {
-  nested: {
-    value: 42,
-  },
-} as const) } as const;`,
+const result = {
+  key: cloneDeep(a, {
+    nested: {
+      value: 42,
+    },
+  } as const),
+} as const;`,
+    },
+    // Regression #2094: the same shape on one line. Splicing the multi-line
+    // call into it would leave the enclosing literal for prettier to expand, so
+    // the fix is declined.
+    {
+      code: `${CLONE_DEEP_IMPORT}
+const result = { key: { ...a, nested: { ...a.nested, value: 42 } } } as const;`,
+      errors: [expectPreferCloneDeepError],
+      output: null,
     },
     // Regression #2011 control: the deeply nested shape from the issue with no
     // outer assertion still fixes normally.
@@ -1237,6 +1283,205 @@ const merged = cloneDeep(a, {
   },
   third: {},
 } as const);`,
+    },
+    // Regression #2094: a `cloneDeep(...)` call is a LeftHandSideExpression, so
+    // the parentheses that were doing work around `{ ... } as const` are
+    // redundant around the call that takes its place. They are absorbed into
+    // the replaced range instead of being left for prettier to strip.
+    {
+      code: `${CLONE_DEEP_IMPORT}
+const result = ({ ...a, b: { ...a.b, c: 1 } } as const).b;`,
+      errors: [expectPreferCloneDeepError],
+      output: `${CLONE_DEEP_IMPORT}
+const result = cloneDeep(a, {
+  b: {
+    c: 1,
+  },
+} as const).b;`,
+    },
+    // Regression #2094: every redundant pair goes, not just the innermost one.
+    {
+      code: `${CLONE_DEEP_IMPORT}
+const result = (({ ...a, b: { ...a.b, c: 1 } } as const))!;`,
+      errors: [expectPreferCloneDeepError],
+      output: `${CLONE_DEEP_IMPORT}
+const result = cloneDeep(a, {
+  b: {
+    c: 1,
+  },
+} as const)!;`,
+    },
+    // Regression #2094: an object literal needs its parentheses at the start of
+    // an expression statement and as a concise arrow body; the emitted call
+    // does not, so both pairs are absorbed.
+    {
+      code: `${CLONE_DEEP_IMPORT}
+({ ...a, b: { ...a.b, c: 1 } } as const);`,
+      errors: [expectPreferCloneDeepError],
+      output: `${CLONE_DEEP_IMPORT}
+cloneDeep(a, {
+  b: {
+    c: 1,
+  },
+} as const);`,
+    },
+    {
+      code: `${CLONE_DEEP_IMPORT}
+const f = () => ({ ...a, b: { ...a.b, c: 1 } } as const);`,
+      errors: [expectPreferCloneDeepError],
+      output: `${CLONE_DEEP_IMPORT}
+const f = () => cloneDeep(a, {
+  b: {
+    c: 1,
+  },
+} as const);`,
+    },
+    // Regression #2094: a parenthesis that belongs to the ENCLOSING construct
+    // is not a grouping pair. Absorbing an argument list's `(` would splice the
+    // call into its own caller, so a call argument keeps every parenthesis
+    // around it — both when the literal is the argument itself and when a
+    // redundant pair sits inside the argument list.
+    {
+      code: `${CLONE_DEEP_IMPORT}
+doThing({ ...a, b: { ...a.b, c: 1 } } as const);`,
+      errors: [expectPreferCloneDeepError],
+      output: `${CLONE_DEEP_IMPORT}
+doThing(cloneDeep(a, {
+  b: {
+    c: 1,
+  },
+} as const));`,
+    },
+    {
+      code: `${CLONE_DEEP_IMPORT}
+doThing(({ ...a, b: { ...a.b, c: 1 } } as const));`,
+      errors: [expectPreferCloneDeepError],
+      output: `${CLONE_DEEP_IMPORT}
+doThing(cloneDeep(a, {
+  b: {
+    c: 1,
+  },
+} as const));`,
+    },
+    // Regression #2094: the same for a statement head's parentheses.
+    {
+      code: `${CLONE_DEEP_IMPORT}
+if (({ ...a, b: { ...a.b, c: 1 } } as const).b) {
+  run();
+}`,
+      errors: [expectPreferCloneDeepError],
+      output: `${CLONE_DEEP_IMPORT}
+if (cloneDeep(a, {
+  b: {
+    c: 1,
+  },
+} as const).b) {
+  run();
+}`,
+    },
+    // Regression #2094: `new (fn())()` re-associates into `new fn()()` without
+    // its parentheses, so a `new` callee is the one position where the emitted
+    // call still needs them.
+    {
+      code: `${CLONE_DEEP_IMPORT}
+const v = new ({ ...a, b: { ...a.b, c: 1 } } as any)();`,
+      errors: [expectPreferCloneDeepError],
+      output: `${CLONE_DEEP_IMPORT}
+const v = new (cloneDeep(a, {
+  b: {
+    c: 1,
+  },
+} as const) as any)();`,
+    },
+    // Regression #2094: dropping a parenthesis its preceding keyword abuts
+    // would fuse the two into `typeofcloneDeep`, so an unspaced operand keeps
+    // its pair.
+    {
+      code: `${CLONE_DEEP_IMPORT}
+const v = typeof({ ...a, b: { ...a.b, c: 1 } } as const);`,
+      errors: [expectPreferCloneDeepError],
+      output: `${CLONE_DEEP_IMPORT}
+const v = typeof(cloneDeep(a, {
+  b: {
+    c: 1,
+  },
+} as const));`,
+    },
+    // Regression #2094: absorbing a pair takes ownership of its margins, so a
+    // comment parked between a parenthesis and the literal keeps the pair. The
+    // fix still lands and the comment stays where its author put it — on either
+    // side.
+    {
+      code: `${CLONE_DEEP_IMPORT}
+const result = (/* keep */ { ...a, b: { ...a.b, c: 1 } } as const)!;`,
+      errors: [expectPreferCloneDeepError],
+      output: `${CLONE_DEEP_IMPORT}
+const result = (/* keep */ cloneDeep(a, {
+  b: {
+    c: 1,
+  },
+} as const))!;`,
+    },
+    {
+      code: `${CLONE_DEEP_IMPORT}
+const result = ({ ...a, b: { ...a.b, c: 1 } } as const /* keep */)!;`,
+      errors: [expectPreferCloneDeepError],
+      output: `${CLONE_DEEP_IMPORT}
+const result = (cloneDeep(a, {
+  b: {
+    c: 1,
+  },
+} as const) /* keep */)!;`,
+    },
+    // Regression #2094: an enclosing literal written on one line would have to
+    // be re-laid-out around the multi-line call, and that range is not the
+    // fix's to own. The report stands; the fix is declined.
+    {
+      code: `${CLONE_DEEP_IMPORT}
+const result = { key: { ...a, b: { ...a.b, c: 1 } } };`,
+      errors: [expectPreferCloneDeepError],
+      output: null,
+    },
+    {
+      code: `${CLONE_DEEP_IMPORT}
+const result = [{ ...a, b: { ...a.b, c: 1 } }];`,
+      errors: [expectPreferCloneDeepError],
+      output: null,
+    },
+    // Regression #2094 control: an enclosing literal already spelled across
+    // lines has nothing to re-lay-out, so the fix stands. The decline is keyed
+    // on the enclosing literal's layout, not on the presence of one.
+    {
+      code: `${CLONE_DEEP_IMPORT}
+const result = {
+  key: { ...a, b: { ...a.b, c: 1 } },
+};`,
+      errors: [expectPreferCloneDeepError],
+      output: `${CLONE_DEEP_IMPORT}
+const result = {
+  key: cloneDeep(a, {
+    b: {
+      c: 1,
+    },
+  } as const),
+};`,
+    },
+    {
+      code: `${CLONE_DEEP_IMPORT}
+const result = [
+  { ...a, b: { ...a.b, c: 1 } },
+  other,
+];`,
+      errors: [expectPreferCloneDeepError],
+      output: `${CLONE_DEEP_IMPORT}
+const result = [
+  cloneDeep(a, {
+    b: {
+      c: 1,
+    },
+  } as const),
+  other,
+];`,
     },
   ],
 });

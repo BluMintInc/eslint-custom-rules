@@ -100,6 +100,51 @@ function rewriteSiteOf(
   return isConstAsserted(site) ? null : site;
 }
 
+/**
+ * Parent constructs whose own syntax spells a parenthesis immediately before
+ * one of their expression children, so a `(` found there is not a grouping pair
+ * the rewrite may absorb.
+ */
+const PAREN_DELIMITED_PARENTS = new Set<string>([
+  AST_NODE_TYPES.CatchClause,
+  AST_NODE_TYPES.DoWhileStatement,
+  AST_NODE_TYPES.ForInStatement,
+  AST_NODE_TYPES.ForOfStatement,
+  AST_NODE_TYPES.ForStatement,
+  AST_NODE_TYPES.IfStatement,
+  AST_NODE_TYPES.ImportExpression,
+  AST_NODE_TYPES.SwitchStatement,
+  AST_NODE_TYPES.WhileStatement,
+  AST_NODE_TYPES.WithStatement,
+]);
+
+/**
+ * Whether an object or array literal ENCLOSING the rewrite site is written on a
+ * single source line.
+ *
+ * The emitted call is always multi-line, and prettier keeps an author's
+ * one-line literal on one line only while everything inside it fits there.
+ * Splicing a hard-broken call into one therefore forces a re-layout of a
+ * construct whose range this fix does not own, so the output is text prettier
+ * immediately rewrites (#2094). Reprinting the enclosing literal instead would
+ * put every comment inside it under this fixer's ownership; declining costs
+ * nothing, because the report stands either way.
+ */
+function hasSingleLineEncloser(site: TSESTree.Node): boolean {
+  let current: TSESTree.Node | undefined = site.parent;
+  while (current) {
+    if (
+      (current.type === AST_NODE_TYPES.ObjectExpression ||
+        current.type === AST_NODE_TYPES.ArrayExpression) &&
+      current.loc.start.line === current.loc.end.line
+    ) {
+      return true;
+    }
+    current = current.parent;
+  }
+  return false;
+}
+
 export const preferCloneDeep = createRule<[], MessageIds>({
   name: 'prefer-clone-deep',
   meta: {
@@ -333,6 +378,102 @@ export const preferCloneDeep = createRule<[], MessageIds>({
 
     function startsWithSpread(node: TSESTree.ObjectExpression): boolean {
       return node.properties[0]?.type === AST_NODE_TYPES.SpreadElement;
+    }
+
+    /** The `(` that opens a call's or `new`'s argument list, if it has one. */
+    function argumentListOpener(
+      node: TSESTree.CallExpression | TSESTree.NewExpression,
+    ): TSESTree.Token | null {
+      return sourceCode.getTokenAfter(node.callee, {
+        filter: (token) => token.value === '(',
+      });
+    }
+
+    /**
+     * Whether the `(` immediately preceding the rewrite site is a redundant
+     * grouping pair rather than punctuation the enclosing construct owns.
+     * Deleting `f(` or `if (` would rewrite the program, so those positions are
+     * named explicitly instead of inferred from adjacency.
+     */
+    function isGroupingParen(
+      site: TSESTree.Node,
+      open: TSESTree.Token,
+    ): boolean {
+      const parent = site.parent;
+      if (!parent) {
+        return false;
+      }
+      if (PAREN_DELIMITED_PARENTS.has(parent.type)) {
+        return false;
+      }
+      if (
+        parent.type === AST_NODE_TYPES.CallExpression ||
+        parent.type === AST_NODE_TYPES.NewExpression
+      ) {
+        // `new (fn())()` re-associates into `new fn()()` without its
+        // parentheses, so a `new` callee keeps them even though a call
+        // expression needs none anywhere else.
+        if (
+          parent.type === AST_NODE_TYPES.NewExpression &&
+          parent.callee === site
+        ) {
+          return false;
+        }
+        return open !== argumentListOpener(parent);
+      }
+      return true;
+    }
+
+    /**
+     * The source range the emitted call replaces, widened over any parentheses
+     * that merely wrap the rewrite site.
+     *
+     * A `cloneDeep(...)` call is a `LeftHandSideExpression`, so parentheses that
+     * were doing work around `{ ... } as const` are redundant around the call
+     * that takes its place — `(...)!` and `(...).prop` never need them. Leaving
+     * them behind emits text prettier rewrites the moment the fix lands
+     * (#2094).
+     *
+     * Absorbing a pair takes ownership of its margins, so a pair with a comment
+     * between its parenthesis and the site is left alone: the fix still lands,
+     * and the comment stays exactly where its author put it.
+     */
+    function absorbedRangeOf(site: TSESTree.Node): TSESTree.Range {
+      let range: TSESTree.Range = [site.range[0], site.range[1]];
+      let first = sourceCode.getFirstToken(site);
+      let last = sourceCode.getLastToken(site);
+
+      while (first && last) {
+        const open = sourceCode.getTokenBefore(first);
+        const close = sourceCode.getTokenAfter(last);
+        if (!open || !close || open.value !== '(' || close.value !== ')') {
+          break;
+        }
+        if (!isGroupingParen(site, open)) {
+          break;
+        }
+        if (
+          sourceCode.commentsExistBetween(open, first) ||
+          sourceCode.commentsExistBetween(last, close)
+        ) {
+          break;
+        }
+        // `typeof({ ... } as const)` would fuse into `typeofcloneDeep(...)`
+        // once the parenthesis it abuts is gone.
+        const preceding = sourceCode.getTokenBefore(open);
+        if (
+          preceding &&
+          preceding.range[1] === open.range[0] &&
+          /[\w$]$/.test(preceding.value)
+        ) {
+          break;
+        }
+        range = [open.range[0], close.range[1]];
+        first = open;
+        last = close;
+      }
+
+      return range;
     }
 
     /**
@@ -630,11 +771,16 @@ export const preferCloneDeep = createRule<[], MessageIds>({
                   if (site === null) {
                     return null;
                   }
+                  if (hasSingleLineEncloser(site)) {
+                    return null;
+                  }
                   const call = buildCloneDeepCall(target);
                   if (call === null) {
                     return null;
                   }
-                  rewrites.push(fixer.replaceText(site, call));
+                  rewrites.push(
+                    fixer.replaceTextRange(absorbedRangeOf(site), call),
+                  );
                 }
 
                 return rewrites;
