@@ -313,9 +313,9 @@ function Component({ id }) {
         output: `import { useCallback } from 'react';
 function Component({ id }) {
   const fetchData = useCallback(async () => {
-      const response = await fetch(\`/api/data/\${id}\`);
-      return response.json();
-    }, [id]);
+    const response = await fetch(\`/api/data/\${id}\`);
+    return response.json();
+  }, [id]);
   return <button onClick={fetchData}>Fetch</button>;
 }`,
       },
@@ -464,8 +464,8 @@ const C = () => {
         output: `import React, { useCallback } from 'react';
 const C = () => {
   const cb = useCallback(() => {
-      console.log('clicked');
-    }, []);
+    console.log('clicked');
+  }, []);
   return <div onClick={cb}>{React.version}</div>;
 };`,
       },
@@ -489,8 +489,8 @@ const C = () => {
         output: `import { useCallback } from 'react';
 const C = () => {
   const handler = useCallback<(id: string) => void>((id) => {
-      console.log(id);
-    }, []);
+    console.log(id);
+  }, []);
   return handler;
 };`,
       },
@@ -1160,11 +1160,13 @@ function Component() {
         ],
         output: `import { useCallback } from 'react';
 function Component() {
-  const handleClick = useCallback(() => {
+  const handleClick = useCallback(
+    () => {
       console.log('Button clicked');
-    }
-  // eslint-disable-next-line no-console
-  , []);
+    },
+    // eslint-disable-next-line no-console
+    [],
+  );
   return <button onClick={handleClick}>Click me</button>;
 }`,
       },
@@ -1190,9 +1192,9 @@ const C = () => {
         output: `import { useCallback } from 'react';
 const C = () => {
   const cb = useCallback(() => {
-      // keep this note
-      doWork();
-    }, []);
+    // keep this note
+    doWork();
+  }, []);
   return cb;
 };`,
       },
@@ -1213,8 +1215,7 @@ const C = () => {
         ],
         output: `import { useCallback } from 'react';
 const C = () => {
-  const cb = useCallback(
-    /* keep me */ () => {}, []);
+  const cb = useCallback(/* keep me */ () => {}, []);
   return cb;
 };`,
       },
@@ -1241,7 +1242,9 @@ const C = () => {
 const C = () => {
   const cb = useCallback(
     // eslint-disable-next-line consistent-return
-    () => {}, []);
+    () => {},
+    [],
+  );
   return cb;
 };`,
       },
@@ -1265,10 +1268,12 @@ const C = () => {
         ],
         output: `import { useCallback } from 'react';
 const C = () => {
-  const cb = useCallback(() => {}
+  const cb = useCallback(
+    () => {},
 
     // eslint-disable-next-line no-console
-  , []);
+    [],
+  );
   return cb;
 };`,
       },
@@ -1293,9 +1298,10 @@ const C = () => {
 const C = () => {
   const cb = useCallback(
     // before
-    () => {}
+    () => {},
     // after
-  , []);
+    [],
+  );
   return cb;
 };`,
       },
@@ -1316,10 +1322,278 @@ const C = () => {
         ],
         output: `import { useCallback } from 'react';
 const C = () => {
-  const cb = useCallback(() => {} // tail
-  , []);
+  const cb = useCallback(
+    () => {}, // tail
+    [],
+  );
   return cb;
 };`,
+      },
+      // ------------------------------------------------------------------
+      // Issue #2091: unwrapping removes a level of nesting, so the relocated
+      // function has to be re-indented to the depth it lands at, and a comment
+      // that cannot share a line with the code beside it forces the argument
+      // list open. Both shapes are what a formatter prints, so `--fix` output
+      // is not rewritten the moment the formatter runs over it.
+      // ------------------------------------------------------------------
+      // Issue #2091: the body is dedented by the level the unwrap removes, at a
+      // depth no fixed indent could produce
+      {
+        code: `import { useMemo } from 'react';
+function Outer() {
+  if (ready) {
+    const cb = useMemo(() => {
+      return () => {
+        doWork();
+      };
+    }, []);
+    return cb;
+  }
+}`,
+        errors: [
+          {
+            messageId: 'preferUseCallback',
+            data: { callbackDescription: callbackDescription('cb') },
+          },
+        ],
+        output: `import { useCallback } from 'react';
+function Outer() {
+  if (ready) {
+    const cb = useCallback(() => {
+      doWork();
+    }, []);
+    return cb;
+  }
+}`,
+      },
+      // Issue #2091: the broken-open argument list is indented from the call's
+      // own line, so it holds at any depth
+      {
+        code: `import { useMemo } from 'react';
+function Outer() {
+  if (ready) {
+    const cb = useMemo(() => {
+      return () => {}; // tail
+    }, []);
+    return cb;
+  }
+}`,
+        errors: [
+          {
+            messageId: 'preferUseCallback',
+            data: { callbackDescription: callbackDescription('cb') },
+          },
+        ],
+        output: `import { useCallback } from 'react';
+function Outer() {
+  if (ready) {
+    const cb = useCallback(
+      () => {}, // tail
+      [],
+    );
+    return cb;
+  }
+}`,
+      },
+      // Issue #2091: the supplied dependency array joins the broken-open list
+      {
+        code: `import { useMemo } from 'react';
+const C = () => {
+  const cb = useMemo(() => {
+    return () => {}; // tail
+  });
+  return cb;
+};`,
+        errors: [
+          {
+            messageId: 'preferUseCallback',
+            data: { callbackDescription: callbackDescription('cb') },
+          },
+        ],
+        output: `import { useCallback } from 'react';
+const C = () => {
+  const cb = useCallback(
+    () => {}, // tail
+    [],
+  );
+  return cb;
+};`,
+      },
+      // Issue #2091: a real dependency array survives the dedent unchanged
+      {
+        code: `import { useMemo } from 'react';
+const C = ({ id }) => {
+  const cb = useMemo(() => {
+    return () => {
+      doWork(id);
+    };
+  }, [id]);
+  return cb;
+};`,
+        errors: [
+          {
+            messageId: 'preferUseCallback',
+            data: { callbackDescription: callbackDescription('cb') },
+          },
+        ],
+        output: `import { useCallback } from 'react';
+const C = ({ id }) => {
+  const cb = useCallback(() => {
+    doWork(id);
+  }, [id]);
+  return cb;
+};`,
+      },
+      // Issue #2091: the interior of a multi-line template literal is the
+      // string's value, so the dedent must not reach into it
+      {
+        code: `import { useMemo } from 'react';
+const C = () => {
+  const cb = useMemo(() => {
+    return () => {
+      log(\`line one
+line two\`);
+    };
+  }, []);
+  return cb;
+};`,
+        errors: [
+          {
+            messageId: 'preferUseCallback',
+            data: { callbackDescription: callbackDescription('cb') },
+          },
+        ],
+        output: `import { useCallback } from 'react';
+const C = () => {
+  const cb = useCallback(() => {
+    log(\`line one
+line two\`);
+  }, []);
+  return cb;
+};`,
+      },
+      // Issue #2091: a call already broken open lands the function on the
+      // callback's own line, so that line's depth is the reference
+      {
+        code: `import { useMemo } from 'react';
+const C = () => {
+  const cb = useMemo(
+    // why
+    () => {
+      return () => {
+        doWork();
+      };
+    },
+    [],
+  );
+  return cb;
+};`,
+        errors: [
+          {
+            messageId: 'preferUseCallback',
+            data: { callbackDescription: callbackDescription('cb') },
+          },
+        ],
+        output: `import { useCallback } from 'react';
+const C = () => {
+  const cb = useCallback(
+    // why
+    () => {
+      doWork();
+    },
+    [],
+  );
+  return cb;
+};`,
+      },
+      // Issue #2091: a block comment spanning lines cannot be printed inline
+      // either, so it breaks the list open as a `//` comment does — and its own
+      // continuation line is text the fixer does not own
+      {
+        code: `import { useMemo } from 'react';
+const C = () => {
+  const cb = useMemo(() => {
+    /* keep
+       me */
+    return () => {};
+  }, []);
+  return cb;
+};`,
+        errors: [
+          {
+            messageId: 'preferUseCallback',
+            data: { callbackDescription: callbackDescription('cb') },
+          },
+        ],
+        output: `import { useCallback } from 'react';
+const C = () => {
+  const cb = useCallback(
+    /* keep
+       me */
+    () => {},
+    [],
+  );
+  return cb;
+};`,
+      },
+      // Issue #2091: a comment in each collapsed span, with the trailing one
+      // keeping the line it shared with the returned function
+      {
+        code: `import { useMemo } from 'react';
+const C = () => {
+  const cb = useMemo(() => {
+    // before
+    return () => {
+      doWork();
+    }; // tail
+  }, []);
+  return cb;
+};`,
+        errors: [
+          {
+            messageId: 'preferUseCallback',
+            data: { callbackDescription: callbackDescription('cb') },
+          },
+        ],
+        output: `import { useCallback } from 'react';
+const C = () => {
+  const cb = useCallback(
+    // before
+    () => {
+      doWork();
+    }, // tail
+    [],
+  );
+  return cb;
+};`,
+      },
+      // Issue #2091: a conversion inside a JSX attribute is re-indented from
+      // the line the call opens on, not from the statement's
+      {
+        code: `import { useMemo } from 'react';
+const C = () => (
+  <button
+    onClick={useMemo(() => {
+      return () => {
+        doWork();
+      };
+    }, [])}
+  />
+);`,
+        errors: [
+          {
+            messageId: 'preferUseCallback',
+            data: { callbackDescription: 'the "onClick" prop callback' },
+          },
+        ],
+        output: `import { useCallback } from 'react';
+const C = () => (
+  <button
+    onClick={useCallback(() => {
+      doWork();
+    }, [])}
+  />
+);`,
       },
       // Issue #1447: the implicit-return shape carries its comment too
       {

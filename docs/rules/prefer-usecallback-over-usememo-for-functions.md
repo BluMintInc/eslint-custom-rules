@@ -139,15 +139,39 @@ import { useCallback } from '../hooks';
 const cb = useMemo(() => () => {}, []); // reported, not fixed
 ```
 
+### The converted body lands at its new depth
+
+Unwrapping removes a level of nesting, so the relocated function is re-indented
+to the depth it lands at instead of keeping the one it was written at:
+
+```jsx
+// before
+import { useMemo } from 'react';
+const cb = useMemo(() => {
+  return () => {
+    console.log('Button clicked');
+  };
+}, []);
+
+// after
+import { useCallback } from 'react';
+const cb = useCallback(() => {
+  console.log('Button clicked');
+}, []);
+```
+
+Three kinds of line inside the relocated span are left alone, because their
+leading whitespace is part of the text rather than its layout: the interior of a
+multi-line template literal, a line-continued string, and a block comment whose
+continuation lines are not `*`-aligned.
+
 ### Comments survive the unwrap
 
 Converting the call collapses the wrapper around the returned function — the
-`() => {` and `return` before it, the `;` and `}` after it. The fix splices those
-tokens out instead of re-printing the call, so the returned function, the type
-arguments, the dependency array and every byte between them are left exactly as
-written. Comments caught inside the collapsed wrapper are emitted back with the
-line breaks that framed them, which keeps an `eslint-disable-next-line` in front
-of the same line it governed:
+`() => {` and `return` before it, the `;` and `}` after it. The type arguments
+and the dependency array are carried across untouched, and every comment caught
+inside the collapsed wrapper is re-hosted onto the argument it annotates, which
+keeps an `eslint-disable-next-line` in front of the same line it governed:
 
 ```jsx
 // before
@@ -159,8 +183,16 @@ const cb = useMemo(() => {
 // after — the directive still suppresses the console call
 const cb = useCallback(
   // eslint-disable-next-line no-console
-  () => console.log('x'), []);
+  () => console.log('x'),
+  [],
+);
 ```
+
+A `//` comment cannot share a line with the code beside it, and neither can a
+block comment spanning lines, so an argument list holding one is written one
+argument per line; a list whose comments all ride inline stays flat. Both are
+the shape a formatter prints, so the fix does not land source a formatter
+rewrites on sight.
 
 A comment is never dropped, so the fix is never declined on account of one:
 every comment in the collapsed wrapper has a landing place inside the emitted

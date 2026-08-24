@@ -221,6 +221,33 @@ export const COMMENT_FIDELITY_BASELINE: Record<string, string> = {
   // a comment anywhere else is untouched.
   'enforce-firestore-set-merge :: TRANSFORM_DIVERGED':
     'declines the batchManager restructure rather than drop a comment sitting between the arguments it rebuilds from (#1877); output is byte-identical to the input and the report stands',
+  // WIDTH/LAYOUT, same class as flatten-push-calls above, and the shape tracks
+  // what Prettier itself prints for the converted call (#2091). Unwrapping
+  // `useMemo(() => fn, deps)` into `useCallback(fn, deps)` deletes the wrapper
+  // the comment sat inside, so the comment is re-hosted onto an argument of the
+  // surviving call — and a LINE comment cannot ride on a single-line argument
+  // list at all: folded onto one line it would swallow the closing parenthesis
+  // and the rest of the call. The list therefore breaks one argument per line,
+  // carrying the trailing comma a formatter writes into any list it breaks, and
+  // that comma is the ENTIRE divergence: measured, the variant's token stream
+  // equals the baseline's once trailing commas before a closer are dropped, on
+  // 11 of 11 diverging cases.
+  //
+  // BOTH SHAPES CARRY THE COMMENT, so nothing is consumed and the remedy is not
+  // a decline: measured across 866 comparisons over the 121 fixtures this rule
+  // reports on (its own corpus and every other rule's), the marker survives
+  // every diverging output (0 lost), and every one of those outputs is a fixed
+  // point of agora's pinned Prettier (2.8.8, not this repo's 2.7.1). All 11 are
+  // the TRAILING_LINE variant — 9 on this rule's own fixtures, 2 on
+  // `no-redundant-usecallback-wrapper`'s — because that is the placement that
+  // lands a `//` comment inside the collapsed wrapper. Emitting the flat list
+  // anyway is what #2091 exists to remove: Prettier rewrote it on sight.
+  // Anchored by the `// tail`, `// before`/`// after` and multi-line block
+  // comment fixtures in
+  // `src/tests/prefer-usecallback-over-usememo-for-functions.test.ts`, so the
+  // own-corpus guard keeps this entry honest.
+  'prefer-usecallback-over-usememo-for-functions :: TRANSFORM_DIVERGED':
+    'breaks the converted argument list open for a comment that cannot ride on a flat one, which adds only the trailing comma a formatter writes into a broken list; Prettier makes the same choice and every shape carries the comment (#2091)',
 
   // IN-NODE. The marker lands inside a node the fixer replaces or deletes
   // wholesale, so the comment goes with its subject. Verified mechanically:

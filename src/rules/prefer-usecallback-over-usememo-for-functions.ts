@@ -1,5 +1,11 @@
-import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
+import {
+  AST_NODE_TYPES,
+  AST_TOKEN_TYPES,
+  TSESLint,
+  TSESTree,
+} from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { reindentRelocated } from '../utils/reindentRelocated';
 import {
   createSuppressionChecker,
   SuppressionChecker,
@@ -544,69 +550,290 @@ function planConversion(
   };
 }
 
-/**
- * Rebuilds the whitespace of a stretch of source whose tokens are being deleted.
- * Line breaks are reproduced one for one so a directive keeps the same distance
- * from the line it governs, and the indentation of the last line is carried over
- * so what follows lands where the deleted text used to start.
- */
-function collapsedWhitespace(gap: string, afterOpenParen: boolean) {
-  const newlines = gap.match(/\n/g)?.length ?? 0;
-  if (newlines === 0) {
-    // Nothing separated the neighbours across a line, so a single space is all
-    // that is needed to keep them apart — except against the parenthesis that
-    // opens the argument list, where a comment reads better flush.
-    return afterOpenParen ? '' : ' ';
-  }
-  const lineBreak = gap.includes('\r\n') ? '\r\n' : '\n';
-  const lastLine = gap.slice(gap.lastIndexOf('\n') + 1);
-  const indent = /^[ \t]*/.exec(lastLine)?.[0] ?? '';
-  return lineBreak.repeat(newlines) + indent;
+/** Leading whitespace of the line `line` (1-based) sits on. */
+function indentOfLine(line: number, sourceCode: TSESLint.SourceCode) {
+  return /^[\t ]*/u.exec(sourceCode.lines[line - 1] ?? '')?.[0] ?? '';
+}
+
+function commentsWithin(
+  sourceCode: TSESLint.SourceCode,
+  start: number,
+  end: number,
+) {
+  return sourceCode
+    .getAllComments()
+    .filter((comment) => comment.range[0] >= start && comment.range[1] <= end);
+}
+
+const textOfComment = (
+  sourceCode: TSESLint.SourceCode,
+  comment: TSESTree.Comment,
+) => sourceCode.getText().slice(comment.range[0], comment.range[1]);
+
+/** Whether the source between two offsets holds a blank line. */
+function separatesWithBlankLine(
+  sourceCode: TSESLint.SourceCode,
+  start: number,
+  end: number,
+) {
+  const gap = sourceCode.getText().slice(start, end);
+  return (gap.match(/\n/g)?.length ?? 0) >= 2;
 }
 
 /**
- * Deletes a stretch of wrapper syntax while keeping every comment inside it.
- *
- * Unwrapping `useMemo(() => { return fn; }, deps)` collapses two stretches of
- * source: the `() => { return` before the returned function and the `; }` after
- * it. Re-emitting the call from `getText` erased whatever sat in those stretches,
- * which silently retires the comments they held — and an `eslint-disable` among
- * them stops suppressing a line that outlives the rewrite. Only the tokens are
- * removed here: the comments come back out with the line breaks that framed
- * them, so each one still precedes the same line.
+ * The parenthesis that opens the call's argument list. The search walks back
+ * from the first argument rather than forward from the callee so a type-argument
+ * list (`useMemo<T>(...)`) is never crossed, and steps over the parentheses of a
+ * parenthesized argument so it lands on the call's own.
  */
-function collapseWrapper(
+function openParenOf(
+  sourceCode: TSESLint.SourceCode,
+  firstArgument: TSESTree.Node,
+) {
+  let token = sourceCode.getTokenBefore(firstArgument);
+  while (token && sourceCode.getTokenBefore(token)?.value === '(') {
+    token = sourceCode.getTokenBefore(token);
+  }
+  return token?.value === '(' ? token : null;
+}
+
+/**
+ * A comment that cannot share a line with the code beside it forces the
+ * argument list open: a `//` comment swallows the rest of a flat list, and a
+ * block comment spanning lines cannot be printed inline either. Emitting the
+ * collapsed shape for one of those lands text a formatter rewrites on sight, so
+ * the presence of such a comment picks the multi-line rebuild instead.
+ */
+function forcesArgumentBreak(comments: readonly TSESTree.Comment[]) {
+  return comments.some(
+    (comment) =>
+      comment.type === AST_TOKEN_TYPES.Line ||
+      comment.loc.start.line !== comment.loc.end.line,
+  );
+}
+
+/**
+ * The converted call written with one argument per line.
+ *
+ * Every comment the deleted wrapper held is re-emitted beside the argument it
+ * annotates — a comment trailing the returned function on its own line follows
+ * the comma that now ends that argument, and a comment on a line of its own
+ * keeps one — so an `eslint-disable-next-line` still governs the line it did.
+ * The returned function is shifted to the depth it lands at, so the nesting the
+ * unwrap removes is taken out of its body as well as its first line.
+ */
+function expandedArguments(
+  sourceCode: TSESLint.SourceCode,
+  node: TSESTree.CallExpression,
+  useMemoCallback: TSESTree.Node,
+  returnedFunction: TSESTree.Node,
+  openParen: TSESTree.Token,
+  closeParen: TSESTree.Token,
+) {
+  const callIndent = indentOfLine(node.loc.start.line, sourceCode);
+  const inner = `${callIndent}  `;
+  const dependencies = node.arguments[1];
+
+  const leading = [
+    ...commentsWithin(sourceCode, openParen.range[1], useMemoCallback.range[0]),
+    ...commentsWithin(
+      sourceCode,
+      useMemoCallback.range[0],
+      returnedFunction.range[0],
+    ),
+  ];
+  const trailing = commentsWithin(
+    sourceCode,
+    returnedFunction.range[1],
+    useMemoCallback.range[1],
+  );
+  const beforeDependencies = commentsWithin(
+    sourceCode,
+    useMemoCallback.range[1],
+    dependencies ? dependencies.range[0] : closeParen.range[0],
+  );
+
+  let text = '\n';
+  let cursorEnd = openParen.range[1];
+  let cursorLine = openParen.loc.end.line;
+  let atLineStart = true;
+
+  const breakBefore = (start: number) =>
+    separatesWithBlankLine(sourceCode, cursorEnd, start) ? '\n\n' : '\n';
+
+  /** Places an item, keeping it on the line it shared with its predecessor. */
+  const place = (item: TSESTree.Node | TSESTree.Comment, body: string) => {
+    if (atLineStart) {
+      text += `${inner}${body}`;
+    } else if (item.loc.start.line === cursorLine) {
+      text += ` ${body}`;
+    } else {
+      text += `${breakBefore(item.range[0])}${inner}${body}`;
+    }
+    atLineStart = false;
+    cursorEnd = item.range[1];
+    cursorLine = item.loc.end.line;
+  };
+
+  /** Places an item on a line of its own, whatever it shared in the source. */
+  const placeOwnLine = (
+    item: TSESTree.Node | TSESTree.Comment,
+    body: string,
+  ) => {
+    text += `${breakBefore(item.range[0])}${inner}${body}`;
+    atLineStart = false;
+    cursorEnd = item.range[1];
+    cursorLine = item.loc.end.line;
+  };
+
+  for (const comment of leading) {
+    place(comment, textOfComment(sourceCode, comment));
+  }
+  place(
+    returnedFunction,
+    reindentRelocated(returnedFunction, inner, sourceCode),
+  );
+  text += ',';
+
+  // Only a comment that already trailed the returned function stays on its
+  // line; the rest annotate what follows them, which is the dependency array.
+  trailing.forEach((comment, index) => {
+    const body = textOfComment(sourceCode, comment);
+    if (
+      index === 0 &&
+      comment.loc.start.line === returnedFunction.loc.end.line
+    ) {
+      place(comment, body);
+      return;
+    }
+    placeOwnLine(comment, body);
+  });
+  for (const comment of beforeDependencies) {
+    placeOwnLine(comment, textOfComment(sourceCode, comment));
+  }
+
+  if (dependencies) {
+    placeOwnLine(
+      dependencies,
+      reindentRelocated(dependencies, inner, sourceCode),
+    );
+  } else {
+    // A call written without a dependency array memoizes nothing, so the
+    // conversion supplies the empty array useCallback needs.
+    text += `\n${inner}[]`;
+  }
+  return `${text},\n${callIndent}`;
+}
+
+/**
+ * The converted call written as one flat argument list.
+ *
+ * Only the tokens of the wrapper are removed: the comments it held come back
+ * beside the function they framed, because re-emitting the call from `getText`
+ * erased whatever sat in those stretches, which silently retired them — and an
+ * `eslint-disable` among them stopped suppressing a line that outlives the
+ * rewrite.
+ */
+function flatArgument(
+  sourceCode: TSESLint.SourceCode,
+  useMemoCallback: TSESTree.Node,
+  returnedFunction: TSESTree.Node,
+  appended: string,
+) {
+  const leading = commentsWithin(
+    sourceCode,
+    useMemoCallback.range[0],
+    returnedFunction.range[0],
+  );
+  const trailing = commentsWithin(
+    sourceCode,
+    returnedFunction.range[1],
+    useMemoCallback.range[1],
+  );
+  // The relocated function lands on the line the collapsed callback opened, so
+  // that line's indentation is the depth its body has to be shifted to.
+  const toIndent = indentOfLine(useMemoCallback.loc.start.line, sourceCode);
+  const parts = [
+    ...leading.map((comment) => textOfComment(sourceCode, comment)),
+    reindentRelocated(returnedFunction, toIndent, sourceCode),
+    ...trailing.map((comment) => textOfComment(sourceCode, comment)),
+  ];
+  return `${parts.join(' ')}${appended}`;
+}
+
+/**
+ * Replaces `useMemo`'s callback with the function it returned, choosing between
+ * the flat and the multi-line argument list by what the surviving comments can
+ * be printed as.
+ */
+function unwrapFixes(
   sourceCode: TSESLint.SourceCode,
   fixer: TSESLint.RuleFixer,
-  range: [number, number],
-  appended = '',
+  node: TSESTree.CallExpression,
+  useMemoCallback: TSESTree.Node,
+  returnedFunction: TSESTree.Node,
+  missingDependencies: string,
 ): TSESLint.RuleFix[] {
-  const [start, end] = range;
-  const comments = sourceCode
-    .getAllComments()
-    .filter((comment) => comment.range[0] >= start && comment.range[1] <= end);
+  const wrapperComments = [
+    ...commentsWithin(
+      sourceCode,
+      useMemoCallback.range[0],
+      returnedFunction.range[0],
+    ),
+    ...commentsWithin(
+      sourceCode,
+      returnedFunction.range[1],
+      useMemoCallback.range[1],
+    ),
+  ];
 
-  if (comments.length === 0) {
-    if (start === end && appended === '') {
-      return [];
-    }
-    return [fixer.replaceTextRange(range, appended)];
+  const openParen = openParenOf(sourceCode, useMemoCallback);
+  const closeParen = sourceCode.getLastToken(node);
+  const dependencies = node.arguments[1];
+  // Rebuilding the list means owning every byte between the parentheses, which
+  // the rule may only do when it can account for all of them: a third argument
+  // or a comment past the dependency array is text it has no place to put.
+  const rebuildable =
+    openParen !== null &&
+    closeParen !== null &&
+    closeParen.value === ')' &&
+    node.arguments.length <= 2 &&
+    (!dependencies ||
+      commentsWithin(sourceCode, dependencies.range[1], closeParen.range[0])
+        .length === 0);
+
+  if (
+    rebuildable &&
+    openParen &&
+    closeParen &&
+    forcesArgumentBreak(wrapperComments)
+  ) {
+    return [
+      fixer.replaceTextRange(
+        [openParen.range[1], closeParen.range[0]],
+        expandedArguments(
+          sourceCode,
+          node,
+          useMemoCallback,
+          returnedFunction,
+          openParen,
+          closeParen,
+        ),
+      ),
+    ];
   }
 
-  const text = sourceCode.getText();
-  let replacement = '';
-  let cursor = start;
-  for (const comment of comments) {
-    replacement += collapsedWhitespace(
-      text.slice(cursor, comment.range[0]),
-      text[cursor - 1] === '(',
-    );
-    replacement += text.slice(comment.range[0], comment.range[1]);
-    cursor = comment.range[1];
-  }
-  replacement += collapsedWhitespace(text.slice(cursor, end), false);
-
-  return [fixer.replaceTextRange(range, replacement + appended)];
+  return [
+    fixer.replaceTextRange(
+      [useMemoCallback.range[0], useMemoCallback.range[1]],
+      flatArgument(
+        sourceCode,
+        useMemoCallback,
+        returnedFunction,
+        missingDependencies,
+      ),
+    ),
+  ];
 }
 
 function getMemoizedFunctionDescription(node) {
@@ -671,20 +898,18 @@ function reportAndFix(node, context, plan: ConversionPlan) {
     data: { callbackDescription },
     fix: plan.fixable.has(node)
       ? (fixer: TSESLint.RuleFixer) => {
-          // The call is spliced rather than re-emitted: the callee is renamed
-          // and the wrapper around the returned function is deleted, so the
-          // returned function, the type arguments, the dependency array and
-          // everything between them stay byte-identical — comments included.
+          // The callee is renamed in place and the wrapper around the returned
+          // function is deleted, so the type arguments and the dependency array
+          // stay byte-identical while the relocated function is re-indented to
+          // the depth the unwrap leaves it at.
           const fixes: TSESLint.RuleFix[] = [
             fixer.replaceText(node.callee, plan.calleeName),
-            ...collapseWrapper(sourceCode, fixer, [
-              useMemoCallback.range[0],
-              returnedFunction.range[0],
-            ]),
-            ...collapseWrapper(
+            ...unwrapFixes(
               sourceCode,
               fixer,
-              [returnedFunction.range[1], useMemoCallback.range[1]],
+              node,
+              useMemoCallback,
+              returnedFunction,
               missingDependencies,
             ),
           ];
