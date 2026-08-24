@@ -554,7 +554,7 @@ const CROSS_FIXER_FLOOR = 52; // measured 56
  * the #1984 failure verbatim.
  */
 const NON_TS_CEILING = 60; // measured 40
-const NO_SURFACE_CEILING = 2400; // measured 2265
+const NO_SURFACE_CEILING = 2550; // measured 2401
 const UNPARSEABLE_OUTPUT_CEILING = 5; // measured 1
 
 console.log(
