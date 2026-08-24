@@ -1441,11 +1441,21 @@ describe('fixers must not emit a reference an inner shadow captures', () => {
    * set is what a rule gaining flat reach is SUPPOSED to look like — the
    * perturbation exists only for rules the flat pass cannot reach — so the
    * floors below track the population down rather than pinning a rule into it.
+   *
+   * `prefer-next-dynamic` moved across for the same reason (#2100): its fix
+   * derives the emitted call's indentation from the line the replaced node
+   * starts on, so the fixtures pinning that landing depth declare the
+   * declarator inside a `function Wrapper() { ... }` and an arrow body. Flat
+   * reach went 12 actionable / 0 enclosed to 17 / 3, which empties the wrap's
+   * contribution for it. Distinguishing the two ways out of the set matters:
+   * a rule also leaves when `reach.actionable` falls to 0, and that one is a
+   * regression wearing the same drop in these counts. This move was confirmed
+   * to be the first kind — enclosed rose off 0 while actionable rose too.
    */
   it('the nesting perturbation reaches a shadow it could not reach flat', () => {
-    expect(nestedTotals.rules).toBeGreaterThanOrEqual(19);
-    expect(nestedTotals.enclosureGained).toBeGreaterThanOrEqual(11);
-    expect(nestedTotals.probedRules).toBeGreaterThanOrEqual(4);
+    expect(nestedTotals.rules).toBeGreaterThanOrEqual(18);
+    expect(nestedTotals.enclosureGained).toBeGreaterThanOrEqual(10);
+    expect(nestedTotals.probedRules).toBeGreaterThanOrEqual(3);
     expect(nestedTotals.neutral).toBeGreaterThanOrEqual(900);
     // An unvalidatable variant is not a valid one. Both zeros are trustworthy
     // only because the counter sits at its own skip rather than downstream.
