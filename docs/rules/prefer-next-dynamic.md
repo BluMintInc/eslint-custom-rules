@@ -98,6 +98,7 @@ emitted import statement is a single line and carries no trailing comma.
 - **Named Exports**: When destructuring (e.g., `{ Picker }`), the fixer returns `mod.Picker`.
 - **Incorrect dynamic usage**: The fixer ensures an async loader and applies `{ ssr: false }`.
 - **Multiple declarators**: Only the matching declarator is rewritten; its siblings and the surrounding declaration keep their existing text. Given `const A = 1, { Picker } = useDynamic(import('@emoji-mart/react')), other = 2;` the fixer replaces the middle declarator with `Picker = dynamic(...)` and leaves `A` and `other` in place — it does not split the declaration into separate statements.
+- **Landing depth**: The emitted `dynamic(...)` call is laid out against the line its replaced span starts on. A declaration nested in a function body, or a declarator on a continuation line of a multi-declarator `const`, keeps its depth — each continuation line of the emitted call is indented from that line, so the output is a fixed point of the consumer's formatter rather than text it re-indents.
 
 ### Options
 

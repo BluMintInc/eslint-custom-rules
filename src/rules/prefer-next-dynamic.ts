@@ -1,6 +1,7 @@
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 import { ASTHelpers } from '../utils/ASTHelpers';
+import { reindentRelocated } from '../utils/reindentRelocated';
 
 const NEXT_DYNAMIC_MODULE = 'next/dynamic';
 const DEFAULT_DYNAMIC_NAME = 'dynamic';
@@ -179,6 +180,21 @@ function bindsNextDynamicDefault(variable: TSESLint.Scope.Variable): boolean {
   );
 }
 
+/**
+ * Leading whitespace of the line `node` starts on, which is the depth the text
+ * replacing `node` is laid out against. A declarator can sit at any depth — a
+ * nested block, or a continuation line of a multi-declarator `const` — and text
+ * written for one depth is text prettier re-indents at every other one.
+ */
+function indentOfLineAt(
+  node: TSESTree.Node,
+  sourceCode: TSESLint.SourceCode,
+): string {
+  const text = sourceCode.getText();
+  const lineStart = text.lastIndexOf('\n', node.range[0] - 1) + 1;
+  return /^[\t ]*/u.exec(text.slice(lineStart, node.range[0]))?.[0] ?? '';
+}
+
 function buildDynamicReplacement(
   call: TSESTree.CallExpression,
   variableKind: 'const' | 'let' | 'var',
@@ -186,25 +202,42 @@ function buildDynamicReplacement(
   namedExportKey: string | null,
   sourceCode: TSESLint.SourceCode,
   dynamicIdent: string,
+  indent: string,
 ): string {
   const expr = buildDynamicExpression(
     call,
     namedExportKey,
     sourceCode,
     dynamicIdent,
+    indent,
   );
   return `${variableKind} ${variableIdText} = ${expr};`;
 }
 
+/**
+ * `indent` is the indentation of the line the emitted call lands on; its
+ * argument list is printed one step deeper and its closing paren back at it.
+ */
 function buildDynamicExpression(
   call: TSESTree.CallExpression,
   namedExportKey: string | null,
   sourceCode: TSESLint.SourceCode,
   dynamicIdent: string,
+  indent: string,
 ): string {
+  const argIndent = `${indent}  `;
+  const bodyIndent = `${argIndent}  `;
+
   // call.arguments[0] is ImportExpression
   const importExpr = call.arguments[0] as TSESTree.ImportExpression;
-  const importArgText = sourceCode.getText(importExpr.source);
+  // The specifier is copied out of the declarator and lands inside the loader
+  // body, so a specifier expression spanning lines has to be shifted to the
+  // depth it lands at rather than carried at the depth it was written at.
+  const importArgText = reindentRelocated(
+    importExpr.source,
+    bodyIndent,
+    sourceCode,
+  );
 
   const returnExpr = namedExportKey ? `mod.${namedExportKey}` : 'mod.default';
 
@@ -215,12 +248,12 @@ function buildDynamicExpression(
   // the next format. A single-line list is the opposite case, which is why the
   // import statements this rule emits carry no trailing comma.
   const dynamicText = `${dynamicIdent}(
-  async () => {
-    const mod = await import(${importArgText});
-    return ${returnExpr};
-  },
-  { ssr: false },
-)`;
+${argIndent}async () => {
+${bodyIndent}const mod = await import(${importArgText});
+${bodyIndent}return ${returnExpr};
+${argIndent}},
+${argIndent}{ ssr: false },
+${indent})`;
   return dynamicText;
 }
 
@@ -403,7 +436,11 @@ export const preferNextDynamic = createRule<Options, MessageIds>({
               dynamicLocal = 'dynamic';
             }
 
-            // Replace the variable declarator text with dynamic(...) usage
+            // Replace the variable declarator text with dynamic(...) usage.
+            // Each branch lays the call out against the line its own replaced
+            // span starts on, because that is where the emitted text lands: the
+            // whole declaration for a lone declarator, but a continuation line
+            // of the declarator list — two columns deeper — for the others.
             if (parentDecl.declarations.length === 1) {
               const variableText = buildDynamicReplacement(
                 init,
@@ -412,6 +449,7 @@ export const preferNextDynamic = createRule<Options, MessageIds>({
                 info.namedExportKey,
                 sourceCode,
                 dynamicLocal || 'dynamic',
+                indentOfLineAt(parentDecl, sourceCode),
               );
               fixes.push(fixer.replaceText(parentDecl, variableText));
             } else {
@@ -423,6 +461,7 @@ export const preferNextDynamic = createRule<Options, MessageIds>({
                   info.namedExportKey,
                   sourceCode,
                   dynamicLocal || 'dynamic',
+                  indentOfLineAt(init, sourceCode),
                 );
                 fixes.push(fixer.replaceText(init, dynamicExpr));
               } else if (node.id.type === AST_NODE_TYPES.ObjectPattern) {
@@ -432,6 +471,7 @@ export const preferNextDynamic = createRule<Options, MessageIds>({
                   info.namedExportKey,
                   sourceCode,
                   dynamicLocal || 'dynamic',
+                  indentOfLineAt(node, sourceCode),
                 );
                 const replacement = `${info.idText} = ${dynamicExpr}`;
                 fixes.push(fixer.replaceText(node, replacement));

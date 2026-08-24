@@ -31,6 +31,22 @@ const EmojiPicker = useDynamic(import('@emoji-mart/react'));
 const App = () => <EmojiPicker/>;`,
       options: [{ useDynamicSources: ['@org/useDynamic'] }],
     },
+    // The fix's own output at a nested landing depth is a fixed point of this
+    // rule: re-linting it reports nothing, so a second `--fix` pass cannot
+    // re-indent what the first pass emitted.
+    {
+      code: `import dynamic from 'next/dynamic';
+
+const A = 1,
+  EmojiPicker = dynamic(
+    async () => {
+      const mod = await import('@emoji-mart/react');
+      return mod.default;
+    },
+    { ssr: false },
+  );
+const App = () => <EmojiPicker />;`,
+    },
   ],
   invalid: [
     // Basic bad case: default export
@@ -359,6 +375,137 @@ const Emoji = dynamic(
   { ssr: false },
 );
 const App = () => <Emoji/>;`,
+    },
+    // A declarator on a continuation line of a multi-declarator `const` lands
+    // two columns deeper than statement depth, and the emitted call follows it
+    // there rather than staying at a depth prettier would re-indent.
+    {
+      code: `import { useDynamic } from '../../hooks/useDynamic';
+const A = 1,
+  EmojiPicker = useDynamic(import('@emoji-mart/react'));
+const App = () => <EmojiPicker />;`,
+      errors: [
+        {
+          messageId: 'preferNextDynamic',
+          data: { componentName: 'EmojiPicker' },
+        },
+      ],
+      output: `import dynamic from 'next/dynamic';
+
+const A = 1,
+  EmojiPicker = dynamic(
+    async () => {
+      const mod = await import('@emoji-mart/react');
+      return mod.default;
+    },
+    { ssr: false },
+  );
+const App = () => <EmojiPicker />;`,
+    },
+    // A destructured declarator on a continuation line lands at that same depth
+    {
+      code: `import { useDynamic } from '../../hooks/useDynamic';
+const A = 1,
+  { Picker } = useDynamic(import('@emoji-mart/react'));
+const App = () => <Picker />;`,
+      errors: [
+        {
+          messageId: 'preferNextDynamic',
+          data: { componentName: 'Picker' },
+        },
+      ],
+      output: `import dynamic from 'next/dynamic';
+
+const A = 1,
+  Picker = dynamic(
+    async () => {
+      const mod = await import('@emoji-mart/react');
+      return mod.Picker;
+    },
+    { ssr: false },
+  );
+const App = () => <Picker />;`,
+    },
+    // A declaration nested in a function body lands one indentation step in
+    {
+      code: `import { useDynamic } from '../../hooks/useDynamic';
+function Wrapper() {
+  const EmojiPicker = useDynamic(import('@emoji-mart/react'));
+  return <EmojiPicker />;
+}`,
+      errors: [
+        {
+          messageId: 'preferNextDynamic',
+          data: { componentName: 'EmojiPicker' },
+        },
+      ],
+      output: `import dynamic from 'next/dynamic';
+
+function Wrapper() {
+  const EmojiPicker = dynamic(
+    async () => {
+      const mod = await import('@emoji-mart/react');
+      return mod.default;
+    },
+    { ssr: false },
+  );
+  return <EmojiPicker />;
+}`,
+    },
+    // Nested inside an arrow function body, with `dynamic` already imported
+    {
+      code: `import dynamic from 'next/dynamic';
+import { useDynamic } from '../../hooks/useDynamic';
+const App = () => {
+  const EmojiPicker = useDynamic(import('@emoji-mart/react'));
+  return <EmojiPicker />;
+};`,
+      errors: [
+        {
+          messageId: 'preferNextDynamic',
+          data: { componentName: 'EmojiPicker' },
+        },
+      ],
+      output: `import dynamic from 'next/dynamic';
+const App = () => {
+  const EmojiPicker = dynamic(
+    async () => {
+      const mod = await import('@emoji-mart/react');
+      return mod.default;
+    },
+    { ssr: false },
+  );
+  return <EmojiPicker />;
+};`,
+    },
+    // A multi-declarator inside a function body stacks both depths: the
+    // continuation line sits four columns in
+    {
+      code: `import { useDynamic } from '../../hooks/useDynamic';
+function Wrapper() {
+  const A = 1,
+    EmojiPicker = useDynamic(import('@emoji-mart/react'));
+  return <EmojiPicker data-a={A} />;
+}`,
+      errors: [
+        {
+          messageId: 'preferNextDynamic',
+          data: { componentName: 'EmojiPicker' },
+        },
+      ],
+      output: `import dynamic from 'next/dynamic';
+
+function Wrapper() {
+  const A = 1,
+    EmojiPicker = dynamic(
+      async () => {
+        const mod = await import('@emoji-mart/react');
+        return mod.default;
+      },
+      { ssr: false },
+    );
+  return <EmojiPicker data-a={A} />;
+}`,
     },
     // The inserted import lands after a directive prologue, and the emitted
     // call still carries its trailing comma
