@@ -467,7 +467,6 @@ const UNREWRITTEN_OWNERS: Record<string, UnrewrittenCause> = {
   'no-async-array-filter': 'noEnabledRuleFixesIt',
   'no-async-foreach': 'noEnabledRuleFixesIt',
   'no-filter-without-return': 'noEnabledRuleFixesIt',
-  'no-jsx-whitespace-literal': 'noEnabledRuleFixesIt',
   'no-memoize-on-static': 'noEnabledRuleFixesIt',
   'no-misused-switch-case': 'noEnabledRuleFixesIt',
   'no-separate-loading-state': 'noEnabledRuleFixesIt',
