@@ -1,5 +1,162 @@
 [
   {
+    "version": "1.20.172",
+    "date": "2026-08-24T16:48:04.154Z",
+    "rules": [
+      {
+        "name": "enforce-dynamic-firebase-imports",
+        "changeType": "fix",
+        "issues": [
+          2103
+        ],
+        "summary": "anchor the awaited import behind guards, state flips and try blocks it must not jump (closes #2103)"
+      },
+      {
+        "name": "enforce-early-destructuring",
+        "changeType": "fix",
+        "issues": [
+          2081
+        ],
+        "summary": "emit nested patterns expanded as prettier prints them (closes #2081)"
+      },
+      {
+        "name": "enforce-empty-object-check",
+        "changeType": "fix",
+        "issues": [
+          2082,
+          2095
+        ],
+        "summary": "break the widened condition's statement header at print width the way prettier does (closes #2095); parenthesize the widened guard only where its position needs it (closes #2082)"
+      },
+      {
+        "name": "enforce-fieldpath-syntax-in-docsetter",
+        "changeType": "fix",
+        "issues": [
+          2083,
+          2096
+        ],
+        "summary": "hoist only comments that sit outside a relocated leaf value, so the fix stops emitting them twice (closes #2096); re-indent the relocated value to its landing depth (closes #2083)"
+      },
+      {
+        "name": "enforce-firestore-doc-ref-generic",
+        "changeType": "fix",
+        "issues": [
+          2104
+        ],
+        "summary": "carry the rules-unit-testing exemption across a project module boundary (closes #2104)"
+      },
+      {
+        "name": "enforce-firestore-set-merge",
+        "changeType": "fix",
+        "issues": [
+          2084,
+          2097
+        ],
+        "summary": "lay { merge: true } out against the call's own argument list so prettier leaves it (closes #2097); emit the batch manager descriptor at its call site's depth (closes #2084)"
+      },
+      {
+        "name": "enforce-m3-sentence-case",
+        "changeType": "fix",
+        "issues": [
+          2105
+        ],
+        "summary": "read an interior capital as proper-noun evidence per word (closes #2105)"
+      },
+      {
+        "name": "ensure-pointer-events-none",
+        "changeType": "fix",
+        "issues": [
+          2085
+        ],
+        "summary": "insert the property on its own line (closes #2085)"
+      },
+      {
+        "name": "flatten-push-calls",
+        "changeType": "fix",
+        "issues": [
+          2086
+        ],
+        "summary": "emit the merged argument list flat while it fits the print width (closes #2086)"
+      },
+      {
+        "name": "jsdoc-above-field",
+        "changeType": "fix",
+        "issues": [
+          2093
+        ],
+        "summary": "attach trailing JSDoc by token order, not line sharing (closes #2093)"
+      },
+      {
+        "name": "memo-compare-deeply-complex-props",
+        "changeType": "fix",
+        "issues": [
+          2099
+        ],
+        "summary": "exempt Error-typed props, for which deep comparison is degenerate (closes #2099)"
+      },
+      {
+        "name": "no-jsx-whitespace-literal",
+        "changeType": "fix",
+        "issues": [
+          2092,
+          2102
+        ],
+        "summary": "report only spacer children (closes #2092, closes #2102)"
+      },
+      {
+        "name": "parallelize-async-operations",
+        "changeType": "fix",
+        "issues": [
+          2087
+        ],
+        "summary": "lay the Promise.all out as prettier prints it (closes #2087)"
+      },
+      {
+        "name": "prefer-clone-deep",
+        "changeType": "fix",
+        "issues": [
+          2088,
+          2094
+        ],
+        "summary": "re-lay-out the emitted call for its enclosing context and drop the redundant paren pair (closes #2094); terminate every emitted property with a comma (closes #2088)"
+      },
+      {
+        "name": "prefer-next-dynamic",
+        "changeType": "fix",
+        "issues": [
+          2089,
+          2100
+        ],
+        "summary": "derive the emitted call's indent from the line its replaced span starts on (closes #2100); carry the trailing comma on the emitted options argument (closes #2089)"
+      },
+      {
+        "name": "prefer-nullish-coalescing-boolean-props",
+        "changeType": "fix",
+        "issues": [
+          2090,
+          2101
+        ],
+        "summary": "re-emit a comment-bearing chain broken as prettier prints it (closes #2101); drop the parentheses `??` does not need (closes #2090)"
+      },
+      {
+        "name": "prefer-usecallback-over-usememo-for-functions",
+        "changeType": "fix",
+        "issues": [
+          2091
+        ],
+        "summary": "re-indent the unwrapped body (closes #2091)"
+      },
+      {
+        "name": "require-props-composition",
+        "changeType": "fix",
+        "issues": [
+          2098
+        ],
+        "summary": "credit props whose entire shape is a framework contract (closes #2098)"
+      }
+    ]
+  },
+  {
     "version": "1.20.171",
     "date": "2026-08-21T14:37:57.307Z",
     "rules": [
