@@ -484,8 +484,8 @@ const KNOWN_DIVERGENT: Record<string, Exemption> = {
   },
   'prefer-usecallback-over-usememo-for-functions::use-latest-callback': {
     reason:
-      'PIPELINE: sequential steps of one migration (`useMemo` -> `useCallback` -> `useLatestCallback`); multi-pass `--fix` converges and the sibling is silent on all 34.',
-    cases: { useLatestCallback: 34 },
+      'PIPELINE: sequential steps of one migration (`useMemo` -> `useCallback` -> `useLatestCallback`); multi-pass `--fix` converges and the sibling is silent on all 42. The count rose from 34 when #2091 added eight fixtures whose converted call carries a comment or a re-indented body — the same `useCallback(...)` output the 34 already produce, so each joins the existing disagreement rather than opening a new shape.',
+    cases: { useLatestCallback: 42 },
   },
   'prefer-utility-function-own-file::semantic-function-prefixes': {
     reason:
