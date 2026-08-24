@@ -198,11 +198,15 @@ The trace follows awaits, calls, member access, optional chaining, and type asse
 
 - **A local helper**, through what it returns — `const getDb = () => testEnv.authenticatedContext('u').firestore()`, whether written as an arrow, an expression body, or a hoisted `function`.
 - **The `withSecurityRulesDisabled` callback parameter**, annotated or not. The seeding block in the Firebase docs writes `async (context) => ...` with no annotation, so the call the callback belongs to is the only evidence of the surface.
+- **A provisioner shared through another module of the project**, named by a relative specifier (`'./util/rulesTestEnvironment'`, `'../util/rulesTestEnvironment'`). Extracting the provisioner does not change what it hands back — the handle is the same compat Firestore and `doc<T>(...)` is still `TS2558` — but this rule opens no other file, so the specifier alone cannot say so. Two gates therefore have to hold together, and neither counts on its own:
+  - **a relative specifier**, which names a module of the project under lint. A bare specifier names a package, and every published Firestore reached that way (`firebase/firestore`, `firebase-admin/firestore`) does accept the generic, so those roots keep reporting;
+  - **the `RulesTestEnvironment` context signature** on the chain itself: `authenticatedContext(...)`/`unauthenticatedContext(...)` followed by `.firestore()`, or the `context.firestore()` handed to a `withSecurityRulesDisabled` callback whose environment traces to such a root.
 
 The exemption is deliberately limited:
 
 - **An unannotated `let`/`var` initializer is refused**, because a later assignment can swap in an Admin SDK handle where the generic is both supportable and valuable. A **declared type is honoured on any binding kind**, including `let`: the environment handle is created in `beforeAll` and so cannot be `const`, and `let testEnv: RulesTestEnvironment` constrains every assignment in a way an initializer alone does not.
 - **The receiver decides, not the file.** An Admin SDK reference in a rules test is still reported.
+- **Crossing a module boundary is not itself a reason to exempt.** A handle imported from a project module and used without the context signature is reported, and so is a chain that carries the signature but roots in a package. The same `let`/`const` limit applies across the boundary as within the file.
 - **The modular `doc(db, path)` function is untouched.** It accepts the generic, so it still requires one.
 - **An explicit `DocumentReference` annotation is untouched.** The annotation is written by hand and can carry its generic regardless of the runtime surface.
 
@@ -236,6 +240,31 @@ it('reads', async () => {
   const adminDb = getFirestore();
   await adminDb.doc('User/uid').get();
 });
+```
+
+The cross-module carve-out, with both of its gates and the shape each one refuses:
+
+```ts
+import { provisionRulesTestEnvironment } from './util/rulesTestEnvironment';
+import { adminDb } from './util/adminFirestore';
+
+const getTestEnv = provisionRulesTestEnvironment('demo-project');
+
+export const seed = async () => {
+  await getTestEnv().withSecurityRulesDisabled(async (context) => {
+    // Correct: the compat handle is the same whichever module built the environment.
+    await context.firestore().doc('Tournament/t1').set({ ownerUserId: 'u' });
+  });
+};
+
+export const probe = async () => {
+  // Correct: the chain carries the context signature back to a project module.
+  await getTestEnv().authenticatedContext('u').firestore().doc('Tournament/t1').get();
+
+  // Incorrect: a relative import proves nothing on its own, and an Admin SDK
+  // handle reached through one accepts the generic like any other.
+  await adminDb.doc('Tournament/t1').get();
+};
 ```
 
 ### Examples of incorrect code
