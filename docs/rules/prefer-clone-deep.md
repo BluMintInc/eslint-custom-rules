@@ -86,6 +86,35 @@ of the formatter and the fix lands without formatting churn behind it. The one
 single-line emission is `{}`, for an override that collapses to nothing; its
 terminator belongs to the surrounding entry, never inside the braces.
 
+Parentheses that were doing work around the literal are absorbed into the
+replaced range, because a `cloneDeep(...)` call is a `LeftHandSideExpression`
+and needs none of them:
+
+```ts
+// before
+import { cloneDeep } from 'functions/src/util/cloneDeep';
+
+const result = ({ ...a, b: { ...a.b, c: 1 } } as const)!;
+```
+
+```ts
+// after --fix
+import { cloneDeep } from 'functions/src/util/cloneDeep';
+
+const result = cloneDeep(a, {
+  b: {
+    c: 1,
+  },
+} as const)!;
+```
+
+A parenthesis the **enclosing construct** owns is never absorbed, since deleting
+it would rewrite the program: an argument list's `(` (`doThing({ … })`), a
+statement head's (`if ((… as const).b)`), and a `new` callee's, where
+`new (fn())()` re-associates into `new fn()()` without its pair. Nor is a pair
+whose margin holds a comment — the fix still lands, and the comment stays where
+its author put it.
+
 The rule never writes an import of its own. Which specifier reaches the helper —
 or whether the helper exists at all — belongs to the consuming project, so a
 guessed import trades working code for a build error. Where the file does not
@@ -114,20 +143,46 @@ faithfully:
   `const` assertion applies only to a literal, so leaving it on the emitted call
   is TS1355, and it cannot be dropped without also dropping the `as Foo` in
   between.
+- A literal wrapped in an object or array literal that is written on a **single
+  line**, for example `const result = { key: { ...a, b: { ...a.b, c: 1 } } };`.
+  The emitted call is multi-line, so the enclosing literal has to break around
+  it — a range the fix does not own. Spelling the enclosing literal across lines
+  restores the fix.
 
 A `const` assertion applied **directly** to the literal is absorbed rather than
-declined: `const result = { ...a, nested: { ...a.nested, value: 42 } } as const;`
-becomes `const result = cloneDeep(a, { nested: { value: 42 } } as const);`, and
-any `as Foo`, `satisfies Foo` or `!` that follows the assertion is kept on the
-call. The emitted call already spells `as const` on its overrides literal, which
+declined — `{ ...a, nested: { ...a.nested, value: 42 } } as const` becomes a
+`cloneDeep(...)` call with no assertion left wrapping it — and any `as Foo`,
+`satisfies Foo` or `!` that follows the assertion is kept on the call. The
+emitted call already spells `as const` on its overrides literal, which
 is the one place the assertion stays legal after the rewrite. Absorbing it is
 also what keeps the fix reachable under a composed `--fix`: `global-const-style`
 appends `as const` to a module-scope constant before this rule's turn, and a
 fix declined on that assertion would never land. `as Foo` and `satisfies Foo`
 on the literal are legal on a call expression and keep their fix, as does
-`as const` on an *enclosing* literal such as
-`{ key: { ...a, nested: { ...a.nested, value: 42 } } } as const`, where the
-rewrite happens inside and the assertion still has a literal.
+`as const` on an *enclosing* literal, where the rewrite happens inside and the
+assertion still has a literal:
+
+```ts
+// before
+import { cloneDeep } from 'functions/src/util/cloneDeep';
+
+const result = {
+  key: { ...a, nested: { ...a.nested, value: 42 } },
+} as const;
+```
+
+```ts
+// after --fix
+import { cloneDeep } from 'functions/src/util/cloneDeep';
+
+const result = {
+  key: cloneDeep(a, {
+    nested: {
+      value: 42,
+    },
+  } as const),
+} as const;
+```
 
 Defensive spellings of the base path are recognized and dropped safely:
 `...(base?.x ?? {})`, `...base.x!` and `...base['x']` all mirror `base.x`. Array,
