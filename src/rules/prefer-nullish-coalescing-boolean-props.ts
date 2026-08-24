@@ -831,8 +831,83 @@ function isParenthesized(
 }
 
 /**
+ * The operator a chain lands after when it is introduced by one, and the gap
+ * between that operator and the chain holds nothing but whitespace.
+ *
+ * Prettier keeps a chain that breaks off the operator's own line entirely: it
+ * breaks after `=`, `:` or `=>` and prints every operand one indent level in,
+ * so a fix that rebuilds a broken chain beside the operator emits a shape the
+ * formatter immediately rewrites. Claiming the operator's own line break is
+ * what lets the fix land that layout in one span.
+ *
+ * The landing shapes are the ones measured to take that break. `return`,
+ * `throw` and `yield` are absent because prettier parenthesizes a broken chain
+ * after them instead, and parentheses are tokens: adding them because a comment
+ * is present would let the comment change the emitted program. A JSX attribute
+ * is absent because prettier answers it by re-breaking the whole opening
+ * element, which is outside the expression this fix owns. An argument, an array
+ * element and a parameter default are absent because prettier measurably keeps
+ * the chain's first operand beside them.
+ *
+ * A comment written between the operator and the chain has no anchor in the
+ * rebuilt text, so its presence withdraws the widening rather than letting the
+ * span delete it — the same discipline the redundant-paren widening keeps.
+ */
+function landingOperator(
+  node: TSESTree.LogicalExpression,
+  sourceCode: Readonly<TSESLint.SourceCode>,
+): TSESTree.Token | null {
+  const { parent } = node;
+  const token = sourceCode.getTokenBefore(node);
+  if (!parent || !token || token.type !== AST_TOKEN_TYPES.Punctuator) {
+    return null;
+  }
+  const lands =
+    (parent.type === AST_NODE_TYPES.VariableDeclarator &&
+      parent.init === node &&
+      token.value === '=') ||
+    (parent.type === AST_NODE_TYPES.AssignmentExpression &&
+      parent.right === node &&
+      token.value === parent.operator) ||
+    (parent.type === AST_NODE_TYPES.PropertyDefinition &&
+      parent.value === node &&
+      token.value === '=') ||
+    (parent.type === AST_NODE_TYPES.Property &&
+      parent.value === node &&
+      token.value === ':') ||
+    (parent.type === AST_NODE_TYPES.ArrowFunctionExpression &&
+      parent.body === node &&
+      token.value === '=>');
+  if (!lands) {
+    return null;
+  }
+  const gap = sourceCode.getText().slice(token.range[1], node.range[0]);
+  return gap.trim() === '' ? token : null;
+}
+
+/**
+ * Whether the rebuilt chain still holds a `||` link a later pass converts.
+ *
+ * Two things withhold the landing break from such a pass. The emitted layout is
+ * not the chain's final one — the surviving link comes back parenthesized and
+ * its own fix rewrites the same text again — and a fix reaching back to the
+ * landing operator starts EARLIER than that link's own fix, which starts at the
+ * chain's first operand. ESLint keeps the earlier of two overlapping fixes and
+ * drops the other, so claiming the operator here would convert the chain from
+ * the outside in and leave the inner link indented one level deeper than
+ * prettier prints it.
+ */
+function hasUnconvertedLink(node: TSESTree.LogicalExpression): boolean {
+  const isOrLink = (operand: TSESTree.Node) =>
+    operand.type === AST_NODE_TYPES.LogicalExpression &&
+    operand.operator === '||';
+  return isOrLink(node.left) || isOrLink(node.right);
+}
+
+/**
  * The span the fix replaces: the node, widened over parentheses the operator
- * swap makes redundant.
+ * swap makes redundant, or back through the operator the chain lands after when
+ * the rebuilt chain takes that operator's line break.
  *
  * A `||` can only be an operand of `??` when parentheses separate them, so those
  * parens survive into the fixed source even though `??` needs none against a
@@ -843,11 +918,18 @@ function isParenthesized(
  * `getCommentsInside(node)` never reports — a comment written there would be
  * deleted rather than carried, so its presence withdraws the widening and keeps
  * the (harmless) parens instead.
+ *
+ * The two widenings cannot both apply: a node whose parent is a `??` sits
+ * behind a `(`, never behind an operator a chain lands after.
  */
 function replacementRange(
   node: TSESTree.LogicalExpression,
   sourceCode: Readonly<TSESLint.SourceCode>,
+  landing: TSESTree.Token | null,
 ): TSESTree.Range {
+  if (landing) {
+    return [landing.range[1], node.range[1]];
+  }
   const { parent } = node;
   if (
     !parent ||
@@ -955,6 +1037,67 @@ function groupStrandedComments(
 }
 
 /**
+ * A comment written between the operands of a logical chain that demands a line
+ * of its own, whether this fix carries it or an earlier pass already baked it
+ * into an operand's text.
+ *
+ * The recursion follows only operands that are themselves logical expressions,
+ * because those are the links the rebuild joins into one chain. A comment nested
+ * inside an operand's own brackets — a line comment in an object literal passed
+ * to a call — belongs to that operand's layout and leaves the chain's own layout
+ * alone, which is how prettier prints it.
+ */
+function chainBreaksLine(
+  node: TSESTree.Node,
+  sourceCode: Readonly<TSESLint.SourceCode>,
+): boolean {
+  if (node.type !== AST_NODE_TYPES.LogicalExpression) {
+    return false;
+  }
+  return (
+    strandedComments(node, sourceCode).some(requiresLineBreakAfter) ||
+    chainBreaksLine(node.left, sourceCode) ||
+    chainBreaksLine(node.right, sourceCode)
+  );
+}
+
+/**
+ * The depths the rebuilt expression lands at.
+ *
+ * `lineIndent` is the indentation of the line the expression opens on, which is
+ * where the statement introducing it sits: text pushed ahead of that statement,
+ * and text resuming after the expression, belongs at that column.
+ *
+ * `bodyIndent` is where the chain's own lines belong. An expression that already
+ * opens its own line keeps that line's indentation; one sharing its opening line
+ * with the code that introduces it (`const uid = …`) is a continuation of that
+ * line and lands one level deeper, which is the column prettier gives the chain.
+ * Taking the opening line's indentation verbatim in that case drops every
+ * continuation operand to column 0 — an indentation no formatter produces and no
+ * author wrote.
+ *
+ * `opensItsLine` is also what decides whether the chain still needs the line
+ * break its landing operator carries: one already opening its own line has it.
+ *
+ * The step matches the indentation already in use so a tab-indented file is not
+ * given a space-indented continuation.
+ */
+function landingIndent(
+  node: TSESTree.LogicalExpression,
+  sourceCode: Readonly<TSESLint.SourceCode>,
+): { lineIndent: string; bodyIndent: string; opensItsLine: boolean } {
+  const startLine = sourceCode.lines[node.loc.start.line - 1] ?? '';
+  const lineIndent = /^[\t ]*/.exec(startLine)?.[0] ?? '';
+  const opensItsLine = startLine.slice(0, node.loc.start.column).trim() === '';
+  const step = lineIndent.includes('\t') ? '\t' : '  ';
+  return {
+    lineIndent,
+    bodyIndent: opensItsLine ? lineIndent : `${lineIndent}${step}`,
+    opensItsLine,
+  };
+}
+
+/**
  * `return`, `throw` and `yield` forbid a LineTerminator between themselves and
  * their operand, so a carried comment that demands its own line cannot sit
  * between one of them and the rewritten expression: a line comment there ends
@@ -1053,11 +1196,10 @@ export const preferNullishCoalescingBooleanProps = createRule<[], MessageIds>({
                   text: text.slice(comment.range[0], comment.range[1]),
                   breakAfter: requiresLineBreakAfter(comment),
                 });
-                // A carried comment's only anchor is the line the expression
-                // opens on, which can start mid-line.
-                const startLine =
-                  sourceCode.lines[node.loc.start.line - 1] ?? '';
-                const indent = /^[\t ]*/.exec(startLine)?.[0] ?? '';
+                const { lineIndent, bodyIndent, opensItsLine } = landingIndent(
+                  node,
+                  sourceCode,
+                );
 
                 // Inside parentheses a newline can never trigger ASI, so every
                 // comment can ride within the replacement on a line of its own.
@@ -1071,38 +1213,88 @@ export const preferNullishCoalescingBooleanProps = createRule<[], MessageIds>({
                 const hoisted = keyword
                   ? groups.leading.filter(requiresOwnLine)
                   : [];
+                const leadingSegments = groups.leading
+                  .filter((comment) => !hoisted.includes(comment))
+                  .map(toSegment);
+                const beforeOperatorSegments =
+                  groups.beforeOperator.map(toSegment);
+                const afterOperatorSegments =
+                  groups.afterOperator.map(toSegment);
+                const trailingSegments = groups.trailing.map(toSegment);
                 const segments: ReplacementSegment[] = [
-                  ...groups.leading
-                    .filter((comment) => !hoisted.includes(comment))
-                    .map(toSegment),
+                  ...leadingSegments,
                   {
                     text: parenthesizeLogical(leftText, node.left),
                     breakAfter: false,
                   },
-                  ...groups.beforeOperator.map(toSegment),
+                  ...beforeOperatorSegments,
                   { text: '??', breakAfter: false },
-                  ...groups.afterOperator.map(toSegment),
+                  ...afterOperatorSegments,
                   {
                     text: parenthesizeLogical(rightText, node.right),
                     breakAfter: false,
                   },
-                  ...groups.trailing.map(toSegment),
+                  ...trailingSegments,
                 ];
+
+                // Prettier prints every operand of a logical chain broken by a
+                // comment on a line of its own, so an operand re-joined onto the
+                // line above it lands non-canonical source. The break rides
+                // after the operator, where the chain's other breaks already
+                // sit, and only when nothing between the operands breaks the
+                // line already — a carried comment holding them apart needs no
+                // second separator.
+                const leftIndex = leadingSegments.length;
+                const operatorIndex =
+                  leftIndex + 1 + beforeOperatorSegments.length;
+                const rightIndex =
+                  operatorIndex + 1 + afterOperatorSegments.length;
+                const operandsSeparated = segments
+                  .slice(leftIndex, rightIndex)
+                  .some((segment) => segment.breakAfter);
+                if (
+                  !operandsSeparated &&
+                  (chainBreaksLine(node.left, sourceCode) ||
+                    chainBreaksLine(node.right, sourceCode))
+                ) {
+                  segments[operatorIndex] = {
+                    ...segments[operatorIndex],
+                    breakAfter: true,
+                  };
+                }
 
                 if (selfParens) {
                   return fixer.replaceText(
                     node,
-                    joinSegments(segments, indent),
+                    joinSegments(segments, bodyIndent),
                   );
                 }
 
-                const body = joinSegmentBody(segments, indent);
+                // Prettier prints a chain that breaks starting on its own
+                // line, so a first operand left beside the `=`, `:` or `=>` it
+                // lands after is text the formatter rewrites. The fix claims
+                // that operator's line break, but only where the chain does not
+                // open its own line already, so an input that carries the break
+                // is re-emitted byte-identical.
+                //
+                // The break belongs to the chain, so only the chain's own breaks
+                // ask for it: a comment trailing the whole expression sits
+                // outside it, and prettier leaves such a chain on one line.
+                const chainSpansLines = segments
+                  .slice(0, rightIndex)
+                  .some((segment) => segment.breakAfter);
+                const landing =
+                  chainSpansLines && !opensItsLine && !hasUnconvertedLink(node)
+                    ? landingOperator(node, sourceCode)
+                    : null;
+                const leading = landing ? `\n${bodyIndent}` : '';
+                const body = joinSegmentBody(segments, bodyIndent);
                 const trailing = segments[segments.length - 1].breakAfter
-                  ? `\n${indent}`
+                  ? `\n${lineIndent}`
                   : '';
                 const replacement = fixer.replaceTextRange(
-                  replacementRange(node, sourceCode),
-                  `${body}${trailing}`,
+                  replacementRange(node, sourceCode, landing),
+                  `${leading}${body}${trailing}`,
                 );
                 if (!keyword || hoisted.length === 0) {
                   return replacement;
@@ -1116,7 +1308,7 @@ export const preferNullishCoalescingBooleanProps = createRule<[], MessageIds>({
                           `${text.slice(
                             comment.range[0],
                             comment.range[1],
-                          )}\n${indent}`,
+                          )}\n${lineIndent}`,
                       )
                       .join(''),
                   ),
