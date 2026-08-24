@@ -693,6 +693,222 @@ const Comp = ({ title }: Props) => <div>{title}</div>;
 export const Wrapped = memo(Comp);
 `,
       },
+      // Bug #2099: an error instance has NO enumerable own properties, so a deep
+      // comparison rates any two same-class errors equal whatever they report.
+      // `compareDeeply('err')` would swallow the re-render that carries a fresh
+      // failure — the shape the `/_error` page is built on, where the error
+      // object's identity IS the signal. Exempt for the same reason DOM nodes
+      // are (#1327): deep equality says nothing about a non-plain object.
+      {
+        filename: 'src/components/ErrorPageContent.tsx',
+        code: `
+import { memo } from 'src/util/memo';
+type Props = { err: Error; statusCode: number };
+const Comp = ({ err, statusCode }: Props) => (
+  <div>{statusCode}{err.message}</div>
+);
+export const Wrapped = memo(Comp);
+`,
+      },
+      // The spelling an error prop almost always has: nullable, because there is
+      // no error until something fails.
+      {
+        filename: 'src/components/ErrorNullableProp.tsx',
+        code: `
+import { memo } from 'src/util/memo';
+type Props = { err: Error | null; statusCode: number };
+const Comp = ({ err, statusCode }: Props) => <div>{statusCode}</div>;
+export const Wrapped = memo(Comp);
+`,
+      },
+      {
+        filename: 'src/components/ErrorOptionalProp.tsx',
+        code: `
+import { memo } from 'react';
+type Props = { err?: Error; statusCode: number };
+const Comp = ({ err, statusCode }: Props) => <div>{statusCode}</div>;
+export const Wrapped = memo(Comp);
+`,
+      },
+      {
+        filename: 'src/components/ErrorNullUndefinedProp.tsx',
+        code: `
+import { memo } from 'react';
+type Props = { err: Error | null | undefined; statusCode: number };
+const Comp = ({ err, statusCode }: Props) => <div>{statusCode}</div>;
+export const Wrapped = memo(Comp);
+`,
+      },
+      // The other global error constructors carve out on the same terms: their
+      // instances are just as opaque to a structural comparison.
+      {
+        filename: 'src/components/ErrorSubtypeProps.tsx',
+        code: `
+import { memo } from 'react';
+type Props = { parseError: SyntaxError; typeError: TypeError; id: string };
+const Comp = ({ parseError, typeError, id }: Props) => <div>{id}</div>;
+export const Wrapped = memo(Comp);
+`,
+      },
+      {
+        filename: 'src/components/AggregateErrorProp.tsx',
+        code: `
+import { memo } from 'react';
+type Props = { err: AggregateError; id: string };
+const Comp = ({ err, id }: Props) => <div>{id}</div>;
+export const Wrapped = memo(Comp);
+`,
+      },
+      // A qualified name reaches the carve-out through its heritage rather than
+      // through its own spelling: `ErrnoException` is not a global error name.
+      {
+        filename: 'src/components/ErrnoExceptionProp.tsx',
+        code: `
+import { memo } from 'react';
+type Props = { err: NodeJS.ErrnoException | null; path: string };
+const Comp = ({ err, path }: Props) => <div>{path}</div>;
+export const Wrapped = memo(Comp);
+`,
+      },
+      // An authored subclass is an error too — the heritage walk finds the base
+      // the name alone would miss.
+      {
+        filename: 'src/components/ErrorSubclassProp.tsx',
+        code: `
+import { memo } from 'react';
+class RecoveryFailure extends Error {}
+type Props = { err: RecoveryFailure; id: string };
+const Comp = ({ err, id }: Props) => <div>{id}</div>;
+export const Wrapped = memo(Comp);
+`,
+      },
+      {
+        filename: 'src/components/ErrorInterfaceExtendsProp.tsx',
+        code: `
+import { memo } from 'react';
+interface HttpFailure extends Error { status: number }
+type Props = { err: HttpFailure; id: string };
+const Comp = ({ err, id }: Props) => <div>{id}</div>;
+export const Wrapped = memo(Comp);
+`,
+      },
+      // A container of errors compares just as degenerately as a lone one: two
+      // same-length lists of DIFFERENT errors are structurally equal element by
+      // element. Each container spelling is a different AST node, so each is
+      // pinned.
+      {
+        filename: 'src/components/ErrorArrayProp.tsx',
+        code: `
+import { memo } from 'react';
+type Props = { errs: Error[]; id: string };
+const Comp = ({ errs, id }: Props) => <div>{id}{errs.length}</div>;
+export const Wrapped = memo(Comp);
+`,
+      },
+      {
+        filename: 'src/components/ErrorReadonlyArrayProp.tsx',
+        code: `
+import { memo } from 'react';
+type Props = { errs: readonly Error[]; id: string };
+const Comp = ({ errs, id }: Props) => <div>{id}{errs.length}</div>;
+export const Wrapped = memo(Comp);
+`,
+      },
+      {
+        filename: 'src/components/ErrorGenericArrayProp.tsx',
+        code: `
+import { memo } from 'react';
+type Props = { errs: Array<Error>; id: string };
+const Comp = ({ errs, id }: Props) => <div>{id}{errs.length}</div>;
+export const Wrapped = memo(Comp);
+`,
+      },
+      {
+        filename: 'src/components/ErrorTupleProp.tsx',
+        code: `
+import { memo } from 'react';
+type Props = { errs: [Error, TypeError]; id: string };
+const Comp = ({ errs, id }: Props) => <div>{id}</div>;
+export const Wrapped = memo(Comp);
+`,
+      },
+      {
+        filename: 'src/components/NullableErrorArrayProp.tsx',
+        code: `
+import { memo } from 'react';
+type Props = { errs: (Error | null)[]; id: string };
+const Comp = ({ errs, id }: Props) => <div>{id}</div>;
+export const Wrapped = memo(Comp);
+`,
+      },
+      // A parameter constrained to an error holds one at every instantiation.
+      {
+        filename: 'src/components/ErrorTypeParameterProp.tsx',
+        code: `
+import { memo } from 'react';
+type Props<E extends Error> = { err: E; id: string };
+const Comp = <E extends Error,>(props: Props<E>) => <div>{props.id}</div>;
+export const Wrapped = memo(Comp);
+`,
+      },
+      // The annotation fallback: an unresolvable import leaves the prop as
+      // `any`, and only the written name is left to answer with.
+      {
+        filename: 'src/components/UnresolvedErrorImportProp.tsx',
+        code: `
+import { memo } from 'react';
+import type { HttpError } from 'totally-nonexistent-error-lib';
+type Props = { err: HttpError; id: string };
+const Comp = ({ err, id }: Props) => <div>{id}</div>;
+export const Wrapped = memo(Comp);
+`,
+      },
+      // The carve-out is a property of the prop, not of the analysis path: the
+      // component-signature and forwardRef type-argument paths reach
+      // `isPropertyComplex` through different callers.
+      {
+        filename: 'src/components/ErrorPropViaSignature.tsx',
+        code: `
+import { memo } from 'react';
+type Props = { err: Error; id: string };
+declare const Comp: (props: Props) => JSX.Element;
+export const Wrapped = memo(Comp);
+`,
+      },
+      {
+        filename: 'src/components/ErrorPropViaForwardRef.tsx',
+        code: `
+import { forwardRef, memo } from 'react';
+type Props = { err: Error | null; id: string };
+const Comp = forwardRef<HTMLDivElement, Props>((props, ref) => (
+  <div ref={ref}>{props.id}</div>
+));
+export const Wrapped = memo(Comp);
+`,
+      },
+      // The deliberate removal the report describes is stable: with the error
+      // prop exempt there is nothing left to demand, so `eslint --fix` has no
+      // report to re-insert `compareDeeply('err')` from.
+      {
+        filename: 'src/components/ErrorOnlyComponent.tsx',
+        code: `
+import { memo } from 'src/util/memo';
+type Props = { err: Error };
+const Comp = ({ err }: Props) => <div>{err.message}</div>;
+export const Wrapped = memo(Comp);
+`,
+      },
+      // Fix fixpoint: the emitted comparator names only the surviving prop, and
+      // the output it produces reports nothing on a second pass.
+      {
+        filename: 'src/components/ErrorBesideDataFixed.tsx',
+        code: `
+import { memo, compareDeeply } from 'src/util/memo';
+type Props = { err: Error | null; settings: { theme: string } };
+const Comp = ({ err, settings }: Props) => <div>{settings.theme}</div>;
+export const Wrapped = memo(Comp, compareDeeply('settings'));
+`,
+      },
     ]),
     invalid: withParserOptions(parserOptions, [
       // Bug #2039 control (NEG-1): the AUTHOR's own non-homomorphic mapped type
@@ -2157,6 +2373,151 @@ export const Wrapped = memo(ChannelPreviewUnmemoized /* keep */);
 `,
         output: null,
         errors: [{ messageId: 'useCompareDeeply' }],
+      },
+      // Bug #2099 control (NEG-1): the error carve-out must not swallow the
+      // genuine data prop sitting beside it. Pinned on the interpolated prop
+      // list rather than the bare messageId — only the NAMES separate "the
+      // carve-out narrowed the report" from "the carve-out disabled the rule
+      // for this component". The autofix is the second half of the report: it
+      // emits `compareDeeply('settings')` and never re-inserts `'err'`.
+      {
+        filename: 'src/components/ErrorBesideDataProp.tsx',
+        code: `
+import { memo } from 'src/util/memo';
+type Props = { err: Error | null; settings: { theme: string } };
+const Comp = ({ err, settings }: Props) => <div>{settings.theme}</div>;
+export const Wrapped = memo(Comp);
+`,
+        output: `
+import { memo, compareDeeply } from 'src/util/memo';
+type Props = { err: Error | null; settings: { theme: string } };
+const Comp = ({ err, settings }: Props) => <div>{settings.theme}</div>;
+export const Wrapped = memo(Comp, compareDeeply('settings'));
+`,
+        errors: [
+          {
+            messageId: 'useCompareDeeply',
+            data: {
+              componentName: 'Comp',
+              propsList: '[settings]',
+              propsCall: "'settings'",
+            },
+          },
+        ],
+      },
+      // NEG-2: a union that only PARTLY holds errors still carries a plain-data
+      // member, whose deep comparison is meaningful. `every`, not `some`.
+      {
+        filename: 'src/components/ErrorMixedUnionProp.tsx',
+        code: `
+import { memo } from 'src/util/memo';
+type Props = { err: Error | { theme: string }; id: string };
+const Comp = ({ err, id }: Props) => <div>{id}</div>;
+export const Wrapped = memo(Comp);
+`,
+        output: `
+import { memo, compareDeeply } from 'src/util/memo';
+type Props = { err: Error | { theme: string }; id: string };
+const Comp = ({ err, id }: Props) => <div>{id}</div>;
+export const Wrapped = memo(Comp, compareDeeply('err'));
+`,
+        errors: [
+          {
+            messageId: 'useCompareDeeply',
+            data: {
+              componentName: 'Comp',
+              propsList: '[err]',
+              propsCall: "'err'",
+            },
+          },
+        ],
+      },
+      // NEG-3: the origin gate. A project-authored type that reuses the name
+      // `Error` is a plain-data shape whose deep comparison is exactly what the
+      // rule is for, so it keeps its report.
+      {
+        filename: 'src/components/AuthoredErrorNameProp.tsx',
+        code: `
+import { memo } from 'src/util/memo';
+type Error = { field: string; text: string };
+type Props = { err: Error; id: string };
+const Comp = ({ err, id }: Props) => <div>{id}</div>;
+export const Wrapped = memo(Comp);
+`,
+        output: `
+import { memo, compareDeeply } from 'src/util/memo';
+type Error = { field: string; text: string };
+type Props = { err: Error; id: string };
+const Comp = ({ err, id }: Props) => <div>{id}</div>;
+export const Wrapped = memo(Comp, compareDeeply('err'));
+`,
+        errors: [
+          {
+            messageId: 'useCompareDeeply',
+            data: {
+              componentName: 'Comp',
+              propsList: '[err]',
+              propsCall: "'err'",
+            },
+          },
+        ],
+      },
+      // NEG-4: the error naming convention decides nothing on its own. A
+      // resolvable annotation is answered structurally, so a plain-data
+      // `ValidationError` is reported however it is spelled.
+      {
+        filename: 'src/components/ErrorNamedDataProp.tsx',
+        code: `
+import { memo } from 'src/util/memo';
+type ValidationError = { field: string; text: string };
+type Props = { err: ValidationError; errs: ValidationError[]; id: string };
+const Comp = ({ err, errs, id }: Props) => <div>{id}</div>;
+export const Wrapped = memo(Comp);
+`,
+        output: `
+import { memo, compareDeeply } from 'src/util/memo';
+type ValidationError = { field: string; text: string };
+type Props = { err: ValidationError; errs: ValidationError[]; id: string };
+const Comp = ({ err, errs, id }: Props) => <div>{id}</div>;
+export const Wrapped = memo(Comp, compareDeeply('err', 'errs'));
+`,
+        errors: [
+          {
+            messageId: 'useCompareDeeply',
+            data: {
+              componentName: 'Comp',
+              propsList: '[err, errs]',
+              propsCall: "'err', 'errs'",
+            },
+          },
+        ],
+      },
+      // NEG-5: an error-SHAPED plain object is not an error. Its `message` is an
+      // enumerable own property, so a deep comparison reads it.
+      {
+        filename: 'src/components/ErrorShapedObjectProp.tsx',
+        code: `
+import { memo } from 'src/util/memo';
+type Props = { err: { message: string }; id: string };
+const Comp = ({ err, id }: Props) => <div>{id}</div>;
+export const Wrapped = memo(Comp);
+`,
+        output: `
+import { memo, compareDeeply } from 'src/util/memo';
+type Props = { err: { message: string }; id: string };
+const Comp = ({ err, id }: Props) => <div>{id}</div>;
+export const Wrapped = memo(Comp, compareDeeply('err'));
+`,
+        errors: [
+          {
+            messageId: 'useCompareDeeply',
+            data: {
+              componentName: 'Comp',
+              propsList: '[err]',
+              propsCall: "'err'",
+            },
+          },
+        ],
       },
       // A bare `{}` prop type has no primitive member, so it keeps reporting: it
       // admits any non-nullish value, including a freshly built object.

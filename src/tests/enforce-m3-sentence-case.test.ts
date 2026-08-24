@@ -75,6 +75,71 @@ ruleTesterJsx.run('enforce-m3-sentence-case', enforceM3SentenceCase, {
     // camelCase / URL-like strings are skipped
     `<TextField label="camelCaseValue" />`,
 
+    // ── Intercapped proper nouns (issue #2105) ───────────────────────────────
+    // A capital away from a word's start is a proper-noun signal: Title Case
+    // would spell these "Blubot", "Paypal", "Typescript". None is enumerated in
+    // DEFAULT_IGNORED_WORDS, so each is caught by shape alone.
+    `<Button label="Enable BluBot in chat" />`,
+    `<Button label="Reconnect BluBot" />`,
+    `<Button label="Pay with PayPal" />`,
+    `<Button label="Open in TypeScript" />`,
+    `<Typography>Written in JavaScript</Typography>`,
+    `<Typography>Deploy to GitLab</Typography>`,
+    `<Typography>Chat on WhatsApp</Typography>`,
+    `<Typography>Host on DigitalOcean</Typography>`,
+    `<Typography>Visit McDonald today</Typography>`,
+    `<TextField label="Order a MacBook now" />`,
+
+    // The capitals need not follow a lower-case letter: "VSCode" is a name for
+    // the same reason "PayPal" is.
+    `<Typography>Open in VSCode</Typography>`,
+
+    // Surrounding punctuation is peeled off before the word is judged
+    `<Typography>Reconnect BluBot.</Typography>`,
+    `<Typography>Configure BluBot, then relax</Typography>`,
+    `<Typography>Use (BluBot) for moderation</Typography>`,
+
+    // A name at the sentence start stays a name
+    `<Typography>BluBot is offline</Typography>`,
+    `<Typography>McDonald opens at nine</Typography>`,
+
+    // Hyphenated text whose segments are all sentence case
+    `<Typography>Use the built-in BluBot commands</Typography>`,
+
+    // A possessive is judged by its segments, so the name still carries
+    `<Typography>Visit McDonald's today</Typography>`,
+
+    // A word that is both enumerated and intercapped resolves the same way
+    `<Typography>Sign in with GitHub</Typography>`,
+    `<Typography>Watch on YouTube</Typography>`,
+    `<Typography>Stream to TikTok</Typography>`,
+    `<Typography>Play on PlayStation</Typography>`,
+    `<Typography>Share to LinkedIn</Typography>`,
+    `<Typography>Buy an iPhone</Typography>`,
+    `<Typography>Run on macOS</Typography>`,
+
+    // A lower-case initial never reached the Title Case test to begin with
+    `<Typography>Join the eSports league</Typography>`,
+
+    // Brands supplied through the option are exempt whatever their shape
+    {
+      code: `<Typography>Welcome to AcmeCorp store</Typography>`,
+      options: [{ ignoredWords: ['AcmeCorp'] }],
+    },
+
+    // All-caps acronyms keep their own carve-out
+    `<Typography>Copy the URL</Typography>`,
+    `<Typography>Open the JSON file</Typography>`,
+
+    // Single-letter words carry no interior position at all
+    `<Typography>Grade A BluBot support</Typography>`,
+
+    // Single-token names pinned: the per-word test must not disturb the
+    // whole-string one they already rely on
+    `<Button label="BluBot" />`,
+    `<Button label="TypeScript" />`,
+    `<Button label="VSCode" />`,
+
     // The suggested output of an ALL-CAPS violation is itself valid — the fix
     // must be stable (issue #1370).
     `<Typography>The user's file</Typography>`,
@@ -584,6 +649,194 @@ ruleTesterJsx.run('enforce-m3-sentence-case', enforceM3SentenceCase, {
             {
               messageId: 'titleCase',
               output: `<TextField label="MacBook pro sale" />`,
+            },
+          ],
+        },
+      ],
+    },
+
+    // ── Genuine Title Case beside intercapped names (issue #2105) ────────────
+
+    // A single leading capital IS Title Case, so exempting "BluBot" must leave
+    // "Blubot" reportable.
+    {
+      code: `<Button label="Enable Blubot in chat" />`,
+      errors: [
+        {
+          messageId: 'titleCase',
+          suggestions: [
+            {
+              messageId: 'titleCase',
+              output: `<Button label="Enable blubot in chat" />`,
+            },
+          ],
+        },
+      ],
+    },
+    {
+      code: `<Typography>Enable Chat</Typography>`,
+      errors: [
+        {
+          messageId: 'titleCase',
+          suggestions: [
+            {
+              messageId: 'titleCase',
+              output: `<Typography>Enable chat</Typography>`,
+            },
+          ],
+        },
+      ],
+    },
+    {
+      code: `<TextField label="Enable Chat in stream" />`,
+      errors: [
+        {
+          messageId: 'titleCase',
+          suggestions: [
+            {
+              messageId: 'titleCase',
+              output: `<TextField label="Enable chat in stream" />`,
+            },
+          ],
+        },
+      ],
+    },
+    {
+      code: `<Typography>Enable Chat Bot</Typography>`,
+      errors: [
+        {
+          messageId: 'titleCase',
+          suggestions: [
+            {
+              messageId: 'titleCase',
+              output: `<Typography>Enable chat bot</Typography>`,
+            },
+          ],
+        },
+      ],
+    },
+    {
+      code: `<Typography>Save All Changes</Typography>`,
+      errors: [
+        {
+          messageId: 'titleCase',
+          suggestions: [
+            {
+              messageId: 'titleCase',
+              output: `<Typography>Save all changes</Typography>`,
+            },
+          ],
+        },
+      ],
+    },
+
+    // A Title Cased compound is not excused by its own hyphens: every segment
+    // carries a single leading capital.
+    {
+      code: `<Typography>Enable Drag-And-Drop mode</Typography>`,
+      errors: [{ messageId: 'titleCase' }],
+    },
+
+    // The name survives the rewrite that repairs the words around it
+    {
+      code: `<Typography>Visit McDonald Today</Typography>`,
+      errors: [
+        {
+          messageId: 'titleCase',
+          suggestions: [
+            {
+              messageId: 'titleCase',
+              output: `<Typography>Visit McDonald today</Typography>`,
+            },
+          ],
+        },
+      ],
+    },
+    {
+      code: `<Typography>Visit McDonald's Today</Typography>`,
+      errors: [
+        {
+          messageId: 'titleCase',
+          suggestions: [
+            {
+              messageId: 'titleCase',
+              output: `<Typography>Visit McDonald's today</Typography>`,
+            },
+          ],
+        },
+      ],
+    },
+    {
+      code: `<TextField label="Order a MacBook Today" />`,
+      errors: [
+        {
+          messageId: 'titleCase',
+          suggestions: [
+            {
+              messageId: 'titleCase',
+              output: `<TextField label="Order a MacBook today" />`,
+            },
+          ],
+        },
+      ],
+    },
+    // ...including where it carries trailing punctuation
+    {
+      code: `<Typography>Configure BluBot, Then Relax</Typography>`,
+      errors: [
+        {
+          messageId: 'titleCase',
+          suggestions: [
+            {
+              messageId: 'titleCase',
+              output: `<Typography>Configure BluBot, then relax</Typography>`,
+            },
+          ],
+        },
+      ],
+    },
+    // ...and where it opens the sentence, whose leading capital is otherwise
+    // re-applied by the suggestion
+    {
+      code: `<Typography>BluBot Is Offline</Typography>`,
+      errors: [
+        {
+          messageId: 'titleCase',
+          suggestions: [
+            {
+              messageId: 'titleCase',
+              output: `<Typography>BluBot is offline</Typography>`,
+            },
+          ],
+        },
+      ],
+    },
+    {
+      code: `<Typography>eSports Finals Today</Typography>`,
+      errors: [
+        {
+          messageId: 'titleCase',
+          suggestions: [
+            {
+              messageId: 'titleCase',
+              output: `<Typography>eSports finals today</Typography>`,
+            },
+          ],
+        },
+      ],
+    },
+
+    // A shouting token is not a name: it is still lower-cased in full while the
+    // intercapped word beside it is left alone.
+    {
+      code: `<Typography>Read The TERMS For BluBot</Typography>`,
+      errors: [
+        {
+          messageId: 'titleCase',
+          suggestions: [
+            {
+              messageId: 'titleCase',
+              output: `<Typography>Read the terms for BluBot</Typography>`,
             },
           ],
         },

@@ -138,6 +138,30 @@ function isAcronymToken(word: string): boolean {
 }
 
 /**
+ * True when a word carries an upper-case letter away from its start, which is
+ * positive evidence of a proper noun or identifier rather than of Title Case:
+ * Title Case capitalises a word's first letter and nothing else, so `BluBot`
+ * cannot be Title Case while `Blubot` can.  Detecting brands structurally is
+ * what spares `DEFAULT_IGNORED_WORDS` from having to enumerate every product
+ * and integration name that ever appears in a label.
+ *
+ * Two exclusions keep the signal honest:
+ * — Shouting tokens (`TERMS`, `HTTPS`) are all-upper by emphasis, not by name,
+ *   and belong to the acronym / ALL-CAPS handling instead.
+ * — Hyphen- and apostrophe-joined tokens are judged segment by segment, so a
+ *   Title Cased compound (`Drag-And-Drop`) is not excused by its own joins
+ *   while a genuine intercapped name (`McDonald's`) still is.
+ */
+function hasInteriorCapital(word: string): boolean {
+  return word.split(/[^A-Za-z0-9]+/).some((segment) => {
+    if (isAllUpperCase(segment)) return false;
+    const firstLetterIndex = segment.search(/[a-zA-Z]/);
+    if (firstLetterIndex === -1) return false;
+    return /[A-Z]/.test(segment.slice(firstLetterIndex + 1));
+  });
+}
+
+/**
  * Checks whether the raw text looks like code, a URL, or a file-path and
  * should be skipped entirely.
  */
@@ -147,7 +171,7 @@ function looksLikeCodeOrUrl(text: string): boolean {
   // File paths (starts with /, ./, ../)
   if (/^\.{0,2}\//.test(text)) return true;
   // camelCase / PascalCase single tokens with no spaces
-  if (/^\S+$/.test(text) && /[a-z][A-Z]/.test(text)) return true;
+  if (/^\S+$/.test(text) && hasInteriorCapital(text)) return true;
   return false;
 }
 
@@ -185,6 +209,8 @@ function titleCaseViolatingWords(
     if (ignoredWordsSet.has(word)) return;
     // Acronym
     if (isAcronymToken(word)) return;
+    // Proper noun identified by its shape rather than by enumeration
+    if (hasInteriorCapital(word)) return;
     // Only flag if the first character is an upper-case letter
     if (/^[A-Z]/.test(word)) {
       violating.push(word);
@@ -305,10 +331,11 @@ function buildAllCapsSuggestionText(
 
 /**
  * Builds the corrected text for a Title Case violation: non-first words that
- * are neither acronyms nor proper nouns are lower-cased.  Mixed-case tokens
- * only lose their leading capital (`Name` → `name`) so intra-word casing such
- * as `McDonald` survives, while shouting tokens (`CHANGES`) are lower-cased in
- * full.
+ * are neither acronyms nor proper nouns are lower-cased (`Name` → `name`),
+ * while shouting tokens (`CHANGES`) are lower-cased in full.  A word whose
+ * capitals sit away from its start (`McDonald`, `PayPal`) is a name, so it is
+ * emitted verbatim — lower-casing only its initial would yield `payPal`, which
+ * is neither the brand nor sentence case.
  */
 function buildTitleCaseSuggestionText(
   text: string,
@@ -325,6 +352,10 @@ function buildTitleCaseSuggestionText(
           // Proper nouns and acronyms keep their original capitalisation.
           if (ignoredWordsSet.has(core)) return raw;
           if (isAcronymToken(core)) return raw;
+          // Structurally identified names are emitted verbatim, including at a
+          // sentence start: `capitalizeFirstLetter` would rewrite `eSports` to
+          // `ESports`, misspelling a word the report never objected to.
+          if (hasInteriorCapital(core)) return raw;
           const lowered = isAllUpperCase(core)
             ? core.toLowerCase()
             : core.charAt(0).toLowerCase() + core.slice(1);

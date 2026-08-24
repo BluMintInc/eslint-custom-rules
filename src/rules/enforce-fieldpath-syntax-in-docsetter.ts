@@ -217,6 +217,8 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
       sourceLine: number;
       /** Absolute source lines whose leading whitespace must not be shifted. */
       frozenLines: ReadonlySet<number>;
+      /** Source span the value text is copied from, comments included. */
+      valueRange: TSESTree.Range;
     };
 
     // A block comment whose continuation lines are `*`-aligned is layout that
@@ -336,6 +338,7 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
           // which is the depth every continuation line is relative to
           sourceLine: property.value.loc.start.line,
           frozenLines: frozenLinesOf(property.value, sourceCode),
+          valueRange: property.value.range,
         });
       }
 
@@ -444,18 +447,34 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
     }
 
     // Render the dot-path replacement for a single nested property. Comments
-    // living inside the property are re-emitted ahead of the flattened entries
-    // so directives such as eslint-disable-next-line keep covering the rewritten
-    // code rather than being destroyed by the fix.
+    // living between the property's nested members are re-emitted ahead of the
+    // flattened entries so directives such as eslint-disable-next-line keep
+    // covering the rewritten code rather than being destroyed by the fix.
+    //
+    // A comment inside a leaf value is excluded: that value's text is copied
+    // verbatim into its entry, so the comment already travels with the code it
+    // documents. Hoisting it as well emits it twice, the hoisted copy detached
+    // from its statement and reading as documentation of the whole entry
+    // (#2096).
     function renderFlattenedProperty(
       property: TSESTree.Property,
       entries: FieldPathEntry[],
       sourceCode: TSESLint.SourceCode,
     ): string {
-      const comments = sourceCode.getCommentsInside(property);
+      const isRelocatedWithValue = (comment: TSESTree.Comment) =>
+        entries.some(
+          ({ valueRange }) =>
+            comment.range[0] >= valueRange[0] &&
+            comment.range[1] <= valueRange[1],
+        );
+      const comments = sourceCode
+        .getCommentsInside(property)
+        .filter((comment) => !isRelocatedWithValue(comment));
       const ownLineIndent = getOwnLineIndent(property, sourceCode);
-      // A carried line comment would swallow the rest of the line, so anything
-      // holding one has to be laid out across multiple lines
+      // A hoisted line comment would swallow the rest of the line, so anything
+      // holding one has to be laid out across multiple lines. One left inside a
+      // relocated value is terminated by that value's own newline, so it forces
+      // no break of its own.
       const carriesLineComment = comments.some(
         (comment) => comment.type === AST_TOKEN_TYPES.Line,
       );

@@ -14,7 +14,7 @@
 - **What it checks**: Memoized components (`React.memo` or `memo` from `src/util/memo`) that lack a custom comparison function and have props typed as objects or arrays.
 - **How to fix**: Pass `compareDeeply('propName')` (listing each complex prop) as the second argument to `memo`, and ensure it is imported from `src/util/memo`.
 
-The rule ignores components that already provide a comparison function and skips the `children` prop to avoid noisy signals on intentionally dynamic children.
+The rule ignores components that already provide a comparison function and skips the `children` prop to avoid noisy signals on intentionally dynamic children. It also skips props whose deep comparison could not answer anything — React render types, DOM nodes and error instances — since none of those is a plain-data shape.
 
 ## Examples
 
@@ -72,6 +72,25 @@ type Props = TypographyProps & { title: string };
 const Heading = ({ title }: Props) => <h1>{title}</h1>;
 
 export const HeadingMemo = memo(Heading); // ✅ MUI's ~110 inherited props are not demanded
+```
+
+Error props are not reported. An error instance has no enumerable own properties,
+so a deep comparison of two distinct errors reports them equal and would suppress
+the re-render that carries a fresh failure.
+
+```tsx
+import { memo } from 'src/util/memo';
+
+type Props = { err: Error | null; statusCode: number };
+
+const ErrorPageContent = ({ err, statusCode }: Props) => (
+  <div>
+    <p>{statusCode}</p>
+    <p>{err ? err.message : 'no error'}</p>
+  </div>
+);
+
+export const ErrorPageContentMemo = memo(ErrorPageContent); // ✅ `err` is not demanded
 ```
 
 An open-ended literal union (`primitive & {}`) is a primitive at runtime, so it is not reported.
@@ -172,6 +191,12 @@ stands on its own and the source is left untouched.
 - Higher-order wrappers (e.g., `memo(forwardRef(...))`, `memo(connect(...)(Component))`) are analyzed; the comparator is added after the wrapped expression.
 - Immutable data structures — still reported; add an inline disable if deep comparison is not desired for that component.
 - React render types (`ReactNode`, `ReactElement`, `ComponentType`, `FC`, render-prop functions) and DOM element types (`HTMLElement | null` anchors, containers) — not reported; they are stable references, and deep-comparing a DOM node walks React's circular fiber back-references.
+- Error props (`Error`, `TypeError`, `NodeJS.ErrnoException`, an authored `class AppError extends Error`, and arrays/tuples of those) — not reported. An error instance exposes no enumerable own properties: `name`, `message` and `stack` are all non-enumerable, so `fast-deep-equal` — and every structural comparison like it — rates any two same-class errors equal whatever they report. `compareDeeply('err')` would therefore swallow the re-render that carries a *fresh* failure, and on a path where the error object's identity is the semantic signal (an error page staying mounted while a second route fails) that suppressed render is a correctness bug rather than a saved render. Deep comparison is demanded only for plain-data shapes where structural equality is semantically valid. Consequences worth knowing:
+  - Because the prop never enters the report, the autofix cannot re-insert `compareDeeply('err')` either. A deliberate removal is stable, with no `eslint-disable` comment needed to hold it.
+  - The exemption is decided by the type's heritage, so a project-authored type that merely reuses the name (`type Error = { field: string }`) is still reported — as is an error-*shaped* plain object (`{ message: string }`), whose `message` is an enumerable own property a deep comparison can read.
+  - A union carries the exemption only when every non-nullish member is an error, so `Error | null` is exempt while `Error | { theme: string }` is still reported.
+  - An error prop sitting beside a genuine data prop narrows the report rather than silencing it: `{ err: Error; settings: { theme: string } }` still demands `compareDeeply('settings')`.
+  - Where the checker cannot resolve the annotation at all (an unresolvable import, an absent lib), the written name decides: a type reference whose rightmost name ends in `Error` or `Exception` is treated as one. That fallback applies *only* to an unresolved annotation — a resolvable `ValidationError` is answered by its heritage and keeps its report.
 - Reserved React slots (`ref`, `key`) — skipped, because React strips them before the memo equality function runs.
 - Props declared by a dependency — not reported. TypeScript surfaces inherited members, so a props type that extends or intersects a library interface (MUI's `TypographyProps`, React's `HTMLAttributes`) exposes that library's entire surface, and demanding all of it produces lists past a hundred names for props the component neither declares nor receives. A prop is kept only when at least one of its declaration sites is authored code — i.e. not a declaration file and not under `node_modules`. A prop with no declaration site at all is classified instead by the type that carries it, found by decomposing intersections and generic wrappers. Consequences worth knowing:
   - A prop the author redeclares alongside the library's own (`LibProps & { classes: { root: string } }`) carries both declaration sites and is still reported.

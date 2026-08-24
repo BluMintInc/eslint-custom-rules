@@ -1531,6 +1531,281 @@ export const ButtonList = ({ title, items }: ButtonListProps) => (
 );
 `,
     },
+    // 92. Issue #2098: the exact shape Next hands a custom `pages/_error`. The
+    // props are the framework's routing contract, so composing them from the
+    // presentational child would invert the dependency.
+    {
+      filename: 'src/components/error/ErrorPageContent.tsx',
+      code: `
+export type ErrorPageContentProps = Readonly<{
+  statusCode: number | undefined;
+  err: Error | undefined;
+}>;
+export const ErrorPageContent = ({ statusCode, err }: ErrorPageContentProps) => (
+  <UniversalAppStatus statusCode={statusCode} err={err} />
+);
+`,
+    },
+    // 93. Issue #2098: the router's error contract on its own — the second file
+    // the report names.
+    {
+      filename: 'src/components/error/ClientExceptionRecovery.tsx',
+      code: `
+export type ClientExceptionRecoveryProps = Readonly<{ err: Error | undefined }>;
+export const ClientExceptionRecovery = ({ err }: ClientExceptionRecoveryProps) => (
+  <UniversalAppStatus err={err} />
+);
+`,
+    },
+    // 94. Issue #2098: the contract without the Readonly wrapper — the wrapper is
+    // a house style, not part of what makes the shape the framework's.
+    {
+      filename: 'src/components/error/ErrorPageContent.tsx',
+      code: `
+export type ErrorPageContentProps = {
+  statusCode: number | undefined;
+  err: Error | undefined;
+};
+export const ErrorPageContent = ({ statusCode, err }: ErrorPageContentProps) => (
+  <UniversalAppStatus statusCode={statusCode} err={err} />
+);
+`,
+    },
+    // 95. Issue #2098: the statusCode half alone, the shape `next/error` hands a
+    // page that never sees the exception object.
+    {
+      filename: 'src/components/error/StatusPanel.tsx',
+      code: `
+export type StatusPanelProps = Readonly<{ statusCode: number }>;
+export const StatusPanel = ({ statusCode }: StatusPanelProps) => (
+  <UniversalAppStatus statusCode={statusCode} />
+);
+`,
+    },
+    // 96. Issue #2098: the optional spelling of the same contract — `?` and
+    // `| undefined` both say the framework may hand nothing.
+    {
+      filename: 'src/components/error/ErrorPageContent.tsx',
+      code: `
+export type ErrorPageContentProps = Readonly<{
+  statusCode?: number;
+  err?: Error;
+}>;
+export const ErrorPageContent = ({ statusCode, err }: ErrorPageContentProps) => (
+  <UniversalAppStatus statusCode={statusCode} err={err} />
+);
+`,
+    },
+    // 97. Issue #2098: the router hands `null` rather than `undefined` in some
+    // spellings; both are the same absence.
+    {
+      filename: 'src/components/error/ClientExceptionRecovery.tsx',
+      code: `
+export type ClientExceptionRecoveryProps = Readonly<{ err: Error | null }>;
+export const ClientExceptionRecovery = ({ err }: ClientExceptionRecoveryProps) => (
+  <UniversalAppStatus err={err} />
+);
+`,
+    },
+    // 98. Issue #2098: the contract named once and reused, which is how a repo
+    // shares a routing shape between the page and its content component.
+    {
+      filename: 'src/components/error/ErrorPageContent.tsx',
+      code: `
+type RouteErrorContract = Readonly<{
+  statusCode: number | undefined;
+  err: Error | undefined;
+}>;
+export type ErrorPageContentProps = RouteErrorContract;
+export const ErrorPageContent = ({ statusCode, err }: ErrorPageContentProps) => (
+  <UniversalAppStatus statusCode={statusCode} err={err} />
+);
+`,
+    },
+    // 99. Issue #2098: every member of the intersection is contract-only, so the
+    // whole surface is still dictated upstream.
+    {
+      filename: 'src/components/error/ErrorPageContent.tsx',
+      code: `
+export type ErrorPageContentProps = Readonly<{ statusCode: number | undefined }> &
+  Readonly<{ err: Error | undefined }>;
+export const ErrorPageContent = ({ statusCode, err }: ErrorPageContentProps) => (
+  <UniversalAppStatus statusCode={statusCode} err={err} />
+);
+`,
+    },
+    // 100. Issue #2098: every arm of the union is contract-only.
+    {
+      filename: 'src/components/error/ErrorPageContent.tsx',
+      code: `
+export type ErrorPageContentProps =
+  | Readonly<{ statusCode: number | undefined }>
+  | Readonly<{ err: Error | undefined }>;
+export const ErrorPageContent = (props: ErrorPageContentProps) => (
+  <UniversalAppStatus {...props} />
+);
+`,
+    },
+    // 101. Issue #2098: composition from the framework's own page-context type is
+    // credited — the shape is dictated upstream, so the rendered child cannot be
+    // its source of truth.
+    {
+      filename: 'src/components/error/ErrorPageContent.tsx',
+      code: `
+import type { NextPageContext } from 'next';
+export type ErrorPageContentProps = Readonly<Pick<NextPageContext, 'err'>>;
+export const ErrorPageContent = ({ err }: ErrorPageContentProps) => (
+  <UniversalAppStatus err={err} />
+);
+`,
+    },
+    // 102. Issue #2098: the framework contract reached through Omit, from a
+    // `next/*` subpath.
+    {
+      filename: 'src/components/app/AppShell.tsx',
+      code: `
+import type { AppProps } from 'next/app';
+export type AppShellProps = Omit<AppProps, 'router'>;
+export const AppShell = ({ Component, pageProps }: AppShellProps) => (
+  <ThemeProvider><Component {...pageProps} /></ThemeProvider>
+);
+`,
+    },
+    // 103. Issue #2098: the contract under a local rename — the import decides
+    // what the framework dictates, not the spelling at the annotation site.
+    {
+      filename: 'src/components/error/ErrorPageContent.tsx',
+      code: `
+import type { NextPageContext as PageContext } from 'next';
+export type ErrorPageContentProps = Pick<PageContext, 'err'>;
+export const ErrorPageContent = ({ err }: ErrorPageContentProps) => (
+  <UniversalAppStatus err={err} />
+);
+`,
+    },
+    // 104. Issue #2098: a framework member and a routing-contract member side by
+    // side — every member is dictated upstream, so the whole type is.
+    {
+      filename: 'src/components/error/ErrorPageContent.tsx',
+      code: `
+import type { NextPageContext } from 'next';
+export type ErrorPageContentProps = Pick<NextPageContext, 'err'> & {
+  statusCode: number | undefined;
+};
+export const ErrorPageContent = ({ statusCode, err }: ErrorPageContentProps) => (
+  <UniversalAppStatus statusCode={statusCode} err={err} />
+);
+`,
+    },
+    // 105. Issue #2098: the whole framework type referenced bare.
+    {
+      filename: 'src/components/error/ErrorPageContent.tsx',
+      code: `
+import type { NextPageContext } from 'next';
+export type ErrorPageContentProps = NextPageContext;
+export const ErrorPageContent = ({ err }: ErrorPageContentProps) => (
+  <UniversalAppStatus err={err} />
+);
+`,
+    },
+    // 106. Issue #2098: `Partial<...>` of the framework type is still the
+    // framework's surface.
+    {
+      filename: 'src/components/error/ErrorPageContent.tsx',
+      code: `
+import type { NextPageContext } from 'next';
+export type ErrorPageContentProps = Partial<NextPageContext>;
+export const ErrorPageContent = ({ err }: ErrorPageContentProps) => (
+  <UniversalAppStatus err={err} />
+);
+`,
+    },
+    // 107. Issue #2098: the framework contract behind an in-file alias, which the
+    // lexical alias resolution has to follow to see it.
+    {
+      filename: 'src/components/error/ErrorPageContent.tsx',
+      code: `
+import type { NextPageContext } from 'next';
+type RouteContract = Pick<NextPageContext, 'err'>;
+export type ErrorPageContentProps = Readonly<RouteContract>;
+export const ErrorPageContent = ({ err }: ErrorPageContentProps) => (
+  <UniversalAppStatus err={err} />
+);
+`,
+    },
+    // 108. Issue #2098: the carve-out is a property of the props type, not of the
+    // declaration form — a function declaration behaves as the arrow does.
+    {
+      filename: 'src/components/error/ErrorPageContent.tsx',
+      code: `
+export type ErrorPageContentProps = Readonly<{
+  statusCode: number | undefined;
+  err: Error | undefined;
+}>;
+export function ErrorPageContent({ statusCode, err }: ErrorPageContentProps) {
+  return <UniversalAppStatus statusCode={statusCode} err={err} />;
+}
+`,
+    },
+    // 109. Issue #2098: memo-wrapped, the shape the repo's own memoization rules
+    // push components into.
+    {
+      filename: 'src/components/error/ClientExceptionRecovery.tsx',
+      code: `
+export type ClientExceptionRecoveryProps = Readonly<{ err: Error | undefined }>;
+export const ClientExceptionRecovery = memo(
+  ({ err }: ClientExceptionRecoveryProps) => <UniversalAppStatus err={err} />,
+);
+`,
+    },
+    // 110. Issue #2098: `requireAllDependencies` cannot re-impose a composition
+    // the framework contract makes unsatisfiable — the option changes how many
+    // children must compose, not whose shape the props are.
+    {
+      filename: 'src/components/error/ErrorPageContent.tsx',
+      options: [{ requireAllDependencies: true }],
+      code: `
+export type ErrorPageContentProps = Readonly<{
+  statusCode: number | undefined;
+  err: Error | undefined;
+}>;
+export const ErrorPageContent = ({ statusCode, err }: ErrorPageContentProps) => (
+  <UniversalAppStatus statusCode={statusCode}>
+    <ErrorDetails err={err} />
+  </UniversalAppStatus>
+);
+`,
+    },
+    // 111. Issue #2098: a string-literal key names the same contract property.
+    {
+      filename: 'src/components/error/ClientExceptionRecovery.tsx',
+      code: `
+export type ClientExceptionRecoveryProps = Readonly<{ 'err': Error | undefined }>;
+export const ClientExceptionRecovery = ({ err }: ClientExceptionRecoveryProps) => (
+  <UniversalAppStatus err={err} />
+);
+`,
+    },
+    // 112. Issue #2098: only the name `Error` itself disqualifies the `err`
+    // member. A file that binds plenty of other types — imports, an alias, a
+    // class — still annotates the ambient `Error`, so the contract holds and the
+    // shadow check cannot stand in for "this file declares anything".
+    {
+      filename: 'src/components/error/ErrorPageContent.tsx',
+      code: `
+import type { NextPageContext } from 'next';
+import { UniversalAppStatus } from './UniversalAppStatus';
+type ErrorLike = { message: string };
+class ErrorBoundary {}
+export type ErrorPageContentProps = Readonly<{
+  statusCode: number | undefined;
+  err: Error | undefined;
+}>;
+export const ErrorPageContent = ({ statusCode, err }: ErrorPageContentProps) => (
+  <UniversalAppStatus statusCode={statusCode} err={err} />
+);
+`,
+    },
   ],
 
   invalid: [
@@ -2843,6 +3118,251 @@ export const ButtonList = ({ items }: ButtonListProps) => (
           },
         },
       ],
+    },
+    // 75. Issue #2098 negative control: one prop of the author's own alongside
+    // the contract, and the rendered child is a candidate owner of it again.
+    {
+      filename: 'src/components/error/ErrorPageContent.tsx',
+      code: `
+export type ErrorPageContentProps = Readonly<{
+  statusCode: number | undefined;
+  err: Error | undefined;
+  sx?: SxProps;
+}>;
+export const ErrorPageContent = ({ statusCode, err, sx }: ErrorPageContentProps) => (
+  <UniversalAppStatus statusCode={statusCode} err={err} sx={sx} />
+);
+`,
+      errors: [
+        {
+          messageId: 'missingPropsComposition',
+          data: {
+            componentName: 'ErrorPageContent',
+            propsTypeName: 'ErrorPageContentProps',
+            dependencyList: "'UniversalAppStatus'",
+            missingList: "'UniversalAppStatusProps'",
+            primaryDep: 'UniversalAppStatusProps',
+          },
+        },
+      ],
+    },
+    // 76. Issue #2098 negative control: the authored member arrives through an
+    // intersection rather than beside the contract in one literal.
+    {
+      filename: 'src/components/error/ErrorPageContent.tsx',
+      code: `
+export type ErrorPageContentProps = Readonly<{ err: Error | undefined }> & {
+  onRetry: () => void;
+};
+export const ErrorPageContent = ({ err, onRetry }: ErrorPageContentProps) => (
+  <UniversalAppStatus err={err} onRetry={onRetry} />
+);
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 77. Issue #2098 negative control: only one arm of the union is the
+    // contract, so the props type is not dictated upstream in its entirety.
+    {
+      filename: 'src/components/error/ErrorPageContent.tsx',
+      code: `
+export type ErrorPageContentProps =
+  | Readonly<{ err: Error | undefined }>
+  | Readonly<{ label: string }>;
+export const ErrorPageContent = (props: ErrorPageContentProps) => (
+  <UniversalAppStatus {...props} />
+);
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 78. Issue #2098 negative control: the contract's NAME with a type the
+    // framework never hands over — a status code of the author's own modelling.
+    {
+      filename: 'src/components/error/StatusPanel.tsx',
+      code: `
+export type StatusPanelProps = Readonly<{ statusCode: string }>;
+export const StatusPanel = ({ statusCode }: StatusPanelProps) => (
+  <UniversalAppStatus statusCode={statusCode} />
+);
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 79. Issue #2098 negative control: an `err` that is the repo's own failure
+    // shape, not the router's Error.
+    {
+      filename: 'src/components/error/ApiErrorPanel.tsx',
+      code: `
+type ApiFailure = { code: string };
+export type ApiErrorPanelProps = Readonly<{ err: ApiFailure }>;
+export const ApiErrorPanel = ({ err }: ApiErrorPanelProps) => (
+  <UniversalAppStatus err={err} />
+);
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 80. Issue #2098 negative control: the contract member widened with an
+    // authored arm is a shape its author chose.
+    {
+      filename: 'src/components/error/ApiErrorPanel.tsx',
+      code: `
+type ApiFailure = { code: string };
+export type ApiErrorPanelProps = Readonly<{ err: Error | ApiFailure }>;
+export const ApiErrorPanel = ({ err }: ApiErrorPanelProps) => (
+  <UniversalAppStatus err={err} />
+);
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 81. Issue #2098 negative control: a prop merely NAMED like the contract.
+    {
+      filename: 'src/components/error/ErrorBanner.tsx',
+      code: `
+export type ErrorBannerProps = Readonly<{ error: Error | undefined }>;
+export const ErrorBanner = ({ error }: ErrorBannerProps) => (
+  <UniversalAppStatus err={error} />
+);
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 82. Issue #2098 negative control: an index signature vouches for no named
+    // property, so nothing about it is the framework's contract.
+    {
+      filename: 'src/components/error/ErrorBag.tsx',
+      code: `
+export type ErrorBagProps = Readonly<{ [key: string]: Error | undefined }>;
+export const ErrorBag = (props: ErrorBagProps) => (
+  <UniversalAppStatus {...props} />
+);
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 83. Issue #2098 negative control: an empty props type declares no contract,
+    // so it cannot be dictated upstream.
+    {
+      filename: 'src/components/error/ErrorShell.tsx',
+      code: `
+export type ErrorShellProps = Readonly<{}>;
+export const ErrorShell = (props: ErrorShellProps) => (
+  <UniversalAppStatus {...props} />
+);
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 84. Issue #2098 negative control: the framework-contract name is bound by
+    // an ordinary relative import, so the framework dictated nothing.
+    {
+      filename: 'src/components/error/ErrorPageContent.tsx',
+      code: `
+import type { NextPageContext } from '../../types/nextPageContext';
+export type ErrorPageContentProps = Pick<NextPageContext, 'err'>;
+export const ErrorPageContent = ({ err }: ErrorPageContentProps) => (
+  <UniversalAppStatus err={err} />
+);
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 85. Issue #2098 negative control: a package whose name merely STARTS with
+    // the framework's is a different package.
+    {
+      filename: 'src/components/error/ErrorPageContent.tsx',
+      code: `
+import type { NextPageContext } from 'nextish-helpers';
+export type ErrorPageContentProps = Pick<NextPageContext, 'err'>;
+export const ErrorPageContent = ({ err }: ErrorPageContentProps) => (
+  <UniversalAppStatus err={err} />
+);
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 86. Issue #2098 negative control: an in-file alias shadows the framework
+    // import at the annotation site, so the local shape is what is annotated.
+    {
+      filename: 'src/components/error/ErrorPageContent.tsx',
+      code: `
+import type { NextPageContext } from 'next';
+export namespace ErrorViews {
+  type NextPageContext = { label: string };
+  type ErrorLabelProps = Pick<NextPageContext, 'label'>;
+  export const ErrorLabel = ({ label }: ErrorLabelProps) => (
+    <UniversalAppStatus label={label} />
+  );
+}
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 87. Issue #2098 negative control: the contract nested inside a property
+    // describes one FIELD, leaving the surrounding props the author's to compose.
+    {
+      filename: 'src/components/error/ErrorPageContent.tsx',
+      code: `
+import type { NextPageContext } from 'next';
+export type ErrorPageContentProps = Readonly<{
+  context: NextPageContext;
+  label: string;
+}>;
+export const ErrorPageContent = ({ context, label }: ErrorPageContentProps) => (
+  <UniversalAppStatus err={context.err} label={label} />
+);
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 88. Issue #2098 negative control: only the local name a NAMED import binds
+    // is credited, so a namespace-qualified reference proves nothing — a
+    // namespace object is not the type surface the framework dictates.
+    {
+      filename: 'src/components/error/ErrorPageContent.tsx',
+      code: `
+import * as Next from 'next';
+export type ErrorPageContentProps = Pick<Next.NextPageContext, 'err'>;
+export const ErrorPageContent = ({ err }: ErrorPageContentProps) => (
+  <UniversalAppStatus err={err} />
+);
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 89. Issue #2098 negative control: `err` is credited on its TYPE, and the
+    // only type the routing contract names is the ambient `Error`. A file that
+    // declares its own shadows it, so the annotation is the author's shape — the
+    // very case the type keying exists to exclude, which keying on the spelling
+    // alone would instead credit.
+    {
+      filename: 'src/components/error/ErrorPanel.tsx',
+      code: `
+type Error = { message: string };
+export type ErrorPanelProps = Readonly<{ err: Error }>;
+export const ErrorPanel = ({ err }: ErrorPanelProps) => (
+  <UniversalAppStatus err={err} />
+);
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 90. Issue #2098 negative control: the same shadowing through an import,
+    // which is how a repo that models its own failures actually binds the name.
+    {
+      filename: 'src/components/error/ErrorPanel.tsx',
+      code: `
+import type { Error } from '../../types/errors';
+export type ErrorPanelProps = Readonly<{ statusCode: number; err: Error }>;
+export const ErrorPanel = ({ statusCode, err }: ErrorPanelProps) => (
+  <UniversalAppStatus statusCode={statusCode} err={err} />
+);
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 91. Issue #2098 negative control: an interface and a class bind the name
+    // just as a type alias does, and a binding nested inside another scope is
+    // still the file declaring its own `Error`.
+    {
+      filename: 'src/components/error/ErrorPanel.tsx',
+      code: `
+export namespace Errors {
+  export interface Error { message: string }
+}
+export type ErrorPanelProps = Readonly<{ err: Error | undefined }>;
+export const ErrorPanel = ({ err }: ErrorPanelProps) => (
+  <UniversalAppStatus err={err} />
+);
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
     },
   ],
 });
