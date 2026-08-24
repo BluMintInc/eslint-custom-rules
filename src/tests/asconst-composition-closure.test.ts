@@ -361,7 +361,6 @@ const UNDRIVEN: Record<string, UndrivenCause> = {
   'enforce-dynamic-file-naming': 'noAssertionAdded',
   'enforce-dynamic-imports': 'noAssertionAdded',
   'enforce-early-destructuring': 'noAssertionAdded',
-  'enforce-empty-object-check': 'noAssertionAdded',
   'enforce-f-extension-for-entry-points': 'noAssertionAdded',
   'enforce-fieldpath-syntax-in-docsetter': 'noAssertionAdded',
   'enforce-firestore-path-utils': 'noAssertionAdded',
