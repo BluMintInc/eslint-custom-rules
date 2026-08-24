@@ -61,7 +61,7 @@ and fix as before.
 
 ### Autofix
 
-- Rewrites a method call in place — only the method name and the tail of the argument list change — so the arguments keep their formatting and their comments. A comment inside a call is often an `eslint-disable` directive, and dropping one silently re-enables the rule it suppresses.
+- Rewrites a method call in place — the method name, the argument list's separators and its tail change, never an argument's own text beyond the indentation a re-laid-out list shifts — so the arguments keep their comments. A comment inside a call is often an `eslint-disable` directive, and dropping one silently re-enables the rule it suppresses. When the appended option cannot ride the closing line — an argument already spans lines, or the widened call would overrun the print width — the whole list is re-broken one argument per line, closing at the column the call opened at, which is the layout the consumer's formatter prints. A comment between the last argument and the closing parenthesis sits in the one gap that rewrite must replace, so the fix appends inline there instead of deleting it.
 - Binds `setDoc` as part of the same edit that emits it. `updateDoc(ref, data)` becomes `setDoc(ref, data, { merge: true })`, which needs `setDoc` in scope, so the import edit and the call rewrite ship as one fix: they sit in disjoint ranges, and a multi-rule `--fix` that applied one without the other would leave the file with an unbound name.
 - Renames the `updateDoc` entry — in `import { … } from 'firebase/firestore'` or in the object pattern of `await import('firebase/firestore')` — when the fix rewrites every reference to it, so an alias disappears together with the references that used it:
 

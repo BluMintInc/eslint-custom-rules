@@ -23,7 +23,16 @@ type MessageIds = 'preferSetMerge';
 const FIRESTORE_MODULES = new Set(['firebase/firestore', 'firebase-admin']);
 const UPDATE_DOC = 'updateDoc';
 const SET_DOC = 'setDoc';
-const MERGE_ARGUMENT = ', { merge: true }';
+const MERGE_OPTION = '{ merge: true }';
+/** The document data `setDoc` requires between the reference and the options. */
+const EMPTY_DATA = '{}';
+/**
+ * The width and indent step the consumer's formatter prints at. They decide the
+ * layout of an emitted argument list, so a fix that ignores them lands text the
+ * formatter immediately rewrites (#2097).
+ */
+const PRINT_WIDTH = 80;
+const INDENT_STEP = '  ';
 const BATCH_MANAGER = 'batchManager';
 /**
  * Realtime Database's batch manager is held under the same `batchManager` field
@@ -52,6 +61,15 @@ type FirestoreBinding = {
    */
   module: string;
   node: TSESTree.ImportSpecifier | TSESTree.Property;
+};
+
+/** Where one argument's own text starts and ends, comments on it included. */
+type ArgumentSpan = { start: number; end: number };
+
+type CallLayout = {
+  openParen: TSESTree.Token;
+  closeParen: TSESTree.Token;
+  spans: ArgumentSpan[];
 };
 
 /** The firestore module a dynamic `await import(…)` reads, if it is one. */
@@ -745,11 +763,234 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
     }
 
     /**
-     * `ref.update(…)` becomes `ref.set(…, { merge: true })` by editing only the
-     * method name and the tail of the argument list. Re-emitting the call from
-     * the text of each argument dropped everything between them — comments
+     * The parentheses of an argument list, with the source range each argument
+     * occupies INCLUDING the comments written against it.
+     *
+     * Absorbing the comments into the spans is what lets a re-layout rewrite
+     * the separators alone: every byte a comment occupies stays inside the span
+     * of the argument it annotates, so nothing between the arguments is ever
+     * part of a replaced range.
+     *
+     * Boundaries come from tokens rather than from node ranges because a node's
+     * range excludes the parentheses around it: `f((a), b)` would otherwise
+     * leave the closing parenthesis in a separator, and a rewritten separator
+     * would emit unbalanced code.
+     */
+    function callLayout(node: TSESTree.CallExpression): CallLayout | null {
+      const args = node.arguments;
+      if (args.length === 0) {
+        return null;
+      }
+      const openParen = sourceCode.getTokenAfter(
+        node.typeParameters ?? node.callee,
+        { filter: (token) => token.value === '(' },
+      );
+      const closeParen = sourceCode.getLastToken(node);
+      if (!openParen || closeParen?.value !== ')') {
+        return null;
+      }
+
+      const trailingComma = sourceCode.getTokenBefore(closeParen);
+      const spans: ArgumentSpan[] = [];
+      let leftBoundary: TSESTree.Token = openParen;
+      for (let index = 0; index < args.length; index++) {
+        const rightBoundary =
+          index === args.length - 1
+            ? trailingComma?.value === ','
+              ? trailingComma
+              : closeParen
+            : sourceCode.getTokenAfter(args[index], {
+                filter: (token) => token.value === ',',
+              });
+        if (!rightBoundary) {
+          return null;
+        }
+        const first = sourceCode.getTokenAfter(leftBoundary, {
+          includeComments: true,
+        });
+        const last = sourceCode.getTokenBefore(rightBoundary, {
+          includeComments: true,
+        });
+        if (!first || !last || first.range[0] >= last.range[1]) {
+          return null;
+        }
+        spans.push({ start: first.range[0], end: last.range[1] });
+        leftBoundary = rightBoundary;
+      }
+      return { openParen, closeParen, spans };
+    }
+
+    /**
+     * Whether a callee is a member chain the formatter breaks before it breaks
+     * an argument list, which puts the width answer out of this fixer's reach.
+     */
+    function calleeBreaksFirst(callee: TSESTree.Node): boolean {
+      let current = callee;
+      while (current.type === AST_NODE_TYPES.MemberExpression) {
+        current = current.object;
+      }
+      return current.type === AST_NODE_TYPES.CallExpression;
+    }
+
+    /**
+     * Whether the emitted argument list has to be printed one argument per
+     * line, closing on a line of its own.
+     *
+     * A formatter prints an argument list flat only while every argument prints
+     * flat and the whole call fits the print width; one argument that cannot
+     * puts every OTHER argument on a line of its own. Appending the option
+     * inline there emits text the formatter immediately re-breaks, so the fix
+     * is never a fixed point of the consumer's own formatting pass (#2097).
+     *
+     * A list written across lines answers the first half outright: this fixer
+     * never rewrites an argument's own text, so the flat layout is not among
+     * the shapes it could emit at all.
+     *
+     * The width half is answered only where the formatter's own answer is
+     * modelled end to end. A trailing options object gets hugged against the
+     * call when the argument before it is of another kind, and a member chain
+     * breaks before its arguments do; both print a layout this fixer cannot
+     * emit, so the list is left flat rather than laid out a way the formatter
+     * would rewrite.
+     */
+    function requiresBrokenList(
+      node: TSESTree.CallExpression,
+      layout: CallLayout,
+      appended: readonly string[],
+      nameDelta: number,
+    ): boolean {
+      const { openParen, closeParen, spans } = layout;
+      if (
+        sourceCode.text
+          .slice(openParen.range[1], closeParen.range[0])
+          .includes('\n')
+      ) {
+        return true;
+      }
+
+      const last = node.arguments[node.arguments.length - 1];
+      if (
+        (appended.length < 2 &&
+          last.type !== AST_NODE_TYPES.ObjectExpression) ||
+        calleeBreaksFirst(node.callee)
+      ) {
+        return false;
+      }
+      const line = sourceCode.lines[closeParen.loc.start.line - 1] ?? '';
+      const appendedWidth = appended.reduce(
+        (width, argument) => width + argument.length + ', '.length,
+        0,
+      );
+      if (line.length + nameDelta + appendedWidth <= PRINT_WIDTH) {
+        return false;
+      }
+      // Breaking the list settles the layout only while every argument then
+      // fits on the line of its own it lands on. One that does not is re-flowed
+      // INSIDE, which is a rewrite of that argument's own text.
+      const body = indentAt(openParen.range[0]).length + INDENT_STEP.length;
+      const widest = Math.max(
+        ...spans.map((span) => span.end - span.start),
+        ...appended.map((argument) => argument.length),
+      );
+      return body + widest + ','.length <= PRINT_WIDTH;
+    }
+
+    /**
+     * The edits that add `appended` to the end of a call's argument list, laid
+     * out the way the consumer's formatter prints the result.
+     *
+     * Neither layout re-emits an argument from its text. The broken one
+     * rewrites the SEPARATORS between the arguments and shifts the indentation
+     * of the ones that span lines, so everything between them — comments
      * included, and a dropped `eslint-disable` silently re-enables the rule it
-     * was suppressing — and dropped every argument past the second outright.
+     * was suppressing (#1877) — stays where it was written, attached to the
+     * argument it belongs to.
+     *
+     * `nameDelta` is how much the caller's own rename widens the call, since
+     * the two edits land on the same line and the width answer is about the
+     * line as it will be emitted.
+     */
+    function appendArguments(
+      fixer: TSESLint.RuleFixer,
+      node: TSESTree.CallExpression,
+      appended: readonly string[],
+      nameDelta: number,
+    ): TSESLint.RuleFix[] {
+      const args = node.arguments;
+      const inline = () => [
+        fixer.insertTextAfter(
+          args[args.length - 1],
+          appended.map((argument) => `, ${argument}`).join(''),
+        ),
+      ];
+
+      const layout = callLayout(node);
+      if (!layout || !requiresBrokenList(node, layout, appended, nameDelta)) {
+        return inline();
+      }
+      const { openParen, closeParen, spans } = layout;
+      const tail = spans[spans.length - 1];
+      // Between the last span and the closing parenthesis is the one gap the
+      // spans do not absorb, because a trailing comma may sit there. A comment
+      // past it would be inside a replaced range, so the list is left as it is
+      // and the option appended in place instead of deleting one.
+      if (
+        sourceCode
+          .getCommentsInside(node)
+          .some((comment) => comment.range[0] >= tail.end)
+      ) {
+        return inline();
+      }
+
+      // A broken list is indented one step past the line its parenthesis opens
+      // on, whatever depth that line sits at, and closes at that line's own
+      // column. A constant indent is right for exactly one call site.
+      const indent = indentAt(openParen.range[0]);
+      const body = `${indent}${INDENT_STEP}`;
+      const fixes = [
+        fixer.replaceTextRange(
+          [openParen.range[1], spans[0].start],
+          `\n${body}`,
+        ),
+      ];
+      for (let index = 1; index < spans.length; index++) {
+        fixes.push(
+          fixer.replaceTextRange(
+            [spans[index - 1].end, spans[index].start],
+            `,\n${body}`,
+          ),
+        );
+      }
+      // An argument laid out across lines was written against the line the call
+      // opens on; landing it a step deeper moves its interior with it.
+      for (const argument of args) {
+        if (argument.loc.start.line === argument.loc.end.line) {
+          continue;
+        }
+        const relocated = reindentRelocated(argument, body, sourceCode);
+        if (relocated !== sourceCode.getText(argument)) {
+          fixes.push(fixer.replaceText(argument, relocated));
+        }
+      }
+      fixes.push(
+        fixer.replaceTextRange(
+          [tail.end, closeParen.range[0]],
+          `${appended
+            .map((argument) => `,\n${body}${argument}`)
+            .join('')},\n${indent}`,
+        ),
+      );
+      return fixes;
+    }
+
+    /**
+     * `ref.update(…)` becomes `ref.set(…, { merge: true })` by editing the
+     * method name and the argument list's separators and tail — never the text
+     * of an argument itself, beyond the indentation a re-laid-out list shifts.
+     * Re-emitting the call from the text of each argument dropped everything
+     * between them — comments included, and a dropped `eslint-disable` silently
+     * re-enables the rule it was suppressing — and dropped every argument past
+     * the second outright.
      */
     function fixUpdateMethod(
       fixer: TSESLint.RuleFixer,
@@ -820,7 +1061,12 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
 
       return [
         fixer.replaceText(callee.property, 'set'),
-        fixer.insertTextAfter(lastArgument, MERGE_ARGUMENT),
+        ...appendArguments(
+          fixer,
+          node,
+          [MERGE_OPTION],
+          'set'.length - callee.property.name.length,
+        ),
       ];
     }
 
@@ -948,7 +1194,6 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
     type UpdateRewrite = {
       identifier: TSESTree.Identifier;
       call: TSESTree.CallExpression;
-      lastArgument: TSESTree.Node;
     };
 
     /**
@@ -1010,7 +1255,7 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
         ) {
           return null;
         }
-        rewrites.push({ identifier, call, lastArgument });
+        rewrites.push({ identifier, call });
       }
 
       // The reporting call has to be among them, or scope analysis did not link
@@ -1043,11 +1288,13 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
         fixer.replaceText(rewrite.identifier, SET_DOC),
         // `setDoc` takes the document data between the reference and the
         // options, so a call that passed no data gets an empty object to merge.
-        fixer.insertTextAfter(
-          rewrite.lastArgument,
+        ...appendArguments(
+          fixer,
+          rewrite.call,
           rewrite.call.arguments.length > 1
-            ? MERGE_ARGUMENT
-            : `, {}${MERGE_ARGUMENT}`,
+            ? [MERGE_OPTION]
+            : [EMPTY_DATA, MERGE_OPTION],
+          SET_DOC.length - rewrite.identifier.name.length,
         ),
       ];
     }
@@ -1116,13 +1363,7 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
           fixes.push(fixer.insertTextAfter(updateBinding.node, `, ${SET_DOC}`));
           plannedSetDocBinding = true;
         }
-        fixes.push(
-          ...rewriteCall(fixer, {
-            identifier: callee,
-            call: node,
-            lastArgument,
-          }),
-        );
+        fixes.push(...rewriteCall(fixer, { identifier: callee, call: node }));
         return fixes;
       }
 

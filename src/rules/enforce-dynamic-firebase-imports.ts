@@ -4,7 +4,9 @@ import {
   TSESLint,
   TSESTree,
 } from '@typescript-eslint/utils';
+import { ASTHelpers } from '../utils/ASTHelpers';
 import { createRule } from '../utils/createRule';
+import { statementsOf } from '../utils/lexicalScope';
 import {
   joinSegmentBody,
   requiresLineBreakAfter,
@@ -27,14 +29,14 @@ const isFunctionNode = (node: TSESTree.Node): node is FunctionNode =>
  * both contains it and satisfies `hostsDeclaration`.
  *
  * A reference sitting in a *synchronous* callback nested inside an async
- * function still resolves once the declaration heads the async body, because
- * the callback cannot run before the first statement of the body it is created
- * in — so the walk continues past non-async functions rather than giving up.
+ * function still resolves against a declaration in that function, because the
+ * callback cannot run before the statement that creates it — so the walk
+ * continues past non-async functions rather than giving up.
  *
  * The containment check is against the body rather than the function: a
  * reference in a parameter default or a signature type annotation is evaluated
- * before the body runs, so a declaration at the top of the body would come too
- * late for it.
+ * before the body runs, so no declaration inside the body is early enough
+ * for it.
  */
 const enclosingAsyncFunctionOf = (
   identifier: TSESTree.Identifier | TSESTree.JSXIdentifier,
@@ -79,6 +81,584 @@ const enclosingConciseAsyncArrowOf = (
     identifier,
     (fn) => fn.body.type !== AST_NODE_TYPES.BlockStatement,
   );
+
+/**
+ * One container the relocated declaration could head, seen from a single
+ * reference.
+ */
+type ReferenceSite = {
+  /** The node holding the statement list. */
+  readonly container: TSESTree.Node;
+  /** The statement list the container holds. */
+  readonly statements: readonly TSESTree.Node[];
+  /** The statement of that list the reference sits inside. */
+  readonly statement: TSESTree.Node;
+  /**
+   * Whether serving the reference from this container means leaving a `try`
+   * block that encloses it.
+   */
+  readonly leavesTryBlock: boolean;
+};
+
+/**
+ * Bodies that hold statements yet run as a function of their own, so an `await`
+ * written in one would belong to that function rather than to the enclosing
+ * async one — where it is not grammatical at all. A class static block runs
+ * during class definition, and a `namespace` body is emitted as an immediately
+ * invoked function.
+ */
+const AWAIT_OPAQUE_BODIES = new Set<string>([
+  AST_NODE_TYPES.StaticBlock,
+  AST_NODE_TYPES.TSModuleBlock,
+]);
+
+/**
+ * The containers that can serve one reference, innermost outward, up to the
+ * async body that hosts the declaration.
+ *
+ * `enclosingStatementLists` materialises the same walk, but it yields the lists
+ * alone; the statement each list holds the reference in is the half that
+ * decides the anchor, so the walk is spelled out here.
+ *
+ * Two kinds of container are dropped on the way out, both because a
+ * declaration written there would not serve the reference at all:
+ *
+ *   - a nested function, a class static block or a `namespace` body, and
+ *     everything under one: the `await` there would not be the async
+ *     function's. A reference inside one is served from the nearest container
+ *     OUTSIDE it, which is where that body is evaluated and therefore ahead of
+ *     every run of it.
+ *   - a `case` clause. It holds statements, but a lexical declaration written
+ *     directly in one is scoped to the whole `switch` block — in scope, and in
+ *     the temporal dead zone, for every other clause — which is the hazard
+ *     `no-case-declarations` exists for. The declaration heads the list the
+ *     `switch` itself sits in instead.
+ */
+const referenceSitesOf = (
+  identifier: TSESTree.Node,
+  body: TSESTree.BlockStatement,
+): ReferenceSite[] | null => {
+  const sites: ReferenceSite[] = [];
+  let child: TSESTree.Node = identifier;
+  let parent: TSESTree.Node | undefined = identifier.parent;
+  let leavesTryBlock = false;
+  while (parent) {
+    if (parent.type === AST_NODE_TYPES.TryStatement && parent.block === child) {
+      leavesTryBlock = true;
+    }
+    const opaque =
+      isFunctionNode(parent) || AWAIT_OPAQUE_BODIES.has(parent.type);
+    if (opaque) {
+      sites.length = 0;
+    }
+    const statements =
+      opaque || parent.type === AST_NODE_TYPES.SwitchCase
+        ? undefined
+        : statementsOf(parent);
+    if (statements?.includes(child)) {
+      sites.push({
+        container: parent,
+        statements,
+        statement: child,
+        leavesTryBlock,
+      });
+    }
+    if (parent === body) {
+      return sites;
+    }
+    child = parent;
+    parent = parent.parent;
+  }
+  // The body encloses every reference the caller collected, so the walk always
+  // meets it; a chain that does not is one this fixer has no position for.
+  return null;
+};
+
+/**
+ * Every container that can serve ALL references, innermost outward, as each
+ * reference's own site in it.
+ *
+ * The innermost is the position the fixer wants: it is the latest one, and so
+ * the one that jumps the fewest statements. It has to be a COMMON container
+ * though — a position inside a deeper branch would leave every reference
+ * outside that branch reading a binding not in scope, which is a crash rather
+ * than a placement — and the rest of the chain is kept because the innermost is
+ * not always usable: a container that runs its statements repeatedly hands the
+ * declaration back outward (see {@link repeatsAtomically}).
+ */
+const sharedSiteChainOf = (
+  chains: readonly ReferenceSite[][],
+): ReferenceSite[][] => {
+  const shared: ReferenceSite[][] = [];
+  for (const candidate of chains[0] ?? []) {
+    const matched = chains.map((chain) =>
+      chain.find((site) => site.statements === candidate.statements),
+    );
+    if (matched.every((site): site is ReferenceSite => site !== undefined)) {
+      shared.push(matched);
+    }
+  }
+  return shared;
+};
+
+/**
+ * The earliest statement the declaration must precede for one reference to read
+ * it.
+ *
+ * A `function` declaration is hoisted across its whole container, so a call
+ * written above it reaches the body before the statement position does. The
+ * only position that dominates every such call is the head of the list.
+ */
+const positionOf = (
+  statements: readonly TSESTree.Node[],
+  site: ReferenceSite,
+): number =>
+  site.statement.type === AST_NODE_TYPES.FunctionDeclaration
+    ? 0
+    : statements.indexOf(site.statement);
+
+const isDirective = (statement: TSESTree.Node): boolean =>
+  statement.type === AST_NODE_TYPES.ExpressionStatement &&
+  statement.expression.type === AST_NODE_TYPES.Literal &&
+  typeof statement.expression.value === 'string';
+
+const prologueLengthOf = (statements: readonly TSESTree.Node[]): number => {
+  const first = statements.findIndex((statement) => !isDirective(statement));
+  return first === -1 ? statements.length : first;
+};
+
+/**
+ * The children of `node` that the async function's own execution reaches.
+ *
+ * A nested function, a class static block and a `namespace` body are cut, the
+ * same boundary {@link referenceSitesOf} draws: what they hold runs when THEY
+ * are invoked, which is not a moment the relocated `await` moves, so their
+ * contents say nothing about the placement.
+ */
+const reachedChildrenOf = (node: TSESTree.Node): TSESTree.Node[] => {
+  const children: TSESTree.Node[] = [];
+  for (const [key, value] of Object.entries(node)) {
+    // `parent` points back up the tree, so following it would walk the whole
+    // file — and never terminate.
+    if (key === 'parent') {
+      continue;
+    }
+    for (const child of Array.isArray(value) ? value : [value]) {
+      if (
+        ASTHelpers.isNode(child) &&
+        !isFunctionNode(child) &&
+        !AWAIT_OPAQUE_BODIES.has(child.type)
+      ) {
+        children.push(child);
+      }
+    }
+  }
+  return children;
+};
+
+const walkReached = (
+  root: TSESTree.Node,
+  visit: (node: TSESTree.Node) => void,
+): void => {
+  const pending: TSESTree.Node[] = [root];
+  while (pending.length > 0) {
+    const node = pending.pop() as TSESTree.Node;
+    visit(node);
+    pending.push(...reachedChildrenOf(node));
+  }
+};
+
+/**
+ * The dotted path an expression names, or null when its spelling is not a fixed
+ * path (`queue[index]`, a call result).
+ *
+ * Paths are compared as text because the question they answer is whether a test
+ * and a later write touch the SAME state, and a member path has no binding of
+ * its own for a resolver to match on.
+ */
+const pathTextOf = (node: TSESTree.Node): string | null => {
+  if (node.type === AST_NODE_TYPES.Identifier) {
+    return node.name;
+  }
+  if (node.type === AST_NODE_TYPES.ThisExpression) {
+    return 'this';
+  }
+  if (
+    node.type === AST_NODE_TYPES.MemberExpression &&
+    !node.computed &&
+    node.property.type === AST_NODE_TYPES.Identifier
+  ) {
+    const object = pathTextOf(node.object);
+    return object === null ? null : `${object}.${node.property.name}`;
+  }
+  return null;
+};
+
+const readPathsInto = (node: TSESTree.Node, paths: Set<string>): void => {
+  const path = pathTextOf(node);
+  if (path !== null) {
+    paths.add(path);
+    // The object half of `ref.current` is read too, so a write that replaces
+    // `ref` outright still answers a test of `ref.current`. Recursing on the
+    // path itself rather than on its children keeps `current` — a property
+    // name, not a binding — out of the set.
+    if (node.type === AST_NODE_TYPES.MemberExpression) {
+      readPathsInto(node.object, paths);
+    }
+    return;
+  }
+  for (const child of reachedChildrenOf(node)) {
+    readPathsInto(child, paths);
+  }
+};
+
+/**
+ * The state a call flips, for the one flip whose spelling says so: a React
+ * `const [status, setStatus] = useState(...)` pair names the writer after the
+ * value, so `setStatus(...)` is a write to `status` even though no assignment
+ * is written anywhere.
+ *
+ * This is the flip the issue's own reproduction turns on (#2103): the guard
+ * tests `revealStatus` and the statement behind it calls
+ * `setRevealStatus('minting')`.
+ */
+const SETTER_NAME = /^set([A-Z])(.*)$/;
+
+const flippedStateOf = (callee: TSESTree.Node): string | null => {
+  if (callee.type !== AST_NODE_TYPES.Identifier) {
+    return null;
+  }
+  const matched = SETTER_NAME.exec(callee.name);
+  return matched ? `${matched[1].toLowerCase()}${matched[2]}` : null;
+};
+
+/** The state a statement writes, as a path, or null when it writes none. */
+const writtenPathOf = (node: TSESTree.Node): string | null => {
+  if (node.type === AST_NODE_TYPES.AssignmentExpression) {
+    return pathTextOf(node.left);
+  }
+  if (node.type === AST_NODE_TYPES.UpdateExpression) {
+    return pathTextOf(node.argument);
+  }
+  if (node.type === AST_NODE_TYPES.CallExpression) {
+    return flippedStateOf(node.callee);
+  }
+  return null;
+};
+
+const SUSPENDING_EXPRESSIONS = new Set<string>([
+  AST_NODE_TYPES.AwaitExpression,
+  AST_NODE_TYPES.YieldExpression,
+]);
+
+/** Where the code already gives up its turn, as source offsets. */
+const suspensionStartsIn = (root: TSESTree.Node): number[] => {
+  const starts: number[] = [];
+  walkReached(root, (node) => {
+    if (
+      SUSPENDING_EXPRESSIONS.has(node.type) ||
+      (node.type === AST_NODE_TYPES.ForOfStatement && node.await)
+    ) {
+      starts.push(node.range[0]);
+    }
+  });
+  return starts;
+};
+
+const LOOP_STATEMENTS = new Set<string>([
+  AST_NODE_TYPES.DoWhileStatement,
+  AST_NODE_TYPES.ForInStatement,
+  AST_NODE_TYPES.ForOfStatement,
+  AST_NODE_TYPES.ForStatement,
+  AST_NODE_TYPES.WhileStatement,
+]);
+
+/**
+ * Whether the container runs its statements repeatedly and, as written, without
+ * ever giving up its turn.
+ *
+ * Such a loop completes in one task, and code after it observes only its
+ * finished state. Anchoring inside it would insert a suspension the loop never
+ * had, so every iteration would hand control back — the same class of silent
+ * change as jumping a guard, one level down. The declaration is handed to the
+ * next container out instead, which is also where a reader would write it: one
+ * load ahead of the loop rather than an `await` per iteration.
+ *
+ * A loop that already awaits keeps the declaration: its iterations interleave
+ * either way, and a body that never runs then loads nothing at all.
+ */
+const repeatsAtomically = (container: TSESTree.Node): boolean => {
+  const loop = container.parent;
+  if (
+    !loop ||
+    !LOOP_STATEMENTS.has(loop.type) ||
+    (loop as unknown as { body: TSESTree.Node }).body !== container
+  ) {
+    return false;
+  }
+  return suspensionStartsIn(loop).length === 0;
+};
+
+/**
+ * Statements that leave their container to whatever follows it: none of them
+ * ends the container's own run.
+ *
+ * A block whose remainder returns is not a step towards the statements after
+ * it, so what is written there never runs behind the relocated `await` on this
+ * path and says nothing about the placement.
+ */
+const EXITING_STATEMENTS = new Set<string>([
+  AST_NODE_TYPES.BreakStatement,
+  AST_NODE_TYPES.ContinueStatement,
+  AST_NODE_TYPES.ReturnStatement,
+  AST_NODE_TYPES.ThrowStatement,
+]);
+
+const fallsThrough = (statements: readonly TSESTree.Node[]): boolean =>
+  !statements.some((statement) => EXITING_STATEMENTS.has(statement.type));
+
+/**
+ * Every statement the relocated `await` would newly precede: the rest of the
+ * anchor's own list, and then the rest of each list enclosing it, out to the
+ * function body.
+ *
+ * A check-then-act is not always written at the anchor's depth — a guard can
+ * follow the block the anchor sits in — so a region cut at the anchor's own
+ * container would read that guard as absent. The walk stops at the first level
+ * whose remainder cannot be left, since the statements past it do not run
+ * behind the `await` at all.
+ */
+const executedAfter = (
+  site: ReferenceSite,
+  index: number,
+  body: TSESTree.BlockStatement,
+): TSESTree.Node[] => {
+  const region: TSESTree.Node[] = [...site.statements.slice(index)];
+  let child: TSESTree.Node = site.container;
+  let parent: TSESTree.Node | undefined = site.container.parent;
+  let reachable = fallsThrough(region);
+  while (reachable && parent && child !== body) {
+    const enclosing = statementsOf(parent);
+    const position = enclosing ? enclosing.indexOf(child) : -1;
+    if (enclosing && position !== -1) {
+      // The statement holding `child` is already walked through `child` itself,
+      // so only what follows it is added.
+      const following = enclosing.slice(position + 1);
+      region.push(...following);
+      reachable = fallsThrough(following);
+    }
+    child = parent;
+    parent = parent.parent;
+  }
+  return region;
+};
+
+/** A path the region assigns, with the offset the assignment is written at. */
+type StateWrite = {
+  readonly path: string;
+  readonly start: number;
+};
+
+/**
+ * The `if` tests already passed on the way to the anchor.
+ *
+ * They are guards the injected `await` lands BEHIND rather than ahead of, which
+ * is a hazard of its own when the act they protect follows: a test read in the
+ * caller's task and an act performed a module load later leaves exactly the
+ * window the guard exists to close.
+ */
+const enclosingGuardTestsOf = (
+  anchor: TSESTree.Node,
+  body: TSESTree.BlockStatement,
+): TSESTree.Expression[] => {
+  const tests: TSESTree.Expression[] = [];
+  let child: TSESTree.Node = anchor;
+  let parent: TSESTree.Node | undefined = anchor.parent;
+  while (parent && child !== body) {
+    if (parent.type === AST_NODE_TYPES.IfStatement && parent.test !== child) {
+      tests.push(parent.test);
+    }
+    child = parent;
+    parent = parent.parent;
+  }
+  return tests;
+};
+
+/**
+ * Whether declaring the import ahead of `anchor` would put its `await` inside a
+ * check-then-act on state that outlives the call.
+ *
+ * This is the defect the issue leads with (#2103), and no anchor position
+ * escapes it: a re-entrancy guard reading `busy`, or a status test whose flip
+ * follows it, is written to run in the caller's own task, and a module load
+ * anywhere between the test and the act is the window a second call lands in.
+ * Both calls reach the test before either performs the act, and the guard stops
+ * guarding.
+ *
+ * Three conditions have to hold together, and each one alone is ordinary code:
+ *
+ *   - the test reads a path that a statement running behind the `await` WRITES.
+ *     A test of a value nothing here assigns (`if (op === 'mint')`) is a branch,
+ *     not a guard, and a suspension near it changes nothing it observes.
+ *   - the path outlives one call, which is what makes a second call able to see
+ *     the act. A binding declared inside the async function is created fresh
+ *     per call and, since the test and the act keep their order relative to
+ *     each other, cannot tell the difference.
+ *   - nothing suspends in the window already. A guard behind an existing
+ *     `await`, or one whose act is already reached through one, runs across
+ *     tasks whatever this fixer does, so the relocation is not what makes it
+ *     unreliable.
+ *
+ * Reads alone are deliberately not enough. Every reference is a read, so
+ * treating one as disqualifying would withhold the fix from every placement
+ * that has a branch in it — including sibling branches, where the anchor is the
+ * position a reader would pick.
+ */
+const jumpsCheckThenAct = (
+  anchor: TSESTree.Node,
+  region: readonly TSESTree.Node[],
+  body: TSESTree.BlockStatement,
+  outlivesCall: (path: string) => boolean,
+): boolean => {
+  const guards = enclosingGuardTestsOf(anchor, body);
+  const writes: StateWrite[] = [];
+  for (const statement of region) {
+    walkReached(statement, (node) => {
+      if (node.type === AST_NODE_TYPES.IfStatement) {
+        guards.push(node.test);
+      }
+      const written = writtenPathOf(node);
+      if (written !== null) {
+        writes.push({ path: written, start: node.range[0] });
+      }
+    });
+  }
+  if (guards.length === 0 || writes.length === 0) {
+    return false;
+  }
+
+  const suspensions = suspensionStartsIn(body);
+  return guards.some((test) => {
+    if (suspensions.some((start) => start < test.range[0])) {
+      return false;
+    }
+    const read = new Set<string>();
+    readPathsInto(test, read);
+    // A guard the `await` is inserted AHEAD of moves wholesale, test and all;
+    // one it is inserted BEHIND only has its window widened, so an existing
+    // suspension in that window means the fixer is not what opened it.
+    const jumped = test.range[0] > anchor.range[0];
+    return writes.some(
+      (write) =>
+        read.has(write.path) &&
+        outlivesCall(write.path) &&
+        (jumped ||
+          !suspensions.some(
+            (start) => start >= test.range[1] && start < write.start,
+          )),
+    );
+  });
+};
+
+/**
+ * The statement the relocated declaration goes immediately ahead of, or null
+ * when no position serves every reference safely.
+ *
+ * Heading the function body instead puts the module-load `await` in front of
+ * whatever the body ran before the first reference — a re-entrancy guard, a
+ * synchronous state flip — which turns synchronous prelude code into
+ * post-await code and silently changes behaviour (#2103). The declaration
+ * therefore heads the innermost list enclosing every reference, ahead of the
+ * first statement of that list holding one.
+ *
+ * Statements ahead of that anchor keep their order and stay ahead of the
+ * injected `await`, so the placement only ever moves the suspension point
+ * LATER than heading the body would. When the anchor already IS the head of
+ * the list, the emission is what heading the body produced all along.
+ *
+ * Three positions are refused rather than approximated:
+ *
+ *   - a reference inside a `try` block the anchor sits outside of. The `catch`
+ *     was written to absorb what that block throws, and a chunk-load rejection
+ *     is exactly what the relocated `await` adds to it, so an outside position
+ *     would let the rejection escape. No position is both inside the block and
+ *     in scope for a reference outside it, so the fix is withheld and the
+ *     report stands. Leaving a `catch` or `finally` block is not refused: what
+ *     they throw was never caught by their own `try`.
+ *   - a position that puts the module load inside a check-then-act on state
+ *     that outlives the call, per {@link jumpsCheckThenAct} — whether the
+ *     `await` lands ahead of the test or between the test and the act. That is
+ *     the issue's leading defect, and no anchor escapes it: the guard and the
+ *     reference it protects are frequently the same statement. The remedy the
+ *     issue asks for is the report without the fix, since a manual placement is
+ *     cheap and a guard that stops guarding is not.
+ *   - a directive prologue, which a declaration in front of would demote to a
+ *     discarded string expression.
+ *
+ * Nothing else is refused, because refusing costs a fix that exists today and
+ * buys nothing over it. A reference in a braceless guard body
+ * (`if (x) return create();`) is the sharpest case: its guard has no statement
+ * list, so the anchor is the guard itself and the `await` precedes the test.
+ * That is where heading the body already put it — the placement is never
+ * EARLIER than the fix it replaces, only later — and reaching between the test
+ * and the reference would mean giving a statement the fixer does not own a
+ * block it was not written with.
+ */
+const anchorStatementOf = (
+  identifiers: readonly TSESTree.Node[],
+  body: TSESTree.BlockStatement,
+  outlivesCall: (path: string) => boolean,
+): TSESTree.Node | null => {
+  const chains: ReferenceSite[][] = [];
+  for (const identifier of identifiers) {
+    const sites = referenceSitesOf(identifier, body);
+    if (!sites) {
+      return null;
+    }
+    chains.push(sites);
+  }
+
+  // The anchor an atomic loop body yields, kept in case no container further
+  // out is usable. An `await` per iteration is the milder of the two changes:
+  // it costs the loop its atomicity, where an outward position can cost a
+  // guard its guarantee or a `catch` its coverage.
+  let repeated: TSESTree.Node | null = null;
+  for (const shared of sharedSiteChainOf(chains)) {
+    if (shared.some((site) => site.leavesTryBlock)) {
+      break;
+    }
+    const { statements, container } = shared[0];
+    const earliest = shared.reduce(
+      (position, site) => Math.min(position, positionOf(statements, site)),
+      statements.length,
+    );
+    const index = Math.max(earliest, prologueLengthOf(statements));
+    const anchor = statements[index];
+    // A directive prologue that runs the whole list leaves no statement here.
+    // No reference can sit in a directive, so this is a floor rather than a
+    // placement, and the report stands on its own.
+    if (!anchor) {
+      break;
+    }
+    if (
+      jumpsCheckThenAct(
+        anchor,
+        executedAfter(shared[0], index, body),
+        body,
+        outlivesCall,
+      )
+    ) {
+      // Every container further out is EARLIER, so it jumps the same guard and
+      // more besides; there is nothing left to try.
+      return repeated;
+    }
+    if (!repeatsAtomically(container)) {
+      return anchor;
+    }
+    repeated = repeated ?? anchor;
+  }
+  return repeated;
+};
 
 const THIRD_PARTY_DIRECTORY = /(^|\/)node_modules(\/|$)/;
 
@@ -631,19 +1211,11 @@ const enforceFirebaseImports = createRule<Options, MessageIds>({
             printDeclaration(declaration, indent, fileIndentUnit(), printWidth),
           );
 
-        /**
-         * An `ImportDeclaration` only ever sits at module scope, so rewriting
-         * it in place can only ever produce a module-scope `await import(...)`
-         * — which defers nothing (the module still awaits it during
-         * evaluation) and does not even parse once the file is compiled to
-         * CommonJS, where top-level await does not exist (issue #1716).
-         *
-         * The rewrite is therefore only expressible when every value reference
-         * lives in one async function body: the declaration can then head that
-         * body, exactly the shape the codebase writes by hand. Anything else
-         * is a per-call-site refactor the fixer declines rather than corrupts.
-         */
-        const findRelocationTarget = (): FunctionNode | undefined => {
+        /** Every identifier that READS the import, type positions included. */
+        const valueReferences = (): (
+          | TSESTree.Identifier
+          | TSESTree.JSXIdentifier
+        )[] => {
           const valueLocalNames = new Set(
             [
               defaultSpecifier?.local.name,
@@ -652,11 +1224,30 @@ const enforceFirebaseImports = createRule<Options, MessageIds>({
             ].filter((name): name is string => name !== undefined),
           );
 
-          const references = context
+          return context
             .getDeclaredVariables(node)
             .filter((variable) => valueLocalNames.has(variable.name))
-            .flatMap((variable) => variable.references);
+            .flatMap((variable) => variable.references)
+            .map((reference) => reference.identifier);
+        };
 
+        /**
+         * The async function the declaration moves into.
+         *
+         * An `ImportDeclaration` only ever sits at module scope, so rewriting
+         * it in place can only ever produce a module-scope `await import(...)`
+         * — which defers nothing (the module still awaits it during
+         * evaluation) and does not even parse once the file is compiled to
+         * CommonJS, where top-level await does not exist (issue #1716).
+         *
+         * The rewrite is therefore only expressible when every value reference
+         * lives in one async function: the declaration can then move inside it,
+         * exactly the shape the codebase writes by hand. Anything else is a
+         * per-call-site refactor the fixer declines rather than corrupts.
+         */
+        const findRelocationTarget = (
+          references: readonly (TSESTree.Identifier | TSESTree.JSXIdentifier)[],
+        ): FunctionNode | undefined => {
           // Nothing reads the binding, so there is no call site to defer to.
           if (references.length === 0) {
             return undefined;
@@ -665,8 +1256,8 @@ const enforceFirebaseImports = createRule<Options, MessageIds>({
           let target: FunctionNode | undefined;
           for (const reference of references) {
             const enclosing =
-              enclosingAsyncBodyOf(reference.identifier) ??
-              enclosingConciseAsyncArrowOf(reference.identifier);
+              enclosingAsyncBodyOf(reference) ??
+              enclosingConciseAsyncArrowOf(reference);
             if (!enclosing || (target && target !== enclosing)) {
               return undefined;
             }
@@ -675,8 +1266,68 @@ const enforceFirebaseImports = createRule<Options, MessageIds>({
           return target;
         };
 
+        /**
+         * Whether a path names state that outlives one call of `fn`, and so
+         * state a SECOND call can observe between the injected `await` and the
+         * act that follows it.
+         *
+         * A bare name declared inside the function — a parameter, a local
+         * `let` — is created fresh per call, so no other call can read the one
+         * this call flips, and the test and the act keep their order relative
+         * to each other whatever precedes them. A member path is shared
+         * whatever binding roots it: `ref.current` and `this.busy` name a
+         * property of an object the call did not create, which is precisely
+         * the React ref that re-entrancy guards are written against.
+         */
+        const outlivesCallOf = (
+          fn: FunctionNode,
+        ): ((path: string) => boolean) => {
+          const local = new Set<string>();
+          const collect = (scope: TSESLint.Scope.Scope): void => {
+            for (const variable of scope.variables) {
+              local.add(variable.name);
+            }
+            scope.childScopes.forEach(collect);
+          };
+          const scope = sourceCode.scopeManager?.acquire(fn);
+          if (scope) {
+            collect(scope);
+          }
+          return (path: string) => path.includes('.') || !local.has(path);
+        };
+
         const indentationAt = (line: number): string =>
           /^[ \t]*/.exec(sourceCode.lines[line - 1] ?? '')?.[0] ?? '';
+
+        /** The text of a node's own line ahead of it, comments included. */
+        const linePrefixOf = (
+          subject: TSESTree.Node | TSESTree.Comment,
+        ): string =>
+          (sourceCode.lines[subject.loc.start.line - 1] ?? '').slice(
+            0,
+            subject.loc.start.column,
+          );
+
+        /**
+         * The run of comments written on their own lines directly above a
+         * statement.
+         *
+         * They document the statement, so the declaration goes ahead of the
+         * whole run rather than between a comment and its subject — which is
+         * also what heading the body did when the statement was the first one.
+         * A comment sharing a line with the code before it describes that code
+         * and ends the run.
+         */
+        const ownLineCommentsBefore = (
+          statement: TSESTree.Node,
+        ): TSESTree.Comment[] => {
+          const comments = sourceCode.getCommentsBefore(statement);
+          let first = comments.length;
+          while (first > 0 && linePrefixOf(comments[first - 1]).trim() === '') {
+            first -= 1;
+          }
+          return comments.slice(first);
+        };
 
         const commentSegment = (
           comment: TSESTree.Comment,
@@ -861,7 +1512,8 @@ const enforceFirebaseImports = createRule<Options, MessageIds>({
         };
 
         const buildFix: TSESLint.ReportFixFunction = (fixer) => {
-          const target = findRelocationTarget();
+          const references = valueReferences();
+          const target = findRelocationTarget(references);
           const declarations = buildDeclarations();
           if (!target || declarations.length === 0) {
             return null;
@@ -886,68 +1538,74 @@ const enforceFirebaseImports = createRule<Options, MessageIds>({
           }
 
           const body = target.body as TSESTree.BlockStatement;
-
-          // A directive stops being a directive the moment a declaration
-          // precedes it, so `'use server'` on a server action would silently
-          // become a discarded string expression. The declaration goes after
-          // the whole prologue instead.
-          const prologueLength = body.body.findIndex(
-            (statement) =>
-              statement.type !== AST_NODE_TYPES.ExpressionStatement ||
-              statement.expression.type !== AST_NODE_TYPES.Literal ||
-              typeof statement.expression.value !== 'string',
+          const anchor = anchorStatementOf(
+            references,
+            body,
+            outlivesCallOf(target),
           );
-          const directives = body.body.slice(
-            0,
-            prologueLength === -1 ? body.body.length : prologueLength,
-          );
-          const lastDirective = directives[directives.length - 1];
-          const following = body.body[directives.length];
-          const anchorLine = lastDirective
-            ? lastDirective.loc.end.line
-            : body.loc.start.line;
-          const neighbour = following ?? lastDirective;
+          if (!anchor) {
+            return null;
+          }
 
-          // A body written on one line keeps its shape; a multi-line body gets
-          // the declaration on its own line at the body's own indentation.
+          const head = ownLineCommentsBefore(anchor)[0] ?? anchor;
+          const linePrefix = linePrefixOf(head);
+          // A statement that begins its line gets the declaration on a line of
+          // its own at the same column; one sharing its line with what precedes
+          // it keeps that layout instead.
           //
-          // The one-line body is the single emission the print width does not
+          // The shared line is the single emission the print width does not
           // govern: a block body holding statements is a shape no formatter
           // prints on one line at all, so there is no width at which the
           // author's layout survives and no wrapped form that would restore it.
           // Breaking the declaration open there would abandon that layout
           // without buying anything. Every other emission lands on a fresh line
           // whose column is known, and is printed against it.
-          const inlineBody = Boolean(
-            following && following.loc.start.line === anchorLine,
-          );
-          const bodyIndent =
-            neighbour && !inlineBody
-              ? indentationAt(neighbour.loc.start.line)
-              : `${indentationAt(target.loc.start.line)}${fileIndentUnit()}`;
+          const headsLine = linePrefix.trim() === '';
+          const bodyIndent = headsLine
+            ? linePrefix
+            : `${indentationAt(target.loc.start.line)}${fileIndentUnit()}`;
 
-          // A carried comment forces the multi-line form even for a one-line
-          // body: a `//` comment appended to that line would swallow the rest
-          // of it, and the comment-free emission is unchanged either way.
+          // A carried comment forces the multi-line form even on a shared line:
+          // a `//` comment appended to that line would swallow the rest of it,
+          // and the comment-free emission is unchanged either way.
           const carried = carriedImportComments(bodyIndent);
+          const emitted = [
+            ...(carried === null ? [] : [carried]),
+            ...printAt(declarations, bodyIndent),
+          ];
+
+          if (headsLine) {
+            return [
+              importEdit,
+              fixer.insertTextBeforeRange(
+                [head.range[0], head.range[0]],
+                emitted
+                  .map((statement) => `${statement}\n${bodyIndent}`)
+                  .join(''),
+              ),
+            ];
+          }
+
+          // Emitting after the preceding token rather than before the anchor
+          // keeps the author's spacing on the shared line where it is: the
+          // declaration takes the position the line already reads at.
+          const previous = sourceCode.getTokenBefore(anchor);
+          if (!previous) {
+            return null;
+          }
           const insertion =
-            inlineBody && carried === null
+            carried === null
               ? ` ${declarations.map(printInline).join(' ')}`
-              : [
-                  ...(carried === null ? [] : [carried]),
-                  ...printAt(declarations, bodyIndent),
-                ]
+              : emitted
                   .map((statement) => `\n${bodyIndent}${statement}`)
                   .join('');
 
           return [
             importEdit,
-            lastDirective
-              ? fixer.insertTextAfter(lastDirective, insertion)
-              : fixer.insertTextAfterRange(
-                  [body.range[0], body.range[0] + 1],
-                  insertion,
-                ),
+            fixer.insertTextAfterRange(
+              [previous.range[1], previous.range[1]],
+              insertion,
+            ),
           ];
         };
 

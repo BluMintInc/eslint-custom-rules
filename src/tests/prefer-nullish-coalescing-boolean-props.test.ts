@@ -1,4 +1,6 @@
 import { Linter, Rule } from 'eslint';
+import * as prettier from 'prettier';
+import * as tsParser from '@typescript-eslint/parser';
 import { ruleTesterTs, ruleTesterJson } from '../utils/ruleTester';
 import { preferNullishCoalescingBooleanProps } from '../rules/prefer-nullish-coalescing-boolean-props';
 import path from 'path';
@@ -1277,7 +1279,7 @@ export const chosen = size ?? 5;
             data: { left: 'obj1.a.id', right: 'obj2.b.key' },
           },
         ],
-        output: `const result = obj1.a.id ?? // keep me\nobj2.b.key;`,
+        output: `const result =\n  obj1.a.id ?? // keep me\n  obj2.b.key;`,
       },
       // A line comment keeps a line of its own: folding the operand onto it
       // would comment the operand out.
@@ -1289,7 +1291,7 @@ export const chosen = size ?? 5;
             data: { left: 'a', right: 'b' },
           },
         ],
-        output: `const value = a ?? // keep me\nb;`,
+        output: `const value =\n  a ?? // keep me\n  b;`,
       },
       // A single-line block comment is inert beside the operand, so it rides
       // inline and the emitted line count is unchanged.
@@ -1332,7 +1334,7 @@ export const chosen = size ?? 5;
             data: { left: 'a', right: 'b' },
           },
         ],
-        output: `const value = a // before\n?? b;`,
+        output: `const value =\n  a // before\n  ?? b;`,
       },
       // A deleted `eslint-disable-next-line` silently re-enables whatever it
       // suppressed. Carried, it still precedes the line holding its subject.
@@ -1344,7 +1346,7 @@ export const chosen = size ?? 5;
             data: { left: 'a', right: 'b' },
           },
         ],
-        output: `const value = a ?? // eslint-disable-next-line no-undef\nb;`,
+        output: `const value =\n  a ?? // eslint-disable-next-line no-undef\n  b;`,
       },
       // Source-level parentheses around an operand are outside that operand's
       // range, so the rebuild drops them along with any comment they hold.
@@ -1421,7 +1423,7 @@ export const chosen = size ?? 5;
             data: { left: 'a', right: 'b' },
           },
         ],
-        output: `const value = (a ?? // c\nb) || d;`,
+        output: `const value = (a ?? // c\n  b) || d;`,
       },
       // The comment-free fix is unchanged: the same multi-line shape collapses
       // to exactly the text it collapsed to before comments were carried.
@@ -1446,6 +1448,372 @@ export const chosen = size ?? 5;
           },
         ],
         output: `const value = f(/* inner */ a) ?? b;`,
+      },
+      // ===== REGRESSION TESTS FOR ISSUE #2101 =====
+      // A chain that breaks lands whole on its own lines: the fix claims the
+      // line break its landing operator carries, so the FIRST operand starts a
+      // line too, and every operand sits at the chain's own depth. That is the
+      // shape prettier prints — measured, not assumed — and a first operand
+      // left beside the `=` is text the next formatter run rewrites, which is
+      // what makes it non-canonical source in a repo whose lint runs `--fix`
+      // before a human reads the report.
+      {
+        code: `const uid = primary.id || // fall back for legacy documents\n            secondary.id;`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'primary.id', right: 'secondary.id' },
+          },
+        ],
+        output: `const uid =\n  primary.id ?? // fall back for legacy documents\n  secondary.id;`,
+      },
+      // The depth is measured from the line the expression opens on, so a chain
+      // nested in a function, an object literal or a JSX attribute lands beside
+      // its own statement rather than at the file's left margin.
+      {
+        code: `function f() {\n  const uid = primary.id || // c\n    secondary.id;\n}`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'primary.id', right: 'secondary.id' },
+          },
+        ],
+        output: `function f() {\n  const uid =\n    primary.id ?? // c\n    secondary.id;\n}`,
+      },
+      {
+        code: `function f() {\n  if (x) {\n    const uid = primary.id || // c\n      secondary.id;\n  }\n}`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'primary.id', right: 'secondary.id' },
+          },
+        ],
+        output: `function f() {\n  if (x) {\n    const uid =\n      primary.id ?? // c\n      secondary.id;\n  }\n}`,
+      },
+      {
+        code: `const o = {\n  k: primary.id || // c\n    secondary.id,\n};`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'primary.id', right: 'secondary.id' },
+          },
+        ],
+        output: `const o = {\n  k:\n    primary.id ?? // c\n    secondary.id,\n};`,
+      },
+      // A JSX attribute is NOT one of the operators the chain takes a line
+      // break from: prettier answers a multi-line attribute value by breaking
+      // the whole opening element onto one attribute per line, which is a
+      // rewrite of text this fix does not own. The operand stays beside the
+      // brace rather than being handed half of a layout the fix cannot finish.
+      {
+        code: `function Component() {\n  return (\n    <Input placeholder={text || // c\n      fallback} />\n  );\n}`,
+        parserOptions: { ecmaFeatures: { jsx: true } },
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'text', right: 'fallback' },
+          },
+        ],
+        output: `function Component() {\n  return (\n    <Input placeholder={text ?? // c\n      fallback} />\n  );\n}`,
+      },
+      // The step matches the indentation already in use, so a tab-indented file
+      // is not handed a space-indented continuation.
+      {
+        code: `function f() {\n\tconst uid = primary.id || // c\n\t\tsecondary.id;\n}`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'primary.id', right: 'secondary.id' },
+          },
+        ],
+        output: `function f() {\n\tconst uid =\n\t\tprimary.id ?? // c\n\t\tsecondary.id;\n}`,
+      },
+      // An expression that already opens its own line is a chain at its landing
+      // depth: it keeps that line's indentation, and the fix is a fixed point of
+      // prettier's canonical layout for a comment-bearing chain.
+      {
+        code: `const uid =\n  primary.id || // fall back for legacy documents\n  secondary.id;`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'primary.id', right: 'secondary.id' },
+          },
+        ],
+        output: `const uid =\n  primary.id ?? // fall back for legacy documents\n  secondary.id;`,
+      },
+      {
+        code: `function f() {\n  const uid =\n    primary.id || // c\n    secondary.id;\n}`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'primary.id', right: 'secondary.id' },
+          },
+        ],
+        output: `function f() {\n  const uid =\n    primary.id ?? // c\n    secondary.id;\n}`,
+      },
+      // Prettier prints every operand of a comment-broken chain on a line of its
+      // own. A link converted by an earlier pass carries the comment inside its
+      // own text, so the operand joined to it takes a line rather than being
+      // folded back onto the one above.
+      {
+        code: `const value = (a ?? // c\n  b) || d;`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a ?? // c\n  b', right: 'd' },
+          },
+        ],
+        output: `const value =\n  a ?? // c\n  b ??\n  d;`,
+      },
+      {
+        code: `const value =\n  (a ?? // c\n  b) ||\n  d;`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a ?? // c\n  b', right: 'd' },
+          },
+        ],
+        output: `const value =\n  a ?? // c\n  b ??\n  d;`,
+      },
+      // A comment carried onto the operator's line already separates the
+      // operands, so no second break is added beside it.
+      {
+        code: `const value = (a ?? b) || // c\n  d;`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a ?? b', right: 'd' },
+          },
+        ],
+        output: `const value =\n  a ?? b ?? // c\n  d;`,
+      },
+      // Every operator a chain lands after takes the break, and each was
+      // measured against prettier rather than reasoned about: an assignment,
+      // a compound assignment, a class field, an arrow body, a plain and a
+      // computed object key, and a declaration carrying a type annotation.
+      {
+        code: `obj.field = primary.id || // c\n  secondary.id;`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'primary.id', right: 'secondary.id' },
+          },
+        ],
+        output: `obj.field =\n  primary.id ?? // c\n  secondary.id;`,
+      },
+      {
+        code: `function f() {\n  obj.field = primary.id || // c\n    secondary.id;\n}`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'primary.id', right: 'secondary.id' },
+          },
+        ],
+        output: `function f() {\n  obj.field =\n    primary.id ?? // c\n    secondary.id;\n}`,
+      },
+      {
+        code: `x ||= primary.id || // c\n  secondary.id;`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'primary.id', right: 'secondary.id' },
+          },
+        ],
+        output: `x ||=\n  primary.id ?? // c\n  secondary.id;`,
+      },
+      {
+        code: `class K {\n  p = primary.id || // c\n    secondary.id;\n}`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'primary.id', right: 'secondary.id' },
+          },
+        ],
+        output: `class K {\n  p =\n    primary.id ?? // c\n    secondary.id;\n}`,
+      },
+      {
+        code: `const g = () => primary.id || // c\n  secondary.id;`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'primary.id', right: 'secondary.id' },
+          },
+        ],
+        output: `const g = () =>\n  primary.id ?? // c\n  secondary.id;`,
+      },
+      {
+        code: `function f() {\n  const g = () => primary.id || // c\n    secondary.id;\n}`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'primary.id', right: 'secondary.id' },
+          },
+        ],
+        output: `function f() {\n  const g = () =>\n    primary.id ?? // c\n    secondary.id;\n}`,
+      },
+      {
+        code: `const o = {\n  [k]: primary.id || // c\n    secondary.id,\n};`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'primary.id', right: 'secondary.id' },
+          },
+        ],
+        output: `const o = {\n  [k]:\n    primary.id ?? // c\n    secondary.id,\n};`,
+      },
+      {
+        code: `const uid: string = primary.id || // c\n  secondary.id;`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'primary.id', right: 'secondary.id' },
+          },
+        ],
+        output: `const uid: string =\n  primary.id ?? // c\n  secondary.id;`,
+      },
+      // Three object levels deep, the break and the operands land at the key's
+      // own depth plus one step, not at the depth of any enclosing brace.
+      {
+        code: `const o = {\n  a: {\n    b: {\n      c: primary.id || // c\n        secondary.id,\n    },\n  },\n};`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'primary.id', right: 'secondary.id' },
+          },
+        ],
+        output: `const o = {\n  a: {\n    b: {\n      c:\n        primary.id ?? // c\n        secondary.id,\n    },\n  },\n};`,
+      },
+      // `return`, `throw` and `yield` are absent from the landing shapes on
+      // purpose. Prettier answers a broken chain after one of them by
+      // PARENTHESIZING it, and parentheses are tokens: emitting them because a
+      // comment is present would let the comment change the program, which is
+      // the invariant the whole comment-carrying path is built on. The operand
+      // stays beside the keyword, where the grammar's restricted production
+      // needs it.
+      {
+        code: `function f() {\n  return primary.id || // c\n    secondary.id;\n}`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'primary.id', right: 'secondary.id' },
+          },
+        ],
+        output: `function f() {\n  return primary.id ?? // c\n    secondary.id;\n}`,
+      },
+      // An argument, an array element and a parameter default are absent too.
+      // Prettier never breaks between the punctuation that introduces one and
+      // the chain's first operand; it answers a chain too wide for the line by
+      // breaking the enclosing LIST and indenting the chain one step further,
+      // which is a rewrite of text outside the expression this fix owns.
+      {
+        code: `f(primary.id || // c\n  secondary.id);`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'primary.id', right: 'secondary.id' },
+          },
+        ],
+        output: `f(primary.id ?? // c\n  secondary.id);`,
+      },
+      {
+        code: `const a = [primary.id || // c\n  secondary.id];`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'primary.id', right: 'secondary.id' },
+          },
+        ],
+        output: `const a = [primary.id ?? // c\n  secondary.id];`,
+      },
+      {
+        code: `function f(p = primary.id || // c\n  secondary.id) {}`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'primary.id', right: 'secondary.id' },
+          },
+        ],
+        output: `function f(p = primary.id ?? // c\n  secondary.id) {}`,
+      },
+      // The widened span swallows the gap between the operator and the chain,
+      // so a comment written in that gap withdraws the widening rather than
+      // being deleted by it — the same discipline the redundant-paren widening
+      // keeps. Prettier does break this one (it prints `/* pin */` on the
+      // chain's first line), so the emission stays non-canonical; deleting a
+      // comment to reach the formatter's layout is the worse of the two.
+      {
+        code: `const uid = /* pin */ primary.id || // c\n  secondary.id;`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'primary.id', right: 'secondary.id' },
+          },
+        ],
+        output: `const uid = /* pin */ primary.id ?? // c\n  secondary.id;`,
+      },
+      // A comment TRAILING the whole expression is outside the chain, so it
+      // breaks nothing the chain owns and the operands stay where they were.
+      {
+        code: `const value = a || (b // tail\n);`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a', right: 'b' },
+          },
+        ],
+        output: `const value = a ?? b // tail\n;`,
+      },
+      // A comment nested inside an operand's own brackets belongs to that
+      // operand's layout: the chain stays on one line, exactly as prettier
+      // prints it, so an operand carrying a multi-line argument is not split.
+      {
+        code: `const v = f({\n  a: 1, // note\n}) || b;`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'f({\n  a: 1, // note\n})', right: 'b' },
+          },
+        ],
+        output: `const v = f({\n  a: 1, // note\n}) ?? b;`,
+      },
+      {
+        code: `const v = f({\n  a: 1,\n}) || b;`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'f({\n  a: 1,\n})', right: 'b' },
+          },
+        ],
+        output: `const v = f({\n  a: 1,\n}) ?? b;`,
+      },
+      // A single-line block comment between the operands disturbs neither, so
+      // the chain keeps its one line and gains no indentation.
+      {
+        code: `const value = a || /* keep */ b || d;`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a || /* keep */ b', right: 'd' },
+          },
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a', right: 'b' },
+          },
+        ],
+        output: `const value = (a ?? /* keep */ b) || d;`,
+      },
+      // Text resuming after the expression belongs to the statement, so the
+      // break a trailing line comment forces returns to the opening line's
+      // depth rather than the chain body's.
+      {
+        code: `const value = a || (b // tail\n);`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a', right: 'b' },
+          },
+        ],
+        output: `const value = a ?? b // tail\n;`,
       },
     ],
   },
@@ -1673,5 +2041,149 @@ describe('prefer-nullish-coalescing-boolean-props emits parseable code', () => {
       ([code]) => code === fixAll(code).output,
     );
     expect(unchanged).toEqual([]);
+  });
+});
+
+// ===== REGRESSION TESTS FOR ISSUE #2101 =====
+// The fixtures above pin the exact emission; this block asks the formatter
+// itself whether that emission is text it would leave alone. agora's canonical
+// lint runs `eslint --fix` and then checks formatting, so an emission the
+// formatter rewrites lands non-canonical source in the repository before a
+// human reads the report.
+//
+// The repo ships prettier 2.7.1 and agora runs 2.8.8. Both were measured on
+// every shape below and printed them identically, so the local binary is a
+// faithful stand-in for the consumer's here.
+describe('prefer-nullish-coalescing-boolean-props: a broken chain is a prettier fixed point (issue #2101)', () => {
+  const RULE_ID = '@blumintinc/blumint/prefer-nullish-coalescing-boolean-props';
+
+  const lint = (code: string) => {
+    const linter = new Linter();
+    linter.defineParser('ts', tsParser as never);
+    linter.defineRule(
+      RULE_ID,
+      preferNullishCoalescingBooleanProps as unknown as Rule.RuleModule,
+    );
+    return linter.verifyAndFix(
+      code,
+      {
+        parser: 'ts',
+        parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+        rules: { [RULE_ID]: 'error' },
+      },
+      'example.ts',
+    );
+  };
+
+  // The repository's own .prettierrc.json, spelled out so a change to it shows
+  // up here as a failing measurement rather than as a silently moved goalpost.
+  const format = (code: string) =>
+    prettier.format(code, {
+      parser: 'typescript',
+      semi: true,
+      trailingComma: 'all',
+      singleQuote: true,
+      printWidth: 80,
+      tabWidth: 2,
+    });
+
+  // Every landing shape the fix claims a line break from, at more than one
+  // nesting depth. `\n` terminators are the formatter's own convention.
+  const LANDING_CASES: [string, string][] = [
+    // The issue's verbatim reproduction.
+    [
+      `const uid = primary.id || // fall back for legacy documents\n            secondary.id;\n`,
+      `const uid =\n  primary.id ?? // fall back for legacy documents\n  secondary.id;\n`,
+    ],
+    [
+      `function f() {\n  const uid = primary.id || // c\n    secondary.id;\n}\n`,
+      `function f() {\n  const uid =\n    primary.id ?? // c\n    secondary.id;\n}\n`,
+    ],
+    [
+      `function f() {\n  if (x) {\n    const uid = primary.id || // c\n      secondary.id;\n  }\n}\n`,
+      `function f() {\n  if (x) {\n    const uid =\n      primary.id ?? // c\n      secondary.id;\n  }\n}\n`,
+    ],
+    [
+      `const o = {\n  k: primary.id || // c\n    secondary.id,\n};\n`,
+      `const o = {\n  k:\n    primary.id ?? // c\n    secondary.id,\n};\n`,
+    ],
+    [
+      `const o = {\n  a: {\n    b: {\n      c: primary.id || // c\n        secondary.id,\n    },\n  },\n};\n`,
+      `const o = {\n  a: {\n    b: {\n      c:\n        primary.id ?? // c\n        secondary.id,\n    },\n  },\n};\n`,
+    ],
+    [
+      `obj.field = primary.id || // c\n  secondary.id;\n`,
+      `obj.field =\n  primary.id ?? // c\n  secondary.id;\n`,
+    ],
+    [
+      `function f() {\n  obj.field = primary.id || // c\n    secondary.id;\n}\n`,
+      `function f() {\n  obj.field =\n    primary.id ?? // c\n    secondary.id;\n}\n`,
+    ],
+    [
+      `class K {\n  p = primary.id || // c\n    secondary.id;\n}\n`,
+      `class K {\n  p =\n    primary.id ?? // c\n    secondary.id;\n}\n`,
+    ],
+    [
+      `const g = () => primary.id || // c\n  secondary.id;\n`,
+      `const g = () =>\n  primary.id ?? // c\n  secondary.id;\n`,
+    ],
+    [
+      `const uid: string = primary.id || // c\n  secondary.id;\n`,
+      `const uid: string =\n  primary.id ?? // c\n  secondary.id;\n`,
+    ],
+    // A chain of three operands converts one link per pass; the converged text
+    // carries every operand on its own line, at two nesting depths.
+    [
+      `const value = a || // c\n  b || d;\n`,
+      `const value =\n  a ?? // c\n  b ??\n  d;\n`,
+    ],
+    [
+      `function f() {\n  const value = a || // c\n    b || d;\n}\n`,
+      `function f() {\n  const value =\n    a ?? // c\n    b ??\n    d;\n}\n`,
+    ],
+  ];
+
+  it.each(LANDING_CASES)('emits a prettier fixed point for %s', (code) => {
+    const { output } = lint(code);
+    expect(format(output)).toBe(output);
+  });
+
+  it.each(LANDING_CASES)('converges %s to %s', (code, expected) => {
+    expect(lint(code).output).toBe(expected);
+  });
+
+  // Non-vacuity. A table the rule declined, or one whose entries were already
+  // the answer, would satisfy both assertions above for free.
+  it('rewrites every case it is handed', () => {
+    const unchanged = LANDING_CASES.filter(
+      ([code]) => !lint(code).fixed || lint(code).output === code,
+    );
+    expect(unchanged).toEqual([]);
+  });
+
+  it('measures more than a handful of shapes', () => {
+    expect(LANDING_CASES.length).toBeGreaterThanOrEqual(12);
+  });
+
+  // Planted positive control: the verbatim emission of the pre-fix fixer. Both
+  // halves matter — it re-lints CLEAN, so a report-counting guard scores it a
+  // success, while the formatter rewrites it on sight.
+  it('would have caught the bug: the un-broken emission is rejected by the oracle', () => {
+    const previousEmission = `const uid = primary.id ?? // fall back for legacy documents\n  secondary.id;\n`;
+    expect(lint(previousEmission).fixed).toBe(false);
+    expect(format(previousEmission)).not.toBe(previousEmission);
+    expect(format(previousEmission)).toBe(LANDING_CASES[0][1]);
+  });
+
+  // Planted negative control: a chain that already opens its own line is at its
+  // landing depth already, so the fix re-emits it byte-for-byte and does not
+  // stack a second break on the one the input carries.
+  it('leaves a chain that already opens its own line byte-for-byte alone', () => {
+    const code = `const uid =\n  primary.id || // fall back for legacy documents\n  secondary.id;\n`;
+    const expected = `const uid =\n  primary.id ?? // fall back for legacy documents\n  secondary.id;\n`;
+    expect(format(code)).toBe(code);
+    const { output } = lint(code);
+    expect(output).toBe(expected);
+    expect(format(output)).toBe(output);
   });
 });

@@ -1258,6 +1258,37 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
      */
     const RULES_UNIT_TESTING_MODULE = '@firebase/rules-unit-testing';
 
+    /**
+     * A shared provisioner of the test environment lives in a module of the
+     * project under lint, and this rule never opens another file, so the
+     * specifier is the only evidence available about what that module hands
+     * back. A relative specifier names such a module — code that can itself
+     * construct a `RulesTestEnvironment` — whereas a bare specifier names a
+     * package, and every published Firestore surface reached that way
+     * (`firebase/firestore`, `firebase-admin/firestore`) does accept the
+     * generic, so those roots must keep reporting.
+     */
+    function isProjectModuleSpecifier(source: string): boolean {
+      return source.startsWith('./') || source.startsWith('../');
+    }
+
+    let fileImportsProjectModule: boolean | undefined;
+
+    function importsProjectModule(): boolean {
+      if (fileImportsProjectModule !== undefined) {
+        return fileImportsProjectModule;
+      }
+
+      const found = context.sourceCode.ast.body.some(
+        (statement) =>
+          statement.type === AST_NODE_TYPES.ImportDeclaration &&
+          isProjectModuleSpecifier(statement.source.value),
+      );
+
+      fileImportsProjectModule = found;
+      return found;
+    }
+
     let rulesUnitTestingLocals: Set<string> | undefined;
 
     /**
@@ -1319,8 +1350,59 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
     }
 
     /**
+     * How much of the `RulesTestEnvironment` context signature the walk has
+     * passed through: a context factory followed by `firestore()`. Carried by
+     * value rather than accumulated on the traversal, so a branch that reaches
+     * the signature cannot lend it to a sibling branch that does not.
+     */
+    type ContextSignatureStage = 'none' | 'firestore' | 'satisfied';
+
+    /**
+     * The methods that hand back a `RulesTestContext`. Recognizing an API by
+     * name is what `CONTEXT_CALLBACK_METHOD` already does; here it is never the
+     * whole answer, since the signature only ever widens a root the module
+     * specifier has already qualified.
+     */
+    const CONTEXT_FACTORY_METHODS = new Set([
+      'authenticatedContext',
+      'unauthenticatedContext',
+    ]);
+
+    const CONTEXT_FIRESTORE_METHOD = 'firestore';
+
+    /**
+     * The walk runs from the receiver toward the root, so the calls of
+     * `env.authenticatedContext('u').firestore()` arrive in reverse:
+     * `firestore()` first, then the factory that produced the context it was
+     * called on. Requiring that order is what keeps a bare `env.firestore()` —
+     * the spelling of every Admin SDK handle — outside the signature.
+     */
+    function advanceContextSignature(
+      node: TSESTree.CallExpression,
+      stage: ContextSignatureStage,
+    ): ContextSignatureStage {
+      if (
+        node.callee.type !== AST_NODE_TYPES.MemberExpression ||
+        node.callee.property.type !== AST_NODE_TYPES.Identifier
+      ) {
+        return stage;
+      }
+
+      const method = node.callee.property.name;
+      if (stage === 'none' && method === CONTEXT_FIRESTORE_METHOD) {
+        return 'firestore';
+      }
+      if (stage === 'firestore' && CONTEXT_FACTORY_METHODS.has(method)) {
+        return 'satisfied';
+      }
+      return stage;
+    }
+
+    /**
      * Walks an expression toward its syntactic root and reports whether that
-     * root is a value supplied by `@firebase/rules-unit-testing`.
+     * root is a value supplied by `@firebase/rules-unit-testing`, either
+     * directly or through a module of the project that provisions the
+     * environment on its behalf.
      *
      * Only `const` bindings are followed, mirroring `isTypedCollectionBinding`:
      * a `let`/`var` receiver can be reassigned to an Admin SDK handle, where the
@@ -1330,8 +1412,16 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
     function tracesToRulesUnitTesting(
       node: TSESTree.Node | null | undefined,
       visited: Set<TSESTree.Node> = new Set(),
+      stage: ContextSignatureStage = 'none',
     ): boolean {
-      if (!node || getRulesUnitTestingLocals().size === 0) {
+      if (!node) {
+        return false;
+      }
+      // The in-file arm needs a local binding of the module to terminate on,
+      // and the cross-module arm needs a relative import. A file with neither
+      // has no root that can qualify, so the walk is skipped outright rather
+      // than run to exhaustion.
+      if (getRulesUnitTestingLocals().size === 0 && !importsProjectModule()) {
         return false;
       }
       // Guards against a self-referential declaration such as `const a = a.b;`.
@@ -1342,24 +1432,28 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
 
       switch (node.type) {
         case AST_NODE_TYPES.AwaitExpression:
-          return tracesToRulesUnitTesting(node.argument, visited);
+          return tracesToRulesUnitTesting(node.argument, visited, stage);
         case AST_NODE_TYPES.CallExpression:
-          return tracesToRulesUnitTesting(node.callee, visited);
+          return tracesToRulesUnitTesting(
+            node.callee,
+            visited,
+            advanceContextSignature(node, stage),
+          );
         case AST_NODE_TYPES.MemberExpression:
-          return tracesToRulesUnitTesting(node.object, visited);
+          return tracesToRulesUnitTesting(node.object, visited, stage);
         case AST_NODE_TYPES.ChainExpression:
-          return tracesToRulesUnitTesting(node.expression, visited);
+          return tracesToRulesUnitTesting(node.expression, visited, stage);
         case AST_NODE_TYPES.TSNonNullExpression:
         case AST_NODE_TYPES.TSAsExpression:
         case AST_NODE_TYPES.TSSatisfiesExpression:
         case AST_NODE_TYPES.TSTypeAssertion:
-          return tracesToRulesUnitTesting(node.expression, visited);
+          return tracesToRulesUnitTesting(node.expression, visited, stage);
         case AST_NODE_TYPES.Identifier:
-          return identifierTracesToRulesUnitTesting(node, visited);
+          return identifierTracesToRulesUnitTesting(node, visited, stage);
         case AST_NODE_TYPES.ArrowFunctionExpression:
         case AST_NODE_TYPES.FunctionExpression:
         case AST_NODE_TYPES.FunctionDeclaration:
-          return functionReturnTracesToRulesUnitTesting(node, visited);
+          return functionReturnTracesToRulesUnitTesting(node, visited, stage);
         default:
           return false;
       }
@@ -1376,15 +1470,16 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
         | TSESTree.FunctionExpression
         | TSESTree.FunctionDeclaration,
       visited: Set<TSESTree.Node>,
+      stage: ContextSignatureStage,
     ): boolean {
       if (node.body.type !== AST_NODE_TYPES.BlockStatement) {
-        return tracesToRulesUnitTesting(node.body, visited);
+        return tracesToRulesUnitTesting(node.body, visited, stage);
       }
 
       return node.body.body.some(
         (statement) =>
           statement.type === AST_NODE_TYPES.ReturnStatement &&
-          tracesToRulesUnitTesting(statement.argument, visited),
+          tracesToRulesUnitTesting(statement.argument, visited, stage),
       );
     }
 
@@ -1400,6 +1495,7 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
       name: TSESTree.BindingName,
       owner: TSESTree.Node,
       visited: Set<TSESTree.Node>,
+      stage: ContextSignatureStage,
     ): boolean {
       if (
         name.type === AST_NODE_TYPES.Identifier &&
@@ -1421,12 +1517,21 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
         return false;
       }
 
-      return tracesToRulesUnitTesting(call.callee.object, visited);
+      // The callback receives a context already provisioned, so reaching it
+      // through `withSecurityRulesDisabled` completes the same signature a
+      // context factory completes on the return path — provided the walk got
+      // here through the `firestore()` the context hands out.
+      return tracesToRulesUnitTesting(
+        call.callee.object,
+        visited,
+        stage === 'firestore' ? 'satisfied' : stage,
+      );
     }
 
     function identifierTracesToRulesUnitTesting(
       node: TSESTree.Identifier,
       visited: Set<TSESTree.Node>,
+      stage: ContextSignatureStage,
     ): boolean {
       const scope = ASTHelpers.getScope(context, node);
       const variable = ASTHelpers.findVariableInScope(scope, node.name);
@@ -1437,20 +1542,37 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
       const def = variable.defs[0];
 
       if (def.type === 'ImportBinding') {
-        return (
-          def.parent?.type === AST_NODE_TYPES.ImportDeclaration &&
-          def.parent.source.value === RULES_UNIT_TESTING_MODULE
-        );
+        if (def.parent?.type !== AST_NODE_TYPES.ImportDeclaration) {
+          return false;
+        }
+
+        const source = def.parent.source.value;
+        if (source === RULES_UNIT_TESTING_MODULE) {
+          return true;
+        }
+
+        // Provisioning the environment in a shared module of the project does
+        // not change what it hands back: the same compat Firestore, whose
+        // `.doc()` still takes zero type arguments. The module cannot be read
+        // from here, so the chain has to carry the evidence itself — only a
+        // receiver that came off a `RulesTestEnvironment` context crosses the
+        // boundary, which leaves an ordinary imported handle reportable.
+        return stage === 'satisfied' && isProjectModuleSpecifier(source);
       }
 
       if (def.type === 'Parameter') {
-        return parameterTracesToRulesUnitTesting(def.name, def.node, visited);
+        return parameterTracesToRulesUnitTesting(
+          def.name,
+          def.node,
+          visited,
+          stage,
+        );
       }
 
       // A hoisted declaration binds the helper the same way a `const` arrow
       // does; an ambient `declare function` has no body and falls through.
       if (def.type === 'FunctionName') {
-        return tracesToRulesUnitTesting(def.node, visited);
+        return tracesToRulesUnitTesting(def.node, visited, stage);
       }
 
       if (
@@ -1485,7 +1607,7 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
         return false;
       }
 
-      return tracesToRulesUnitTesting(declarator.init, visited);
+      return tracesToRulesUnitTesting(declarator.init, visited, stage);
     }
 
     return {

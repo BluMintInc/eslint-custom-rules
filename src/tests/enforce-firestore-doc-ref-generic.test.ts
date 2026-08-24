@@ -1464,6 +1464,83 @@ ruleTesterTs.run(
         };
       `,
       },
+      // The environment is provisioned by a shared module of the project rather
+      // than constructed here. That module hands back the same compat handle,
+      // so `.doc()` still takes zero type arguments; the chain carries the
+      // evidence through the boundary this rule declines to cross.
+      {
+        code: `
+        import { assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
+        import { provisionRulesTestEnvironment } from './util/rulesTestEnvironment';
+
+        const getTestEnv = provisionRulesTestEnvironment('demo-project');
+
+        const getOwnerDb = () => {
+          return getTestEnv().authenticatedContext('owner-uid').firestore();
+        };
+
+        export const seed = async () => {
+          await getTestEnv().withSecurityRulesDisabled(async (context) => {
+            const seedDb = context.firestore();
+            await seedDb.doc('Tournament/t1').set({ ownerUserId: 'owner-uid' });
+          });
+        };
+
+        export const probe = async () => {
+          await assertSucceeds(getOwnerDb().doc('Tournament/t1').get());
+          await assertFails(
+            getOwnerDb().doc('Tournament/t1').update({ isEnabled: 'not-a-bool' }),
+          );
+        };
+      `,
+      },
+      // The shared module re-exports the assertions too, so the linted file
+      // holds no rules-unit-testing import of its own
+      {
+        code: `
+        import { getTestEnv, assertFails } from './util/rulesTestEnvironment';
+
+        export const probe = async () => {
+          await assertFails(
+            getTestEnv().unauthenticatedContext().firestore().doc('Tournament/t1').get(),
+          );
+        };
+      `,
+      },
+      // The environment crosses the boundary as a value rather than an accessor
+      {
+        code: `
+        import { assertSucceeds } from '@firebase/rules-unit-testing';
+        import { testEnv } from './util/rulesTestEnvironment';
+
+        export const probe = async () => {
+          await assertSucceeds(
+            testEnv.authenticatedContext('u').firestore().doc('Tournament/t1').get(),
+          );
+        };
+      `,
+      },
+      // .collection() and .collectionGroup() cross the boundary on the same terms
+      {
+        code: `
+        import { getTestEnv } from './util/rulesTestEnvironment';
+        export const read = async () => {
+          const db = getTestEnv().authenticatedContext('u').firestore();
+          await db.collection('Tournament').get();
+          await db.collectionGroup('Match').get();
+        };
+      `,
+      },
+      // A parent-relative specifier names a module of the project just as a
+      // sibling-relative one does
+      {
+        code: `
+        import { getTestEnv } from '../util/rulesTestEnvironment';
+        export const read = async () => {
+          await getTestEnv().unauthenticatedContext().firestore().doc('Tournament/t1').get();
+        };
+      `,
+      },
       // A class method with no return annotation still supplies the schema
       // through the expression it returns. `no-explicit-return-type` deletes
       // the annotation, so the annotation cannot be the only evidence read.
@@ -3032,6 +3109,68 @@ ruleTesterTs.run(
           await db.doc('User/uid').get();
         };
         export const env = initializeTestEnvironment;
+      `,
+        errors: [missingGenericError('DocumentReference')],
+      },
+      // Crossing a project module is not on its own a reason to exempt: an
+      // Admin handle imported from one supports the generic and keeps reporting
+      {
+        code: `
+        import { adminDb } from './util/adminFirestore';
+        export const seed = async () => {
+          await adminDb.doc('Tournament/t1').set({ ownerUserId: 'owner-uid' });
+        };
+      `,
+        errors: [missingGenericError('DocumentReference')],
+      },
+      // A `firestore()` with no context factory before it is the Admin spelling,
+      // so half the context signature exempts nothing
+      {
+        code: `
+        import { getApp } from './util/firebaseApp';
+        export const read = async () => {
+          await getApp().firestore().doc('Tournament/t1').get();
+        };
+      `,
+        errors: [missingGenericError('DocumentReference')],
+      },
+      // The context signature is not credited on its own either: a bare
+      // specifier names a package whose Firestore surface takes the generic
+      {
+        code: `
+        import { getTestEnv } from 'some-testing-package';
+        export const probe = async () => {
+          await getTestEnv().authenticatedContext('u').firestore().doc('Tournament/t1').get();
+        };
+      `,
+        errors: [missingGenericError('DocumentReference')],
+      },
+      // A locally declared type that merely shares the name is not the compat
+      // surface, whatever else the file imports
+      {
+        code: `
+        import { PROJECT_ID } from './util/constants';
+        type RulesTestEnvironment = {
+          authenticatedContext(uid: string): {
+            firestore(): { doc(path: string): { get(): Promise<unknown> } };
+          };
+        };
+        let env: RulesTestEnvironment;
+        export const probe = async () => {
+          await env.authenticatedContext(PROJECT_ID).firestore().doc('Tournament/t1').get();
+        };
+      `,
+        errors: [missingGenericError('DocumentReference')],
+      },
+      // A mutable binding breaks the trace across the boundary exactly as it
+      // does within the file
+      {
+        code: `
+        import { testEnv } from './util/rulesTestEnvironment';
+        export const read = async () => {
+          let db = testEnv.authenticatedContext('u').firestore();
+          await db.doc('Tournament/t1').get();
+        };
       `,
         errors: [missingGenericError('DocumentReference')],
       },

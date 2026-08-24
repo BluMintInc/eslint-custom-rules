@@ -147,6 +147,28 @@ ruleTester.run(
         code: `import { a } from '../firebaseCloud/messaging/mod';`,
         filename: 'node_modules/@blumint/pkg/dist/index.ts',
       },
+      // The relocated declaration is a fixed point wherever it lands: a
+      // declaration that heads a nested statement list rather than the function
+      // body is still a dynamic import, and reports nothing (#2103)
+      {
+        code: `export const submit = async (id: string) => {
+  const trimmed = id.trim();
+  const { create } = await import('../firebaseCloud/transaction/create');
+  return await create(trimmed);
+};`,
+        filename: 'src/hooks/useSubmit.ts',
+      },
+      {
+        code: `export const submit = async (id: string) => {
+  try {
+    const { create } = await import('../firebaseCloud/transaction/create');
+    return await create(id);
+  } catch {
+    return undefined;
+  }
+};`,
+        filename: 'src/hooks/useSubmit.ts',
+      },
     ],
     invalid: [
       // Every fixture in this first block is a bare import with no reader, so
@@ -1364,6 +1386,751 @@ export const run = async () => undefined;`,
         filename: 'src/utils/run.ts',
         errors: [error('../firebaseCloud/utils/helper')],
         output: null,
+      },
+
+      // ---------------------------------------------------------------------
+      // #2103 — the declaration heads the innermost statement list holding
+      // every reference, not the function body. Heading the body puts the
+      // module-load `await` in front of whatever ran before the first
+      // reference, which turns synchronous prelude code into post-await code.
+      // ---------------------------------------------------------------------
+
+      // A re-entrancy guard stays synchronous: the await lands after it
+      {
+        code: `import { mint } from '../firebaseCloud/app/mint';
+
+export const reveal = async (status: string) => {
+  if (status === 'minting') {
+    return undefined;
+  }
+  return await mint(status);
+};`,
+        filename: 'src/hooks/useReveal.ts',
+        errors: [error('../firebaseCloud/app/mint')],
+        output: `
+export const reveal = async (status: string) => {
+  if (status === 'minting') {
+    return undefined;
+  }
+  const { mint } = await import('../firebaseCloud/app/mint');
+  return await mint(status);
+};`,
+      },
+      // A synchronous statement written before the call site stays before it
+      {
+        code: `import { create } from '../firebaseCloud/transaction/create';
+
+export const submit = async (id: string) => {
+  const trimmed = id.trim();
+  return await create(trimmed);
+};`,
+        filename: 'src/hooks/useSubmit.ts',
+        errors: [error('../firebaseCloud/transaction/create')],
+        output: `
+export const submit = async (id: string) => {
+  const trimmed = id.trim();
+  const { create } = await import('../firebaseCloud/transaction/create');
+  return await create(trimmed);
+};`,
+      },
+      // Every reference inside a `try` puts the declaration inside it too, so a
+      // chunk-load rejection stays catchable
+      {
+        code: `import { create } from '../firebaseCloud/transaction/create';
+
+export const submit = async (id: string) => {
+  try {
+    return await create(id);
+  } catch {
+    return undefined;
+  }
+};`,
+        filename: 'src/hooks/useSubmit.ts',
+        errors: [error('../firebaseCloud/transaction/create')],
+        output: `
+export const submit = async (id: string) => {
+  try {
+    const { create } = await import('../firebaseCloud/transaction/create');
+    return await create(id);
+  } catch {
+    return undefined;
+  }
+};`,
+      },
+      // A `catch` block is a statement list of its own
+      {
+        code: `import { create } from '../firebaseCloud/transaction/create';
+
+export const submit = async (id: string, retryId: string) => {
+  try {
+    return id.trim();
+  } catch {
+    return await create(retryId);
+  }
+};`,
+        filename: 'src/hooks/useSubmit.ts',
+        errors: [error('../firebaseCloud/transaction/create')],
+        output: `
+export const submit = async (id: string, retryId: string) => {
+  try {
+    return id.trim();
+  } catch {
+    const { create } = await import('../firebaseCloud/transaction/create');
+    return await create(retryId);
+  }
+};`,
+      },
+      // References straddling a `try` have no position at all: inside the block
+      // is out of scope for the reference outside it, and outside it lets the
+      // module-load rejection escape the `catch` that was written for the call
+      {
+        code: `import { create } from '../firebaseCloud/transaction/create';
+
+export const submit = async (id: string, retryId: string) => {
+  try {
+    return await create(id);
+  } catch {
+    return await create(retryId);
+  }
+};`,
+        filename: 'src/hooks/useSubmit.ts',
+        errors: [error('../firebaseCloud/transaction/create')],
+        output: null,
+      },
+      // References in sibling branches share only the body, so the declaration
+      // goes ahead of the branch — after everything written before it
+      {
+        code: `import { create } from '../firebaseCloud/transaction/create';
+
+export const transact = async (op: string) => {
+  const normalized = op.trim();
+  if (normalized === 'mint') {
+    return await create(normalized);
+  }
+  return await create(op);
+};`,
+        filename: 'src/hooks/useTransact.ts',
+        errors: [error('../firebaseCloud/transaction/create')],
+        output: `
+export const transact = async (op: string) => {
+  const normalized = op.trim();
+  const { create } = await import('../firebaseCloud/transaction/create');
+  if (normalized === 'mint') {
+    return await create(normalized);
+  }
+  return await create(op);
+};`,
+      },
+      // A loop body is a statement list too. The module map memoizes the load,
+      // so evaluating the import per iteration fetches nothing twice — and a
+      // zero-iteration call now fetches nothing at all
+      {
+        code: `import { create as createTransaction } from '../firebaseCloud/transaction/create';
+
+export const submitAll = async (ids: string[]) => {
+  for (const id of ids) {
+    await createTransaction(id);
+  }
+};`,
+        filename: 'src/hooks/useSubmitAll.ts',
+        errors: [error('../firebaseCloud/transaction/create')],
+        output: `
+export const submitAll = async (ids: string[]) => {
+  for (const id of ids) {
+    const { create: createTransaction } = await import(
+      '../firebaseCloud/transaction/create'
+    );
+    await createTransaction(id);
+  }
+};`,
+      },
+      // A braceless guard body holds no statement list, so the declaration goes
+      // ahead of the guard — still behind every statement written before it
+      {
+        code: `import { create } from '../firebaseCloud/transaction/create';
+
+export const submit = async (id: string) => {
+  const trimmed = id.trim();
+  if (trimmed) return await create(trimmed);
+  return undefined;
+};`,
+        filename: 'src/hooks/useSubmit.ts',
+        errors: [error('../firebaseCloud/transaction/create')],
+        output: `
+export const submit = async (id: string) => {
+  const trimmed = id.trim();
+  const { create } = await import('../firebaseCloud/transaction/create');
+  if (trimmed) return await create(trimmed);
+  return undefined;
+};`,
+      },
+      // The same guard as the body's first statement: the declaration heads the
+      // body, which is where it always went
+      {
+        code: `import { create } from '../firebaseCloud/transaction/create';
+
+export const submit = async (id: string) => {
+  if (id) return await create(id);
+  return undefined;
+};`,
+        filename: 'src/hooks/useSubmit.ts',
+        errors: [error('../firebaseCloud/transaction/create')],
+        output: `
+export const submit = async (id: string) => {
+  const { create } = await import('../firebaseCloud/transaction/create');
+  if (id) return await create(id);
+  return undefined;
+};`,
+      },
+      // A `function` declaration is hoisted across its whole container, so a
+      // call written above it reaches the body first: the declaration heads the
+      // list rather than taking the declaration's own position
+      {
+        code: `import { create } from '../firebaseCloud/transaction/create';
+
+export const run = async (ids: string[]) => {
+  ids.forEach(load);
+  function load(id: string) {
+    return create(id);
+  }
+};`,
+        filename: 'src/hooks/useRun.ts',
+        errors: [error('../firebaseCloud/transaction/create')],
+        output: `
+export const run = async (ids: string[]) => {
+  const { create } = await import('../firebaseCloud/transaction/create');
+  ids.forEach(load);
+  function load(id: string) {
+    return create(id);
+  }
+};`,
+      },
+      // Comments written above the anchor document it, so the declaration goes
+      // ahead of the whole run rather than between a comment and its subject
+      {
+        code: `import { create } from '../firebaseCloud/transaction/create';
+
+export const submit = async (id: string) => {
+  const trimmed = id.trim();
+  // the callable is only worth loading once the id is non-empty
+  return await create(trimmed);
+};`,
+        filename: 'src/hooks/useSubmit.ts',
+        errors: [error('../firebaseCloud/transaction/create')],
+        output: `
+export const submit = async (id: string) => {
+  const trimmed = id.trim();
+  const { create } = await import('../firebaseCloud/transaction/create');
+  // the callable is only worth loading once the id is non-empty
+  return await create(trimmed);
+};`,
+      },
+      // A `case` clause holds statements, but a lexical declaration written in
+      // one is scoped to the whole `switch` block — in scope, and in the
+      // temporal dead zone, for every other clause. The declaration heads the
+      // list the `switch` itself sits in
+      {
+        code: `import { create } from '../firebaseCloud/transaction/create';
+
+export const submit = async (op: string) => {
+  const normalized = op.trim();
+  switch (normalized) {
+    case 'mint':
+      return await create(normalized);
+    default:
+      return undefined;
+  }
+};`,
+        filename: 'src/hooks/useSubmit.ts',
+        errors: [error('../firebaseCloud/transaction/create')],
+        output: `
+export const submit = async (op: string) => {
+  const normalized = op.trim();
+  const { create } = await import('../firebaseCloud/transaction/create');
+  switch (normalized) {
+    case 'mint':
+      return await create(normalized);
+    default:
+      return undefined;
+  }
+};`,
+      },
+      // A braced clause is an ordinary block, and hosts the declaration
+      {
+        code: `import { create } from '../firebaseCloud/transaction/create';
+
+export const submit = async (op: string) => {
+  switch (op) {
+    case 'mint': {
+      const normalized = op.trim();
+      return await create(normalized);
+    }
+    default:
+      return undefined;
+  }
+};`,
+        filename: 'src/hooks/useSubmit.ts',
+        errors: [error('../firebaseCloud/transaction/create')],
+        output: `
+export const submit = async (op: string) => {
+  switch (op) {
+    case 'mint': {
+      const normalized = op.trim();
+      const { create } = await import('../firebaseCloud/transaction/create');
+      return await create(normalized);
+    }
+    default:
+      return undefined;
+  }
+};`,
+      },
+      // The declaration follows the reference as deep as the statement lists go
+      {
+        code: `import { create } from '../firebaseCloud/transaction/create';
+
+export const submit = async (id: string) => {
+  const trimmed = id.trim();
+  if (trimmed) {
+    const prefixed = \`tx-\${trimmed}\`;
+    return await create(prefixed);
+  }
+  return undefined;
+};`,
+        filename: 'src/hooks/useSubmit.ts',
+        errors: [error('../firebaseCloud/transaction/create')],
+        output: `
+export const submit = async (id: string) => {
+  const trimmed = id.trim();
+  if (trimmed) {
+    const prefixed = \`tx-\${trimmed}\`;
+    const { create } = await import('../firebaseCloud/transaction/create');
+    return await create(prefixed);
+  }
+  return undefined;
+};`,
+      },
+      // A class static block holds statements but runs as a function of its
+      // own, so an `await` written inside it is not the async function's at
+      // all. The declaration is served from outside the class instead
+      {
+        code: `import { create } from '../firebaseCloud/transaction/create';
+
+export const run = async (id: string) => {
+  const before = id.trim();
+  class Holder {
+    static {
+      create(before);
+    }
+  }
+  return Holder;
+};`,
+        filename: 'src/hooks/useRun.ts',
+        errors: [error('../firebaseCloud/transaction/create')],
+        output: `
+export const run = async (id: string) => {
+  const before = id.trim();
+  const { create } = await import('../firebaseCloud/transaction/create');
+  class Holder {
+    static {
+      create(before);
+    }
+  }
+  return Holder;
+};`,
+      },
+      // A `namespace` body is emitted as an immediately invoked function, so it
+      // is the same kind of boundary
+      {
+        code: `import { create } from '../firebaseCloud/transaction/create';
+
+export const run = async (id: string) => {
+  const before = id.trim();
+  namespace Holder {
+    export const value = create(before);
+  }
+  return Holder.value;
+};`,
+        filename: 'src/hooks/useRun.ts',
+        errors: [error('../firebaseCloud/transaction/create')],
+        output: `
+export const run = async (id: string) => {
+  const before = id.trim();
+  const { create } = await import('../firebaseCloud/transaction/create');
+  namespace Holder {
+    export const value = create(before);
+  }
+  return Holder.value;
+};`,
+      },
+      // A reference held by a synchronous callback is served from outside that
+      // callback, which is where the callback is created — and therefore ahead
+      // of every call to it, but behind the statements written before it
+      {
+        code: `import { create } from '../firebaseCloud/transaction/create';
+
+export const run = async (ids: string[]) => {
+  const sorted = [...ids].sort();
+  return sorted.map((id) => create(id));
+};`,
+        filename: 'src/hooks/useRun.ts',
+        errors: [error('../firebaseCloud/transaction/create')],
+        output: `
+export const run = async (ids: string[]) => {
+  const sorted = [...ids].sort();
+  const { create } = await import('../firebaseCloud/transaction/create');
+  return sorted.map((id) => create(id));
+};`,
+      },
+
+      // ---------------------------------------------------------------------
+      // #2103 — the anchor answers WHERE the `await` goes, not whether going
+      // there is safe. A check-then-act on state that outlives the call is
+      // defeated by a module load anywhere between its test and its act, and
+      // no anchor position avoids that, so those placements are reported
+      // without a fixer. A loop that never suspends is handed the position
+      // outside itself rather than an `await` per iteration.
+      // ---------------------------------------------------------------------
+
+      // A re-entrancy guard whose own branch reads the import has no safe anchor:
+      // the earliest referencing statement IS the guard, so the declaration
+      // lands ahead of the test and a second call in the same tick passes it
+      // before the first flips `busy`. The report stands without a fix
+      {
+        code: `import { create } from '../firebaseCloud/transaction/create';
+
+let busy = false;
+
+export const reveal = async (status: string) => {
+  const trimmed = status.trim();
+  if (busy) {
+    return await create(trimmed);
+  }
+  busy = true;
+  return await create(status);
+};`,
+        filename: 'src/hooks/useReveal.ts',
+        errors: [error('../firebaseCloud/transaction/create')],
+        output: null,
+      },
+      // The same defeat spelled as a React state flip: the guard tests
+      // `revealStatus` and the statement behind it calls the setter named after
+      // it, which is a write to that state with no assignment written anywhere
+      {
+        code: `import { mint } from '../firebaseCloud/app/mint';
+
+type Setter = (value: string) => void;
+
+export const useReveal = (revealStatus: string, setRevealStatus: Setter) => {
+  return async (id: string) => {
+    if (revealStatus === 'minting') {
+      return await mint(id);
+    }
+    setRevealStatus('minting');
+    return await mint(revealStatus);
+  };
+};`,
+        filename: 'src/hooks/useReveal.ts',
+        errors: [error('../firebaseCloud/app/mint')],
+        output: null,
+      },
+      // A `useRef` guard reads a member path, which names state the call did not
+      // create whatever binding roots it
+      {
+        code: `import { create } from '../firebaseCloud/transaction/create';
+
+type Ref = { current: boolean };
+
+export const useSubmit = (busyRef: Ref) => {
+  return async (id: string) => {
+    if (busyRef.current) {
+      return await create(id);
+    }
+    busyRef.current = true;
+    return await create(id);
+  };
+};`,
+        filename: 'src/hooks/useSubmit.ts',
+        errors: [error('../firebaseCloud/transaction/create')],
+        output: null,
+      },
+      // A guard written after the block the anchor sits in is jumped just as
+      // squarely as one written beside it
+      {
+        code: `import { create } from '../firebaseCloud/transaction/create';
+
+let busy = false;
+
+export const run = async (id: string) => {
+  if (id) {
+    schedule(() => create(id));
+  }
+  if (busy) {
+    return undefined;
+  }
+  busy = true;
+  return undefined;
+};`,
+        filename: 'src/hooks/useRun.ts',
+        errors: [error('../firebaseCloud/transaction/create')],
+        output: null,
+      },
+      // The mirror position: the anchor lands BEHIND the test and ahead of the
+      // act, which widens the very window the guard closes
+      {
+        code: `import { create } from '../firebaseCloud/transaction/create';
+
+let started = false;
+
+export const run = async (id: string) => {
+  if (!started) {
+    create(id);
+    started = true;
+  }
+};`,
+        filename: 'src/hooks/useRun.ts',
+        errors: [error('../firebaseCloud/transaction/create')],
+        output: null,
+      },
+      // A flag declared inside the async function is created fresh per call, so
+      // no second call can observe the one this call flips — and the test and
+      // the act keep their order. The fix stands
+      {
+        code: `import { create } from '../firebaseCloud/transaction/create';
+
+export const submit = async (id: string) => {
+  let attempted = false;
+  if (attempted) {
+    return await create(id);
+  }
+  attempted = true;
+  return await create(id);
+};`,
+        filename: 'src/hooks/useSubmit.ts',
+        errors: [error('../firebaseCloud/transaction/create')],
+        output: `
+export const submit = async (id: string) => {
+  let attempted = false;
+  const { create } = await import('../firebaseCloud/transaction/create');
+  if (attempted) {
+    return await create(id);
+  }
+  attempted = true;
+  return await create(id);
+};`,
+      },
+      // A guard already reached through an `await` runs a task late whatever this
+      // fixer does, so the relocation is not what makes it unreliable
+      {
+        code: `import { create } from '../firebaseCloud/transaction/create';
+
+let busy = false;
+
+export const submit = async (id: string) => {
+  const trimmed = await Promise.resolve(id.trim());
+  if (busy) {
+    return await create(trimmed);
+  }
+  busy = true;
+  return await create(id);
+};`,
+        filename: 'src/hooks/useSubmit.ts',
+        errors: [error('../firebaseCloud/transaction/create')],
+        output: `
+let busy = false;
+
+export const submit = async (id: string) => {
+  const trimmed = await Promise.resolve(id.trim());
+  const { create } = await import('../firebaseCloud/transaction/create');
+  if (busy) {
+    return await create(trimmed);
+  }
+  busy = true;
+  return await create(id);
+};`,
+      },
+      // A guard and its flip written ahead of the reference keep the caller's
+      // task: the declaration lands behind both
+      {
+        code: `import { create } from '../firebaseCloud/transaction/create';
+
+let busy = false;
+
+export const submit = async (id: string) => {
+  if (busy) {
+    return undefined;
+  }
+  busy = true;
+  return await create(id);
+};`,
+        filename: 'src/hooks/useSubmit.ts',
+        errors: [error('../firebaseCloud/transaction/create')],
+        output: `
+let busy = false;
+
+export const submit = async (id: string) => {
+  if (busy) {
+    return undefined;
+  }
+  busy = true;
+  const { create } = await import('../firebaseCloud/transaction/create');
+  return await create(id);
+};`,
+      },
+      // A loop with no suspension of its own runs in one task, and anchoring
+      // inside it would hand control back on every iteration. The declaration
+      // goes ahead of the loop instead — one load rather than one per pass
+      {
+        code: `import { create } from '../firebaseCloud/transaction/create';
+
+export const trackAll = async (ids: string[]) => {
+  const seen = [...ids].sort();
+  for (const id of seen) {
+    create(id);
+  }
+};`,
+        filename: 'src/hooks/useTrackAll.ts',
+        errors: [error('../firebaseCloud/transaction/create')],
+        output: `
+export const trackAll = async (ids: string[]) => {
+  const seen = [...ids].sort();
+  const { create } = await import('../firebaseCloud/transaction/create');
+  for (const id of seen) {
+    create(id);
+  }
+};`,
+      },
+      // Stepping out of an atomic loop stops at the `try`: the declaration stays
+      // where a chunk-load rejection is still caught
+      {
+        code: `import { create } from '../firebaseCloud/transaction/create';
+
+export const trackAll = async (ids: string[]) => {
+  try {
+    for (const id of ids) {
+      create(id);
+    }
+  } catch {
+    return undefined;
+  }
+};`,
+        filename: 'src/hooks/useTrackAll.ts',
+        errors: [error('../firebaseCloud/transaction/create')],
+        output: `
+export const trackAll = async (ids: string[]) => {
+  try {
+    const { create } = await import('../firebaseCloud/transaction/create');
+    for (const id of ids) {
+      create(id);
+    }
+  } catch {
+    return undefined;
+  }
+};`,
+      },
+      // Stepping out launders no guard: the position outside the loop is inside
+      // the branch the flip follows, so the report stands without a fix
+      {
+        code: `import { create } from '../firebaseCloud/transaction/create';
+
+let busy = false;
+
+export const trackAll = async (ids: string[]) => {
+  if (busy) {
+    for (const id of ids) {
+      create(id);
+    }
+  }
+  busy = true;
+};`,
+        filename: 'src/hooks/useTrackAll.ts',
+        errors: [error('../firebaseCloud/transaction/create')],
+        output: null,
+      },
+      // A trailing guard the anchor's branch returns past never runs behind the
+      // `await` at all, so it withholds nothing
+      {
+        code: `import { create } from '../firebaseCloud/transaction/create';
+
+let busy = false;
+
+export const run = async (id: string) => {
+  if (id) {
+    return await create(id);
+  }
+  if (busy) {
+    return undefined;
+  }
+  busy = true;
+  return undefined;
+};`,
+        filename: 'src/hooks/useRun.ts',
+        errors: [error('../firebaseCloud/transaction/create')],
+        output: `
+let busy = false;
+
+export const run = async (id: string) => {
+  if (id) {
+    const { create } = await import('../firebaseCloud/transaction/create');
+    return await create(id);
+  }
+  if (busy) {
+    return undefined;
+  }
+  busy = true;
+  return undefined;
+};`,
+      },
+      // The act is already reached through an `await`, so the window predates the
+      // relocation
+      {
+        code: `import { create } from '../firebaseCloud/transaction/create';
+
+let started = false;
+
+export const run = async (id: string) => {
+  if (!started) {
+    await create(id);
+    started = true;
+  }
+};`,
+        filename: 'src/hooks/useRun.ts',
+        errors: [error('../firebaseCloud/transaction/create')],
+        output: `
+let started = false;
+
+export const run = async (id: string) => {
+  if (!started) {
+    const { create } = await import('../firebaseCloud/transaction/create');
+    await create(id);
+    started = true;
+  }
+};`,
+      },
+      // The flip runs before the reference, so the declaration lands behind it and
+      // the guard keeps its guarantee
+      {
+        code: `import { create } from '../firebaseCloud/transaction/create';
+
+let started = false;
+
+export const run = async (id: string) => {
+  if (!started) {
+    started = true;
+    create(id);
+  }
+};`,
+        filename: 'src/hooks/useRun.ts',
+        errors: [error('../firebaseCloud/transaction/create')],
+        output: `
+let started = false;
+
+export const run = async (id: string) => {
+  if (!started) {
+    started = true;
+    const { create } = await import('../firebaseCloud/transaction/create');
+    create(id);
+  }
+};`,
       },
     ],
   },
