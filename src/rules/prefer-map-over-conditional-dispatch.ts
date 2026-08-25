@@ -482,6 +482,100 @@ function forcesTypeArgumentBreak(typeText: string): boolean {
 }
 
 /**
+ * How Prettier opens a map entry whose value does not fit on the entry's line.
+ *
+ * - `element`: a JSX element or fragment, which Prettier parenthesizes onto
+ *   lines of its own.
+ * - `ternary`: a conditional Prettier prints in its JSX mode, where each
+ *   branch is parenthesized unless it is `null`/`undefined`, which stays
+ *   inline.
+ */
+export type JsxBreakShape =
+  | { kind: 'element' }
+  | {
+      kind: 'ternary';
+      test: string;
+      consequent: string;
+      consequentNil: boolean;
+      alternate: string;
+      alternateNil: boolean;
+    };
+
+/**
+ * The lines of one map entry whose flat spelling overflows the print width and
+ * whose value is a JSX shape, or null when Prettier's answer is a layout this
+ * emitter does not author (an element whose attributes it would break apart).
+ *
+ * The fixer copies branch values verbatim, so an entry wider than the print
+ * width is text Prettier rewrites the moment it runs — churn on every file the
+ * fix touches (#2107). JSX is the shape worth authoring rather than declining:
+ * a component dispatch table is what this rule exists to produce, and Prettier
+ * answers both of its spellings with a parenthesization that is fully
+ * determined by the width.
+ *
+ * `null`/`undefined` is the one branch Prettier leaves inline, which is why a
+ * nil branch appends to the surrounding line instead of opening one.
+ */
+export function jsxEntryLines(
+  entryIndent: string,
+  keyText: string,
+  valueText: string,
+  shape: JsxBreakShape,
+  printWidth: number,
+): string[] | null {
+  const innerIndent = `${entryIndent}  `;
+  const head = `${entryIndent}${keyText}: `;
+  const fits = (line: string): boolean => line.length <= printWidth;
+
+  if (shape.kind === 'element') {
+    const body = `${innerIndent}${valueText}`;
+    // Past the width even parenthesized, Prettier breaks the element's own
+    // attribute list — a reflow of text this rule copied rather than authored.
+    return fits(`${head}(`) && fits(body)
+      ? [`${head}(`, body, `${entryIndent}),`]
+      : null;
+  }
+
+  const lines: string[] = [];
+  let pending = `${head}${shape.test} ? `;
+  if (shape.consequentNil) {
+    pending += `${shape.consequent} : `;
+  } else {
+    const body = `${innerIndent}${shape.consequent}`;
+    if (!fits(body)) {
+      return null;
+    }
+    lines.push(`${pending}(`);
+    lines.push(body);
+    pending = `${entryIndent}) : `;
+  }
+  if (shape.alternateNil) {
+    lines.push(`${pending}${shape.alternate},`);
+  } else {
+    const body = `${innerIndent}${shape.alternate}`;
+    if (!fits(body)) {
+      return null;
+    }
+    lines.push(`${pending}(`);
+    lines.push(body);
+    lines.push(`${entryIndent}),`);
+  }
+  // The test rides the entry's own line; past the width Prettier reaches for a
+  // different regime altogether rather than the one built here.
+  return lines.every(fits) ? lines : null;
+}
+
+/** Why a Record body could not be emitted, spelled for the manual message. */
+const DECLINE_REASONS = {
+  indent:
+    'a multi-line branch value is indented in different units than the fix site, so its body cannot be re-indented onto the Record — normalize the indentation, then convert',
+  jsxWidth:
+    'a JSX branch value overflows the print width even parenthesized on its own line, so the formatter would break its attributes apart — shorten the element, or write the Record manually',
+  jsxChildren:
+    'a JSX branch value nests an element child, so the formatter opens it across lines wherever it lands — break the element out into its own component or constant, then convert',
+} as const;
+
+/**
  * How position-sensitive a comment is when the fix relocates it onto the
  * generated Record:
  *
@@ -1671,8 +1765,16 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
       }
     }
 
-    /** A rewrite of the fix site, replacing `range` with `text`. */
-    type LookupEdit = { range: TSESTree.Range; text: string };
+    /**
+     * A rewrite of the fix site, replacing `range` with `text`. `preserved`
+     * names the comments inside `range` that `text` re-emits verbatim, so the
+     * comment gate can tell a comment the edit carries from one it deletes.
+     */
+    type LookupEdit = {
+      range: TSESTree.Range;
+      text: string;
+      preserved?: TSESTree.Comment[];
+    };
 
     /**
      * The reported node together with the outer edges of the text a replacement
@@ -1852,17 +1954,74 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
      * single gate for every widening: the parenthesis absorption (#2063) adds
      * exactly such a margin, and a comment written between a parenthesis and the
      * expression it groups sits in it.
+     *
+     * A comment the edit's own text re-emits is not absorbed — it is moved, and
+     * the emitter owns where it lands.
      */
     function absorbsComment(node: TSESTree.Node, edit: LookupEdit): boolean {
+      const preserved = new Set(edit.preserved ?? []);
       return sourceCode
         .getAllComments()
         .some(
           (comment) =>
-            (comment.range[1] > edit.range[0] &&
+            !preserved.has(comment) &&
+            ((comment.range[1] > edit.range[0] &&
               comment.range[0] < node.range[0]) ||
-            (comment.range[1] > node.range[1] &&
-              comment.range[0] < edit.range[1]),
+              (comment.range[1] > node.range[1] &&
+                comment.range[0] < edit.range[1])),
         );
+    }
+
+    /**
+     * The comments lying wholly inside `[start, end)`, or null when one of them
+     * cannot travel with a join.
+     *
+     * A directive is excluded whatever its content: which line
+     * `eslint-disable-line` covers, and which line `eslint-disable-next-line`
+     * suppresses, are both decided by where the comment sits, so a join that
+     * moves it changes which rules report. `allowLine` is false where the joined
+     * text continues after the comment — a `//` comment there would swallow the
+     * rest of the line.
+     */
+    function joinableComments(
+      start: number,
+      end: number,
+      allowLine: boolean,
+    ): TSESTree.Comment[] | null {
+      const comments = sourceCode
+        .getAllComments()
+        .filter(
+          (comment) => comment.range[0] >= start && comment.range[1] <= end,
+        );
+      const travels = comments.every(
+        (comment) =>
+          directiveKindOf(comment) === 'none' &&
+          (allowLine || comment.type === AST_TOKEN_TYPES.Block),
+      );
+      return travels ? comments : null;
+    }
+
+    /**
+     * The text between `start` and `end` with every comment cut out, split at
+     * the comments. The first segment is the one a terminator may sit in:
+     * Prettier prints a trailing comment AFTER the statement's semicolon, so a
+     * comment written before the terminator is a token move this emitter does
+     * not author and the join is declined there.
+     */
+    function segmentsAround(
+      start: number,
+      end: number,
+      comments: TSESTree.Comment[],
+    ): string[] {
+      const text = sourceCode.getText();
+      const segments: string[] = [];
+      let cursor = start;
+      for (const comment of comments) {
+        segments.push(text.slice(cursor, comment.range[0]));
+        cursor = comment.range[1];
+      }
+      segments.push(text.slice(cursor, end));
+      return segments;
     }
 
     /** The join for a host that broke after `=` / `:` (see `absorbedLookupEdit`). */
@@ -1891,15 +2050,42 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
         return null;
       }
       const tailLine = sourceCode.lines[span.right.loc.end.line - 1] ?? '';
-      const tail = tailLine.slice(span.right.loc.end.column).trimEnd();
-      // Anything after the span beyond its own terminator (a closing paren the
-      // span does not own, a trailing comment) means joining does not produce
-      // one line.
-      if (!/^[,;]?$/.test(tail)) {
+      const lineEnd = sourceCode.getIndexFromLoc({
+        line: span.right.loc.end.line,
+        column: tailLine.length,
+      });
+      // A trailing comment travels with the line it is on, so joining moves it
+      // up whole and the fixer never rewrites it — Prettier joins the same host
+      // the same way (#2107). Anything else past the span's own terminator (a
+      // closing paren the span does not own) means joining does not produce one
+      // line.
+      const tailComments = joinableComments(span.right.range[1], lineEnd, true);
+      if (tailComments === null) {
         return null;
       }
+      const segments = segmentsAround(
+        span.right.range[1],
+        lineEnd,
+        tailComments,
+      );
+      if (
+        !/^[ \t]*[,;]?[ \t]*$/.test(segments[0]) ||
+        segments.slice(1).some((segment) => segment.trim() !== '')
+      ) {
+        return null;
+      }
+      // A `//` comment is a line suffix Prettier does not measure, so the width
+      // is read from the code and any block comment before it — the same split
+      // Prettier makes when it decides whether the host fits.
+      const lineComment = tailComments.find(
+        (comment) => comment.type === AST_TOKEN_TYPES.Line,
+      );
+      const measuredTail = sourceCode
+        .getText()
+        .slice(span.right.range[1], lineComment?.range[0] ?? lineEnd)
+        .trimEnd();
       const head = headLine.slice(0, prevToken.loc.end.column);
-      const joined = `${head} ${lookupText}${tail}`;
+      const joined = `${head} ${lookupText}${measuredTail}`;
       return joined.length <= printWidth
         ? {
             range: [prevToken.range[1], span.right.range[1]],
@@ -1949,12 +2135,29 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
       if (afterComma !== closeParen) {
         return null;
       }
-      if (
-        sourceCode.getCommentsBefore(span.left).length > 0 ||
-        sourceCode.getCommentsAfter(span.right).length > 0
-      ) {
+      // The whole interior is rewritten, so a comment in it is not swallowed
+      // but re-emitted around the lookup — which is where Prettier puts one
+      // when it joins the same call, whichever side of the dangling comma it
+      // was written on (#2107). Only a block comment can make that trip: a `//`
+      // one would comment out the closer.
+      const before = joinableComments(
+        openParen.range[1],
+        span.left.range[0],
+        false,
+      );
+      const after = joinableComments(
+        span.right.range[1],
+        closeParen.range[0],
+        false,
+      );
+      if (before === null || after === null) {
         return null;
       }
+      const text = [
+        ...before.map((comment) => sourceCode.getText(comment)),
+        lookupText,
+        ...after.map((comment) => sourceCode.getText(comment)),
+      ].join(' ');
       const headLine = sourceCode.lines[openParen.loc.end.line - 1] ?? '';
       const tailLine = sourceCode.lines[closeParen.loc.start.line - 1] ?? '';
       if (
@@ -1966,11 +2169,12 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
       const joined = `${headLine.slice(
         0,
         openParen.loc.end.column,
-      )}${lookupText}${tailLine.slice(closeParen.loc.start.column).trimEnd()}`;
+      )}${text}${tailLine.slice(closeParen.loc.start.column).trimEnd()}`;
       return joined.length <= printWidth
         ? {
             range: [openParen.range[1], closeParen.range[0]],
-            text: lookupText,
+            text,
+            preserved: [...before, ...after],
           }
         : null;
     }
@@ -2074,34 +2278,191 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
       };
     }
 
+    /** Whether Prettier reads this node as JSX for layout purposes. */
+    function isJsxNode(node: TSESTree.Node): boolean {
+      return (
+        node.type === AST_NODE_TYPES.JSXElement ||
+        node.type === AST_NODE_TYPES.JSXFragment
+      );
+    }
+
     /**
-     * The emitted declaration, or null when a multi-line branch value cannot be
-     * re-indented to the entry's depth. The caller decides on that null before
-     * reporting, because it changes which message the construct gets.
+     * Whether Prettier opens this JSX element across lines whatever the width.
+     * An element child forces the break; text and expression containers — even
+     * one holding JSX — do not, so `<Row>{cond && <Inner />}</Row>` stays flat
+     * while `<Row><Inner /></Row>` cannot.
+     *
+     * A value this is true of is one the emitter cannot place on an entry at
+     * all: re-indenting the opened element is a reflow of text the fixer
+     * copied rather than authored.
+     */
+    function forcesJsxOpen(node: TSESTree.Node): boolean {
+      if (!isJsxNode(node)) {
+        return false;
+      }
+      const { children } = node as TSESTree.JSXElement | TSESTree.JSXFragment;
+      return children.some((child) => isJsxNode(child));
+    }
+
+    /**
+     * Whether the entry's value carries a force-opened element directly or on
+     * a ternary branch — the two positions the fixer copies a value from.
+     */
+    function carriesOpenedJsx(node: TSESTree.Node | undefined): boolean {
+      if (!node) {
+        return false;
+      }
+      if (node.type === AST_NODE_TYPES.ConditionalExpression) {
+        return forcesJsxOpen(node.consequent) || forcesJsxOpen(node.alternate);
+      }
+      return forcesJsxOpen(node);
+    }
+
+    /** `null` / `undefined` — the ternary branches Prettier leaves inline. */
+    function isNilBranch(node: TSESTree.Node): boolean {
+      return (
+        (node.type === AST_NODE_TYPES.Literal && node.value === null) ||
+        (node.type === AST_NODE_TYPES.Identifier && node.name === 'undefined')
+      );
+    }
+
+    /**
+     * How Prettier would open this over-wide value, or null when the value is
+     * not one of the JSX shapes whose broken layout is width-determined — the
+     * emitter then leaves the entry flat, which is what Prettier keeps for
+     * every other over-wide value this corpus reaches.
+     *
+     * Two shapes are excluded deliberately, because Prettier answers them with
+     * a different regime rather than the parenthesization built here: a
+     * conditional whose test is binaryish breaks after the `:` instead
+     * (`shouldBreakAfterOperator`), and a chained ternary alternate is printed
+     * inline rather than parenthesized.
+     */
+    function jsxBreakShapeOf(
+      expr: TSESTree.Node | undefined,
+      valueText: string,
+    ): JsxBreakShape | null {
+      if (!expr || sourceCode.getText(expr) !== valueText) {
+        return null;
+      }
+      if (isJsxNode(expr)) {
+        return { kind: 'element' };
+      }
+      if (expr.type !== AST_NODE_TYPES.ConditionalExpression) {
+        return null;
+      }
+      const { test, consequent, alternate } = expr;
+      if (
+        test.type === AST_NODE_TYPES.LogicalExpression ||
+        test.type === AST_NODE_TYPES.BinaryExpression ||
+        alternate.type === AST_NODE_TYPES.ConditionalExpression
+      ) {
+        return null;
+      }
+      if (!isJsxNode(consequent) && !isJsxNode(alternate)) {
+        return null;
+      }
+      const parts = {
+        test: sourceCode.getText(test),
+        consequent: sourceCode.getText(consequent),
+        alternate: sourceCode.getText(alternate),
+      };
+      // Reassembly has to be exact: anything between the operands that is not
+      // the canonical spacing (a comment, an extra parenthesis pair) is text
+      // this emitter would drop when it lays the branches out itself.
+      return `${parts.test} ? ${parts.consequent} : ${parts.alternate}` ===
+        valueText
+        ? {
+            kind: 'ternary',
+            ...parts,
+            consequentNil: isNilBranch(consequent),
+            alternateNil: isNilBranch(alternate),
+          }
+        : null;
+    }
+
+    /**
+     * The emitted declaration, or the reason it cannot be emitted. The caller
+     * decides on a failure before reporting, because it changes which message
+     * the construct gets.
      */
     function buildRecordText(
       layout: RecordLayout,
       entries: Entry[],
-    ): string | null {
+    ): { text: string } | { failure: 'indent' | 'jsxWidth' | 'jsxChildren' } {
       const { bodyIndent } = layout;
+      const entryIndent = `${bodyIndent}  `;
       const lines: string[] = [];
       for (const e of entries) {
-        const valueText = rebasedValueText(e, `${bodyIndent}  `);
+        const valueText = rebasedValueText(e, entryIndent);
         if (valueText === null) {
-          return null;
+          return { failure: 'indent' };
         }
         for (const comment of e.leadingComments ?? []) {
-          lines.push(`${bodyIndent}  ${comment}`);
+          lines.push(`${entryIndent}${comment}`);
         }
         const trailing =
           e.trailingComments && e.trailingComments.length > 0
             ? ` ${e.trailingComments.join(' ')}`
             : '';
+        const keyText = formatKey(e.key);
+        const flat = `${entryIndent}${keyText}: ${valueText},`;
+        const singleLine = !valueText.includes('\n');
+        const innerIndent = `${entryIndent}  `;
+
+        // An element already broken across lines is one Prettier answers by
+        // parenthesizing it in a value position, so the entry opens and the
+        // copied body is re-indented a step further in. Every other
+        // multi-line value — a function body above all — sits unwrapped.
+        if (!singleLine && e.valueExpr && isJsxNode(e.valueExpr)) {
+          const nested = rebasedValueText(e, innerIndent);
+          if (nested === null) {
+            return { failure: 'indent' };
+          }
+          const body = `${innerIndent}${nested}`;
+          if (body.split('\n').some((line) => line.length > printWidth)) {
+            return { failure: 'jsxWidth' };
+          }
+          lines.push(
+            `${entryIndent}${keyText}: (`,
+            body,
+            `${entryIndent}),${trailing}`,
+          );
+          continue;
+        }
+
+        // A flat element Prettier would open anyway cannot be placed at all:
+        // re-indenting the opened form is a reflow of copied text.
+        if (singleLine && carriesOpenedJsx(e.valueExpr)) {
+          return { failure: 'jsxChildren' };
+        }
+        // Past the width, a flat entry is a line Prettier lays out differently.
+        const shape =
+          singleLine && flat.length > printWidth
+            ? jsxBreakShapeOf(e.valueExpr, valueText)
+            : null;
+        if (shape === null) {
+          lines.push(`${flat}${trailing}`);
+          continue;
+        }
+        const broken = jsxEntryLines(
+          entryIndent,
+          keyText,
+          valueText,
+          shape,
+          printWidth,
+        );
+        if (broken === null) {
+          return { failure: 'jsxWidth' };
+        }
         lines.push(
-          `${bodyIndent}  ${formatKey(e.key)}: ${valueText},${trailing}`,
+          ...broken.slice(0, -1),
+          `${broken[broken.length - 1]}${trailing}`,
         );
       }
-      return [...layout.head, ...lines, `${bodyIndent}};`].join('\n');
+      return {
+        text: [...layout.head, ...lines, `${bodyIndent}};`].join('\n'),
+      };
     }
 
     // ---- Comment hosting ----------------------------------------------------
@@ -2494,18 +2855,18 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
       // Built here rather than inside the fixer: a value whose indentation
       // cannot be rebased withholds the fix, which changes which message this
       // construct gets, and a fixer runs long after that decision is made.
-      const recordText = buildRecordText(layout, entries);
-      if (recordText === null) {
+      const built = buildRecordText(layout, entries);
+      if ('failure' in built) {
         context.report({
           node,
           messageId: 'preferMapManual',
           data: {
-            reason:
-              'a multi-line branch value is indented in different units than the fix site, so its body cannot be re-indented onto the Record — normalize the indentation, then convert',
+            reason: DECLINE_REASONS[built.failure],
           },
         });
         return;
       }
+      const recordText = built.text;
 
       // Claimed only once every gate has passed, so a dispatch that ends up
       // report-only never blocks a later one from using the name.
