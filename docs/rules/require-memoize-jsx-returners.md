@@ -44,6 +44,7 @@ class ProviderFactory {
 - Recognizes `@Memoize`, aliased imports, and namespaced forms like `@memoize.Memoize()`. Auto-fix reuses existing aliases and inserts `import { Memoize } from '@blumintinc/typescript-memoize';` if missing.
 - When other decorators exist, `@Memoize()` is added without removing them; multiple violations in a file share a single inserted import.
 - The decorator attaches to the member itself, so a member that shares its line receives it inline (see below).
+- A member that already carries a decorator gets one more, and a formatter gives each of two or more decorators a line of its own — so a decorator written inline (`@Log() get view() {`) is broken out along with the insertion. A comment trailing that decorator stays with it, so the break lands after the comment.
 
 ### Where the decorator is written
 
