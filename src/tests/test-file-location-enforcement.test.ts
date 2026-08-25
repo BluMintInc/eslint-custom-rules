@@ -1,14 +1,12 @@
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
 
 import { Linter, Rule } from 'eslint';
 import { ruleTesterTs } from '../utils/ruleTester';
 import { testFileLocationEnforcement } from '../rules/test-file-location-enforcement';
+import { createTempFixtureDir } from '../utils/tempFixtureDir';
 
-const tempDir = fs.mkdtempSync(
-  path.join(os.tmpdir(), 'test-file-location-enforcement-'),
-);
+const tempDir = createTempFixtureDir('test-file-location-enforcement-');
 
 const workspaceTempDir = path.join(
   process.cwd(),
