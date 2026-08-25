@@ -17,12 +17,12 @@ This rule:
 - Auto-fixes by importing from `use-latest-callback`, replacing the call site, and removing the dependency array.
 - Leaves JSX-returning callbacks and render-prop patterns alone because `useCallback` is the right tool for memoizing rendered output.
 - Removes the `useCallback` specifier from the `react` import only when every reference to it is converted. If a JSX-returning call — or any other use of the binding, such as `const cb = useCallback` — survives, the `react` import is kept untouched and the `use-latest-callback` import is added alongside it.
-- Splices only the `useCallback` specifier and its separating comma out of the `react` import, so the rest of the declaration — its layout, its quote style, and every comment in it — is preserved. A comment that belongs to the removed specifier is left behind rather than deleted, because a trailing comment can be an eslint directive that governs the **next** line and dropping it would change which rules report on the file. The whole declaration is replaced only when `useCallback` is its sole specifier, in which case no comment inside it can govern anything that remains.
+- Splices only the `useCallback` specifier and its separating comma out of the `react` import, so the rest of the declaration — its layout, its quote style, and every comment in it — is preserved. A comment that belongs to the removed specifier is left behind rather than deleted, because a trailing comment can be an eslint directive that governs the **next** line and dropping it would change which rules report on the file. The whole declaration is replaced only when `useCallback` is its sole specifier, in which case no comment inside it can govern anything that remains. Which comma goes is decided by the surviving list's shape — see [Separators around a preserved comment](#separators-around-a-preserved-comment).
 - Emits the import rewrite and every call-site conversion as **one atomic fix** on a single report. When another rule's fix conflicts with any part of it in the same `--fix` pass, ESLint defers the whole conversion to the next pass instead of applying half of it, so the `useCallback` import can never be removed while a `useCallback(...)` call remains.
 - Withholds the fix when dropping the dependency array would leave a declaration with no reader left, and retires an **import** left that way in the same fix — see [Dependencies nothing else reads](#dependencies-nothing-else-reads).
 - Retires the `react` import a converted `React.useCallback` call was the last reader of, decided by scope analysis rather than by any JSX or `.tsx` test — see [Retiring the `react` import a `React.useCallback` call was the last reader of](#retiring-the-react-import-a-reactusecallback-call-was-the-last-reader-of).
 - Leaves a callback whose identity another hook keys on, or a `ref` re-registers on, alone entirely — see [When the callback identity is load-bearing](#when-the-callback-identity-is-load-bearing).
-- Keeps the rewritten call on one line only while that line fits the print width. Past it the fix follows the shape Prettier picks: a parameterised function expression is hugged onto the call line with its parameter list broken one per line while that head fits, and otherwise the argument list is broken open — see [Print width](#print-width).
+- Keeps the rewritten call on one line only while that line fits the print width. Past it the fix follows the shape Prettier picks: a parameterised function expression is hugged onto the call line with its parameter list broken one per line while that head fits, a **sole destructuring parameter** is hugged with the pattern's own brackets expanded instead, and otherwise the argument list is broken open — see [Print width](#print-width).
 - Skips files in `node_modules` for performance so third-party code is untouched.
 
 ### Print width
@@ -102,16 +102,63 @@ parameter's own text, so a comment written alongside a parameter travels with
 it. A rest parameter has to stay last, so the broken list ends without the
 trailing comma the setting otherwise asks for.
 
-Three parameter spellings are not authored as a hugged, one-per-line list. The
-first two break the call open instead; the last stays collapsed:
+#### A sole destructuring parameter breaks the pattern, not the list
 
-- A **sole destructuring parameter**. Prettier answers that one by opening the
-  pattern's own braces (`function ({\n  alpha,\n}: Props) {`) and leaving the
-  parameter list intact. Every line of the one-per-line spelling measures within
-  the width yet Prettier rewrites it straight back, so the fix does not author
-  it and breaks the call open instead, which at least emits no over-wide line. A
-  pattern sharing the list with another parameter is broken one per line as
-  usual.
+A single pattern parameter is the one list Prettier does **not** break. It
+leaves the argument hugged onto the call's line and expands the pattern's own
+brackets in place instead, and it rewrites both of the other shapes straight
+back to that one — the one-per-line parameter list above, and the broken-open
+argument list. Every line of either measures within the width, so a width check
+alone never catches them; the fix authors the pattern break directly:
+
+```ts
+// Before — 112 columns once collapsed
+const handleTheFormSubmission = useCallback(
+  function ({ alpha, bravo, charlie, delta }: SubmissionProps) {
+    go();
+  },
+  [go],
+);
+
+// After --fix
+const handleTheFormSubmission = useLatestCallback(function ({
+  alpha,
+  bravo,
+  charlie,
+  delta,
+}: SubmissionProps) {
+  go();
+});
+```
+
+The hug is a measurement here too: the head line through the pattern's opening
+bracket must fit the print width, as must every element line and the line the
+body opens on. Past that boundary Prettier genuinely breaks the argument list,
+and so does the fix. An **array pattern** takes the same path, expanding `[`
+rather than `{`. Each element is carried as the span between its separators, so
+a rename, a default and a comment written alongside an element all survive; a
+rest element has to stay last, so the expanded pattern ends without a trailing
+comma.
+
+An **arrow** with a sole pattern parameter is not hugged at all. Prettier breaks
+the argument list open and leaves the pattern on one line, which is what the
+broken-open form already emits:
+
+```ts
+// After --fix
+const handleTheFormSubmission = useLatestCallback(
+  ({ alpha, bravo, charlie, delta }: SubmissionProps) => {
+    go();
+  },
+);
+```
+
+A pattern sharing the parameter list with another parameter stops being the sole
+pattern Prettier expands in place, so it is broken one per line as usual.
+
+Two further parameter spellings are not authored as a hugged, one-per-line list.
+The first breaks the call open instead; the second stays collapsed:
+
 - A **parameter list spelled across lines once trimmed**, or a **multi-line type
   parameter list** on the callback. Folding either onto one line would reflow
   text the fix does not own, so the call breaks open and the callback's own
@@ -124,6 +171,49 @@ first two break the call open instead; the last stays collapsed:
 Whitespace inside a multi-line template literal or string is the value the
 program produces, not formatting, so those lines are never shifted in either
 direction.
+
+### Separators around a preserved comment
+
+Removing the `useCallback` specifier removes one separator with it, and which
+one is not a free choice: the surviving list has exactly one position a comma
+may occupy, and Prettier writes it back if the fix picks the other.
+
+The removed specifier's **own** trailing comma always goes with it. Left behind,
+it slides up against whatever precedes the specifier — and when that is a line
+comment on the surviving specifier, the comma lands **inside** the comment.
+That is still valid code, so nothing fails: the list has silently lost its
+separator, and the next `prettier --write` writes it back.
+
+A line comment also holds the list open across lines, and a broken list carries
+a trailing comma. The separator ahead of the `//` is the only place that comma
+can sit, so it stays exactly where the author put it:
+
+```ts
+// Before
+import {
+  useState, // keep this note
+  useCallback,
+} from 'react';
+
+// After --fix
+import useLatestCallback from 'use-latest-callback';
+import {
+  useState, // keep this note
+} from 'react';
+```
+
+With only **block** comments in the way, the surviving list closes back onto one
+line, where there is no trailing comma to keep — so there the separator goes
+with the specifier instead:
+
+```ts
+// Before
+import { useState, /* keep */ useCallback } from 'react';
+
+// After --fix
+import useLatestCallback from 'use-latest-callback';
+import { useState /* keep */ } from 'react';
+```
 
 ### Mixed files
 
