@@ -3,6 +3,8 @@ import { TSESLint } from '@typescript-eslint/utils';
 import * as prettier from 'prettier';
 import { ruleTesterTs, ruleTesterJsx } from '../utils/ruleTester';
 import {
+  JsxBreakShape,
+  jsxEntryLines,
   normalizeTypeQuotes,
   preferMapOverConditionalDispatch,
   reflowsWhenOverWide,
@@ -5070,11 +5072,12 @@ function paint() {
 `,
       errors: [{ messageId: 'preferMap' }],
     },
-    // #2060 DECLINE: a comment after the dangling comma sits in the absorbed
-    // interior while being adjacent to neither end of it — `getCommentsAfter`
-    // on the expression stops at the comma — so the join would delete text the
-    // fixer does not own. The join is dropped and the expression replaced in
-    // place; the conversion itself still happens and the comment survives.
+    // #2107: a comment after the dangling comma sits in the absorbed interior
+    // while being adjacent to neither end of it — `getCommentsAfter` on the
+    // expression stops at the comma. The whole interior is rewritten, so the
+    // comment is re-emitted after the lookup rather than deleted, which is
+    // where Prettier puts one when it joins the same call. Declining the join
+    // instead would leave a hand-broken call Prettier immediately re-joins.
     {
       code: `
 type Side = 'buy' | 'sell';
@@ -5099,18 +5102,15 @@ function paint() {
     buy: BUY_SIDE_LABEL_TEXT,
     sell: SELL_SIDE_LABEL_TEXT_FOR_HEADER,
   };
-  renderLabel(
-    RESULT_BY_SIDE[side], /* keep */
-  );
+  renderLabel(RESULT_BY_SIDE[side] /* keep */);
 }
 `,
       errors: [{ messageId: 'preferMap' }],
     },
-    // #2060 DECLINE, operator arm: the mirror case on the other absorbing
-    // spelling. Here the tail check already refuses it — anything past the
-    // expression's own terminator means joining does not produce one line — so
-    // this pins that the two arms agree rather than one carrying the comment
-    // and the other eating it.
+    // #2107, operator arm: the mirror case on the other absorbing spelling. A
+    // trailing comment travels with the line it sits on, so the join moves it
+    // up whole and never rewrites it. This pins that the two arms agree rather
+    // than one carrying the comment and the other declining around it.
     {
       code: `
 type Side = 'buy' | 'sell';
@@ -5133,8 +5133,7 @@ function paint() {
     buy: BUY_SIDE_LABEL_TEXT,
     sell: SELL_SIDE_LABEL_TEXT_FOR_HEADER,
   };
-  const label =
-    RESULT_BY_SIDE[side]; /* keep */
+  const label = RESULT_BY_SIDE[side]; /* keep */
   return label;
 }
 `,
@@ -5921,6 +5920,11 @@ function render() {
     // #1663: the live agora file (PushDeviceList.tsx) — a status constant
     // imported solely to name the dispatch keys. Emitting the checker-resolved
     // values left the import unreferenced and failed no-unused-vars there.
+    //
+    // #2107: it doubles as the width case. A computed key is far wider than
+    // the `return ` it replaces, so a JSX branch that fits on its own line in
+    // the switch overflows once it becomes a map entry, and Prettier answers
+    // that by parenthesizing the element onto lines of its own.
     {
       code: `
 declare module '../../hooks/notification/useThisDeviceStatus' {
@@ -5969,10 +5973,346 @@ declare const recover: () => void;
 declare const ThisDeviceRow: any;
 function render() {
   const RESULT_BY_STATUS: Record<Status, any> = {
-    [THIS_DEVICE_STATUS.active]: device ? <ThisDeviceRow device={device} status="active" /> : null,
-    [THIS_DEVICE_STATUS.unregistered]: <ThisDeviceRow status="unregistered" onTurnOn={turnOn} />,
-    [THIS_DEVICE_STATUS.hasOtherDevices]: <ThisDeviceRow status="hasOtherDevices" onTurnOn={turnOn} />,
-    [THIS_DEVICE_STATUS.blocked]: <ThisDeviceRow status="blocked" onRecover={recover} />,
+    [THIS_DEVICE_STATUS.active]: device ? (
+      <ThisDeviceRow device={device} status="active" />
+    ) : null,
+    [THIS_DEVICE_STATUS.unregistered]: (
+      <ThisDeviceRow status="unregistered" onTurnOn={turnOn} />
+    ),
+    [THIS_DEVICE_STATUS.hasOtherDevices]: (
+      <ThisDeviceRow status="hasOtherDevices" onTurnOn={turnOn} />
+    ),
+    [THIS_DEVICE_STATUS.blocked]: (
+      <ThisDeviceRow status="blocked" onRecover={recover} />
+    ),
+  };
+  return RESULT_BY_STATUS[status];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2107: the mirror branch — a `null` CONSEQUENT stays inline and the JSX
+    // alternate opens, so the parenthesis lands on the other side of the `:`.
+    // Prettier leaves `null`/`undefined` unparenthesized in either position,
+    // and wrapping it anyway would be text Prettier immediately strips.
+    {
+      code: `
+declare const ThisDeviceRow: any;
+declare const device: unknown;
+type Status = 'active' | 'blocked';
+declare const status: Status;
+const STATUS_LABEL_KEY = { active: 'active', blocked: 'blocked' } as const;
+function render() {
+  switch (status) {
+    case STATUS_LABEL_KEY.active:
+      return device ? null : <ThisDeviceRow device={device} status="a" />;
+    case STATUS_LABEL_KEY.blocked:
+      return null;
+  }
+}
+`,
+      output: `
+declare const ThisDeviceRow: any;
+declare const device: unknown;
+type Status = 'active' | 'blocked';
+declare const status: Status;
+const STATUS_LABEL_KEY = { active: 'active', blocked: 'blocked' } as const;
+function render() {
+  const RESULT_BY_STATUS: Record<Status, any | null> = {
+    [STATUS_LABEL_KEY.active]: device ? null : (
+      <ThisDeviceRow device={device} status="a" />
+    ),
+    [STATUS_LABEL_KEY.blocked]: null,
+  };
+  return RESULT_BY_STATUS[status];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2107: neither branch is nil, so both open — the spelling that proves
+    // the parenthesization is per-branch rather than a single wrapper around
+    // the whole conditional.
+    {
+      code: `
+declare const ThisDeviceRow: any;
+declare const device: unknown;
+type Status = 'active' | 'blocked';
+declare const status: Status;
+const STATUS_LABEL_KEY = { active: 'active', blocked: 'blocked' } as const;
+function render() {
+  switch (status) {
+    case STATUS_LABEL_KEY.active:
+      return device ? <ThisDeviceRow status="on" /> : <ThisDeviceRow s="off" />;
+    case STATUS_LABEL_KEY.blocked:
+      return null;
+  }
+}
+`,
+      output: `
+declare const ThisDeviceRow: any;
+declare const device: unknown;
+type Status = 'active' | 'blocked';
+declare const status: Status;
+const STATUS_LABEL_KEY = { active: 'active', blocked: 'blocked' } as const;
+function render() {
+  const RESULT_BY_STATUS: Record<Status, any | null> = {
+    [STATUS_LABEL_KEY.active]: device ? (
+      <ThisDeviceRow status="on" />
+    ) : (
+      <ThisDeviceRow s="off" />
+    ),
+    [STATUS_LABEL_KEY.blocked]: null,
+  };
+  return RESULT_BY_STATUS[status];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2107 CONTROL: the same shapes within the width stay on one line.
+    // Prettier parenthesizes only when the entry breaks, so an unconditional
+    // wrap would trade this rule's overflow for its mirror image on every
+    // short JSX dispatch — the negative half of the pair above.
+    {
+      code: `
+declare const ThisDeviceRow: any;
+declare const device: unknown;
+declare const turnOn: () => void;
+type Status = 'active' | 'blocked';
+declare const status: Status;
+function render() {
+  switch (status) {
+    case 'active':
+      return <ThisDeviceRow status="active" onTurnOn={turnOn} />;
+    case 'blocked':
+      return device ? <ThisDeviceRow status="b" /> : null;
+  }
+}
+`,
+      output: `
+declare const ThisDeviceRow: any;
+declare const device: unknown;
+declare const turnOn: () => void;
+type Status = 'active' | 'blocked';
+declare const status: Status;
+function render() {
+  const RESULT_BY_STATUS: Record<Status, any> = {
+    active: <ThisDeviceRow status="active" onTurnOn={turnOn} />,
+    blocked: device ? <ThisDeviceRow status="b" /> : null,
+  };
+  return RESULT_BY_STATUS[status];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2107 DECLINE: an element past the width even on a line of its own is
+    // one Prettier answers by breaking the attribute list apart — a reflow of
+    // text this rule copies rather than authors. The conversion is reported
+    // without a fix instead of shipping a line the formatter rewrites.
+    {
+      code: `
+declare const ThisDeviceRow: any;
+declare const device: unknown;
+declare const turnOn: () => void;
+type Status = 'active' | 'blocked';
+declare const status: Status;
+function render() {
+  switch (status) {
+    case 'active':
+      return <ThisDeviceRow device={device} status="active" onTurnOn={turnOn} extraProp={device} another={turnOn} />;
+    case 'blocked':
+      return null;
+  }
+}
+`,
+      errors: [
+        {
+          messageId: 'preferMapManual',
+          data: {
+            reason:
+              'a JSX branch value overflows the print width even parenthesized on its own line, so the formatter would break its attributes apart — shorten the element, or write the Record manually',
+          },
+        },
+      ],
+    },
+    // #2107 DECLINE, ternary arm: the same ceiling measured on a conditional's
+    // branch rather than on a bare element, so both entry layouts refuse at
+    // the same width rather than one shipping an over-wide line.
+    {
+      code: `
+declare const ThisDeviceRow: any;
+declare const device: unknown;
+declare const turnOn: () => void;
+type Status = 'active' | 'blocked';
+declare const status: Status;
+function render() {
+  switch (status) {
+    case 'active':
+      return device ? <ThisDeviceRow device={device} status="active" onTurnOn={turnOn} extraProp={device} /> : null;
+    case 'blocked':
+      return null;
+  }
+}
+`,
+      errors: [
+        {
+          messageId: 'preferMapManual',
+          data: {
+            reason:
+              'a JSX branch value overflows the print width even parenthesized on its own line, so the formatter would break its attributes apart — shorten the element, or write the Record manually',
+          },
+        },
+      ],
+    },
+    // #2107: a value the source already broke sits in a position Prettier
+    // parenthesizes, so the entry opens and the copied body moves one step in.
+    // Copying it flat left the opening tag hanging off the key.
+    {
+      code: `
+declare const ThisDeviceRow: any;
+declare const device: unknown;
+declare const turnOn: () => void;
+type Status = 'active' | 'blocked';
+declare const status: Status;
+function render() {
+  switch (status) {
+    case 'active':
+      return (
+        <ThisDeviceRow
+          device={device}
+          status="active"
+          onTurnOn={turnOn}
+          extraProp={device}
+          another={turnOn}
+        />
+      );
+    case 'blocked':
+      return null;
+  }
+}
+`,
+      output: `
+declare const ThisDeviceRow: any;
+declare const device: unknown;
+declare const turnOn: () => void;
+type Status = 'active' | 'blocked';
+declare const status: Status;
+function render() {
+  const RESULT_BY_STATUS: Record<Status, any | null> = {
+    active: (
+      <ThisDeviceRow
+        device={device}
+        status="active"
+        onTurnOn={turnOn}
+        extraProp={device}
+        another={turnOn}
+      />
+    ),
+    blocked: null,
+  };
+  return RESULT_BY_STATUS[status];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2107: an element child is the one thing that opens its parent
+    // regardless of width. Written broken — the only way a formatted source
+    // spells it — it re-indents onto the entry like any other broken element.
+    {
+      code: `
+declare const Row: any;
+declare const Inner: any;
+declare const device: unknown;
+type Status = 'active' | 'blocked';
+declare const status: Status;
+function render() {
+  switch (status) {
+    case 'active':
+      return (
+        <Row>
+          <Inner one={device} />
+        </Row>
+      );
+    case 'blocked':
+      return null;
+  }
+}
+`,
+      output: `
+declare const Row: any;
+declare const Inner: any;
+declare const device: unknown;
+type Status = 'active' | 'blocked';
+declare const status: Status;
+function render() {
+  const RESULT_BY_STATUS: Record<Status, any | null> = {
+    active: (
+      <Row>
+        <Inner one={device} />
+      </Row>
+    ),
+    blocked: null,
+  };
+  return RESULT_BY_STATUS[status];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2107 DECLINE: the same element written flat. Prettier opens it wherever
+    // it lands, so there is no entry spelling to author — re-indenting the
+    // opened form is a reflow of text the fixer copied rather than wrote.
+    {
+      code: `
+declare const Row: any;
+declare const Inner: any;
+declare const device: unknown;
+type Status = 'active' | 'blocked';
+declare const status: Status;
+function render() {
+  switch (status) {
+    case 'active':
+      return <Row><Inner one={device} /></Row>;
+    case 'blocked':
+      return null;
+  }
+}
+`,
+      errors: [
+        {
+          messageId: 'preferMapManual',
+          data: {
+            reason:
+              'a JSX branch value nests an element child, so the formatter opens it across lines wherever it lands — break the element out into its own component or constant, then convert',
+          },
+        },
+      ],
+    },
+    // #2107 CONTROL: an EXPRESSION child does not open its parent, so the
+    // entry stays flat and the fix stands. The decline above is keyed on the
+    // child's kind rather than on the element merely having children.
+    {
+      code: `
+declare const Row: any;
+declare const device: unknown;
+type Status = 'active' | 'blocked';
+declare const status: Status;
+function render() {
+  switch (status) {
+    case 'active':
+      return <Row a={1}>{device}</Row>;
+    case 'blocked':
+      return null;
+  }
+}
+`,
+      output: `
+declare const Row: any;
+declare const device: unknown;
+type Status = 'active' | 'blocked';
+declare const status: Status;
+function render() {
+  const RESULT_BY_STATUS: Record<Status, any | null> = {
+    active: <Row a={1}>{device}</Row>,
+    blocked: null,
   };
   return RESULT_BY_STATUS[status];
 }
@@ -6100,6 +6440,8 @@ describe('prefer-map-over-conditional-dispatch fix layout vs Prettier', () => {
     trailingComma: 'all',
   };
 
+  const JSX_ELEMENT = /<[A-Za-z][^<>]*\/>|<\/[A-Za-z]/;
+
   const isFixedPoint = (text: string): boolean =>
     prettier.format(text, PRETTIER_OPTIONS) === text;
 
@@ -6107,7 +6449,17 @@ describe('prefer-map-over-conditional-dispatch fix layout vs Prettier', () => {
   // repo's, so Prettier at 80 is not its oracle. The leading newline every
   // fixture opens with is a template-literal artifact Prettier strips; every
   // other byte has to survive formatting untouched.
-  const fixedCases = tsTests.invalid
+  //
+  // Every suite feeds the sample, JSX ones included. Drawing only from
+  // `tsTests` left the branch values Prettier is most opinionated about
+  // outside the oracle entirely, and a JSX dispatch table — the shape this
+  // rule exists to produce — shipped an entry Prettier reopened on sight
+  // (#2107).
+  const fixedCases = [
+    ...tsTests.invalid,
+    ...jsxTests.invalid,
+    ...jsxAnnotationTests.invalid,
+  ]
     .filter((testCase) => testCase.options === undefined)
     .map((testCase) => ({
       code: testCase.code.trimStart(),
@@ -6119,16 +6471,20 @@ describe('prefer-map-over-conditional-dispatch fix layout vs Prettier', () => {
   const functionValued = settled.filter((testCase) =>
     /Record<[A-Za-z]+, \(/.test(testCase.output),
   );
+  const jsxValued = settled.filter((testCase) =>
+    JSX_ELEMENT.test(testCase.output),
+  );
 
   it('rewrites Prettier-clean input into Prettier-clean output', () => {
     console.log(
-      `[fix-layout] ${settled.length} settled input(s) of ${fixedCases.length} fixed, ${functionValued.length} function-valued`,
+      `[fix-layout] ${settled.length} settled input(s) of ${fixedCases.length} fixed, ${functionValued.length} function-valued, ${jsxValued.length} JSX-valued`,
     );
-    // Floors just under the measured counts, so a fixture edited out of either
+    // Floors just under the measured counts, so a fixture edited out of any
     // sample fails here rather than quietly emptying it.
-    expect(settled.length).toBeGreaterThanOrEqual(113);
-    expect(functionValued.length).toBeGreaterThanOrEqual(14);
-    for (const testCase of functionValued) {
+    expect(settled.length).toBeGreaterThanOrEqual(125);
+    expect(functionValued.length).toBeGreaterThanOrEqual(15);
+    expect(jsxValued.length).toBeGreaterThanOrEqual(8);
+    for (const testCase of [...functionValued, ...jsxValued]) {
       expect(prettier.format(testCase.output, PRETTIER_OPTIONS)).toBe(
         testCase.output,
       );
@@ -6171,10 +6527,12 @@ describe('prefer-map-over-conditional-dispatch fix layout vs Prettier', () => {
     // the assertion above passing over an empty sample, so the ceiling sits
     // just above the measured count rather than at "a minority".
     //
-    // Nine of them, because a fixture pinning what #2063 must NOT do cannot be
+    // Ten of them, because a fixture pinning what #2063 must NOT do cannot be
     // Prettier-clean by construction: a redundant paren pair, a second pair
     // nested in a required one, and a comment written inside a pair are each
-    // something Prettier rewrites in the INPUT.
+    // something Prettier rewrites in the INPUT. The tenth writes two
+    // interfaces on one line to declare a JSX namespace compactly, which
+    // Prettier opens up.
     expect(fixedCases.length - settled.length).toBeLessThanOrEqual(10);
   });
 
@@ -6351,5 +6709,259 @@ describe('prefer-map-over-conditional-dispatch quote normalizer', () => {
     // rather than half-rewritten; the annotation gate is the only place that
     // decides whether such text may ship at all.
     expect(normalizeTypeQuotes('not a "type', true)).toBe('not a "type');
+  });
+});
+
+/**
+ * The fixer copies a branch value verbatim onto a map entry, where a computed
+ * key is far wider than the `return ` it replaced — so a JSX branch that fits
+ * in the switch overflows as an entry, and Prettier reopens it the moment it
+ * runs (#2107). The layout the emitter authors for that entry is therefore
+ * measured against the repo's own Prettier rather than described, across the
+ * widths and depths the fixer actually writes at.
+ *
+ * Both answers are asserted. Where the emitter authors a layout it must be
+ * Prettier's byte for byte; where it declines, Prettier's answer must be a
+ * shape it could not have authored — an element whose attribute list is
+ * broken apart — or the decline is discarding a fix that was available.
+ */
+describe('prefer-map-over-conditional-dispatch JSX entry layout', () => {
+  const PRETTIER_OPTIONS: prettier.Options = {
+    parser: 'typescript',
+    tabWidth: 2,
+    singleQuote: true,
+    semi: true,
+    trailingComma: 'all',
+  };
+
+  const nil = (text: string) => text === 'null' || text === 'undefined';
+  const ternary = (
+    test: string,
+    consequent: string,
+    alternate: string,
+  ): { valueText: string; shape: JsxBreakShape } => ({
+    valueText: `${test} ? ${consequent} : ${alternate}`,
+    shape: {
+      kind: 'ternary',
+      test,
+      consequent,
+      consequentNil: nil(consequent),
+      alternate,
+      alternateNil: nil(alternate),
+    },
+  });
+  const element = (valueText: string) => ({
+    valueText,
+    shape: { kind: 'element' } as JsxBreakShape,
+  });
+
+  const SHAPES = [
+    element('<Row status="unregistered" onTurnOn={turnOn} />'),
+    element('<Row />'),
+    element('<>text children that run on for a fair while here indeed ok</>'),
+    element('<Row a={1}>{someExpressionChildValue}</Row>'),
+    element('<RowWithARatherLongComponentName status="x" onTurnOn={t} />'),
+    ternary('device', '<Row device={device} status="active" />', 'null'),
+    ternary('device', '<Row device={device} status="active" />', 'undefined'),
+    ternary('device', 'null', '<Row device={device} status="active" />'),
+    ternary('device', 'undefined', '<Row device={device} status="act" />'),
+    ternary('device', '<AlphaRow d={device} />', '<BravoRow d={device} />'),
+    ternary('device', '<AlphaRow d={device} />', 'fallbackValueForThis'),
+    ternary('device', 'fallbackValueForThis', '<BravoRow d={device} />'),
+    ternary('device.ready', '<Row device={device} status="active" />', 'null'),
+  ];
+  const KEYS = ['a', "'a-key'", '[TAG.x]', '[THIS_DEVICE_STATUS.unregistered]'];
+  const WIDTHS = [60, 80, 100];
+  // The depths the fixer writes entries at: a top-level construct, one inside
+  // a function, and one inside a nested block.
+  const DEPTHS = [1, 2, 3];
+
+  /**
+   * The lines Prettier gives this single entry, read out of a whole file so
+   * the entry is measured exactly where the fixer writes it.
+   */
+  const prettierEntryLines = (
+    depth: number,
+    keyText: string,
+    valueText: string,
+    printWidth: number,
+  ): string[] | null => {
+    const open = Array.from(
+      { length: depth - 1 },
+      (_unused, level) => `${'  '.repeat(level)}function scope${level}() {`,
+    );
+    const close = open.map((_unused, level) =>
+      '  '.repeat(open.length - 1 - level).concat('}'),
+    );
+    const head = '  '.repeat(depth - 1);
+    const source = [
+      ...open,
+      `${head}const R: Record<K, any> = {`,
+      `${head}  ${keyText}: ${valueText},`,
+      `${head}};`,
+      ...close,
+      '',
+    ].join('\n');
+    let formatted: string;
+    try {
+      formatted = prettier.format(source, { ...PRETTIER_OPTIONS, printWidth });
+    } catch {
+      return null;
+    }
+    const lines = formatted.split('\n');
+    const start = lines.findIndex((line) =>
+      line.endsWith('Record<K, any> = {'),
+    );
+    const end = lines.findIndex(
+      (line, index) => index > start && line === `${head}};`,
+    );
+    return start === -1 || end === -1 ? null : lines.slice(start + 1, end);
+  };
+
+  const rows = WIDTHS.flatMap((printWidth) =>
+    DEPTHS.flatMap((depth) =>
+      KEYS.flatMap((keyText) =>
+        SHAPES.map(({ valueText, shape }) => {
+          const entryIndent = '  '.repeat(depth);
+          const flat = `${entryIndent}${keyText}: ${valueText},`;
+          return {
+            printWidth,
+            depth,
+            keyText,
+            valueText,
+            shape,
+            entryIndent,
+            flat,
+            overflows: flat.length > printWidth,
+            mine: jsxEntryLines(
+              entryIndent,
+              keyText,
+              valueText,
+              shape,
+              printWidth,
+            ),
+            theirs: prettierEntryLines(depth, keyText, valueText, printWidth),
+          };
+        }),
+      ),
+    ),
+  );
+
+  const overflowing = rows.filter(
+    (row) => row.overflows && row.theirs !== null,
+  );
+  const authored = overflowing.filter((row) => row.mine !== null);
+  const declined = overflowing.filter((row) => row.mine === null);
+  const fitting = rows.filter((row) => !row.overflows && row.theirs !== null);
+
+  it('authors exactly the layout Prettier prints for an over-wide entry', () => {
+    // eslint-disable-next-line no-console
+    console.log(
+      `[jsx-entry] ${rows.length} row(s): ${authored.length} authored, ${declined.length} declined, ${fitting.length} within the width`,
+    );
+    // Floors just under the measured counts, so a shape dropped from the
+    // matrix fails here rather than quietly emptying an arm.
+    expect(authored.length).toBeGreaterThanOrEqual(145);
+    expect(declined.length).toBeGreaterThanOrEqual(25);
+    const disagreements = authored
+      .filter(
+        (row) => (row.mine ?? []).join('\n') !== (row.theirs ?? []).join('\n'),
+      )
+      .map((row) => ({
+        printWidth: row.printWidth,
+        keyText: row.keyText,
+        valueText: row.valueText,
+        mine: row.mine,
+        theirs: row.theirs,
+      }));
+    expect(disagreements).toEqual([]);
+  });
+
+  it('never declines a layout that was in fact correct', () => {
+    // A decline is only correct if the layout the emitter withheld is not the
+    // one Prettier prints. Rebuilding it with the width gate lifted answers
+    // that directly, and catches the failure mode a count cannot: a gate cut
+    // one column too tight, throwing away a fix that was available.
+    const discarded = declined
+      .map((row) => ({
+        row,
+        unchecked: jsxEntryLines(
+          row.entryIndent,
+          row.keyText,
+          row.valueText,
+          row.shape,
+          Number.MAX_SAFE_INTEGER,
+        ),
+      }))
+      .filter(
+        ({ row, unchecked }) =>
+          (unchecked ?? []).join('\n') === (row.theirs ?? []).join('\n'),
+      );
+    expect(
+      discarded.map(({ row }) => ({
+        printWidth: row.printWidth,
+        valueText: row.valueText,
+        theirs: row.theirs,
+      })),
+    ).toEqual([]);
+
+    // Both reasons a decline happens are exercised: Prettier opening the
+    // element's attribute list, and Prettier breaking after the `:` because
+    // the entry's own head does not fit. A single-cause sample would leave
+    // the other gate unmeasured.
+    const attributesOpened = declined.filter((row) =>
+      (row.theirs ?? []).some((line) => /^\s*<[A-Za-z]+$/.test(line)),
+    );
+    const brokeAfterOperator = declined.filter((row) =>
+      (row.theirs ?? [])[0]?.endsWith(':'),
+    );
+    expect(attributesOpened.length).toBeGreaterThanOrEqual(1);
+    expect(brokeAfterOperator.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('leaves an entry within the width on one line, as Prettier does', () => {
+    expect(fitting.length).toBeGreaterThanOrEqual(290);
+    const broken = fitting.filter(
+      (row) => (row.theirs ?? []).join('\n') !== row.flat,
+    );
+    expect(broken.map((row) => row.valueText)).toEqual([]);
+  });
+
+  it('is not vacuous: a perturbed layout is rejected, and the excluded regime is measured', () => {
+    // A planted positive: the authored layout with its indentation shifted is
+    // not what Prettier prints, so the comparison above has teeth.
+    const sample = authored[0];
+    const shifted = (sample.mine ?? []).map((line) => `  ${line}`);
+    expect(shifted.join('\n')).not.toBe((sample.theirs ?? []).join('\n'));
+
+    // A planted negative: the emitter refuses a conditional whose test is
+    // binaryish, because Prettier answers that one by breaking after the `:`
+    // rather than parenthesizing the branch. Measured rather than asserted
+    // from prose, since the exclusion is otherwise invisible.
+    const binaryish = prettierEntryLines(
+      2,
+      '[THIS_DEVICE_STATUS.unregistered]',
+      'device && ready ? <Row device={device} status="active" /> : null',
+      80,
+    );
+    expect(binaryish).toEqual([
+      '    [THIS_DEVICE_STATUS.unregistered]:',
+      '      device && ready ? <Row device={device} status="active" /> : null,',
+    ]);
+
+    // The other measured exclusion: an ELEMENT child opens its parent
+    // wherever it lands, even well within the width, while a text or
+    // expression child does not. The rule withholds the fix on the first and
+    // keeps it on the second, so the boundary is pinned rather than assumed.
+    expect(prettierEntryLines(2, 'a', '<Row>{child}</Row>', 80)).toEqual([
+      '    a: <Row>{child}</Row>,',
+    ]);
+    expect(prettierEntryLines(2, 'a', '<Row><Inner /></Row>', 80)).toEqual([
+      '    a: (',
+      '      <Row>',
+      '        <Inner />',
+      '      </Row>',
+      '    ),',
+    ]);
   });
 });

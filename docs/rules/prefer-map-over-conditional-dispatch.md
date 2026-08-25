@@ -318,6 +318,12 @@ report-only message (`preferMapManual`) explaining why and suggesting the shape:
   no such layout exists — a single printed type too long for its own line that
   Prettier would open up, such as a function type with several parameters —
   the fix is skipped rather than shipping a head the formatter rewrites.
+- **Map entries the formatter would keep.** A JSX branch value is laid out on
+  its entry the way Prettier lays it out (see
+  [JSX branch values](#jsx-branch-values)). A value whose entry Prettier would
+  open up further — an element past the width even on a line of its own, or
+  one nesting an element child — is a shape the fixer cannot author, so the
+  fix is skipped rather than shipping an entry the formatter rewrites.
 - **Hostable comments.** Comments inside the converted construct are carried
   onto the generated `Record`: a branch's leading comments (including
   `eslint-disable-next-line` and `@ts-expect-error` directives that target the
@@ -465,6 +471,40 @@ on its own over-wide line, because that is what Prettier does with it. A type
 Prettier *would* open up (a function type's parameter list, a type literal's
 members, a two-argument type-argument list) is a shape the fixer cannot author,
 so it declines the fix instead.
+
+#### JSX branch values
+
+Map entries are measured too, because a key is wider than the `return ` it
+replaces — a computed key such as `[THIS_DEVICE_STATUS.unregistered]` by a
+good margin. A JSX branch that fit on its own line inside the switch therefore
+overflows once it becomes an entry, and Prettier answers that by
+parenthesizing the element onto lines of its own. The fixer emits that layout
+rather than the flat line Prettier would immediately reopen:
+
+```ts
+const RESULT_BY_STATUS: Record<Status, ReactNode> = {
+  [THIS_DEVICE_STATUS.active]: device ? (
+    <ThisDeviceRow device={device} status="active" />
+  ) : null,
+  [THIS_DEVICE_STATUS.unregistered]: (
+    <ThisDeviceRow status="unregistered" onTurnOn={turnOn} />
+  ),
+};
+```
+
+A `null` or `undefined` branch stays inline, as above, because Prettier never
+parenthesizes those. An entry within the width keeps its single line — the
+parentheses appear only when the entry breaks — and an element the source
+already broke across lines is parenthesized and re-indented onto the entry.
+
+Two JSX shapes have no entry spelling the fixer can author, and are reported
+without a fix:
+
+- an element still past the width on a line of its own, which Prettier answers
+  by breaking its attribute list apart;
+- an element nesting an **element** child (`<Row><Inner /></Row>`) written on
+  one line, which Prettier opens across lines wherever it lands. An expression
+  child (`<Row>{child}</Row>`) does not open its parent, and keeps its fix.
 
 ### The replaced span
 
