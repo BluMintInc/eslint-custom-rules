@@ -223,7 +223,9 @@ export const run: Handler = (payload) => ({ ...payload, ...SEED });
         },
       ],
     },
-    // Complex type with redundant parameter type
+    // Complex type with redundant parameter type. The list was broken only
+    // because the annotation overflowed, so the strip collapses it the way
+    // prettier prints the result (#2130).
     {
       code: `
         export const enforceMembershipLimit: DocumentChangeHandler<
@@ -239,9 +241,7 @@ export const run: Handler = (payload) => ({ ...payload, ...SEED });
         export const enforceMembershipLimit: DocumentChangeHandler<
           ChannelMembership,
           ChannelMembershipPath
-        > = async (
-          event,
-        ) => {
+        > = async (event) => {
           // function logic
         };
       `,
@@ -1349,6 +1349,562 @@ export const run: Handler = (payload: typeof SHAPE) => payload;
 export const run: Handler = (payload) => payload;
 `,
     },
+
+    // --- Layout after the strip (#2130) ---
+    //
+    // prettier lays an arrow out against its print width, so a stripped
+    // annotation changes the shape it prints: a list broken only because the
+    // annotation overflowed collapses, and the body breaks instead when the
+    // collapsed line is still too long. Each pair below pins one width
+    // decision in both directions, so the fixer's measurement is tested rather
+    // than assumed. Every fixture is written prettier-canonical at column 0 so
+    // the RuleTester and the prettier fixed-point oracle see the same text.
+    // The stripped list collapses, and the array body prettier hugs against the
+    // arrow then breaks one element per line because the collapsed line is still
+    // too long (#2130). Leaving the list broken is a layout prettier rewrites.
+    {
+      code: `const swap: (tuple: [string, number]) => [number, string] = (
+  tuple: [string, number],
+) => [tuple[1], tuple[0]];
+`,
+      output: `const swap: (tuple: [string, number]) => [number, string] = (tuple) => [
+  tuple[1],
+  tuple[0],
+];
+`,
+      errors: [
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('tuple: [string, number]'),
+        },
+      ],
+    },
+
+    // The names alone overflow the header, so prettier keeps the list broken and
+    // the plain strip is already its layout.
+    {
+      code: `const handler: (a: Alpha, b: Beta) => void = (
+  aVeryLongParameterNameNumberOne: Alpha,
+  aVeryLongParameterNameNumberTwo: Beta,
+) => {
+  run();
+};
+`,
+      output: `const handler: (a: Alpha, b: Beta) => void = (
+  aVeryLongParameterNameNumberOne,
+  aVeryLongParameterNameNumberTwo,
+) => {
+  run();
+};
+`,
+      errors: [
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('aVeryLongParameterNameNumberOne: Alpha'),
+        },
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('aVeryLongParameterNameNumberTwo: Beta'),
+        },
+      ],
+    },
+
+    // With the return type on the header, the collapsed list would push the
+    // array's opening bracket past the width, so prettier keeps the list broken.
+    {
+      code: `const swap: (tuple: [string, number]) => [number, string] = (
+  tuple: [string, number],
+): [number, string] => [tuple[1], tuple[0]];
+`,
+      output: `const swap: (tuple: [string, number]) => [number, string] = (
+  tuple,
+): [number, string] => [tuple[1], tuple[0]];
+`,
+      errors: [
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('tuple: [string, number]'),
+        },
+      ],
+    },
+
+    // The stripped statement fits on one line, so the list collapses onto it.
+    {
+      code: `const process: (data: readonly string[]) => string[] = (
+  data: readonly string[],
+) => [...data];
+`,
+      output: `const process: (data: readonly string[]) => string[] = (data) => [...data];
+`,
+      errors: [
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('data: readonly string[]'),
+        },
+      ],
+    },
+
+    // A trailing line comment is a suffix prettier never weighs, so the line
+    // collapses with the comment riding along past the width.
+    {
+      code: `const swap: (tuple: [string, number]) => [number] = (
+  tuple: [string, number],
+) => [tuple[1]]; // keeps the order
+`,
+      output: `const swap: (tuple: [string, number]) => [number] = (tuple) => [tuple[1]]; // keeps the order
+`,
+      errors: [
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('tuple: [string, number]'),
+        },
+      ],
+    },
+
+    // A trailing block comment occupies its columns, so the same statement no
+    // longer fits and the array breaks beneath the collapsed list instead.
+    {
+      code: `const swap: (tuple: [string, number]) => [number] = (
+  tuple: [string, number],
+) => [tuple[1]]; /* keeps the order */
+`,
+      output: `const swap: (tuple: [string, number]) => [number] = (tuple) => [
+  tuple[1],
+]; /* keeps the order */
+`,
+      errors: [
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('tuple: [string, number]'),
+        },
+      ],
+    },
+
+    // A block body keeps its own lines, so only the header answers to the width:
+    // this one lands exactly on it.
+    {
+      code: `const fetchData: <T>(id: string) => Promise<T> = async <T>(
+  id: string,
+): Promise<T> => {
+  return await apiCall(id);
+};
+`,
+      output: `const fetchData: <T>(id: string) => Promise<T> = async <T>(id): Promise<T> => {
+  return await apiCall(id);
+};
+`,
+      errors: [
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('id: string'),
+        },
+      ],
+    },
+
+    // One column past it, the header stays broken.
+    {
+      code: `const fetchDataXY: <T>(id: string) => Promise<T> = async <T>(
+  id: string,
+): Promise<T> => {
+  return await apiCall(id);
+};
+`,
+      output: `const fetchDataXY: <T>(id: string) => Promise<T> = async <T>(
+  id,
+): Promise<T> => {
+  return await apiCall(id);
+};
+`,
+      errors: [
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('id: string'),
+        },
+      ],
+    },
+
+    // A call body is not hugged: when the collapsed line overflows by one column,
+    // prettier drops the body beneath the arrow.
+    {
+      code: `const withCallback: (cb: (err: Error | null) => void) => void = (
+  cb: (err: Error | null) => void,
+) => cb(null);
+`,
+      output: `const withCallback: (cb: (err: Error | null) => void) => void = (cb) =>
+  cb(null);
+`,
+      errors: [
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('cb: (err: Error | null) => void'),
+        },
+      ],
+    },
+
+    // The return type stays on the header ahead of the arrow.
+    {
+      code: `const withCallback: (cb: (err: Error | null) => void) => void = (
+  cb: (err: Error | null) => void,
+): void => cb(null);
+`,
+      output: `const withCallback: (cb: (err: Error | null) => void) => void = (cb): void =>
+  cb(null);
+`,
+      errors: [
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('cb: (err: Error | null) => void'),
+        },
+      ],
+    },
+
+    // Inside a class the dropped body indents one step past the member.
+    {
+      code: `class Runner {
+  withCallback: (cb: (err: Error | null) => void) => void = (
+    cb: (err: Error | null) => void,
+  ) => callback(cb, null);
+}
+`,
+      output: `class Runner {
+  withCallback: (cb: (err: Error | null) => void) => void = (cb) =>
+    callback(cb, null);
+}
+`,
+      errors: [
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('cb: (err: Error | null) => void'),
+        },
+      ],
+    },
+
+    // A hugged array closes at the member's own indent.
+    {
+      code: `class Store {
+  swap: (tuple: [string, number]) => [number, string] = (
+    tuple: [string, number],
+  ) => [tuple[1], tuple[0]];
+}
+`,
+      output: `class Store {
+  swap: (tuple: [string, number]) => [number, string] = (tuple) => [
+    tuple[1],
+    tuple[0],
+  ];
+}
+`,
+      errors: [
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('tuple: [string, number]'),
+        },
+      ],
+    },
+
+    // two parameters collapse and the array hugs
+    {
+      code: `const pair: (a: string, b: string) => [string, string] = (
+  first: string,
+  second: string,
+) => [first, second];
+`,
+      output: `const pair: (a: string, b: string) => [string, string] = (first, second) => [
+  first,
+  second,
+];
+`,
+      errors: [
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('first: string'),
+        },
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('second: string'),
+        },
+      ],
+    },
+
+    // A default and a rest parameter collapse with the rest — a rest parameter
+    // takes no trailing comma, so the broken list had none to drop.
+    {
+      code: `const sum: (base: number, ...nums: number[]) => number = (
+  base: number = 0,
+  ...nums: number[]
+) => nums.reduce((a, b) => a + b, base);
+`,
+      output: `const sum: (base: number, ...nums: number[]) => number = (base = 0, ...nums) =>
+  nums.reduce((a, b) => a + b, base);
+`,
+      errors: [
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('base: number = 0'),
+        },
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('...nums: number[]'),
+        },
+      ],
+    },
+
+    // A body that sat beneath the arrow only because the annotated header left
+    // it no room rejoins the header once the statement fits.
+    {
+      code: `const greet: (name?: string) => string = (name?: string) =>
+  \`Hello \${name ?? 'world'}\`;
+`,
+      output: `const greet: (name?: string) => string = (name) => \`Hello \${name ?? 'world'}\`;
+`,
+      errors: [
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('name?: string'),
+        },
+      ],
+    },
+
+    // body below the arrow stays there when the statement still overflows
+    {
+      code: `const greeting: (name?: string) => string = (name?: string) =>
+  \`Hello there, \${name ?? 'world'}, and welcome aboard\`;
+`,
+      output: `const greeting: (name?: string) => string = (name) =>
+  \`Hello there, \${name ?? 'world'}, and welcome aboard\`;
+`,
+      errors: [
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('name?: string'),
+        },
+      ],
+    },
+
+    // A line comment inside the parentheses forces prettier's break, so the list
+    // stays as written and only the annotation goes.
+    {
+      code: `const swap: (tuple: [string, number]) => [number, string] = (
+  // the pair to flip
+  tuple: [string, number],
+) => [tuple[1], tuple[0]];
+`,
+      output: `const swap: (tuple: [string, number]) => [number, string] = (
+  // the pair to flip
+  tuple,
+) => [tuple[1], tuple[0]];
+`,
+      errors: [
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('tuple: [string, number]'),
+        },
+      ],
+    },
+
+    // own-line block comment inside the parentheses keeps the list broken
+    {
+      code: `const swap: (tuple: [string, number]) => [number, string] = (
+  /* the pair to flip */
+  tuple: [string, number],
+) => [tuple[1], tuple[0]];
+`,
+      output: `const swap: (tuple: [string, number]) => [number, string] = (
+  /* the pair to flip */
+  tuple,
+) => [tuple[1], tuple[0]];
+`,
+      errors: [
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('tuple: [string, number]'),
+        },
+      ],
+    },
+
+    // trailing line comment on the parameter keeps the list broken
+    {
+      code: `const swap: (tuple: [string, number]) => [number, string] = (
+  tuple: [string, number], // the pair to flip
+) => [tuple[1], tuple[0]];
+`,
+      output: `const swap: (tuple: [string, number]) => [number, string] = (
+  tuple, // the pair to flip
+) => [tuple[1], tuple[0]];
+`,
+      errors: [
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('tuple: [string, number]'),
+        },
+      ],
+    },
+
+    // A block comment sharing the parameter's line rides onto it, whichever side
+    // of the comma it was written on, and the list still collapses.
+    {
+      code: `const swap: (t: [string, number]) => [number, string] = (
+  t: [string, number] /* pair */,
+) => t;
+`,
+      output: `const swap: (t: [string, number]) => [number, string] = (t /* pair */) => t;
+`,
+      errors: [
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('t: [string, number]'),
+        },
+      ],
+    },
+
+    // same-line block comment after the comma rides onto the parameter
+    {
+      code: `const swap: (t: [string, number]) => [number, string] = (
+  t: [string, number], /* pair */
+) => t;
+`,
+      output: `const swap: (t: [string, number]) => [number, string] = (t /* pair */) => t;
+`,
+      errors: [
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('t: [string, number]'),
+        },
+      ],
+    },
+
+    // same-line block comment before the parameter leads it
+    {
+      code: `const swap: (t: [string, number]) => [number, string] = (
+  /* pair */ t: [string, number],
+) => t;
+`,
+      output: `const swap: (t: [string, number]) => [number, string] = (/* pair */ t) => t;
+`,
+      errors: [
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('t: [string, number]'),
+        },
+      ],
+    },
+
+    // An empty block cannot break to make room, so an overflowing header keeps
+    // the list broken.
+    {
+      code: `const noop: (tuple: [string, number], other: [string, number]) => void = (
+  tuple: [string, number],
+) => {};
+`,
+      output: `const noop: (tuple: [string, number], other: [string, number]) => void = (
+  tuple,
+) => {};
+`,
+      errors: [
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('tuple: [string, number]'),
+        },
+      ],
+    },
+
+    // prettier preserves an object literal broken after its brace, so only the
+    // header collapses around it.
+    {
+      code: `export const makeRecord: (id: string) => { id: string; kind: string } = (
+  id: string,
+) => ({
+  id,
+  kind: 'thing',
+});
+`,
+      output: `export const makeRecord: (id: string) => { id: string; kind: string } = (
+  id,
+) => ({
+  id,
+  kind: 'thing',
+});
+`,
+      errors: [
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('id: string'),
+        },
+      ],
+    },
+
+    // prettier preserves an object literal broken after its brace, so only the
+    // header collapses around it — here landing exactly on the width.
+    {
+      code: `export const makeItem: (id: string) => { id: string; kind: string } = (
+  id: string,
+) => ({
+  id,
+  kind: 'thing',
+});
+`,
+      output: `export const makeItem: (id: string) => { id: string; kind: string } = (id) => ({
+  id,
+  kind: 'thing',
+});
+`,
+      errors: [
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('id: string'),
+        },
+      ],
+    },
+
+    // Every list a pass strips is re-laid out inside the same single fix that
+    // takes the import they all orphaned.
+    {
+      code: `import { Handler } from './handler';
+import { Payload } from './payload';
+
+export const firstHandlerWithAVeryLongName: Handler = (
+  payload: Payload,
+  extras: Payload,
+) => [payload.id, payload.kind, extras.id, extras.kind];
+export const secondHandlerWithAVeryLongName: Handler = (
+  payload: Payload,
+  extras: Payload,
+) => [payload.id, payload.kind, extras.id, extras.kind];
+`,
+      output: `import { Handler } from './handler';
+
+export const firstHandlerWithAVeryLongName: Handler = (payload, extras) => [
+  payload.id,
+  payload.kind,
+  extras.id,
+  extras.kind,
+];
+export const secondHandlerWithAVeryLongName: Handler = (payload, extras) => [
+  payload.id,
+  payload.kind,
+  extras.id,
+  extras.kind,
+];
+`,
+      errors: [
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('payload: Payload'),
+        },
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('extras: Payload'),
+        },
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('payload: Payload'),
+        },
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('extras: Payload'),
+        },
+      ],
+    },
   ],
 });
 
@@ -1657,6 +2213,37 @@ describe('no-redundant-param-types --fix under eslint-disable', () => {
 
     expect(output).toContain("import { Payload } from './payload';");
     expect(output).toContain('(payload: Payload)');
+    expectNoDanglingType(source, output);
+  });
+
+  it('keeps a disabled sibling annotation and the list broken around it', () => {
+    // The directive is a line comment inside the parentheses, which is a
+    // comment prettier itself holds the list open for; the sibling's annotation
+    // goes while the disabled one, and the import it still reads, stay.
+    const source = [
+      IMPORTS,
+      '',
+      'export const run: Handler = (',
+      '  payload: Payload,',
+      `  // eslint-disable-next-line ${RULE_ID}`,
+      '  other: Payload,',
+      ') => [payload, other];',
+      '',
+    ].join('\n');
+    const { output } = fixWith(source);
+
+    expect(output).toBe(
+      [
+        IMPORTS,
+        '',
+        'export const run: Handler = (',
+        '  payload,',
+        `  // eslint-disable-next-line ${RULE_ID}`,
+        '  other: Payload,',
+        ') => [payload, other];',
+        '',
+      ].join('\n'),
+    );
     expectNoDanglingType(source, output);
   });
 
