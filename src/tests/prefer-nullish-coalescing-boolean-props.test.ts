@@ -1360,15 +1360,36 @@ export const chosen = size ?? 5;
         ],
         output: `const value = /* lead */ a ?? b;`,
       },
+      // The carried comment sits in a call argument rather than at the end of a
+      // statement on purpose. Prettier prints a STATEMENT-final block comment
+      // after the terminator (`a ?? b; /* tail */`) and reaches that layout in
+      // two passes, not one: it prints `a || (b /* tail */)` as
+      // `a || b /* tail */` and only hops the comment past the `;` on the next
+      // pass. A pre-image that is not itself a prettier fixed point charges this
+      // fixer with churn it inherits — the emission here differs from its input
+      // by the operator alone (#2106).
       {
-        code: `const value = a || (b /* tail */);`,
+        code: `f(a || (b /* tail */));`,
         errors: [
           {
             messageId: 'preferNullishCoalescing',
             data: { left: 'a', right: 'b' },
           },
         ],
-        output: `const value = a ?? b /* tail */;`,
+        output: `f(a ?? b /* tail */);`,
+      },
+      // The same comment once prettier has parked it past the terminator: it is
+      // outside the expression's range, so the swap must leave it exactly where
+      // the formatter put it rather than pulling it back inside.
+      {
+        code: `const value = a || b; /* tail */`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a', right: 'b' },
+          },
+        ],
+        output: `const value = a ?? b; /* tail */`,
       },
       // `return` forbids a LineTerminator before its operand, and a block
       // comment carrying one IS a LineTerminator to the grammar (#1963), so a
@@ -1575,8 +1596,11 @@ export const chosen = size ?? 5;
         ],
         output: `const value =\n  a ?? // c\n  b ??\n  d;`,
       },
-      // A comment carried onto the operator's line already separates the
-      // operands, so no second break is added beside it.
+      // A comment carried onto the operator's line already separates the two
+      // operands it sits between, so no second break is added beside it — but
+      // the chain is ONE prettier group, so the gap the comment does not touch
+      // takes its own break rather than leaving two operands packed onto one
+      // line (#2106).
       {
         code: `const value = (a ?? b) || // c\n  d;`,
         errors: [
@@ -1585,7 +1609,148 @@ export const chosen = size ?? 5;
             data: { left: 'a ?? b', right: 'd' },
           },
         ],
-        output: `const value =\n  a ?? b ?? // c\n  d;`,
+        output: `const value =\n  a ??\n  b ?? // c\n  d;`,
+      },
+      // ===== REGRESSION FIXTURES FOR ISSUE #2106 =====
+      // Prettier lays a logical chain out as ONE group: once it breaks, every
+      // operand takes a line of its own, at the depth of the line the group
+      // opens on. Each shape below is the prettier-canonical spelling of an
+      // input the converged emission used to re-flow.
+      //
+      // A link an earlier pass already converted carries its own text, written
+      // when it still sat behind parentheses one level deeper. Splicing it into
+      // the chain has to re-flow it, not copy it.
+      {
+        code: `const value =\n  (a ?? // c\n    b) ||\n  d;`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a ?? // c\n    b', right: 'd' },
+          },
+        ],
+        output: `const value =\n  a ?? // c\n  b ??\n  d;`,
+      },
+      // The comment lands in the LAST gap, so the earlier gap is the one that
+      // would otherwise keep two operands packed onto one line.
+      {
+        code: `const value =\n  (a ?? b) || // c\n  d;`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a ?? b', right: 'd' },
+          },
+        ],
+        output: `const value =\n  a ??\n  b ?? // c\n  d;`,
+      },
+      // A call argument and an array element take prettier's `indent(rest)`:
+      // the argument's own indentation positions the chain's FIRST operand, and
+      // every later operand sits one step further in.
+      {
+        code: `f(\n  primary.id || // c\n    secondary.id,\n);`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'primary.id', right: 'secondary.id' },
+          },
+        ],
+        output: `f(\n  primary.id ?? // c\n    secondary.id,\n);`,
+      },
+      {
+        code: `function g() {\n  f(\n    primary.id || // c\n      secondary.id,\n  );\n}`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'primary.id', right: 'secondary.id' },
+          },
+        ],
+        output: `function g() {\n  f(\n    primary.id ?? // c\n      secondary.id,\n  );\n}`,
+      },
+      {
+        code: `const a = [\n  primary.id || // c\n    secondary.id,\n];`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'primary.id', right: 'secondary.id' },
+          },
+        ],
+        output: `const a = [\n  primary.id ?? // c\n    secondary.id,\n];`,
+      },
+      // Both effects at once: a spliced link inside a call argument, so the
+      // flattened operands land one step in from the argument's own column.
+      {
+        code: `f(\n  (a ?? // c\n    b) ||\n    d,\n);`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a ?? // c\n    b', right: 'd' },
+          },
+        ],
+        output: `f(\n  a ?? // c\n    b ??\n    d,\n);`,
+      },
+      {
+        code: `const a = [\n  (x ?? // c\n    y) ||\n    z,\n];`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'x ?? // c\n    y', right: 'z' },
+          },
+        ],
+        output: `const a = [\n  x ?? // c\n    y ??\n    z,\n];`,
+      },
+      // The opposite direction, and the reason a constant step cannot serve
+      // both: an assignment has already taken the chain's step, so its operands
+      // stay FLUSH with the first one. A comment written ahead of the chain
+      // rides inside the chain's own group, so it does not make the chain a
+      // continuation of the line it shares.
+      {
+        code: `const uid =\n  /* pin */ primary.id || // c\n  secondary.id;`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'primary.id', right: 'secondary.id' },
+          },
+        ],
+        output: `const uid =\n  /* pin */ primary.id ?? // c\n  secondary.id;`,
+      },
+      {
+        code: `const o = {\n  k:\n    /* pin */ primary.id || // c\n    secondary.id,\n};`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'primary.id', right: 'secondary.id' },
+          },
+        ],
+        output: `const o = {\n  k:\n    /* pin */ primary.id ?? // c\n    secondary.id,\n};`,
+      },
+      // A link whose parentheses the swap makes redundant lands at the PAREN's
+      // column, not the operand's, so the depth is measured from where the
+      // emission starts rather than from where the node does.
+      {
+        code: `const v =\n  q ??\n  (aa || // c\n    bb);`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'aa', right: 'bb' },
+          },
+        ],
+        output: `const v =\n  q ??\n  aa ?? // c\n  bb;`,
+      },
+      // The break that governs this link sits in a gap the link does not own:
+      // it belongs to the enclosing `??` chain, which absorbs this one into its
+      // group. Asking only the reported link leaves two operands on one line.
+      {
+        code: `const v =\n  q ??\n  (aa ||\n    bb || // c\n    cc);`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'aa ||\n    bb', right: 'cc' },
+          },
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'aa', right: 'bb' },
+          },
+        ],
+        output: `const v =\n  q ??\n  (aa ||\n    bb) ?? // c\n  cc;`,
       },
       // Every operator a chain lands after takes the break, and each was
       // measured against prettier rather than reasoned about: an assignment,
@@ -2185,5 +2350,196 @@ describe('prefer-nullish-coalescing-boolean-props: a broken chain is a prettier 
     const { output } = lint(code);
     expect(output).toBe(expected);
     expect(format(output)).toBe(output);
+  });
+});
+
+// ===== REGRESSION TESTS FOR ISSUE #2106 =====
+// #2101 pinned the LANDING break. This block pins the two things that decide
+// where the operands then sit: how deep the chain's tail is indented, and how
+// many of its gaps take a break. Prettier prints a binaryish chain as one
+// group, so a chain that breaks anywhere breaks EVERYWHERE — and it prints that
+// group as `group([first, indent(rest)])` except where the construct
+// introducing the chain has already taken that step. An emission that packs two
+// operands onto a line, or that indents the tail by a constant, is text agora's
+// prettier rewrites the moment `eslint --fix` hands it over.
+//
+// Both prettier 2.7.1 (this repo) and 2.8.8 (agora) were measured on every
+// shape below and printed each identically, so the local binary stands in for
+// the consumer's.
+describe('prefer-nullish-coalescing-boolean-props: chain depth and gap breaks are a prettier fixed point (issue #2106)', () => {
+  const RULE_ID = '@blumintinc/blumint/prefer-nullish-coalescing-boolean-props';
+
+  const lint = (code: string) => {
+    const linter = new Linter();
+    linter.defineParser('ts', tsParser as never);
+    linter.defineRule(
+      RULE_ID,
+      preferNullishCoalescingBooleanProps as unknown as Rule.RuleModule,
+    );
+    return linter.verifyAndFix(
+      code,
+      {
+        parser: 'ts',
+        parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+        rules: { [RULE_ID]: 'error' },
+      },
+      'example.ts',
+    );
+  };
+
+  const format = (code: string) =>
+    prettier.format(code, {
+      parser: 'typescript',
+      semi: true,
+      trailingComma: 'all',
+      singleQuote: true,
+      printWidth: 80,
+      tabWidth: 2,
+    });
+
+  // Each entry is the PRETTIER-CANONICAL spelling of its input, so a failure is
+  // the fixer's churn and never churn the fixture arrived carrying.
+  const DEPTH_CASES: [string, string][] = [
+    // A link converted by an earlier pass carries text written one level deeper,
+    // from when parentheses still held it there. Splicing it in re-flows it.
+    [
+      `const value =\n  (a ?? // c\n    b) ||\n  d;\n`,
+      `const value =\n  a ?? // c\n  b ??\n  d;\n`,
+    ],
+    // The comment sits in the LAST gap; the earlier gap still takes a break.
+    [
+      `const value =\n  (a ?? b) || // c\n  d;\n`,
+      `const value =\n  a ??\n  b ?? // c\n  d;\n`,
+    ],
+    // A call argument, an array element and a nested call all take
+    // `indent(rest)`: the tail sits one step past the chain's own first operand.
+    [
+      `f(\n  primary.id || // c\n    secondary.id,\n);\n`,
+      `f(\n  primary.id ?? // c\n    secondary.id,\n);\n`,
+    ],
+    [
+      `function g() {\n  f(\n    primary.id || // c\n      secondary.id,\n  );\n}\n`,
+      `function g() {\n  f(\n    primary.id ?? // c\n      secondary.id,\n  );\n}\n`,
+    ],
+    [
+      `const a = [\n  primary.id || // c\n    secondary.id,\n];\n`,
+      `const a = [\n  primary.id ?? // c\n    secondary.id,\n];\n`,
+    ],
+    // Both effects together: a spliced link inside a call argument.
+    [
+      `f(\n  (a ?? // c\n    b) ||\n    d,\n);\n`,
+      `f(\n  a ?? // c\n    b ??\n    d,\n);\n`,
+    ],
+    [
+      `const a = [\n  (x ?? // c\n    y) ||\n    z,\n];\n`,
+      `const a = [\n  x ?? // c\n    y ??\n    z,\n];\n`,
+    ],
+    // The opposite direction. An assignment and an object value have already
+    // spent the chain's step, so the tail stays FLUSH — which is why a constant
+    // indent cannot answer both this and the argument cases above.
+    [
+      `const uid =\n  /* pin */ primary.id || // c\n  secondary.id;\n`,
+      `const uid =\n  /* pin */ primary.id ?? // c\n  secondary.id;\n`,
+    ],
+    [
+      `const o = {\n  k:\n    /* pin */ primary.id || // c\n    secondary.id,\n};\n`,
+      `const o = {\n  k:\n    /* pin */ primary.id ?? // c\n    secondary.id,\n};\n`,
+    ],
+    // A block comment prettier keeps beside the operand it trails, so the swap
+    // is the only difference between input and emission.
+    [`f(a || b /* tail */);\n`, `f(a ?? b /* tail */);\n`],
+    // A link nested in a longer `??` chain: the depth is the claimed paren's,
+    // and the break that governs the link lives in a gap the link does not own.
+    [
+      `const v =\n  q ??\n  (aa || // c\n    bb);\n`,
+      `const v =\n  q ??\n  aa ?? // c\n  bb;\n`,
+    ],
+    [
+      `const v =\n  q ??\n  (aa ||\n    bb || // c\n    cc);\n`,
+      `const v =\n  q ??\n  aa ??\n  bb ?? // c\n  cc;\n`,
+    ],
+  ];
+
+  it.each(DEPTH_CASES)('emits a prettier fixed point for %s', (code) => {
+    const { output } = lint(code);
+    expect(format(output)).toBe(output);
+  });
+
+  it.each(DEPTH_CASES)('converges %s to %s', (code, expected) => {
+    expect(lint(code).output).toBe(expected);
+  });
+
+  // Non-vacuity, three ways. The table must be prettier-canonical going IN (or
+  // the oracle is measuring the fixture's own churn), every entry must be a
+  // rewrite the fixer actually performed, and the table must cover both
+  // indentation directions rather than one of them twice.
+  it('feeds the oracle only prettier-canonical inputs', () => {
+    const churning = DEPTH_CASES.filter(([code]) => format(code) !== code);
+    expect(churning).toEqual([]);
+  });
+
+  it('rewrites every case it is handed', () => {
+    const unchanged = DEPTH_CASES.filter(
+      ([code]) => !lint(code).fixed || lint(code).output === code,
+    );
+    expect(unchanged).toEqual([]);
+  });
+
+  it('covers both indentation directions and more than a handful of shapes', () => {
+    expect(DEPTH_CASES.length).toBeGreaterThanOrEqual(12);
+    const tailDeeper = DEPTH_CASES.filter(([, expected]) =>
+      /\n {4}secondary\.id|\n {6}secondary\.id|\n {4}[bdyz] \?\?|\n {4}[dz],/.test(
+        expected,
+      ),
+    );
+    const tailFlush = DEPTH_CASES.filter(([, expected]) =>
+      /\n {2}secondary\.id;|\n {4}secondary\.id,\n};|\n {2}b \?\?|\n {2}d;/.test(
+        expected,
+      ),
+    );
+    expect(tailDeeper.length).toBeGreaterThanOrEqual(4);
+    expect(tailFlush.length).toBeGreaterThanOrEqual(4);
+  });
+
+  // Planted positive controls: the verbatim emissions of the pre-fix fixer. Each
+  // re-lints CLEAN, so a report-counting guard scores it a success, while the
+  // formatter rewrites it on sight — and rewrites it INTO the table's answer.
+  it.each([
+    [
+      `const value =\n  a ?? b ?? // c\n  d;\n`,
+      `const value =\n  a ??\n  b ?? // c\n  d;\n`,
+    ],
+    [
+      `const value =\n  a ?? // c\n    b ??\n  d;\n`,
+      `const value =\n  a ?? // c\n  b ??\n  d;\n`,
+    ],
+    [
+      `f(\n  primary.id ?? // c\n  secondary.id,\n);\n`,
+      `f(\n  primary.id ?? // c\n    secondary.id,\n);\n`,
+    ],
+    [
+      `const uid =\n  /* pin */ primary.id ?? // c\n    secondary.id;\n`,
+      `const uid =\n  /* pin */ primary.id ?? // c\n  secondary.id;\n`,
+    ],
+    [
+      `const v =\n  q ??\n  aa ?? bb ?? // c\n  cc;\n`,
+      `const v =\n  q ??\n  aa ??\n  bb ?? // c\n  cc;\n`,
+    ],
+  ])(
+    'would have caught the bug: %s is rejected by the oracle',
+    (previousEmission, canonical) => {
+      expect(lint(previousEmission).fixed).toBe(false);
+      expect(format(previousEmission)).not.toBe(previousEmission);
+      expect(format(previousEmission)).toBe(canonical);
+    },
+  );
+
+  // Planted negative control: an already-canonical emission must be re-emitted
+  // byte-for-byte, so the depth model cannot pass by re-indenting everything.
+  it('leaves an already-canonical chain byte-for-byte alone', () => {
+    const code = `f(\n  primary.id ?? // c\n    secondary.id,\n);\n`;
+    expect(format(code)).toBe(code);
+    expect(lint(code).fixed).toBe(false);
+    expect(lint(code).output).toBe(code);
   });
 });
