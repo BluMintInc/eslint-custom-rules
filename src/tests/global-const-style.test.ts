@@ -2044,6 +2044,148 @@ const Probe = () => {
       ],
       output: 'const CFG = { a: 1 } as const;\nsend({ p: CFG.a });\n',
     },
+    // Issue #2126: the append LENGTHENS the declaration by nine columns, so a
+    // line that fitted prettier's 80-column print width before the fix does not
+    // after it. Prettier's answer for an over-wide assignment whose right-hand
+    // side cannot break internally is to break after the `=` and indent one
+    // step, so emitting the flat form leaves the file churning on every format
+    // run. Every `output` below is a prettier fixed point, measured against the
+    // formatter the consuming repo runs (prettier 2.8.8 at print width 80).
+    {
+      code: `export const PLACEHOLDER_AVATAR_URL = '/assets/images/avatar-default.svg';\n`,
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: `export const PLACEHOLDER_AVATAR_URL =\n  '/assets/images/avatar-default.svg' as const;\n`,
+    },
+    // The break follows from the WIDTH alone, so an unexported declaration of
+    // the same shape breaks on the same terms.
+    {
+      code: `const PLACEHOLDER_AVATAR_URL = '/assets/images/avatar-default-large.svg';\n`,
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: `const PLACEHOLDER_AVATAR_URL =\n  '/assets/images/avatar-default-large.svg' as const;\n`,
+    },
+    // The negative control for the whole group: a declaration that still fits
+    // once the nine columns are added keeps the flat append. Without it this set
+    // would pass just as well against a fixer that broke every line it touched.
+    {
+      code: `const API_URL = 'https://api.example.com';\n`,
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: `const API_URL = 'https://api.example.com' as const;\n`,
+    },
+    // The boundary. This declaration is 71 columns, so the append lands it on
+    // exactly 80 — the width is a limit, not a target, and 80 fits.
+    {
+      code: `export const ANALYTICS_EVENT_NAME = 'user_profile_avatar_upload_start';\n`,
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: `export const ANALYTICS_EVENT_NAME = 'user_profile_avatar_upload_start' as const;\n`,
+    },
+    // One column more of value, and the append lands on 81: the break appears.
+    {
+      code: `export const ANALYTICS_EVENT_NAME = 'user_profile_avatar_upload_failed';\n`,
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: `export const ANALYTICS_EVENT_NAME =\n  'user_profile_avatar_upload_failed' as const;\n`,
+    },
+    // An exported binding's rename fix withdraws — its name is a cross-file
+    // contract — so the id keeps its spelling and adds no columns. This
+    // declaration is the same 71 columns as the flat one above and stays flat,
+    // which a measurement that counted every REPORTED rename would get wrong.
+    {
+      code: `export const avatarAnalyticsEvent = 'user_profile_avatar_upload_start';\n`,
+      filename: 'test.ts',
+      errors: [
+        { messageId: 'asConst' },
+        {
+          messageId: 'upperSnakeCase',
+          data: {
+            name: 'avatarAnalyticsEvent',
+            suggestedName: 'AVATAR_ANALYTICS_EVENT',
+          },
+        },
+      ],
+      output: `export const avatarAnalyticsEvent = 'user_profile_avatar_upload_start' as const;\n`,
+    },
+    // A rename that DOES land moves the width the append is measured against,
+    // because ESLint applies both of this rule's fixes in the same pass. The
+    // two declarations below are both 71 columns and differ only in whether the
+    // id is rewritten: `avatarAnalyticsEvent` becomes `AVATAR_ANALYTICS_EVENT`,
+    // two columns longer, which is what carries the line past the width.
+    {
+      code: `const ANALYTICS_EVENT_NAME = 'user_profile_avatar_upload_has_finished';\n`,
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: `const ANALYTICS_EVENT_NAME = 'user_profile_avatar_upload_has_finished' as const;\n`,
+    },
+    {
+      code: `const avatarAnalyticsEvent = 'user_profile_avatar_upload_has_finished';\n`,
+      filename: 'test.ts',
+      errors: [
+        { messageId: 'asConst' },
+        {
+          messageId: 'upperSnakeCase',
+          data: {
+            name: 'avatarAnalyticsEvent',
+            suggestedName: 'AVATAR_ANALYTICS_EVENT',
+          },
+        },
+      ],
+      output: `const AVATAR_ANALYTICS_EVENT =\n  'user_profile_avatar_upload_has_finished' as const;\n`,
+    },
+    // A declaration already broken across lines is measured on a line that is
+    // not the whole of what moves, so the flat append is kept — and that is
+    // what prettier settles on anyway, since the value still cannot fit beside
+    // the id.
+    {
+      code: `export const PLACEHOLDER_AVATAR_URL_FOR_A_MISSING_USER_PROFILE =\n  '/assets/images/avatar-default.svg';\n`,
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: `export const PLACEHOLDER_AVATAR_URL_FOR_A_MISSING_USER_PROFILE =\n  '/assets/images/avatar-default.svg' as const;\n`,
+    },
+    // Prettier prints a trailing LINE comment as a suffix that never counts
+    // toward fitting: this output is 91 columns and prettier leaves it alone.
+    // Measuring the LINE instead of the statement would break it for nothing.
+    {
+      code: `const CDN_BASE_URL = 'https://cdn.example.com'; // read by the avatar image loader\n`,
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: `const CDN_BASE_URL = 'https://cdn.example.com' as const; // read by the avatar image loader\n`,
+    },
+    // A trailing BLOCK comment occupies columns like any other text, so the
+    // same declaration carrying one that ends at column 72 does break.
+    {
+      code: `const CDN_BASE_URL = 'https://cdn.example.com'; /* read by the loader */\n`,
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: `const CDN_BASE_URL =\n  'https://cdn.example.com' as const; /* read by the loader */\n`,
+    },
+    // Counting a block comment is not the same as breaking whenever one is
+    // present: one that ends inside the width leaves the declaration flat.
+    {
+      code: `const CDN_BASE_URL = 'https://cdn.example.com'; /* the CDN */\n`,
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: `const CDN_BASE_URL = 'https://cdn.example.com' as const; /* the CDN */\n`,
+    },
+    // A comment on the NEXT line shares no columns with the declaration, so it
+    // must not be measured — this one ends past column 71 and changes nothing.
+    {
+      code: `const CDN_BASE_URL = 'https://cdn.example.com';\n/* a comment long enough to end past column seventy-one, yes it is */\n`,
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: `const CDN_BASE_URL = 'https://cdn.example.com' as const;\n/* a comment long enough to end past column seventy-one, yes it is */\n`,
+    },
+    // Every block comment on the line occupies columns, not just the first: the
+    // declaration and the first comment together end at column 55, and it is
+    // the second comment that carries the line past the width.
+    {
+      code: `const CDN_BASE_URL = 'https://cdn.example.com'; /* a */ /* bbbbbbbbbbbbbbbbbbbbbbbb */\n`,
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: `const CDN_BASE_URL =\n  'https://cdn.example.com' as const; /* a */ /* bbbbbbbbbbbbbbbbbbbbbbbb */\n`,
+    },
   ],
 });
 
@@ -2225,5 +2367,94 @@ describe('global-const-style --fix degeneracy (Issue #1816)', () => {
       `const ${expected} = { a: 1 } as const;\nexport const useIt = () => ${expected};\n`,
     );
     expect(parseErrorCount(fixed)).toBe(0);
+  });
+});
+
+/**
+ * Issue #2126: the shapes below overflow the print width once ` as const` is
+ * appended, and the width measurement deliberately withholds the break for each
+ * of them. Each carve-out needs a case of its own, or a later change deletes one
+ * without anything going red.
+ *
+ * They are pinned here rather than in the RuleTester corpus because the flat
+ * append is NOT the spelling prettier settles on for them: the fixed-point sweep
+ * formats every fixture before linting it and would read a deliberate carve-out
+ * as a defect of the fixer. What these cases own is that the emitted text is the
+ * flat append — the shape the rule has always written — and nothing else.
+ */
+describe('global-const-style as-const width carve-outs (Issue #2126)', () => {
+  const RULE_ID = 'global-const-style';
+
+  const fixWith = (code: string) => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(RULE_ID, rule as unknown as Rule.RuleModule);
+    return linter.verifyAndFix(
+      code,
+      {
+        parser: '@typescript-eslint/parser',
+        parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+        rules: { [RULE_ID]: 'error' },
+      },
+      'constants.ts',
+    ).output;
+  };
+
+  it.each([
+    // Prettier EXPANDS an over-wide object or array literal across lines rather
+    // than pushing it below the `=`. Only a rebuild from the literal's own
+    // items could emit that shape, and such a rebuild owns every byte between
+    // the brackets — a comment written among the items would be deleted by it.
+    [
+      'an object literal',
+      `export const AVATAR_UPLOAD_OPTIONS = { maxSizeMb: 4, qualityPercent: 82 };`,
+      `export const AVATAR_UPLOAD_OPTIONS = { maxSizeMb: 4, qualityPercent: 82 } as const;`,
+    ],
+    [
+      'an array literal',
+      `export const SUPPORTED_AVATAR_TYPES = ['image/png', 'image/jpeg', 'image/webp'];`,
+      `export const SUPPORTED_AVATAR_TYPES = ['image/png', 'image/jpeg', 'image/webp'] as const;`,
+    ],
+    // A sibling declarator carries its own report, and its fix lands in the same
+    // pass, so the columns this one is measured against move with it. The
+    // post-pass width is not knowable from either declarator alone.
+    [
+      'a declaration with a sibling declarator',
+      `const AVATAR_URL = '/assets/avatar.svg', BANNER = '/assets/banner.svg';`,
+      `const AVATAR_URL = '/assets/avatar.svg' as const, BANNER = '/assets/banner.svg' as const;`,
+    ],
+    // The break rewrites the span between `=` and the end of the initializer, so
+    // a comment sitting inside that span would be swallowed by it.
+    [
+      'a comment between `=` and the initializer',
+      `const CDN_BASE_URL = /* pinned by ops */ 'https://cdn.example.com/assets';`,
+      `const CDN_BASE_URL = /* pinned by ops */ 'https://cdn.example.com/assets' as const;`,
+    ],
+    // Parentheses are not part of the initializer's range, so a break anchored
+    // on `=` would move the `(` and leave the `)` behind.
+    [
+      'a parenthesized initializer',
+      `const CDN_BASE_URL = ('https://cdn.example.com/assets/images/avatars/');`,
+      `const CDN_BASE_URL = ('https://cdn.example.com/assets/images/avatars/' as const);`,
+    ],
+    // A second statement on the line is a shape prettier splits before it
+    // measures anything, so the width read from the source is not the one it
+    // decides on.
+    [
+      'a declaration sharing its line with another statement',
+      `const SHORT = 1; const AVATAR_PLACEHOLDER_URL = '/assets/avatar.svg';`,
+      `const SHORT = 1 as const; const AVATAR_PLACEHOLDER_URL = '/assets/avatar.svg' as const;`,
+    ],
+  ])('keeps the flat append for %s', (_shape, code, expected) => {
+    // Non-vacuity: each input must overflow the print width once the nine
+    // columns are appended, otherwise the carve-out is never the reason the
+    // declaration stays flat and the case guards nothing.
+    expect(expected.split('\n')[0].length).toBeGreaterThan(80);
+
+    expect(fixWith(code)).toBe(expected);
   });
 });
