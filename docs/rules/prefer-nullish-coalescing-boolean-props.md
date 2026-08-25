@@ -18,7 +18,17 @@ This rule keeps logical OR (`||`) available inside boolean contexts (JSX boolean
 
 **How to fix**: Replace `left || right` with `left ?? right` unless the expression is strictly boolean. The fixer applies this automatically.
 
-**The parentheses `??` requires are kept, and only those**: ECMAScript rejects `??` sharing an expression with an unparenthesized `&&` or `||`, so an operand that is itself an `&&` or `||` comes back parenthesized — `(a && b) || c` becomes `(a && b) ?? c`, never the unparseable `a && b ?? c`. A `??` operand needs no such separation: `??` chains with itself, and it is associative, so the flat chain evaluates the same operands in the same order. `(a ?? b) || c` becomes `a ?? b ?? c`, not `(a ?? b) ?? c`. Parentheses that existed only to hold a `||` apart from a neighbouring `??` go the same way once the swap removes the reason for them, so `(a || b) ?? c` becomes `a ?? b ?? c`.
+**The parentheses the swap makes load-bearing are kept, and only those**: ECMAScript rejects `??` sharing an expression with an unparenthesized `&&` or `||`, so an operand that is itself an `&&` or `||` comes back parenthesized — `(a && b) || c` becomes `(a && b) ?? c`, never the unparseable `a && b ?? c`. A `??` operand needs no such separation: `??` chains with itself, and it is associative, so the flat chain evaluates the same operands in the same order. `(a ?? b) || c` becomes `a ?? b ?? c`, not `(a ?? b) ?? c`. Parentheses that existed only to hold a `||` apart from a neighbouring `??` go the same way once the swap removes the reason for them, so `(a || b) ?? c` becomes `a ?? b ?? c`.
+
+An operand the author already parenthesized keeps its pair on the same test, applied to that operand's own spelling rather than to the `&&`/`||` case alone. Every operator binding looser than `??` needs it to stay the same program: unparenthesized, a `yield`, an assignment or a conditional operand swallows the `??` and its right operand, turning `(yield x) ?? y` into `yield (x ?? y)`, and a sequence operand stops parsing altogether. `await`, `as` and `satisfies` bind tighter, so their pair changes no meaning, but Prettier writes it regardless — and emitting a spelling the formatter immediately rewrites churns the file on every pass in a repository that runs both over one tree:
+
+```ts
+// Before
+const value = (await fetchFlag()) || fallback;
+
+// After `--fix`
+const value = (await fetchFlag()) ?? fallback;
+```
 
 **Long `||` chains convert one link per pass**: the links of `a || b || c` overlap, so a single `--fix` pass rewrites the innermost link and parenthesizes it (`(a ?? b) || c`) to keep the half-converted chain parseable. The remaining links are reported again and convert on subsequent passes, which `eslint --fix` runs automatically, and the scaffolding parentheses come off as the last link converts:
 

@@ -1146,6 +1146,103 @@ export const chosen = size ?? 5;
         ],
         output: `const value = (a || b) ?? (c || d);`,
       },
+
+      // ===== REGRESSION TESTS FOR ISSUE #2135 =====
+      // #1720 restored the parens around a `&&`/`||` operand, the pair the
+      // grammar makes mandatory. These are the operands that need their pair for
+      // a reason the grammar check never asked about, and each was missing from
+      // the corpus — which is why the prettier fixed-point sweep never saw them.
+      //
+      // Three distinct harms hide here, and only the first is cosmetic. An
+      // `await`/`satisfies` operand binds TIGHTER than `??`, so dropping its
+      // parens changes nothing but the spelling — prettier writes them back, and
+      // agora, which runs prettier and `--fix` over one tree, gets a diff that
+      // never settles. A `yield`, assignment or conditional operand binds
+      // LOOSER: unparenthesized it swallows the `??` and its right operand, so
+      // `(yield x) ?? y` silently becomes `yield (x ?? y)` — a different program
+      // that prettier is perfectly happy to leave alone, which is exactly why a
+      // fixed-point oracle cannot be the guard for it. A sequence operand does
+      // not even parse: `(a, b) ?? c` degrades to `a, b ?? c`.
+      {
+        code: `const value = (await fetchFlag()) || fallback;`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'await fetchFlag()', right: 'fallback' },
+          },
+        ],
+        output: `const value = (await fetchFlag()) ?? fallback;`,
+      },
+      // The right operand takes the same treatment: the swap makes the pair
+      // load-bearing on whichever side the author wrote it.
+      {
+        code: `const value = fallback || (await fetchFlag());`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'fallback', right: 'await fetchFlag()' },
+          },
+        ],
+        output: `const value = fallback ?? (await fetchFlag());`,
+      },
+      {
+        code: `const value = (a satisfies boolean) || b;`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a satisfies boolean', right: 'b' },
+          },
+        ],
+        output: `const value = (a satisfies boolean) ?? b;`,
+      },
+      // Losing this pair rewrites the program to `yield (request ?? fallback)`,
+      // which yields a different value and resumes with a different one.
+      {
+        code: `function* gen() { const value = (yield request) || fallback; }`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'yield request', right: 'fallback' },
+          },
+        ],
+        output: `function* gen() { const value = (yield request) ?? fallback; }`,
+      },
+      // Without the pair this assigns `source ?? fallback` to `target` instead
+      // of defaulting the assignment's own result.
+      {
+        code: `const value = (target = source) || fallback;`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'target = source', right: 'fallback' },
+          },
+        ],
+        output: `const value = (target = source) ?? fallback;`,
+      },
+      // Without the pair the `??` binds to the alternate alone, so the whole
+      // conditional stops being the defaulted expression.
+      {
+        code: `const value = (a ? b : c) || d;`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a ? b : c', right: 'd' },
+          },
+        ],
+        output: `const value = (a ? b : c) ?? d;`,
+      },
+      // The one operand whose unparenthesized form does not parse at all.
+      {
+        code: `const value = (a, b) || c;`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a, b', right: 'c' },
+          },
+        ],
+        output: `const value = (a, b) ?? c;`,
+      },
+
       // ===== REGRESSION TESTS FOR ISSUE #2090 =====
       // A `??` operand needs no parens: `??` chains with itself and is
       // associative, so the flat form evaluates the same operands in the same

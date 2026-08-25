@@ -774,10 +774,38 @@ function couldBeNullish(
 }
 
 /**
- * ECMAScript forbids `??` from sharing an expression with an unparenthesized
- * `&&`/`||`. Source-level parentheses are not part of an ESTree node's range,
- * so rewriting a whole LogicalExpression drops the parens around its operands —
- * exactly the ones the operator swap makes mandatory.
+ * The operand spellings prettier prints inside parentheses under `??`, measured
+ * against the formatter in both operand slots and at every position of a chain
+ * rather than derived from precedence.
+ *
+ * Two reasons converge on one set. Grammar: every operator binding looser than
+ * `??` swallows the `??` and its right operand once the parens go, so dropping
+ * them silently rewrites the program — `(yield x) ?? y` becomes `yield (x ?? y)`
+ * and `(z = a) ?? y` becomes `z = (a ?? y)` — or stops parsing outright, as a
+ * comma operand does. Style: `await`, `as` and `satisfies` bind tighter than
+ * `??`, so their parens change nothing, yet prettier writes them regardless.
+ *
+ * Spellings prettier leaves bare are absent by measurement, including ones that
+ * look like they belong: a `<T>a` type assertion, a `!` non-null, an object or
+ * class or function expression, and every unary and binary operator.
+ */
+const PARENTHESIZED_UNDER_NULLISH = new Set<string>([
+  AST_NODE_TYPES.ArrowFunctionExpression,
+  AST_NODE_TYPES.AssignmentExpression,
+  AST_NODE_TYPES.AwaitExpression,
+  AST_NODE_TYPES.ConditionalExpression,
+  AST_NODE_TYPES.SequenceExpression,
+  AST_NODE_TYPES.TSAsExpression,
+  AST_NODE_TYPES.TSSatisfiesExpression,
+  AST_NODE_TYPES.YieldExpression,
+]);
+
+/**
+ * Source-level parentheses are not part of an ESTree node's range, so rebuilding
+ * the chain from `getText` of each operand drops every pair the author wrote
+ * around one. ECMAScript forbids `??` from sharing an expression with an
+ * unparenthesized `&&`/`||`, and the spellings above need their pair for the
+ * grammar or for the formatter, so the rebuild puts it back.
  *
  * A `??` operand is the exception: `??` chains with itself without parentheses,
  * and it is associative, so reading `a ?? (b ?? c)` as `a ?? b ?? c` yields the
@@ -785,14 +813,15 @@ function couldBeNullish(
  * it emits text prettier immediately rewrites, which lands non-canonical source
  * in a repository whose lint runs `--fix` before a human sees the report.
  */
-function parenthesizeLogical(
+function parenthesizeOperand(
   text: string,
   operand: TSESTree.Expression | TSESTree.PrivateIdentifier,
 ): string {
-  return operand.type === AST_NODE_TYPES.LogicalExpression &&
-    operand.operator !== '??'
-    ? `(${text})`
-    : text;
+  const needsParens =
+    PARENTHESIZED_UNDER_NULLISH.has(operand.type) ||
+    (operand.type === AST_NODE_TYPES.LogicalExpression &&
+      operand.operator !== '??');
+  return needsParens ? `(${text})` : text;
 }
 
 /**
@@ -1479,7 +1508,7 @@ export const preferNullishCoalescingBooleanProps = createRule<[], MessageIds>({
                   }
                   operandIndices.push(segments.length);
                   segments.push({
-                    text: parenthesizeLogical(
+                    text: parenthesizeOperand(
                       sourceCode.getText(operand),
                       operand,
                     ),
