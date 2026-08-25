@@ -1,4 +1,4 @@
-import { TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 export const noUnnecessaryDestructuring = createRule({
@@ -89,9 +89,38 @@ export const noUnnecessaryDestructuring = createRule({
             fix(fixer) {
               const restName = sourceCode.getText(restElement.argument);
               const rightText = sourceCode.getText(node.right);
+              const replacement = `${restName} = ${rightText}`;
 
-              // Replace the destructuring with direct assignment
-              return fixer.replaceText(node, `${restName} = ${rightText}`);
+              // `({ ...obj } = source);` is written parenthesized because a
+              // statement opening with `{` would parse as a BLOCK. Rewriting the
+              // pattern to a plain target removes that reason, and a formatter
+              // then removes the parentheses — so leaving them behind is a diff
+              // that never settles (#2113). They are dropped here only where
+              // they are provably the statement's own wrapper.
+              const parenthesized =
+                node.parent?.type === AST_NODE_TYPES.ExpressionStatement;
+              if (!parenthesized || replacement.startsWith('{')) {
+                return fixer.replaceText(node, replacement);
+              }
+              const open = sourceCode.getTokenBefore(node);
+              const close = sourceCode.getTokenAfter(node);
+              if (open?.value !== '(' || close?.value !== ')') {
+                return fixer.replaceText(node, replacement);
+              }
+              // Text between a parenthesis and what it groups is a comment, and
+              // dropping the pair would move it out of the group the author
+              // wrote it inside.
+              const text = sourceCode.getText();
+              if (
+                text.slice(open.range[1], node.range[0]).trim() !== '' ||
+                text.slice(node.range[1], close.range[0]).trim() !== ''
+              ) {
+                return fixer.replaceText(node, replacement);
+              }
+              return fixer.replaceTextRange(
+                [open.range[0], close.range[1]],
+                replacement,
+              );
             },
           });
         }
