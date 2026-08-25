@@ -673,6 +673,45 @@ export const enforceMemoizeGetters = createRule<Options, MessageIds>({
               ),
             );
 
+            // A member carrying a SINGLE decorator may keep it on the member's
+            // own line, and a formatter preserves that. Adding a second one
+            // withdraws the choice: with more than one decorator each takes a
+            // line of its own. So a decorator the author wrote inline —
+            // `@Log() private get isLocked() {` — has to be broken out here, or
+            // the formatter does it on its next run and the file churns every
+            // pass (#2124). Only whitespace may be crossed: text between a
+            // decorator and the member is a comment, and moving the break past
+            // it would change which line the comment introduces.
+            if (ownsItsLine) {
+              for (const decorator of node.decorators ?? []) {
+                const following = sourceCode.getTokenAfter(decorator);
+                if (!following) {
+                  continue;
+                }
+                // A comment written after the decorator stays WITH the
+                // decorator — that is where it was attached and where a
+                // formatter leaves it — so the break goes after the comment
+                // rather than before it. Anything else would move the comment
+                // onto the member it does not annotate.
+                const trailing = sourceCode
+                  .getCommentsAfter(decorator)
+                  .filter(
+                    (comment) =>
+                      comment.range[1] <= following.range[0] &&
+                      comment.loc.start.line === decorator.loc.end.line,
+                  );
+                const anchor = trailing[trailing.length - 1] ?? decorator;
+                if (following.loc.start.line === anchor.loc.end.line) {
+                  fixes.push(
+                    fixer.replaceTextRange(
+                      [anchor.range[1], following.range[0]],
+                      `\n${linePrefix}`,
+                    ),
+                  );
+                }
+              }
+            }
+
             return fixes;
           },
         });

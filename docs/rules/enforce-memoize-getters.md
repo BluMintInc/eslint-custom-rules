@@ -62,6 +62,34 @@ class UserAccount {
 class Compact { @Memoize() private get isLocked() { return true; } }
 ```
 
+A getter that already carries a decorator of its own gets one more, and that
+changes the layout: a formatter keeps a **single** decorator wherever the author
+put it, but gives **each** of two or more a line of its own. So a decorator
+written inline is broken out along with the insertion, rather than left for a
+formatter to move on its next run:
+
+```ts
+// Before
+import { Memoize } from '@blumintinc/typescript-memoize';
+
+class UserAccount {
+  @Log() private get isLocked() { return true; }
+}
+
+// After --fix
+import { Memoize } from '@blumintinc/typescript-memoize';
+
+class UserAccount {
+  @Memoize()
+  @Log()
+  private get isLocked() { return true; }
+}
+```
+
+A comment trailing the existing decorator stays with it — that is where it was
+attached — so the break lands after the comment (`@Log() /* c */`), never
+between the decorator and it.
+
 ### Where the injected import is written
 
 The `import { Memoize } …` the fix adds when the file lacks one is placed below
