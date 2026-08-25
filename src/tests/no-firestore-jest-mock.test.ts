@@ -118,7 +118,9 @@ ruleTesterTs.run('no-firestore-jest-mock', noFirestoreJestMock, {
       filename: 'src/components/test.test.ts',
       errors: [expectedError],
       output: `const mockFn = async () => {
-                const { mockFirestore: mockFirebase } = await import('../../__test-utils__/mockFirestore');
+                const { mockFirestore: mockFirebase } = await import(
+                  '../../__test-utils__/mockFirestore'
+                );
             };`,
     },
     // Invalid: Dynamic import with multiple destructured properties
@@ -147,7 +149,9 @@ ruleTesterTs.run('no-firestore-jest-mock', noFirestoreJestMock, {
       filename: 'src/components/test.test.ts',
       errors: [expectedError],
       output: `const mockFn = async () => {
-                const { mockFirestore: myMock } = await import('../../__test-utils__/mockFirestore');
+                const { mockFirestore: myMock } = await import(
+                  '../../__test-utils__/mockFirestore'
+                );
             };`,
     },
     // Invalid: Require statement in test file
