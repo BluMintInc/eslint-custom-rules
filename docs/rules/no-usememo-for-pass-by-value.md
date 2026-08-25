@@ -51,7 +51,7 @@ export function useDelay() {
 }
 ```
 
-A JSDoc block is the common shape of the third kind. Folding it after `return` would parse, yet ASI would end the statement at the comment and the hook would return `undefined` instead of its value, so it is hoisted too. Its text is carried verbatim, which is why the continuation lines keep the columns they were written at:
+A JSDoc block is the common shape of the third kind. Folding it after `return` would parse, yet ASI would end the statement at the comment and the hook would return `undefined` instead of its value, so it is hoisted too. A block comment's text carries the indentation of where it was *written* on every line but its first, so inlining the callback shifts its continuation lines out by the same nesting step the code moves — otherwise the ` * ` run hangs at its old depth and a formatter pulls it straight back:
 
 ```ts
 // Before
@@ -67,28 +67,33 @@ export function useDelay() {
 // After --fix
 export function useDelay() {
   /**
-     * The caller polls, so this stays constant.
-     */
+   * The caller polls, so this stays constant.
+   */
   return 0;
 }
 ```
 
-When the surrounding context parenthesizes the replacement anyway, such a comment rides inside the parentheses, where a line break can never trigger ASI:
+The shift is uniform, so whatever relative alignment the comment was written with survives it.
+
+When the surrounding context parenthesizes the replacement anyway, such a comment rides inside the parentheses, where a line break can never trigger ASI. A parenthesized group that had to break is printed as a block — interior one nesting step in, closing parenthesis back on the opening line's indent — which is the shape a formatter leaves alone:
 
 ```ts
 // Before
 export function useToggle(flag: boolean) {
+  void flag;
   return !useMemo(() => {
     // inverted below
-    return flag;
-  }, [flag]);
+    return null;
+  }, []);
 }
 
 // After --fix
 export function useToggle(flag: boolean) {
+  void flag;
   return !(
-  // inverted below
-  flag);
+    // inverted below
+    null
+  );
 }
 ```
 

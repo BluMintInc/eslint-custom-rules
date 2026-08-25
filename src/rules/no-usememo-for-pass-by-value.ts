@@ -11,7 +11,6 @@ import { planOrphanedImportRemoval, TextRange } from '../utils/importRemoval';
 import {
   ReplacementSegment,
   joinSegmentBody,
-  joinSegments,
   requiresLineBreakAfter,
   requiresOwnLine,
 } from '../utils/replacementSegments';
@@ -477,6 +476,9 @@ function shouldParenthesizeReplacement(
   }
 }
 
+/** A formatter's default `tabWidth`: the step a broken group indents by. */
+const INDENT_STEP = '  ';
+
 export const noUsememoForPassByValue = createRule<Options, MessageIds>({
   name: 'no-usememo-for-pass-by-value',
   meta: {
@@ -767,8 +769,38 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
         const startLine = sourceCode.lines[node.loc.start.line - 1] ?? '';
         const indent = /^[\t ]*/.exec(startLine)?.[0] ?? '';
         const text = sourceCode.getText();
+        /**
+         * A block comment's text carries the indentation of where it was
+         * WRITTEN, on every line but its first. Inlining the callback moves the
+         * comment out one nesting step, and re-emitting it verbatim leaves the
+         * ` * ` run of a JSDoc block hanging at its old depth — which a
+         * formatter then pulls back, churning the file on every pass (#2114).
+         *
+         * The shift is uniform, so it preserves whatever relative alignment the
+         * author chose; a continuation line with less leading whitespace than
+         * the shift removes simply loses what it has.
+         */
+        const reindented = (comment: TSESTree.Comment, toIndent: string) => {
+          const raw = text.slice(comment.range[0], comment.range[1]);
+          if (!raw.includes('\n')) {
+            return raw;
+          }
+          const ownLine = sourceCode.lines[comment.loc.start.line - 1] ?? '';
+          const fromIndent = /^[\t ]*/.exec(ownLine)?.[0] ?? '';
+          const [head, ...rest] = raw.split('\n');
+          return [
+            head,
+            ...rest.map((line) => {
+              const lead = /^[\t ]*/.exec(line)?.[0] ?? '';
+              const kept = lead.startsWith(fromIndent)
+                ? lead.slice(fromIndent.length)
+                : '';
+              return `${toIndent}${kept}${line.slice(lead.length)}`;
+            }),
+          ].join('\n');
+        };
         const toSegment = (comment: TSESTree.Comment): ReplacementSegment => ({
-          text: text.slice(comment.range[0], comment.range[1]),
+          text: reindented(comment, indent),
           breakAfter: requiresLineBreakAfter(comment),
         });
         // A stranded comment lies wholly on one side of the expression, since
@@ -790,9 +822,19 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
             { text: replacementText, breakAfter: false },
             ...trailingComments.map(toSegment),
           ];
+          // A formatter prints a parenthesized group it had to break as a
+          // BLOCK: the interior one nesting step in, and the closing
+          // parenthesis back on the opening line's indent. Emitting the
+          // interior at the opening indent — and the `)` hard against the
+          // expression — is the shape it rewrites on its next run (#2114).
+          const hasBreak = segments.some((segment) => segment.breakAfter);
+          const bodyIndent = `${indent}${INDENT_STEP}`;
+          const inner = joinSegmentBody(segments, bodyIndent);
           edits.push({
             range: node.range,
-            text: joinSegments(segments, indent),
+            text: hasBreak
+              ? `(\n${bodyIndent}${inner}\n${indent})`
+              : `(${inner})`,
           });
         } else {
           // Without parentheses a line break between a restricted keyword
@@ -814,13 +856,7 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
               column: 0,
             });
             const hoisted = hoistedComments
-              .map(
-                (comment) =>
-                  `${indent}${text.slice(
-                    comment.range[0],
-                    comment.range[1],
-                  )}\n`,
-              )
+              .map((comment) => `${indent}${reindented(comment, indent)}\n`)
               .join('');
             edits.push({
               range: [lineStartIndex, lineStartIndex],
