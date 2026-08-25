@@ -478,6 +478,104 @@ const NEXTJS_RESERVED_EXPORTS = new Set([
   'middleware',
 ]);
 
+/** Prettier's default print width, which this repo and agora both format with. */
+const PRINT_WIDTH = 80;
+
+/** Prettier's default `tabWidth`, the step it indents a broken group by. */
+const INDENT_STEP = '  ';
+
+const AS_CONST_SUFFIX = ' as const';
+
+/**
+ * The break a formatter puts after `=` once the appended `as const` has pushed
+ * the declaration past the print width, or null where the flat spelling is the
+ * one prettier settles on.
+ *
+ * The append always LENGTHENS the line by nine columns, so a declaration that
+ * fitted before the fix routinely does not after it, and prettier's answer for
+ * an over-wide assignment whose right-hand side cannot break internally is to
+ * break after the `=` and indent one step. Leaving that break for the next
+ * prettier run churns the file on every pass (#2126).
+ *
+ * `idDelta` carries the columns a rename landing in the same pass adds to the
+ * declaration id, so the measurement is taken against the line the pass leaves
+ * behind rather than the one it started from.
+ *
+ * Only a bare `Literal` initializer is broken this way. An object or array
+ * literal is expanded across lines by prettier instead — a shape only a rebuild
+ * from the literal's own items could emit, and such a rebuild owns every byte
+ * between the braces, so a comment written among the items would be deleted by
+ * it. The flat append is kept there: it is what the rule has always written.
+ */
+function asConstOverflowFix(
+  fixer: TSESLint.RuleFixer,
+  sourceCode: TSESLint.SourceCode,
+  statement: TSESTree.Node,
+  init: TSESTree.Node,
+  initText: string,
+  idDelta: number,
+): TSESLint.RuleFix | null {
+  if (init.type !== AST_NODE_TYPES.Literal) {
+    return null;
+  }
+  // A declaration already written across lines is broken where prettier broke
+  // it, and the single line measured here is then not the whole of what moves.
+  if (statement.loc.start.line !== statement.loc.end.line) {
+    return null;
+  }
+
+  // A second STATEMENT sharing the line is a shape prettier splits before it
+  // measures anything, so the width read here is not the one it decides on.
+  const previous = sourceCode.getTokenBefore(statement);
+  if (previous && previous.loc.end.line === statement.loc.start.line) {
+    return null;
+  }
+  const next = sourceCode.getTokenAfter(statement);
+  if (next && next.loc.start.line === statement.loc.end.line) {
+    return null;
+  }
+
+  // Measured on the STATEMENT, not on the line: a trailing LINE comment is
+  // printed as a suffix that never counts toward fitting (measured against
+  // prettier 2.8.8: the identical declaration stays flat at 92 columns with one
+  // and breaks at 84 with a block comment), while a trailing BLOCK comment
+  // occupies columns like any other text and moves the answer.
+  let measuredEndColumn = statement.loc.end.column;
+  for (const comment of sourceCode.getCommentsAfter(statement)) {
+    if (
+      comment.loc.start.line !== statement.loc.end.line ||
+      comment.type === AST_TOKEN_TYPES.Line
+    ) {
+      break;
+    }
+    measuredEndColumn = comment.loc.end.column;
+  }
+
+  if (measuredEndColumn + idDelta + AS_CONST_SUFFIX.length <= PRINT_WIDTH) {
+    return null;
+  }
+
+  // Reading the token before the initializer WITH comments settles two hazards
+  // at once: a comment between `=` and the value would be swallowed by the
+  // replaced span, and a parenthesized initializer would lose its `(` while
+  // keeping its `)`.
+  const equals = sourceCode.getTokenBefore(init, { includeComments: true });
+  if (
+    !equals ||
+    equals.type !== AST_TOKEN_TYPES.Punctuator ||
+    equals.value !== '='
+  ) {
+    return null;
+  }
+
+  const line = sourceCode.lines[statement.loc.start.line - 1] ?? '';
+  const indent = /^[\t ]*/.exec(line)?.[0] ?? '';
+  return fixer.replaceTextRange(
+    [equals.range[1], init.range[1]],
+    `\n${indent}${INDENT_STEP}${initText}${AS_CONST_SUFFIX}`,
+  );
+}
+
 type MessageIds = 'upperSnakeCase' | 'asConst';
 
 export default createRule<[], MessageIds>({
@@ -649,6 +747,79 @@ export default createRule<[], MessageIds>({
             ? sourceCode.getText(typeAnnotation)
             : '';
 
+          const isExported =
+            node.parent?.type === AST_NODE_TYPES.ExportNamedDeclaration;
+          // The whole of what a formatter measures: for an exported constant
+          // the group starts at `export`, not at `const`.
+          const statement = isExported && node.parent ? node.parent : node;
+
+          // Resolve the declared variable up front: the component carve-out
+          // below reads its reference list, the rename fix rewrites every one
+          // of those references, and the width measurement asks whether that
+          // rename lands in this pass.
+          const renamedVariable =
+            context
+              .getDeclaredVariables(declaration)
+              .find((variable) => variable.name === name) ?? null;
+
+          // A React component is exempt from the rename however it is built.
+          // #1681 covered the shapes that DECLARE one inline (a function value,
+          // a `memo`/`forwardRef` call); a component read off another value —
+          // `const Provider = provider.Provider`, a getter on a class instance —
+          // is a MemberExpression that carve-out never reached. Renaming one
+          // contradicts React's component spelling, and the rename is what
+          // wrote unparseable JSX in the first place (Issue #2055). The
+          // exemption gates only the rename check: the `as const` logic is
+          // untouched.
+          const isComponentBinding =
+            (renamedVariable !== null &&
+              isUsedAsJsxElementName(renamedVariable)) ||
+            isComponentPropertyRead(init, name);
+
+          /**
+           * How many columns this pass's RENAME adds to the declaration id, or
+           * null where that is not knowable here.
+           *
+           * The two fixes this rule emits for one declarator do not overlap, so
+           * ESLint applies BOTH in the same pass: a rename that lengthens the
+           * id moves the width the appended `as const` is measured against. An
+           * id that keeps its spelling — because no rename is reported, or
+           * because the rename fix withdraws — contributes nothing. Every
+           * withdrawal the fix decides by scanning JSX is left UNKNOWN rather
+           * than guessed, and an unknown answer withholds the break.
+           */
+          const pendingIdDelta = (): number | null => {
+            const renamedTo = toUpperSnakeCase(name);
+            const renameReported =
+              !isUpperSnakeCase(name) &&
+              !isJestMockCast(init) &&
+              !isComponentBinding &&
+              !(isExported && NEXTJS_RESERVED_EXPORTS.has(name));
+            if (!renameReported) {
+              return 0;
+            }
+            if (
+              isExported ||
+              !renamedVariable ||
+              !isUpperSnakeCase(renamedTo) ||
+              renameWouldCollide(renamedVariable, renamedTo)
+            ) {
+              return 0;
+            }
+            const rewritesJsx = (sourceCode.ast.tokens ?? []).some(
+              (token) => token.type === AST_TOKEN_TYPES.JSXIdentifier,
+            );
+            const rewritesExportSpecifier = renamedVariable.references.some(
+              (reference) =>
+                reference.identifier.parent?.type ===
+                AST_NODE_TYPES.ExportSpecifier,
+            );
+            if (rewritesJsx || rewritesExportSpecifier) {
+              return null;
+            }
+            return renamedTo.length - name.length;
+          };
+
           // Only check for as const in TypeScript files
           if (isTypeScript) {
             // An `as const` anywhere in the wrapper chain already freezes the
@@ -747,7 +918,29 @@ export default createRule<[], MessageIds>({
                   valueKind: describeValueKind(init),
                 },
                 fix(fixer) {
-                  return fixer.replaceText(init, `${initText} as const`);
+                  // A sibling declarator on the same statement carries its own
+                  // report, and its fix lands in this pass too, so the columns
+                  // this one is measured against move with it. Where the
+                  // post-pass width is not knowable the flat append — the shape
+                  // the rule has always written — is kept: the measurement can
+                  // withhold a break, never emit one against a guess.
+                  const idDelta =
+                    node.declarations.length === 1 ? pendingIdDelta() : null;
+                  const overflowFix =
+                    idDelta === null
+                      ? null
+                      : asConstOverflowFix(
+                          fixer,
+                          sourceCode,
+                          statement,
+                          init,
+                          initText,
+                          idDelta,
+                        );
+                  return (
+                    overflowFix ??
+                    fixer.replaceText(init, `${initText}${AS_CONST_SUFFIX}`)
+                  );
                 },
               });
             }
@@ -758,33 +951,9 @@ export default createRule<[], MessageIds>({
           // statically verified as safe to rename, so autofixing the rename
           // silently regresses behavior (Issue #1257). The `as const` check
           // above still applies since it never touches the export name.
-          const isExported =
-            node.parent?.type === AST_NODE_TYPES.ExportNamedDeclaration;
           if (isExported && NEXTJS_RESERVED_EXPORTS.has(name)) {
             return;
           }
-
-          // Resolve the declared variable up front: the component carve-out
-          // below reads its reference list, and the rename fix rewrites every
-          // one of those references.
-          const renamedVariable =
-            context
-              .getDeclaredVariables(declaration)
-              .find((variable) => variable.name === name) ?? null;
-
-          // A React component is exempt from the rename however it is built.
-          // #1681 covered the shapes that DECLARE one inline (a function value,
-          // a `memo`/`forwardRef` call); a component read off another value —
-          // `const Provider = provider.Provider`, a getter on a class instance —
-          // is a MemberExpression that carve-out never reached. Renaming one
-          // contradicts React's component spelling, and the rename is what
-          // wrote unparseable JSX in the first place (Issue #2055). The
-          // exemption gates only this rename check, exactly like the jest-mock
-          // one: the `as const` logic above is untouched.
-          const isComponentBinding =
-            (renamedVariable !== null &&
-              isUsedAsJsxElementName(renamedVariable)) ||
-            isComponentPropertyRead(init, name);
 
           // Check for UPPER_SNAKE_CASE. Jest mock handles (`x as jest.Mock<…>`)
           // are exempt: they are mutable test doubles, not immutable config, so
