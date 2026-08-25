@@ -725,11 +725,12 @@ const Comp = ({ userCfg }) => {
 `,
       },
       {
-        // A comment inside the call sits between tokens the re-render rewrites,
-        // so it would be moved off the argument it annotates. Carrying it costs
-        // an over-width line the formatter fixes; relocating it costs the
-        // author's meaning (#2045).
-        name: 'issue #2064: a comment inside the call keeps the rename in place',
+        // Each argument slot is sliced out of the source rather than rebuilt
+        // from the argument's own text, so a comment written inside the list
+        // rides on the slot it annotates — which is exactly where Prettier
+        // leaves it. Leaving the line flat instead was the mirror defect: the
+        // very next `prettier --write` broke it open anyway (#2121).
+        name: 'issue #2121: a comment leading the callback rides on its slot',
         code: `
 import { useMemo } from 'react';
 const Comp = ({ userCfg }) => {
@@ -741,18 +742,155 @@ const Comp = ({ userCfg }) => {
         output: `
 import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
 const Comp = ({ userCfg }) => {
-  const subtitle = useDeepCompareMemo(/* keep */ () => ({ n: userCfg.n }), [userCfg]);
+  const subtitle = useDeepCompareMemo(
+    /* keep */ () => ({ n: userCfg.n }),
+    [userCfg],
+  );
   return <div />;
 };
 `,
       },
       {
-        // Whichever of the two is re-rendered, its replacement spans the other's
-        // edit, and ESLint rejects overlapping fixes outright — taking both
-        // reports' fix down with them. Both ends decline, so the pair is left as
-        // two renames for a formatter to settle: breaking only the inner one
-        // inside a flat outer call is a layout Prettier prints for neither.
-        name: 'issue #2064: nested convertible calls both keep the rename in place',
+        // The other three positions a single-line call offers a comment. A
+        // trailing one stays ahead of the comma this re-render appends, which
+        // is the side Prettier puts it on.
+        name: 'issue #2121: a comment trailing the callback stays ahead of the comma',
+        code: `
+import { useMemo } from 'react';
+const Comp = ({ userCfg }) => {
+  const subtitle = useMemo(() => ({ n: userCfg.n }) /* keep */, [userCfg]);
+  return <div />;
+};
+`,
+        errors: [error],
+        output: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+const Comp = ({ userCfg }) => {
+  const subtitle = useDeepCompareMemo(
+    () => ({ n: userCfg.n }) /* keep */,
+    [userCfg],
+  );
+  return <div />;
+};
+`,
+      },
+      {
+        name: 'issue #2121: a comment leading the dependency array rides on its slot',
+        code: `
+import { useMemo } from 'react';
+const Comp = ({ userCfg }) => {
+  const subtitle = useMemo(() => ({ n: userCfg.n }), /* keep */ [userCfg]);
+  return <div />;
+};
+`,
+        errors: [error],
+        output: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+const Comp = ({ userCfg }) => {
+  const subtitle = useDeepCompareMemo(
+    () => ({ n: userCfg.n }),
+    /* keep */ [userCfg],
+  );
+  return <div />;
+};
+`,
+      },
+      {
+        // The last slot ends at the closing parenthesis, so a comment written
+        // against it is inside the slot and not stranded outside the list.
+        name: 'issue #2121: a comment after the dependency array stays in its slot',
+        code: `
+import { useMemo } from 'react';
+const Comp = ({ userCfg }) => {
+  const subtitle = useMemo(() => ({ n: userCfg.n }), [userCfg] /* keep */);
+  return <div />;
+};
+`,
+        errors: [error],
+        output: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+const Comp = ({ userCfg }) => {
+  const subtitle = useDeepCompareMemo(
+    () => ({ n: userCfg.n }),
+    [userCfg] /* keep */,
+  );
+  return <div />;
+};
+`,
+      },
+      {
+        // The only span a re-render does not re-emit is the one the author's
+        // own trailing comma occupies, so a comment written behind that comma
+        // is the one piece of text this rewrite could delete. It declines
+        // instead: an over-width line costs less than a lost comment.
+        name: 'issue #2121: a comment behind a trailing comma keeps the rename in place',
+        code: `
+import { useMemo } from 'react';
+const Comp = ({ userCfg }) => {
+  const subtitleRow = useMemo(() => ({ n: userCfg.n }), [userCfg, userCfg], /* keep */);
+  return <div />;
+};
+`,
+        errors: [error],
+        output: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+const Comp = ({ userCfg }) => {
+  const subtitleRow = useDeepCompareMemo(() => ({ n: userCfg.n }), [userCfg, userCfg], /* keep */);
+  return <div />;
+};
+`,
+      },
+      {
+        // A comment between the callee and the opening parenthesis is one
+        // Prettier MOVES — it prints `useDeepCompareMemo(/* keep */ () => …`.
+        // Relocating a comment is not this fixer's to do, so this one arm still
+        // declines and the rename stays in place.
+        name: 'issue #2121: a comment ahead of the argument list keeps the rename in place',
+        code: `
+import { useMemo } from 'react';
+const Comp = ({ userCfg }) => {
+  const subtitle = useMemo /* keep */(() => ({ n: userCfg.n }), [userCfg]);
+  return <div />;
+};
+`,
+        errors: [error],
+        output: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+const Comp = ({ userCfg }) => {
+  const subtitle = useDeepCompareMemo /* keep */(() => ({ n: userCfg.n }), [userCfg]);
+  return <div />;
+};
+`,
+      },
+      {
+        // The callee is re-emitted from its own name onward, so parentheses an
+        // author wrote around it would come back on the wrong side of the
+        // rename. Prettier strips them anyway, so the decline costs one pass
+        // of the formatter and never a token.
+        name: 'issue #2121: a parenthesised callee keeps the rename in place',
+        code: `
+import { useMemo } from 'react';
+const Comp = ({ userCfg }) => {
+  const subtitleRowLongName = (useMemo)(() => ({ n: userCfg.n }), [userCfg]);
+  return <div />;
+};
+`,
+        errors: [error],
+        output: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+const Comp = ({ userCfg }) => {
+  const subtitleRowLongName = (useDeepCompareMemo)(() => ({ n: userCfg.n }), [userCfg]);
+  return <div />;
+};
+`,
+      },
+      {
+        // The outer break carries the inner rename in its own text rather than
+        // leaving it as a second edit inside the replacement, which ESLint would
+        // reject as overlapping — taking every report's fix down with it. That
+        // is the only way to emit what Prettier prints here: the outer list
+        // broken open with the inner call left flat inside it (#2121).
+        name: 'issue #2121: an outer break carries the nested call rename',
         code: `
 import { useMemo } from 'react';
 const Comp = () => {
@@ -764,7 +902,77 @@ const Comp = () => {
         output: `
 import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
 const Comp = () => {
-  const subtitle = useDeepCompareMemo(() => useDeepCompareMemo(() => 1, [{ a: 1 }]), [{ b: 2 }]);
+  const subtitle = useDeepCompareMemo(
+    () => useDeepCompareMemo(() => 1, [{ a: 1 }]),
+    [{ b: 2 }],
+  );
+  return <div />;
+};
+`,
+      },
+      {
+        // Both renames move this line, not just the outer one: at 68 columns it
+        // lands at 79 after one and at 90 after two, so measuring the outer
+        // eleven alone leaves a call flat that Prettier breaks open.
+        name: 'issue #2121: the width counts every rename the call carries',
+        code: `
+import { useMemo } from 'react';
+const Comp = () => {
+  const v = useMemo(() => useMemo(() => 1, [{ a: 1 }]), [{ b: 2 }]);
+  return <div />;
+};
+`,
+        errors: [error, error],
+        output: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+const Comp = () => {
+  const v = useDeepCompareMemo(
+    () => useDeepCompareMemo(() => 1, [{ a: 1 }]),
+    [{ b: 2 }],
+  );
+  return <div />;
+};
+`,
+      },
+      {
+        // The same 68-column line with only one callee to rename, so the count
+        // is pinned as a measurement rather than a flag that any nesting sets:
+        // 79 columns fits, and Prettier leaves it flat.
+        name: 'issue #2121: one rename on the same line stays flat',
+        code: `
+import { useMemo } from 'react';
+const Comp = () => {
+  const v = useMemo(() => compute(() => 1, [{ a: 1 }]), [{ b: 2 }]);
+  return <div />;
+};
+`,
+        errors: [error],
+        output: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+const Comp = () => {
+  const v = useDeepCompareMemo(() => compute(() => 1, [{ a: 1 }]), [{ b: 2 }]);
+  return <div />;
+};
+`,
+      },
+      {
+        // Prettier reaches an inner argument list only after breaking the outer
+        // one open, so a call nested inside one this pass leaves flat declines
+        // with it. Breaking the inner alone inside a flat outer call is a layout
+        // Prettier prints for neither.
+        name: 'issue #2121: a call nested in a flat outer call keeps the rename in place',
+        code: `
+import { useMemo } from 'react';
+const Comp = ({ cfg }) => {
+  const label = useMemo(() => { return useMemo(() => cfg.a, [{ a: 1 }]); }, [{ b: 2 }]);
+  return <div />;
+};
+`,
+        errors: [error, error],
+        output: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+const Comp = ({ cfg }) => {
+  const label = useDeepCompareMemo(() => { return useDeepCompareMemo(() => cfg.a, [{ a: 1 }]); }, [{ b: 2 }]);
   return <div />;
 };
 `,
