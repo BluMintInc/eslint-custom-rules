@@ -44,6 +44,79 @@ type WrapPlan = {
   indentSteps: number;
 };
 
+/**
+ * The span an over-wide argument list is re-rendered into, and the column its
+ * closing parenthesis returns to.
+ */
+type CallWrapPlan = {
+  open: TSESTree.Token;
+  close: TSESTree.Token;
+  slotEnd: number;
+  indent: string;
+};
+
+/**
+ * Positions whose parent prints its child flush against its own text, with no
+ * break point in between. Walking outward through these is what lets the fix
+ * know the column Prettier closes the argument list at: an arrow body, a
+ * bodyless `if`, a ternary branch and a multi-declarator `const` all break
+ * before the call and reindent it, so none of them is here.
+ */
+function attachesToParentLine(
+  parent: TSESTree.Node,
+  child: TSESTree.Node,
+): boolean {
+  switch (parent.type) {
+    case AST_NODE_TYPES.ExpressionStatement:
+      return parent.expression === child;
+    case AST_NODE_TYPES.ReturnStatement:
+    case AST_NODE_TYPES.ThrowStatement:
+    case AST_NODE_TYPES.AwaitExpression:
+      return parent.argument === child;
+    case AST_NODE_TYPES.AssignmentExpression:
+      return parent.right === child;
+    case AST_NODE_TYPES.VariableDeclarator:
+      return parent.init === child;
+    case AST_NODE_TYPES.VariableDeclaration:
+      // Sibling declarators each take their own line one step in from the
+      // keyword, which moves the closing parenthesis with them.
+      return parent.declarations.length === 1;
+    case AST_NODE_TYPES.ExportNamedDeclaration:
+    case AST_NODE_TYPES.ExportDefaultDeclaration:
+      return parent.declaration === child;
+    case AST_NODE_TYPES.Property:
+      return parent.value === child;
+    default:
+      return false;
+  }
+}
+
+/**
+ * The `(` that opens the argument list.
+ *
+ * Walked over tokens from the end of the callee rather than searched for in the
+ * text, because a type argument can spell a parenthesis of its own:
+ * `publish<(rules: string) => void>(…)`.
+ */
+function argumentListOpenParen(
+  sourceCode: TSESLint.SourceCode,
+  call: TSESTree.CallExpression | TSESTree.NewExpression,
+): TSESTree.Token | null {
+  const afterCallee = call.typeParameters
+    ? call.typeParameters.range[1]
+    : call.callee.range[1];
+  return (
+    sourceCode
+      .getTokens(call)
+      .find(
+        (token) =>
+          token.range[0] >= afterCallee &&
+          token.type === AST_TOKEN_TYPES.Punctuator &&
+          token.value === '(',
+      ) ?? null
+  );
+}
+
 const DIRECT_ACCESS_REGEX =
   /\b(?:request\.resource|resource)\.data(?!\.get\()(?:\.(?!get\()[A-Za-z_]\w*|\[['"][^'"]+['"]\])+(?:\s*)(?:!=|==|!==|===)\s*(?:null|undefined)\b/;
 
@@ -339,6 +412,96 @@ export const enforceFirestoreRulesGetAccess = createRule<Options, MessageIds>({
       return node.loc.start.column + literalText.length + counted.length;
     };
 
+    /**
+     * Whether the line the node starts on is the line Prettier prints it on.
+     *
+     * True once nothing but whitespace precedes the node on its line, or once
+     * every construct between it and that line's start is one Prettier keeps
+     * flush. Anything else — an arrow body, a bodyless `if`, a ternary branch —
+     * breaks before the node and indents it a step further than the line it was
+     * written on, which is a column this fix cannot read off the source.
+     */
+    const keepsItsColumn = (node: TSESTree.Node): boolean => {
+      let current: TSESTree.Node = node;
+      for (;;) {
+        const line = sourceCode.lines[current.loc.start.line - 1] ?? '';
+        if (line.slice(0, current.loc.start.column).trim() === '') return true;
+        const parent = current.parent;
+        if (!parent) return false;
+        if (!attachesToParentLine(parent, current)) return false;
+        // A parent opening on an earlier line leaves text on this one that the
+        // walk has not accounted for, so its layout is not this fix's to guess.
+        if (parent.loc.start.line !== current.loc.start.line) return false;
+        current = parent;
+      }
+    };
+
+    /**
+     * How Prettier re-renders the call around a literal that no longer fits:
+     * the argument on its own line one nesting step in, a trailing comma after
+     * it, and the closing parenthesis back at the column the call's line starts
+     * at. The trailing comma is `trailingComma: 'all'`, which is this
+     * repository's and its consumer's setting and Prettier 3's default.
+     *
+     * Every `null` below is a DELIBERATE decline rather than a fall-through:
+     * the literal is replaced in place instead, leaving a line Prettier rewraps
+     * but losing nothing the author wrote. A formatting nicety does not justify
+     * relocating a comment or guessing at a layout Prettier does not print.
+     */
+    const callWrapPlanFor = (node: TSESTree.Literal): CallWrapPlan | null => {
+      const call = node.parent;
+      if (
+        !call ||
+        (call.type !== AST_NODE_TYPES.CallExpression &&
+          call.type !== AST_NODE_TYPES.NewExpression)
+      ) {
+        return null;
+      }
+      // Prettier hugs a trailing function, object or array argument instead of
+      // giving each argument its own line, and two rewritten literals in one
+      // argument list would produce two fixes over the same span — so only a
+      // list holding this literal alone is a shape the emitter can state.
+      if (call.arguments.length !== 1 || call.arguments[0] !== node)
+        return null;
+      // A call already broken across lines carries the formatter's answer, and
+      // its continuation lines keep columns this re-render does not set.
+      if (call.loc.start.line !== call.loc.end.line) return null;
+      if (!keepsItsColumn(call)) return null;
+
+      const open = argumentListOpenParen(sourceCode, call);
+      const close = sourceCode.getLastToken(call);
+      if (!open || !close || close.value !== ')') return null;
+
+      // A comment between the callee and the opening parenthesis is one
+      // Prettier MOVES: it prints `publish(/* keep */ arg`. Comments written
+      // inside the argument list need no such care — each rides along on the
+      // slot text below, which is exactly where Prettier leaves it.
+      const relocatedComment = sourceCode
+        .getAllComments()
+        .some(
+          (comment) =>
+            comment.range[0] >= call.callee.range[1] &&
+            comment.range[1] <= open.range[0],
+        );
+      if (relocatedComment) return null;
+
+      // A comma the author already wrote before the closing parenthesis is the
+      // one this re-render appends itself, so the slot ends ahead of it.
+      const beforeClose = sourceCode.getTokenBefore(close);
+      const slotEnd =
+        beforeClose && beforeClose.value === ','
+          ? beforeClose.range[0]
+          : close.range[0];
+
+      const callLine = sourceCode.lines[call.loc.start.line - 1] ?? '';
+      return {
+        open,
+        close,
+        slotEnd,
+        indent: /^[ \t]*/.exec(callLine)?.[0] ?? '',
+      };
+    };
+
     return {
       Literal(node) {
         if (typeof node.value !== 'string') return;
@@ -361,20 +524,44 @@ export const enforceFirestoreRulesGetAccess = createRule<Options, MessageIds>({
             // Measure, never wrap unconditionally: a rewritten literal that
             // still fits is left flat because Prettier pulls a needlessly
             // wrapped short value straight back onto one line.
-            const plan = breakPointBefore(node);
-            if (!plan || emittedLineWidth(node, literalText) <= printWidth) {
+            if (emittedLineWidth(node, literalText) <= printWidth) {
               return fixer.replaceText(node, literalText);
             }
 
-            const { operator, indentSteps } = plan;
-            const operatorLine =
-              sourceCode.lines[operator.loc.start.line - 1] ?? '';
-            const indent = /^[ \t]*/.exec(operatorLine)?.[0] ?? '';
-            const step = fileIndentUnit().repeat(indentSteps);
-            return fixer.replaceTextRange(
-              [operator.range[1], node.range[1]],
-              `\n${indent}${step}${literalText}`,
-            );
+            const plan = breakPointBefore(node);
+            if (plan) {
+              const { operator, indentSteps } = plan;
+              const operatorLine =
+                sourceCode.lines[operator.loc.start.line - 1] ?? '';
+              const indent = /^[ \t]*/.exec(operatorLine)?.[0] ?? '';
+              const step = fileIndentUnit().repeat(indentSteps);
+              return fixer.replaceTextRange(
+                [operator.range[1], node.range[1]],
+                `\n${indent}${step}${literalText}`,
+              );
+            }
+
+            // A literal an operator cannot carry onto its own line may still be
+            // one Prettier answers by breaking the call around it open.
+            const callWrap = callWrapPlanFor(node);
+            if (callWrap) {
+              const { open, close, slotEnd, indent } = callWrap;
+              const source = sourceCode.getText();
+              // Sliced out of the source rather than rebuilt from the argument,
+              // so a comment written beside the literal rides along on the slot
+              // it annotates — where Prettier prints it.
+              const slot = (
+                source.slice(open.range[1], node.range[0]) +
+                literalText +
+                source.slice(node.range[1], slotEnd)
+              ).trim();
+              return fixer.replaceTextRange(
+                [open.range[1], close.range[0]],
+                `\n${indent}${fileIndentUnit()}${slot},\n${indent}`,
+              );
+            }
+
+            return fixer.replaceText(node, literalText);
           },
         });
       },
