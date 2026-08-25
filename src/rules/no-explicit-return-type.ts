@@ -11,6 +11,7 @@ import { planTypeDeclarationRemoval } from '../utils/typeDeclarationRemoval';
 import {
   joinSegmentBody,
   requiresLineBreakAfter,
+  requiresOwnLine,
 } from '../utils/replacementSegments';
 import {
   BOUND_UNPROVABLE,
@@ -20,6 +21,7 @@ import {
 } from '../utils/lexicalScope';
 import { declaresResourceHandleResult } from '../utils/resourceHandleType';
 import {
+  arrowAnnotationGap,
   Edit,
   indentAt,
   isDisjoint,
@@ -1440,6 +1442,455 @@ function carriedText(
   return `${lead}${body}${trail}`;
 }
 
+/** Every character the syntactic grammar counts as a LineTerminator. */
+const LINE_TERMINATORS = /[\n\r\u2028\u2029]/g;
+
+function countLineTerminators(text: string): number {
+  return text.match(LINE_TERMINATORS)?.length ?? 0;
+}
+
+/**
+ * The text `range` spells once `edits` are applied.
+ *
+ * Only an edit lying wholly inside the span can change what it spells: one
+ * outside shifts both endpoints by the same amount, which moves the span
+ * without rewriting it.
+ */
+function previewSpan(
+  text: string,
+  edits: readonly Edit[],
+  range: TextRange,
+): string {
+  const inside = edits
+    .filter((edit) => edit.range[0] >= range[0] && edit.range[1] <= range[1])
+    .sort((left, right) => left.range[0] - right.range[0]);
+
+  let preview = '';
+  let cursor = range[0];
+  for (const edit of inside) {
+    preview += text.slice(cursor, edit.range[0]) + edit.text;
+    cursor = edit.range[1];
+  }
+  return preview + text.slice(cursor, range[1]);
+}
+
+/**
+ * Whether a line break falls BETWEEN two of the node's tokens, rather than
+ * inside one of them.
+ *
+ * A body spanning lines only has an interior depth to get wrong when its own
+ * structure spans them. The lines a multi-line template literal or a block
+ * comment occupies are inside a single token — content whose columns prettier
+ * never re-indents — so moving such a body's first line leaves nothing behind
+ * at the wrong depth.
+ */
+function spansLinesBetweenTokens(
+  source: TSESLint.SourceCode,
+  node: TSESTree.Node,
+): boolean {
+  const tokens = source.getTokens(node, { includeComments: true });
+  return tokens.some(
+    (token, index) =>
+      index > 0 && tokens[index - 1].loc.end.line !== token.loc.start.line,
+  );
+}
+
+/**
+ * Whether `text`, the span between an arrow's `=>` and its body, breaks the
+ * line before anything else. Only a break the arrow's own line ends on counts:
+ * a block comment that hugs the `=>` and spans lines leaves the body on the
+ * arrow's group, and prettier keeps it at the declaration's depth.
+ */
+function breaksAheadOfBody(text: string): boolean {
+  return /^[ \t]*[\n\r\u2028\u2029]/.test(text);
+}
+
+/**
+ * Whether the emitted text moves the arrow's body off the `=>` onto a line of
+ * its own, one step deeper than its interior was written for.
+ *
+ * Prettier indents a block body from the line its arrow breaks on: a body left
+ * beside the `=>` is one step past the declaration, and a body pushed to the
+ * next line is one step past THAT. A carried comment run that must own a line
+ * — a `//` comment, or a second block comment — leaves the body no room
+ * beside the `=>`, so the body drops a line while its interior and its closing
+ * bracket stay at the columns they were written at, and prettier re-indents
+ * the whole body to settle them (#2129). A body already opening its own line
+ * keeps the depth it was written at, and one whose run hugs the `=>` never
+ * leaves the arrow's line.
+ */
+function displacesBody(
+  source: TSESLint.SourceCode,
+  arrow: TSESTree.ArrowFunctionExpression,
+  edits: readonly Edit[],
+): boolean {
+  if (!spansLinesBetweenTokens(source, arrow.body)) return false;
+
+  const arrowToken = source.getTokenBefore(arrow.body, {
+    filter: (token) => token.value === '=>',
+  });
+  if (!arrowToken) return false;
+
+  const lead: TextRange = [arrowToken.range[1], arrow.body.range[0]];
+  return (
+    breaksAheadOfBody(previewSpan(source.text, edits, lead)) !==
+    breaksAheadOfBody(source.text.slice(lead[0], lead[1]))
+  );
+}
+
+/**
+ * Every link of the arrow chain `arrow` belongs to, outermost first.
+ *
+ * An arrow function is the only node that can stand as an arrow's body without
+ * a wrapper, so the body position identifies a link exactly: an arrow sitting
+ * in a parameter default shares a parent type without sharing a chain.
+ */
+function arrowChainLinks(
+  arrow: TSESTree.ArrowFunctionExpression,
+): TSESTree.ArrowFunctionExpression[] {
+  let root = arrow;
+  for (
+    let parent = root.parent;
+    parent?.type === AST_NODE_TYPES.ArrowFunctionExpression &&
+    parent.body === root;
+    parent = root.parent
+  ) {
+    root = parent;
+  }
+
+  const links = [root];
+  let body: TSESTree.Node = root.body;
+  while (body.type === AST_NODE_TYPES.ArrowFunctionExpression) {
+    links.push(body);
+    body = body.body;
+  }
+
+  return links;
+}
+
+/**
+ * Whether the chain is written with its links one per line, the shape prettier
+ * prints when the chain's single group is open.
+ *
+ * The signal is a line terminator between one link's `=>` and the next link,
+ * which is a break prettier only takes for the whole group at once — a chain it
+ * fits on one line puts every `=>` on that line.
+ */
+function chainIsPrintedBroken(
+  source: TSESLint.SourceCode,
+  links: readonly TSESTree.ArrowFunctionExpression[],
+): boolean {
+  return links.slice(1).some((next) => {
+    const arrowToken = source.getTokenBefore(next, {
+      filter: (token) => token.value === '=>',
+    });
+
+    return (
+      arrowToken !== null && arrowToken.loc.end.line !== next.loc.start.line
+    );
+  });
+}
+
+/**
+ * Whether stripping the annotation takes the line terminator that holds an
+ * already-broken arrow chain open out of this link's head.
+ *
+ * Prettier lays an arrow chain out as a single group: either every `=>` in it
+ * ends a line or none does. A line terminator in the head of one link — a block
+ * comment carrying one, or an annotation written across lines — is enough to
+ * force that group open, so deleting it re-decides where every OTHER link
+ * breaks. Those links are not this annotation's span, and re-emitting them
+ * would mean laying the whole chain out again, so the fix is withheld instead
+ * of shipping a head prettier immediately rewrites (#2129).
+ *
+ * A chain whose links already share a line is not held open by anything, so the
+ * same strip leaves the group where it was and the fix ships.
+ *
+ * The head stops at the `=>` rather than past it: a comment carried to the far
+ * side lands beyond the group's decision point, and counting it would read the
+ * carried terminators as if they still held the chain open.
+ */
+function collapsesChainHead(
+  source: TSESLint.SourceCode,
+  returnType: TSESTree.TSTypeAnnotation,
+  arrow: TSESTree.ArrowFunctionExpression,
+  edits: readonly Edit[],
+): boolean {
+  const links = arrowChainLinks(arrow);
+  if (links.length < 2 || !chainIsPrintedBroken(source, links)) return false;
+
+  const gapInfo = arrowAnnotationGap(source, returnType);
+  if (!gapInfo) return false;
+
+  const head: TextRange = [arrow.range[0], gapInfo.arrow.range[0]];
+  return (
+    countLineTerminators(previewSpan(source.text, edits, head)) <
+    countLineTerminators(source.text.slice(head[0], head[1]))
+  );
+}
+
+/**
+ * Whether a planned strip leaves every line it does not own where it was.
+ *
+ * agora runs prettier and `eslint --fix` over the same tree, so a fix whose
+ * output the formatter rewrites on arrival produces a diff that never settles
+ * and churns every file it touches. Both shapes screened here are ones where
+ * the emitted text re-decides the layout of code OUTSIDE the annotation's own
+ * span — a body's interior, or the other links of an arrow chain — which the
+ * shared planner cannot re-emit without rewriting text it does not own. A
+ * block body can take the run onto its first line instead, which
+ * {@link reroutedIntoBlockBody} answers for; everywhere else the fix is
+ * withheld and the report still ships, so the annotation is surfaced to its
+ * author (#2129).
+ */
+function keepsSurroundingLayout(
+  source: TSESLint.SourceCode,
+  returnType: TSESTree.TSTypeAnnotation,
+  edits: readonly Edit[],
+): boolean {
+  const arrow = returnType.parent;
+  if (arrow?.type !== AST_NODE_TYPES.ArrowFunctionExpression) return true;
+
+  return (
+    !displacesBody(source, arrow, edits) &&
+    !collapsesChainHead(source, returnType, arrow, edits)
+  );
+}
+
+/** A single LineTerminator, for a look at one character. */
+const LINE_TERMINATOR = /[\n\r\u2028\u2029]/;
+
+/**
+ * One nesting step, in the spelling prettier writes at its default `tabWidth`:
+ * the depth a block body's interior sits at past the declaration that owns it.
+ */
+const INDENT_STEP = '  ';
+
+const textOf = (source: TSESLint.SourceCode, range: TextRange): string =>
+  source.text.slice(range[0], range[1]);
+
+/**
+ * Whether every continuation line of a block comment carries the `*` gutter,
+ * which makes its alignment a function of the column it opens at rather than
+ * text its author chose. Any other block comment's interior is content —
+ * commented-out code, a table — and keeps its columns byte-for-byte.
+ */
+function hasAlignedGutter(lines: readonly string[]): boolean {
+  return (
+    lines.length > 1 &&
+    lines.slice(1).every((line) => line.trimStart().startsWith('*'))
+  );
+}
+
+/**
+ * A block comment re-aligned to open at `indent`, its gutter one column in
+ * from the `/*`. Only leading whitespace moves: the comment's own characters
+ * are the part a fix may not rewrite.
+ */
+function realignComment(text: string, indent: string): string {
+  const lines = text.split('\n');
+  if (!hasAlignedGutter(lines)) return text;
+  return lines
+    .map((line, index) =>
+      index === 0 ? line : `${indent} ${line.trimStart()}`,
+    )
+    .join('\n');
+}
+
+/**
+ * The depth a block body's first line is written at: the indentation of the
+ * first token or comment inside it when that opens a line of its own, and one
+ * step past the declaration otherwise — an empty body, or one written on a
+ * single line. Reading it from the body rather than computing it keeps a
+ * carried comment level with the statement it lands beside.
+ */
+function blockInteriorIndent(
+  source: TSESLint.SourceCode,
+  body: TSESTree.BlockStatement,
+  subjectIndent: string,
+): string {
+  const brace = source.getFirstToken(body);
+  const first = brace && source.getTokenAfter(brace, { includeComments: true });
+  if (first && first.range[1] < body.range[1]) {
+    const lineStart = source.text.lastIndexOf('\n', first.range[0] - 1) + 1;
+    const prefix = source.text.slice(lineStart, first.range[0]);
+    if (lineStart > body.range[0] && prefix.trim() === '') return prefix;
+  }
+  return `${subjectIndent}${INDENT_STEP}`;
+}
+
+/**
+ * Re-emits `comments` as the first lines of a block body, level with its
+ * interior.
+ *
+ * A comment run that has to end a line cannot sit ahead of the body's `{`
+ * without pushing that brace onto a line of its own, where prettier never
+ * prints it: it re-lays out the whole body around a brace displaced that way
+ * (#2129). The body's first line is the one position such a run can hold
+ * where the surrounding text keeps every column it had — and it is where
+ * prettier itself settles a comment stranded ahead of a brace, so the emitted
+ * text is what the formatter would have written.
+ *
+ * The edit consumes only the horizontal whitespace after the brace. A body
+ * that already breaks after its `{` supplies the separator the run needs; one
+ * with text on that line gets one, so the run cannot comment it out; an empty
+ * body gets its `}` back at the declaration's depth.
+ */
+function carryIntoBlockBody(
+  source: TSESLint.SourceCode,
+  comments: readonly TSESTree.Comment[],
+  subjectIndent: string,
+  body: TSESTree.BlockStatement,
+): Edit {
+  const indent = blockInteriorIndent(source, body, subjectIndent);
+  const run = joinSegmentBody(
+    comments.map((comment) => ({
+      text: realignComment(textOf(source, comment.range), indent),
+      breakAfter: true,
+    })),
+    indent,
+  );
+  const braceEnd = body.range[0] + 1;
+  const interior = source.text.slice(braceEnd, body.range[1] - 1);
+  const [spacing] = /^[ \t]*/.exec(interior) ?? [''];
+  const rest = interior.slice(spacing.length);
+  const closer =
+    rest === ''
+      ? `\n${subjectIndent}`
+      : LINE_TERMINATOR.test(rest.charAt(0))
+      ? ''
+      : `\n${indent}`;
+  return {
+    range: [braceEnd, braceEnd + spacing.length],
+    text: `\n${indent}${run}${closer}`,
+  };
+}
+
+/**
+ * The block body of a non-arrow subject, or `null` for one that has none: an
+ * overload signature, an abstract method or a `declare`d function ends at a
+ * semicolon, and its comments stay where they were written. A class method is
+ * reported on the member, whose function sits in its `value`.
+ */
+function blockBodyOf(node: TSESTree.Node): TSESTree.BlockStatement | null {
+  const fn =
+    node.type === AST_NODE_TYPES.MethodDefinition ||
+    node.type === AST_NODE_TYPES.TSAbstractMethodDefinition
+      ? node.value
+      : node;
+  if (
+    fn.type !== AST_NODE_TYPES.FunctionDeclaration &&
+    fn.type !== AST_NODE_TYPES.FunctionExpression
+  ) {
+    return null;
+  }
+  return fn.body && fn.body.type === AST_NODE_TYPES.BlockStatement
+    ? fn.body
+    : null;
+}
+
+/**
+ * The node whose line a subject's body is indented from. A method's function
+ * node begins at its parameter list, on the same line as its key in every
+ * spelling prettier prints, but the member is what the indentation belongs to.
+ */
+function subjectAnchorOf(node: TSESTree.Node): TSESTree.Node {
+  const { parent } = node;
+  return parent &&
+    (parent.type === AST_NODE_TYPES.MethodDefinition ||
+      parent.type === AST_NODE_TYPES.TSAbstractMethodDefinition ||
+      parent.type === AST_NODE_TYPES.Property ||
+      parent.type === AST_NODE_TYPES.PropertyDefinition)
+    ? parent
+    : node;
+}
+
+/**
+ * The edits that strip an annotation from a subject whose parameter list ends
+ * at a body rather than an arrow.
+ *
+ * A run holding a comment that must end its line — a `//` comment — cannot be
+ * re-emitted in place: the break it needs lands ahead of the body's `{` and
+ * pushes the brace onto a line of its own, which prettier re-lays out on
+ * arrival (#2129). Such a run is carried into the body instead. Every other
+ * run keeps its place, so a multi-line block comment spliced in ahead of the
+ * brace — which prettier leaves exactly there — does not move.
+ */
+function planBodiedSubjectEdits(
+  source: TSESLint.SourceCode,
+  entry: PendingAnnotation,
+): Edit[] | null {
+  const range = entry.returnType.range;
+  const body = blockBodyOf(entry.node);
+  const comments = source
+    .getAllComments()
+    .filter((comment) => containsRange(range, comment.range));
+  if (body === null || !comments.some(requiresLineBreakAfter)) {
+    const carried = carriedText(source, range);
+    return carried === null ? null : [{ range, text: carried }];
+  }
+  if (comments.some(isPositionalDirective)) return null;
+
+  const subjectIndent = indentAt(source, subjectAnchorOf(entry.node).range[0]);
+  return [
+    { range, text: '' },
+    carryIntoBlockBody(source, comments, subjectIndent, body),
+  ];
+}
+
+/**
+ * The planned arrow edits with their carried run moved into the block body,
+ * for a strip whose run would otherwise displace that body.
+ *
+ * The shared planner carries a line-ending run past the `=>` onto a line of
+ * its own, which leaves a block body nowhere to go but the line below, at a
+ * depth its interior does not share (#2129). The body's first line takes the
+ * run instead: the brace stays beside the `=>` and every column behind it is
+ * kept. Only the edit that hoisted the run is replaced; the gap rewrite, which
+ * keeps one-line comments in place, is the planner's own.
+ *
+ * A concise body has no interior to carry into, and a chain link whose strip
+ * collapses the chain's head is re-laid out for a reason no body can absorb;
+ * both stay withheld.
+ */
+function reroutedIntoBlockBody(
+  source: TSESLint.SourceCode,
+  returnType: TSESTree.TSTypeAnnotation,
+  edits: readonly Edit[],
+): Edit[] | null {
+  const arrow = returnType.parent;
+  if (arrow?.type !== AST_NODE_TYPES.ArrowFunctionExpression) return null;
+  const { body } = arrow;
+  if (body.type !== AST_NODE_TYPES.BlockStatement) return null;
+  if (collapsesChainHead(source, returnType, arrow, edits)) return null;
+
+  const gapInfo = arrowAnnotationGap(source, returnType);
+  if (!gapInfo) return null;
+  const hoistIndex = edits.findIndex(
+    (edit) => edit.range[0] === gapInfo.arrow.range[1],
+  );
+  if (hoistIndex === -1) return null;
+
+  const hoisted = source
+    .getAllComments()
+    .filter(
+      (comment) =>
+        containsRange(gapInfo.gap, comment.range) && requiresOwnLine(comment),
+    );
+  if (hoisted.length === 0) return null;
+
+  const rerouted = [
+    ...edits.filter((_, index) => index !== hoistIndex),
+    carryIntoBlockBody(
+      source,
+      hoisted,
+      indentAt(source, subjectAnchorOf(arrow).range[0]),
+      body,
+    ),
+  ];
+  return isDisjoint(rerouted) ? rerouted : null;
+}
+
 /**
  * The edits that strip one annotation, carrying every comment the strip
  * strands rather than deleting it (#1877). `null` withholds the fix, for a
@@ -1449,23 +1900,30 @@ function carriedText(
  * production, so its edits come from the shared planner that answers for that
  * grammar (#1964). The removal span handed to it is the annotation's own
  * range: unlike the planner's other caller, nothing here reaches back over the
- * whitespace ahead of the `:`.
+ * whitespace ahead of the `:`. Those edits are screened once more before they
+ * ship: a carried run that would displace the body is carried into a block
+ * body instead, and a strip that would re-lay out anything else outside the
+ * annotation's span is withheld (#2129).
  *
- * Every other subject ends its parameter list at a body or a semicolon, so its
- * stranded comments stay where they were written and a deletion that carries
- * them in place is correct.
+ * Every other subject ends its parameter list at a body or a semicolon, so
+ * nothing about the comments around it is restricted; a run that must end its
+ * line still goes into the body, since ahead of the brace it would displace
+ * that too.
  */
 function planAnnotationEdits(
   source: TSESLint.SourceCode,
   entry: PendingAnnotation,
 ): Edit[] | null {
-  const range = entry.returnType.range;
   if (entry.node.type !== AST_NODE_TYPES.ArrowFunctionExpression) {
-    const carried = carriedText(source, range);
-    return carried === null ? null : [{ range, text: carried }];
+    return planBodiedSubjectEdits(source, entry);
   }
 
-  return planArrowAnnotationEdits(source, entry.returnType, range);
+  const range = entry.returnType.range;
+  const edits = planArrowAnnotationEdits(source, entry.returnType, range);
+  if (edits === null) return null;
+  if (keepsSurroundingLayout(source, entry.returnType, edits)) return edits;
+
+  return reroutedIntoBlockBody(source, entry.returnType, edits);
 }
 
 /**

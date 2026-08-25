@@ -1211,6 +1211,31 @@ const FIX_EXEMPT: Record<string, string> = {
   // 'no-redundant-annotation-assertion --fix output survives Prettier'.
   'no-redundant-annotation-assertion':
     'the in-place strip cannot re-lay out an arrow body or chain it would displace; a declaration has neither',
+  // Its strip carries a line-ending comment run onto the block body's first
+  // line, which is where prettier settles such a run, so the brace keeps its
+  // line and every column behind it is kept (#2129). Three shapes have no first
+  // line to carry into and are declined instead: an arrow whose body is a
+  // parenthesized object, and the two broken arrow chains whose inner head
+  // holds the run — re-emitting those would mean laying out text the strip does
+  // not own.
+  //
+  // In each of the three, the guard's rewritten spelling is a one-line
+  // `=> { return ...; }` block — a shape prettier NEVER prints, so agora, which
+  // lints prettier-formatted source, cannot hold it. That respelling is also
+  // what dissolves the asymmetry: the block gives the object a first line to
+  // carry into and flattens the chain. Measured against agora's prettier
+  // (2.8.8): every prettier-STABLE spelling of these subjects is fixed, and its
+  // output is a fixed point; only the unstable respellings differ. The
+  // `arrow->declaration` and `blockArrow->concise` arms — the ones whose
+  // rewritten spellings ARE prettier-stable — were a real defect in the
+  // declaration path and were fixed rather than recorded here (#2129), which is
+  // why they no longer appear.
+  //
+  // Because this entry un-gates the rule's other arms (#1839), the boundary is
+  // pinned in the rule's own suite —
+  // 'no-explicit-return-type --fix emits code Prettier leaves alone'.
+  'no-explicit-return-type':
+    'carries the comment run onto the block body it precedes; the three declined shapes have no first line to carry into, and each respells only into a one-line block prettier never prints',
   // The reorder pins non-function statements and swaps functions among their
   // slots, so a helper can be carried below a pinned module-scope caller
   // (`const CHAMPION = buildHit(...)`). A `function` declaration hoists and the

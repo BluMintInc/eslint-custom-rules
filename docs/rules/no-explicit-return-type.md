@@ -311,7 +311,21 @@ export const buildCount = () =>
   1;
 ```
 
-A body that opens a bracket — an object, an array, a block — keeps the arrow's line when the only thing breaking it is a multi-line block comment, since such a body closes back at the declaration's own depth and gains nothing from the break; the comment is spliced in after the `=>` and re-aligned to the declaration's column instead. A line comment leaves it no such choice — it would swallow the opening bracket — so the body goes onto the next line with the comment.
+A body that opens a bracket — an object, an array, a block — keeps the arrow's line when the only thing breaking it is a multi-line block comment, since such a body closes back at the declaration's own depth and gains nothing from the break; the comment is spliced in after the `=>` and re-aligned to the declaration's column instead. A line comment leaves it no such choice — it would swallow the opening bracket. An object or array literal then goes onto the next line with the comment. A block body does not move: a brace pushed onto a line of its own is a shape Prettier re-lays out the whole body around, so the comment is carried onto the body's first line instead, level with the statement it precedes, which is where Prettier itself settles a comment stranded ahead of a brace.
+
+```ts
+// before
+export const readRow = (): // the row
+number => {
+  return 1;
+};
+
+// after --fix
+export const readRow = () => {
+  // the row
+  return 1;
+};
+```
 
 **JSX is the exception.** Prettier does not leave a JSX arrow body beside the `=>` once the line has to break: it wraps the body in parentheses and drops it to a line inside them. The carried comment therefore goes inside those parentheses, immediately ahead of the body — reusing a pair the source already wrote, and adding one where it has none.
 
@@ -351,9 +365,53 @@ export const Row = () => (
 );
 ```
 
-A comment that fits on one line trips no restricted production and is left exactly where it was written (`() /* doc */: number => 1` → `() /* doc */ => 1`), and a function declaration, method or function expression ends its parameter list at a body rather than an arrow, so its comments never move.
+A comment that fits on one line trips no restricted production and is left exactly where it was written (`() /* doc */: number => 1` → `() /* doc */ => 1`). A function declaration, method or function expression ends its parameter list at a body rather than an arrow, so nothing about its comments is restricted and a block comment stays exactly where it was written (`function count() /** doc */ {`). A line comment is the one comment those subjects carry: it has to end its line, and ahead of the body's `{` that strands the brace on a line of its own, so it goes onto the body's first line just as it does for an arrow.
+
+```ts
+// before
+export function readRow(): // the row
+number {
+  return 1;
+}
+
+// after --fix
+export function readRow() {
+  // the row
+  return 1;
+}
+```
 
 A directive comment (`// eslint-disable-next-line`, `@ts-expect-error`) inside an arrow's restricted gap withholds the fix when that gap has to be rewritten, since the rewrite collapses the lines it spanned and would leave the directive pointing at a different line. A directive that shares its gap with nothing else keeps both its position and the fix.
+
+**A rewrite that would re-decide layout outside the gap withholds the fix as well.** Prettier and `eslint --fix` run over the same tree, so an edit the formatter rewrites on arrival produces a diff that never settles and churns every file it touches. Two shapes reach that far, and the report ships without a fixer for both:
+
+```ts
+// A comment run that must own a line leaves a multi-line body no room beside
+// the `=>`, so the body drops to the next line one step in while its interior
+// and its closing bracket stay at the columns they were written at. A block
+// body takes the run onto its first line instead (above); an object literal
+// has no such line, and settling its three depths means re-indenting text
+// that is not the annotation's span.
+export const buildEntry = (): // why this exists
+{ a: number; b: number } => ({
+  a: 1,
+  b: 2,
+});
+
+// Prettier lays an arrow chain out as a single group — either every `=>` in it
+// ends a line or none does — and the line terminator this annotation carries is
+// what holds that group open. Deleting it re-decides where the OTHER links
+// break. A chain whose links share a line is held open by nothing and is fixed
+// as usual, as is a broken chain whose annotation carries no terminator.
+export const outer =
+  () =>
+  (): /**
+   * why this exists
+   */ number =>
+    1;
+```
+
+A body that has no interior of its own to leave behind is still fixed: the lines a multi-line template literal spans are inside a single token, whose columns Prettier never re-indents, so displacing it moves the whole literal intact. So is a bracketed body the source already opened on a line of its own at the depth the carried run lands at, since nothing behind it moves.
 
 ### Examples of incorrect code
 
