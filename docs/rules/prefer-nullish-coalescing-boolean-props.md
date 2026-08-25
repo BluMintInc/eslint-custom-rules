@@ -59,6 +59,37 @@ const value =
 
 The break belongs to the chain, so only the chain's own breaks ask for it. A comment nested inside an operand's brackets is that operand's layout and leaves the chain on one line; a comment trailing the whole expression sits outside the chain and moves nothing. A chain that already opens its own line is at that depth already and comes back byte-identical.
 
+Prettier reads a logical chain as ONE group, so a chain broken anywhere is broken everywhere: a comment beside one operator still puts the operands it does not touch on lines of their own, and a link an earlier pass already converted is re-flowed rather than carried with the indentation it had while parentheses held it one level deeper.
+
+```ts
+// Before
+const owner =
+  (explicit ?? inherited) || // legacy documents have no owner
+  fallback;
+
+// After `--fix`
+const owner =
+  explicit ??
+  inherited ?? // legacy documents have no owner
+  fallback;
+```
+
+The depth those operands land at belongs to the construct the chain sits in, not to a constant step. An assignment, an object value, a class field, an arrow body, `return`/`throw`, a template hole and an `if`/`while`/`switch`/`do` test have all already indented the chain, so its operands stay flush with the first one. A call or `new` argument, an array element, a parameter default, an `await`, a spread, an `as` and a JSX child have not, so prettier indents every operand after the first one step further in, and the fix does too:
+
+```ts
+// Before
+save(
+  primary.id || // legacy documents have no owner
+    secondary.id,
+);
+
+// After `--fix`
+save(
+  primary.id ?? // legacy documents have no owner
+    secondary.id,
+);
+```
+
 Three landing shapes are deliberately left alone, each measured against prettier rather than assumed. After `return`, `throw` or `yield` prettier parenthesizes the broken chain instead, and parentheses are tokens — emitting them because a comment is present would let the comment change the program. In a JSX attribute prettier answers by re-breaking the whole opening element, which is text outside the expression this fix owns. In an argument, an array element or a parameter default prettier never breaks between the punctuation and the chain's first operand at all.
 
 A comment that must occupy its own line gets one, and where the expression follows `return`, `throw` or `yield` — which forbid a line terminator before their operand — such a comment is hoisted ahead of the keyword instead, so the fix cannot change the program through ASI. Whether the result is parenthesized is decided by the surrounding expression exactly as it is without comments, so a comment never adds or removes parentheses.
