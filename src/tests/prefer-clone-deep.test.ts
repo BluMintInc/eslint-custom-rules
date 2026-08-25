@@ -1325,16 +1325,14 @@ cloneDeep(a, {
   },
 } as const);`,
     },
+    // Regression #2109: prettier prints a broken concise arrow body on a line
+    // of its own, so the overrides collapse onto the line the call already has.
     {
       code: `${CLONE_DEEP_IMPORT}
 const f = () => ({ ...a, b: { ...a.b, c: 1 } } as const);`,
       errors: [expectPreferCloneDeepError],
       output: `${CLONE_DEEP_IMPORT}
-const f = () => cloneDeep(a, {
-  b: {
-    c: 1,
-  },
-} as const);`,
+const f = () => cloneDeep(a, { b: { c: 1 } } as const);`,
     },
     // Regression #2094: a parenthesis that belongs to the ENCLOSING construct
     // is not a grouping pair. Absorbing an argument list's `(` would splice the
@@ -1346,22 +1344,14 @@ const f = () => cloneDeep(a, {
 doThing({ ...a, b: { ...a.b, c: 1 } } as const);`,
       errors: [expectPreferCloneDeepError],
       output: `${CLONE_DEEP_IMPORT}
-doThing(cloneDeep(a, {
-  b: {
-    c: 1,
-  },
-} as const));`,
+doThing(cloneDeep(a, { b: { c: 1 } } as const));`,
     },
     {
       code: `${CLONE_DEEP_IMPORT}
 doThing(({ ...a, b: { ...a.b, c: 1 } } as const));`,
       errors: [expectPreferCloneDeepError],
       output: `${CLONE_DEEP_IMPORT}
-doThing(cloneDeep(a, {
-  b: {
-    c: 1,
-  },
-} as const));`,
+doThing(cloneDeep(a, { b: { c: 1 } } as const));`,
     },
     // Regression #2094: the same for a statement head's parentheses.
     {
@@ -1371,11 +1361,7 @@ if (({ ...a, b: { ...a.b, c: 1 } } as const).b) {
 }`,
       errors: [expectPreferCloneDeepError],
       output: `${CLONE_DEEP_IMPORT}
-if (cloneDeep(a, {
-  b: {
-    c: 1,
-  },
-} as const).b) {
+if (cloneDeep(a, { b: { c: 1 } } as const).b) {
   run();
 }`,
     },
@@ -1482,6 +1468,270 @@ const result = [
   } as const),
   other,
 ];`,
+    },
+    // Regression #2109: prettier moves a broken call out of a ternary branch,
+    // a logical operand, a parameter default, an argument list and a statement
+    // head onto a line of its own, and the leading break it inserts there is
+    // outside the range this fix owns. Collapsing the overrides onto the line
+    // the call already occupies is the spelling prettier prints back unchanged.
+    {
+      code: `${CLONE_DEEP_IMPORT}
+function pick() {
+  return flag ? ({ ...a, b: { ...a.b, c: 1 } } as const) : fallback;
+}`,
+      errors: [expectPreferCloneDeepError],
+      output: `${CLONE_DEEP_IMPORT}
+function pick() {
+  return flag ? cloneDeep(a, { b: { c: 1 } } as const) : fallback;
+}`,
+    },
+    {
+      code: `${CLONE_DEEP_IMPORT}
+function pick() {
+  return flag || ({ ...a, b: { ...a.b, c: 1 } } as const);
+}`,
+      errors: [expectPreferCloneDeepError],
+      output: `${CLONE_DEEP_IMPORT}
+function pick() {
+  return flag || cloneDeep(a, { b: { c: 1 } } as const);
+}`,
+    },
+    {
+      code: `${CLONE_DEEP_IMPORT}
+function g(p = { ...a, b: { ...a.b, c: 1 } }) {
+  return p;
+}`,
+      errors: [expectPreferCloneDeepError],
+      output: `${CLONE_DEEP_IMPORT}
+function g(p = cloneDeep(a, { b: { c: 1 } } as const)) {
+  return p;
+}`,
+    },
+    {
+      code: `${CLONE_DEEP_IMPORT}
+const v = new Thing({ ...a, b: { ...a.b, c: 1 } } as const);`,
+      errors: [expectPreferCloneDeepError],
+      output: `${CLONE_DEEP_IMPORT}
+const v = new Thing(cloneDeep(a, { b: { c: 1 } } as const));`,
+    },
+    {
+      code: `${CLONE_DEEP_IMPORT}
+for (const k of ({ ...a, b: { ...a.b, c: 1 } } as const).list) {
+  use(k);
+}`,
+      errors: [expectPreferCloneDeepError],
+      output: `${CLONE_DEEP_IMPORT}
+for (const k of cloneDeep(a, { b: { c: 1 } } as const).list) {
+  use(k);
+}`,
+    },
+    // Regression #2109: a site that ALREADY opens its own line has spent the
+    // break prettier would insert, so the broken call is written exactly where
+    // prettier wants it — whoever the parent is. The concise arrow body and its
+    // block-bodied twin therefore produce the same rewrite, as does an argument
+    // prettier has already put on a line of its own.
+    {
+      code: `${CLONE_DEEP_IMPORT}
+const buildIt = () =>
+  ({
+    ...configuration,
+    nested: { ...configuration.nested, isEnabled: true, retryLimit: 3 },
+  } as const);`,
+      errors: [expectPreferCloneDeepError],
+      output: `${CLONE_DEEP_IMPORT}
+const buildIt = () =>
+  cloneDeep(configuration, {
+    nested: {
+      isEnabled: true,
+      retryLimit: 3,
+    },
+  } as const);`,
+    },
+    {
+      code: `${CLONE_DEEP_IMPORT}
+const buildIt = () => {
+  return {
+    ...configuration,
+    nested: { ...configuration.nested, isEnabled: true, retryLimit: 3 },
+  };
+};`,
+      errors: [expectPreferCloneDeepError],
+      output: `${CLONE_DEEP_IMPORT}
+const buildIt = () => {
+  return cloneDeep(configuration, {
+    nested: {
+      isEnabled: true,
+      retryLimit: 3,
+    },
+  } as const);
+};`,
+    },
+    {
+      code: `${CLONE_DEEP_IMPORT}
+doSomething(
+  { ...configuration, nested: { ...configuration.nested, isEnabled: true } },
+  extra,
+);`,
+      errors: [expectPreferCloneDeepError],
+      output: `${CLONE_DEEP_IMPORT}
+doSomething(
+  cloneDeep(configuration, {
+    nested: {
+      isEnabled: true,
+    },
+  } as const),
+  extra,
+);`,
+    },
+    // Regression #2109: prettier prints a concise arrow body that breaks on a
+    // line of its own, and that break sits in the gap after `=>` — which the
+    // fix takes into its range so it can write it. Without that, the same
+    // literal declined as `() => ({ ... })` and fixed as its
+    // `() => { return { ... }; }` twin, making the fix depend on the spelling of
+    // the enclosing function rather than on anything about the literal.
+    {
+      code: `${CLONE_DEEP_IMPORT}
+const buildIt = () => ({
+  ...configuration,
+  nested: { ...configuration.nested, isEnabled: true, retryLimit: 3 },
+});`,
+      errors: [expectPreferCloneDeepError],
+      output: `${CLONE_DEEP_IMPORT}
+const buildIt = () =>
+  cloneDeep(configuration, {
+    nested: {
+      isEnabled: true,
+      retryLimit: 3,
+    },
+  } as const);`,
+    },
+    {
+      code: `${CLONE_DEEP_IMPORT}
+function build() {
+  return {
+    make: () => ({
+      ...configuration,
+      nested: { ...configuration.nested, isEnabled: true, retryLimit: 3 },
+    }),
+  };
+}`,
+      errors: [expectPreferCloneDeepError],
+      output: `${CLONE_DEEP_IMPORT}
+function build() {
+  return {
+    make: () =>
+      cloneDeep(configuration, {
+        nested: {
+          isEnabled: true,
+          retryLimit: 3,
+        },
+      } as const),
+  };
+}`,
+    },
+    // A comment in that gap is carried across onto the line the break opens,
+    // which is where prettier puts it anyway. Declining instead would make the
+    // fix depend on whether a comment happens to sit there.
+    {
+      code: `${CLONE_DEEP_IMPORT}
+const buildIt = () => /* keep */ ({
+  ...configuration,
+  nested: { ...configuration.nested, isEnabled: true, retryLimit: 3 },
+});`,
+      errors: [expectPreferCloneDeepError],
+      output: `${CLONE_DEEP_IMPORT}
+const buildIt = () =>
+  /* keep */ cloneDeep(configuration, {
+    nested: {
+      isEnabled: true,
+      retryLimit: 3,
+    },
+  } as const);`,
+    },
+    // A line comment cannot be carried onto the call's line — `//` would
+    // swallow the call — but it does not have to be: prettier already put the
+    // body on a line of its own, so no break is left for the fix to write.
+    {
+      code: `${CLONE_DEEP_IMPORT}
+const buildIt = () =>
+  // keep
+  ({
+    ...configuration,
+    nested: { ...configuration.nested, isEnabled: true, retryLimit: 3 },
+  });`,
+      errors: [expectPreferCloneDeepError],
+      output: `${CLONE_DEEP_IMPORT}
+const buildIt = () =>
+  // keep
+  cloneDeep(configuration, {
+    nested: {
+      isEnabled: true,
+      retryLimit: 3,
+    },
+  } as const);`,
+    },
+    // An arrow that is itself an argument keeps its own layout, so the fix is
+    // whatever fits on the line the arrow already occupies.
+    {
+      code: `${CLONE_DEEP_IMPORT}
+doThing(() => ({ ...a, b: { ...a.b, c: 1 } }));`,
+      errors: [expectPreferCloneDeepError],
+      output: `${CLONE_DEEP_IMPORT}
+doThing(() => cloneDeep(a, { b: { c: 1 } } as const));`,
+    },
+    // Regression #2109: a site prettier hugs open MID-LINE is the one place no
+    // spelling works — the break prettier wants belongs to `doSomething(`, and
+    // the overrides are too wide to collapse onto the line the call has. The
+    // report stands and the input is left exactly as its author wrote it.
+    {
+      code: `${CLONE_DEEP_IMPORT}
+doSomething({
+  ...configuration,
+  nested: { ...configuration.nested, isEnabled: true, retryLimit: 3 },
+} as const);`,
+      errors: [expectPreferCloneDeepError],
+      output: null,
+    },
+    // Regression #2109: once `cloneDeep(base, {` no longer fits on the line it
+    // starts, prettier stops hugging the overrides and prints one argument per
+    // line instead, so the fix emits that layout rather than a head prettier
+    // immediately reflows.
+    {
+      code: `${CLONE_DEEP_IMPORT}
+const EXTREMELY_LONG_DESTINATION_NAME_FOR_THIS = {
+  ...anotherVeryLongBaseName,
+  nested: { ...anotherVeryLongBaseName.nested, on: true },
+} as const;`,
+      errors: [expectPreferCloneDeepError],
+      output: `${CLONE_DEEP_IMPORT}
+const EXTREMELY_LONG_DESTINATION_NAME_FOR_THIS = cloneDeep(
+  anotherVeryLongBaseName,
+  {
+    nested: {
+      on: true,
+    },
+  } as const,
+);`,
+    },
+    // An over-wide line prettier cannot break is not a reason to withhold the
+    // fix: a long string literal keeps its line over the print width whether or
+    // not the rewrite happens, so measuring it would decline a working fix.
+    {
+      code: `${CLONE_DEEP_IMPORT}
+const VALUE_MAP = {
+  ...a,
+  b: {
+    ...a.b,
+    c: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+  },
+} as const;`,
+      errors: [expectPreferCloneDeepError],
+      output: `${CLONE_DEEP_IMPORT}
+const VALUE_MAP = cloneDeep(a, {
+  b: {
+    c: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+  },
+} as const);`,
     },
   ],
 });
