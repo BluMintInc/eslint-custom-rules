@@ -458,8 +458,13 @@ class Holder {
         };
       `,
       errors: [errorFor('useLivestreamPlayer')],
+      // The appended default pushes the signature past the print width, so the
+      // fix emits the pattern break prettier would otherwise make (#2132).
       output: `
-        export const useLivestreamPlayer = ({ placeholder, playbackId }: { placeholder?: ReactNode; playbackId?: string } = {}) => {
+        export const useLivestreamPlayer = ({
+          placeholder,
+          playbackId,
+        }: { placeholder?: ReactNode; playbackId?: string } = {}) => {
           return null;
         };
       `,
@@ -473,7 +478,10 @@ class Holder {
       `,
       errors: [errorFor('useData')],
       output: `
-        export function useData({ url, options }: { url?: string; options?: object } = {}) {
+        export function useData({
+          url,
+          options,
+        }: { url?: string; options?: object } = {}) {
           return null;
         }
       `,
@@ -531,7 +539,10 @@ class Holder {
       `,
       errors: [errorFor('useDataFetcher')],
       output: `
-        export function useDataFetcher<T>({ url, options }: { url?: string; options?: T } = {}) {
+        export function useDataFetcher<T>({
+          url,
+          options,
+        }: { url?: string; options?: T } = {}) {
           return null;
         }
       `,
@@ -565,10 +576,456 @@ class Holder {
             onError?: () => void;
           };
         };
-        export const useComplexHook = ({ config, callbacks }: ComplexOptions = {}) => {
+        export const useComplexHook = ({
+          config,
+          callbacks,
+        }: ComplexOptions = {}) => {
           return null;
         };
       `,
+    },
+    /**
+     * The issue #2132 reproduction: the pre-image is prettier-canonical at 79
+     * columns, the appended ` = {}` lands at 84, and prettier answers by
+     * expanding the destructuring pattern — one property per line, trailing
+     * comma, the type annotation flat on the closing line. The fix emits that
+     * shape itself so its output is a prettier fixed point.
+     */
+    {
+      code: `
+export function useData({ url, options }: { url?: string; options?: object }) {
+  return null;
+}
+      `,
+      output: `
+export function useData({
+  url,
+  options,
+}: { url?: string; options?: object } = {}) {
+  return null;
+}
+      `,
+      errors: [errorFor('useData')],
+    },
+    /**
+     * The fitting boundary, flat side: the appended default lands the line at
+     * exactly 80 columns (measured through the body's `{`), which prettier
+     * keeps flat, so the fix must too.
+     */
+    {
+      code: `
+export function useXXXXXXXXXXXXXXXX({ a, b }: { a?: string; b?: object }) {
+  return null;
+}
+      `,
+      output: `
+export function useXXXXXXXXXXXXXXXX({ a, b }: { a?: string; b?: object } = {}) {
+  return null;
+}
+      `,
+      errors: [errorFor('useXXXXXXXXXXXXXXXX')],
+    },
+    /**
+     * The fitting boundary, break side: one column more than the fixture above
+     * lands the appended line at 81, and prettier expands the pattern.
+     */
+    {
+      code: `
+export function useXXXXXXXXXXXXXXXXX({ a, b }: { a?: string; b?: object }) {
+  return null;
+}
+      `,
+      output: `
+export function useXXXXXXXXXXXXXXXXX({
+  a,
+  b,
+}: { a?: string; b?: object } = {}) {
+  return null;
+}
+      `,
+      errors: [errorFor('useXXXXXXXXXXXXXXXXX')],
+    },
+    /**
+     * A trailing LINE comment never counts toward prettier's fitting decision:
+     * the raw line is far past the width, but the tokens land at exactly 80
+     * after the append, so the signature must stay flat.
+     */
+    {
+      code: `
+export function useXXXXXXX({ a, b }: { a?: string; b?: object }) { // this trailing note runs far beyond the print width
+  return null;
+}
+      `,
+      output: `
+export function useXXXXXXX({ a, b }: { a?: string; b?: object } = {}) { // this trailing note runs far beyond the print width
+  return null;
+}
+      `,
+      errors: [errorFor('useXXXXXXX')],
+    },
+    /**
+     * A BLOCK comment after the body's `{` does not count either — prettier
+     * moves it into the body rather than measuring it — so the tokens-at-80
+     * signature stays flat despite the raw line exceeding the width.
+     */
+    {
+      code: `
+export function useXXXXXXXXXXXXXXXX({ a, b }: { a?: string; b?: object }) { /* note */
+  return null;
+}
+      `,
+      output: `
+export function useXXXXXXXXXXXXXXXX({ a, b }: { a?: string; b?: object } = {}) { /* note */
+  return null;
+}
+      `,
+      errors: [errorFor('useXXXXXXXXXXXXXXXX')],
+    },
+    /**
+     * A BLOCK comment BEFORE the body's `{` occupies columns and moves the
+     * answer: without it the appended line would fit at 72, with it the line
+     * lands at 83, and prettier expands the pattern while the comment rides
+     * the closing line untouched.
+     */
+    {
+      code: `
+export function useXXXXXXXX({ a, b }: { a?: string; b?: object }) /* opts */ {
+  return null;
+}
+      `,
+      output: `
+export function useXXXXXXXX({
+  a,
+  b,
+}: { a?: string; b?: object } = {}) /* opts */ {
+  return null;
+}
+      `,
+      errors: [errorFor('useXXXXXXXX')],
+    },
+    /**
+     * Property spans are sliced between separators, so a comment INSIDE a
+     * property rides its own line — exactly where prettier keeps it.
+     */
+    {
+      code: `
+export function useXXXXXXXX({ a /* keep */, b }: { a?: string; b?: object }) {
+  return null;
+}
+      `,
+      output: `
+export function useXXXXXXXX({
+  a /* keep */,
+  b,
+}: { a?: string; b?: object } = {}) {
+  return null;
+}
+      `,
+      errors: [errorFor('useXXXXXXXX')],
+    },
+    /**
+     * A comment in the GAP after a separator belongs to the following
+     * property's slice, matching prettier's placement of the comment ahead of
+     * the property on its own line.
+     */
+    {
+      code: `
+export function useXXXXXXXX({ a, /* pick */ b }: { a?: string; b?: object }) {
+  return null;
+}
+      `,
+      output: `
+export function useXXXXXXXX({
+  a,
+  /* pick */ b,
+}: { a?: string; b?: object } = {}) {
+  return null;
+}
+      `,
+      errors: [errorFor('useXXXXXXXX')],
+    },
+    /**
+     * A comment between the last property and the close brace rides that
+     * property's slice, before the comma the rebuild adds — prettier's own
+     * placement.
+     */
+    {
+      code: `
+export function useXXXXXXXX({ a, b /* both */ }: { a?: string; b?: object }) {
+  return null;
+}
+      `,
+      output: `
+export function useXXXXXXXX({
+  a,
+  b /* both */,
+}: { a?: string; b?: object } = {}) {
+  return null;
+}
+      `,
+      errors: [errorFor('useXXXXXXXX')],
+    },
+    /**
+     * A comment in the gap after the OPEN brace leads the first property's
+     * slice.
+     */
+    {
+      code: `
+export function useXXXXXXXX({ /* lead */ a, b }: { a?: string; b?: object }) {
+  return null;
+}
+      `,
+      output: `
+export function useXXXXXXXX({
+  /* lead */ a,
+  b,
+}: { a?: string; b?: object } = {}) {
+  return null;
+}
+      `,
+      errors: [errorFor('useXXXXXXXX')],
+    },
+    /**
+     * A comment between the `:` and the type is part of the annotation's span,
+     * carried verbatim onto the closing line.
+     */
+    {
+      code: `
+export function useXXXXXXXX({ a, b }: /* keep */ { a?: string; b?: object }) {
+  return null;
+}
+      `,
+      output: `
+export function useXXXXXXXX({
+  a,
+  b,
+}: /* keep */ { a?: string; b?: object } = {}) {
+  return null;
+}
+      `,
+      errors: [errorFor('useXXXXXXXX')],
+    },
+    /**
+     * A comment between the pattern's `}` and the `:` is one prettier re-homes
+     * to the other side of the colon — a move the fixer does not own — so the
+     * break is withheld and the flat append keeps the comment in place.
+     */
+    {
+      code: `
+export function useXXX({ url, options } /* moved */: { url?: string; options?: object }) {
+  return null;
+}
+      `,
+      output: `
+export function useXXX({ url, options } /* moved */: { url?: string; options?: object } = {}) {
+  return null;
+}
+      `,
+      errors: [errorFor('useXXX')],
+    },
+    /**
+     * An expression-bodied arrow that ends on the signature line breaks the
+     * same way, with the body staying on the closing line.
+     */
+    {
+      code: `
+export const useXXX = ({ url, options }: { url?: string; options?: object }) => url;
+      `,
+      output: `
+export const useXXX = ({
+  url,
+  options,
+}: { url?: string; options?: object } = {}) => url;
+      `,
+      errors: [errorFor('useXXX')],
+    },
+    /**
+     * A type REFERENCE stays flat on the closing line however the pattern
+     * breaks; only the pattern is rebuilt.
+     */
+    {
+      code: `
+type UseDataOptions = { url?: string; options?: object; retries?: number };
+export function useVeryLongHookNameForFetchingData({ url, options, retries }: UseDataOptions) {
+  return null;
+}
+      `,
+      output: `
+type UseDataOptions = { url?: string; options?: object; retries?: number };
+export function useVeryLongHookNameForFetchingData({
+  url,
+  options,
+  retries,
+}: UseDataOptions = {}) {
+  return null;
+}
+      `,
+      errors: [errorFor('useVeryLongHookNameForFetchingData')],
+    },
+    /**
+     * The break aligns to the hook's own indent: properties one step in, the
+     * close brace back at the statement's column (#2127 is the same lesson for
+     * hoisted comments).
+     */
+    {
+      code: `
+function makeHooks() {
+  function useXXXXXXXXX({ url, options }: { url?: string; options?: object }) {
+    return null;
+  }
+  return useXXXXXXXXX;
+}
+      `,
+      output: `
+function makeHooks() {
+  function useXXXXXXXXX({
+    url,
+    options,
+  }: { url?: string; options?: object } = {}) {
+    return null;
+  }
+  return useXXXXXXXXX;
+}
+      `,
+      errors: [errorFor('useXXXXXXXXX')],
+    },
+    /**
+     * A property too long for its own line is a layout only prettier can
+     * settle, so the break is withheld and the flat append — the shape the
+     * rule has always written — is kept.
+     */
+    {
+      code: `
+export function useConfiguredFetcher({ url = 'fallback-endpoint-path-used-when-the-caller-provides-no-url-option-value', options }: { url?: string; options?: object }) {
+  return null;
+}
+      `,
+      output: `
+export function useConfiguredFetcher({ url = 'fallback-endpoint-path-used-when-the-caller-provides-no-url-option-value', options }: { url?: string; options?: object } = {}) {
+  return null;
+}
+      `,
+      errors: [errorFor('useConfiguredFetcher')],
+    },
+    /**
+     * A pattern prettier has already expanded — canonical over-width code that
+     * merely lacks the default — takes the flat append on the closing line,
+     * which is exactly the fixed point prettier prints.
+     */
+    {
+      code: `
+export function useData({
+  url,
+  options,
+}: { url?: string; options?: object }) {
+  return null;
+}
+      `,
+      output: `
+export function useData({
+  url,
+  options,
+}: { url?: string; options?: object } = {}) {
+  return null;
+}
+      `,
+      errors: [errorFor('useData')],
+    },
+    /**
+     * A source-level trailing comma is a separator with no property after it:
+     * the slices drop it rather than doubling it, and the emitted shape is the
+     * same one prettier prints.
+     */
+    {
+      code: `
+export function useXXXXX({ url, options, }: { url?: string; options?: object }) {
+  return null;
+}
+      `,
+      output: `
+export function useXXXXX({
+  url,
+  options,
+}: { url?: string; options?: object } = {}) {
+  return null;
+}
+      `,
+      errors: [errorFor('useXXXXX')],
+    },
+    /**
+     * An empty body keeps `{}` on the closing line, so the whole statement is
+     * the measured group and the break still lands.
+     */
+    {
+      code: `
+export function useSomeVeryLongDataFetcherWithNames({ url, options }: { url?: string; options?: object }) {}
+      `,
+      output: `
+export function useSomeVeryLongDataFetcherWithNames({
+  url,
+  options,
+}: { url?: string; options?: object } = {}) {}
+      `,
+      errors: [errorFor('useSomeVeryLongDataFetcherWithNames')],
+    },
+    /**
+     * A sibling declarator carries its own layout decisions, so a
+     * multi-declarator statement is left to the flat append however wide the
+     * result.
+     */
+    {
+      code: `
+function build() {
+  const fallback = null, useHookish = ({ a, b }: { a?: string; b?: object }) => fallback;
+  return useHookish;
+}
+      `,
+      output: `
+function build() {
+  const fallback = null, useHookish = ({ a, b }: { a?: string; b?: object } = {}) => fallback;
+  return useHookish;
+}
+      `,
+      errors: [errorFor('useHookish')],
+    },
+    /**
+     * Prettier's head-break shape: the signature line ends with `=>` and the
+     * body sits below. The appended default overflows the head, prettier
+     * expands the pattern — and with the head broken, the body fits the
+     * closing line again, so the fix joins it there. The joined span is
+     * provably whitespace-only.
+     */
+    {
+      code: `
+export const useXX = ({ url, options }: { url?: string; options?: object }) =>
+  url;
+      `,
+      output: `
+export const useXX = ({
+  url,
+  options,
+}: { url?: string; options?: object } = {}) => url;
+      `,
+      errors: [errorFor('useXX')],
+    },
+    /**
+     * The same head-break shape with a body too wide to rejoin: prettier keeps
+     * the body on its own line below the expanded pattern, so the fix leaves
+     * it exactly where it is.
+     */
+    {
+      code: `
+export const useXX = ({ url, options }: { url?: string; options?: object }) =>
+  options ? url : 'fallback-value-used-when-the-caller-passes-only-options';
+      `,
+      output: `
+export const useXX = ({
+  url,
+  options,
+}: { url?: string; options?: object } = {}) =>
+  options ? url : 'fallback-value-used-when-the-caller-passes-only-options';
+      `,
+      errors: [errorFor('useXX')],
     },
   ],
 });

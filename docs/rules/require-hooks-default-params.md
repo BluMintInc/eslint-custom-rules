@@ -20,6 +20,31 @@ React hooks often receive a single "options" object. When every property on that
 
 - If a hook takes one object parameter and all properties are optional, add a default empty object: `({ foo, bar }: Options = {})`.
 
+## Fix layout at the print width
+
+Appending ` = {}` lengthens the signature by five columns, so a line that fit before the fix may not after it. Measured against prettier (print width 80), a signature the append pushes past the width is one prettier answers by expanding the destructuring pattern — one property per line at one indent step, trailing comma, the close brace back at the statement's column — while the type annotation and everything after the parameter stay on the closing line. The fix emits that shape directly, so its output is a fixed point of prettier rather than a diff that reflows on the next format:
+
+```ts
+export function useData({ url, options }: { url?: string; options?: object }) {
+  return null;
+}
+```
+
+becomes
+
+```ts
+export function useData({
+  url,
+  options,
+}: { url?: string; options?: object } = {}) {
+  return null;
+}
+```
+
+The width is measured the way prettier measures it: through the body's `{` (or, for an expression-bodied arrow or an empty body, through the end of the statement). A trailing line comment never counts; a block comment counts exactly where prettier counts it — before the body's `{` it occupies columns, after it prettier moves it into the body. On prettier's head-break arrow shape (the line ends with `=>` and the body sits below), the expanded pattern frees the closing line, and the fix rejoins the body there whenever it fits. Property spans are sliced between the source's own separators, so a comment written beside a property rides along verbatim.
+
+Wherever the post-break layout cannot be read off the source — a signature already spanning several lines, a second declarator or statement sharing the line, a property too long for its own line, a closing line that would still exceed the width — the fix keeps the flat append rather than guessing at prettier's answer.
+
 ## How the parameter type is resolved
 
 A named options type is resolved lexically, from the hook outward through each enclosing statement container to module scope. Every container that can hold a declaration counts — a function body, a `namespace`, a class `static {}` block, a `switch` case consequent — so how deeply the type is nested never decides whether the rule can see it. That covers a type declared beside the hook, one declared in an enclosing function, and an exported declaration — `export type Props = { ... }` is a type alias inside an `export` statement, and both spellings resolve the same way. The nearest declaration answers, so an inner type shadows a same-named outer one, and a matching type in a scope that does not enclose the hook is never consulted. A name that also has a value binding of the same name nearby still resolves to the type.
