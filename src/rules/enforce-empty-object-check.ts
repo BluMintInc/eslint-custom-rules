@@ -731,6 +731,64 @@ function hasRedundantlyGroupedOperand(doc: LayoutDoc): boolean {
 }
 
 /**
+ * Re-emits `doc` with an inline comment riding its last (or first) rendered
+ * line, mirroring where Prettier parks a comment that sits in the GAP around an
+ * operand.
+ *
+ * Measured against Prettier 2.8.8: a comment written after an operand stays
+ * glued to that operand and precedes the trailing operator
+ * (`Object.keys(p).length === 0 /* c *\/ ||`), and one written before an operand
+ * opens that operand's line. A chain therefore hands the comment to the part it
+ * belongs to, which survives the flattening `joinChain` performs — a group or a
+ * conditional is declined because its own parentheses and branch lines make the
+ * placement a second question this emitter has not measured.
+ */
+function attachTrailingComment(
+  doc: LayoutDoc,
+  comment: string,
+): LayoutDoc | null {
+  if (doc.kind === 'leaf') {
+    return { kind: 'leaf', text: `${doc.text} ${comment}` };
+  }
+  if (doc.kind === 'chain') {
+    const last = attachTrailingComment(
+      doc.parts[doc.parts.length - 1],
+      comment,
+    );
+    if (!last) {
+      return null;
+    }
+    return {
+      kind: 'chain',
+      operator: doc.operator,
+      parts: [...doc.parts.slice(0, -1), last],
+    };
+  }
+  return null;
+}
+
+function attachLeadingComment(
+  doc: LayoutDoc,
+  comment: string,
+): LayoutDoc | null {
+  if (doc.kind === 'leaf') {
+    return { kind: 'leaf', text: `${comment} ${doc.text}` };
+  }
+  if (doc.kind === 'chain') {
+    const first = attachLeadingComment(doc.parts[0], comment);
+    if (!first) {
+      return null;
+    }
+    return {
+      kind: 'chain',
+      operator: doc.operator,
+      parts: [first, ...doc.parts.slice(1)],
+    };
+  }
+  return null;
+}
+
+/**
  * The lines Prettier would print for `doc`, or null when no layout this emitter
  * authors reproduces it.
  *
@@ -940,6 +998,42 @@ const isParenRun = (text: string, paren: '(' | ')'): boolean =>
     .split('')
     .every((character) => character === paren);
 
+const INLINE_BLOCK_COMMENT = /\/\*(?:[^*]|\*(?!\/))*\*\//;
+
+/** The parentheses and the one inline comment a segment gap carries. */
+type SegmentGap = { depth: number; comment: string | null };
+
+/**
+ * Reads the text between an operand and its segment boundary, or null when the
+ * gap holds something no layout this emitter authors can place.
+ *
+ * A single-line block comment is placeable: Prettier keeps it glued to the
+ * operand it was written against. A `//` comment is not — every emitted line is
+ * joined into one flat string before it is measured, and a line comment would
+ * swallow whatever follows it. Parentheses and a comment sharing one gap are
+ * declined too, since their order changes which side of the pair the comment
+ * lands on.
+ */
+function readSegmentGap(text: string, paren: '(' | ')'): SegmentGap | null {
+  const match = text.match(INLINE_BLOCK_COMMENT);
+  if (match) {
+    const comment = match[0];
+    const rest = text.replace(comment, '');
+    if (
+      comment.includes('\n') ||
+      INLINE_BLOCK_COMMENT.test(rest) ||
+      rest.trim() !== ''
+    ) {
+      return null;
+    }
+    return { depth: 0, comment };
+  }
+  if (!isParenRun(text, paren)) {
+    return null;
+  }
+  return { depth: text.trim().length, comment: null };
+}
+
 /**
  * Reconstructs `node` — as it reads once the replacement is spliced in — over
  * the source span `[segmentStart, segmentEnd)`.
@@ -957,14 +1051,14 @@ function buildDoc(
   context: DocContext,
 ): LayoutDoc | null {
   const { source } = context;
-  const before = source.slice(segmentStart, node.range[0]);
-  const after = source.slice(node.range[1], segmentEnd);
-  if (!isParenRun(before, '(') || !isParenRun(after, ')')) {
+  const before = readSegmentGap(source.slice(segmentStart, node.range[0]), '(');
+  const after = readSegmentGap(source.slice(node.range[1], segmentEnd), ')');
+  if (!before || !after) {
     return null;
   }
-  const depth = before.trim().length;
+  const depth = before.depth;
   /** Prettier strips a doubled pair, so any layout keeping it is not its output. */
-  if (depth !== after.trim().length || depth > 1) {
+  if (depth !== after.depth || depth > 1) {
     return null;
   }
 
@@ -977,14 +1071,19 @@ function buildDoc(
   if (!core) {
     return null;
   }
-  if (depth === 0) {
-    return core;
-  }
   /**
    * A pair the author wrote around the negation already encloses the emission,
    * so the fixer adds none of its own and the group is read off the source.
    */
-  return { kind: 'group', inner: core };
+  let doc: LayoutDoc | null =
+    depth === 0 ? core : { kind: 'group', inner: core };
+  if (before.comment) {
+    doc = attachLeadingComment(doc, before.comment);
+  }
+  if (doc && after.comment) {
+    doc = attachTrailingComment(doc, after.comment);
+  }
+  return doc;
 }
 
 function buildCoreDoc(
@@ -1111,6 +1210,34 @@ function regionHasComment(
     .some((comment) => comment.range[1] > start && comment.range[0] < end);
 }
 
+/**
+ * Whether `[start, end)` holds a comment no emitted line can carry.
+ *
+ * A re-layout owns every column of its region, so a comment in it is a layout
+ * input rather than text the fixer steps over. Placement itself is settled
+ * elsewhere: the reconstruction is compared against the spliced source before
+ * any line is emitted, so a comment the emitter moved or dropped fails that
+ * comparison and declines. What that comparison cannot catch is a comment whose
+ * MEANING depends on the line break it sits on — a `//` comment would swallow
+ * the rest of the flattened chain, and a block comment spanning lines would put
+ * a newline inside a measured leaf.
+ */
+function regionHasUnplaceableComment(
+  sourceCode: Readonly<TSESLint.SourceCode>,
+  start: number,
+  end: number,
+): boolean {
+  return sourceCode
+    .getAllComments()
+    .some(
+      (comment) =>
+        comment.range[1] > start &&
+        comment.range[0] < end &&
+        (comment.type !== AST_TOKEN_TYPES.Block ||
+          comment.loc.start.line !== comment.loc.end.line),
+    );
+}
+
 /** A replacement that owns more than the negation, so that it can re-wrap it. */
 type WidenedFix = { range: [number, number]; text: string };
 
@@ -1221,10 +1348,62 @@ function planWidenedFix(input: PlanInput): WidenedFix | null {
 }
 
 /**
- * The `if (…) {`, `while (…) {` and `} while (…);` break.
+ * A clause the emitter can move onto its own indented line, or null.
  *
- * The replaced range is the span BETWEEN the parentheses, so whatever follows
- * the closing one — a block, an `else`, the `;` of a `do` — is left untouched.
+ * Prettier prints a non-block clause inside the SAME group as the header it
+ * hangs off, so the moment that group breaks the clause leaves the `)` line —
+ * measured on `if (…) return handle();` at Prettier 2.8.8. Moving it is
+ * therefore part of the same emission, and everything that would make the moved
+ * line something other than the clause verbatim is declined here.
+ */
+function readMovableClause(
+  parent: TSESTree.Node,
+  body: TSESTree.Node,
+  closeParen: TSESLint.AST.Token,
+  sourceCode: Readonly<TSESLint.SourceCode>,
+  source: string,
+  indent: string,
+  printWidth: number,
+): string | null {
+  /** `if (x);` keeps its `;` glued to the header rather than moving it. */
+  if (body.type === AST_NODE_TYPES.EmptyStatement) {
+    return null;
+  }
+  const text = source.slice(body.range[0], body.range[1]);
+  if (text.includes('\n')) {
+    return null;
+  }
+  if (regionHasComment(sourceCode, closeParen.range[1], body.range[1])) {
+    return null;
+  }
+  /** A clause that overflows its own line breaks internally: a second layout. */
+  if (indent.length + 2 + text.length > printWidth) {
+    return null;
+  }
+  /**
+   * Prettier already puts `else` on its own line whenever the consequent is not
+   * a block, so an `else` still sharing the clause's line means source this
+   * emitter was not reading as Prettier's output to begin with.
+   */
+  if (parent.type === AST_NODE_TYPES.IfStatement && parent.alternate) {
+    const elseToken = sourceCode.getTokenAfter(body);
+    if (
+      elseToken?.value !== 'else' ||
+      !source.slice(body.range[1], elseToken.range[0]).includes('\n')
+    ) {
+      return null;
+    }
+  }
+  return text;
+}
+
+/**
+ * The `if (…) {`, `while (…) {`, `} while (…);` and non-block-clause breaks.
+ *
+ * With a block clause the replaced range is the span BETWEEN the parentheses, so
+ * whatever follows the closing one — the block, an `else`, the `;` of a `do` —
+ * is left untouched. A non-block clause moves with the header, so the range
+ * reaches through it and the emitter writes the `)` itself.
  */
 function planHeaderFix(
   root: TSESTree.Node,
@@ -1235,7 +1414,7 @@ function planHeaderFix(
   source: string,
 ): WidenedFix | null {
   let keywordPrefix: string;
-  let closingSuffix: string;
+  let blockSuffix: string;
   let body: TSESTree.Node;
 
   if (
@@ -1247,27 +1426,20 @@ function planHeaderFix(
       parent.type === AST_NODE_TYPES.IfStatement
         ? parent.consequent
         : parent.body;
-    /**
-     * Past a block, Prettier lays the clause out on its own line and breaks
-     * after the closing parenthesis before it breaks the test, which is a
-     * second layout rather than a wider version of this one.
-     */
-    if (body.type !== AST_NODE_TYPES.BlockStatement) {
-      return null;
-    }
     keywordPrefix =
       parent.type === AST_NODE_TYPES.IfStatement ? 'if (' : 'while (';
-    closingSuffix = ') {';
+    blockSuffix = ') {';
   } else if (
     parent.type === AST_NODE_TYPES.DoWhileStatement &&
     parent.test === root
   ) {
+    /** `do clause; while (…)` breaks after the `do`, which is another layout. */
     if (parent.body.type !== AST_NODE_TYPES.BlockStatement) {
       return null;
     }
     body = parent.body;
     keywordPrefix = '} while (';
-    closingSuffix = ');';
+    blockSuffix = ');';
   } else {
     return null;
   }
@@ -1298,7 +1470,7 @@ function planHeaderFix(
   }
   if (parent.type === AST_NODE_TYPES.DoWhileStatement) {
     const terminator = sourceCode.getTokenAfter(closeParen);
-    closingSuffix = terminator?.value === ';' ? ');' : ')';
+    blockSuffix = terminator?.value === ';' ? ');' : ')';
   }
 
   /**
@@ -1312,14 +1484,49 @@ function planHeaderFix(
   if (indent === null) {
     return null;
   }
-  if (regionHasComment(sourceCode, root.range[0], root.range[1])) {
+  if (regionHasUnplaceableComment(sourceCode, root.range[0], root.range[1])) {
     return null;
   }
 
+  const isBlockClause = body.type === AST_NODE_TYPES.BlockStatement;
+  const clause = isBlockClause
+    ? null
+    : readMovableClause(
+        parent,
+        body,
+        closeParen,
+        sourceCode,
+        source,
+        indent,
+        printWidth,
+      );
+  if (!isBlockClause && clause === null) {
+    return null;
+  }
+
+  /**
+   * The width Prettier measures the test against: everything it would print on
+   * the `if (` row. A block contributes its opening brace and a moved clause
+   * contributes nothing, because it has left that row already.
+   */
+  const closingSuffix = isBlockClause ? blockSuffix : ')';
   const headerWidth =
     indent.length + keywordPrefix.length + flat.length + closingSuffix.length;
-  if (headerWidth <= printWidth) {
+  const printedWidth =
+    clause === null ? headerWidth : headerWidth + 1 + clause.length;
+  if (printedWidth <= printWidth) {
     return null;
+  }
+
+  const range: [number, number] =
+    clause === null
+      ? [openParen.range[1], closeParen.range[0]]
+      : [openParen.range[1], body.range[1]];
+  const movedClause = clause === null ? '' : `\n${indent}  ${clause}`;
+
+  /** Only the clause overflows: the test keeps its line inside the parentheses. */
+  if (clause !== null && headerWidth <= printWidth) {
+    return { range, text: `${flat})${movedClause}` };
   }
 
   const bodyIndent = `${indent}  `;
@@ -1336,16 +1543,135 @@ function planHeaderFix(
   }
   const rendered = [bodyIndent + lines[0], ...lines.slice(1)].join('\n');
   return {
-    range: [openParen.range[1], closeParen.range[0]],
-    text: `\n${rendered}\n${indent}`,
+    range,
+    text:
+      clause === null
+        ? `\n${rendered}\n${indent}`
+        : `\n${rendered}\n${indent})${movedClause}`,
   };
+}
+
+/** Where the row holding an initializer starts, and how far its break indents. */
+type AssignmentAnchor = {
+  statement: TSESTree.Node;
+  headStart: number;
+  lineIndent: string;
+  valueIndent: string;
+  tail: string;
+};
+
+/**
+ * The row a declarator is printed on, for a declaration that holds more than
+ * one of them.
+ *
+ * Prettier puts every declarator after the first on its own line one level in,
+ * and indents a break after `=` one level past THAT — so the value lands four
+ * columns from the statement whichever declarator carries it, including the
+ * first, which merely happens to share the `const` line. Measured at Prettier
+ * 2.8.8 against both positions.
+ */
+function anchorMultiDeclarator(
+  declarator: TSESTree.VariableDeclarator,
+  declaration: TSESTree.VariableDeclaration,
+  statement: TSESTree.Node,
+  statementIndent: string,
+  sourceCode: Readonly<TSESLint.SourceCode>,
+  root: TSESTree.Node,
+): AssignmentAnchor | null {
+  const declaratorIndent = `${statementIndent}  `;
+  const isFirst = declaration.declarations[0] === declarator;
+  if (!isFirst && getLineIndent(declarator, sourceCode) !== declaratorIndent) {
+    return null;
+  }
+  /**
+   * The separator is the whole of what follows the value on its row, and its
+   * absence means source Prettier did not print — every declarator it lays out
+   * this way is closed by a `,` or the statement's `;`.
+   */
+  const separator = sourceCode.getTokenAfter(root);
+  if (
+    (separator?.value !== ',' && separator?.value !== ';') ||
+    separator.range[0] !== root.range[1]
+  ) {
+    return null;
+  }
+  return {
+    statement,
+    headStart: isFirst ? statement.range[0] : declarator.range[0],
+    lineIndent: isFirst ? statementIndent : declaratorIndent,
+    valueIndent: `${declaratorIndent}  `,
+    tail: separator.value,
+  };
+}
+
+function readAssignmentAnchor(
+  root: TSESTree.Node,
+  parent: TSESTree.Node,
+  sourceCode: Readonly<TSESLint.SourceCode>,
+  source: string,
+): AssignmentAnchor | null {
+  if (
+    parent.type === AST_NODE_TYPES.VariableDeclarator &&
+    parent.init === root &&
+    parent.parent?.type === AST_NODE_TYPES.VariableDeclaration
+  ) {
+    const declaration = parent.parent;
+    const statement = getDeclarationStatement(declaration);
+    if (!statement) {
+      return null;
+    }
+    const statementIndent = getLineIndent(statement, sourceCode);
+    if (statementIndent === null) {
+      return null;
+    }
+    if (declaration.declarations.length > 1) {
+      return anchorMultiDeclarator(
+        parent,
+        declaration,
+        statement,
+        statementIndent,
+        sourceCode,
+        root,
+      );
+    }
+    return {
+      statement,
+      headStart: statement.range[0],
+      lineIndent: statementIndent,
+      valueIndent: `${statementIndent}  `,
+      tail: source.slice(root.range[1], statement.range[1]),
+    };
+  }
+
+  if (
+    parent.type === AST_NODE_TYPES.AssignmentExpression &&
+    parent.right === root &&
+    parent.operator === '=' &&
+    parent.parent?.type === AST_NODE_TYPES.ExpressionStatement
+  ) {
+    const statement = parent.parent;
+    const statementIndent = getLineIndent(statement, sourceCode);
+    if (statementIndent === null) {
+      return null;
+    }
+    return {
+      statement,
+      headStart: statement.range[0],
+      lineIndent: statementIndent,
+      valueIndent: `${statementIndent}  `,
+      tail: source.slice(root.range[1], statement.range[1]),
+    };
+  }
+
+  return null;
 }
 
 /**
  * The break after `=` in `const x = …;` and `x.y = …;`.
  *
  * The replaced range starts after the `=`, so the declaration's head — its
- * `export`, its type annotation, the assignment target — is left untouched.
+ * `export`, its type annotation, the assignment target, any declarator sharing
+ * the statement — is left untouched.
  */
 function planAssignmentFix(
   root: TSESTree.Node,
@@ -1355,27 +1681,11 @@ function planAssignmentFix(
   { sourceCode, printWidth }: PlanInput,
   source: string,
 ): WidenedFix | null {
-  let statement: TSESTree.Node | null = null;
-
-  if (
-    parent.type === AST_NODE_TYPES.VariableDeclarator &&
-    parent.init === root &&
-    parent.parent?.type === AST_NODE_TYPES.VariableDeclaration &&
-    /** Prettier lays a second declarator out under the first, not after `=`. */
-    parent.parent.declarations.length === 1
-  ) {
-    statement = getDeclarationStatement(parent.parent);
-  } else if (
-    parent.type === AST_NODE_TYPES.AssignmentExpression &&
-    parent.right === root &&
-    parent.operator === '=' &&
-    parent.parent?.type === AST_NODE_TYPES.ExpressionStatement
-  ) {
-    statement = parent.parent;
-  }
-  if (!statement) {
+  const anchor = readAssignmentAnchor(root, parent, sourceCode, source);
+  if (!anchor) {
     return null;
   }
+  const { statement, headStart, lineIndent, valueIndent, tail } = anchor;
 
   const equals = sourceCode.getTokenBefore(root);
   if (
@@ -1385,27 +1695,21 @@ function planAssignmentFix(
     return null;
   }
 
-  const indent = getLineIndent(statement, sourceCode);
-  if (indent === null) {
-    return null;
-  }
   if (regionHasComment(sourceCode, statement.range[0], statement.range[1])) {
     return null;
   }
 
-  const head = source.slice(statement.range[0], equals.range[1]);
-  const tail = source.slice(root.range[1], statement.range[1]);
+  const head = source.slice(headStart, equals.range[1]);
   if (head.includes('\n') || tail.includes('\n')) {
     return null;
   }
 
   const statementWidth =
-    indent.length + head.length + 1 + flat.length + tail.length;
+    lineIndent.length + head.length + 1 + flat.length + tail.length;
   if (statementWidth <= printWidth) {
     return null;
   }
 
-  const valueIndent = `${indent}  `;
   const lines = layoutDoc(
     doc,
     valueIndent,
