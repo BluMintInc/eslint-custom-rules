@@ -163,11 +163,11 @@ fixer emits is a function of the code alone. That also tracks the common case: a
 formatter counts a trailing block comment toward the line but emits a trailing
 line comment as a suffix that never forces a break.
 
-An inline component written as a block-bodied arrow is a special case in the
-other direction. A formatter hugs such an argument — it keeps the arrow's header
-on the call's line and prints the comparator after the closing brace, whatever
-the resulting width — so the inline form is already the formatter's own output
-and the fixer emits it:
+An inline component the formatter *hugs* is a special case in the other
+direction. A formatter groups a first argument that is a `function` expression
+or a block-bodied arrow — it keeps the header on the call's line and prints the
+comparator after the closing brace — so the inline form is already the
+formatter's own output and the fixer emits it:
 
 ```tsx
 export const Wrapped = memo((props: Props) => {
@@ -175,13 +175,51 @@ export const Wrapped = memo((props: Props) => {
 }, compareDeeply('activeChannelData', 'metadataRecords', 'participantsCollection'));
 ```
 
+The two hugged spellings part company once that closing line itself overflows:
+the formatter leaves the arrow's long, but breaks the comparator's own argument
+list for a `function` expression. The fixer emits each shape as measured, since
+writing either one for both is churn in one direction or the other:
+
+```tsx
+export const Wrapped = memo(function Impl(props: Props) {
+  return <div>{props.activeChannelData.id}</div>;
+}, compareDeeply(
+  'activeChannelData',
+  'metadataRecords',
+  'participantsCollection',
+));
+```
+
+A **concise-bodied** arrow is *not* grouped, so adding the comparator withdraws
+the hug and the formatter prints one argument per line. The component moves one
+nesting step in — a uniform shift of every line it owns, which keeps its
+interior aligned:
+
+```tsx
+export const WrappedInline = memo(
+  ({ beta, alpha }: Props) => (
+    <section>
+      {beta.value}
+      {alpha.value}
+    </section>
+  ),
+  compareDeeply('alpha', 'beta'),
+);
+```
+
+Prop names are quoted the way a formatter quotes them: the quote needing fewer
+escapes wins, so a prop containing an apostrophe is emitted double-quoted even
+under `singleQuote`.
+
+Whitespace inside a template literal is *data*, not layout, so lines inside a
+multi-line template are left exactly where they are while everything around them
+shifts — which is what a formatter does with them too.
+
 **The fix is declined (report only) rather than written over the width** when the
-emitted shape cannot be reproduced faithfully: a component written across lines
-that a formatter does not hug (re-emitting it one step in would misalign its
-interior), a comment inside the argument list (rebuilding the list would drop
-it), or a component argument too long to sit on its own line. Emitting the
-over-wide line in those cases is what a formatter would rewrite, so the report
-stands on its own and the source is left untouched.
+emitted shape cannot be reproduced faithfully: a comment inside the argument list
+(rebuilding the list would drop it), or a component argument too long to sit on
+its own line. Emitting a shape a formatter would rewrite is what the decline
+avoids, so the report stands on its own and the source is left untouched.
 
 ## Edge Cases
 
