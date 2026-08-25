@@ -119,6 +119,34 @@ becomes self-closing: ` />` takes the place the `>` occupied, which leaves it on
 its own line when the attribute list is expanded and beside the last attribute
 when it is not.
 
+The one thing the rename does change is the line's width: `ImageOptimized` is
+twelve columns wider than `img`, so a one-line element near the print width no
+longer fits once it is swapped. Where prettier's answer to that is to
+parenthesize the element on a line of its own, the fix writes that layout
+instead of leaving a line prettier rewrites on sight. Measured at prettier's
+default 80 columns, that is the element standing as the whole value of a
+`return`, an initializer, an assignment or an `export default`, or as the
+concise body of an arrow in one of those places — including an arrow that is
+the sole argument of a call, which prettier hugs (`memo(() => (`), and the
+value of a property in an object already broken across lines:
+
+```jsx
+// export const Gallery = () => <img src="/example.jpg" alt="Example" />;
+export const Gallery = () => (
+  <ImageOptimized src="/example.jpg" alt="Example" />
+);
+```
+
+The measurement follows prettier's: an element that still fits stays flat, a
+trailing `//` comment is a suffix that never counts, and a trailing block
+comment occupies columns and can tip the line over by itself. Everywhere else
+the tag is renamed in place — a child of another element, a conditional
+branch, an attribute value, a call argument prettier does not hug, and an
+element that would overflow even on a line of its own, where prettier breaks
+the attribute list next. That last shape is only writable by rebuilding the
+list, and a rebuild owns every byte between the attributes, comments included,
+so the input's layout is preserved there and the re-layout left to prettier.
+
 When nothing binds the component, the violation is reported without a fix.
 Inserting an import would have to guess the module's canonical path, and a
 rewrite to an unimported name leaves the file referencing an undefined

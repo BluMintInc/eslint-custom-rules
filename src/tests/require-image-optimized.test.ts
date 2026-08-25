@@ -667,7 +667,9 @@ it('renders', () => {
 });
 `,
     },
-    // Any value binding of the name keeps the swap resolvable.
+    // Any value binding of the name keeps the swap resolvable. The rename
+    // pushes this line to 81 columns, so the element is parenthesized the way
+    // prettier prints it rather than left over-wide (#2133).
     {
       code: `
 const ImageOptimized = (props) => <div {...props} />;
@@ -676,7 +678,9 @@ export const Gallery = () => <img src="/example.jpg" alt="Example" />;
       errors: [{ messageId: 'useImageOptimized' }],
       output: `
 const ImageOptimized = (props) => <div {...props} />;
-export const Gallery = () => <ImageOptimized src="/example.jpg" alt="Example" />;
+export const Gallery = () => (
+  <ImageOptimized src="/example.jpg" alt="Example" />
+);
 `,
     },
     // A namespace import binds the namespace, not the component name.
@@ -1226,6 +1230,236 @@ const ImageOptimized = dynamic(() => import('src/components/image/ImageOptimized
 function Component() {
   return <ImageOptimized src="/example.jpg" alt="Example" />;
 }
+`,
+    },
+    // The width arm, pinned in both directions (#2133). Every output below is
+    // a fixed point of agora's prettier 2.8.8 at the default 80-column width.
+    // A rename landing exactly on the print width stays flat.
+    {
+      code: `
+${IMPORT}
+export const Gallery = () => <img src="/example.jpg" alt="Exampl" />;
+`,
+      errors: [{ messageId: 'useImageOptimized' }],
+      output: `
+${IMPORT}
+export const Gallery = () => <ImageOptimized src="/example.jpg" alt="Exampl" />;
+`,
+    },
+    // One column past it, the concise arrow body is parenthesized.
+    {
+      code: `
+${IMPORT}
+export const Gallery = () => <img src="/example.jpg" alt="Example" />;
+`,
+      errors: [{ messageId: 'useImageOptimized' }],
+      output: `
+${IMPORT}
+export const Gallery = () => (
+  <ImageOptimized src="/example.jpg" alt="Example" />
+);
+`,
+    },
+    // A trailing line comment is a suffix prettier never counts, so the same
+    // 80-column rename stays flat under one.
+    {
+      code: `
+${IMPORT}
+export const Gallery = () => <img src="/example.jpg" alt="Exampl" />; // hero shot
+`,
+      errors: [{ messageId: 'useImageOptimized' }],
+      output: `
+${IMPORT}
+export const Gallery = () => <ImageOptimized src="/example.jpg" alt="Exampl" />; // hero shot
+`,
+    },
+    // A trailing block comment occupies columns, so it tips a 73-column rename
+    // over the width by itself and rides along after the closing parenthesis.
+    {
+      code: `
+${IMPORT}
+export const Thumb = () => <img src="/example.jpg" alt="E" />; /* wide */
+`,
+      errors: [{ messageId: 'useImageOptimized' }],
+      output: `
+${IMPORT}
+export const Thumb = () => (
+  <ImageOptimized src="/example.jpg" alt="E" />
+); /* wide */
+`,
+    },
+    {
+      code: `
+${IMPORT}
+export const Thumb = () => <img src="/example.jpg" alt="E" />;
+`,
+      errors: [{ messageId: 'useImageOptimized' }],
+      output: `
+${IMPORT}
+export const Thumb = () => <ImageOptimized src="/example.jpg" alt="E" />;
+`,
+    },
+    // A return argument is parenthesized at the statement's indent.
+    {
+      code: `
+${IMPORT}
+function Gallery() {
+  return <img src="/example.jpg" alt="Example gallery item" width={480} />;
+}
+`,
+      errors: [{ messageId: 'useImageOptimized' }],
+      output: `
+${IMPORT}
+function Gallery() {
+  return (
+    <ImageOptimized src="/example.jpg" alt="Example gallery item" width={480} />
+  );
+}
+`,
+    },
+    // So is a sole-declarator initializer.
+    {
+      code: `
+${IMPORT}
+function Hero() {
+  const hero = <img src="/hero.jpg" alt="Hero" className="hero-image" />;
+  return hero;
+}
+`,
+      errors: [{ messageId: 'useImageOptimized' }],
+      output: `
+${IMPORT}
+function Hero() {
+  const hero = (
+    <ImageOptimized src="/hero.jpg" alt="Hero" className="hero-image" />
+  );
+  return hero;
+}
+`,
+    },
+    // And an assignment statement.
+    {
+      code: `
+${IMPORT}
+let hero;
+hero = <img src="/hero.jpg" alt="Hero image" className="hero-image" />;
+`,
+      errors: [{ messageId: 'useImageOptimized' }],
+      output: `
+${IMPORT}
+let hero;
+hero = (
+  <ImageOptimized src="/hero.jpg" alt="Hero image" className="hero-image" />
+);
+`,
+    },
+    // An arrow that is the sole argument of a call is hugged, so the opening
+    // parenthesis stays on the call's line and the closers pair up.
+    {
+      code: `
+${IMPORT}
+export const Gallery = memo(() => <img src="/example.jpg" alt="Example" />);
+`,
+      errors: [{ messageId: 'useImageOptimized' }],
+      output: `
+${IMPORT}
+export const Gallery = memo(() => (
+  <ImageOptimized src="/example.jpg" alt="Example" />
+));
+`,
+    },
+    {
+      code: `
+${IMPORT}
+function make() {
+  return memo(() => <img src="/example.jpg" alt="Example gallery" />);
+}
+`,
+      errors: [{ messageId: 'useImageOptimized' }],
+      output: `
+${IMPORT}
+function make() {
+  return memo(() => (
+    <ImageOptimized src="/example.jpg" alt="Example gallery" />
+  ));
+}
+`,
+    },
+    // An exported default arrow.
+    {
+      code: `
+${IMPORT}
+export default () => <img src="/example.jpg" alt="Example gallery item" />;
+`,
+      errors: [{ messageId: 'useImageOptimized' }],
+      output: `
+${IMPORT}
+export default () => (
+  <ImageOptimized src="/example.jpg" alt="Example gallery item" />
+);
+`,
+    },
+    // A property of an object prettier has already broken: the wrap is
+    // indented from the property, and the property's comma stays put.
+    {
+      code: `
+${IMPORT}
+const routes = {
+  gallery: () => <img src="/example.jpg" alt="Example gallery item" />,
+};
+`,
+      errors: [{ messageId: 'useImageOptimized' }],
+      output: `
+${IMPORT}
+const routes = {
+  gallery: () => (
+    <ImageOptimized src="/example.jpg" alt="Example gallery item" />
+  ),
+};
+`,
+    },
+    // The width is measured on the element as the rename leaves it, so a
+    // one-line closing tag collapsing to `/>` is counted at its new length.
+    {
+      code: `
+${IMPORT}
+export const Gallery = () => <img src="/example.jpg" alt="Example"></img>;
+`,
+      errors: [{ messageId: 'useImageOptimized' }],
+      output: `
+${IMPORT}
+export const Gallery = () => (
+  <ImageOptimized src="/example.jpg" alt="Example" />
+);
+`,
+    },
+    // The element is moved, not rebuilt: a comment between attributes travels
+    // inside the parentheses byte for byte.
+    {
+      code: `
+${IMPORT}
+export const Gallery = () => <img src="/e.jpg" /* why */ alt="Example" />;
+`,
+      errors: [{ messageId: 'useImageOptimized' }],
+      output: `
+${IMPORT}
+export const Gallery = () => (
+  <ImageOptimized src="/e.jpg" /* why */ alt="Example" />
+);
+`,
+    },
+    // An alias is measured at its own length.
+    {
+      code: `
+import { ImageOptimized as CustomImage } from '../image/ImageOptimized';
+export const Gallery = () => <img src="/example.jpg" alt="Example thumb" />;
+`,
+      errors: [{ messageId: 'useImageOptimized' }],
+      output: `
+import { ImageOptimized as CustomImage } from '../image/ImageOptimized';
+export const Gallery = () => (
+  <CustomImage src="/example.jpg" alt="Example thumb" />
+);
 `,
     },
   ],
