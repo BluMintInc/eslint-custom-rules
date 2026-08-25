@@ -1904,7 +1904,13 @@ class UserAccount { @Memoize() private get a() { return 1; } @Memoize() private 
       `,
     },
     {
-      name: 'an existing decorator sharing the getter line still owns the line',
+      // A getter carrying a SINGLE decorator may keep it on the getter's own
+      // line. Adding a second withdraws that choice — with more than one
+      // decorator each takes a line of its own — so the inline decorator is
+      // broken out with the insertion rather than left for a formatter to move
+      // on its next run (#2124). Shares its emission with
+      // require-memoize-jsx-returners, which pins the same shape (#2115).
+      name: 'a decorator written inline is broken out once a second joins it',
       code: `
         function Log(): MethodDecorator { return () => {}; }
         class UserAccount {
@@ -1917,7 +1923,30 @@ class UserAccount { @Memoize() private get a() { return 1; } @Memoize() private 
         function Log(): MethodDecorator { return () => {}; }
         class UserAccount {
           @Memoize()
-          @Log() private get isLocked() { return true; }
+          @Log()
+          private get isLocked() { return true; }
+        }
+      `,
+    },
+    {
+      // A comment written after the decorator stays WITH the decorator — that
+      // is where it was attached — so the break goes after the comment rather
+      // than before it.
+      name: 'the break lands after a comment trailing the decorator',
+      code: `
+        function Log(): MethodDecorator { return () => {}; }
+        class UserAccount {
+          @Log() /* c */ private get isLocked() { return true; }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoizeGetter' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        function Log(): MethodDecorator { return () => {}; }
+        class UserAccount {
+          @Memoize()
+          @Log() /* c */
+          private get isLocked() { return true; }
         }
       `,
     },
@@ -3295,7 +3324,8 @@ class ExecutionGovernor {
     // silence above is a decision rather than a rule that never ran. The
     // reader strips the data getter's inferable annotation and this rule
     // decorates it, while the handle getter beside it keeps both.
-    const output = lintBoth(`type Admission = { reservedMb: number; release: () => void };
+    const output =
+      lintBoth(`type Admission = { reservedMb: number; release: () => void };
 
 export class Governor {
   private get admission(): Admission {
