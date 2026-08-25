@@ -1,5 +1,6 @@
 import {
   AST_NODE_TYPES,
+  AST_TOKEN_TYPES,
   ASTUtils,
   TSESLint,
   TSESTree,
@@ -11,6 +12,13 @@ type MessageIds = 'preferCloneDeep';
 const CLONE_DEEP_NAME = 'cloneDeep';
 const CLONE_DEEP_MODULE = 'functions/src/util/cloneDeep';
 const INDENT_STEP = '  ';
+/**
+ * agora runs prettier and `eslint --fix` over the same tree, so output prettier
+ * immediately re-lays out is a diff that never settles. The emitted call is
+ * therefore laid out the way prettier would print it at the width prettier is
+ * configured with here and in every consumer (`.prettierrc.json`).
+ */
+const PRINT_WIDTH = 80;
 
 /**
  * Only BluMint's own `cloneDeep` accepts an overrides argument, so an existing
@@ -117,6 +125,92 @@ const PAREN_DELIMITED_PARENTS = new Set<string>([
   AST_NODE_TYPES.WhileStatement,
   AST_NODE_TYPES.WithStatement,
 ]);
+
+/**
+ * Parents that re-lay their child out onto a line of their own as soon as that
+ * child breaks, measured against prettier 2.8.8 at `printWidth: 80`.
+ *
+ * `doThing(cloneDeep(a, {` becomes `doThing(\n  cloneDeep(a, {`, and
+ * `() => cloneDeep(a, {` becomes `() =>\n  cloneDeep(a, {`: prettier expands
+ * the enclosing group rather than hugging a call it cannot treat as a groupable
+ * last argument. The multi-line spelling of the emitted call cannot reproduce
+ * that, because the line break belongs to text this fix does not own.
+ *
+ * Every other parent measured (variable declarator, assignment, `return`,
+ * `throw`, property value, class property, array element, member object,
+ * `await`, spread, template hole, `export default`) hugs, so the default is to
+ * hug and only the measured breakers are named.
+ */
+const BREAKS_BEFORE_ITS_CHILD = new Set<string>([
+  ...PAREN_DELIMITED_PARENTS,
+  AST_NODE_TYPES.AssignmentPattern,
+  AST_NODE_TYPES.BinaryExpression,
+  AST_NODE_TYPES.ConditionalExpression,
+  AST_NODE_TYPES.JSXExpressionContainer,
+  AST_NODE_TYPES.LogicalExpression,
+  AST_NODE_TYPES.TSInstantiationExpression,
+]);
+
+/**
+ * Parents that print their child exactly where the child already sits, so the
+ * question of who breaks first passes through them to the grandparent:
+ * `if (cloneDeep(...).b)` breaks because of the `if`, not because of the member
+ * access.
+ */
+const LAYOUT_TRANSPARENT_PARENTS = new Set<string>([
+  AST_NODE_TYPES.AwaitExpression,
+  AST_NODE_TYPES.ChainExpression,
+  AST_NODE_TYPES.TSAsExpression,
+  AST_NODE_TYPES.TSNonNullExpression,
+  AST_NODE_TYPES.TSSatisfiesExpression,
+  AST_NODE_TYPES.TSTypeAssertion,
+]);
+
+/**
+ * Whether prettier would move the emitted call onto a line of its own instead
+ * of leaving it where the rewrite site starts.
+ *
+ * Only asked of a multi-line spelling, and only where the site does not already
+ * begin its line: a call that fits on the site's own line changes no layout
+ * decision above it, and one prettier has ALREADY moved down is being written
+ * exactly where prettier wants it.
+ */
+function movesToItsOwnLine(site: TSESTree.Node): boolean {
+  let current: TSESTree.Node = site;
+  let parent: TSESTree.Node | undefined = site.parent;
+
+  while (parent) {
+    if (BREAKS_BEFORE_ITS_CHILD.has(parent.type)) {
+      return true;
+    }
+    if (
+      (parent.type === AST_NODE_TYPES.CallExpression ||
+        parent.type === AST_NODE_TYPES.NewExpression) &&
+      (parent.arguments as TSESTree.Node[]).includes(current)
+    ) {
+      return true;
+    }
+    if (
+      parent.type === AST_NODE_TYPES.ArrowFunctionExpression &&
+      parent.body === current
+    ) {
+      return true;
+    }
+    const passesThrough =
+      LAYOUT_TRANSPARENT_PARENTS.has(parent.type) ||
+      (parent.type === AST_NODE_TYPES.MemberExpression &&
+        parent.object === current) ||
+      (parent.type === AST_NODE_TYPES.CallExpression &&
+        parent.callee === current);
+    if (!passesThrough) {
+      return false;
+    }
+    current = parent;
+    parent = parent.parent;
+  }
+
+  return false;
+}
 
 /**
  * Whether an object or array literal ENCLOSING the rewrite site is written on a
@@ -494,11 +588,16 @@ export const preferCloneDeep = createRule<[], MessageIds>({
      * whenever a property cannot be reproduced without changing runtime
      * behavior, which makes the caller decline the fix instead of emitting code
      * that silently drops data (#1364).
+     *
+     * `indent` is the indentation each entry takes in the broken spelling and is
+     * unused by the one-line spelling, which prettier prints as `{ a: 1, b: 2 }`
+     * with no trailing comma.
      */
     function buildOverrideEntries(
       properties: TSESTree.ObjectLiteralElement[],
       basePath: string,
       indent: string,
+      inline: boolean,
     ): string | null {
       const entries: string[] = [];
 
@@ -524,6 +623,7 @@ export const preferCloneDeep = createRule<[], MessageIds>({
             prop.value,
             `${basePath}${accessor}`,
             `${indent}${INDENT_STEP}`,
+            inline,
           );
           if (nested === null) {
             return null;
@@ -535,29 +635,35 @@ export const preferCloneDeep = createRule<[], MessageIds>({
           valueText = sourceCode.getText(prop.value);
         }
 
-        entries.push(`${indent}${keyTextOf(prop)}: ${valueText}`);
+        entries.push(
+          inline
+            ? `${keyTextOf(prop)}: ${valueText}`
+            : `${indent}${keyTextOf(prop)}: ${valueText}`,
+        );
       }
 
-      // Every entry, including the last, carries its own terminator: an object
-      // with entries is only ever emitted across multiple lines (the single-line
-      // spelling `{}` has no entries at all), and prettier's `trailingComma:
-      // 'all'` demands a comma after the final property of a multi-line object.
-      // Joining with ',\n' instead left the last property of every emitted
-      // object, at every nesting depth, unterminated, so prettier rewrote the
-      // fix the moment it landed (#2088). Spreads never reach here — the loop
-      // above declines any property that is not a plain `init` Property — so no
-      // rest element can pick up an illegal trailing comma.
-      return entries.map((entry) => `${entry},`).join('\n');
+      // In the broken spelling every entry, including the last, carries its own
+      // terminator, because prettier's `trailingComma: 'all'` demands a comma
+      // after the final property of a broken object. Joining with ',\n' instead
+      // left the last property of every emitted object, at every nesting depth,
+      // unterminated, so prettier rewrote the fix the moment it landed (#2088).
+      // A one-line object takes no trailing comma at all. Spreads never reach
+      // here — the loop above declines any property that is not a plain `init`
+      // Property — so no rest element can pick up an illegal comma.
+      return inline
+        ? entries.join(', ')
+        : entries.map((entry) => `${entry},`).join('\n');
     }
 
     /**
-     * `indent` is the indentation of the rebuilt object's entries; its closing
-     * brace lines up one step to the left.
+     * `indent` is the indentation of the rebuilt object's entries in the broken
+     * spelling; its closing brace lines up one step to the left.
      */
     function buildOverrideObject(
       node: TSESTree.ObjectExpression,
       basePath: string,
       indent: string,
+      inline: boolean,
     ): string | null {
       let properties: TSESTree.ObjectLiteralElement[] = [...node.properties];
       const [first] = properties;
@@ -572,20 +678,239 @@ export const preferCloneDeep = createRule<[], MessageIds>({
         properties = properties.slice(1);
       }
 
-      const body = buildOverrideEntries(properties, basePath, indent);
+      const body = buildOverrideEntries(properties, basePath, indent, inline);
       if (body === null) {
         return null;
       }
       if (body === '') {
         return '{}';
       }
+      if (inline) {
+        // `bracketSpacing` is on in this repo and in agora, so a non-empty
+        // object prints with padded braces.
+        return `{ ${body} }`;
+      }
       const closingIndent = indent.slice(0, indent.length - INDENT_STEP.length);
       return `{\n${body}\n${closingIndent}}`;
     }
 
-    function buildCloneDeepCall(
+    /**
+     * Where one emitted call is written: the range it replaces, the text that
+     * precedes it inside that range, and the indentation the call is laid out
+     * at. `ownsBreak` marks a placement that SUPPLIES the line break prettier
+     * wants before the call, which is otherwise the reason a broken call cannot
+     * be written mid-line.
+     */
+    type Placement = {
+      range: TSESTree.Range;
+      lead: string;
+      baseIndent: string;
+      ownsBreak: boolean;
+    };
+
+    /**
+     * The replaced range's own lines: the text flanking it on them, and the two
+     * source lines it opens and closes on, whose widths the splice inherits.
+     */
+    function lineContextOf(range: TSESTree.Range): {
+      prefix: string;
+      suffix: string;
+      openLine: string;
+      closeLine: string;
+    } {
+      const text = sourceCode.getText();
+      const lineStart = text.lastIndexOf('\n', range[0] - 1) + 1;
+      const openEnd = text.indexOf('\n', range[0]);
+      const closeStart = text.lastIndexOf('\n', range[1] - 1) + 1;
+      const lineEnd = text.indexOf('\n', range[1]);
+      const upto = (index: number) => (index === -1 ? text.length : index);
+      return {
+        prefix: text.slice(lineStart, range[0]),
+        suffix: text.slice(range[1], upto(lineEnd)).trimEnd(),
+        openLine: text.slice(lineStart, upto(openEnd)).trimEnd(),
+        closeLine: text.slice(closeStart, upto(lineEnd)).trimEnd(),
+      };
+    }
+
+    /**
+     * Whether splicing `call` over `range` yields text prettier reprints
+     * unchanged.
+     *
+     * Two ways it would not. A call that spans lines cannot sit MID-LINE in a
+     * position prettier re-lays onto a line of its own, because that leading
+     * break belongs to text outside the replaced range (#2109). Where the site
+     * already opens its own line the break is spent, whoever the parent is, and
+     * the multi-line call is written exactly where prettier would put it. And
+     * the two lines the splice widens — `const x = {` becoming
+     * `const x = cloneDeep(base, {`, and `}` becoming `} as const)` — must still
+     * fit, or prettier reflows the whole argument list around them.
+     *
+     * Only those two are measured. The lines between them carry the author's own
+     * entries at the indentation they already had, so their width is not this
+     * fixer's to answer for, and rejecting one would decline a working fix over
+     * a long string literal prettier cannot break either.
+     */
+    function isPrintableAt(
       node: TSESTree.ObjectExpression,
+      placement: Placement,
+      call: string,
+    ): boolean {
+      const { range, lead, ownsBreak } = placement;
+      const { prefix, suffix, openLine, closeLine } = lineContextOf(range);
+      const spliced = `${prefix}${lead}${call}${suffix}`.split('\n');
+      // The budget is the print width, or the source line's own width where
+      // that is already larger. A line the input already ran over is one
+      // prettier reflows whether or not this fix lands, so withholding the fix
+      // buys nothing there — and the overrun is usually a trailing comment,
+      // which would otherwise make a comment decide whether the rule fixes at
+      // all (#2086).
+      const openBudget = Math.max(PRINT_WIDTH, openLine.length);
+      const closeBudget = Math.max(PRINT_WIDTH, closeLine.length);
+      if (spliced.length === 1) {
+        return spliced[0].length <= Math.max(openBudget, closeBudget);
+      }
+      if (
+        spliced[0].length > openBudget ||
+        spliced[spliced.length - 1].length > closeBudget
+      ) {
+        return false;
+      }
+      return (
+        ownsBreak ||
+        `${prefix}${lead}`.trim() === '' ||
+        !movesToItsOwnLine(node)
+      );
+    }
+
+    /**
+     * The three layouts prettier chooses between for a call whose last argument
+     * is an object literal, in the order it tries them: both arguments on one
+     * line, the object hugged open on the call's own line, and — once the head
+     * `cloneDeep(base, {` no longer fits — one argument per line.
+     */
+    type CallLayout = 'inline' | 'hug' | 'expanded';
+
+    /**
+     * The placements to try for one rewrite site, in order.
+     *
+     * The second exists because prettier prints a concise arrow body that
+     * breaks on a line of its own — `() =>\n  cloneDeep(base, {` — and that
+     * break sits between the `=>` and the replaced range. Taking that gap into
+     * the range is what lets the fix write it, and it is the one break the fix
+     * can take, because nothing else claims the gap.
+     *
+     * A comment in the gap is carried across verbatim onto the line the break
+     * opens, which is where prettier puts it anyway — declining instead would
+     * make the fix depend on whether a comment happens to sit there. A LINE
+     * comment cannot be carried, since `//` would swallow the call behind it,
+     * and neither can a gap already spanning lines.
+     *
+     * The arrow itself has to be somewhere prettier leaves alone, or the break
+     * this placement writes is not the only one being decided: prettier answers
+     * `doThing(() => …)` from the argument list outwards, and the `,` and `)` it
+     * wants there are text this fix does not own.
+     */
+    function placementsFor(
+      node: TSESTree.ObjectExpression,
+      site: TSESTree.Node,
+      range: TSESTree.Range,
+    ): Placement[] {
+      const placements: Placement[] = [
+        { range, lead: '', baseIndent: indentOf(node), ownsBreak: false },
+      ];
+
+      const arrow = site.parent;
+      if (
+        !arrow ||
+        arrow.type !== AST_NODE_TYPES.ArrowFunctionExpression ||
+        arrow.body !== site ||
+        movesToItsOwnLine(arrow)
+      ) {
+        return placements;
+      }
+
+      const first = sourceCode.getTokenByRangeStart(range[0]);
+      const arrowToken = first && sourceCode.getTokenBefore(first);
+      if (!first || !arrowToken || arrowToken.value !== '=>') {
+        return placements;
+      }
+
+      const gap = sourceCode
+        .getText()
+        .slice(arrowToken.range[1], range[0])
+        .trim();
+      const carriable = sourceCode
+        .getCommentsBefore(first)
+        .every((comment) => comment.type === AST_TOKEN_TYPES.Block);
+      if (gap.includes('\n') || !carriable) {
+        return placements;
+      }
+
+      const baseIndent = `${indentOf(arrow)}${INDENT_STEP}`;
+      placements.push({
+        range: [arrowToken.range[1], range[1]],
+        lead: gap === '' ? `\n${baseIndent}` : `\n${baseIndent}${gap} `,
+        baseIndent,
+        ownsBreak: true,
+      });
+      return placements;
+    }
+
+    function spellCloneDeepCall(
+      rest: TSESTree.ObjectLiteralElement[],
+      baseText: string,
+      basePath: string,
+      baseIndent: string,
+      layout: CallLayout,
     ): string | null {
+      const argumentIndent =
+        layout === 'expanded' ? `${baseIndent}${INDENT_STEP}` : baseIndent;
+      const entryIndent =
+        layout === 'inline' ? '' : `${argumentIndent}${INDENT_STEP}`;
+      const body = buildOverrideEntries(
+        rest,
+        basePath,
+        entryIndent,
+        layout === 'inline',
+      );
+      if (body === null) {
+        return null;
+      }
+      const overrides =
+        body === ''
+          ? '{}'
+          : layout === 'inline'
+          ? `{ ${body} }`
+          : `{\n${body}\n${argumentIndent}}`;
+      if (layout === 'expanded') {
+        return `cloneDeep(\n${argumentIndent}${baseText},\n${argumentIndent}${overrides} as const,\n${baseIndent})`;
+      }
+      return `cloneDeep(${baseText}, ${overrides} as const)`;
+    }
+
+    /**
+     * The edit that rewrites one literal, spelled and placed the way prettier
+     * would print it there, or null where no faithful spelling exists.
+     *
+     * One override per line is the spelling this rule emits wherever prettier
+     * prints it back unchanged. Where it does not — a head or entry too wide for
+     * its line, or a position such as `doThing(cloneDeep(...))` or
+     * `if (cloneDeep(...))` where prettier moves a broken call down a line of
+     * its own — the overrides are collapsed onto the one line the call already
+     * occupies, which prettier keeps whole while it fits. A concise arrow body
+     * gets the break written for it instead, so that
+     * `() => ({ ... })` and its `() => { return { ... }; }` twin are fixed alike
+     * rather than one of them declining on the shape of its own function.
+     *
+     * Where nothing is printable the fix is declined: leaving the input alone
+     * changes no meaning, while emitting churn does, and the report stands
+     * either way (#2109).
+     */
+    function buildCloneDeepRewrite(
+      node: TSESTree.ObjectExpression,
+      site: TSESTree.Node,
+      range: TSESTree.Range,
+    ): { range: TSESTree.Range; text: string } | null {
       const [first, ...rest] = node.properties;
       if (!first || first.type !== AST_NODE_TYPES.SpreadElement) {
         return null;
@@ -593,18 +918,35 @@ export const preferCloneDeep = createRule<[], MessageIds>({
 
       const baseText = sourceCode.getText(first.argument);
       const basePath = accessPathOf(first.argument);
-      const baseIndent = indentOf(node);
-      const body = buildOverrideEntries(
-        rest,
-        basePath,
-        `${baseIndent}${INDENT_STEP}`,
-      );
-      if (body === null) {
-        return null;
+      const layouts: CallLayout[] = ['hug', 'inline', 'expanded'];
+
+      for (const placement of placementsFor(node, site, range)) {
+        for (const layout of layouts) {
+          const call = spellCloneDeepCall(
+            rest,
+            baseText,
+            basePath,
+            placement.baseIndent,
+            layout,
+          );
+          if (call === null) {
+            return null;
+          }
+          // A property value copied verbatim can carry its own line breaks (and
+          // a `//` comment with them), which no room collapses onto one.
+          if (layout === 'inline' && call.includes('\n')) {
+            continue;
+          }
+          if (isPrintableAt(node, placement, call)) {
+            return {
+              range: placement.range,
+              text: `${placement.lead}${call}`,
+            };
+          }
+        }
       }
 
-      const overrides = body === '' ? '{}' : `{\n${body}\n${baseIndent}}`;
-      return `cloneDeep(${baseText}, ${overrides} as const)`;
+      return null;
     }
 
     /**
@@ -774,12 +1116,16 @@ export const preferCloneDeep = createRule<[], MessageIds>({
                   if (hasSingleLineEncloser(site)) {
                     return null;
                   }
-                  const call = buildCloneDeepCall(target);
-                  if (call === null) {
+                  const rewrite = buildCloneDeepRewrite(
+                    target,
+                    site,
+                    absorbedRangeOf(site),
+                  );
+                  if (rewrite === null) {
                     return null;
                   }
                   rewrites.push(
-                    fixer.replaceTextRange(absorbedRangeOf(site), call),
+                    fixer.replaceTextRange(rewrite.range, rewrite.text),
                   );
                 }
 

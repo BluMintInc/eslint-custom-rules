@@ -79,12 +79,71 @@ specifier that names it (`functions/src/util/cloneDeep`, `../util/cloneDeep`,
 `./cloneDeep`, …), as either a named or a default import. That import is the
 proof that the call the fix writes resolves.
 
-The overrides object is emitted across multiple lines with every entry
-terminated, including the last one at each nesting depth. Prettier's
-`trailingComma: 'all'` requires that comma, so the emitted text is a fixed point
-of the formatter and the fix lands without formatting churn behind it. The one
-single-line emission is `{}`, for an override that collapses to nothing; its
+The call is emitted in whichever of prettier's three layouts for a call with a
+trailing object argument prettier would print at that spot, so the fix lands
+without formatting churn behind it:
+
+- **Overrides hugged open** — `cloneDeep(base, {` on the line the literal already
+  started, one entry per line below it. This is the default spelling.
+- **Everything on one line** — `cloneDeep(base, { a: 1 } as const)` — where the
+  hugged spelling is not one prettier would print back. That happens where
+  prettier moves a broken call onto a line of its own: a concise arrow body
+  (`() => …`), an argument list (`doThing(…)`, `new Thing(…)`), a statement head
+  (`if (…)`, `for (… of …)`), a ternary branch, a logical operand and a parameter
+  default. The leading break prettier wants there belongs to text outside the
+  range this fix replaces, so it cannot be written. A site that **already** opens
+  its own line has spent that break, and keeps the hugged spelling whoever its
+  parent is.
+- **One argument per line** — the base and the overrides each on their own line
+  inside the call's parentheses — once `cloneDeep(base, {` no longer fits on the
+  line it starts, which is exactly when prettier stops hugging.
+
+In the two broken layouts every entry is terminated, including the last one at
+each nesting depth, because prettier's `trailingComma: 'all'` requires that
+comma. The one-line layout takes no trailing comma at all. `{}`, for an override
+that collapses to nothing, is spelled the same way in every layout; its
 terminator belongs to the surrounding entry, never inside the braces.
+
+The one break the fix does write is the one after a concise arrow's `=>`, by
+taking the gap after that token into the replaced range:
+
+```ts
+// before
+import { cloneDeep } from 'functions/src/util/cloneDeep';
+
+const buildIt = () => ({
+  ...configuration,
+  nested: { ...configuration.nested, isEnabled: true, retryLimit: 3 },
+});
+```
+
+```ts
+// after --fix
+import { cloneDeep } from 'functions/src/util/cloneDeep';
+
+const buildIt = () =>
+  cloneDeep(configuration, {
+    nested: {
+      isEnabled: true,
+      retryLimit: 3,
+    },
+  } as const);
+```
+
+Nothing else claims that gap, and writing it is what keeps `() => ({ … })` and
+its `() => { return { … }; }` twin fixed alike, instead of the fix depending on
+how the enclosing function is spelled. A block comment in the gap is carried
+across onto the line the break opens, which is where prettier puts it anyway.
+The gap is not taken where a line comment sits in it — `//` would swallow the
+call behind it — nor where something else is deciding the same break, as an
+arrow that is itself an argument is: prettier answers `doThing(() => …)` from
+the argument list outwards, and the `,` and `)` it wants there are text this fix
+does not own.
+
+Width is measured against the print width **or the source line's own width where
+that is already greater**. A line the input already ran over is one prettier
+reflows whether or not the fix lands, so a trailing comment that happens to push
+a line past the margin does not decide whether the rule fixes at all.
 
 Parentheses that were doing work around the literal are absorbed into the
 replaced range, because a `cloneDeep(...)` call is a `LeftHandSideExpression`
@@ -148,6 +207,12 @@ faithfully:
   The emitted call is multi-line, so the enclosing literal has to break around
   it — a range the fix does not own. Spelling the enclosing literal across lines
   restores the fix.
+- A literal hugged open **mid-line** in a position where prettier moves a broken
+  call down a line of its own, whose overrides are too wide to collapse onto the
+  line the call already occupies — for example a `doSomething({ … })` argument
+  that only fits across several lines. No layout the fix can write is one
+  prettier prints back unchanged, and leaving the input alone changes no meaning
+  while emitting churn does.
 
 A `const` assertion applied **directly** to the literal is absorbed rather than
 declined — `{ ...a, nested: { ...a.nested, value: 42 } } as const` becomes a
