@@ -92,7 +92,7 @@ const getUser = () =>
    */ fetchUser() as User;
 ```
 
-Four things bound that rewrite:
+Five things bound that rewrite:
 
 - **The comment lands at the depth an arrow body is written at**, one step past the declaration the arrow belongs to, which is where Prettier puts a body it has had to break. A `*`-gutter block comment is re-aligned to the column it arrives at. A `//` comment is carried the same way — its own text cannot hold a line terminator, but it ends its line just as hard:
 
@@ -109,6 +109,31 @@ const getUser = () =>
 
 - **A comment that trips no restricted production is not moved.** A single-line block comment stays exactly where it was written (`const getUser = () /* doc */ => …`); relocating comments gratuitously is its own regression.
 - **A positional directive in the gap withholds the fix.** Rewriting the gap collapses the lines it spanned, which would retarget an `eslint-disable-next-line` or a `@ts-expect-error` written there. The report ships without a fixer instead.
+- **A rewrite that would re-decide layout outside the gap withholds the fix.** Prettier and `eslint --fix` run over the same tree, so an edit the formatter rewrites on arrival produces a diff that never settles and churns every file it touches. Two shapes reach that far, and the report ships without a fixer for both:
+
+```ts
+// A comment run that must own a line leaves a bracketed body no room beside
+// the `=>`, so the body's opening brace drops one step in while its interior
+// and its closing brace stay at the columns they were written at. Settling the
+// three means re-indenting the body, which is not the annotation's span.
+const getUser = (): // why this exists
+User => {
+  return fetchUser() as User;
+};
+
+// Prettier lays an arrow chain out as a single group — either every `=>` in it
+// ends a line or none does — and the line terminator this annotation carries is
+// what holds that group open. Deleting it re-decides where the OTHER links
+// break. A chain whose links share a line is held open by nothing and is fixed
+// as usual, as is a broken chain whose annotation carries no terminator.
+const outer =
+  () =>
+  (): /**
+   * why this exists
+   */ User =>
+    fetchUser() as User;
+```
+
 - **Every other subject is untouched.** A function declaration, a method, a class property with a body and a plain binding all end their signature at a body or a separator, so their comments keep their place and the annotation is simply deleted.
 
 ### Annotations that carry type information

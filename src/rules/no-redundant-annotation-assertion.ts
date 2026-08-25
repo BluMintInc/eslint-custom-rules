@@ -3,6 +3,7 @@ import { visitorKeys } from '@typescript-eslint/visitor-keys';
 import * as ts from 'typescript';
 import { ASTHelpers } from '../utils/ASTHelpers';
 import {
+  arrowAnnotationGap,
   Edit,
   isDisjoint,
   planArrowAnnotationEdits,
@@ -1296,6 +1297,216 @@ function findCircularReturnCandidates(
   return circular;
 }
 
+/** Every character the syntactic grammar counts as a LineTerminator. */
+const LINE_TERMINATORS = /[\n\r\u2028\u2029]/g;
+
+function countLineTerminators(text: string): number {
+  return text.match(LINE_TERMINATORS)?.length ?? 0;
+}
+
+/**
+ * The text `range` spells once `edits` are applied.
+ *
+ * Only an edit lying wholly inside the span can change what it spells: one
+ * outside shifts both endpoints by the same amount, which moves the span
+ * without rewriting it.
+ */
+function previewSpan(
+  text: string,
+  edits: readonly Edit[],
+  range: TextRange,
+): string {
+  const inside = edits
+    .filter((edit) => edit.range[0] >= range[0] && edit.range[1] <= range[1])
+    .sort((left, right) => left.range[0] - right.range[0]);
+
+  let preview = '';
+  let cursor = range[0];
+  for (const edit of inside) {
+    preview += text.slice(cursor, edit.range[0]) + edit.text;
+    cursor = edit.range[1];
+  }
+  return preview + text.slice(cursor, range[1]);
+}
+
+/**
+ * The whitespace `offset` sits behind on its own line, or `null` when anything
+ * else shares that line ahead of it.
+ *
+ * The distinction is what decides a bracketed body's depth: prettier indents
+ * the interior of a body that OPENS a line from that line's own indentation,
+ * and the interior of one it left beside the `=>` from the declaration's.
+ */
+function ownLineIndentAt(text: string, offset: number): string | null {
+  const lineStart = text.lastIndexOf('\n', offset - 1) + 1;
+  const prefix = text.slice(lineStart, offset);
+  return prefix.trim() === '' ? prefix : null;
+}
+
+/**
+ * Whether a line break falls BETWEEN two of the node's tokens, rather than
+ * inside one of them.
+ *
+ * A body spanning lines only has an interior depth to get wrong when its own
+ * structure spans them. The lines a multi-line template literal or a block
+ * comment occupies are inside a single token — content whose columns prettier
+ * never re-indents — so moving such a body's first line leaves nothing behind
+ * at the wrong depth.
+ */
+function spansLinesBetweenTokens(
+  source: TSESLint.SourceCode,
+  node: TSESTree.Node,
+): boolean {
+  const tokens = source.getTokens(node, { includeComments: true });
+  return tokens.some(
+    (token, index) =>
+      index > 0 && tokens[index - 1].loc.end.line !== token.loc.start.line,
+  );
+}
+
+/**
+ * Whether the emitted text moves the arrow's body onto a line of its own at a
+ * depth its interior does not share.
+ *
+ * A carried comment run that must own a line leaves the body no room beside the
+ * `=>`, so the body's opening bracket drops to the next line one step in. Its
+ * interior and its closing bracket stay where they were written, which puts the
+ * three at three different depths — and prettier re-indents the whole body to
+ * settle them (#2120). A body left beside the `=>`, or one already opening a
+ * line at the depth the run is written to, keeps every column it had.
+ */
+function displacesBody(
+  source: TSESLint.SourceCode,
+  arrow: TSESTree.ArrowFunctionExpression,
+  edits: readonly Edit[],
+): boolean {
+  const bodyStart = arrow.body.range[0];
+  if (!spansLinesBetweenTokens(source, arrow.body)) return false;
+
+  const emitted = previewSpan(source.text, edits, [0, bodyStart]);
+  const emittedIndent = ownLineIndentAt(emitted, emitted.length);
+  if (emittedIndent === null) return false;
+
+  return emittedIndent !== ownLineIndentAt(source.text, bodyStart);
+}
+
+/**
+ * Every link of the arrow chain `arrow` belongs to, outermost first.
+ *
+ * An arrow function is the only node that can stand as an arrow's body without
+ * a wrapper, so the body position identifies a link exactly: an arrow sitting
+ * in a parameter default shares a parent type without sharing a chain.
+ */
+function arrowChainLinks(
+  arrow: TSESTree.ArrowFunctionExpression,
+): TSESTree.ArrowFunctionExpression[] {
+  let root = arrow;
+  for (
+    let parent = root.parent;
+    parent?.type === AST_NODE_TYPES.ArrowFunctionExpression &&
+    parent.body === root;
+    parent = root.parent
+  ) {
+    root = parent;
+  }
+
+  const links = [root];
+  let body: TSESTree.Node = root.body;
+  while (body.type === AST_NODE_TYPES.ArrowFunctionExpression) {
+    links.push(body);
+    body = body.body;
+  }
+
+  return links;
+}
+
+/**
+ * Whether the chain is written with its links one per line, the shape prettier
+ * prints when the chain's single group is open.
+ *
+ * The signal is a line terminator between one link's `=>` and the next link,
+ * which is a break prettier only takes for the whole group at once — a chain it
+ * fits on one line puts every `=>` on that line.
+ */
+function chainIsPrintedBroken(
+  source: TSESLint.SourceCode,
+  links: readonly TSESTree.ArrowFunctionExpression[],
+): boolean {
+  return links.slice(1).some((next) => {
+    const arrowToken = source.getTokenBefore(next, {
+      filter: (token) => token.value === '=>',
+    });
+
+    return (
+      arrowToken !== null && arrowToken.loc.end.line !== next.loc.start.line
+    );
+  });
+}
+
+/**
+ * Whether stripping the annotation takes the line terminator that holds an
+ * already-broken arrow chain open out of this link's head.
+ *
+ * Prettier lays an arrow chain out as a single group: either every `=>` in it
+ * ends a line or none does. A line terminator in the head of one link — a block
+ * comment carrying one, or an annotation written across lines — is enough to
+ * force that group open, so deleting it re-decides where every OTHER link
+ * breaks. Those links are not this annotation's span, and re-emitting them
+ * would mean laying the whole chain out again, so the fix is withheld instead
+ * of shipping a head prettier immediately rewrites (#2120).
+ *
+ * A chain whose links already share a line is not held open by anything, so the
+ * same strip leaves the group where it was and the fix ships.
+ *
+ * The head stops at the `=>` rather than past it: a comment carried to the far
+ * side lands beyond the group's decision point, and counting it would read the
+ * carried terminators as if they still held the chain open.
+ */
+function collapsesChainHead(
+  source: TSESLint.SourceCode,
+  returnType: TSESTree.TSTypeAnnotation,
+  arrow: TSESTree.ArrowFunctionExpression,
+  edits: readonly Edit[],
+): boolean {
+  const links = arrowChainLinks(arrow);
+  if (links.length < 2 || !chainIsPrintedBroken(source, links)) return false;
+
+  const gapInfo = arrowAnnotationGap(source, returnType);
+  if (!gapInfo) return false;
+
+  const head: TextRange = [arrow.range[0], gapInfo.arrow.range[0]];
+  return (
+    countLineTerminators(previewSpan(source.text, edits, head)) <
+    countLineTerminators(source.text.slice(head[0], head[1]))
+  );
+}
+
+/**
+ * Whether a planned strip leaves every line it does not own where it was.
+ *
+ * agora runs prettier and `eslint --fix` over the same tree, so a fix whose
+ * output the formatter rewrites on arrival produces a diff that never settles
+ * and churns every file it touches. Both shapes screened here are ones where
+ * the emitted text re-decides the layout of code OUTSIDE the annotation's own
+ * span — a body's interior, or the other links of an arrow chain — which this
+ * planner cannot re-emit without rewriting text it does not own. Withholding
+ * the fix keeps the report, so the annotation is still surfaced to its author
+ * (#2120).
+ */
+function keepsSurroundingLayout(
+  source: TSESLint.SourceCode,
+  returnType: TSESTree.TSTypeAnnotation,
+  edits: readonly Edit[],
+): boolean {
+  const arrow = returnType.parent;
+  if (arrow?.type !== AST_NODE_TYPES.ArrowFunctionExpression) return true;
+
+  return (
+    !displacesBody(source, arrow, edits) &&
+    !collapsesChainHead(source, returnType, arrow, edits)
+  );
+}
+
 export const noRedundantAnnotationAssertion = createRule<[], MessageIds>({
   name: 'no-redundant-annotation-assertion',
   meta: {
@@ -1445,11 +1656,16 @@ export const noRedundantAnnotationAssertion = createRule<[], MessageIds>({
       if (!site.arrowReturnType) {
         return [{ range: site.removal, text: '' }];
       }
-      return planArrowAnnotationEdits(
+      const edits = planArrowAnnotationEdits(
         sourceCode,
         site.arrowReturnType,
         site.removal,
       );
+      if (edits === null) return null;
+
+      return keepsSurroundingLayout(sourceCode, site.arrowReturnType, edits)
+        ? edits
+        : null;
     }
 
     /**

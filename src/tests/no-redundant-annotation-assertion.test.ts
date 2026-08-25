@@ -1678,12 +1678,14 @@ const getUser = () /* a */ =>
 `,
       },
       {
-        // A line comment ahead of a block body forces the break the bracketed
-        // body would otherwise avoid — it would swallow the `{` — so the
-        // comment takes the step a broken body takes. Prettier re-indents the
-        // block behind it; those columns are the body's own text, outside the
-        // gap this planner rewrites.
-        name: 'a line comment ahead of a block body still takes the body depth',
+        // Issue #2120: a line comment ahead of a block body forces the break
+        // the bracketed body would otherwise avoid — it would swallow the `{` —
+        // so the `{` drops to its own line one step in while the body's
+        // interior and its closing brace stay at the columns they were written
+        // at. Settling those three depths means re-indenting the body, which is
+        // text outside the gap this planner rewrites, so the fix is withheld
+        // and only the report ships.
+        name: 'a line comment ahead of a block body withholds the fix',
         code: `
 type User = { id: string };
 declare function fetchUser(): User;
@@ -1693,14 +1695,172 @@ User => {
 };
 `,
         errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: null,
+      },
+      {
+        // The neighbour on the other side of that carve-out: the body opens a
+        // line of its own at exactly the depth the carried run is written to,
+        // so nothing behind it moves and the fix ships.
+        name: 'a body already opening its own line at the run depth is fixed',
+        code: `
+type User = { id: string };
+declare function fetchUser(): User;
+const getUser = (): // doc
+User =>
+  {
+    return fetchUser() as User;
+  };
+`,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
         output: `
 type User = { id: string };
 declare function fetchUser(): User;
 const getUser = () =>
   // doc
   {
-  return fetchUser() as User;
-};
+    return fetchUser() as User;
+  };
+`,
+      },
+      {
+        // The lines a template literal occupies are inside a single token, so
+        // it has no interior columns to leave behind at the wrong depth —
+        // displacing it moves the whole literal intact.
+        name: 'a multi-line template body is displaced without withholding the fix',
+        code: `
+const render = (): // doc
+string =>
+  \`line one
+line two\` as string;
+`,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+const render = () =>
+  // doc
+  \`line one
+line two\` as string;
+`,
+      },
+      {
+        // Issue #2120: Prettier lays an arrow chain out as one group, and the
+        // line terminator this annotation carries is the only thing holding
+        // that group open. Stripping it re-decides where the OTHER link breaks,
+        // which is text outside this annotation's span, so the fix is withheld.
+        name: 'a broken arrow chain held open by a block comment withholds the fix',
+        code: `
+type User = { id: string };
+declare function fetchUser(): User;
+const outer =
+  () =>
+  (): /**
+   * doc
+   */ User =>
+    fetchUser() as User;
+`,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: null,
+      },
+      {
+        // A line comment holds the group open just as hard as a block comment
+        // carrying a terminator, so the same carve-out answers for it.
+        name: 'a broken arrow chain held open by a line comment withholds the fix',
+        code: `
+type User = { id: string };
+declare function fetchUser(): User;
+const outer =
+  () =>
+  (): // doc
+  User =>
+    fetchUser() as User;
+`,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: null,
+      },
+      {
+        // The neighbour that pins what the carve-out keys on: the chain is
+        // written just as broken, but the strip takes no line terminator out of
+        // the head, so the group stays where it was and the fix ships.
+        name: 'a broken arrow chain losing no terminator is still fixed',
+        code: `
+type User = { id: string };
+declare function fetchUser(): User;
+const buildUserFetcher =
+  (tenantIdentifier: string, tenantRegionName: string) =>
+  (requestIdentifier: string, requestRegionName: string): User =>
+    fetchUser() as User;
+`,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+type User = { id: string };
+declare function fetchUser(): User;
+const buildUserFetcher =
+  (tenantIdentifier: string, tenantRegionName: string) =>
+  (requestIdentifier: string, requestRegionName: string) =>
+    fetchUser() as User;
+`,
+      },
+      {
+        // Same broken chain with a comment that stays in the gap: a comment is
+        // not itself the trigger, only the terminator one may carry.
+        name: 'a broken arrow chain keeps a one-line comment and its fix',
+        code: `
+type User = { id: string };
+declare function fetchUser(): User;
+const buildUserFetcher =
+  (tenantIdentifier: string, tenantRegionName: string) =>
+  (requestIdentifier: string, requestRegionName: string): /* doc */ User =>
+    fetchUser() as User;
+`,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+type User = { id: string };
+declare function fetchUser(): User;
+const buildUserFetcher =
+  (tenantIdentifier: string, tenantRegionName: string) =>
+  (requestIdentifier: string, requestRegionName: string) /* doc */ =>
+    fetchUser() as User;
+`,
+      },
+      {
+        // A chain whose links share a line is a group nothing holds open, so
+        // the strip cannot collapse it and the fix ships.
+        name: 'a chain written on one line is fixed',
+        code: `
+type User = { id: string };
+declare function fetchUser(): User;
+const outer = () => (): /* doc */ User => fetchUser() as User;
+`,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+type User = { id: string };
+declare function fetchUser(): User;
+const outer = () => () /* doc */ => fetchUser() as User;
+`,
+      },
+      {
+        // An arrow sitting in another arrow's PARAMETER list shares a parent
+        // type without sharing a chain: its own head is laid out on its own,
+        // so the chain carve-out must not reach it.
+        name: 'an arrow in a parameter default is not treated as a chain link',
+        code: `
+type User = { id: string };
+declare function fetchUser(): User;
+const outer = (
+  cb = (): /**
+   * doc
+   */ User => fetchUser() as User,
+) => cb;
+`,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+type User = { id: string };
+declare function fetchUser(): User;
+const outer = (
+  cb = () =>
+    /**
+     * doc
+     */ fetchUser() as User,
+) => cb;
 `,
       },
       {
@@ -2669,6 +2829,149 @@ describe('no-redundant-annotation-assertion --fix leaves JSX values alone', () =
     expect(
       isFixedPoint(
         `export const Row = () =>\n  /**\n   * doc\n   */ (<div />) as JSX.Element;\n`,
+      ),
+    ).toBe(true);
+  });
+});
+
+/**
+ * Issue #2120: agora runs Prettier and `eslint --fix` over the same tree, so a
+ * fixer whose output Prettier rewrites on arrival produces a diff that never
+ * settles and churns every file it touches.
+ *
+ * Every source below is a Prettier fixed point as written, which is what makes
+ * the question meaningful: a pre-image Prettier would reformat anyway cannot
+ * distinguish the fixer's churn from the formatter's own.
+ */
+describe('no-redundant-annotation-assertion --fix output survives Prettier', () => {
+  const RULE_ID = '@blumintinc/blumint/no-redundant-annotation-assertion';
+  const FILENAME = 'x.ts';
+
+  const linter = new Linter();
+  linter.defineParser('@typescript-eslint/parser', tsParser as never);
+  linter.defineRule(
+    RULE_ID,
+    noRedundantAnnotationAssertion as unknown as Rule.RuleModule,
+  );
+
+  const CONFIG: Linter.Config = {
+    parser: '@typescript-eslint/parser',
+    parserOptions: {
+      ecmaVersion: 2022 as const,
+      sourceType: 'module' as const,
+    },
+    rules: { [RULE_ID]: 'error' },
+  };
+
+  const PRETTIER_OPTIONS: prettier.Options = {
+    parser: 'typescript',
+    printWidth: 80,
+    tabWidth: 2,
+    singleQuote: true,
+    semi: true,
+    trailingComma: 'all',
+  };
+
+  const isFixedPoint = (text: string): boolean =>
+    prettier.format(text, PRETTIER_OPTIONS) === text;
+
+  const HEAD =
+    'type User = { id: string };\ndeclare function fetchUser(): User;\n';
+
+  /** The two shapes reported in #2120, each written as Prettier prints it. */
+  const WITHHELD: [string, string][] = [
+    [
+      'a line comment ahead of a block body',
+      `${HEAD}const getUser = (): // doc\nUser => {\n  return fetchUser() as User;\n};\n`,
+    ],
+    [
+      'a broken arrow chain held open by the annotation',
+      `${HEAD}const outer =\n  () =>\n  (): /**\n   * doc\n   */ User =>\n    fetchUser() as User;\n`,
+    ],
+  ];
+
+  /**
+   * Neighbours of those two carve-outs: the same body shape and the same broken
+   * chain, differing only in what the strip would displace. Each must still be
+   * fixed, and its output must settle.
+   */
+  const FIXED: [string, string][] = [
+    [
+      'the same block body, with a comment that keeps the arrow line',
+      `${HEAD}const getUser = (): /**\n * doc\n */ User => {\n  return fetchUser() as User;\n};\n`,
+    ],
+    [
+      'a broken chain that loses no line terminator',
+      `${HEAD}const buildUserFetcher =\n  (tenantIdentifier: string, tenantRegionName: string) =>\n  (requestIdentifier: string, requestRegionName: string): User =>\n    fetchUser() as User;\n`,
+    ],
+    [
+      'a broken chain whose comment stays in the gap',
+      `${HEAD}const buildUserFetcher =\n  (tenantIdentifier: string, tenantRegionName: string) =>\n  (requestIdentifier: string, requestRegionName: string): /* doc */ User =>\n    fetchUser() as User;\n`,
+    ],
+    [
+      'a chain written on one line',
+      `${HEAD}const outer = () => (): /* doc */ User => fetchUser() as User;\n`,
+    ],
+    [
+      'an arrow in a parameter default',
+      `${HEAD}const outer = (\n  cb = (): /**\n   * doc\n   */ User => fetchUser() as User,\n) => cb;\n`,
+    ],
+    [
+      'a multi-line template body',
+      'const render = (): // doc\nstring =>\n  `line one\nline two` as string;\n',
+    ],
+  ];
+
+  it.each([...WITHHELD, ...FIXED])(
+    'reads %s from a Prettier fixed point',
+    (_label, source) => {
+      expect(isFixedPoint(source)).toBe(true);
+      expect(
+        linter.verify(source, CONFIG, FILENAME).filter((m) => m.fatal),
+      ).toEqual([]);
+    },
+  );
+
+  it.each(WITHHELD)('withholds the fix for %s', (_label, source) => {
+    // The report survives the decline: the annotation is still surfaced to its
+    // author, only the edit is withheld.
+    expect(
+      linter
+        .verify(source, CONFIG, FILENAME)
+        .filter((message) => message.ruleId === RULE_ID),
+    ).toHaveLength(1);
+
+    const { output, fixed } = linter.verifyAndFix(source, CONFIG, FILENAME);
+    expect(fixed).toBe(false);
+    expect(output).toBe(source);
+  });
+
+  it.each(FIXED)('fixes %s into a Prettier fixed point', (_label, source) => {
+    const { output, fixed } = linter.verifyAndFix(source, CONFIG, FILENAME);
+    expect(fixed).toBe(true);
+    expect(output).not.toBe(source);
+    expect(isFixedPoint(output)).toBe(true);
+  });
+
+  // Declining is only worth its false negative where no emission settles. The
+  // text the planner would otherwise have written for each withheld shape is
+  // planted here: Prettier rejects both, so neither could pass the check above.
+  it('is not vacuous: the withheld emissions are the ones Prettier rewrites', () => {
+    expect(
+      isFixedPoint(
+        `${HEAD}const getUser = () =>\n  // doc\n  {\n  return fetchUser() as User;\n};\n`,
+      ),
+    ).toBe(false);
+    expect(
+      isFixedPoint(
+        `${HEAD}const outer =\n  () =>\n  () =>\n    /**\n     * doc\n     */\n    fetchUser() as User;\n`,
+      ),
+    ).toBe(false);
+    // And the settled layout for the block-body shape is one no annotation
+    // strip can reach: it re-indents the body's own interior.
+    expect(
+      isFixedPoint(
+        `${HEAD}const getUser = () =>\n  // doc\n  {\n    return fetchUser() as User;\n  };\n`,
       ),
     ).toBe(true);
   });
