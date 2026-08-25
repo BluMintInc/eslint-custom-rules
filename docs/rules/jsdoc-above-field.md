@@ -24,6 +24,17 @@ about the enclosing shape — and is left alone. That carve-out is also why a
 class field whose trailing block prettier parks _after_ its `;` goes unreported:
 that position is indistinguishable from leading documentation.
 
+Prettier keeps a type literal or object literal on one line whenever the source
+has no newline after its `{`, so a documented field often shares its line with
+the braces and its siblings. There is no line above such a field to move the
+block to, so the fix breaks the whole `{ … }` apart — one member per line, each
+separated and the closing brace back at the construct's own column, indented by
+the step the file itself uses. That is the layout prettier prints for the
+result, so `--fix` and a subsequent format agree instead of rewriting each
+other. Every comment inside the braces travels with the rewrite, and a sibling
+field's own trailing block is hoisted in the same pass rather than being left
+behind past its separator, where the rule would no longer see it.
+
 ### ❌ Incorrect
 
 ```ts
@@ -48,6 +59,9 @@ export type Session = {
 interface Profile {
   username: string /** @remarks unique handle */;
 }
+
+// Prettier keeps a one-line literal on one line — still a violation
+type InlineType = { value: string /** @remarks stays with field */ };
 
 class Account {
   @Column()
@@ -76,6 +90,12 @@ class Account {
 const config = {
   /** @remarks in milliseconds */
   retryDelay: 1000,
+};
+
+// A one-line literal is broken apart, because the block needs a line of its own
+type InlineType = {
+  /** @remarks stays with field */
+  value: string;
 };
 
 // Past the separator the block documents the NEXT field, so it stays put

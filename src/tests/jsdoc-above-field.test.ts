@@ -166,6 +166,18 @@ interface Account {
   accept: 'json'
   /** @remarks header is lowercase */,
 };`,
+
+    // A one-line type literal whose block leads the field needs no expansion
+    `type InlineLeading = { /** @remarks user phone */ phone?: string };`,
+
+    // A one-line literal's non-JSDoc block never reaches an IDE hover
+    `type Flags = { isEnabled: boolean /* not a jsdoc */ };`,
+
+    // One-line object literals stay unchecked while the option is off
+    `const inline = { timeout: 3000 /** @remarks milliseconds */ };`,
+
+    // Documentation inside a one-line member's own type is not trailing
+    `type Handlers = { onSelect: (/** @remarks row id */ id: string) => void };`,
   ],
   invalid: [
     {
@@ -180,9 +192,10 @@ interface Account {
     },
     {
       code: `type InlineType = { value: string; /** @remarks stays with field */ };`,
-      output: `type InlineType = { 
- /** @remarks stays with field */
- value: string; };`,
+      output: `type InlineType = {
+  /** @remarks stays with field */
+  value: string;
+};`,
       errors: [{ messageId: 'moveJsdocAbove' }],
     },
     {
@@ -606,6 +619,129 @@ interface Merged {
         { messageId: 'moveJsdocAbove' },
         { messageId: 'moveJsdocAbove' },
       ],
+    },
+    // Prettier keeps a type or object literal on one line whenever the source
+    // has no newline after its `{`, so the field shares its line with the
+    // braces and its siblings. Moving the block in place there would indent it
+    // by whatever followed `{` and leave the members bunched behind it, which
+    // prettier rewrites on its next pass. Each output below is prettier
+    // 2.8.8's own layout, so the two tools agree on it.
+    {
+      code: `type InlineType = { value: string /** @remarks stays with field */ };`,
+      output: `type InlineType = {
+  /** @remarks stays with field */
+  value: string;
+};`,
+      errors: [{ messageId: 'moveJsdocAbove' }],
+    },
+    {
+      code: `type Dimensions = { width: number; height: number /** @remarks in pixels */ };`,
+      output: `type Dimensions = {
+  width: number;
+  /** @remarks in pixels */
+  height: number;
+};`,
+      errors: [{ messageId: 'moveJsdocAbove' }],
+    },
+    {
+      code: `interface Point { x: number /** @remarks horizontal offset */ }`,
+      output: `interface Point {
+  /** @remarks horizontal offset */
+  x: number;
+}`,
+      errors: [{ messageId: 'moveJsdocAbove' }],
+    },
+    {
+      code: `class Session { token = '' /** @remarks JWT token */ }`,
+      output: `class Session {
+  /** @remarks JWT token */
+  token = '';
+}`,
+      errors: [{ messageId: 'moveJsdocAbove' }],
+    },
+    {
+      code: `class User { @Column() email = '' /** @remarks lowercase */ }`,
+      output: `class User {
+  /** @remarks lowercase */
+  @Column() email = '';
+}`,
+      errors: [{ messageId: 'moveJsdocAbove' }],
+    },
+    {
+      code: `const config = { timeout: 3000 /** @remarks in milliseconds */ };`,
+      output: `const config = {
+  /** @remarks in milliseconds */
+  timeout: 3000,
+};`,
+      options: [{ checkObjectLiterals: true }],
+      errors: [{ messageId: 'moveJsdocAbove' }],
+    },
+    // The closing brace returns to the nested literal's own column, not to the
+    // outer shape's
+    {
+      code: `type Contact = {
+  address: { country: string /** @remarks two-letter code */ };
+};`,
+      output: `type Contact = {
+  address: {
+    /** @remarks two-letter code */
+    country: string;
+  };
+};`,
+      errors: [{ messageId: 'moveJsdocAbove' }],
+    },
+    // A sibling's inline block is not documentation, so it stays where its
+    // member holds it rather than being hoisted along
+    {
+      code: `type Flags = { on: boolean /* toggle */; label: string /** @remarks shown */ };`,
+      output: `type Flags = {
+  on: boolean /* toggle */;
+  /** @remarks shown */
+  label: string;
+};`,
+      errors: [{ messageId: 'moveJsdocAbove' }],
+    },
+    // A block sitting in the gap between the brace and the field belongs to no
+    // member's range, so rebuilding the literal has to carry it explicitly
+    {
+      code: `type Meta = { /* origin */ id: string /** @remarks uuid */ };`,
+      output: `type Meta = {
+  /* origin */
+  /** @remarks uuid */
+  id: string;
+};`,
+      errors: [{ messageId: 'moveJsdocAbove' }],
+    },
+    // Both blocks travel with the same rewrite: one left behind would land
+    // past its member's separator, where it reads as a note about the shape
+    // and the rule stops reporting it
+    {
+      code: `type Pair = { a: string /** @remarks left */; b: string /** @remarks right */ };`,
+      output: `type Pair = {
+  /** @remarks left */
+  a: string;
+  /** @remarks right */
+  b: string;
+};`,
+      errors: [
+        { messageId: 'moveJsdocAbove' },
+        { messageId: 'moveJsdocAbove' },
+      ],
+    },
+    // The indent step comes from the file rather than from prettier's default,
+    // so a four-space file gains four spaces. This output is a fixed point of
+    // prettier at the tab width the file itself uses.
+    {
+      code: `type Wrapper = {
+    inner: { value: string /** @remarks four space step */ };
+};`,
+      output: `type Wrapper = {
+    inner: {
+        /** @remarks four space step */
+        value: string;
+    };
+};`,
+      errors: [{ messageId: 'moveJsdocAbove' }],
     },
   ],
 });
