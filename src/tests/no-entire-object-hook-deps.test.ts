@@ -110,7 +110,9 @@ const optionalComputedFixCases = [
       };
     `,
   },
-  // Optional-chained computed access with a string key renders as ?.["key"].
+  // Optional-chained computed access with a string key renders as ?.['key'] —
+  // the quote a formatter would print, since emitting the other one is text it
+  // rewrites on its next run (#2118).
   {
     code: `
       const MyComponent = ({ state }) => {
@@ -120,12 +122,34 @@ const optionalComputedFixCases = [
         return <div>{special}</div>;
       };
     `,
-    errors: [avoid('state', 'state?.["special-key"]')],
+    errors: [avoid('state', "state?.['special-key']")],
     output: `
       const MyComponent = ({ state }) => {
         const special = useMemo(() => {
           return state?.["special-key"];
-        }, [state?.["special-key"]]);
+        }, [state?.['special-key']]);
+        return <div>{special}</div>;
+      };
+    `,
+  },
+  // A formatter picks whichever quote needs FEWER escapes, so a key carrying an
+  // apostrophe stays double-quoted even under `singleQuote`. The key's own
+  // spelling, not a constant, is what decides.
+  {
+    code: `
+      const MyComponent = ({ state }) => {
+        const special = useMemo(() => {
+          return state["it's-key"];
+        }, [state]);
+        return <div>{special}</div>;
+      };
+    `,
+    errors: [avoid('state', 'state["it\'s-key"]')],
+    output: `
+      const MyComponent = ({ state }) => {
+        const special = useMemo(() => {
+          return state["it's-key"];
+        }, [state["it's-key"]]);
         return <div>{special}</div>;
       };
     `,
@@ -1484,12 +1508,12 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
           return <div>{value}</div>;
         };
       `,
-      errors: [avoid('data', 'data["special-key"]')],
+      errors: [avoid('data', "data['special-key']")],
       output: `
         const MyComponent = ({ data }: { data: { [key: string]: any } }) => {
           const value = useMemo(() => {
             return data['special-key'];
-          }, [data["special-key"]]);
+          }, [data['special-key']]);
           return <div>{value}</div>;
         };
       `,
