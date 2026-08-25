@@ -1355,12 +1355,15 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       // A block comment carrying a line terminator is itself a LineTerminator to
       // the grammar, so folding it after `return` would let ASI end the
       // statement and return `undefined` instead of the expression (#1963). It
-      // is hoisted above the statement, verbatim, rather than dropped.
+      // is hoisted above the statement rather than dropped, and its
+      // continuation lines shift with it: the text carries the indentation of
+      // where it was WRITTEN, so re-emitting it unshifted leaves the ` * ` run
+      // hanging at the old depth for a formatter to pull back (#2114).
       output: `
       export function useJsDocInCallback() {
         /**
-           * Why this value is nothing.
-           */
+         * Why this value is nothing.
+         */
         return undefined;
       }
       `,
@@ -1383,8 +1386,8 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       output: `
       export function useJsDocBeforeNull() {
         /**
-           * The doc.
-           */
+         * The doc.
+         */
         return null;
       }
       `,
@@ -1447,7 +1450,7 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       output: `
       export function useMultiLineAndLineComments(flag: boolean) {
         /* first
-          still first */
+        still first */
         // second
         return flag;
       }
@@ -1472,7 +1475,7 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       output: `
       export function useMultiLineCommentInsideParens(flag: boolean) {
         return !(/* first
-          still first */ flag);
+        still first */ flag);
       }
       `,
     },
@@ -1495,7 +1498,7 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       output: `
       export function useMultiLineTrailingComment(flag: boolean) {
         return flag /* trailing
-          still trailing */;
+        still trailing */;
       }
       `,
     },
@@ -1661,8 +1664,9 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       export function useNegatedCommented(flag: boolean) {
         void flag;
         return !(
-        // keep me
-        null);
+          // keep me
+          null
+        );
       }
       `,
     },
