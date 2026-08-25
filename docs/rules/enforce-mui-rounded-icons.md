@@ -58,6 +58,27 @@ Where the rename cannot be applied in full, the fix falls back to changing the m
 
 A file holding several renameable icon imports converges over successive `--fix` passes: each report owns a range spanning its import and its last reference, and ESLint applies one of a pair of overlapping ranges per pass.
 
+### An import the renames widen is broken open
+
+A rename only ever *lengthens* a specifier — `Person` becomes `PersonRounded` — so an import that fitted on one line before the fix may not after it, and a formatter's answer to an over-wide import is one specifier per line. The fix emits that shape itself rather than leave the break for the formatter's next run:
+
+```ts
+// Before
+import { LogoutRounded, Person, GitHub, AddLink } from '@mui/icons-material';
+
+// After --fix
+import {
+  LogoutRounded,
+  PersonRounded,
+  GitHub,
+  AddLinkRounded,
+} from '@mui/icons-material';
+```
+
+The width is measured across *all* the renames the declaration calls for, not one at a time, and an import that still fits keeps its single-line shape. A declaration already written across lines is left as it is.
+
+Breaking the group open rebuilds it, which would delete a comment written between the specifiers — so a declaration carrying one is reported without a rewrite rather than fixed over the width.
+
 ### Examples of incorrect code
 
 ```ts

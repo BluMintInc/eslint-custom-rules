@@ -9,6 +9,9 @@ import { ASTHelpers } from '../utils/ASTHelpers';
 type Options = [];
 type MessageIds = 'enforceRoundedVariant';
 
+/** Prettier's default print width, which this repo and agora both format with. */
+const PRINT_WIDTH = 80;
+
 const MUI_ICONS_BARREL = '@mui/icons-material';
 const MUI_ICONS_DEEP_PREFIX = `${MUI_ICONS_BARREL}/`;
 
@@ -352,12 +355,190 @@ export const enforceMuiRoundedIcons = createRule<Options, MessageIds>({
     };
 
     /** `import { Logout } from '@mui/icons-material'` — the icon is named by each specifier. */
+    /**
+     * Every rounded rename this declaration's specifiers call for.
+     *
+     * Collected before any report is made, because whether the import has to be
+     * broken open depends on the width ALL of them together produce, not on any
+     * one of them.
+     */
+    type PlannedRename = {
+      specifier: TSESTree.ImportSpecifier;
+      roundedVariant: string;
+      renamesBinding: boolean;
+    };
+
+    const plannedRenames = (
+      node: TSESTree.ImportDeclaration,
+    ): PlannedRename[] => {
+      const planned: PlannedRename[] = [];
+      for (const specifier of node.specifiers) {
+        if (
+          specifier.type !== AST_NODE_TYPES.ImportSpecifier ||
+          specifier.importKind === 'type'
+        ) {
+          continue;
+        }
+        const roundedVariant = toRoundedIconName(specifier.imported.name);
+        if (!roundedVariant) {
+          continue;
+        }
+        planned.push({
+          specifier,
+          roundedVariant,
+          renamesBinding: specifier.local.name === specifier.imported.name,
+        });
+      }
+      return planned;
+    };
+
+    /**
+     * Whether the renames would push this import past the print width.
+     *
+     * A rename only ever LENGTHENS the specifier — `Person` becomes
+     * `PersonRounded` — so an import that fitted on one line before the fix may
+     * not after it, and a formatter's answer to an over-wide import is one
+     * specifier per line. Emitting the long line leaves that break for the
+     * formatter's next run, which churns the file on every pass (#2117).
+     *
+     * A declaration already written across lines is left alone: it is either
+     * already in the broken shape or carries a layout this fixer did not choose.
+     */
+    const overflowsAfterRenames = (
+      node: TSESTree.ImportDeclaration,
+      planned: readonly PlannedRename[],
+    ): boolean => {
+      if (node.loc.start.line !== node.loc.end.line) {
+        return false;
+      }
+      const delta = planned.reduce(
+        (total, { specifier, roundedVariant }) =>
+          total + roundedVariant.length - specifier.imported.name.length,
+        0,
+      );
+      // The width measured is the DECLARATION's own, not the whole line's. A
+      // comment trailing the statement sits outside it, and a formatter does
+      // not count one toward the statement's width — measured against prettier
+      // 2.8.8, an import at 66 columns stays flat with either a `//` or a `/* */`
+      // comment appended past 80. Measuring the line instead would let a comment
+      // decide the layout, which is a comment changing the transform.
+      return node.loc.end.column + delta > PRINT_WIDTH;
+    };
+
+    /**
+     * The whole named-import group rewritten one specifier per line with every
+     * rename applied, plus the reference edits the binding renames need.
+     *
+     * Every report on the declaration returns this same edit, so whichever
+     * ESLint applies first carries all of them and the others are discarded as
+     * overlapping — the declaration converges in a single pass rather than one
+     * pass per specifier.
+     */
+    const explodedRenameFixes = (
+      fixer: TSESLint.RuleFixer,
+      node: TSESTree.ImportDeclaration,
+      planned: readonly PlannedRename[],
+    ): TSESLint.RuleFix[] | null => {
+      const named = node.specifiers.filter(
+        (specifier): specifier is TSESTree.ImportSpecifier =>
+          specifier.type === AST_NODE_TYPES.ImportSpecifier,
+      );
+      if (named.length === 0) {
+        return null;
+      }
+      const open = sourceCode.getTokenBefore(named[0]);
+      let close = sourceCode.getTokenAfter(named[named.length - 1]);
+      if (close?.value === ',') {
+        close = sourceCode.getTokenAfter(close);
+      }
+      const closeBrace = close;
+      if (open?.value !== '{' || closeBrace?.value !== '}') {
+        return null;
+      }
+      // Rebuilding the group drops anything in it that is not a specifier, so a
+      // comment written between them would be deleted outright.
+      if (
+        sourceCode
+          .getCommentsInside(node)
+          .some(
+            (comment) =>
+              comment.range[0] >= open.range[1] &&
+              comment.range[1] <= closeBrace.range[0],
+          )
+      ) {
+        return null;
+      }
+
+      const renameOf = new Map(
+        planned.map((entry) => [entry.specifier, entry] as const),
+      );
+      const fixes: TSESLint.RuleFix[] = [];
+      const entries: string[] = [];
+      for (const specifier of named) {
+        const entry = renameOf.get(specifier);
+        const prefix = specifier.importKind === 'type' ? 'type ' : '';
+        if (!entry) {
+          entries.push(
+            `${prefix}${sourceCode.getText(specifier)}`.replace(
+              /^type type /,
+              'type ',
+            ),
+          );
+          continue;
+        }
+        if (entry.renamesBinding) {
+          // Renaming the binding means owning every reference to it. Passing no
+          // declaration tokens leaves those edits to the rebuilt group while
+          // keeping the collision and resolution checks that decide whether the
+          // rename is safe at all.
+          const referenceFixes = bindingRenameFixes(
+            fixer,
+            node,
+            specifier.local,
+            [],
+            entry.roundedVariant,
+          );
+          if (!referenceFixes) {
+            return null;
+          }
+          fixes.push(...referenceFixes);
+          // `import { Logout as Logout }` spells the imported and local names
+          // with two tokens, and rebuilding the group must keep both — dropping
+          // the redundant alias would make the emitted TOKENS depend on whether
+          // the group had to be broken open, which is a layout decision.
+          entries.push(
+            specifier.imported.range[0] === specifier.local.range[0]
+              ? `${prefix}${entry.roundedVariant}`
+              : `${prefix}${entry.roundedVariant} as ${entry.roundedVariant}`,
+          );
+          continue;
+        }
+        entries.push(
+          `${prefix}${entry.roundedVariant} as ${specifier.local.name}`,
+        );
+      }
+
+      fixes.unshift(
+        fixer.replaceTextRange(
+          [open.range[0], closeBrace.range[1]],
+          `{\n${entries.map((entry) => `  ${entry},`).join('\n')}\n}`,
+        ),
+      );
+      return fixes;
+    };
+
     const checkBarrelImport = (node: TSESTree.ImportDeclaration) => {
       // A type-only import names a type, and the barrel's type exports are not
       // icons; nothing it introduces can be rendered.
       if (node.importKind === 'type') {
         return;
       }
+
+      // Whether the import has to be broken open depends on the width ALL the
+      // renames together produce, so it is decided once, before any report.
+      const planned = plannedRenames(node);
+      const mustExplode =
+        planned.length > 0 && overflowsAfterRenames(node, planned);
 
       for (const specifier of node.specifiers) {
         // Default and namespace imports name no individual icon.
@@ -383,7 +564,9 @@ export const enforceMuiRoundedIcons = createRule<Options, MessageIds>({
             node: specifier,
             messageId: 'enforceRoundedVariant',
             fix: (fixer) =>
-              fixer.replaceText(specifier.imported, roundedVariant),
+              mustExplode
+                ? explodedRenameFixes(fixer, node, planned)
+                : fixer.replaceText(specifier.imported, roundedVariant),
           });
           continue;
         }
@@ -402,13 +585,15 @@ export const enforceMuiRoundedIcons = createRule<Options, MessageIds>({
           node: specifier,
           messageId: 'enforceRoundedVariant',
           fix: (fixer) =>
-            bindingRenameFixes(
-              fixer,
-              node,
-              specifier.local,
-              declarationTokens,
-              roundedVariant,
-            ),
+            mustExplode
+              ? explodedRenameFixes(fixer, node, planned)
+              : bindingRenameFixes(
+                  fixer,
+                  node,
+                  specifier.local,
+                  declarationTokens,
+                  roundedVariant,
+                ),
         });
       }
     };

@@ -217,7 +217,16 @@ export const x = PersonRounded;
         { messageId: 'enforceRoundedVariant' },
         { messageId: 'enforceRoundedVariant' },
       ],
-      output: `import { LogoutRounded, PersonRounded, GitHub, AddLinkRounded } from '@mui/icons-material';`,
+      // A rename only ever LENGTHENS the specifier, so an import that fitted
+      // on one line may not after the fix — and a formatter's answer to an
+      // over-wide import is one specifier per line. Emitting the long line
+      // would leave that break for the formatter's next run (#2117).
+      output: `import {
+  LogoutRounded,
+  PersonRounded,
+  GitHub,
+  AddLinkRounded,
+} from '@mui/icons-material';`,
     },
     {
       // Variant suffixes map to the Rounded variant of the BASE icon here too.
@@ -227,7 +236,11 @@ export const x = PersonRounded;
         { messageId: 'enforceRoundedVariant' },
         { messageId: 'enforceRoundedVariant' },
       ],
-      output: `import { AddReactionRounded as AddReactionIcon, DeleteRounded as DeleteIcon, PhoneRounded as PhoneIcon } from '@mui/icons-material';`,
+      output: `import {
+  AddReactionRounded as AddReactionIcon,
+  DeleteRounded as DeleteIcon,
+  PhoneRounded as PhoneIcon,
+} from '@mui/icons-material';`,
     },
     {
       // MailOutline is its own icon in the barrel form as well.
@@ -256,7 +269,29 @@ export const x = PersonRounded;
         { messageId: 'enforceRoundedVariant' },
         { messageId: 'enforceRoundedVariant' },
       ],
-      output: `import { LogoutRounded as LogoutIcon, PersonRounded } from '@mui/icons-material';`,
+      output: `import {
+  LogoutRounded as LogoutIcon,
+  PersonRounded,
+} from '@mui/icons-material';`,
+    },
+    {
+      // Breaking the group open rebuilds it, which would delete a comment
+      // written between the specifiers. The rewrite is declined rather than
+      // emitted over the width, so the report stands on its own and the source
+      // is left untouched (#2117).
+      code: `import { Logout as LogoutIcon, /* keep */ Person } from '@mui/icons-material';`,
+      errors: [
+        { messageId: 'enforceRoundedVariant' },
+        { messageId: 'enforceRoundedVariant' },
+      ],
+      output: null,
+    },
+    {
+      // The control for the width gate: an import that still fits keeps its
+      // single-line shape, so the rename stays a rename.
+      code: `import { Person } from '@mui/icons-material';`,
+      errors: [{ messageId: 'enforceRoundedVariant' }],
+      output: `import { PersonRounded } from '@mui/icons-material';`,
     },
     {
       // A default import alongside named specifiers.
