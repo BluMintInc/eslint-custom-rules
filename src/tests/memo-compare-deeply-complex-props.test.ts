@@ -1612,7 +1612,7 @@ import { compareDeeply } from 'src/util/memo';
 import { memo } from 'react';
 type Props = { "user'sData": { id: string } };
 const Comp = ({ ["user'sData"]: usersData }: Props) => <div>{usersData.id}</div>;
-export const Wrapped = memo(Comp, compareDeeply('user\\'sData'));
+export const Wrapped = memo(Comp, compareDeeply("user'sData"));
 `,
         errors: [{ messageId: 'useCompareDeeply' }],
       },
@@ -2318,9 +2318,11 @@ export const Wrapped = memo((props: Props) => {
 `,
         errors: [{ messageId: 'useCompareDeeply' }],
       },
-      // A component written across lines that the formatter does NOT hug
-      // cannot be re-emitted one step in without misaligning its interior, so
-      // the fix is declined rather than written over the print width.
+      // A `function` first argument is hugged just as a block-bodied arrow is,
+      // but the formatter treats the over-wide CLOSING line differently for the
+      // two: it breaks the comparator's own argument list here and leaves it
+      // long for the arrow above. Both spellings are pinned so neither
+      // emission can drift onto the other's shape (#2112).
       {
         filename: 'src/components/PrintWidthMultilineComponent.tsx',
         code: `
@@ -2334,7 +2336,122 @@ export const Wrapped = memo(function Impl(props: Props) {
   return <div>{props.activeChannelData.id}</div>;
 });
 `,
-        output: null,
+        output: `
+import { compareDeeply } from 'src/util/memo';
+import { memo } from 'react';
+type Props = {
+  activeChannelData: { id: string };
+  metadataRecords: { k: string };
+  participantsCollection: { id: string }[];
+};
+export const Wrapped = memo(function Impl(props: Props) {
+  return <div>{props.activeChannelData.id}</div>;
+}, compareDeeply(
+  'activeChannelData',
+  'metadataRecords',
+  'participantsCollection',
+));
+`,
+        errors: [{ messageId: 'useCompareDeeply' }],
+      },
+      // A CONCISE-bodied arrow is not grouped as a first argument, so adding
+      // the comparator withdraws the hug and the formatter prints one argument
+      // per line. The component moves one nesting step in, which is a uniform
+      // shift of every line it owns and so keeps its interior aligned (#2108's
+      // sibling defect, #2112).
+      {
+        filename: 'src/components/PrintWidthConciseArrow.tsx',
+        code: `
+import { memo } from 'react';
+type Props = { beta: { value: number }; alpha: { value: number } };
+export const WrappedInline = memo(({ beta, alpha }: Props) => (
+  <section>
+    {beta.value}
+    {alpha.value}
+  </section>
+));
+`,
+        output: `
+import { compareDeeply } from 'src/util/memo';
+import { memo } from 'react';
+type Props = { beta: { value: number }; alpha: { value: number } };
+export const WrappedInline = memo(
+  ({ beta, alpha }: Props) => (
+    <section>
+      {beta.value}
+      {alpha.value}
+    </section>
+  ),
+  compareDeeply('alpha', 'beta'),
+);
+`,
+        errors: [{ messageId: 'useCompareDeeply' }],
+      },
+      // Type arguments sit between the callee and the argument list, so the
+      // list's own `(` is not the token after the callee. The same break is
+      // emitted through them.
+      {
+        filename: 'src/components/PrintWidthConciseArrowTypeArgs.tsx',
+        code: `
+import { memo } from 'react';
+type Props = { beta: { value: number }; alpha: { value: number } };
+export const Wrapped = memo<any, Props>(({ beta, alpha }: any) => (
+  <div>
+    {beta.value}
+    {alpha.value}
+  </div>
+));
+`,
+        output: `
+import { compareDeeply } from 'src/util/memo';
+import { memo } from 'react';
+type Props = { beta: { value: number }; alpha: { value: number } };
+export const Wrapped = memo<any, Props>(
+  ({ beta, alpha }: any) => (
+    <div>
+      {beta.value}
+      {alpha.value}
+    </div>
+  ),
+  compareDeeply('alpha', 'beta'),
+);
+`,
+        errors: [{ messageId: 'useCompareDeeply' }],
+      },
+      // Whitespace inside a template literal is DATA, not layout, so those lines
+      // are left exactly where they are while everything around them shifts —
+      // which is what a formatter does with them too. Declining instead would
+      // withhold the fix from a concise-bodied arrow while a block-bodied one
+      // (hugged, and so never re-indented) kept it, making fix availability
+      // depend on how the component is spelled.
+      {
+        filename: 'src/components/PrintWidthMultilineTemplate.tsx',
+        code: `
+import { memo } from 'react';
+type Props = { beta: { value: number }; alpha: { value: number } };
+export const Wrapped = memo(({ beta, alpha }: Props) => (
+  <div className={\`a
+b\`}>
+    {beta.value}
+    {alpha.value}
+  </div>
+));
+`,
+        output: `
+import { compareDeeply } from 'src/util/memo';
+import { memo } from 'react';
+type Props = { beta: { value: number }; alpha: { value: number } };
+export const Wrapped = memo(
+  ({ beta, alpha }: Props) => (
+    <div className={\`a
+b\`}>
+      {beta.value}
+      {alpha.value}
+    </div>
+  ),
+  compareDeeply('alpha', 'beta'),
+);
+`,
         errors: [{ messageId: 'useCompareDeeply' }],
       },
       // A component name too long to sit on its own line would send the

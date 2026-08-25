@@ -118,16 +118,25 @@ function unwrapExpression(
   return node;
 }
 
+/**
+ * Prettier picks whichever quote needs fewer escapes rather than always the
+ * configured one, so a value carrying more \`'\` than \`"\` prints double-quoted
+ * even under \`singleQuote: true\`. Emitting the other spelling is text the
+ * formatter rewrites on its next run, which is the churn #2112 is about.
+ */
 function escapeStringForCodeGeneration(value: string): string {
+  const singles = (value.match(/'/g) ?? []).length;
+  const doubles = (value.match(/"/g) ?? []).length;
+  const quote = singles > doubles ? '"' : "'";
   const escaped = value
     .replace(/\\/g, '\\\\')
-    .replace(/'/g, "\\'")
+    .replace(quote === "'" ? /'/g : /"/g, `\\\\${quote}`)
     .replace(/\r/g, '\\r')
     .replace(/\n/g, '\\n')
     .replace(/\t/g, '\\t')
     .replace(/\u2028/g, '\\u2028')
     .replace(/\u2029/g, '\\u2029');
-  return `'${escaped}'`;
+  return `${quote}${escaped}${quote}`;
 }
 
 function isComponentExpression(expr: TSESTree.Expression): boolean {
@@ -2173,11 +2182,19 @@ type OverflowPlan =
  * after its closing brace, whatever that line's width. Measured against
  * Prettier 2.7, 2.8 and 3.3, all of which leave such a line untouched at 128
  * columns.
+ *
+ * The shape has to be a BLOCK body. Prettier groups a first argument only when
+ * it is a `function` expression or an arrow whose body is a block — a
+ * concise-bodied arrow is not grouped, and its argument list breaks one
+ * argument per line instead. Reading the arrow arm alone made every
+ * `function Impl() {}` component read as un-hugged and expanded a call the
+ * formatter then collapsed straight back (#2112).
  */
 function isHuggedFirstArgument(node: TSESTree.Node): boolean {
   return (
-    node.type === AST_NODE_TYPES.ArrowFunctionExpression &&
-    node.body.type === AST_NODE_TYPES.BlockStatement
+    node.type === AST_NODE_TYPES.FunctionExpression ||
+    (node.type === AST_NODE_TYPES.ArrowFunctionExpression &&
+      node.body.type === AST_NODE_TYPES.BlockStatement)
   );
 }
 
@@ -2185,6 +2202,29 @@ function isHuggedFirstArgument(node: TSESTree.Node): boolean {
  * Prettier's layout for a two-argument call that does not fit on one line: each
  * argument alone on its own line, one nesting step in, with a trailing comma.
  */
+/**
+ * Whether appending the comparator forces the formatter to break the argument
+ * list open however short the edited line is.
+ *
+ * A call whose SOLE argument is a multi-line function is printed hugged: the
+ * argument keeps the call's own line and its body indents beneath it. Adding a
+ * second argument withdraws that layout unless the first argument is one the
+ * formatter still groups — a block-bodied arrow, as in `useEffect(() => {…}, [])`.
+ * For a concise-bodied arrow the formatter puts every argument on its own line
+ * instead, so an inline emission there is text it immediately rewrites, and the
+ * width the edit lands at never sees it: the insertion point is the call's short
+ * LAST line (#2112).
+ */
+function forcesArgumentListBreak(
+  sourceCode: TSESLint.SourceCode,
+  componentArg: TSESTree.Node,
+): boolean {
+  return (
+    /[\r\n]/.test(sourceCode.getText(componentArg)) &&
+    !isHuggedFirstArgument(componentArg)
+  );
+}
+
 function planOverflow(
   sourceCode: TSESLint.SourceCode,
   fixer: TSESLint.RuleFixer,
@@ -2221,14 +2261,11 @@ function planOverflow(
   const componentText = sourceCode
     .getText()
     .slice(componentRange[0], componentRange[1]);
-  // A component written across lines carries its own interior indentation, so
-  // re-emitting it one step in would misalign every line but the first. Where
-  // the formatter hugs such a component, the inline form is what it prints
-  // anyway, so that call keeps its fix.
-  if (/[\r\n]/.test(componentText)) {
-    return isHuggedFirstArgument(componentArg)
-      ? { kind: 'hug' }
-      : { kind: 'decline' };
+  // Where the formatter hugs such a component, the inline form is what it
+  // prints anyway, so that call keeps its fix untouched.
+  const componentIsMultiline = /[\r\n]/.test(componentText);
+  if (componentIsMultiline && isHuggedFirstArgument(componentArg)) {
+    return { kind: 'hug' };
   }
 
   // Rebuilding the argument list drops anything in it that is not one of the
@@ -2246,10 +2283,57 @@ function planOverflow(
 
   const indent = lineIndentAt(sourceCode, callExpression.range[0]);
   const argIndent = `${indent}${indentUnit}`;
-  // The component argument is emitted verbatim; when even that overflows, the
-  // formatter would break the expression itself in a shape this fixer cannot
-  // predict.
-  if (argIndent.length + componentText.length + 1 > printWidth) {
+
+  // A component written across lines keeps its own interior layout; moving it
+  // into the broken-open list shifts every line of it one step deeper, which is
+  // a uniform shift and so preserves the relative indentation the author (or
+  // the formatter) chose.
+  //
+  // Whitespace inside a template literal is DATA, not layout — shifting those
+  // lines would edit the string's value — so they are left exactly where they
+  // are. That is what the formatter does with them too, which is why the
+  // component can still move rather than having to decline: declining here
+  // would withhold the fix from a concise-bodied arrow while a block-bodied one
+  // (hugged, and so never re-indented) kept it, making fix availability depend
+  // on how the component is spelled.
+  const templateSpans = sourceCode
+    .getTokens(callExpression)
+    .filter(
+      (token) =>
+        token.type === AST_TOKEN_TYPES.Template &&
+        /[\r\n]/.test(token.value) &&
+        token.range[1] > componentRange[0] &&
+        token.range[0] < componentRange[1],
+    )
+    .map((token) => token.range);
+  const componentLines = componentText.split('\n');
+  let lineStart = componentRange[0];
+  const reindentedComponent = componentLines
+    .map((line, index) => {
+      const offset = lineStart;
+      lineStart += line.length + 1;
+      // A blank continuation line gains no indentation: the formatter does not
+      // write trailing whitespace, and emitting some would itself be rewritten.
+      if (index === 0 || line.trim() === '') {
+        return line;
+      }
+      const insideTemplate = templateSpans.some(
+        ([from, to]) => offset > from && offset < to,
+      );
+      return insideTemplate ? line : `${indentUnit}${line}`;
+    })
+    .join('\n');
+  // The component argument is emitted verbatim; when any of its lines overflows
+  // once shifted, the formatter would break the expression itself in a shape
+  // this fixer cannot predict.
+  const widest = reindentedComponent
+    .split('\n')
+    .reduce(
+      (worst, line, index) =>
+        Math.max(worst, (index === 0 ? argIndent.length : 0) + line.length),
+      0,
+    );
+  if (widest + 1 > printWidth) {
     return { kind: 'decline' };
   }
 
@@ -2271,7 +2355,7 @@ function planOverflow(
     kind: 'wrap',
     fix: fixer.replaceTextRange(
       [openParen.range[1], closingParen.range[0]],
-      `\n${argIndent}${componentText},\n${comparatorBlock}\n${indent}`,
+      `\n${argIndent}${reindentedComponent},\n${comparatorBlock}\n${indent}`,
     ),
   };
 }
@@ -2305,6 +2389,9 @@ function buildMemoFixes(
   // argument list overflows the print width on ordinary components. Wrapping
   // unconditionally is the mirror failure — a formatter collapses a short
   // argument list back onto one line — so the width decides.
+  const firstArgument = callExpression.arguments[0];
+  const mustBreakArgumentList =
+    !!firstArgument && forcesArgumentListBreak(sourceCode, firstArgument);
   const overflowPlan = () =>
     planOverflow(
       sourceCode,
@@ -2321,10 +2408,43 @@ function buildMemoFixes(
    * list, the inline text the formatter hugs anyway, or nothing at all — never
    * the over-wide line the measurement just rejected.
    */
-  const overflowFix = (inline: TSESLint.RuleFix): TSESLint.RuleFix | null => {
+  /**
+   * The comparator with one prop per line, at the call's own nesting. This is
+   * where the formatter takes a hugged call whose CLOSING line overflows: it
+   * breaks the comparator's argument list and keeps the hug, rather than
+   * withdrawing the hug and expanding the outer list (#2112).
+   */
+  const brokenComparator = (): string => {
+    const indent = lineIndentAt(sourceCode, callExpression.range[0]);
+    return [
+      `${importResult.localName}(`,
+      ...propLiterals.map((literal) => `${indent}${indentUnit}${literal},`),
+      `${indent})`,
+    ].join('\n');
+  };
+
+  const overflowFix = (
+    inline: TSESLint.RuleFix,
+    editRange: TSESTree.Range,
+    prefix: string,
+  ): TSESLint.RuleFix | null => {
     const plan = overflowPlan();
     if (plan.kind === 'wrap') return plan.fix;
-    return plan.kind === 'hug' ? inline : null;
+    if (plan.kind !== 'hug') return null;
+    // Reaching here means the inline emission was measured over the width, and
+    // the hug itself stands either way. What the formatter does with the
+    // over-wide CLOSING line then splits on the hugged argument's spelling —
+    // measured against Prettier 2.8.8, the binary agora runs:
+    //
+    //   memo(function Impl() {…}, compareDeeply(…))  breaks the comparator
+    //   memo(() => {…},           compareDeeply(…))  is left long
+    //
+    // so the arrow keeps the inline emission and only the `function` spelling
+    // takes the broken one. Emitting either shape for both is churn in one
+    // direction or the other (#2112).
+    return firstArgument?.type === AST_NODE_TYPES.FunctionExpression
+      ? fixer.replaceTextRange(editRange, `${prefix}${brokenComparator()}`)
+      : inline;
   };
 
   if (
@@ -2339,11 +2459,12 @@ function buildMemoFixes(
     const inline = fixer.replaceTextRange(comparatorRange, comparatorText);
     if (
       lineLengthAfterEdit(sourceCode, comparatorRange, comparatorText) <=
-      printWidth
+        printWidth &&
+      !mustBreakArgumentList
     ) {
       fixes.push(inline);
     } else {
-      const fix = overflowFix(inline);
+      const fix = overflowFix(inline, comparatorRange, '');
       if (!fix) return [];
       fixes.push(fix);
     }
@@ -2358,11 +2479,12 @@ function buildMemoFixes(
           : [closingParen.range[0], closingParen.range[0]];
       const inline = fixer.replaceTextRange(editRange, insertText);
       if (
-        lineLengthAfterEdit(sourceCode, editRange, insertText) <= printWidth
+        lineLengthAfterEdit(sourceCode, editRange, insertText) <= printWidth &&
+        !mustBreakArgumentList
       ) {
         fixes.push(inline);
       } else {
-        const fix = overflowFix(inline);
+        const fix = overflowFix(inline, editRange, ', ');
         if (!fix) return [];
         fixes.push(fix);
       }
