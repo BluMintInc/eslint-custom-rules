@@ -1,5 +1,245 @@
 [
   {
+    "version": "1.20.173",
+    "date": "2026-08-25T23:22:38.601Z",
+    "rules": [
+      {
+        "name": "enforce-assert-safe-object-key",
+        "changeType": "fix",
+        "issues": [
+          2108,
+          2134
+        ],
+        "summary": "break inside the computed access when the arrow break is taken (closes #2134); make the --fix output a prettier fixed point (closes #2108)"
+      },
+      {
+        "name": "enforce-empty-object-check",
+        "changeType": "fix",
+        "issues": [
+          2110
+        ],
+        "summary": "make the --fix output a prettier fixed point (closes #2110)"
+      },
+      {
+        "name": "enforce-firestore-rules-get-access",
+        "changeType": "fix",
+        "issues": [
+          2123
+        ],
+        "summary": "make the --fix output a prettier fixed point (closes #2123)"
+      },
+      {
+        "name": "enforce-memoize-async",
+        "changeType": "fix",
+        "issues": [
+          2111
+        ],
+        "summary": "make the --fix output a prettier fixed point (closes #2111)"
+      },
+      {
+        "name": "enforce-memoize-getters",
+        "changeType": "fix",
+        "issues": [
+          2124
+        ],
+        "summary": "make the --fix output a prettier fixed point (closes #2124)"
+      },
+      {
+        "name": "enforce-microdiff",
+        "changeType": "fix",
+        "issues": [
+          2116
+        ],
+        "summary": "make the --fix output a prettier fixed point (closes #2116)"
+      },
+      {
+        "name": "enforce-mui-rounded-icons",
+        "changeType": "fix",
+        "issues": [
+          2117
+        ],
+        "summary": "make the --fix output a prettier fixed point (closes #2117)"
+      },
+      {
+        "name": "enforce-querykey-ts",
+        "changeType": "fix",
+        "issues": [
+          2125
+        ],
+        "summary": "make the --fix output a prettier fixed point (closes #2125)"
+      },
+      {
+        "name": "global-const-style",
+        "changeType": "fix",
+        "issues": [
+          2126
+        ],
+        "summary": "break the as-const append that overflows the print width (closes #2126)"
+      },
+      {
+        "name": "jsdoc-above-field",
+        "changeType": "fix",
+        "issues": [
+          2127
+        ],
+        "summary": "emit the hoisted comment at the field's own indent (closes #2127)"
+      },
+      {
+        "name": "memo-compare-deeply-complex-props",
+        "changeType": "fix",
+        "issues": [
+          2112
+        ],
+        "summary": "make the --fix output a prettier fixed point (closes #2112)"
+      },
+      {
+        "name": "no-array-length-in-deps",
+        "changeType": "fix",
+        "issues": [
+          2128
+        ],
+        "summary": "measure the print width before extending an import (closes #2128)"
+      },
+      {
+        "name": "no-entire-object-hook-deps",
+        "changeType": "fix",
+        "issues": [
+          2118
+        ],
+        "summary": "make the --fix output a prettier fixed point (closes #2118)"
+      },
+      {
+        "name": "no-explicit-return-type",
+        "changeType": "fix",
+        "issues": [
+          2129
+        ],
+        "summary": "carry the annotation comment onto the block body it precedes (closes #2129)"
+      },
+      {
+        "name": "no-firestore-jest-mock",
+        "changeType": "fix",
+        "issues": [
+          2119
+        ],
+        "summary": "make the --fix output a prettier fixed point (closes #2119)"
+      },
+      {
+        "name": "no-redundant-annotation-assertion",
+        "changeType": "fix",
+        "issues": [
+          2120
+        ],
+        "summary": "withhold the strip where it would re-lay out an arrow body or chain (closes #2120)"
+      },
+      {
+        "name": "no-redundant-param-types",
+        "changeType": "fix",
+        "issues": [
+          2130
+        ],
+        "summary": "re-lay the stripped parameter list the way prettier prints it (closes #2130)"
+      },
+      {
+        "name": "no-unnecessary-destructuring",
+        "changeType": "fix",
+        "issues": [
+          2113
+        ],
+        "summary": "make the --fix output a prettier fixed point (closes #2113)"
+      },
+      {
+        "name": "no-useless-fragment",
+        "changeType": "fix",
+        "issues": [
+          2131
+        ],
+        "summary": "re-indent the promoted child for its new enclosing scope (closes #2131)"
+      },
+      {
+        "name": "no-usememo-for-pass-by-value",
+        "changeType": "fix",
+        "issues": [
+          2114
+        ],
+        "summary": "make the --fix output a prettier fixed point (closes #2114)"
+      },
+      {
+        "name": "prefer-clone-deep",
+        "changeType": "fix",
+        "issues": [
+          2109
+        ],
+        "summary": "make the --fix output a prettier fixed point (closes #2109)"
+      },
+      {
+        "name": "prefer-map-over-conditional-dispatch",
+        "changeType": "fix",
+        "issues": [
+          2107
+        ],
+        "summary": "make the --fix output a prettier fixed point (closes #2107)"
+      },
+      {
+        "name": "prefer-nullish-coalescing-boolean-props",
+        "changeType": "fix",
+        "issues": [
+          2106,
+          2135
+        ],
+        "summary": "keep the parens the rewrite needs around an operand (closes #2135); make the --fix output a prettier fixed point (closes #2106)"
+      },
+      {
+        "name": "prefer-use-deep-compare-memo",
+        "changeType": "fix",
+        "issues": [
+          2121
+        ],
+        "summary": "make the --fix output a prettier fixed point (closes #2121)"
+      },
+      {
+        "name": "require-hooks-default-params",
+        "changeType": "fix",
+        "issues": [
+          2132
+        ],
+        "summary": "emit the default-param append at the width prettier prints (closes #2132)"
+      },
+      {
+        "name": "require-image-optimized",
+        "changeType": "fix",
+        "issues": [
+          2133
+        ],
+        "summary": "emit the renamed element at the width prettier prints (closes #2133)"
+      },
+      {
+        "name": "require-memo",
+        "changeType": "fix",
+        "issues": [
+          2137
+        ],
+        "summary": "measure the print width before extending the memo import (closes #2137)"
+      },
+      {
+        "name": "require-memoize-jsx-returners",
+        "changeType": "fix",
+        "issues": [
+          2115
+        ],
+        "summary": "make the --fix output a prettier fixed point (closes #2115)"
+      },
+      {
+        "name": "use-latest-callback",
+        "changeType": "fix",
+        "issues": [
+          2122
+        ],
+        "summary": "make the --fix output a prettier fixed point (closes #2122)"
+      }
+    ]
+  },
+  {
     "version": "1.20.172",
     "date": "2026-08-24T16:48:04.154Z",
     "rules": [
