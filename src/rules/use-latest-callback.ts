@@ -565,6 +565,190 @@ const huggedParamsCallText = (
   )}\n${callIndent}) ${body})`;
 };
 
+/** The pattern's own bracket pair, as the punctuation Prettier breaks open. */
+const BRACKETS = {
+  [AST_NODE_TYPES.ObjectPattern]: ['{', '}'],
+  [AST_NODE_TYPES.ArrayPattern]: ['[', ']'],
+} as const;
+
+/**
+ * The elements of a sole destructuring parameter, one per line, as the source
+ * spells them — the span between the separators around each, so a type, a
+ * default and any comment written alongside ride along.
+ *
+ * Null when the shape is one this emitter cannot fold: a hole in an array
+ * pattern (`[, b]`), an element whose span still crosses lines once trimmed, or
+ * text left stranded between the last separator and the closing bracket, which
+ * is where a comment written after a trailing comma sits.
+ */
+const patternSegmentsOf = (
+  sourceCode: TSESLint.SourceCode,
+  pattern: TSESTree.ObjectPattern | TSESTree.ArrayPattern,
+  closeBracket: TSESTree.Token,
+): string[] | null => {
+  const elements =
+    pattern.type === AST_NODE_TYPES.ObjectPattern
+      ? pattern.properties
+      : pattern.elements;
+  if (elements.length === 0 || elements.some((element) => !element)) {
+    return null;
+  }
+
+  const text = sourceCode.getText();
+  const openBracket = sourceCode.getFirstToken(pattern);
+  if (!openBracket) {
+    return null;
+  }
+
+  const segments: string[] = [];
+  let start = openBracket.range[1];
+  let lastSeparatorEnd = openBracket.range[1];
+  for (const element of elements) {
+    const after = sourceCode.getTokenAfter(element as TSESTree.Node);
+    const separator = isComma(after) ? after : closeBracket;
+    const segment = text.slice(start, separator.range[0]).trim();
+    if (segment === '' || segment.includes('\n')) {
+      return null;
+    }
+    segments.push(segment);
+    start = separator.range[1];
+    lastSeparatorEnd = separator.range[1];
+  }
+  if (
+    lastSeparatorEnd <= closeBracket.range[0] &&
+    text.slice(lastSeparatorEnd, closeBracket.range[0]).trim() !== ''
+  ) {
+    return null;
+  }
+  return segments;
+};
+
+/**
+ * The rewritten call with the callback hugged onto the call's line and its sole
+ * destructuring parameter's own brackets broken open — the shape Prettier gives
+ * an over-long call whose callback takes a single pattern parameter.
+ *
+ * A sole pattern is the one parameter list Prettier does not break: it expands
+ * the pattern in place and leaves the list hugged, so the one-per-line spelling
+ * `huggedParamsCallText` authors is rewritten straight back and
+ * `breaksParamsOnePerLine` declines it. Breaking the argument list open instead
+ * is rewritten just as fast, because Prettier hugs a lone function argument
+ * whenever the head through the pattern's `{` fits (issue #2122). Past that
+ * width the argument list genuinely breaks, so an over-wide candidate returns
+ * null and `brokenOpenCallText` takes over.
+ */
+const huggedPatternCallText = (
+  sourceCode: TSESLint.SourceCode,
+  call: TSESTree.CallExpression,
+  callback: TSESTree.Node,
+  head: string,
+  indentUnit: string,
+  printWidth: number,
+  column: number,
+): string | null => {
+  if (
+    callback.type !== AST_NODE_TYPES.FunctionExpression ||
+    callback.params.length !== 1
+  ) {
+    return null;
+  }
+  const [pattern] = callback.params;
+  if (
+    pattern.type !== AST_NODE_TYPES.ObjectPattern &&
+    pattern.type !== AST_NODE_TYPES.ArrayPattern
+  ) {
+    return null;
+  }
+  const [opener, closer] = BRACKETS[pattern.type];
+  const elements =
+    pattern.type === AST_NODE_TYPES.ObjectPattern
+      ? pattern.properties
+      : pattern.elements;
+  const lastElement = elements[elements.length - 1];
+  // A hole (`[, b]`) leaves nothing to anchor the closing bracket on, and an
+  // empty pattern has no element lines to break onto.
+  if (!lastElement) {
+    return null;
+  }
+
+  const paramsHead = parameterListHeadOf(sourceCode, callback);
+  if (paramsHead === null) {
+    return null;
+  }
+
+  const isPunctuator = (value: string) => (token: TSESTree.Token) =>
+    token.type === AST_TOKEN_TYPES.Punctuator && token.value === value;
+  const closeBracket = sourceCode.getTokenAfter(lastElement, {
+    filter: isPunctuator(closer),
+  });
+  const closeParen = sourceCode.getTokenAfter(pattern, {
+    filter: isPunctuator(')'),
+  });
+  if (!closeBracket || !closeParen) {
+    return null;
+  }
+
+  const segments = patternSegmentsOf(sourceCode, pattern, closeBracket);
+  if (segments === null) {
+    return null;
+  }
+
+  // Everything between the pattern's closing bracket and the parameter list's
+  // closing paren — an optional marker, a type annotation — is carried through
+  // verbatim, so a spelling that crosses lines is text this emitter cannot fold.
+  const suffix = sourceCode
+    .getText()
+    .slice(closeBracket.range[1], closeParen.range[1]);
+  if (suffix.includes('\n')) {
+    return null;
+  }
+
+  const callIndent = indentationAt(sourceCode, call.range[0]);
+  const body = reindentedText(
+    sourceCode,
+    callback.body,
+    indentationAt(sourceCode, callback.range[0]),
+    callIndent,
+  );
+  if (body === null) {
+    return null;
+  }
+
+  // A rest element must stay last, so it cannot carry a trailing comma.
+  const trailingComma =
+    wantsTrailingComma(sourceCode, call) &&
+    lastElement.type !== AST_NODE_TYPES.RestElement
+      ? ','
+      : '';
+
+  const elementIndent = `${callIndent}${indentUnit}`;
+  const elementLines = segments.map(
+    (segment, index) =>
+      `${elementIndent}${segment}${
+        index === segments.length - 1 ? trailingComma : ','
+      }`,
+  );
+  const closingLine = `${callIndent}${closer}${suffix} ${body.split('\n')[0]}`;
+
+  // The head, the element lines and the line the body opens on are the only
+  // lines this emitter writes; the rest of the body is source text carried
+  // through. Any one of them past the width would be rewritten by the next
+  // `prettier --write` — the very failure this branch exists to avoid.
+  const headLineLength =
+    column + head.length + 1 + paramsHead.length + opener.length;
+  const overWide =
+    headLineLength > printWidth ||
+    elementLines.some((line) => line.length > printWidth) ||
+    closingLine.length > printWidth;
+  if (overWide) {
+    return null;
+  }
+
+  return `${head}(${paramsHead}${opener}\n${elementLines.join(
+    '\n',
+  )}\n${callIndent}${closer}${suffix} ${body})`;
+};
+
 /** Whether a range sits wholly inside one of the ranges a fix deletes. */
 const fallsInside = (
   ranges: readonly TSESTree.Range[],
@@ -1265,13 +1449,40 @@ export const useLatestCallback = createRule<Options, MessageIds>({
           if (!isComma(comma)) {
             return [fixer.remove(specifier)];
           }
+          // The removed specifier's own trailing comma goes with it. Left
+          // behind it slides up against whatever precedes the specifier, and
+          // when that is a line comment the comma lands INSIDE the comment —
+          // valid code whose surviving list is missing its separator, which
+          // the next `prettier --write` writes back (issue #2122).
+          const afterSpecifier = sourceCode.getTokenAfter(specifier);
+          const end = isComma(afterSpecifier)
+            ? afterSpecifier.range[1]
+            : specifier.range[1];
+
           const beforeSpecifier = sourceCode.getTokenBefore(specifier, {
             includeComments: true,
           });
           if (beforeSpecifier && beforeSpecifier.range[0] !== comma.range[0]) {
+            // A line comment between the separator and the removed specifier
+            // holds the list open across lines, and a broken list carries a
+            // trailing comma. The separator already sits in the one position
+            // that comma can occupy — ahead of the `//`, where the comment
+            // cannot swallow it — so it stays exactly where the author put it.
+            const commentsBetween = sourceCode
+              .getCommentsBefore(specifier)
+              .filter((comment) => comment.range[0] >= comma.range[1]);
+            if (
+              commentsBetween.some(
+                (comment) => comment.type === AST_TOKEN_TYPES.Line,
+              )
+            ) {
+              return [fixer.removeRange([beforeSpecifier.range[1], end])];
+            }
+            // Block comments alone let the surviving list close back onto one
+            // line, where Prettier writes no trailing comma at all.
             return [
               fixer.removeRange(comma.range),
-              fixer.removeRange([beforeSpecifier.range[1], specifier.range[1]]),
+              fixer.removeRange([beforeSpecifier.range[1], end]),
             ];
           }
           return [fixer.removeRange([comma.range[0], specifier.range[1]])];
@@ -1447,10 +1658,23 @@ export const useLatestCallback = createRule<Options, MessageIds>({
             // line while the head through the callback's own break point fits,
             // and breaks the argument list open above that. An arrow and a
             // parameter-less function expression carry no break point of their
-            // own, so `huggedParamsCallText` declines them and the call breaks
-            // open, as before.
+            // own, so both hugging emitters decline them and the call breaks
+            // open, as before. Those two split the parameterised function
+            // expressions between them: a list Prettier breaks one parameter
+            // per line goes to `huggedParamsCallText`, and a sole destructuring
+            // parameter — the list Prettier leaves hugged, expanding the
+            // pattern in place — to `huggedPatternCallText`.
             const rewrapped = overflows
               ? huggedParamsCallText(
+                  sourceCode,
+                  node,
+                  callback,
+                  headOf(node),
+                  indentUnit,
+                  printWidth,
+                  lineColumnAt(simulated, start),
+                ) ??
+                huggedPatternCallText(
                   sourceCode,
                   node,
                   callback,

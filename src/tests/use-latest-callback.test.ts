@@ -1676,8 +1676,10 @@ const A = () => {
 };`,
       errors: errors(),
     },
-    // The removed specifier is last in the list: the comma BEFORE it goes with
-    // it, and the surviving specifier's trailing comment is untouched.
+    // The removed specifier is last in the list, behind a line comment on the
+    // survivor. The separator stays where the author wrote it — ahead of the
+    // `//`, the one position a comma can occupy on that line — and the comment
+    // is untouched. Trailing the comment instead would put the comma INSIDE it.
     {
       code: `import {
   useState, // keep this note
@@ -1690,8 +1692,87 @@ const A = () => {
 };`,
       output: `import useLatestCallback from 'use-latest-callback';
 import {
-  useState // keep this note
+  useState, // keep this note
 } from 'react';
+const A = () => {
+  const [s] = useState(0);
+  const o = useLatestCallback(() => { go(); });
+  return <div onClick={o}>{s}</div>;
+};`,
+      errors: errors(),
+    },
+    // The same shape with the list already carrying a trailing comma — the
+    // prettier-canonical spelling, and the one #2122 was filed on. That comma
+    // belongs to the REMOVED specifier, so it goes with it; left behind it
+    // slides onto the comment's line and is swallowed by the `//`.
+    {
+      code: `import {
+  useState, // keep this note
+  useCallback,
+} from 'react';
+const A = () => {
+  const [s] = useState(0);
+  const o = useCallback(() => {
+    go();
+  }, []);
+  return <div onClick={o}>{s}</div>;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+import {
+  useState, // keep this note
+} from 'react';
+const A = () => {
+  const [s] = useState(0);
+  const o = useLatestCallback(() => {
+    go();
+  });
+  return <div onClick={o}>{s}</div>;
+};`,
+      errors: errors(),
+    },
+    // Two line comments between the separator and the removed specifier: the
+    // run is read as a whole, so a directive above the removed name still
+    // leaves the separator ahead of the first `//`.
+    {
+      code: `import {
+  useState, // keep this note
+  // eslint-disable-next-line no-console
+  useCallback,
+} from 'react';
+const A = () => {
+  const [s] = useState(0);
+  const o = useCallback(() => {
+    go();
+  }, []);
+  return <div onClick={o}>{s}</div>;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+import {
+  useState, // keep this note
+  // eslint-disable-next-line no-console
+} from 'react';
+const A = () => {
+  const [s] = useState(0);
+  const o = useLatestCallback(() => {
+    go();
+  });
+  return <div onClick={o}>{s}</div>;
+};`,
+      errors: errors(),
+    },
+    // A BLOCK comment ahead of the removed last specifier is the other half of
+    // the same decision: the surviving list closes back onto one line, where
+    // there is no trailing comma to keep, so the separator goes with the
+    // specifier as before.
+    {
+      code: `import { useState, /* keep */ useCallback } from 'react';
+const A = () => {
+  const [s] = useState(0);
+  const o = useCallback(() => { go(); }, []);
+  return <div onClick={o}>{s}</div>;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+import { useState /* keep */ } from 'react';
 const A = () => {
   const [s] = useState(0);
   const o = useLatestCallback(() => { go(); });
@@ -2535,10 +2616,9 @@ export const useThing = (go: () => void) => {
       errors: errors(),
     },
     // A sole destructuring parameter is the one shape Prettier breaks
-    // differently: it opens the pattern's own braces and leaves the parameter
-    // list intact. The one-per-line spelling measures within the width yet is
-    // rewritten straight back, so it is not authored — the call breaks open,
-    // which at least emits no line past the width.
+    // differently: it leaves the argument list hugged and opens the pattern's
+    // own braces instead. Breaking the argument list open is rewritten straight
+    // back to this, so the pattern is what gets broken (issue #2122).
     {
       code: `import { useCallback } from 'react';
 
@@ -2554,8 +2634,151 @@ export const useThing = (go: () => void) => {
       output: `import useLatestCallback from 'use-latest-callback';
 
 export const useThing = (go: () => void) => {
+  const handleTheFormSubmission = useLatestCallback(function ({
+    alpha,
+    bravo,
+    charlie,
+    delta,
+  }: SubmissionProps) {
+    go();
+  });
+  return handleTheFormSubmission;
+};`,
+      errors: errors(),
+    },
+    // A sole ARRAY pattern takes the same path: Prettier expands the pattern's
+    // brackets in place and keeps the argument list hugged.
+    {
+      code: `import { useCallback } from 'react';
+
+export const useThing = (go: () => void) => {
+  const handleTheFormSubmission = useCallback(
+    function ([alphaOne, bravoTwo, charlieThree]: SubmissionTuple) {
+      go();
+    },
+    [go],
+  );
+  return handleTheFormSubmission;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+
+export const useThing = (go: () => void) => {
+  const handleTheFormSubmission = useLatestCallback(function ([
+    alphaOne,
+    bravoTwo,
+    charlieThree,
+  ]: SubmissionTuple) {
+    go();
+  });
+  return handleTheFormSubmission;
+};`,
+      errors: errors(),
+    },
+    // A rest element must stay last, so the expanded pattern carries no
+    // trailing comma after it.
+    {
+      code: `import { useCallback } from 'react';
+
+export const useThing = (go: () => void) => {
+  const handleTheFormSubmission = useCallback(
+    function ({ alpha, bravo, charlie, ...rest }: SubmissionProps) {
+      go();
+    },
+    [go],
+  );
+  return handleTheFormSubmission;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+
+export const useThing = (go: () => void) => {
+  const handleTheFormSubmission = useLatestCallback(function ({
+    alpha,
+    bravo,
+    charlie,
+    ...rest
+  }: SubmissionProps) {
+    go();
+  });
+  return handleTheFormSubmission;
+};`,
+      errors: errors(),
+    },
+    // Each element is carried as the span between its separators, so a rename,
+    // a default and a comment written alongside all survive the expansion.
+    {
+      code: `import { useCallback } from 'react';
+
+export const useThing = (go: () => void) => {
+  const handleTheFormSubmission = useCallback(
+    function ({ alpha: a = 1, bravo /* note */, charlie }: SubmissionProps) {
+      go();
+    },
+    [go],
+  );
+  return handleTheFormSubmission;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+
+export const useThing = (go: () => void) => {
+  const handleTheFormSubmission = useLatestCallback(function ({
+    alpha: a = 1,
+    bravo /* note */,
+    charlie,
+  }: SubmissionProps) {
+    go();
+  });
+  return handleTheFormSubmission;
+};`,
+      errors: errors(),
+    },
+    // Past the width the head line itself no longer fits, which is where
+    // Prettier genuinely breaks the argument list open. The emitter measures
+    // that line rather than assuming the pattern always hugs.
+    {
+      code: `import { useCallback } from 'react';
+
+export const useThing = (go: () => void) => {
+  const handleTheVeryLongFormSubmissionCallbackName = useCallback(
+    function ({ alpha, bravo, charlie }: SubmissionPropsWithAVeryLongName) {
+      go();
+    },
+    [go],
+  );
+  return handleTheVeryLongFormSubmissionCallbackName;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+
+export const useThing = (go: () => void) => {
+  const handleTheVeryLongFormSubmissionCallbackName = useLatestCallback(
+    function ({ alpha, bravo, charlie }: SubmissionPropsWithAVeryLongName) {
+      go();
+    },
+  );
+  return handleTheVeryLongFormSubmissionCallbackName;
+};`,
+      errors: errors(),
+    },
+    // An ARROW with a sole destructuring parameter is NOT hugged: Prettier
+    // breaks the argument list open and leaves the pattern on one line, which
+    // is what `brokenOpenCallText` already emits. Pinning it keeps the pattern
+    // emitter from claiming the shape.
+    {
+      code: `import { useCallback } from 'react';
+
+export const useThing = (go: () => void) => {
+  const handleTheFormSubmission = useCallback(
+    ({ alpha, bravo, charlie, delta }: SubmissionProps) => {
+      go();
+    },
+    [go],
+  );
+  return handleTheFormSubmission;
+};`,
+      output: `import useLatestCallback from 'use-latest-callback';
+
+export const useThing = (go: () => void) => {
   const handleTheFormSubmission = useLatestCallback(
-    function ({ alpha, bravo, charlie, delta }: SubmissionProps) {
+    ({ alpha, bravo, charlie, delta }: SubmissionProps) => {
       go();
     },
   );
