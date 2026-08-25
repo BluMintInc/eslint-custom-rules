@@ -255,6 +255,23 @@ export const COMMENT_FIDELITY_BASELINE: Record<string, string> = {
   // `prettier --check` step, so the drift self-heals in the same `--fix` run.
   'prefer-sx-prop-over-system-props :: TRANSFORM_DIVERGED':
     'wrapping-only divergence that agora prettier normalizes to an identical token stream',
+  // WIDTH-DRIVEN LAYOUT, the #2086 class. Stripping the redundant annotation
+  // makes a parameter list that was broken across lines fit on one, so the fixer
+  // re-lays it out at the measured print width rather than leaving behind the
+  // expanded list prettier collapses again on the next pass — which is the whole
+  // of #2130. Measuring the width makes a comment a layout INPUT rather than
+  // text the fixer consumes: a block comment written above a parameter is one
+  // prettier itself holds the list open for, so the fixer keeps it broken and
+  // the marker rides along, where the same input without it collapses to
+  // `(event)`. Both shapes are what prettier prints for their own input.
+  // NOTHING IS CONSUMED: this guard classifies a dropped comment as
+  // COMMENT_LOST and an unparseable output as PARSE_BREAK, and this rule reaches
+  // neither — all 79 diverging outputs still carry the marker. Anchored by the
+  // bidirectional width fixtures in `src/tests/no-redundant-param-types.test.ts`
+  // (pairs pinned at exactly 80 and 81 columns), so the own-corpus guard keeps
+  // this entry honest.
+  'no-redundant-param-types :: TRANSFORM_DIVERGED':
+    'chooses the shape of the stripped parameter list by measured print width, and keeps the list broken for a comment prettier itself holds it open for; prettier makes the same choice in every shape and the comment is carried in all of them (#2130)',
   'use-custom-memo :: TRANSFORM_DIVERGED':
     'trailing-comma/wrapping divergence that agora prettier normalizes to an identical token stream',
   'use-latest-callback :: TRANSFORM_DIVERGED':
