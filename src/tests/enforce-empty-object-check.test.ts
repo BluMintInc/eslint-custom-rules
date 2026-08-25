@@ -1391,16 +1391,16 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
         `,
     },
     /**
-     * The decline boundary. Each shape below is one whose break Prettier decides
-     * by a rule this emitter does not author — it opens a call's argument list,
-     * lays a second declarator out under the first, or moves a non-block clause
-     * to its own line — so the fix stays the minimal replacement rather than
-     * emitting a line `prettier --check` would reject. Declining is not a lost
-     * fix: the guard is still added, exactly as it was before the width was
-     * measured at all.
+     * An inline comment is a layout input once the region is re-laid out, so it
+     * is carried rather than declined: Prettier glues a comment written after an
+     * operand to that operand's line, ahead of the trailing operator, and one
+     * written before an operand opens that operand's line. Both spellings ship
+     * because the reconstruction is compared against the spliced source before
+     * any line is emitted — a comment the emitter moved would fail that
+     * comparison, and only a spelling actually exercised proves it does not.
      */
     {
-      name: 'a comment inside the condition keeps the minimal replacement',
+      name: 'a comment after an operand rides that operand once the header breaks',
       code: `
         if (!payload /* keep me */ || Object.keys(payload).length > 5) {
           handle(payload);
@@ -1410,13 +1410,44 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
         { messageId: 'missingEmptyObjectCheck', data: { name: 'payload' } },
       ],
       output: `
-        if (!payload || Object.keys(payload).length === 0 /* keep me */ || Object.keys(payload).length > 5) {
+        if (
+          !payload ||
+          Object.keys(payload).length === 0 /* keep me */ ||
+          Object.keys(payload).length > 5
+        ) {
           handle(payload);
         }
         `,
     },
     {
-      name: 'a non-block clause keeps the minimal replacement',
+      name: 'a comment before an operand opens that operand once the header breaks',
+      code: `
+        if (!payload || /* keep me */ Object.keys(payload).length > 5) {
+          handle(payload);
+        }
+        `,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'payload' } },
+      ],
+      output: `
+        if (
+          !payload ||
+          Object.keys(payload).length === 0 ||
+          /* keep me */ Object.keys(payload).length > 5
+        ) {
+          handle(payload);
+        }
+        `,
+    },
+    /**
+     * A non-block clause shares the header's group, so Prettier moves it to its
+     * own indented line the moment that group breaks. Which of the two rows
+     * overflows decides how much breaks: past the `)` column the test breaks one
+     * operand per line as well, within it the test keeps its line and only the
+     * clause moves.
+     */
+    {
+      name: 'a non-block clause moves under a test that breaks with it',
       code: `
         if (!payloadContext || Object.keys(payloadContext).length > 5) return handle();
         `,
@@ -1427,11 +1458,58 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
         },
       ],
       output: `
-        if (!payloadContext || Object.keys(payloadContext).length === 0 || Object.keys(payloadContext).length > 5) return handle();
+        if (
+          !payloadContext ||
+          Object.keys(payloadContext).length === 0 ||
+          Object.keys(payloadContext).length > 5
+        )
+          return handle();
         `,
     },
     {
-      name: 'a second declarator keeps the minimal replacement',
+      name: 'a non-block clause moves alone when the test still fits its line',
+      code: `
+        if (!appConfig || flag) handleConfiguredApplication();
+        `,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'appConfig' } },
+      ],
+      output: `
+        if (!appConfig || Object.keys(appConfig).length === 0 || flag)
+          handleConfiguredApplication();
+        `,
+    },
+    {
+      name: 'an else clause keeps its own line while the consequent moves',
+      code: `
+        if (!payloadContext || Object.keys(payloadContext).length > 5) return handle();
+        else return other();
+        `,
+      errors: [
+        {
+          messageId: 'missingEmptyObjectCheck',
+          data: { name: 'payloadContext' },
+        },
+      ],
+      output: `
+        if (
+          !payloadContext ||
+          Object.keys(payloadContext).length === 0 ||
+          Object.keys(payloadContext).length > 5
+        )
+          return handle();
+        else return other();
+        `,
+    },
+    /**
+     * Prettier lays every declarator after the first out one level in, and
+     * indents a break after `=` one level past that — so the value lands four
+     * columns from the statement whichever declarator carries it, including the
+     * first, which merely shares the `const` line rather than owning a row of
+     * its own.
+     */
+    {
+      name: 'a second declarator breaks after its own equals sign',
       code: `
         const first = 1,
           second = !userProfile ? 'anonymous' : userProfile.name;
@@ -1444,9 +1522,40 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
       ],
       output: `
         const first = 1,
-          second = !userProfile || Object.keys(userProfile).length === 0 ? 'anonymous' : userProfile.name;
+          second =
+            !userProfile || Object.keys(userProfile).length === 0
+              ? 'anonymous'
+              : userProfile.name;
         `,
     },
+    {
+      name: 'the first of several declarators indents to the declarator level',
+      code: `
+        const displayName = !userProfile ? 'anonymous' : userProfile.name,
+          fallback = 1;
+        `,
+      errors: [
+        {
+          messageId: 'missingEmptyObjectCheck',
+          data: { name: 'userProfile' },
+        },
+      ],
+      output: `
+        const displayName =
+            !userProfile || Object.keys(userProfile).length === 0
+              ? 'anonymous'
+              : userProfile.name,
+          fallback = 1;
+        `,
+    },
+    /**
+     * The decline boundary. A shape whose break Prettier decides by a rule this
+     * emitter does not author — opening a call's argument list, switching to its
+     * chained-ternary form — keeps the minimal replacement rather than emitting
+     * a line `prettier --check` would reject. Declining is not a lost fix: the
+     * guard is still added, exactly as it was before the width was measured at
+     * all.
+     */
     {
       name: 'an operand too wide for its own line keeps the minimal replacement',
       code: `

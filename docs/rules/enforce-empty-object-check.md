@@ -143,11 +143,37 @@ const displayName =
     : userProfile.name;
 ```
 
-Where the break is one this fixer does not author — a second declarator, a clause
-that is not a block, an operand too wide for its own line, or a condition
-carrying a comment — the fix stays the minimal replacement and leaves the
-re-wrap to the formatter. Declining costs only the layout: the guard is added
-either way.
+A clause that is not a block belongs to the same group as the header it hangs
+off, so it moves to its own line with it — on its own when the widened test
+still fits between the parentheses, and under the broken test when it does not:
+
+```ts
+// after --fix
+if (!appConfig || Object.keys(appConfig).length === 0 || flag)
+  handleConfiguredApplication();
+```
+
+A declaration holding more than one declarator lays each one after the first out
+a level in, and indents a break after `=` a level past that:
+
+```ts
+// after --fix
+const first = 1,
+  second =
+    !userProfile || Object.keys(userProfile).length === 0
+      ? 'anonymous'
+      : userProfile.name;
+```
+
+An inline `/* … */` comment inside the condition is carried rather than declined:
+one written after an operand rides that operand's line ahead of the trailing
+operator, and one written before an operand opens that operand's line, which is
+where Prettier puts them.
+
+Where the break is one this fixer does not author — an operand too wide for its
+own line, a chained ternary, a condition carrying a `//` comment — the fix stays
+the minimal replacement and leaves the re-wrap to the formatter. Declining costs
+only the layout: the guard is added either way.
 
 ## Options
 
