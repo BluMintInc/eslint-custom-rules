@@ -92,6 +92,31 @@ export const COMMENT_FIDELITY_BASELINE: Record<string, string> = {
   // measuring and a line-comment perturbation produces no divergence at all.
   // Anchored by the straddling fixture pair and the trailing-comment pair in
   // `src/tests/prefer-use-deep-compare-memo.test.ts`.
+  // WIDTH/LAYOUT, same class as require-memo above. A `QUERY_KEY_*` constant is
+  // longer than the key literal it replaces, so past the print width the fixer
+  // emits the shape Prettier hugs a sole object argument into — the object open
+  // beneath the call, one property per line, the closing brace and parenthesis
+  // back at the statement's column (#2125). A trailing BLOCK comment occupies
+  // columns on that line like any other text, so it carries a substitution that
+  // fits on its own (68 columns) past the width and the object breaks around
+  // it. Measured against Prettier 2.8.8, that is the identical answer the
+  // formatter gives, and the fix's output is a Prettier fixed point in both
+  // shapes.
+  // Both shapes are valid and BOTH CARRY THE COMMENT — the marker census over
+  // this rule's corpus reports 74 diverged variants and MARKERS_LOST=0 across
+  // 1046 variants examined — so the remedy is not a decline, which would
+  // withdraw a working fix. Ignoring those columns would re-emit the over-wide
+  // line #2125 exists to prevent.
+  // The mirror case is NOT excused and is fixed rather than baselined: a
+  // trailing `//` comment is printed as a suffix that never counts toward
+  // fitting, so the rule subtracts one before measuring and a line-comment
+  // perturbation produces no divergence at all. A second STATEMENT on the line
+  // is a third case and also not excused: its layout is Prettier's to decide,
+  // so the key is substituted in place. Anchored by those three fixtures in
+  // `src/tests/enforce-querykey-ts.test.ts`, so the own-corpus guard keeps the
+  // entry honest.
+  'enforce-querykey-ts :: TRANSFORM_DIVERGED':
+    'chooses its shape by measured line width, which a trailing block comment legitimately changes exactly as it changes the answer Prettier itself gives; both shapes preserve the comment (#2125)',
   // WIDTH/LAYOUT, same class as require-memo above. Rewriting `.seg` into
   // `.get('seg', null)` adds thirteen columns per path segment, so past the
   // print width the fix emits the shape Prettier answers an over-wide call

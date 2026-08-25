@@ -1469,10 +1469,16 @@ function Component() {
         { messageId: 'enforceQueryKeyImport' },
         { messageId: 'enforceQueryKeyImport' },
       ],
+      // `QUERY_KEY_SECTION_SUBSECTION` is eighteen columns longer than the
+      // literal it replaces, which tips this line past 80 — so the object is
+      // emitted in the shape Prettier prints for one it can no longer fit
+      // (#2125).
       output: `import { QUERY_KEY_SECTION_SUBSECTION } from 'src/util/routing/queryKeys';
 
         function Component() {
-          const [value1] = useRouterState({ key: QUERY_KEY_SECTION_SUBSECTION });
+          const [value1] = useRouterState({
+            key: QUERY_KEY_SECTION_SUBSECTION,
+          });
           const [value2] = useRouterState({ key: 'user:profile:settings' });
           const [value3] = useRouterState({ key: 'app/module/component' });
           return <div>{value1} {value2} {value3}</div>;
@@ -2327,7 +2333,9 @@ export const useProfileKey = () => {
           const [valid] = useRouterState({ key: QUERY_KEY_VALID });
           // eslint-disable-next-line enforce-querykey-ts
           const [match] = useRouterState({ key: 'match-view' });
-          const [tournament] = useRouterState({ key: QUERY_KEY_TOURNAMENT_VIEW });
+          const [tournament] = useRouterState({
+            key: QUERY_KEY_TOURNAMENT_VIEW,
+          });
           return <div>{valid}{match}{tournament}</div>;
         }
       `,
@@ -3002,11 +3010,382 @@ function Component() {
     // 125. Control for 124: a comment outside that span is untouched by the
     // rewrite, so declining there would be a fix lost to a comment that was
     // never at risk.
+    //
+    // The output is spelled out rather than built from `inlineKeyCode` because
+    // the constant tips this line past 80 columns: the object is emitted broken
+    // (#2125), and the comment rides the slot it was written in — which is
+    // where Prettier prints it, ahead of the comma the rebuild appends.
     {
       name: 'a comment beside the asserted key does not withhold the fix',
       code: inlineKeyCode(`'user-profile' as const /* the legacy key */`),
       errors: [{ messageId: 'enforceQueryKeyImport' }],
-      output: inlineKeyCode('QUERY_KEY_USER_PROFILE /* the legacy key */'),
+      output: `
+import { QUERY_KEY_USER_PROFILE } from 'src/util/routing/queryKeys';
+import { SOMETHING } from './other';
+
+function Component({ config, id, keyParam }) {
+  const [value] = useRouterState({
+    key: QUERY_KEY_USER_PROFILE /* the legacy key */,
+  });
+  return value;
+}
+`,
+    },
+
+    // 126-137 (#2125). A `QUERY_KEY_*` name is longer than the quoted key it
+    // replaces, so a substitution on a line already near the print width pushes
+    // it over — and the consumer runs `prettier --write` over the same tree
+    // `eslint --fix` just rewrote. An object left over the width there is one
+    // Prettier immediately re-emits broken, so the fixer emits that shape
+    // itself. Every case below is paired with the direction it does NOT fire
+    // in, because breaking unconditionally is the same defect mirrored.
+    {
+      name: 'breaks the object whose constant tips its line past the width',
+      code: `import {
+  QUERY_KEY_MATCH_DETAILS,
+  QUERY_KEY_TOURNAMENT_DETAILS,
+} from 'src/util/routing/queryKeys';
+
+function useCustomRouterState() {
+  const [matchValue] = useRouterState({ key: 'match-details' });
+  const [tournamentValue] = useRouterState({ key: 'tournament-details' });
+  return { match: matchValue, tournament: tournamentValue };
+}
+`,
+      errors: [
+        { messageId: 'enforceQueryKeyImport' as const },
+        { messageId: 'enforceQueryKeyImport' as const },
+      ],
+      // Both arms on adjacent lines: the first substitution lands at 72
+      // columns and keeps its object flat, the second at 82 and does not.
+      output: `import {
+  QUERY_KEY_MATCH_DETAILS,
+  QUERY_KEY_TOURNAMENT_DETAILS,
+} from 'src/util/routing/queryKeys';
+
+function useCustomRouterState() {
+  const [matchValue] = useRouterState({ key: QUERY_KEY_MATCH_DETAILS });
+  const [tournamentValue] = useRouterState({
+    key: QUERY_KEY_TOURNAMENT_DETAILS,
+  });
+  return { match: matchValue, tournament: tournamentValue };
+}
+`,
+    },
+    // A comment written after the statement is measured the way Prettier
+    // measures it, and the two comment kinds disagree. A BLOCK comment occupies
+    // columns like any other text, so it carries a substitution that fits on
+    // its own (68 columns) past the width and the object breaks around it.
+    {
+      name: 'a trailing block comment counts toward the width it is measured against',
+      code: `import { QUERY_KEY_TOURNAMENT_DETAILS } from 'src/util/routing/queryKeys';
+
+function useCustomRouterState() {
+  const [v] = useRouterState({ key: 'tournament-details' }); /* legacy note */
+  return v;
+}
+`,
+      errors: [{ messageId: 'enforceQueryKeyImport' as const }],
+      output: `import { QUERY_KEY_TOURNAMENT_DETAILS } from 'src/util/routing/queryKeys';
+
+function useCustomRouterState() {
+  const [v] = useRouterState({
+    key: QUERY_KEY_TOURNAMENT_DETAILS,
+  }); /* legacy note */
+  return v;
+}
+`,
+    },
+    // Its mirror, and the reason the width is not simply read off the line: a
+    // LINE comment is printed as a suffix that never counts toward whether the
+    // statement fits, so the identical substitution stays flat at 68 columns
+    // however far past the width the comment carries the line.
+    {
+      name: 'a trailing line comment never counts toward the width',
+      code: `import { QUERY_KEY_TOURNAMENT_DETAILS } from 'src/util/routing/queryKeys';
+
+function useCustomRouterState() {
+  const [v] = useRouterState({ key: 'tournament-details' }); // legacy note
+  return v;
+}
+`,
+      errors: [{ messageId: 'enforceQueryKeyImport' as const }],
+      output: `import { QUERY_KEY_TOURNAMENT_DETAILS } from 'src/util/routing/queryKeys';
+
+function useCustomRouterState() {
+  const [v] = useRouterState({ key: QUERY_KEY_TOURNAMENT_DETAILS }); // legacy note
+  return v;
+}
+`,
+    },
+    // A second STATEMENT on the line is what the trailing-comment cases above
+    // are distinguished from: its layout is Prettier's to decide (it splits the
+    // two onto separate lines first), so the object is substituted in place and
+    // left for the formatter.
+    {
+      name: 'declines the break when a second statement shares the line',
+      code: `import { QUERY_KEY_TOURNAMENT_DETAILS } from 'src/util/routing/queryKeys';
+
+function useCustomRouterState() {
+  const [tournamentValue] = useRouterState({ key: 'tournament-details' }); doSomethingElse();
+  return tournamentValue;
+}
+`,
+      errors: [{ messageId: 'enforceQueryKeyImport' as const }],
+      output: `import { QUERY_KEY_TOURNAMENT_DETAILS } from 'src/util/routing/queryKeys';
+
+function useCustomRouterState() {
+  const [tournamentValue] = useRouterState({ key: QUERY_KEY_TOURNAMENT_DETAILS }); doSomethingElse();
+  return tournamentValue;
+}
+`,
+    },
+    {
+      // Prettier keeps an object whose brace and first key stand on separate
+      // lines, so the author's own breaks are the finished shape and only the
+      // key changes.
+      name: 'keeps the object the author already broke across lines',
+      code: `import { QUERY_KEY_TOURNAMENT_DETAILS } from 'src/util/routing/queryKeys';
+
+function useCustomRouterState() {
+  const [tournamentValue] = useRouterState({
+    key: 'tournament-details',
+  });
+  return tournamentValue;
+}
+`,
+      errors: [{ messageId: 'enforceQueryKeyImport' as const }],
+      output: `import { QUERY_KEY_TOURNAMENT_DETAILS } from 'src/util/routing/queryKeys';
+
+function useCustomRouterState() {
+  const [tournamentValue] = useRouterState({
+    key: QUERY_KEY_TOURNAMENT_DETAILS,
+  });
+  return tournamentValue;
+}
+`,
+    },
+    {
+      // The rebuild slices the span between the separating commas rather than
+      // the properties themselves, so a comment written beside a key rides onto
+      // the line Prettier itself prints it on — ahead of the comma the rebuild
+      // appends. Rebuilding from the properties alone would delete it.
+      name: 'carries a comment beside the key onto the broken line',
+      code: `import { QUERY_KEY_TOURNAMENT_DETAILS } from 'src/util/routing/queryKeys';
+
+function useCustomRouterState() {
+  const [tournamentValue] = useRouterState({ key: 'tournament-details' /* legacy */ });
+  return tournamentValue;
+}
+`,
+      errors: [{ messageId: 'enforceQueryKeyImport' as const }],
+      output: `import { QUERY_KEY_TOURNAMENT_DETAILS } from 'src/util/routing/queryKeys';
+
+function useCustomRouterState() {
+  const [tournamentValue] = useRouterState({
+    key: QUERY_KEY_TOURNAMENT_DETAILS /* legacy */,
+  });
+  return tournamentValue;
+}
+`,
+    },
+    {
+      // A comment behind the trailing comma sits in the one span the rebuild
+      // does not re-emit — it writes that comma itself — so the object stays
+      // flat rather than losing text this fixer does not own.
+      name: 'leaves the object flat where a comment sits behind its comma',
+      code: `import { QUERY_KEY_TOURNAMENT_DETAILS } from 'src/util/routing/queryKeys';
+
+function useCustomRouterState() {
+  const [tournamentValue] = useRouterState({ key: 'tournament-details', /* legacy */ });
+  return tournamentValue;
+}
+`,
+      errors: [{ messageId: 'enforceQueryKeyImport' as const }],
+      output: `import { QUERY_KEY_TOURNAMENT_DETAILS } from 'src/util/routing/queryKeys';
+
+function useCustomRouterState() {
+  const [tournamentValue] = useRouterState({ key: QUERY_KEY_TOURNAMENT_DETAILS, /* legacy */ });
+  return tournamentValue;
+}
+`,
+    },
+    {
+      // Prettier prints a trailing line comment as a suffix that never counts
+      // toward whether the statement fits, and this substituted line reaches 67
+      // columns without it. Counting the comment would break an object Prettier
+      // leaves flat, which is this defect mirrored.
+      name: 'leaves the object flat under a long trailing line comment',
+      code: `import { QUERY_KEY_MATCH_DETAILS } from 'src/util/routing/queryKeys';
+
+function useCustomRouterState() {
+  const [value] = useRouterState({ key: 'match-details' }); // a trailing note that runs well past eighty columns
+  return value;
+}
+`,
+      errors: [{ messageId: 'enforceQueryKeyImport' as const }],
+      output: `import { QUERY_KEY_MATCH_DETAILS } from 'src/util/routing/queryKeys';
+
+function useCustomRouterState() {
+  const [value] = useRouterState({ key: QUERY_KEY_MATCH_DETAILS }); // a trailing note that runs well past eighty columns
+  return value;
+}
+`,
+    },
+    {
+      // The rebuild appends its own trailing comma, and a comma the author
+      // already wrote closes the slot ahead of it, so the two cannot double up.
+      name: "writes no second comma over the author's own trailing one",
+      code: `import { QUERY_KEY_TOURNAMENT_DETAILS } from 'src/util/routing/queryKeys';
+
+function useCustomRouterState() {
+  const [tournamentValue] = useRouterState({ key: 'tournament-details', });
+  return tournamentValue;
+}
+`,
+      errors: [{ messageId: 'enforceQueryKeyImport' as const }],
+      output: `import { QUERY_KEY_TOURNAMENT_DETAILS } from 'src/util/routing/queryKeys';
+
+function useCustomRouterState() {
+  const [tournamentValue] = useRouterState({
+    key: QUERY_KEY_TOURNAMENT_DETAILS,
+  });
+  return tournamentValue;
+}
+`,
+    },
+    {
+      // Prettier breaks an object all or nothing, so every property takes a
+      // line — not the key's alone — and a spread is a slot like any other.
+      name: "breaks every property of the object, not the key's alone",
+      code: `import { QUERY_KEY_TOURNAMENT_DETAILS } from 'src/util/routing/queryKeys';
+
+function useCustomRouterState(base) {
+  const [tournamentValue] = useRouterState({ ...base, key: 'tournament-details', shallow: true });
+  return tournamentValue;
+}
+`,
+      errors: [{ messageId: 'enforceQueryKeyImport' as const }],
+      output: `import { QUERY_KEY_TOURNAMENT_DETAILS } from 'src/util/routing/queryKeys';
+
+function useCustomRouterState(base) {
+  const [tournamentValue] = useRouterState({
+    ...base,
+    key: QUERY_KEY_TOURNAMENT_DETAILS,
+    shallow: true,
+  });
+  return tournamentValue;
+}
+`,
+    },
+    {
+      // A returned call hugs its object exactly as an assigned one does.
+      name: "breaks a returned call's object",
+      code: `import { QUERY_KEY_TOURNAMENT_REGISTRATION_DETAILS_EXTENDED } from 'src/util/routing/queryKeys';
+
+function useTournamentRegistration() {
+  return useRouterState({ key: 'tournament-registration-details-extended' });
+}
+`,
+      errors: [{ messageId: 'enforceQueryKeyImport' as const }],
+      output: `import { QUERY_KEY_TOURNAMENT_REGISTRATION_DETAILS_EXTENDED } from 'src/util/routing/queryKeys';
+
+function useTournamentRegistration() {
+  return useRouterState({
+    key: QUERY_KEY_TOURNAMENT_REGISTRATION_DETAILS_EXTENDED,
+  });
+}
+`,
+    },
+    {
+      // `export` opens the line the declaration is written on, and the closing
+      // brace still returns to that line's own indentation.
+      name: 'breaks the object inside an exported arrow hook',
+      code: `import { QUERY_KEY_TOURNAMENT_REGISTRATION_DETAILS } from 'src/util/routing/queryKeys';
+
+export const useTournamentDetails = () => {
+  const [value] = useRouterState({ key: 'tournament-registration-details' });
+  return value;
+};
+`,
+      errors: [{ messageId: 'enforceQueryKeyImport' as const }],
+      output: `import { QUERY_KEY_TOURNAMENT_REGISTRATION_DETAILS } from 'src/util/routing/queryKeys';
+
+export const useTournamentDetails = () => {
+  const [value] = useRouterState({
+    key: QUERY_KEY_TOURNAMENT_REGISTRATION_DETAILS,
+  });
+  return value;
+};
+`,
+    },
+    {
+      // A property Prettier has no narrower way to print — a plain key and a
+      // single token — is emitted past the width rather than declined, because
+      // that is what Prettier itself writes for it.
+      name: 'emits a property Prettier cannot narrow further',
+      options: [{ printWidth: 40 }],
+      code: `import { QUERY_KEY_A_VERY_LONG_TOURNAMENT_REGISTRATION_KEY } from 'src/util/routing/queryKeys';
+
+function useThing() {
+  const [v] = useRouterState({ key: 'a-very-long-tournament-registration-key' });
+  return v;
+}
+`,
+      errors: [{ messageId: 'enforceQueryKeyImport' as const }],
+      output: `import { QUERY_KEY_A_VERY_LONG_TOURNAMENT_REGISTRATION_KEY } from 'src/util/routing/queryKeys';
+
+function useThing() {
+  const [v] = useRouterState({
+    key: QUERY_KEY_A_VERY_LONG_TOURNAMENT_REGISTRATION_KEY,
+  });
+  return v;
+}
+`,
+    },
+    {
+      // A DELIBERATE decline: Prettier hugs an object argument only where it is
+      // the call's only one, and breaks the argument list open instead where it
+      // is not. The substitution still lands — only the layout is left alone.
+      name: "leaves a two-argument call's object flat",
+      options: [{ printWidth: 40 }],
+      code: `import { QUERY_KEY_TOURNAMENT } from 'src/util/routing/queryKeys';
+
+function useThing(fallbackValue) {
+  const [value] = useRouterState({ key: 'tournament' }, fallbackValue);
+  return value;
+}
+`,
+      errors: [{ messageId: 'enforceQueryKeyImport' as const }],
+      output: `import { QUERY_KEY_TOURNAMENT } from 'src/util/routing/queryKeys';
+
+function useThing(fallbackValue) {
+  const [value] = useRouterState({ key: QUERY_KEY_TOURNAMENT }, fallbackValue);
+  return value;
+}
+`,
+    },
+    {
+      // The same decline for a call Prettier reaches only after breaking
+      // something earlier on the line: it splits a conditional at its `?` long
+      // before it looks at the object.
+      name: "leaves a conditional's object flat",
+      options: [{ printWidth: 40 }],
+      code: `import { QUERY_KEY_TOURNAMENT } from 'src/util/routing/queryKeys';
+
+function useThing(flag) {
+  const [value] = flag ? useRouterState({ key: 'tournament' }) : [];
+  return value;
+}
+`,
+      errors: [{ messageId: 'enforceQueryKeyImport' as const }],
+      output: `import { QUERY_KEY_TOURNAMENT } from 'src/util/routing/queryKeys';
+
+function useThing(flag) {
+  const [value] = flag ? useRouterState({ key: QUERY_KEY_TOURNAMENT }) : [];
+  return value;
+}
+`,
     },
   ],
 });
@@ -3180,6 +3559,39 @@ function Component() {
 }
 `);
     expect(remaining).toHaveLength(0);
+  });
+
+  // Issue #2125: the two keys reach for the same import, so each is fixed on a
+  // pass of its own — and the width decision has to hold across both. The
+  // converged text below is byte-for-byte what `prettier --write` emits for it
+  // at 80 columns, which is the property the consumer's tree depends on: it
+  // runs both tools over the same files, so an object left over the width is a
+  // diff that never settles.
+  it('converges on the shape Prettier prints for an over-wide object', () => {
+    const { output, remaining } = lint(`function useCustomRouterState(id) {
+  const [matchValue] = useRouterState({ key: 'match-details' });
+  const [tournamentValue] = useRouterState({ key: 'tournament-details' });
+  return { match: matchValue, tournament: tournamentValue };
+}
+`);
+
+    expect(output).toBe(`import {
+  QUERY_KEY_MATCH_DETAILS,
+  QUERY_KEY_TOURNAMENT_DETAILS,
+} from 'src/util/routing/queryKeys';
+
+function useCustomRouterState(id) {
+  const [matchValue] = useRouterState({ key: QUERY_KEY_MATCH_DETAILS });
+  const [tournamentValue] = useRouterState({
+    key: QUERY_KEY_TOURNAMENT_DETAILS,
+  });
+  return { match: matchValue, tournament: tournamentValue };
+}
+`);
+    expect(remaining).toHaveLength(0);
+    // The property behind the exact text above, stated on its own: nothing the
+    // fixer wrote is left for Prettier to re-wrap.
+    expect(output.split('\n').filter((line) => line.length > 80)).toEqual([]);
   });
 
   it('declines to touch a key whose constant name is already taken', () => {
@@ -3903,7 +4315,8 @@ function Status() {
     },
     {
       // The option is read, not merely declared: the same source that stays
-      // flat at the default width breaks here.
+      // flat at the default width breaks here — the specifier list and, at 40
+      // columns, the substituted key's own object literal alike.
       name: 'a lowered printWidth breaks an import that fits at 80',
       filename: '/repo/src/components/Widget.tsx',
       options: [{ printWidth: 40 }],
@@ -3923,7 +4336,9 @@ function Widget() {
 
 function Widget() {
   const [a] = useRouterState({ key: QUERY_KEY_A });
-  const [b] = useRouterState({ key: QUERY_KEY_B });
+  const [b] = useRouterState({
+    key: QUERY_KEY_B,
+  });
   return null;
 }
 `,
