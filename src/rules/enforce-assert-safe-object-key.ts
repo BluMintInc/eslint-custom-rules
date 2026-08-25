@@ -900,6 +900,16 @@ const PRINT_WIDTH = 80;
 const INDENT_STEP = '  ';
 
 /**
+ * A `;` closing the rewritten line, optionally followed by same-line
+ * comments. Prettier leaves such comments where they are — after the `;` on
+ * the closing line — when it opens a lookup, so the emission may carry them
+ * (measured against prettier 2.8.8). A comment after a `,` is re-hosted
+ * BEFORE the comma instead, a relocation the emitter declines to model.
+ */
+const SEMICOLON_WITH_TRAILING_COMMENTS =
+  /^;(?:\s*\/\*(?:[^*]|\*(?!\/))*\*\/)*(?:\s*\/\/.*)?$/;
+
+/**
  * Bodies prettier keeps on the arrow's own line instead of breaking after `=>`.
  * Each of these opens a block of its own that absorbs the overflow, so a break
  * inserted ahead of one is a layout prettier does not print.
@@ -1245,10 +1255,12 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
      * Prettier lays a concise arrow body out as `group(indent([line, body]))`,
      * so the break after `=>` is the FIRST one it reaches for: a body that fits
      * on the indented line is laid out exactly this way, and one that does not
-     * is broken further inside, which this emitter declines rather than guesses
-     * at. Every other decline below is deliberate for the same reason — the
-     * one-line emission it falls back to is what shipped before the width was
-     * measured at all, so a decline costs formatting and never meaning.
+     * is broken further inside — which `planMemberBreak` prints for the one
+     * shape it has measured, and which this emitter otherwise declines rather
+     * than guesses at. Every other decline below is deliberate for the same
+     * reason — the one-line emission it falls back to is what shipped before
+     * the width was measured at all, so a decline costs formatting and never
+     * meaning.
      */
     const planArrowBreak = (
       node: TSESTree.Node,
@@ -1311,6 +1323,132 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
     };
 
     /**
+     * The wrap re-emitted in the shape prettier prints a computed lookup in
+     * once the wrap has widened the line past the print width and the break
+     * after `=>` is already taken, or null where this emitter cannot say what
+     * prettier would print.
+     *
+     * Prettier lays a computed lookup out as `object[` + indent(softline +
+     * key) + softline + `]`, so a body that no longer fits on its own line is
+     * opened at the bracket with the key one step in; the call is then
+     * measured on that line and, where it does not fit there either, opened
+     * at its own parenthesis with the argument one step further in and a
+     * trailing comma. Both steps are measured against prettier 2.8.8 at
+     * agora's options, whose `trailingComma: "all"` is what puts the comma
+     * after the argument (#2134).
+     *
+     * The emission is limited to the shape measured: a single-line lookup
+     * that starts its line as the whole body of an arrow whose `=>` closes
+     * an earlier line, followed by the `;` or `,` that ends the statement or
+     * the element — a `;` optionally carrying same-line comments. Anything
+     * else — a key the author
+     * parenthesized or commented, a lookup broken across lines, a key so long
+     * that even its own line overflows — falls back to the one-line emission,
+     * which is what shipped before the width was measured at all.
+     */
+    const planMemberBreak = (
+      node: TSESTree.Node,
+      wrap: PlannedEdit,
+      argText: string,
+    ): PlannedEdit | null => {
+      const { sourceCode } = context;
+      const { text } = sourceCode;
+      const { line } = node.loc.start;
+      const original = sourceCode.lines[line - 1] ?? '';
+      const delta = wrap.text.length - (wrap.range[1] - wrap.range[0]);
+      if (original.length + delta <= PRINT_WIDTH) {
+        return null;
+      }
+      const member = node.parent;
+      if (
+        !member ||
+        member.type !== AST_NODE_TYPES.MemberExpression ||
+        !member.computed ||
+        member.property !== node ||
+        wrap.range[0] !== member.range[0] ||
+        wrap.range[1] !== member.range[1] ||
+        wrap.text.includes('\n') ||
+        member.loc.start.line !== line ||
+        member.loc.end.line !== line ||
+        groupingParensAround(sourceCode, node).length > 0 ||
+        sourceCode.getCommentsInside(member).length > 0
+      ) {
+        return null;
+      }
+      const arrow = enclosingConciseArrow(node);
+      const body = arrow?.body;
+      // An optional chain wraps the lookup in a ChainExpression of the same
+      // extent, so the body is the lookup either way.
+      const bodyIsLookup =
+        body === member ||
+        (body?.type === AST_NODE_TYPES.ChainExpression &&
+          body.expression === member);
+      const arrowToken = sourceCode.getTokenBefore(member);
+      if (
+        !arrow ||
+        !bodyIsLookup ||
+        arrowToken?.value !== '=>' ||
+        arrowToken.loc.end.line >= line
+      ) {
+        return null;
+      }
+      // A comment on a line of its own between `=>` and the body stays on
+      // that line and leaves the body's layout untouched, so it is carried;
+      // one that shares the arrow's line is text prettier relocates into the
+      // parameter list, which this emitter does not model.
+      const gapComments = sourceCode.getTokensBetween(arrowToken, member, {
+        includeComments: true,
+      });
+      if (
+        gapComments.some(
+          (comment) => comment.loc.start.line <= arrowToken.loc.end.line,
+        )
+      ) {
+        return null;
+      }
+      const openBracket = sourceCode.getTokenBefore(node);
+      const closeBracket = sourceCode.getLastToken(member);
+      if (
+        openBracket?.value !== '[' ||
+        closeBracket?.value !== ']' ||
+        text.slice(openBracket.range[1], node.range[0]) !== '' ||
+        text.slice(node.range[1], closeBracket.range[0]) !== ''
+      ) {
+        return null;
+      }
+      const indent = original.slice(0, member.loc.start.column);
+      const tail = original.slice(member.loc.end.column);
+      const isBreakableTail =
+        tail === ';' ||
+        tail === ',' ||
+        SEMICOLON_WITH_TRAILING_COMMENTS.test(tail);
+      if (indent.trim() !== '' || !isBreakableTail) {
+        return null;
+      }
+      // Everything through the bracket — `m[`, `s.map[`, `m?.[`, `m[a][` —
+      // stays on the body's line; prettier opens only the outermost lookup.
+      const head = text.slice(member.range[0], openBracket.range[1]);
+      if (indent.length + head.length > PRINT_WIDTH) {
+        return null;
+      }
+      const keyIndent = `${indent}${INDENT_STEP}`;
+      const argIndent = `${keyIndent}${INDENT_STEP}`;
+      const call = `${ASSERT_SAFE_NAME}(${argText})`;
+      let key: string;
+      if (keyIndent.length + call.length <= PRINT_WIDTH) {
+        key = `${keyIndent}${call}`;
+      } else if (argIndent.length + argText.length + 1 <= PRINT_WIDTH) {
+        key = `${keyIndent}${ASSERT_SAFE_NAME}(\n${argIndent}${argText},\n${keyIndent})`;
+      } else {
+        return null;
+      }
+      return {
+        range: [member.range[0], member.range[1]],
+        text: `${head}\n${key}\n${indent}]`,
+      };
+    };
+
+    /**
      * Helper function to create fixes for a node
      */
     const createFixes = (
@@ -1332,7 +1470,10 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
       if (arrowBreak) {
         fixes.push(fixer.replaceTextRange(arrowBreak.range, arrowBreak.text));
       }
-      fixes.push(fixer.replaceTextRange(wrap.range, wrap.text));
+      const access = arrowBreak
+        ? wrap
+        : planMemberBreak(node, wrap, argText) ?? wrap;
+      fixes.push(fixer.replaceTextRange(access.range, access.text));
 
       return fixes;
     };

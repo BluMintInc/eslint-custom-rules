@@ -495,6 +495,46 @@ One consequence is visible under `--fix`: accesses that **nest** — `store[look
 per pass. `eslint --fix` runs passes until nothing changes, so every level is
 wrapped by the time it stops.
 
+### The wrap and the print width
+
+Wrapping a key widens the line it sits on by the twelve characters of
+`assertSafe()`, and a line the formatter would break is a line the formatter
+**does** break: agora runs prettier and `eslint --fix` over the same tree, so a
+wrap emitted past the 80-column print width churns the file on every pass
+(#2108). Where the widened line no longer fits, the fix prints the break
+prettier would print, in prettier's own shape:
+
+- A concise arrow body that no longer fits after `=>` moves to its own line,
+  one step in from the arrow's line (#2108).
+- A computed lookup that no longer fits on its own line — because the break
+  after `=>` is already taken — opens at its bracket with the wrapped key one
+  step in; and where the call does not fit there either, the call opens at its
+  parenthesis with the key one step further in and a trailing comma (#2134).
+
+```js
+// ❌ Reported — and the wrap alone would push the body to 84 columns
+const read = (m: Record<string, number>) =>
+  m[someVeryLongKeyNameThatPushesThisLinePastTheEightyColumnPrintWidth];
+
+// ✅ Fixed — the lookup opens at its bracket, in the shape prettier keeps
+import { assertSafe } from 'functions/src/util/assertSafe';
+const read = (m: Record<string, number>) =>
+  m[
+    assertSafe(
+      someVeryLongKeyNameThatPushesThisLinePastTheEightyColumnPrintWidth,
+    )
+  ];
+```
+
+Each of these layouts is measured against prettier 2.8.8 at agora's options
+(`printWidth: 80`, `tabWidth: 2`, `trailingComma: "all"`). Wherever the fix
+cannot say what prettier would print — a comment between `=>` and the body, a
+lookup the author already broke across lines, parenthesized, or commented
+inside, or a key so long that even its own line overflows — it declines the
+break and emits the wrap on one line. That costs a formatter pass, never
+meaning: the one-line emission is what the fix produced before the width was
+measured at all.
+
 ### When the fix is withheld
 
 The fix wraps the key in a bare `assertSafe(...)` call and inserts
