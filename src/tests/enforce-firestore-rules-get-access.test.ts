@@ -155,9 +155,8 @@ ruleTesterTs.run(
       // segment, so the rewritten literal routinely lands past the width a
       // formatter owns. Each pair below pins one side of that decision. Every
       // asserted `output` is a Prettier fixed point at the width it was
-      // measured against — width 80, except the two `printWidth` cases, which
-      // are fixed points at their own configured width. The single exception is
-      // the call-argument case, marked KNOWN LIMITATION where it appears.
+      // measured against — width 80, except the `printWidth` cases, which are
+      // fixed points at their own configured width.
 
       // Exactly 80 columns after the fix: stays on one line. One column
       // narrower than the case below, so the two pin the boundary.
@@ -326,15 +325,127 @@ ruleTesterTs.run(
         output: `const rules =
   "allow read: if resource.data.get('organizationName', null).get('ownerId', null) != null;";`,
       },
-      // KNOWN LIMITATION: Prettier answers an over-wide call argument by
-      // breaking the CALL open, and whether that emits a trailing comma depends
-      // on `trailingComma`, which this rule has no option for. Guessing is worse
-      // than leaving the line, so the literal is replaced in place.
+      // Prettier answers an over-wide call argument by breaking the CALL open:
+      // the argument on its own line one step in, a trailing comma after it,
+      // and the closing parenthesis back at the call's own column.
       {
         code: 'publish("allow read: if resource.data.meta.ownerId != null;");',
         errors: [{ messageId: 'useGetAccess' }],
         output:
-          "publish(\"allow read: if resource.data.get('meta', null).get('ownerId', null) != null;\");",
+          "publish(\n  \"allow read: if resource.data.get('meta', null).get('ownerId', null) != null;\",\n);",
+      },
+      // ...and a rewritten argument that still fits keeps the call flat,
+      // because Prettier pulls a needlessly broken short list straight back
+      // onto one line.
+      {
+        code: 'publish("allow read: if resource.data.org != null;");',
+        errors: [{ messageId: 'useGetAccess' }],
+        output:
+          'publish("allow read: if resource.data.get(\'org\', null) != null;");',
+      },
+      // An assignment head stays on the call's line: Prettier hugs a call it
+      // can break rather than breaking after the `=`.
+      {
+        code: 'const rules = publish("allow read: if resource.data.meta.ownerId != null;");',
+        errors: [{ messageId: 'useGetAccess' }],
+        output:
+          "const rules = publish(\n  \"allow read: if resource.data.get('meta', null).get('ownerId', null) != null;\",\n);",
+      },
+      // The closing parenthesis returns to the call's own column, which is the
+      // enclosing block's indentation rather than the file's margin.
+      {
+        code: `function buildRules() {
+  publish("allow read: if resource.data.meta.ownerId != null;");
+}`,
+        errors: [{ messageId: 'useGetAccess' }],
+        output: `function buildRules() {
+  publish(
+    "allow read: if resource.data.get('meta', null).get('ownerId', null) != null;",
+  );
+}`,
+      },
+      // `new` prints its argument list exactly as a call does.
+      {
+        code: 'new RulesDocument("allow read: if resource.data.meta.ownerId != null;");',
+        errors: [{ messageId: 'useGetAccess' }],
+        output:
+          "new RulesDocument(\n  \"allow read: if resource.data.get('meta', null).get('ownerId', null) != null;\",\n);",
+      },
+      // A call whose opening token already sits on its own line keeps that
+      // line's indentation, so the arrow's break survives the argument break.
+      {
+        code: `const publishRules = () =>
+  publish("allow read: if resource.data.meta.ownerId != null;");`,
+        errors: [{ messageId: 'useGetAccess' }],
+        output: `const publishRules = () =>
+  publish(
+    "allow read: if resource.data.get('meta', null).get('ownerId', null) != null;",
+  );`,
+      },
+      // A comment written inside the argument list rides along on the slot it
+      // annotates, which is where Prettier leaves it.
+      {
+        code: 'publish(/* rules */ "allow read: if resource.data.meta.ownerId != null;");',
+        errors: [{ messageId: 'useGetAccess' }],
+        output:
+          "publish(\n  /* rules */ \"allow read: if resource.data.get('meta', null).get('ownerId', null) != null;\",\n);",
+      },
+      // A comment written AFTER the statement is the pair anchoring this
+      // rule's COMMENT_FIDELITY_BASELINE entry, and the two halves disagree
+      // because Prettier itself answers them differently. A block comment
+      // occupies columns like any other text, so it pushes a rewritten literal
+      // that would otherwise fit (65 columns) past the width and the call
+      // breaks open around it.
+      {
+        code: 'publish("allow read: if resource.data.org != null;"); /* legacy note */',
+        errors: [{ messageId: 'useGetAccess' }],
+        output:
+          'publish(\n  "allow read: if resource.data.get(\'org\', null) != null;",\n); /* legacy note */',
+      },
+      // Its mirror: a line comment is printed as a suffix that never counts
+      // toward whether the statement fits, so the identical rewrite stays flat
+      // however far past the width the comment carries the line.
+      {
+        code: 'publish("allow read: if resource.data.org != null;"); // legacy note',
+        errors: [{ messageId: 'useGetAccess' }],
+        output:
+          'publish("allow read: if resource.data.get(\'org\', null) != null;"); // legacy note',
+      },
+      // A comment between the callee and the opening parenthesis is one
+      // Prettier MOVES, so the fix declines the break and replaces in place.
+      {
+        code: 'publish /* rules */ ("allow read: if resource.data.meta.ownerId != null;");',
+        errors: [{ messageId: 'useGetAccess' }],
+        output:
+          "publish /* rules */ (\"allow read: if resource.data.get('meta', null).get('ownerId', null) != null;\");",
+      },
+      // A comma the author already wrote is the one the break appends, not a
+      // second one.
+      {
+        code: 'publish("allow read: if resource.data.meta.ownerId != null;",);',
+        errors: [{ messageId: 'useGetAccess' }],
+        output:
+          "publish(\n  \"allow read: if resource.data.get('meta', null).get('ownerId', null) != null;\",\n);",
+      },
+      // An already-broken argument list carries the formatter's answer, so the
+      // fix replaces the literal without inserting a second break.
+      {
+        code: `publish(
+  "allow read: if resource.data.organizationSettings.ownerId != null;",
+);`,
+        errors: [{ messageId: 'useGetAccess' }],
+        output: `publish(
+  "allow read: if resource.data.get('organizationSettings', null).get('ownerId', null) != null;",
+);`,
+      },
+      // The width is a live measurement inside a call too: at 40 a literal that
+      // stays flat at the default breaks the argument list open.
+      {
+        code: 'publish("allow read: if resource.data.organization != null;");',
+        options: [{ printWidth: 40 }],
+        errors: [{ messageId: 'useGetAccess' }],
+        output:
+          'publish(\n  "allow read: if resource.data.get(\'organization\', null) != null;",\n);',
       },
 
       // --- printWidth option --------------------------------------------

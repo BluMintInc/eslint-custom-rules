@@ -86,9 +86,27 @@ const rules =
   "allow read: if resource.data.get('meta', null).get('ownerId', null) != null;";
 ```
 
+A literal passed straight to a call is wrapped the other way a formatter reaches
+for, because there is no `=` to break after: the argument list opens instead,
+putting the argument on its own line one step in, a trailing comma after it, and
+the closing parenthesis back at the call's own column.
+
+```javascript
+// Emitted when the rewritten argument would overflow
+publish(
+  "allow read: if resource.data.get('meta', null).get('ownerId', null) != null;",
+);
+```
+
 The width is measured, never assumed: a rewritten literal that still fits is left
 on its original line, because a formatter pulls a needlessly wrapped short value
 straight back up.
+
+A comment sharing the line is measured the way a formatter measures it, and the
+two kinds differ. A block comment occupies columns like any other text, so it can
+carry an otherwise-fitting rewrite past the width and open the wrap by itself; a
+line comment is printed as a suffix that never counts toward whether the
+statement fits, so it never does. Both shapes keep the comment.
 
 ## When Not To Use It
 

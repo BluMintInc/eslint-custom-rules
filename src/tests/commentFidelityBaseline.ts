@@ -92,6 +92,31 @@ export const COMMENT_FIDELITY_BASELINE: Record<string, string> = {
   // measuring and a line-comment perturbation produces no divergence at all.
   // Anchored by the straddling fixture pair and the trailing-comment pair in
   // `src/tests/prefer-use-deep-compare-memo.test.ts`.
+  // WIDTH/LAYOUT, same class as require-memo above. Rewriting `.seg` into
+  // `.get('seg', null)` adds thirteen columns per path segment, so past the
+  // print width the fix emits the shape Prettier answers an over-wide call
+  // argument with: the argument on its own line, a trailing comma, and the
+  // closing parenthesis back at the call's column (#2123). A trailing BLOCK
+  // comment occupies columns on that line like any other text, so it pushes a
+  // rewritten literal that fits on its own (65 columns) past the width and the
+  // call breaks around it. Measured against Prettier 2.8.8, that is the
+  // identical answer the formatter gives: it breaks
+  // `publish("…get('org', null)…"); /* c */` open at 85 columns and leaves the
+  // same statement flat without the comment, and the fix's broken output is a
+  // Prettier fixed point.
+  // Both shapes are valid and BOTH CARRY THE COMMENT — measured, zero markers
+  // are lost across this rule's corpus — so the remedy is not a decline, which
+  // would withdraw a working fix. Ignoring those columns would re-emit the
+  // over-wide line #2123 exists to prevent.
+  // The mirror case is NOT excused and is fixed rather than baselined: a
+  // trailing `//` comment is printed as a suffix that never counts toward
+  // fitting, so the identical rewrite stays flat and a line-comment
+  // perturbation produces no divergence at all. Anchored by that straddling
+  // trailing-comment pair in
+  // `src/tests/enforce-firestore-rules-get-access.test.ts`, so the own-corpus
+  // guard keeps it honest.
+  'enforce-firestore-rules-get-access :: TRANSFORM_DIVERGED':
+    'chooses its shape by measured line width, which a trailing block comment legitimately changes exactly as it changes the answer Prettier itself gives; both shapes preserve the comment (#2123)',
   'prefer-use-deep-compare-memo :: TRANSFORM_DIVERGED':
     'chooses its shape by measured line width, which a block comment on the call line legitimately changes exactly as it changes the answer Prettier itself gives; both shapes preserve the comment (#2064)',
   // WIDTH/LAYOUT, same class as require-memo above. Having replaced a wide
