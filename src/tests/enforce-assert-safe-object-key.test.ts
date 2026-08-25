@@ -5761,6 +5761,228 @@ const SPAN_TESTS: AssertSafeTests = {
         "const readSomething = (m: Record<string, number>, kind: 'live' | 'sim') => /* c */ m[assertSafe(kind)];",
       ].join('\n'),
     },
+    {
+      // The break after `=>` is already taken, so the wrap has nowhere to
+      // move the body: prettier opens the lookup at its bracket and, where
+      // the call still does not fit at the key's indent, the call at its
+      // parenthesis (#2134). This is that output, so the sweep asserting
+      // prettier stability over every fixture covers the shape.
+      name: 'a wrap past the print width opens the lookup and the call',
+      code: [
+        'const read = (m: Record<string, number>) =>',
+        '  m[someVeryLongKeyNameThatPushesThisLinePastTheEightyColumnPrintWidth];',
+      ].join('\n'),
+      errors: [
+        lintError(
+          'someVeryLongKeyNameThatPushesThisLinePastTheEightyColumnPrintWidth',
+        ),
+      ],
+      output: [
+        IMPORT_LINE,
+        'const read = (m: Record<string, number>) =>',
+        '  m[',
+        '    assertSafe(',
+        '      someVeryLongKeyNameThatPushesThisLinePastTheEightyColumnPrintWidth,',
+        '    )',
+        '  ];',
+      ].join('\n'),
+    },
+    {
+      // The call is measured on the key's own line: one that fits there
+      // stays flat inside the opened lookup.
+      name: 'a wrap past the print width keeps a call that fits at the key indent flat',
+      code: [
+        'const read = (m: Record<string, number>) =>',
+        '  m[someLongKeyNameThatPushesThisLineJustPastTheEightyColumnWidthXx];',
+      ].join('\n'),
+      errors: [
+        lintError(
+          'someLongKeyNameThatPushesThisLineJustPastTheEightyColumnWidthXx',
+        ),
+      ],
+      output: [
+        IMPORT_LINE,
+        'const read = (m: Record<string, number>) =>',
+        '  m[',
+        '    assertSafe(someLongKeyNameThatPushesThisLineJustPastTheEightyColumnWidthXx)',
+        '  ];',
+      ].join('\n'),
+    },
+    {
+      // The other direction: a wrap that lands exactly on the print width
+      // is a line prettier keeps, so no break is emitted.
+      name: 'a wrap that lands exactly on the print width stays flat',
+      code: [
+        'const read = (m: Record<string, number>) =>',
+        '  m[someLongKeyNameThatPushesThisLineJustPastTheEightyColumnWidthX];',
+      ].join('\n'),
+      errors: [
+        lintError(
+          'someLongKeyNameThatPushesThisLineJustPastTheEightyColumnWidthX',
+        ),
+      ],
+      output: [
+        IMPORT_LINE,
+        'const read = (m: Record<string, number>) =>',
+        '  m[assertSafe(someLongKeyNameThatPushesThisLineJustPastTheEightyColumnWidthX)];',
+      ].join('\n'),
+    },
+    {
+      // The call's own boundary, pinned from both sides: at exactly the
+      // print width it stays flat; one column past it, it opens.
+      name: 'a wrapped call landing exactly on the print width stays flat in the lookup',
+      code: [
+        'const read = (m: Record<string, number>) =>',
+        '  m[aKeyWhoseWrappedCallLandsExactlyOnTheEightyColumnMarkWhenSetInXy];',
+      ].join('\n'),
+      errors: [
+        lintError(
+          'aKeyWhoseWrappedCallLandsExactlyOnTheEightyColumnMarkWhenSetInXy',
+        ),
+      ],
+      output: [
+        IMPORT_LINE,
+        'const read = (m: Record<string, number>) =>',
+        '  m[',
+        '    assertSafe(aKeyWhoseWrappedCallLandsExactlyOnTheEightyColumnMarkWhenSetInXy)',
+        '  ];',
+      ].join('\n'),
+    },
+    {
+      name: 'a wrapped call one column past the print width opens at its parenthesis',
+      code: [
+        'const read = (m: Record<string, number>) =>',
+        '  m[aKeyWhoseWrappedCallLandsJustOneColumnPastTheEightyMarkWhenSetInX];',
+      ].join('\n'),
+      errors: [
+        lintError(
+          'aKeyWhoseWrappedCallLandsJustOneColumnPastTheEightyMarkWhenSetInX',
+        ),
+      ],
+      output: [
+        IMPORT_LINE,
+        'const read = (m: Record<string, number>) =>',
+        '  m[',
+        '    assertSafe(',
+        '      aKeyWhoseWrappedCallLandsJustOneColumnPastTheEightyMarkWhenSetInX,',
+        '    )',
+        '  ];',
+      ].join('\n'),
+    },
+    {
+      // Prettier opens only the outermost lookup; everything through its
+      // bracket — here the optional chain — stays on the body's line.
+      name: 'an optional-chained lookup past the print width opens at its bracket',
+      code: [
+        'const read = (m?: Record<string, number>) =>',
+        '  m?.[someLongKeyNameThatPushesThisLinePastEightyColumnsInOptionalMap];',
+      ].join('\n'),
+      errors: [
+        lintError(
+          'someLongKeyNameThatPushesThisLinePastEightyColumnsInOptionalMap',
+        ),
+      ],
+      output: [
+        IMPORT_LINE,
+        'const read = (m?: Record<string, number>) =>',
+        '  m?.[',
+        '    assertSafe(someLongKeyNameThatPushesThisLinePastEightyColumnsInOptionalMap)',
+        '  ];',
+      ].join('\n'),
+    },
+    {
+      // The indent is the body line's own, and a `,` closing an element is
+      // as much the end of the line as a `;` closing a statement.
+      name: 'a property-valued arrow body past the print width opens at its indent',
+      code: [
+        'run({',
+        '  read: (m: Record<string, number>) =>',
+        '    m[someVeryLongKeyNameThatPushesThisLinePastTheEightyColumnWidth],',
+        '});',
+      ].join('\n'),
+      errors: [
+        lintError(
+          'someVeryLongKeyNameThatPushesThisLinePastTheEightyColumnWidth',
+        ),
+      ],
+      output: [
+        IMPORT_LINE,
+        'run({',
+        '  read: (m: Record<string, number>) =>',
+        '    m[',
+        '      assertSafe(someVeryLongKeyNameThatPushesThisLinePastTheEightyColumnWidth)',
+        '    ],',
+        '});',
+      ].join('\n'),
+    },
+    {
+      // A comment on a line of its own between `=>` and the body leaves
+      // the body's layout untouched — prettier keeps it on that line and
+      // opens the lookup exactly as it would without it — so it is carried,
+      // not declined around.
+      name: 'a comment on its own line above the body rides with the opened lookup',
+      code: [
+        'const read = (m: Record<string, number>) =>',
+        '  // chosen by the caller',
+        '  m[someLongKeyNameThatPushesThisLineJustPastTheEightyColumnWidthXx];',
+      ].join('\n'),
+      errors: [
+        lintError(
+          'someLongKeyNameThatPushesThisLineJustPastTheEightyColumnWidthXx',
+        ),
+      ],
+      output: [
+        IMPORT_LINE,
+        'const read = (m: Record<string, number>) =>',
+        '  // chosen by the caller',
+        '  m[',
+        '    assertSafe(someLongKeyNameThatPushesThisLineJustPastTheEightyColumnWidthXx)',
+        '  ];',
+      ].join('\n'),
+    },
+    {
+      // A comment trailing the `;` stays where it is — prettier leaves it
+      // after the `;` on the closing line when it opens the lookup — so it
+      // rides along rather than turning the break off.
+      name: 'a block comment trailing the semicolon rides on the closing line',
+      code: [
+        'const read = (m: Record<string, number>) =>',
+        '  m[someVeryLongKeyNameThatPushesThisLinePastTheEightyColumnPrintWidth]; /* a */',
+      ].join('\n'),
+      errors: [
+        lintError(
+          'someVeryLongKeyNameThatPushesThisLinePastTheEightyColumnPrintWidth',
+        ),
+      ],
+      output: [
+        IMPORT_LINE,
+        'const read = (m: Record<string, number>) =>',
+        '  m[',
+        '    assertSafe(',
+        '      someVeryLongKeyNameThatPushesThisLinePastTheEightyColumnPrintWidth,',
+        '    )',
+        '  ]; /* a */',
+      ].join('\n'),
+    },
+    {
+      name: 'a line comment trailing the semicolon rides on the closing line',
+      code: [
+        'const read = (m: Record<string, number>) =>',
+        '  m[someLongKeyNameThatPushesThisLineJustPastTheEightyColumnWidthXx]; // note',
+      ].join('\n'),
+      errors: [
+        lintError(
+          'someLongKeyNameThatPushesThisLineJustPastTheEightyColumnWidthXx',
+        ),
+      ],
+      output: [
+        IMPORT_LINE,
+        'const read = (m: Record<string, number>) =>',
+        '  m[',
+        '    assertSafe(someLongKeyNameThatPushesThisLineJustPastTheEightyColumnWidthXx)',
+        '  ]; // note',
+      ].join('\n'),
+    },
   ],
 };
 
@@ -5772,14 +5994,17 @@ ruleTesterTs.run(
 
 // A wrap widens the line it lands on, so where prettier would then break
 // after `=>` the fixer emits that break itself rather than leave churn
-// (#2108). It declines wherever it cannot say WHERE the break goes — and an
-// access the author already broke across lines is one such place, because the
-// single line the width was measured on is not the whole of what moves.
+// (#2108), and where that break is already taken it opens the lookup at its
+// bracket instead (#2134). It declines wherever it cannot say WHERE the break
+// goes — an access the author already broke across lines is one such place,
+// because the single line the width was measured on is not the whole of what
+// moves; a key too long for even its own line, or a comment inside the
+// lookup, are two more.
 //
-// This case is driven through a bare `Linter` rather than declared as a
-// RuleTester fixture on purpose: reaching the guard REQUIRES a line past the
+// These cases are driven through a bare `Linter` rather than declared as
+// RuleTester fixtures on purpose: reaching a decline REQUIRES a line past the
 // print width (the wrap only ever widens), so the output is one prettier must
-// re-wrap. Declaring it as a fixture would put a knowingly non-fixed-point
+// re-wrap. Declaring one as a fixture would put a knowingly non-fixed-point
 // case into the corpus the #2108 sweep asserts over.
 describe('enforce-assert-safe-object-key: the arrow break declines (issue #2108)', () => {
   const RULE_ID = '@blumintinc/blumint/enforce-assert-safe-object-key';
@@ -5841,6 +6066,96 @@ describe('enforce-assert-safe-object-key: the arrow break declines (issue #2108)
     );
 
     expect(fixed.output).toContain('=>\n  m[assertSafe(kind)]');
+  });
+
+  it('a key too long for even its own line declines the lookup break', () => {
+    // Opening the lookup and the call would still leave the argument's line
+    // past the print width, and how prettier lays THAT out is not modelled —
+    // so the emission is the one-line wrap, as it was before #2134.
+    const fixed = fixOf(
+      [
+        'const read = (m: Record<string, number>) =>',
+        '  m[aKeyTooLongToFitEvenOnItsOwnLineAtTheArgumentIndentSoTheBreakIsDeclinedHere];',
+      ].join('\n'),
+    );
+
+    expect(fixed.output).toContain(
+      '=>\n  m[assertSafe(aKeyTooLongToFitEvenOnItsOwnLineAtTheArgumentIndentSoTheBreakIsDeclinedHere)];',
+    );
+    expect(parseFailure(fixed.output)).toBeNull();
+  });
+
+  it('a comment inside the lookup declines the lookup break', () => {
+    // Where prettier carries a comment when it opens the lookup is not
+    // modelled either; the comment stays exactly where it was written.
+    const fixed = fixOf(
+      [
+        'const read = (m: Record<string, number>) =>',
+        '  m[someLongKeyNameWhoseCommentKeepsTheLookupOnOneLinePastEighty /* c */];',
+      ].join('\n'),
+    );
+
+    expect(fixed.output).toContain(
+      '=>\n  m[assertSafe(someLongKeyNameWhoseCommentKeepsTheLookupOnOneLinePastEighty) /* c */];',
+    );
+    expect(parseFailure(fixed.output)).toBeNull();
+  });
+
+  it('a comment trailing the arrow on its own line declines the lookup break', () => {
+    // Prettier moves a comment written after `=>` into the parameter list,
+    // which is a relocation this emitter does not model; the comment stays
+    // where it was written and the wrap ships on one line.
+    const fixed = fixOf(
+      [
+        'const read = (m: Record<string, number>) => /* c */',
+        '  m[someVeryLongKeyNameThatPushesThisLinePastTheEightyColumnPrintWidth];',
+      ].join('\n'),
+    );
+
+    expect(fixed.output).toContain(
+      '=> /* c */\n  m[assertSafe(someVeryLongKeyNameThatPushesThisLinePastTheEightyColumnPrintWidth)];',
+    );
+    expect(parseFailure(fixed.output)).toBeNull();
+  });
+
+  it('a comment trailing an element\u2019s comma declines the lookup break', () => {
+    // Prettier re-hosts a comment written after a `,` to BEFORE the comma
+    // when it opens the lookup — a relocation the emitter does not model, so
+    // the wrap ships on one line and the comment stays where it was written.
+    const fixed = fixOf(
+      [
+        'run({',
+        '  read: (m: Record<string, number>) =>',
+        '    m[someVeryLongKeyNameThatPushesThisLinePastTheEightyColumnWidth], /* c */',
+        '});',
+      ].join('\n'),
+    );
+
+    expect(fixed.output).toContain(
+      '    m[assertSafe(someVeryLongKeyNameThatPushesThisLinePastTheEightyColumnWidth)], /* c */',
+    );
+    expect(parseFailure(fixed.output)).toBeNull();
+  });
+
+  it('the lookup break IS emitted where the emitter can place it', () => {
+    // The positive control for the two declines above (#2134).
+    const fixed = fixOf(
+      [
+        'const read = (m: Record<string, number>) =>',
+        '  m[someVeryLongKeyNameThatPushesThisLinePastTheEightyColumnPrintWidth];',
+      ].join('\n'),
+    );
+
+    expect(fixed.output).toContain(
+      [
+        '=>',
+        '  m[',
+        '    assertSafe(',
+        '      someVeryLongKeyNameThatPushesThisLinePastTheEightyColumnPrintWidth,',
+        '    )',
+        '  ];',
+      ].join('\n'),
+    );
   });
 });
 
