@@ -182,7 +182,9 @@ the dependency list are both arbitrary source text, so the emitted width grows
 with the input. At the default width that makes any `useMemo(...)` call written
 on one line past column 69 overflow. The import insertion and the orphaned-import
 removal land on other lines, so the rename is the only edit this measurement has
-to account for.
+to account for — but every rename the call carries counts, not just its own. A
+`useMemo(() => useMemo(...), ...)` pair grows by twenty-two columns, so a line
+that lands at 90 after both is measured at 90 and not at 79.
 
 The fixer therefore measures the line before writing it. Within the width the
 call stays flat; past it the call is written in Prettier's canonical broken form,
@@ -192,6 +194,28 @@ one argument per line:
 const formatted = useDeepCompareMemo(
   () => ({ name: userConfig.name }),
   [userConfig],
+);
+```
+
+Each argument slot is sliced out of the source rather than rebuilt from the
+argument's own text, so a comment written inside the list rides on the slot it
+annotates — the side Prettier keeps it on, comma and all:
+
+```tsx
+const subtitle = useDeepCompareMemo(
+  /* keep */ () => ({ n: userCfg.n }),
+  [userCfg],
+);
+```
+
+A nested pair converts as one edit rather than two. The outer re-render spans the
+inner call, and ESLint rejects overlapping fixes outright, so the outer text
+carries the inner rename itself:
+
+```tsx
+const subtitle = useDeepCompareMemo(
+  () => useDeepCompareMemo(() => 1, [{ a: 1 }]),
+  [{ b: 2 }],
 );
 ```
 
@@ -216,14 +240,20 @@ them writes something other than the call the source spells:
   shape: it keeps the callee and the dependency array on the outer lines and
   breaks only the block between them, so one argument per line is not what it
   prints.
-- **A comment inside the call.** It sits between tokens a re-render rewrites, so
-  it would be moved off the argument it annotates. A formatting nicety does not
-  justify relocating an author's comment.
-- **Two convertible calls, one nested in the other.** Whichever is re-rendered,
-  its replacement spans the other's edit, and ESLint rejects overlapping fixes
-  outright — which would cost both call sites their fix. Both ends decline, so
-  the pair is left as two renames for the formatter to settle; breaking only the
-  inner one inside a flat outer call is a layout Prettier prints for neither.
+- **A comment between the callee and the opening parenthesis.** Prettier moves
+  that one, printing `useDeepCompareMemo(/* keep */ () => ...`, and relocating an
+  author's comment is not this fixer's to do. A comment written *inside* the
+  argument list is no reason to decline: it rides on the slot it annotates.
+- **A parenthesised callee.** The callee is re-emitted from its own name onward,
+  so the text `(useMemo)(...)` writes around it would come back in the wrong
+  order.
+- **A comment written behind a trailing comma.** That comma's span is the one
+  piece of text a re-render does not re-emit, since it writes its own, so a
+  comment sitting behind it would be deleted. An over-width line costs less.
+- **A convertible call nested inside one of the shapes above.** Prettier reaches
+  an inner argument list only after breaking the outer one open, so a call inside
+  a list this pass leaves flat declines with it; breaking the inner one alone
+  inside a flat outer call is a layout Prettier prints for neither.
 - **An argument list that is not a callback plus a dependency array.** Prettier
   hugs a trailing array behind a third argument rather than giving each argument
   its own line, so the two-argument shape is the only one this fixer prints.

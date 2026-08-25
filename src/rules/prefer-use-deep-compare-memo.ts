@@ -674,6 +674,7 @@ function lineIndentOf(
 function widthAfterRename(
   sourceCode: TSESLint.SourceCode,
   call: TSESTree.CallExpression,
+  batch: readonly TSESTree.CallExpression[],
 ): number {
   const startLine = call.loc.start.line;
   const line = sourceCode.lines[startLine - 1] ?? '';
@@ -689,53 +690,136 @@ function widthAfterRename(
   const printed = suffix
     ? line.slice(0, suffix.loc.start.column).trimEnd()
     : line;
-  const calleeWidth = call.callee.range[1] - call.callee.range[0];
-  return printed.length - calleeWidth + DEEP_COMPARE_HOOK.length;
+  // Every callee this one conversion renames within this call moves the line,
+  // not just the call's own: `useMemo(() => useMemo(…), …)` grows by twenty-two
+  // columns, so measuring the outer eleven alone reads a line that lands at 96
+  // as one that lands at 85 (#2121). Only calls sharing a range with this one
+  // count, which leaves an unrelated sibling further along the line measured
+  // exactly as before.
+  const renameDelta = batch
+    .filter(
+      (other) =>
+        other.range[0] < call.range[1] &&
+        call.range[0] < other.range[1] &&
+        other.callee.loc.start.line === startLine,
+    )
+    .reduce(
+      (total, other) =>
+        total +
+        DEEP_COMPARE_HOOK.length -
+        (other.callee.range[1] - other.callee.range[0]),
+      0,
+    );
+  return printed.length + renameDelta;
 }
 
 /**
- * Everything the source writes between the callee and the first argument —
- * type arguments, an optional-call marker, the opening parenthesis. Copying it
- * verbatim is what keeps `useMemo<T>(…)` and `useMemo?.(…)` intact through a
- * re-render that only authors line breaks.
+ * The `(` that opens the argument list.
+ *
+ * Walked over tokens from the end of the type arguments rather than searched
+ * for in the text, because a type argument can spell a parenthesis of its own:
+ * `useMemo<(row: Row) => string>(…)`.
  */
-function argumentListOpenerOf(
+function argumentListOpenParen(
   sourceCode: TSESLint.SourceCode,
   call: TSESTree.CallExpression,
-): string {
-  return sourceCode
-    .getText()
-    .slice(call.callee.range[1], call.arguments[0].range[0])
-    .trimEnd();
+): TSESTree.Token | null {
+  const afterCallee = call.typeParameters
+    ? call.typeParameters.range[1]
+    : call.callee.range[1];
+  return (
+    sourceCode
+      .getTokens(call)
+      .find(
+        (token) =>
+          token.range[0] >= afterCallee &&
+          token.type === AST_TOKEN_TYPES.Punctuator &&
+          token.value === '(',
+      ) ?? null
+  );
 }
 
 /**
- * Whether the converted call can be re-rendered across lines as the very call
- * the source already spells.
+ * The comma separating the two arguments.
  *
- * Each arm below is a DELIBERATE decline rather than a fall-through: the
+ * Read off the tokens between the arguments rather than as "the token after the
+ * first one", which is the closing parenthesis of a parenthesised argument.
+ * Nothing between two complete expressions can be a comma except the one that
+ * separates them, so the first is the separator at any nesting depth.
+ */
+function argumentSeparatorOf(
+  sourceCode: TSESLint.SourceCode,
+  call: TSESTree.CallExpression,
+): TSESTree.Token | null {
+  const [first, second] = call.arguments;
+  return (
+    sourceCode
+      .getTokensBetween(first, second)
+      .find(
+        (token) =>
+          token.type === AST_TOKEN_TYPES.Punctuator && token.value === ',',
+      ) ?? null
+  );
+}
+
+/**
+ * A span of the source with every callee this conversion renames rewritten.
+ *
+ * A re-rendered call replaces its whole range, so an inner convertible call's
+ * own rename would land inside that replacement — and ESLint drops overlapping
+ * fixes outright, taking every report's fix with them. Carrying the inner
+ * rename in the outer text is what lets the pair convert as one edit (#2121).
+ */
+function textWithRenames(
+  sourceCode: TSESLint.SourceCode,
+  start: number,
+  end: number,
+  renamed: readonly TSESTree.CallExpression[],
+): string {
+  const source = sourceCode.getText();
+  const callees = renamed
+    .map((call) => call.callee.range)
+    .filter(
+      ([calleeStart, calleeEnd]) => calleeStart >= start && calleeEnd <= end,
+    )
+    .sort((a, b) => a[0] - b[0]);
+  let cursor = start;
+  let rendered = '';
+  for (const [calleeStart, calleeEnd] of callees) {
+    rendered += source.slice(cursor, calleeStart) + DEEP_COMPARE_HOOK;
+    cursor = calleeEnd;
+  }
+  return rendered + source.slice(cursor, end);
+}
+
+/**
+ * The call re-rendered the way prettier prints an argument list it cannot fit:
+ * one argument per line at a single nesting step, a trailing comma on each, and
+ * the closing parenthesis back at the statement's own column.
+ *
+ * Every `null` below is a DELIBERATE decline rather than a fall-through: the
  * in-place rename is emitted instead, leaving a line prettier will rewrap but
  * losing nothing the author wrote. A formatting nicety does not justify
  * relocating a comment or guessing at a layout prettier does not print (#2045).
  */
-function isReprintableCall(
+function reprintCallBroken(
   sourceCode: TSESLint.SourceCode,
   call: TSESTree.CallExpression,
-  batch: readonly TSESTree.CallExpression[],
-): boolean {
+  renamed: readonly TSESTree.CallExpression[],
+): string | null {
   // A call already broken across lines carries the author's own breaks inside
   // the argument text this re-render copies verbatim, so every continuation
   // line would keep its original column while its opening line moved.
-  if (call.loc.start.line !== call.loc.end.line) return false;
+  if (call.loc.start.line !== call.loc.end.line) return null;
 
   // Prettier gives an argument list its own line per argument only while the
   // trailing argument is not one it hugs. At three arguments ending in an
   // array it breaks the array open instead and leaves the rest flat, which is
   // a different shape — and `useMemo` is a two-argument hook, so declining
   // there withholds nothing real.
-  if (call.arguments.length !== 2) return false;
+  if (call.arguments.length !== 2) return null;
   const [callback, deps] = call.arguments;
-  if (deps.type !== AST_NODE_TYPES.ArrayExpression) return false;
+  if (deps.type !== AST_NODE_TYPES.ArrayExpression) return null;
 
   // A zero-parameter arrow with a block body is prettier's React-hook shape: it
   // keeps the callee, the closing brace and the dependency array on the outer
@@ -745,58 +829,98 @@ function isReprintableCall(
     callback.type === AST_NODE_TYPES.ArrowFunctionExpression &&
     callback.body.type === AST_NODE_TYPES.BlockStatement
   ) {
-    return false;
+    return null;
   }
 
-  // A comment inside the call sits between tokens this re-render rewrites, so
-  // it would be moved off the argument it annotates or dropped outright.
-  if (sourceCode.getCommentsInside(call).length > 0) return false;
+  // The callee is re-emitted from its own name onward, so a parenthesised
+  // callee — `(useMemo)(…)` — would have the text between them re-emitted in
+  // the wrong order.
+  const firstToken = sourceCode.getFirstToken(call);
+  if (!firstToken || firstToken.range[0] !== call.callee.range[0]) return null;
 
-  // One convertible call nested inside another: whichever of the two is
-  // re-rendered, its replacement spans the other's edit, and ESLint rejects
-  // overlapping fixes outright — taking the whole conversion, and with it every
-  // report's fix, down with them. Both ends of the nesting decline, so the pair
-  // is left as two renames on one over-width line for a formatter to settle,
-  // rather than as an inner break inside a flat outer call, which is a layout
-  // prettier prints for neither.
-  if (
-    batch.some(
-      (other) =>
-        other !== call &&
-        other.range[0] < call.range[1] &&
-        call.range[0] < other.range[1],
-    )
-  ) {
-    return false;
-  }
+  const openParen = argumentListOpenParen(sourceCode, call);
+  const separator = argumentSeparatorOf(sourceCode, call);
+  const closeParen = sourceCode.getLastToken(call);
+  if (!openParen || !separator || !closeParen) return null;
 
-  // The opener is copied rather than authored, so it has to end where the
-  // argument list begins for the re-render to still be this call.
-  return argumentListOpenerOf(sourceCode, call).endsWith('(');
-}
+  // A comment between the callee and the opening parenthesis is one prettier
+  // MOVES: it prints `useDeepCompareMemo(/* keep */ arg`. Relocating a comment
+  // is not this fixer's to do, so the rename stays in place there. Comments
+  // written inside the argument list are a different matter — each rides along
+  // on the slot it annotates below, which is exactly where prettier leaves it,
+  // so they are no reason to decline (#2121).
+  const relocatedComment = sourceCode
+    .getAllComments()
+    .some(
+      (comment) =>
+        comment.range[0] >= call.callee.range[1] &&
+        comment.range[1] <= openParen.range[0],
+    );
+  if (relocatedComment) return null;
 
-/**
- * The call rewritten the way prettier prints an argument list it cannot fit:
- * one argument per line at a single nesting step, a trailing comma on each, and
- * the closing parenthesis back at the statement's own column.
- */
-function reprintCallBroken(
-  sourceCode: TSESLint.SourceCode,
-  call: TSESTree.CallExpression,
-): string {
-  const indent = lineIndentOf(sourceCode, call);
-  return [
-    `${DEEP_COMPARE_HOOK}${argumentListOpenerOf(sourceCode, call)}`,
-    ...call.arguments.map(
-      (argument) =>
-        `${indent}${DEFAULT_INDENT_STEP}${sourceCode.getText(argument)},`,
+  // A comma the author already wrote before the closing parenthesis is the one
+  // this re-render appends itself, so the slot ends ahead of it.
+  const beforeClose = sourceCode.getTokenBefore(closeParen);
+  const lastSlotEnd =
+    beforeClose && beforeClose.value === ','
+      ? beforeClose.range[0]
+      : closeParen.range[0];
+
+  // Everything between the slots and the closer is re-emitted except the span
+  // that trailing comma occupies, so a comment written behind it is the one
+  // piece of text this re-render would delete outright.
+  const strandedComment = sourceCode
+    .getAllComments()
+    .some(
+      (comment) =>
+        comment.range[0] >= lastSlotEnd &&
+        comment.range[1] <= closeParen.range[0],
+    );
+  if (strandedComment) return null;
+
+  // Slots are sliced out of the source rather than rebuilt from each argument's
+  // own text, so a comment written between two tokens rides on the slot it
+  // annotates. That is what prettier prints, measured on all four positions a
+  // single-line call has: a leading comment leads its own line, a trailing one
+  // stays ahead of the comma this re-render appends.
+  const slots = [
+    textWithRenames(
+      sourceCode,
+      openParen.range[1],
+      separator.range[0],
+      renamed,
     ),
+    textWithRenames(sourceCode, separator.range[1], lastSlotEnd, renamed),
+  ].map((slot) => slot.trim());
+
+  const indent = lineIndentOf(sourceCode, call);
+  const opener = textWithRenames(
+    sourceCode,
+    call.callee.range[1],
+    openParen.range[1],
+    renamed,
+  );
+  return [
+    `${DEEP_COMPARE_HOOK}${opener}`,
+    ...slots.map((slot) => `${indent}${DEFAULT_INDENT_STEP}${slot},`),
     `${indent})`,
   ].join('\n');
 }
 
 /**
- * The edit that converts one call site.
+ * What one call site's conversion emits.
+ *
+ * `absorbed` is the nesting case: an enclosing call is re-rendered, and its
+ * replacement already carries this call's rename, so this site contributes no
+ * edit of its own.
+ */
+type CallConversion =
+  | { kind: 'rename' }
+  | { kind: 'reprint'; text: string }
+  | { kind: 'absorbed' };
+
+/**
+ * How each call in the batch converts.
  *
  * Renaming in place is the whole conversion wherever the line still fits, and
  * that measurement runs in both directions on purpose: prettier collapses a
@@ -804,26 +928,53 @@ function reprintCallBroken(
  * would trade one `prettier --check` failure for its mirror image on every
  * short call (#2064).
  */
-function convertCallFix(
+function planConversions(
   sourceCode: TSESLint.SourceCode,
-  fixer: TSESLint.RuleFixer,
-  call: TSESTree.CallExpression,
   batch: readonly TSESTree.CallExpression[],
   printWidth: number,
-): TSESLint.RuleFix {
-  const renameInPlace = () => fixer.replaceText(call.callee, DEEP_COMPARE_HOOK);
+): Map<TSESTree.CallExpression, CallConversion> {
+  const encloses = (
+    outer: TSESTree.CallExpression,
+    inner: TSESTree.CallExpression,
+  ) =>
+    outer !== inner &&
+    outer.range[0] <= inner.range[0] &&
+    inner.range[1] <= outer.range[1];
 
-  // Within the width the flat call is exactly what prettier prints, so breaking
-  // it open here would be the mirror failure rather than a fix.
-  if (widthAfterRename(sourceCode, call) <= printWidth) return renameInPlace();
+  // Outermost first: prettier breaks an outer argument list before it reaches
+  // an inner one, and the outer re-render is what claims the inner's edit.
+  const ordered = [...batch].sort(
+    (left, right) =>
+      left.range[0] - right.range[0] || right.range[1] - left.range[1],
+  );
 
-  // Over the width, and the call carries something the re-render would not
-  // reproduce. Declining is a decision taken here rather than a case that falls
-  // through: the line stays over the width until a formatter reaches it, which
-  // costs less than deleting a comment or printing a layout prettier does not.
-  if (!isReprintableCall(sourceCode, call, batch)) return renameInPlace();
+  const conversions = new Map<TSESTree.CallExpression, CallConversion>();
+  for (const call of ordered) {
+    if (conversions.get(call)?.kind === 'absorbed') continue;
 
-  return fixer.replaceText(call, reprintCallBroken(sourceCode, call));
+    // A call nested inside one this pass leaves flat is a call prettier reaches
+    // only after breaking that outer list open. Breaking the inner alone inside
+    // a flat outer call is a layout prettier prints for neither, so the
+    // enclosing decline carries down.
+    const insideFlatCall = ordered.some(
+      (other) => conversions.has(other) && encloses(other, call),
+    );
+    const text =
+      insideFlatCall || widthAfterRename(sourceCode, call, batch) <= printWidth
+        ? null
+        : reprintCallBroken(sourceCode, call, batch);
+
+    conversions.set(
+      call,
+      text === null ? { kind: 'rename' } : { kind: 'reprint', text },
+    );
+    if (text !== null) {
+      for (const inner of ordered) {
+        if (encloses(call, inner)) conversions.set(inner, { kind: 'absorbed' });
+      }
+    }
+  }
+  return conversions;
 }
 
 /**
@@ -863,10 +1014,17 @@ function convertCallsFixes(
   if (!importRemoval) return null;
 
   const batch = calls.map((call) => call.node);
+  const conversions = planConversions(sourceCode, batch, printWidth);
   return [
-    ...batch.map((call) =>
-      convertCallFix(sourceCode, fixer, call, batch, printWidth),
-    ),
+    ...batch.flatMap((call) => {
+      const conversion = conversions.get(call);
+      // An absorbed call emits nothing: the enclosing re-render already carries
+      // its rename, and a second edit inside that replacement would overlap it.
+      if (!conversion || conversion.kind === 'absorbed') return [];
+      return conversion.kind === 'reprint'
+        ? [fixer.replaceText(call, conversion.text)]
+        : [fixer.replaceText(call.callee, DEEP_COMPARE_HOOK)];
+    }),
     ...ensureDeepCompareImportFixes(context, fixer),
     ...importRemoval.map((range) => fixer.removeRange([range[0], range[1]])),
   ];
