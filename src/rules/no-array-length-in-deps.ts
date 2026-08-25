@@ -569,29 +569,170 @@ function bindsIntendedImport(
 }
 
 /**
+ * The whitespace opening the line `node` starts on, or null when other tokens
+ * precede it there — the caller then has no line indent to mirror.
+ */
+function lineIndentBefore(
+  sourceCode: TSESLint.SourceCode,
+  node: TSESTree.Node,
+): string | null {
+  const line = sourceCode.lines[node.loc.start.line - 1] ?? '';
+  const prefix = line.slice(0, node.loc.start.column);
+  return /^\s*$/.test(prefix) ? prefix : null;
+}
+
+/**
+ * Whether extending `declaration` with `addition` still fits the print width
+ * on one line. Prettier prints the terminating semicolon whether or not the
+ * source spells it, so a missing one still costs a column.
+ */
+function extendedImportFits(
+  sourceCode: TSESLint.SourceCode,
+  declaration: TSESTree.ImportDeclaration,
+  indent: string,
+  addition: string,
+  printWidth: number,
+): boolean {
+  const declText = sourceCode.getText(declaration);
+  const semicolonDebt = declText.endsWith(';') ? 0 : 1;
+  return (
+    indent.length + declText.length + addition.length + semicolonDebt <=
+    printWidth
+  );
+}
+
+/**
+ * Re-lays a single-line named import into Prettier's one-specifier-per-line
+ * form with `name` appended, touching only the separator gaps between the
+ * braces and the specifiers. Each specifier's own text is carried verbatim, so
+ * a comment INSIDE a specifier (`stableHash /* alias *\/ as hashOf`) survives;
+ * a comment in a replaced gap would be silently deleted by the rewrite, so its
+ * presence withholds this layout entirely (null) and the caller falls back to
+ * a separate declaration that touches none of the existing bytes.
+ */
+function buildExpandedImportFix(
+  fixer: TSESLint.RuleFixer,
+  sourceCode: TSESLint.SourceCode,
+  named: TSESTree.ImportSpecifier[],
+  name: string,
+  declIndent: string,
+): TSESLint.RuleFix[] | null {
+  const openBrace = sourceCode.getTokenBefore(named[0], {
+    filter: (token) => token.value === '{',
+  });
+  const closeBrace = sourceCode.getTokenAfter(named[named.length - 1], {
+    filter: (token) => token.value === '}',
+  });
+  if (!openBrace || !closeBrace) return null;
+  const specIndent = `${declIndent}  `;
+  const gaps: [number, number, string][] = [
+    [openBrace.range[1], named[0].range[0], `\n${specIndent}`],
+  ];
+  for (let i = 0; i < named.length - 1; i++) {
+    gaps.push([named[i].range[1], named[i + 1].range[0], `,\n${specIndent}`]);
+  }
+  gaps.push([
+    named[named.length - 1].range[1],
+    closeBrace.range[0],
+    `,\n${specIndent}${name},\n${declIndent}`,
+  ]);
+  const fixes: TSESLint.RuleFix[] = [];
+  for (const [start, end, replacement] of gaps) {
+    const gapText = sourceCode.text.slice(start, end);
+    if (!/^[\s,]*$/.test(gapText)) return null;
+    fixes.push(fixer.replaceTextRange([start, end], replacement));
+  }
+  return fixes;
+}
+
+/**
  * Extends an existing import from `source` with `name` instead of prepending
- * a duplicate declaration. Namespace-only imports cannot host a named
- * specifier, so those fall through to a separate declaration (null).
+ * a duplicate declaration, in the layout Prettier keeps. Measure, do not
+ * always-append: joining `, name` onto a line that then exceeds the print
+ * width hands Prettier a line it re-wraps, so the --fix output churns on the
+ * next format. Three layouts cover what Prettier does with an import:
+ *
+ * - the extended declaration fits on one line: append in place;
+ * - the declaration is already multi-line (Prettier's own overflow layout):
+ *   the new specifier gets its own line at the specifiers' indent;
+ * - a single-line declaration stops fitting: re-lay it one specifier per line,
+ *   unless a comment occupies a separator gap the re-layout would own.
+ *
+ * Namespace imports cannot host a named specifier — neither `* as ns` alone
+ * nor the `d, * as ns` pair leaves a grammatical slot for `{ name }` — so
+ * those fall through to a separate declaration (null).
  */
 function buildImportExtensionFix(
   fixer: TSESLint.RuleFixer,
   sourceCode: TSESLint.SourceCode,
   source: string,
   name: string,
-): TSESLint.RuleFix | null {
+  printWidth: number,
+): TSESLint.RuleFix[] | null {
   for (const declaration of getValueImports(sourceCode, source)) {
+    if (
+      declaration.specifiers.some(
+        (spec) => spec.type === AST_NODE_TYPES.ImportNamespaceSpecifier,
+      )
+    ) {
+      continue;
+    }
+    const declIndent = lineIndentBefore(sourceCode, declaration) ?? '';
     const named = declaration.specifiers.filter(
       (spec): spec is TSESTree.ImportSpecifier =>
         spec.type === AST_NODE_TYPES.ImportSpecifier,
     );
     if (named.length > 0) {
-      return fixer.insertTextAfter(named[named.length - 1], `, ${name}`);
+      const last = named[named.length - 1];
+      if (declaration.loc.start.line !== declaration.loc.end.line) {
+        const specIndent =
+          lineIndentBefore(sourceCode, last) ?? `${declIndent}  `;
+        return [fixer.insertTextAfter(last, `,\n${specIndent}${name}`)];
+      }
+      if (
+        extendedImportFits(
+          sourceCode,
+          declaration,
+          declIndent,
+          `, ${name}`,
+          printWidth,
+        )
+      ) {
+        return [fixer.insertTextAfter(last, `, ${name}`)];
+      }
+      const expansion = buildExpandedImportFix(
+        fixer,
+        sourceCode,
+        named,
+        name,
+        declIndent,
+      );
+      if (expansion) return expansion;
+      continue;
     }
     const defaultSpec = declaration.specifiers.find(
       (spec) => spec.type === AST_NODE_TYPES.ImportDefaultSpecifier,
     );
     if (defaultSpec) {
-      return fixer.insertTextAfter(defaultSpec, `, { ${name} }`);
+      const addition = `, { ${name} }`;
+      if (
+        declaration.loc.start.line === declaration.loc.end.line &&
+        !extendedImportFits(
+          sourceCode,
+          declaration,
+          declIndent,
+          addition,
+          printWidth,
+        )
+      ) {
+        return [
+          fixer.insertTextAfter(
+            defaultSpec,
+            `, {\n${declIndent}  ${name},\n${declIndent}}`,
+          ),
+        ];
+      }
+      return [fixer.insertTextAfter(defaultSpec, addition)];
     }
   }
   return null;
@@ -940,8 +1081,9 @@ export const noArrayLengthInDeps = createRule<Options, MessageIds>({
                   sourceCode,
                   REACT_MODULE,
                   MEMO_HOOK_NAME,
+                  printWidth,
                 );
-                if (extension) fixes.push(extension);
+                if (extension) fixes.push(...extension);
                 else {
                   newImportLines.push(
                     `import { ${MEMO_HOOK_NAME} } from '${REACT_MODULE}';`,
@@ -960,8 +1102,9 @@ export const noArrayLengthInDeps = createRule<Options, MessageIds>({
                   sourceCode,
                   hashImportConfig.source,
                   hashImportConfig.importName,
+                  printWidth,
                 );
-                if (extension) fixes.push(extension);
+                if (extension) fixes.push(...extension);
                 else {
                   newImportLines.push(
                     `import { ${hashImportConfig.importName} } from '${hashImportConfig.source}';`,

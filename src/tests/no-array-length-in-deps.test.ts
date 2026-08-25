@@ -1757,7 +1757,41 @@ const C = ({ items }) => {
 `,
     },
     {
+      // Appending `, stableHash` in place would push the import line to 86
+      // columns; prettier then re-wraps it, so the fixer authors the
+      // one-specifier-per-line layout prettier keeps (#2128).
       name: 'a stableHash import aliased to another local name does not decline',
+      code: `import { stableHash as hashOf } from 'functions/src/util/hash/stableHash';
+
+const C = ({ items }) => {
+  useEffect(() => { console.log(items, hashOf); }, [items.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length' },
+        },
+      ],
+      output: `import { useMemo } from 'react';
+import {
+  stableHash as hashOf,
+  stableHash,
+} from 'functions/src/util/hash/stableHash';
+
+const C = ({ items }) => {
+  const itemsHash = useMemo(() => stableHash(items), [items]);
+  useEffect(() => { console.log(items, hashOf); }, [itemsHash]);
+  return null;
+};
+`,
+    },
+    {
+      // Same source as the previous case, but the configured width absorbs the
+      // extension: the in-place append survives wherever it still fits.
+      name: 'a wider printWidth keeps the extended import on one line',
+      options: [{ printWidth: 100 }],
       code: `import { stableHash as hashOf } from 'functions/src/util/hash/stableHash';
 
 const C = ({ items }) => {
@@ -1777,6 +1811,226 @@ import { stableHash as hashOf, stableHash } from 'functions/src/util/hash/stable
 const C = ({ items }) => {
   const itemsHash = useMemo(() => stableHash(items), [items]);
   useEffect(() => { console.log(items, hashOf); }, [itemsHash]);
+  return null;
+};
+`,
+    },
+    {
+      // An import prettier already broke across lines gains the specifier on
+      // its own line at the same indent; joining it onto the last line would
+      // be re-collapsed into a fresh wrap on the next format.
+      name: 'a multi-line hash import gains the specifier on its own line',
+      code: `import {
+  stableHash as hashOf,
+  somethingElseWithAVeryLongName,
+} from 'functions/src/util/hash/stableHash';
+
+const C = ({ items }) => {
+  useEffect(() => { console.log(items, hashOf); }, [items.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length' },
+        },
+      ],
+      output: `import { useMemo } from 'react';
+import {
+  stableHash as hashOf,
+  somethingElseWithAVeryLongName,
+  stableHash,
+} from 'functions/src/util/hash/stableHash';
+
+const C = ({ items }) => {
+  const itemsHash = useMemo(() => stableHash(items), [items]);
+  useEffect(() => { console.log(items, hashOf); }, [itemsHash]);
+  return null;
+};
+`,
+    },
+    {
+      // A comment inside a specifier is not in any gap the re-layout owns, so
+      // the expansion carries it verbatim.
+      name: 'expanding an over-width import preserves a specifier-interior comment',
+      code: `import { stableHash /* legacy alias */ as hashOf } from 'functions/src/util/hash/stableHash';
+
+const C = ({ items }) => {
+  useEffect(() => { console.log(items, hashOf); }, [items.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length' },
+        },
+      ],
+      output: `import { useMemo } from 'react';
+import {
+  stableHash /* legacy alias */ as hashOf,
+  stableHash,
+} from 'functions/src/util/hash/stableHash';
+
+const C = ({ items }) => {
+  const itemsHash = useMemo(() => stableHash(items), [items]);
+  useEffect(() => { console.log(items, hashOf); }, [itemsHash]);
+  return null;
+};
+`,
+    },
+    {
+      // A comment in a separator gap would be deleted by the re-layout, so
+      // the extension is withheld and a separate declaration carries the
+      // helper instead — every existing byte stays put.
+      name: 'a separator-gap comment falls back to a separate import declaration',
+      code: `import { /* legacy alias */ stableHash as hashOf } from 'functions/src/util/hash/stableHash';
+
+const C = ({ items }) => {
+  useEffect(() => { console.log(items, hashOf); }, [items.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length' },
+        },
+      ],
+      output: `import { useMemo } from 'react';
+import { stableHash } from 'functions/src/util/hash/stableHash';
+import { /* legacy alias */ stableHash as hashOf } from 'functions/src/util/hash/stableHash';
+
+const C = ({ items }) => {
+  const itemsHash = useMemo(() => stableHash(items), [items]);
+  useEffect(() => { console.log(items, hashOf); }, [itemsHash]);
+  return null;
+};
+`,
+    },
+    {
+      // A default-only import whose extension no longer fits takes the braced
+      // block prettier prints for that overflow.
+      name: 'an over-width default hash import gains a braced specifier block',
+      code: `import theDefaultHashExportName from 'functions/src/util/hash/stableHash';
+
+const C = ({ items }) => {
+  useEffect(() => { console.log(items); }, [items.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length' },
+        },
+      ],
+      output: `import { useMemo } from 'react';
+import theDefaultHashExportName, {
+  stableHash,
+} from 'functions/src/util/hash/stableHash';
+
+const C = ({ items }) => {
+  const itemsHash = useMemo(() => stableHash(items), [items]);
+  useEffect(() => { console.log(items); }, [itemsHash]);
+  return null;
+};
+`,
+    },
+    {
+      // `import d, * as ns` leaves no grammatical slot for `{ stableHash }`,
+      // so the declaration is left alone and a separate import carries the
+      // helper.
+      name: 'a default-plus-namespace hash import falls back to a separate declaration',
+      code: `import hashDefault, * as hashHelpers from 'functions/src/util/hash/stableHash';
+
+const C = ({ items }) => {
+  useEffect(() => { console.log(items); }, [items.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length' },
+        },
+      ],
+      output: `import { useMemo } from 'react';
+import { stableHash } from 'functions/src/util/hash/stableHash';
+import hashDefault, * as hashHelpers from 'functions/src/util/hash/stableHash';
+
+const C = ({ items }) => {
+  const itemsHash = useMemo(() => stableHash(items), [items]);
+  useEffect(() => { console.log(items); }, [itemsHash]);
+  return null;
+};
+`,
+    },
+    {
+      // The react import takes the same width-aware path as the hash import:
+      // prettier already broke it, so useMemo lands on its own line.
+      name: 'a multi-line react import gains useMemo on its own line',
+      code: `import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useReducer,
+  useState,
+} from 'react';
+
+const C = ({ items }) => {
+  useEffect(() => { console.log(items); }, [items.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length' },
+        },
+      ],
+      output: `import { stableHash } from 'functions/src/util/hash/stableHash';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useReducer,
+  useState,
+  useMemo,
+} from 'react';
+
+const C = ({ items }) => {
+  const itemsHash = useMemo(() => stableHash(items), [items]);
+  useEffect(() => { console.log(items); }, [itemsHash]);
+  return null;
+};
+`,
+    },
+    {
+      // Boundary: the extended react import is exactly 80 columns, which
+      // prettier keeps, so the in-place append must survive at the width
+      // itself and not just strictly under it.
+      name: 'an extension landing exactly on the print width stays in place',
+      code: `import { useEffect, useLayoutEffect, aaPaddingSpecifier } from 'react';
+
+const C = ({ items }) => {
+  useEffect(() => { console.log(items); }, [items.length]);
+  return null;
+};
+`,
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length' },
+        },
+      ],
+      output: `import { stableHash } from 'functions/src/util/hash/stableHash';
+import { useEffect, useLayoutEffect, aaPaddingSpecifier, useMemo } from 'react';
+
+const C = ({ items }) => {
+  const itemsHash = useMemo(() => stableHash(items), [items]);
+  useEffect(() => { console.log(items); }, [itemsHash]);
   return null;
 };
 `,
