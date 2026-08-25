@@ -442,6 +442,127 @@ function canEmitDiff(
   );
 }
 
+/** Prettier's default print width, which this repo and agora both format with. */
+const PRINT_WIDTH = 80;
+
+/**
+ * Parents whose child expression may lose the parentheses written around it.
+ *
+ * A pair of parentheses is not a node, so "the tokens either side are `(` and
+ * `)`" does NOT make them the author's grouping pair — in `f(a !== b)` they
+ * belong to the CALL, and dropping them would delete its argument list. Naming
+ * the positions where a bare expression is unambiguously legal is what keeps
+ * that case out.
+ */
+const ABSORBABLE_PARENT_TYPES = new Set<string>([
+  AST_NODE_TYPES.ReturnStatement,
+  AST_NODE_TYPES.ArrowFunctionExpression,
+  AST_NODE_TYPES.VariableDeclarator,
+  AST_NODE_TYPES.ExpressionStatement,
+  AST_NODE_TYPES.AssignmentExpression,
+]);
+
+/**
+ * The replacement, taking back a wrap the emission makes unnecessary.
+ *
+ * What this rule writes is SHORTER than what it replaces — `diff(a, b).length >
+ * 0` for a pair of `JSON.stringify` calls — so a line broken to fit the old text
+ * usually fits the new one whole. Leaving the break behind is text the formatter
+ * joins on its next run, and agora runs the formatter and `--fix` over the same
+ * tree, so that is a diff which never settles (#2116).
+ *
+ * Two shapes are taken back, and only when the joined line is measured to fit:
+ * parentheses the author wrote purely to break across lines, and a break between
+ * the expression and the token that introduces it. Anything else — a comment in
+ * the absorbed span, a line that would still overflow — falls back to replacing
+ * the expression alone, which is what shipped before the width was measured and
+ * costs layout rather than meaning.
+ */
+function collapsingReplace(
+  fixer: TSESLint.RuleFixer,
+  sourceCode: TSESLint.SourceCode,
+  node: TSESTree.Node,
+  replacement: string,
+): TSESLint.RuleFix {
+  const plain = fixer.replaceText(node, replacement);
+  const parent = node.parent;
+  if (!parent || !ABSORBABLE_PARENT_TYPES.has(parent.type)) {
+    return plain;
+  }
+  const text = sourceCode.getText();
+  let start = node.range[0];
+  let end = node.range[1];
+
+  // Only a pair facing the expression at once is the author's grouping pair,
+  // and only whitespace may lie between: anything else is a comment, which
+  // dropping the pair would move out of the group it was written inside.
+  let openToken = sourceCode.getTokenBefore(node);
+  let closeToken = sourceCode.getTokenAfter(node);
+  while (
+    openToken?.value === '(' &&
+    closeToken?.value === ')' &&
+    openToken.range[0] >= parent.range[0] &&
+    text.slice(openToken.range[1], start).trim() === '' &&
+    text.slice(end, closeToken.range[0]).trim() === ''
+  ) {
+    start = openToken.range[0];
+    end = closeToken.range[1];
+    openToken = sourceCode.getTokenBefore(openToken);
+    closeToken = sourceCode.getTokenAfter(closeToken);
+  }
+
+  // A break between the introducing token and the expression is the other wrap
+  // worth taking back, and it is only a wrap while that token sits on an
+  // earlier line.
+  const spanStartToken = sourceCode.getTokenByRangeStart(start);
+  const previous = spanStartToken
+    ? sourceCode.getTokenBefore(spanStartToken)
+    : sourceCode.getTokenBefore(node);
+  const startLine = sourceCode.getLocFromIndex(start).line;
+  let prefix = '';
+  if (
+    previous &&
+    previous.loc.end.line < startLine &&
+    previous.range[1] <= start &&
+    text.slice(previous.range[1], start).trim() === ''
+  ) {
+    start = previous.range[1];
+    prefix = ' ';
+  }
+
+  if (start === node.range[0] && end === node.range[1]) {
+    return plain;
+  }
+
+  const head =
+    sourceCode.lines[sourceCode.getLocFromIndex(start).line - 1] ?? '';
+  const tailLoc = sourceCode.getLocFromIndex(end);
+  const tailLine = sourceCode.lines[tailLoc.line - 1] ?? '';
+  // A comment trailing the statement is left out of the measurement. A
+  // formatter does not count one toward the statement's width — measured
+  // against prettier 2.8.8 — so counting it would let a comment decide the
+  // layout, which is a comment changing the transform rather than riding along
+  // with it.
+  const lineEnd = sourceCode.getIndexFromLoc({
+    line: tailLoc.line,
+    column: tailLine.length,
+  });
+  const trailingComment = sourceCode
+    .getAllComments()
+    .find((comment) => comment.range[0] >= end && comment.range[0] < lineEnd);
+  const measuredTail = sourceCode
+    .getText()
+    .slice(end, trailingComment ? trailingComment.range[0] : lineEnd)
+    .trimEnd();
+  const joined = `${head.slice(
+    0,
+    sourceCode.getLocFromIndex(start).column,
+  )}${prefix}${replacement}${measuredTail}`;
+  return joined.length <= PRINT_WIDTH
+    ? fixer.replaceTextRange([start, end], `${prefix}${replacement}`)
+    : plain;
+}
+
 export const enforceMicrodiff = createRule<[], MessageIds>({
   name: 'enforce-microdiff',
   meta: {
@@ -714,7 +835,9 @@ export const enforceMicrodiff = createRule<[], MessageIds>({
         return null;
       }
 
-      const bodyFix = fixer.replaceText(
+      const bodyFix = collapsingReplace(
+        fixer,
+        sourceCode,
         comparisons[0].node,
         buildDiffComparison(comparisons[0]),
       );
@@ -1049,7 +1172,9 @@ export const enforceMicrodiff = createRule<[], MessageIds>({
               return null;
             }
 
-            const compareFix = fixer.replaceText(
+            const compareFix = collapsingReplace(
+              fixer,
+              sourceCode,
               node,
               buildDiffComparison(comparison),
             );
