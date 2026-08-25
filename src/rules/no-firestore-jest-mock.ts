@@ -8,6 +8,95 @@ type MessageIds = 'noFirestoreJestMock';
 const FIRESTORE_JEST_MOCK = 'firestore-jest-mock';
 const MOCK_FIRESTORE_TARGET = '__test-utils__/mockFirestore';
 
+/** Prettier's default print width, which this repo and agora both format with. */
+const PRINT_WIDTH = 80;
+
+/** Prettier's default `tabWidth`, the step it indents a broken group by. */
+const INDENT_STEP = '  ';
+
+/**
+ * The break a formatter puts inside `import( … )` once the rewrite has widened
+ * the line past the print width, or null where no break is called for.
+ *
+ * Both halves of this fix LENGTHEN the line — `firestore-jest-mock` becomes a
+ * relative path several times its length, and a bare binding gains a
+ * `mockFirestore:` prefix — so a statement that fitted before the fix routinely
+ * does not after it. A formatter's answer for a dynamic import is to break
+ * inside its parentheses, and leaving that break for its next run churns the
+ * file on every pass (#2119).
+ *
+ * A statement the author already broke across lines is left alone: the single
+ * line measured here is then not the whole of what moves.
+ */
+function importParenBreakFix(
+  fixer: TSESLint.RuleFixer,
+  sourceCode: TSESLint.SourceCode,
+  node: TSESTree.ImportExpression,
+  sourceText: string,
+  destructuringFix: TSESLint.RuleFix,
+  pattern: TSESTree.Node,
+): TSESLint.RuleFix | null {
+  const line = sourceCode.lines[node.loc.start.line - 1] ?? '';
+  if (node.loc.start.line !== node.loc.end.line) {
+    return null;
+  }
+  if (pattern.loc.start.line !== node.loc.start.line) {
+    return null;
+  }
+  const delta =
+    sourceText.length -
+    (node.source.range[1] - node.source.range[0]) +
+    destructuringFix.text.length -
+    (destructuringFix.range[1] - destructuringFix.range[0]);
+  // A comment trailing the statement is left out of the measurement: a
+  // formatter does not count one toward the statement's width either, so
+  // counting it would let a comment decide the layout — a comment changing the
+  // transform rather than riding along with it.
+  const lineEnd = sourceCode.getIndexFromLoc({
+    line: node.loc.start.line,
+    column: line.length,
+  });
+  const trailingComment = sourceCode
+    .getAllComments()
+    .find(
+      (comment) =>
+        comment.range[0] >= node.range[1] && comment.range[0] < lineEnd,
+    );
+  const measured = trailingComment
+    ? sourceCode
+        .getText()
+        .slice(lineEnd - line.length, trailingComment.range[0])
+        .trimEnd().length
+    : line.length;
+  if (measured + delta <= PRINT_WIDTH) {
+    return null;
+  }
+  const first = sourceCode.getFirstToken(node);
+  const openParen = first ? sourceCode.getTokenAfter(first) : null;
+  const closeParen = sourceCode.getLastToken(node);
+  if (openParen?.value !== '(' || closeParen?.value !== ')') {
+    return null;
+  }
+  // Rebuilding the parentheses drops anything inside them that is not the
+  // specifier, so a comment written there would be deleted outright.
+  if (
+    sourceCode
+      .getCommentsInside(node)
+      .some(
+        (comment) =>
+          comment.range[0] >= openParen.range[1] &&
+          comment.range[1] <= closeParen.range[0],
+      )
+  ) {
+    return null;
+  }
+  const indent = /^[\t ]*/.exec(line)?.[0] ?? '';
+  return fixer.replaceTextRange(
+    [openParen.range[1], closeParen.range[0]],
+    `\n${indent}${INDENT_STEP}${sourceText}\n${indent}`,
+  );
+}
+
 const toPosixPath = (filePath: string) => filePath.replace(/\\/g, '/');
 
 const ensureRelativeSpecifier = (specifier: string) =>
@@ -240,8 +329,21 @@ export const noFirestoreJestMock = createRule<[], MessageIds>({
                 return null;
               }
 
+              const sourceText = `'${replacementPath}'`;
+              // The break spans the parentheses and re-emits the specifier
+              // inside them, so it REPLACES the specifier edit rather than
+              // joining it — two edits over the same text are an overlap ESLint
+              // rejects outright.
+              const breakFix = importParenBreakFix(
+                fixer,
+                context.getSourceCode(),
+                node,
+                sourceText,
+                destructuringFix,
+                variableDeclarator.id,
+              );
               return [
-                fixer.replaceText(node.source, `'${replacementPath}'`),
+                breakFix ?? fixer.replaceText(node.source, sourceText),
                 destructuringFix,
               ];
             },

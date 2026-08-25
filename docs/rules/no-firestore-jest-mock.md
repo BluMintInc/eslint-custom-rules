@@ -52,6 +52,21 @@ beforeEach(() => {
 });
 ```
 
+## Autofix layout
+
+Both halves of the rewrite *lengthen* the statement — `firestore-jest-mock` becomes a relative path several times its length, and a bare binding gains a `mockFirestore:` prefix — so a dynamic import that fitted on one line before the fix routinely does not after it. A formatter's answer there is to break inside the import's parentheses, and leaving that break for its next run churns the file on every pass:
+
+```ts
+// After --fix
+const mockFn = async () => {
+  const { mockFirestore: mockFirebase } = await import(
+    '../../__test-utils__/mockFirestore'
+  );
+};
+```
+
+The width measured is the statement's own: a comment trailing it is not counted, because a formatter does not count one either — otherwise a comment would decide the layout. A statement already written across lines is left as it is, and a comment inside the parentheses blocks the rebuild that would delete it.
+
 ## When Not To Use It
 
 This rule should always be enabled for test files to maintain consistent Firestore mocking across the codebase.
