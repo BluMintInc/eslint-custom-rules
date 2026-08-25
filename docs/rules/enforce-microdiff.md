@@ -181,6 +181,28 @@ The fix is declined, leaving the report for the author, when the body holds no s
 
 A comparison function whose body compares only with `===` is reported without a rewrite in either spelling: the rewrite follows bodies that phrase the question the way the name does, `!==`. The sense of what is emitted still comes off the comparison's own operator, so an `===` comparison reached past a `!==` guard becomes `.length === 0`.
 
+### A wrap the rewrite makes unnecessary is taken back
+
+What this rule writes is *shorter* than what it replaces, so a line the author broke to fit `JSON.stringify(x) !== JSON.stringify(y)` usually fits `diff(x, y).length > 0` whole. Leaving the break behind is text a formatter joins on its next run, so the fix takes it back itself:
+
+```ts
+// Before
+function hasConfigChanged(oldConfig, newConfig) {
+  return (
+    JSON.stringify(oldConfig.settings) !== JSON.stringify(newConfig.settings)
+  );
+}
+
+// After --fix
+import diff from '@blumintinc/microdiff';
+
+function hasConfigChanged(oldConfig, newConfig) {
+  return diff(oldConfig.settings, newConfig.settings).length > 0;
+}
+```
+
+Two shapes are absorbed: parentheses written purely to break the line, and a break between the token that introduces the expression and the expression itself. Both are measured first — a wrap removed from a line that would *still* overflow only moves the churn, so it stays. A comment inside the parentheses keeps them too, since dropping the pair would move the comment out of the group it was written into.
+
 ### lodash's difference family is report-only
 
 `_.difference`, `_.differenceBy`, and `_.differenceWith` are reported but never rewritten. lodash returns the elements of the first array that have no match in the second — a subset of the input — while `diff(a, b)` returns a structural change list of `{type, path, value}` records. The two do not compute the same thing, and lodash's third argument (an iteratee or comparator) has no counterpart in microdiff's signature, whose third parameter is an options object. Any mechanical rewrite would change what the surrounding code receives, so the conversion is left to the author.

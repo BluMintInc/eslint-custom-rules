@@ -1,3 +1,5 @@
+import { Linter, Rule } from 'eslint';
+import * as typescriptParser from '@typescript-eslint/parser';
 import { ruleTesterTs } from '../utils/ruleTester';
 import { enforceMicrodiff } from '../rules/enforce-microdiff';
 
@@ -1581,5 +1583,113 @@ export function outer() {
       errors: [{ messageId: 'enforceMicrodiff' }],
       output: null,
     },
+    {
+      // What this rule writes is SHORTER than what it replaces, so a wrap the
+      // author needed for the old text is dead weight around the new one. A
+      // formatter joins it on its next run, and agora runs the formatter and
+      // `--fix` over the same tree, so leaving the wrap is a diff that never
+      // settles (#2116). Parentheses written purely to break the line are taken
+      // back with it.
+      code: `function hasConfigChanged(oldConfig, newConfig) {
+  return (
+    JSON.stringify(oldConfig.settings) !== JSON.stringify(newConfig.settings)
+  );
+}`,
+      errors: [{ messageId: 'enforceMicrodiff' }],
+      output: `import diff from '@blumintinc/microdiff';
+
+function hasConfigChanged(oldConfig, newConfig) {
+  return diff(oldConfig.settings, newConfig.settings).length > 0;
+}`,
+    },
+    {
+      // The other wrap worth taking back: a break between the token that
+      // introduces the expression and the expression itself.
+      code: `export const hasConfigChanged = (a, b) =>
+  JSON.stringify(a) !== JSON.stringify(b);`,
+      errors: [{ messageId: 'enforceMicrodiff' }],
+      output: `import diff from '@blumintinc/microdiff';
+
+export const hasConfigChanged = (a, b) => diff(a, b).length > 0;`,
+    },
+    {
+      // A comment inside the parentheses is the group the author wrote it into,
+      // so the pair stays and the wrap with it.
+      code: `function hasConfigChanged(a, b) {
+  return (
+    // keep
+    JSON.stringify(a) !== JSON.stringify(b)
+  );
+}`,
+      errors: [{ messageId: 'enforceMicrodiff' }],
+      output: `import diff from '@blumintinc/microdiff';
+
+function hasConfigChanged(a, b) {
+  return (
+    // keep
+    diff(a, b).length > 0
+  );
+}`,
+    },
   ],
+});
+
+// Taking a wrap back is conditional on the joined line FITTING: a wrap removed
+// from a line that still overflows just moves the churn rather than ending it.
+//
+// This arm is driven through a bare `Linter` rather than declared as a fixture
+// on purpose. Reaching it needs an emission wider than the print width, so the
+// output is one a formatter must re-wrap — declaring it would put a knowingly
+// non-fixed-point case into the corpus the #2116 sweep asserts over.
+describe('enforce-microdiff: the wrap is taken back only when it fits', () => {
+  const RULE_ID = '@blumintinc/blumint/enforce-microdiff';
+
+  const fixOf = (code: string) => {
+    const linter = new Linter();
+    linter.defineParser(
+      'ts',
+      typescriptParser as unknown as Linter.ParserModule,
+    );
+    linter.defineRule(RULE_ID, enforceMicrodiff as unknown as Rule.RuleModule);
+    return linter.verifyAndFix(
+      code,
+      {
+        parser: 'ts',
+        parserOptions: { ecmaVersion: 2022, sourceType: 'module' },
+        rules: { [RULE_ID]: 'error' },
+      } as unknown as Linter.Config,
+      { filename: 'x.ts' },
+    );
+  };
+
+  it('keeps a wrap whose joined line would still overflow', () => {
+    const fixed =
+      fixOf(`function hasConfigChanged(oldConfiguration, newConfiguration) {
+  return (
+    JSON.stringify(oldConfiguration.deeplyNestedSettingsBag) !== JSON.stringify(newConfiguration.deeplyNestedSettingsBag)
+  );
+}`);
+
+    // The comparison is still rewritten — declining the COLLAPSE must never
+    // decline the rewrite that is the rule's whole purpose.
+    expect(fixed.output).toContain('diff(');
+    expect(fixed.output).toContain('.length > 0');
+    // And the author's wrap is left where it was.
+    expect(fixed.output).toContain('return (');
+  });
+
+  it('the collapse IS taken where the joined line fits', () => {
+    // The positive control: without it the assertion above would pass on a
+    // fixer that had simply stopped collapsing anywhere.
+    const fixed = fixOf(`function hasConfigChanged(oldConfig, newConfig) {
+  return (
+    JSON.stringify(oldConfig.settings) !== JSON.stringify(newConfig.settings)
+  );
+}`);
+
+    expect(fixed.output).toContain(
+      'return diff(oldConfig.settings, newConfig.settings).length > 0;',
+    );
+    expect(fixed.output).not.toContain('return (');
+  });
 });
