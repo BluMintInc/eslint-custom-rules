@@ -23,10 +23,11 @@ type Options = [
 ];
 
 /**
- * Matches Prettier's own default. Extending an import's specifier list is a
- * line-length decision a formatter owns: a list this fixer joins onto one line
- * past this width is rewritten by the next `prettier --write`, and fails
- * `prettier --check` in the meantime (#2050).
+ * Matches Prettier's own default. Both edits this rule emits are line-length
+ * decisions a formatter owns — the specifier list an import fix joins onto one
+ * line (#2050), and the object literal a substituted constant widens past the
+ * width (#2125) — so text this fixer writes past it is rewritten by the next
+ * `prettier --write`, and fails `prettier --check` in the meantime.
  */
 const DEFAULT_PRINT_WIDTH = 80;
 
@@ -107,6 +108,20 @@ const ALIASED_QUERY_KEYS_MODULE = '@/util/routing/queryKeys';
  * other's violation (#1714).
  */
 const APPROVED_REEXPORT_SOURCES = new Set(['constants', 'constants/index']);
+
+/**
+ * Nodes a statement can hang directly off. A statement written anywhere else —
+ * as a braceless `if` body, as a `for` initializer — is one Prettier lays out
+ * together with the construct holding it, so its own line is not a column this
+ * rule can compute.
+ */
+const STATEMENT_PARENT_TYPES = new Set<AST_NODE_TYPES>([
+  AST_NODE_TYPES.Program,
+  AST_NODE_TYPES.BlockStatement,
+  AST_NODE_TYPES.StaticBlock,
+  AST_NODE_TYPES.SwitchCase,
+  AST_NODE_TYPES.TSModuleBlock,
+]);
 
 /**
  * Reduce a specifier to the module it names, dropping the roots that are all
@@ -239,6 +254,15 @@ type PendingReport = {
     keyNode: TSESTree.Node;
     constant: string;
     scope: TSESLint.Scope.Scope;
+    /**
+     * The `useRouterState` call and the object literal argument holding the
+     * key. A `QUERY_KEY_*` name is longer than the literal it replaces, so the
+     * substitution can push its line past the print width, and the shape
+     * Prettier prints for the object that results is spelled from these two
+     * nodes (#2125).
+     */
+    call: TSESTree.CallExpression;
+    objectArgument: TSESTree.ObjectExpression;
   };
 };
 
@@ -693,6 +717,267 @@ export const enforceQueryKeyTs = createRule<Options, MessageIds>({
       );
     }
 
+    /**
+     * The statement whose line a `useRouterState` call is laid out on, when
+     * that statement is one Prettier has no earlier break to reach for.
+     *
+     * Prettier hugs a sole object argument — `useRouterState({` stays on the
+     * statement's line and the object opens beneath it — only where nothing
+     * between the statement and the call offers a break of its own. It splits a
+     * conditional at its `?`, an arrow at its `=>`, an enclosing argument list
+     * at its own parentheses and a second declarator onto its own line, all of
+     * them before it ever reaches the object. Null means the shape emitted
+     * below is not the shape Prettier prints, so the substitution is written in
+     * place instead.
+     */
+    function huggedStatementOf(
+      call: TSESTree.CallExpression,
+    ): TSESTree.Node | null {
+      const asStatement = (statement: TSESTree.Node): TSESTree.Node | null => {
+        const parent = statement.parent;
+        return parent && STATEMENT_PARENT_TYPES.has(parent.type)
+          ? statement
+          : null;
+      };
+
+      let node: TSESTree.Node = call;
+      let parent: TSESTree.Node | undefined = node.parent;
+      while (parent) {
+        switch (parent.type) {
+          // `await` and the left side of a plain assignment print ahead of the
+          // callee on the same line and carry no break of their own.
+          case AST_NODE_TYPES.AwaitExpression:
+            break;
+          case AST_NODE_TYPES.AssignmentExpression:
+            if (parent.right !== node) {
+              return null;
+            }
+            break;
+          case AST_NODE_TYPES.ExpressionStatement:
+            return parent.expression === node ? asStatement(parent) : null;
+          case AST_NODE_TYPES.ReturnStatement:
+            return parent.argument === node ? asStatement(parent) : null;
+          case AST_NODE_TYPES.VariableDeclarator: {
+            const declaration = parent.parent;
+            if (
+              parent.init !== node ||
+              !declaration ||
+              declaration.type !== AST_NODE_TYPES.VariableDeclaration ||
+              declaration.declarations.length !== 1
+            ) {
+              return null;
+            }
+            // `export` opens the line the declaration is written on, so the
+            // exported statement is the node that owns that line.
+            const exported = declaration.parent;
+            return asStatement(
+              exported?.type === AST_NODE_TYPES.ExportNamedDeclaration
+                ? exported
+                : declaration,
+            );
+          }
+          default:
+            return null;
+        }
+        node = parent;
+        parent = node.parent;
+      }
+      return null;
+    }
+
+    /**
+     * The span each property occupies between the braces, measured from one
+     * separating comma to the next rather than from the property's own range.
+     *
+     * A comment written beside a property sits outside that property's range
+     * and inside its slot, so slicing slots is what carries it onto the line
+     * Prettier itself prints it on — rebuilding from the properties alone would
+     * delete text this fixer does not own. Null where a comment sits in the
+     * only span slots do not cover: behind a trailing comma the rebuild writes
+     * for itself.
+     */
+    function objectSlotsOf(
+      object: TSESTree.ObjectExpression,
+    ): TSESTree.Range[] | null {
+      const openBrace = sourceCode.getFirstToken(object);
+      const closeBrace = sourceCode.getLastToken(object);
+      if (!openBrace || !closeBrace) {
+        return null;
+      }
+
+      const slots: TSESTree.Range[] = [];
+      let start = openBrace.range[1];
+      for (const property of object.properties) {
+        const separator = sourceCode.getTokenAfter(property);
+        if (!separator) {
+          return null;
+        }
+        const end =
+          separator.value === ',' ? separator.range[0] : closeBrace.range[0];
+        slots.push([start, end]);
+        start = separator.value === ',' ? separator.range[1] : end;
+      }
+
+      const stranded = sourceCode
+        .getCommentsInside(object)
+        .some((comment) => comment.range[0] >= start);
+      return stranded ? null : slots;
+    }
+
+    /**
+     * Whether Prettier has no narrower way to print this property than the one
+     * line it occupies: a plain key and a single-token value. It emits such a
+     * line past the print width rather than inventing a break, so an over-wide
+     * one of these is no reason to decline the rebuild.
+     */
+    function isUnbreakableProperty(property: TSESTree.Node): boolean {
+      return (
+        property.type === AST_NODE_TYPES.Property &&
+        !property.computed &&
+        (property.key.type === AST_NODE_TYPES.Identifier ||
+          property.key.type === AST_NODE_TYPES.Literal) &&
+        (property.value.type === AST_NODE_TYPES.Identifier ||
+          property.value.type === AST_NODE_TYPES.Literal)
+      );
+    }
+
+    /**
+     * The key's object literal re-rendered the way Prettier prints one it can
+     * no longer fit: the brace stays on the statement's line, each property
+     * takes a line of its own at a single nesting step with a trailing comma,
+     * and the closing brace returns to the statement's own column.
+     *
+     * A `QUERY_KEY_*` name is longer than the quoted key it replaces, so a
+     * substitution on a line already near the width pushes it over and the next
+     * `prettier --write` re-emits the object broken — churning a file this
+     * fixer had just settled (#2125). The measurement runs in BOTH directions
+     * for the same reason: a line that still fits keeps its object flat, and
+     * breaking one unconditionally would trade this defect for its mirror image
+     * on every short call.
+     *
+     * Every `null` below is a DELIBERATE decline, never a fall-through: the
+     * in-place substitution is emitted instead, which leaves a line Prettier
+     * may rewrap but loses nothing the author wrote.
+     */
+    function rebuildBrokenObject(
+      substitution: NonNullable<PendingReport['substitution']>,
+      constantName: string,
+      widthDeltaByLine: Map<number, number>,
+    ): string | null {
+      const { call, keyNode, objectArgument: object } = substitution;
+
+      // Prettier hugs an object argument only where it is the call's only
+      // argument; a second argument makes it break the argument list open
+      // instead, one argument per line with the object still flat inside it.
+      if (call.arguments.length !== 1) {
+        return null;
+      }
+
+      // An object the author already wrote across lines keeps those lines —
+      // Prettier collapses one only when its brace and first key share a line
+      // in the input — so it needs nothing emitted for it.
+      if (object.loc.start.line !== object.loc.end.line) {
+        return null;
+      }
+
+      const statement = huggedStatementOf(call);
+      if (!statement || statement.loc.start.line !== statement.loc.end.line) {
+        return null;
+      }
+
+      const statementLine = statement.loc.start.line;
+      const line = sourceCode.lines[statementLine - 1] ?? '';
+      // The statement has to open its own line for that line's indentation to
+      // be the column Prettier closes the object at.
+      if (!/^[\t ]*$/.test(line.slice(0, statement.loc.start.column))) {
+        return null;
+      }
+
+      // A trailing line comment is subtracted and a trailing block comment is
+      // not, because that is the asymmetry Prettier itself prints: a line
+      // comment is emitted as a suffix that never counts toward whether the
+      // statement fits, while a block comment occupies columns like any other
+      // text.
+      const suffixComment = sourceCode
+        .getAllComments()
+        .find(
+          (comment) =>
+            comment.type === AST_TOKEN_TYPES.Line &&
+            comment.loc.start.line === statementLine,
+        );
+      const printed = (
+        suffixComment ? line.slice(0, suffixComment.loc.start.column) : line
+      ).trimEnd();
+      // Anything else left on the line is a second statement, whose layout
+      // Prettier decides for itself. A trailing comment is not one: it carries
+      // no layout of its own, so it is measured above as the columns it
+      // occupies rather than rejected here. Testing the next TOKEN rather than
+      // the line's length is what separates the two — a trailing block comment
+      // makes the line longer than the statement without another statement
+      // being present, and rejecting on length alone silently withheld the
+      // wrap there while Prettier still performed it (#2125).
+      const tokenAfterStatement = sourceCode.getTokenAfter(statement);
+      if (
+        tokenAfterStatement &&
+        tokenAfterStatement.loc.start.line === statementLine
+      ) {
+        return null;
+      }
+
+      if (
+        printed.length + (widthDeltaByLine.get(statementLine) ?? 0) <=
+        printWidth
+      ) {
+        return null;
+      }
+
+      const slots = objectSlotsOf(object);
+      if (!slots) {
+        return null;
+      }
+
+      const indent = /^[\t ]*/.exec(line)?.[0] ?? '';
+      const source = sourceCode.getText();
+      const propertyLines = slots.map(([start, end]) => {
+        // The key rides along inside the slot holding it: the rebuilt object
+        // covers the span the substitution would otherwise replace on its own,
+        // and ESLint drops a pair of overlapping fixes outright.
+        const text =
+          keyNode.range[0] >= start && keyNode.range[1] <= end
+            ? source.slice(start, keyNode.range[0]) +
+              constantName +
+              source.slice(keyNode.range[1], end)
+            : source.slice(start, end);
+        return `${indent}${fileIndentUnit()}${text.trim()},`;
+      });
+
+      // Prettier reaches for the object only while the line still fits up to
+      // its brace; past that it breaks something earlier instead — the
+      // assignment, the arrow, the enclosing call.
+      const closingWidth =
+        indent.length + 1 + (printed.length - object.loc.end.column);
+      if (
+        object.loc.start.column + 1 > printWidth ||
+        closingWidth > printWidth
+      ) {
+        return null;
+      }
+
+      // A property still over the width on a line of its own is one Prettier
+      // keeps breaking into, so the text emitted here would not be its last
+      // word.
+      const overflows = propertyLines.some(
+        (text, index) =>
+          text.length > printWidth &&
+          !isUnbreakableProperty(object.properties[index]),
+      );
+      if (overflows) {
+        return null;
+      }
+
+      return `{\n${propertyLines.join('\n')}\n${indent}}`;
+    }
+
     function flushReports(): void {
       const resolutions = new Map<
         PendingReport,
@@ -722,6 +1007,24 @@ export const enforceQueryKeyTs = createRule<Options, MessageIds>({
         resolutions.set(report, { name, state });
       }
 
+      // Every substitution the line carries moves it, not just the one being
+      // measured: two keys replaced on one line move it by the sum. The plan is
+      // read rather than the pass, so a substitution ESLint defers to a later
+      // pass still counts — the converged text is what Prettier formats.
+      const widthDeltaByLine = new Map<number, number>();
+      for (const [report, resolution] of resolutions) {
+        const keyNode = report.substitution?.keyNode;
+        // A key spelled across lines moves no single line by a knowable amount,
+        // and the statement holding it is one this rule declines anyway.
+        if (!keyNode || keyNode.loc.start.line !== keyNode.loc.end.line) {
+          continue;
+        }
+        const line = keyNode.loc.start.line;
+        const delta =
+          resolution.name.length - (keyNode.range[1] - keyNode.range[0]);
+        widthDeltaByLine.set(line, (widthDeltaByLine.get(line) ?? 0) + delta);
+      }
+
       // Suppressed violations are still reported: ESLint discards them, and
       // reporting keeps the user's directive "used" so that
       // `--report-unused-disable-directives` does not flag it.
@@ -741,8 +1044,22 @@ export const enforceQueryKeyTs = createRule<Options, MessageIds>({
             ) {
               return null;
             }
+            // The constant is written over the key alone wherever the line it
+            // lands on still fits, and over the whole object literal where it
+            // does not — the second is the same substitution carried inside the
+            // shape Prettier prints for an object it can no longer fit (#2125).
+            const broken = rebuildBrokenObject(
+              substitution,
+              resolution.name,
+              widthDeltaByLine,
+            );
             const fixes = [
-              fixer.replaceText(substitution.keyNode, resolution.name),
+              broken === null
+                ? fixer.replaceText(substitution.keyNode, resolution.name)
+                : fixer.replaceTextRange(
+                    substitution.objectArgument.range,
+                    broken,
+                  ),
             ];
             // Every fix stands on its own: the one that writes a constant is
             // the one that imports it. Concentrating the file's imports into a
@@ -1201,6 +1518,8 @@ export const enforceQueryKeyTs = createRule<Options, MessageIds>({
                               keyNode: span,
                               constant: suggestedConstant,
                               scope: scopeOf(keyValue),
+                              call: node,
+                              objectArgument: firstArg,
                             }
                           : undefined,
                     });

@@ -410,11 +410,11 @@ Note: the fix is gated on the key's **value**, not on the notation that spells i
 
 ### Options
 
-- `printWidth` (default `80`): Column the autofix wraps the emitted import at.
+- `printWidth` (default `80`): Column the autofix measures its emissions against — both the import it writes and the call it substitutes into.
 
 ```js
 '@blumintinc/blumint/enforce-querykey-ts': ['error', {
-  // Column the autofix wraps the emitted import at
+  // Column the autofix measures its emissions against
   printWidth: 80,
 }]
 ```
@@ -457,6 +457,32 @@ opposite failure:
 - **A fresh single-specifier import.** A formatter never breaks a lone named
   specifier, so such an import is stable at any width — even well past
   `printWidth` — and is emitted on one line regardless.
+
+#### The substituted call is measured too
+
+A `QUERY_KEY_*` name is longer than the key literal it replaces, so a
+substitution on a line already near the width pushes it over. Where the call
+takes a single object argument, a formatter answers that by hugging the object
+open beneath the call, so the fixer emits that shape itself rather than leave a
+line the next `prettier --write` immediately rewrites:
+
+```typescript
+const [tournamentValue] = useRouterState({
+  key: QUERY_KEY_TOURNAMENT_DETAILS,
+});
+```
+
+This too is measured rather than assumed. A substitution that still fits keeps
+its object flat, an object the author already broke across lines keeps those
+lines, and a call taking a second argument is left alone — a formatter breaks
+its argument list instead, which is a different shape.
+
+A comment sharing the line is measured the way a formatter measures it, and the
+two kinds differ: a block comment occupies columns like any other text and can
+open the wrap by itself, while a line comment is printed as a suffix that never
+counts toward whether the statement fits. A second *statement* on the line is
+neither — its layout is the formatter's to decide, so the key is substituted in
+place and nothing is wrapped.
 
 ### Interaction with inline disable comments
 
