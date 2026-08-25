@@ -5032,7 +5032,11 @@ export class Loader {
 }`,
       },
       {
-        name: 'an existing decorator sharing the method line still owns that line',
+        // The decorator the author wrote inline is broken out with the added
+        // one: a member wearing more than one decorator carries each on a line
+        // of its own, so leaving it inline is a layout a formatter rewrites
+        // (#2111).
+        name: 'an existing decorator sharing the method line is broken out',
         code: `declare const Log: () => MethodDecorator;
 export class Loader {
   @Log() async load() { return 1; }
@@ -5042,7 +5046,8 @@ export class Loader {
 declare const Log: () => MethodDecorator;
 export class Loader {
   @Memoize()
-  @Log() async load() { return 1; }
+  @Log()
+  async load() { return 1; }
 }`,
       },
       {
@@ -6593,5 +6598,390 @@ export class Loader {
 `;
 
     expect(introducedBy(before, after)).toEqual(['TS1206']);
+  });
+});
+
+// Issue #2111: a member carrying a SINGLE decorator may keep it on the member's
+// own line, and prettier preserves that layout. Adding a second decorator
+// withdraws the choice — with more than one, prettier puts each on a line of its
+// own and the member on the next. So `@Memoize()` emitted above a decorator the
+// author wrote inline leaves `@Log() async load() {` for prettier to break, and
+// agora formats with prettier beside `eslint --fix`: the diff never settles and
+// every file the fixer touches churns. The fixer breaks the run out itself.
+ruleTesterTs.run(
+  'enforce-memoize-async: a decorator written inline (issue #2111)',
+  enforceMemoizeAsync,
+  {
+    valid: [
+      {
+        // The fixpoint of the first invalid case below, stated as a fixture:
+        // what `--fix` writes there has to be silent here.
+        name: 'a member already carrying the decorator on a broken-out run is silent',
+        code: `import { Memoize } from '@blumintinc/typescript-memoize';
+declare const Log: () => MethodDecorator;
+export class Loader {
+  @Memoize()
+  @Log()
+  async load() {
+    return 1;
+  }
+}`,
+      },
+      {
+        // A run the rule never wrote — one the author left inline — is still
+        // silent: the break-out rides on a report, and this member has none.
+        name: 'a member already carrying the decorator inline with another is silent',
+        code: `import { Memoize } from '@blumintinc/typescript-memoize';
+declare const Log: () => MethodDecorator;
+export class Loader {
+  @Memoize() @Log() async load() {
+    return 1;
+  }
+}`,
+      },
+    ],
+    invalid: [
+      {
+        // The dump's shape. A member wearing one decorator may keep it on the
+        // member's own line; a second withdraws that choice, so the inline one
+        // has to be broken out or the formatter does it on its next run.
+        name: 'a decorator written inline is broken out once a second joins it',
+        code: `declare const Log: () => MethodDecorator;
+export class Loader {
+  @Log() async load() {
+    return 1;
+  }
+}`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+declare const Log: () => MethodDecorator;
+export class Loader {
+  @Memoize()
+  @Log()
+  async load() {
+    return 1;
+  }
+}`,
+      },
+      {
+        name: 'a property ahead of the member does not change the break',
+        code: `declare const Log: () => MethodDecorator;
+export class Loader {
+  private locked = 1;
+  @Log() async load() {
+    return 1;
+  }
+}`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+declare const Log: () => MethodDecorator;
+export class Loader {
+  private locked = 1;
+  @Memoize()
+  @Log()
+  async load() {
+    return 1;
+  }
+}`,
+      },
+      {
+        name: 'a run of two inline decorators is broken out entirely',
+        code: `declare const Log: () => MethodDecorator;
+declare const Trace: () => MethodDecorator;
+export class Loader {
+  @Log() @Trace() async load() {
+    return 1;
+  }
+}`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+declare const Log: () => MethodDecorator;
+declare const Trace: () => MethodDecorator;
+export class Loader {
+  @Memoize()
+  @Log()
+  @Trace()
+  async load() {
+    return 1;
+  }
+}`,
+      },
+      {
+        name: 'the break lands after a comment trailing the decorator',
+        code: `declare const Log: () => MethodDecorator;
+export class Loader {
+  @Log() /* hot path */ async load() {
+    return 1;
+  }
+}`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+declare const Log: () => MethodDecorator;
+export class Loader {
+  @Memoize()
+  @Log() /* hot path */
+  async load() {
+    return 1;
+  }
+}`,
+      },
+      {
+        name: 'a decorator carrying arguments is broken out like any other',
+        code: `declare const Log: (level: string) => MethodDecorator;
+export class Loader {
+  @Log('debug') async load() {
+    return 1;
+  }
+}`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+declare const Log: (level: string) => MethodDecorator;
+export class Loader {
+  @Memoize()
+  @Log('debug')
+  async load() {
+    return 1;
+  }
+}`,
+      },
+      {
+        name: 'an overlong member keeps every decorator on a line of its own',
+        code: `declare const Log: () => MethodDecorator;
+declare const Trace: () => MethodDecorator;
+export class Loader {
+  @Log() @Trace() async loadTournamentParticipantRegistrationRosters() {
+    return 1;
+  }
+}`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+declare const Log: () => MethodDecorator;
+declare const Trace: () => MethodDecorator;
+export class Loader {
+  @Memoize()
+  @Log()
+  @Trace()
+  async loadTournamentParticipantRegistrationRosters() {
+    return 1;
+  }
+}`,
+      },
+      {
+        name: 'a run already on its own lines keeps the historical layout',
+        code: `declare const Log: () => MethodDecorator;
+export class Loader {
+  @Log()
+  async load() {
+    return 1;
+  }
+}`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+declare const Log: () => MethodDecorator;
+export class Loader {
+  @Memoize()
+  @Log()
+  async load() {
+    return 1;
+  }
+}`,
+      },
+      {
+        name: 'a member with no decorator at all keeps the historical layout',
+        code: `export class Loader {
+  async load() {
+    return 1;
+  }
+}`,
+        errors: [{ messageId: 'requireMemoize' as const }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+export class Loader {
+  @Memoize()
+  async load() {
+    return 1;
+  }
+}`,
+      },
+    ],
+  },
+);
+
+describe('enforce-memoize-async: the emitted decorator run is one a formatter keeps (issue #2111)', () => {
+  const fix = (code: string) =>
+    createLinter().verifyAndFix(code, LINT_CONFIG, 'Service.ts');
+
+  const OWN_LINE_DECORATOR = /^[ \t]*@[\w.]+\([^)]*\)[ \t]*$/;
+  const DECORATOR_THEN_REST = /^[ \t]*@[\w.]+\([^)]*\)(.*)$/;
+
+  /**
+   * What a decorator's line holds past the decorator, with comments removed. A
+   * comment stays WITH the decorator it trails, so a line ending in one is
+   * still a decorator's own line rather than a shared one.
+   */
+  const pastTheDecorator = (rest: string) =>
+    rest
+      .replace(/\/\*[\s\S]*?\*\//g, ' ')
+      .replace(/\/\/.*$/, '')
+      .trim();
+
+  /**
+   * Lines holding a decorator that stands on a line of its own directly above a
+   * decorator still sharing its line with the member. Prettier prints no run
+   * that way — more than one decorator means one per line — so this is the
+   * churn shape, and it is exactly what the rule emitted before the fix.
+   */
+  const churnedRunLines = (output: string) => {
+    const lines = output.split('\n');
+    return lines.filter((line, index) => {
+      if (!OWN_LINE_DECORATOR.test(line)) {
+        return false;
+      }
+      const next = lines[index + 1];
+      const rest = next?.match(DECORATOR_THEN_REST)?.[1];
+      return rest !== undefined && pastTheDecorator(rest) !== '';
+    });
+  };
+
+  const expectFormatterStableRun = (code: string) => {
+    // A fixture the rule declined, or one that never parsed, would satisfy
+    // every layout assertion below vacuously.
+    expect(lintMessages(code).length).toBeGreaterThan(0);
+    const fixed = fix(code);
+    expect(fixed.fixed).toBe(true);
+    expect(fixed.output).toContain('@Memoize()');
+
+    expect(churnedRunLines(fixed.output)).toEqual([]);
+
+    // The fixer reaching its own fixpoint is what makes the layout claim worth
+    // anything: a second pass that rewrote the output would churn on its own.
+    expect(fix(fixed.output).fixed).toBe(false);
+    return fixed.output;
+  };
+
+  it('detects the pre-fix layout it is asked to rule out (positive control)', () => {
+    // Without this, an oracle that matched nothing at all would pass every case
+    // below while asserting nothing.
+    expect(
+      churnedRunLines(`export class Loader {
+  @Memoize()
+  @Log() async load() {
+    return 1;
+  }
+}
+`),
+    ).toHaveLength(1);
+  });
+
+  it('passes the layouts a formatter does print (negative control)', () => {
+    // Both renderings prettier emits have to read clean, or the oracle would
+    // reject the fix as readily as the bug.
+    expect(
+      churnedRunLines(`export class Loader {
+  @Memoize() @Log() async load() {
+    return 1;
+  }
+}
+`),
+    ).toEqual([]);
+    expect(
+      churnedRunLines(`export class Loader {
+  @Memoize()
+  @Log()
+  async load() {
+    return 1;
+  }
+}
+`),
+    ).toEqual([]);
+    // A comment trailing the decorator leaves its line a decorator's own line,
+    // which is the rendering prettier prints for a broken-out run carrying one.
+    expect(
+      churnedRunLines(`export class Loader {
+  @Memoize()
+  @Log() /* hot path */
+  async load() {
+    return 1;
+  }
+}
+`),
+    ).toEqual([]);
+  });
+
+  it('breaks out a decorator the author wrote inline', () => {
+    const output =
+      expectFormatterStableRun(`declare const Log: () => MethodDecorator;
+export class Loader {
+  @Log() async load() {
+    return 1;
+  }
+}
+`);
+
+    expect(output).toContain(`  @Memoize()
+  @Log()
+  async load() {`);
+  });
+
+  it('breaks a run of two inline decorators onto three lines', () => {
+    const output =
+      expectFormatterStableRun(`declare const Log: () => MethodDecorator;
+declare const Trace: () => MethodDecorator;
+export class Loader {
+  @Log() @Trace() async load() {
+    return 1;
+  }
+}
+`);
+
+    expect(output).toContain(`  @Memoize()
+  @Log()
+  @Trace()
+  async load() {`);
+  });
+
+  it('breaks after a comment trailing the decorator, never over it', () => {
+    const output =
+      expectFormatterStableRun(`declare const Log: () => MethodDecorator;
+export class Loader {
+  @Log() /* hot path */ async load() {
+    return 1;
+  }
+}
+`);
+
+    expect(output).toContain(`  @Memoize()
+  @Log() /* hot path */
+  async load() {`);
+  });
+
+  it('leaves a run that already stands on its own lines alone', () => {
+    const output =
+      expectFormatterStableRun(`declare const Log: () => MethodDecorator;
+export class Loader {
+  @Log()
+  async load() {
+    return 1;
+  }
+}
+`);
+
+    expect(output).toContain(`  @Memoize()
+  @Log()
+  async load() {`);
+  });
+
+  it('leaves a member sharing its line with earlier code inline', () => {
+    // The `ownsItsLine` carve-out: there is no line for the run to take, and a
+    // formatter reflows that whole body regardless.
+    const output =
+      expectFormatterStableRun(`declare const Log: () => MethodDecorator;
+export class Loader {
+  private locked = 1; @Log() async load() { return 1; }
+}
+`);
+
+    expect(output).toContain(
+      '  private locked = 1; @Memoize() @Log() async load() { return 1; }',
+    );
   });
 });
