@@ -56,6 +56,25 @@ const b = objB[safeKey];
 const c = objC[safeKey];
 ```
 
+### Parentheses the wrap makes redundant
+
+Every position that yields an access span takes a call bare — between the
+brackets of a lookup, and as the left operand of `in` — so grouping parentheses
+the source wrote around the key have nothing left to group once it is wrapped.
+The fix drops them along with the wrap, rather than emit a pair a formatter
+deletes on its next run:
+
+```ts
+// obj[(id)] is rewritten to this, not to obj[(assertSafe(id))]
+console.log(obj[assertSafe(id)]);
+```
+
+Nested pairs go together (`obj[((id))]`), and a pair is kept wherever it is
+doing something other than grouping: where dropping it would fuse the key onto
+the token before it, and where a comment sits between the parenthesis and the
+key — `obj[(/* keep */ assertSafe(id))]` — since dropping the pair there would
+move the comment out of the group its author wrote it inside.
+
 ### Numeric keys and array-like objects are exempt
 
 `assertSafe()` exists to reject dangerous **property names** — `__proto__`,
