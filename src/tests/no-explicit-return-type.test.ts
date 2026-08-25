@@ -1,6 +1,5 @@
 import { execFileSync } from 'child_process';
-import { mkdtempSync, writeFileSync } from 'fs';
-import { tmpdir } from 'os';
+import { rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { Linter, Rule } from 'eslint';
 import * as ts from 'typescript';
@@ -9,6 +8,7 @@ import * as tsParser from '@typescript-eslint/parser';
 import * as prettier from 'prettier';
 import { ruleTesterJsx, ruleTesterTs } from '../utils/ruleTester';
 import { noExplicitReturnType } from '../rules/no-explicit-return-type';
+import { createTempFixtureDir } from '../utils/tempFixtureDir';
 import { preferTypeOverInterface } from '../rules/prefer-type-over-interface';
 import { enforceMemoizeAsync } from '../rules/enforce-memoize-async';
 
@@ -5636,8 +5636,14 @@ export function second() {
 describe('no-explicit-return-type --fix emits code V8 accepts', () => {
   const RULE_ID = '@blumintinc/blumint/no-explicit-return-type';
   const FILENAME = 'x.ts';
-  const checkDirectory = mkdtempSync(join(tmpdir(), 'blumint-v8-check-'));
+  const checkDirectory = createTempFixtureDir('blumint-v8-check-');
   let checkCounter = 0;
+
+  // The scratch files exist only to give `node --check` something to read, so
+  // nothing outlives the suite that wrote them.
+  afterAll(() => {
+    rmSync(checkDirectory, { recursive: true, force: true });
+  });
 
   const linter = new Linter();
   linter.defineParser('@typescript-eslint/parser', tsParser as never);

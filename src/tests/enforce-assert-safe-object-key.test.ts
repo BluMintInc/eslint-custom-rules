@@ -1,11 +1,11 @@
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
 import { ESLint, Linter, Rule } from 'eslint';
 import * as typescriptParser from '@typescript-eslint/parser';
 import type { TSESLint } from '@typescript-eslint/utils';
 import { ruleTesterTs } from '../utils/ruleTester';
 import { enforceAssertSafeObjectKey } from '../rules/enforce-assert-safe-object-key';
+import { createTempFixtureDir } from '../utils/tempFixtureDir';
 
 /**
  * The suites are named rather than passed inline so that the re-parse guard at
@@ -4997,7 +4997,7 @@ describe('enforce-assert-safe-object-key: the nearest manifest decides the exten
   };
 
   beforeAll(() => {
-    projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'assert-safe-esm-'));
+    projectRoot = createTempFixtureDir('assert-safe-esm-');
     writeFixture('esm-pkg/package.json', '{"type":"module"}');
     writeFixture('cjs-pkg/package.json', '{"type":"commonjs"}');
     // A nested manifest without a `type` field: node reads the nearest one and

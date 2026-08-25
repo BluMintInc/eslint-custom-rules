@@ -1,7 +1,7 @@
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
 import * as sharedTesters from './ruleTester';
+import { createTempFixtureDir } from './tempFixtureDir';
 
 /**
  * Collects every `RuleTester` case the suite declares WITHOUT executing any of
@@ -221,9 +221,7 @@ export function harvestRuleTesterCases(): HarvestResult {
    * same cwd they were built from, so the harvested filenames come out
    * identical either way.
    */
-  const scratchRoot = fs.mkdtempSync(
-    path.join(os.tmpdir(), 'blumint-harvest-'),
-  );
+  const scratchRoot = createTempFixtureDir('blumint-harvest-');
   const realCwd = process.cwd();
   process.chdir(scratchRoot);
 
