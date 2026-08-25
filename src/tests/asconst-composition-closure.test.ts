@@ -432,7 +432,6 @@ const UNDRIVEN: Record<string, UndrivenCause> = {
   'require-hooks-default-params': 'noAssertionAdded',
   'require-https-error': 'noAssertionAdded',
   'require-https-error-cause': 'noAssertionAdded',
-  'require-image-optimized': 'noAssertionAdded',
   'require-memoize-jsx-returners': 'noAssertionAdded',
   'require-migration-script-metadata': 'noAssertionAdded',
   'require-props-composition': 'noAssertionAdded',

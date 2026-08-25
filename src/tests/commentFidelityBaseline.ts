@@ -272,6 +272,21 @@ export const COMMENT_FIDELITY_BASELINE: Record<string, string> = {
   // this entry honest.
   'no-redundant-param-types :: TRANSFORM_DIVERGED':
     'chooses the shape of the stripped parameter list by measured print width, and keeps the list broken for a comment prettier itself holds it open for; prettier makes the same choice in every shape and the comment is carried in all of them (#2130)',
+  // WIDTH-DRIVEN LAYOUT, the #2086 class. Renaming `img` to `ImageOptimized`
+  // lengthens the element by nine columns, so the fixer measures the result and
+  // emits the parenthesised, broken JSX prettier prints once the element no
+  // longer fits — without that measurement the one-line rename overflows and
+  // prettier rewrites it, which is #2133. A trailing BLOCK comment occupies
+  // columns like any other text (a trailing LINE comment does not), so on these
+  // 13 cases the marker is itself what pushes the element past the width: the
+  // comment is a layout input, not text the fixer consumes.
+  // NOTHING IS CONSUMED: COMMENT_LOST and PARSE_BREAK are classified separately
+  // and this rule reaches neither — every diverging output still carries the
+  // marker. Anchored by the bidirectional width fixtures in
+  // `src/tests/require-image-optimized.test.ts`, one rename that still fits on
+  // one line and one that does not, so the own-corpus guard keeps this honest.
+  'require-image-optimized :: TRANSFORM_DIVERGED':
+    'chooses the shape of the renamed element by measured print width, and a trailing block comment occupies columns, so the marker itself decides whether the JSX still fits; prettier makes the same choice in both shapes and carries the comment in each (#2133)',
   'use-custom-memo :: TRANSFORM_DIVERGED':
     'trailing-comma/wrapping divergence that agora prettier normalizes to an identical token stream',
   'use-latest-callback :: TRANSFORM_DIVERGED':

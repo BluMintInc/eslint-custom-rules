@@ -1,5 +1,6 @@
 import {
   AST_NODE_TYPES,
+  AST_TOKEN_TYPES,
   ASTUtils,
   TSESLint,
   TSESTree,
@@ -290,6 +291,276 @@ const aliasedLocalName = (
   return null;
 };
 
+/** Prettier's default print width, which this repo and agora both format with. */
+const PRINT_WIDTH = 80;
+
+/** Prettier's default `tabWidth`, the step it indents a broken group by. */
+const INDENT_STEP = '  ';
+
+/**
+ * The `VariableDeclaration` a declarator is the sole member of — or the
+ * `export` wrapping it, since that is where the printed line starts — or null
+ * where siblings share the statement. Prettier lays a multi-declarator
+ * statement out one declarator per line before it measures any initializer,
+ * so the line read off the source is not the one it decides on.
+ */
+const soleDeclarationOf = (declarator: TSESTree.VariableDeclarator) => {
+  const declaration = declarator.parent;
+  if (
+    declaration?.type !== AST_NODE_TYPES.VariableDeclaration ||
+    declaration.declarations.length !== 1
+  ) {
+    return null;
+  }
+  return declaration.parent?.type === AST_NODE_TYPES.ExportNamedDeclaration
+    ? declaration.parent
+    : declaration;
+};
+
+/**
+ * The statement a plain assignment is the whole of, or null where it is an
+ * operand of something else, whose layout is settled first.
+ */
+const statementOfAssignment = (assignment: TSESTree.AssignmentExpression) =>
+  assignment.operator === '=' &&
+  assignment.parent?.type === AST_NODE_TYPES.ExpressionStatement
+    ? assignment.parent
+    : null;
+
+/**
+ * The statement or object property whose layout prettier settles, once the
+ * element at the end of it overflows the print width, by parenthesizing that
+ * element on a line of its own — or null where the element stands in a layout
+ * prettier resolves some other way.
+ *
+ * Measured against prettier 2.8.8, the parenthesized shape is what it prints
+ * for an over-wide element that is the whole value of a `return`, of a
+ * sole-declarator initializer, of an assignment statement or of an
+ * `export default`, and for the concise body of an arrow standing in one of
+ * those places or as the value of a property in an object already broken. An
+ * arrow that is the SOLE argument of a call is hugged — `memo(() => (` — so the
+ * call is looked through as well when it is the whole value in turn.
+ * Everything else breaks an outer group first: a call whose arrow is not its
+ * lone argument, or which is itself an argument, breaks its argument list; a
+ * multi-declarator statement breaks between declarators; a JSX parent breaks
+ * its children; a conditional, a chain and an attribute value each have a
+ * layout of their own. The flat rename is left to prettier there.
+ */
+const parenthesizingAnchorOf = (element: TSESTree.JSXElement) => {
+  let value: TSESTree.Node = element;
+  let { parent } = element;
+  if (
+    parent?.type === AST_NODE_TYPES.ArrowFunctionExpression &&
+    parent.body === value
+  ) {
+    value = parent;
+    parent = parent.parent;
+    if (
+      parent?.type === AST_NODE_TYPES.CallExpression &&
+      parent.arguments.length === 1 &&
+      parent.arguments[0] === value
+    ) {
+      value = parent;
+      parent = parent.parent;
+    }
+  }
+  if (!parent) {
+    return null;
+  }
+  switch (parent.type) {
+    case AST_NODE_TYPES.ReturnStatement:
+      return parent.argument === value ? parent : null;
+    case AST_NODE_TYPES.VariableDeclarator:
+      return parent.init === value ? soleDeclarationOf(parent) : null;
+    case AST_NODE_TYPES.AssignmentExpression:
+      return parent.right === value ? statementOfAssignment(parent) : null;
+    case AST_NODE_TYPES.ExportDefaultDeclaration:
+      return parent.declaration === value ? parent : null;
+    case AST_NODE_TYPES.ExpressionStatement:
+      // A bare element or arrow as a statement renders nothing; only the
+      // hugged call form (`render(() => <img />)`) is a layout worth writing.
+      return parent.expression === value &&
+        value.type === AST_NODE_TYPES.CallExpression
+        ? parent
+        : null;
+    case AST_NODE_TYPES.Property:
+      // A raw element as a property value is not parenthesized by prettier,
+      // which breaks the object around it instead; the arrow and hugged-call
+      // values are.
+      return parent.value === value &&
+        value !== element &&
+        parent.kind === 'init' &&
+        !parent.shorthand &&
+        !parent.method
+        ? parent
+        : null;
+    default:
+      return null;
+  }
+};
+
+/**
+ * Whether a token is the operator prettier prints the opening parenthesis
+ * after: the `=>` of a concise body, the `return` or `export default` keyword,
+ * or the `=` of an initializer or assignment.
+ */
+const opensParenthesizedValue = (token: TSESTree.Token) =>
+  (token.type === AST_TOKEN_TYPES.Punctuator &&
+    (token.value === '=>' || token.value === '=')) ||
+  (token.type === AST_TOKEN_TYPES.Keyword &&
+    (token.value === 'return' || token.value === 'default'));
+
+/**
+ * The column the element's line ends at as prettier measures it, or null where
+ * the line holds something outside the anchor's own layout. A trailing LINE
+ * comment is printed as a suffix that never counts toward fitting, while a
+ * BLOCK comment occupies columns like any other text — measured against
+ * prettier 2.8.8, the identical statement stays flat at 92 columns with a `//`
+ * suffix and is parenthesized at 81 with a block comment after its semicolon.
+ * A second statement on the line is neither: its placement is the formatter's,
+ * so no width is read off a line it would split first.
+ */
+const measuredLineEnd = (
+  sourceCode: Readonly<TSESLint.SourceCode>,
+  element: TSESTree.JSXElement,
+  anchor: TSESTree.Node,
+) => {
+  const line = element.loc.end.line;
+  let end = element.loc.end.column;
+  let token = sourceCode.getTokenAfter(element, { includeComments: true });
+  while (token && token.loc.start.line === line) {
+    if (token.type === AST_TOKEN_TYPES.Line) {
+      break;
+    }
+    if (token.loc.end.line !== line) {
+      return null;
+    }
+    const pastAnchor = token.range[0] >= anchor.range[1];
+    // The comma after a property belongs to the object and stays on the line.
+    const isPropertySeparator =
+      anchor.type === AST_NODE_TYPES.Property &&
+      token.type === AST_TOKEN_TYPES.Punctuator &&
+      token.value === ',';
+    if (
+      pastAnchor &&
+      token.type !== AST_TOKEN_TYPES.Block &&
+      !isPropertySeparator
+    ) {
+      return null;
+    }
+    end = token.loc.end.column;
+    token = sourceCode.getTokenAfter(token, { includeComments: true });
+  }
+  return end;
+};
+
+/**
+ * Where the closing tag's replacement starts, and what it is. The component
+ * renders as a void element, so `<img …></img>` becomes self-closing: the
+ * splice runs from the end of the last attribute (or of the tag name, when
+ * there is none) through the element's end, which leaves the attribute list
+ * untouched. Text between that point and the opening element's `>` carries the
+ * author's spacing and any trailing comment. Prettier puts `/>` on its own line
+ * when the attribute list is expanded and a space before it when it is not,
+ * which is exactly the distinction that spacing already encodes.
+ */
+const selfClosingSplice = (
+  node: TSESTree.JSXElement,
+  sourceCode: Readonly<TSESLint.SourceCode>,
+) => {
+  const { attributes, name } = node.openingElement;
+  const spliceStart = (attributes[attributes.length - 1] ?? name).range[1];
+  const gap = sourceCode.text.slice(
+    spliceStart,
+    node.openingElement.range[1] - 1,
+  );
+  return { spliceStart, text: /\s$/.test(gap) ? `${gap}/>` : `${gap} />` };
+};
+
+/**
+ * The element's text as the rename leaves it: the tag swapped, every byte
+ * between the tag and the closing splice carried over verbatim.
+ */
+const renamedElementText = (
+  node: TSESTree.JSXElement,
+  localName: string,
+  sourceCode: Readonly<TSESLint.SourceCode>,
+) => {
+  const { name } = node.openingElement;
+  const head = `<${localName}`;
+  if (!node.closingElement) {
+    return head + sourceCode.text.slice(name.range[1], node.range[1]);
+  }
+  const { spliceStart, text } = selfClosingSplice(node, sourceCode);
+  return head + sourceCode.text.slice(name.range[1], spliceStart) + text;
+};
+
+/**
+ * The parenthesized re-layout prettier gives a one-line element once the
+ * longer tag name pushes its line past the print width, or null where the flat
+ * rename is what prettier keeps — or where the shape it moves to is not one
+ * this fixer can write. The rename always LENGTHENS the line (`ImageOptimized`
+ * is twelve columns wider than `img`), so an element that fitted before the
+ * fix routinely does not after it, and a flat rename there is text prettier
+ * rewrites on sight, churning the file on every pass (#2133).
+ */
+const parenthesizedOverflowFix = (
+  fixer: TSESLint.RuleFixer,
+  sourceCode: Readonly<TSESLint.SourceCode>,
+  node: TSESTree.JSXElement,
+  renamed: string,
+) => {
+  // An element already laid out over several lines is broken where prettier
+  // broke it, and the rename lengthens only its first line, which holds
+  // nothing but the tag.
+  if (node.loc.start.line !== node.loc.end.line) {
+    return null;
+  }
+  const anchor = parenthesizingAnchorOf(node);
+  if (!anchor) {
+    return null;
+  }
+  const line = node.loc.start.line;
+  // The anchor has to open the line: anything before it there is an outer
+  // group — the object holding the property, the call the statement is an
+  // argument of — that prettier breaks before it measures the element.
+  const beforeAnchor = sourceCode.getTokenBefore(anchor, {
+    includeComments: true,
+  });
+  if (
+    anchor.loc.start.line !== line ||
+    (beforeAnchor && beforeAnchor.loc.end.line === line)
+  ) {
+    return null;
+  }
+  // The element must follow the anchor's own operator directly. A comment in
+  // between is printed INSIDE the parentheses, and a parenthesis there means
+  // the element is wrapped already.
+  const before = sourceCode.getTokenBefore(node, { includeComments: true });
+  if (!before || !opensParenthesizedValue(before)) {
+    return null;
+  }
+  const end = measuredLineEnd(sourceCode, node, anchor);
+  if (end === null) {
+    return null;
+  }
+  const delta = renamed.length - (node.range[1] - node.range[0]);
+  if (end + delta <= PRINT_WIDTH) {
+    return null;
+  }
+  const indent = /^[\t ]*/.exec(sourceCode.lines[line - 1] ?? '')?.[0] ?? '';
+  const inner = `${indent}${INDENT_STEP}`;
+  // Past the width even on a line of its own, the element's attribute list
+  // is what prettier breaks next — a shape only a rebuild of that list could
+  // write, and a rebuild owns every byte between the attributes, comments
+  // included. The flat rename is kept there: it is what the rule has always
+  // written.
+  if (inner.length + renamed.length > PRINT_WIDTH) {
+    return null;
+  }
+  return fixer.replaceText(node, `(\n${inner}${renamed}\n${indent})`);
+};
+
 export = createRule<Options, MessageIds>({
   name: 'require-image-optimized',
   meta: {
@@ -417,40 +688,33 @@ export = createRule<Options, MessageIds>({
             if (!resolvesToModuleBinding(scope, localName)) {
               return null;
             }
+            // The longer name can push a one-line element past the print
+            // width, where prettier parenthesizes the element on a line of its
+            // own; that layout is written here whenever it is the one prettier
+            // would settle on.
+            const overflow = parenthesizedOverflowFix(
+              fixer,
+              sourceCode,
+              node,
+              renamedElementText(node, localName, sourceCode),
+            );
+            if (overflow) {
+              return overflow;
+            }
             // Renaming the tag in place carries every attribute — and every
             // line break between them — over byte for byte. Re-authoring the
             // element from joined attribute texts instead collapses the list
             // onto one line, by an amount that grows with the attribute count,
             // so a prettier-formatted element comes back overflowing the print
-            // width. Wrapping by measurement is no remedy either: prettier
-            // collapses a short expanded attribute list back onto one line, so
-            // the input's own layout is the only shape that survives a round
-            // trip in both directions.
+            // width. Breaking the attribute list by measurement is no remedy
+            // either: prettier collapses a short expanded attribute list back
+            // onto one line, so the input's own layout is the only shape that
+            // survives a round trip in both directions.
             const fixes = [fixer.replaceText(elementName, localName)];
-            const { closingElement } = node;
-            const { attributes } = node.openingElement;
-            if (closingElement) {
-              // The component renders as a void element, so the closing tag
-              // has to go; splicing from the end of the last attribute (or of
-              // the tag name, when there is none) through the element's end
-              // leaves the attribute list untouched.
-              const spliceStart = (
-                attributes[attributes.length - 1] ?? elementName
-              ).range[1];
-              // Text between that point and the opening element's `>` carries
-              // the author's spacing and any trailing comment. Prettier puts
-              // `/>` on its own line when the attribute list is expanded and a
-              // space before it when it is not, which is exactly the
-              // distinction that spacing already encodes.
-              const gap = sourceCode.text.slice(
-                spliceStart,
-                node.openingElement.range[1] - 1,
-              );
+            if (node.closingElement) {
+              const { spliceStart, text } = selfClosingSplice(node, sourceCode);
               fixes.push(
-                fixer.replaceTextRange(
-                  [spliceStart, node.range[1]],
-                  /\s$/.test(gap) ? `${gap}/>` : `${gap} />`,
-                ),
+                fixer.replaceTextRange([spliceStart, node.range[1]], text),
               );
             }
             return fixes;
