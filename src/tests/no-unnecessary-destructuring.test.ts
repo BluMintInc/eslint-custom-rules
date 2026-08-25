@@ -183,7 +183,7 @@ ruleTester.run('no-unnecessary-destructuring', noUnnecessaryDestructuring, {
     {
       code: `let obj; ({ ...obj } = source);`,
       errors: [expectError('source', 'obj')],
-      output: `let obj; (obj = source);`,
+      output: `let obj; obj = source;`,
     },
     // Multiple declarations with one invalid - invalid
     {
@@ -264,13 +264,28 @@ ruleTester.run('no-unnecessary-destructuring', noUnnecessaryDestructuring, {
     {
       code: `let rest; ({ ...rest } = obj);`,
       errors: [expectError('obj', 'rest')],
-      output: `let rest; (rest = obj);`,
+      output: `let rest; rest = obj;`,
     },
     // Assignment expression with a member-expression target
     {
       code: `({ ...target.value } = source.data);`,
       errors: [expectError('source.data', 'target.value')],
-      output: `(target.value = source.data);`,
+      output: `target.value = source.data;`,
+    },
+    // A comment inside the parentheses belongs to the group the author wrote
+    // it into, so the pair is kept even though the rewrite makes it redundant.
+    {
+      code: `let kept; (/* c */ { ...kept } = obj);`,
+      errors: [expectError('obj', 'kept')],
+      output: `let kept; (/* c */ kept = obj);`,
+    },
+    // Parentheses the statement does not own are not the fixer's to remove:
+    // here they group the assignment as a condition, and dropping them would
+    // change what `if` tests.
+    {
+      code: `let seen; if ((({ ...seen } = obj))) { use(seen); }`,
+      errors: [expectError('obj', 'seen')],
+      output: `let seen; if (((seen = obj))) { use(seen); }`,
     },
     // No initializer means no autofix, so nothing can be dropped
     {

@@ -45,6 +45,17 @@ const rest: Readonly<Foo & Bar> = obj;
 
 Generics, intersections, function types, and multi-line object types all survive unchanged. Declarators without an annotation still fix to a bare name (`const rest = obj;`), and a declarator with no initializer (such as `for (const { ...entry } of entries)`) is reported without a fix.
 
+An assignment statement is written parenthesized — `({ ...obj } = source);` —
+only because a statement opening with `{` would parse as a block. Collapsing the
+pattern to a plain target removes that reason, so the fix drops the pair with it
+and emits `obj = source;`. Leaving it behind would be text a formatter removes on
+its next run, which churns the file on every pass.
+
+The pair is kept where it is not the statement's own wrapper — parentheses
+grouping the assignment as a condition (`if ((obj = source))`) are load-bearing —
+and where a comment sits inside it, since dropping the pair would move the
+comment out of the group it was written into.
+
 ## Why this matters
 
 - `{ ...source }` in a destructuring pattern hints that properties are being picked, but it keeps everything, which misleads readers and reviewers.
