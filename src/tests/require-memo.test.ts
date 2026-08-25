@@ -815,6 +815,92 @@ const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</
     }),
 
     // ---------------------------------------------------------------------
+    // The extended import is measured against the print width, so the --fix
+    // output is the layout Prettier keeps rather than a line it re-wraps.
+    // ---------------------------------------------------------------------
+    // The appended `, memo` lands the line exactly at 80 columns: it fits, so
+    // the declaration stays flat (an always-expanded import is its own churn).
+    withDefaults({
+      code: `import { aMemoHelperWithAFortyTwoCharacterLongName1 } from '../util/memo';
+function Component({foo}) { return <div>{foo}</div>; }`,
+      output: `import { aMemoHelperWithAFortyTwoCharacterLongName1, memo } from '../util/memo';
+const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</div>; });`,
+      name: 'Component',
+    }),
+    // One column more and the appended line would be 81 wide: the import is
+    // re-laid one specifier per line, the way Prettier prints the overflow.
+    withDefaults({
+      code: `import { aMemoHelperWithAFortyThreeCharacterName1234 } from '../util/memo';
+function Component({foo}) { return <div>{foo}</div>; }`,
+      output: `import {
+  aMemoHelperWithAFortyThreeCharacterName1234,
+  memo,
+} from '../util/memo';
+const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</div>; });`,
+      name: 'Component',
+    }),
+    // The initializer wrap shares the import plan, so it crosses the width the
+    // same way.
+    withDefaults({
+      code: `import { aMemoHelperWithAFortyThreeCharacterName1234 } from '../util/memo';
+export const Component = ({foo}) => <div>{foo}</div>;`,
+      output: `import {
+  aMemoHelperWithAFortyThreeCharacterName1234,
+  memo,
+} from '../util/memo';
+export const Component = memo(({foo}) => <div>{foo}</div>);`,
+      name: 'Component',
+    }),
+    // An import Prettier already broke takes the specifier on its own line at
+    // the existing indent, keeping the trailing comma where Prettier puts it.
+    withDefaults({
+      code: `import {
+  aMemoHelperWithAFortyThreeCharacterName1234,
+  anotherMemoHelper,
+} from '../util/memo';
+function Component({foo}) { return <div>{foo}</div>; }`,
+      output: `import {
+  aMemoHelperWithAFortyThreeCharacterName1234,
+  anotherMemoHelper,
+  memo,
+} from '../util/memo';
+const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</div>; });`,
+      name: 'Component',
+    }),
+    // A default import that stops fitting opens its braces the way Prettier
+    // prints them, instead of appending `, { memo }` past the width.
+    withDefaults({
+      code: `import aVeryLongDefaultMemoFactoryExportBindingName1234 from '../util/memo';
+function Component({foo}) { return <div>{foo}</div>; }`,
+      output: `import aVeryLongDefaultMemoFactoryExportBindingName1234, {
+  memo,
+} from '../util/memo';
+const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</div>; });`,
+      name: 'Component',
+    }),
+    // A comment in a separator gap the re-layout would own withholds it: the
+    // helper gets its own declaration and the existing bytes are left alone.
+    withDefaults({
+      code: `import { aMemoHelperWithAFortyThreeCharacterName1234 /* pinned */ } from '../util/memo';
+function Component({foo}) { return <div>{foo}</div>; }`,
+      output: `import { aMemoHelperWithAFortyThreeCharacterName1234 /* pinned */ } from '../util/memo';
+import { memo } from '../util/memo';
+const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</div>; });`,
+      name: 'Component',
+    }),
+    // A default import paired with a namespace has no grammatical slot for
+    // `{ memo }` — `import d, { memo }, * as ns` is a syntax error — so the
+    // helper gets its own declaration.
+    withDefaults({
+      code: `import memoDefault, * as memoUtils from '../util/memo';
+function Component({foo}) { return <div>{foo}</div>; }`,
+      output: `import memoDefault, * as memoUtils from '../util/memo';
+import { memo } from '../util/memo';
+const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</div>; });`,
+      name: 'Component',
+    }),
+
+    // ---------------------------------------------------------------------
     // File prologues survive the inserted import (no import to anchor to).
     // ---------------------------------------------------------------------
     // A `'use client'` directive stops being one the moment a statement

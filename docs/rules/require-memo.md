@@ -223,10 +223,13 @@ as mockMemo }`, whose name matches the `/^mock/i` allowlist, or a
 The fix emits a **value named specifier** — `import { memo } from '../util/memo';`,
 or `, memo` appended to an existing value import of the helper (`, { memo }`
 beside a default import, and its own declaration beside a namespace or
-side-effect import, since `import * as memoUtils, memo from '...'` is a syntax
-error). A type-only declaration is never extended, because a specifier added to
-one erases at compile time and leaves the emitted `memo(...)` call unbound at
-runtime.
+side-effect import, since neither `import * as memoUtils, memo from '...'` nor
+`import memoDefault, { memo }, * as memoUtils from '...'` is grammatical). The
+extended declaration is measured against `printWidth` and laid out the way a
+formatter prints it — see [Which layout the fix gives an extended
+import](#which-layout-the-fix-gives-an-extended-import). A type-only declaration
+is never extended, because a specifier added to one erases at compile time and
+leaves the emitted `memo(...)` call unbound at runtime.
 
 Because the rewritten component spells `memo` bare, the fix is **withheld**
 whenever another `memo` is visible at the component — the violation is still
@@ -318,3 +321,50 @@ forces the `memo(` call open and re-indents every line of the body.
 
 The appended binding follows the same measurement: it stays on one line while it
 fits, and breaks its sole argument out past the width.
+
+### Which layout the fix gives an extended import
+
+Appending `, memo` to an existing `util/memo` import lengthens a line the author
+never chose the width of. A blanket append hands the formatter a line it
+re-wraps on the next pass, so the extended declaration is measured against
+`printWidth` too, and takes one of three layouts:
+
+- While the extended declaration still fits on one line, the specifier is
+  appended in place (an always-expanded import would be its own churn):
+
+  ```jsx
+  import { memoWithDisplayName, memo } from '../util/memo';
+  ```
+
+- A declaration the formatter already broke takes `memo` on its own line at the
+  specifiers' indent, so the trailing comma stays where the formatter puts it:
+
+  ```jsx
+  import {
+    aMemoHelperWithAFortyThreeCharacterName1234,
+    anotherMemoHelper,
+    memo,
+  } from '../util/memo';
+  ```
+
+- A single-line declaration that stops fitting is re-laid one specifier per
+  line — `import { aMemoHelperWithAFortyThreeCharacterName1234 } from
+  '../util/memo';` becomes:
+
+  ```jsx
+  import {
+    aMemoHelperWithAFortyThreeCharacterName1234,
+    memo,
+  } from '../util/memo';
+  ```
+
+  A default import that stops fitting opens its braces the same way:
+  `import aVeryLongDefaultMemoFactoryExportBindingName1234, {\n  memo,\n} from
+  '../util/memo';`.
+
+The re-layout rewrites only the separator gaps between the braces and the
+specifiers; each specifier's own text is carried verbatim. A comment sitting in
+one of those gaps (`import { helper /* pinned */ } from '../util/memo';`) would
+be deleted by the rewrite, so its presence withholds the re-layout and the
+helper gets its own `import { memo } from '../util/memo';` declaration instead,
+leaving the existing bytes untouched.

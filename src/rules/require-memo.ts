@@ -425,28 +425,168 @@ function bindsMemoHelper(variable: TSESLint.Scope.Variable): boolean {
 }
 
 /**
+ * The whitespace opening the line `node` starts on, or null when other tokens
+ * precede it there — the caller then has no line indent to mirror.
+ */
+function lineIndentBefore(
+  sourceCode: TSESLint.SourceCode,
+  node: TSESTree.Node,
+): string | null {
+  const line = sourceCode.lines[node.loc.start.line - 1] ?? '';
+  const prefix = line.slice(0, node.loc.start.column);
+  return /^\s*$/.test(prefix) ? prefix : null;
+}
+
+/**
+ * Whether extending `declaration` with `addition` still fits the print width
+ * on one line. Prettier prints the terminating semicolon whether or not the
+ * source spells it, so a missing one still costs a column.
+ */
+function extendedImportFits(
+  sourceCode: TSESLint.SourceCode,
+  declaration: TSESTree.ImportDeclaration,
+  indent: string,
+  addition: string,
+  printWidth: number,
+): boolean {
+  const declText = sourceCode.getText(declaration);
+  const semicolonDebt = declText.endsWith(';') ? 0 : 1;
+  return (
+    indent.length + declText.length + addition.length + semicolonDebt <=
+    printWidth
+  );
+}
+
+/**
+ * Re-lays a single-line named import into Prettier's one-specifier-per-line
+ * form with `memo` appended, touching only the separator gaps between the
+ * braces and the specifiers. Each specifier's own text is carried verbatim, so
+ * a comment INSIDE a specifier survives; a comment in a replaced gap would be
+ * silently deleted by the rewrite, so its presence withholds this layout
+ * entirely (null) and the caller falls back to a separate declaration that
+ * touches none of the existing bytes.
+ */
+function buildExpandedImportFix(
+  fixer: TSESLint.RuleFixer,
+  sourceCode: TSESLint.SourceCode,
+  named: TSESTree.ImportSpecifier[],
+  declIndent: string,
+): TSESLint.RuleFix[] | null {
+  const openBrace = sourceCode.getTokenBefore(named[0], {
+    filter: (token) => token.value === '{',
+  });
+  const closeBrace = sourceCode.getTokenAfter(named[named.length - 1], {
+    filter: (token) => token.value === '}',
+  });
+  if (!openBrace || !closeBrace) return null;
+  const specIndent = `${declIndent}  `;
+  const gaps: [number, number, string][] = [
+    [openBrace.range[1], named[0].range[0], `\n${specIndent}`],
+  ];
+  for (let i = 0; i < named.length - 1; i++) {
+    gaps.push([named[i].range[1], named[i + 1].range[0], `,\n${specIndent}`]);
+  }
+  gaps.push([
+    named[named.length - 1].range[1],
+    closeBrace.range[0],
+    `,\n${specIndent}${MEMO_NAME},\n${declIndent}`,
+  ]);
+  const fixes: TSESLint.RuleFix[] = [];
+  for (const [start, end, replacement] of gaps) {
+    const gapText = sourceCode.text.slice(start, end);
+    if (!/^[\s,]*$/.test(gapText)) return null;
+    fixes.push(fixer.replaceTextRange([start, end], replacement));
+  }
+  return fixes;
+}
+
+/**
  * Extends an existing value `util/memo` import with a `memo` specifier instead
- * of adding a second declaration. A namespace-only or side-effect-only
- * declaration has nowhere to put a named specifier, so those fall through to a
- * separate declaration (null).
+ * of adding a second declaration, in the layout Prettier keeps. Measure, do
+ * not always-append: joining `, memo` onto a line that then exceeds the print
+ * width hands Prettier a line it re-wraps, so the --fix output churns on the
+ * next format. Three layouts cover what Prettier does with an import:
+ *
+ * - the extended declaration fits on one line: append in place;
+ * - the declaration is already multi-line (Prettier's own overflow layout):
+ *   the new specifier gets its own line at the specifiers' indent;
+ * - a single-line declaration stops fitting: re-lay it one specifier per line,
+ *   unless a comment occupies a separator gap the re-layout would own.
+ *
+ * Namespace imports cannot host a named specifier — neither `* as ns` alone
+ * nor the `d, * as ns` pair leaves a grammatical slot for `{ memo }` — so
+ * those fall through to a separate declaration (null), as does a
+ * side-effect-only declaration.
  */
 function buildImportExtensionFix(
   fixer: TSESLint.RuleFixer,
-  program: TSESTree.Program,
-): TSESLint.RuleFix | null {
-  for (const declaration of memoValueImports(program)) {
+  sourceCode: TSESLint.SourceCode,
+  printWidth: number,
+): TSESLint.RuleFix[] | null {
+  for (const declaration of memoValueImports(sourceCode.ast)) {
+    if (
+      declaration.specifiers.some(
+        (specifier) =>
+          specifier.type === AST_NODE_TYPES.ImportNamespaceSpecifier,
+      )
+    ) {
+      continue;
+    }
+    const declIndent = lineIndentBefore(sourceCode, declaration) ?? '';
     const named = declaration.specifiers.filter(
       (specifier): specifier is TSESTree.ImportSpecifier =>
         specifier.type === AST_NODE_TYPES.ImportSpecifier,
     );
     if (named.length > 0) {
-      return fixer.insertTextAfter(named[named.length - 1], `, ${MEMO_NAME}`);
+      const last = named[named.length - 1];
+      if (declaration.loc.start.line !== declaration.loc.end.line) {
+        const specIndent =
+          lineIndentBefore(sourceCode, last) ?? `${declIndent}  `;
+        return [fixer.insertTextAfter(last, `,\n${specIndent}${MEMO_NAME}`)];
+      }
+      if (
+        extendedImportFits(
+          sourceCode,
+          declaration,
+          declIndent,
+          `, ${MEMO_NAME}`,
+          printWidth,
+        )
+      ) {
+        return [fixer.insertTextAfter(last, `, ${MEMO_NAME}`)];
+      }
+      const expansion = buildExpandedImportFix(
+        fixer,
+        sourceCode,
+        named,
+        declIndent,
+      );
+      if (expansion) return expansion;
+      continue;
     }
     const defaultSpecifier = declaration.specifiers.find(
       (specifier) => specifier.type === AST_NODE_TYPES.ImportDefaultSpecifier,
     );
     if (defaultSpecifier) {
-      return fixer.insertTextAfter(defaultSpecifier, `, { ${MEMO_NAME} }`);
+      const addition = `, { ${MEMO_NAME} }`;
+      if (
+        declaration.loc.start.line === declaration.loc.end.line &&
+        !extendedImportFits(
+          sourceCode,
+          declaration,
+          declIndent,
+          addition,
+          printWidth,
+        )
+      ) {
+        return [
+          fixer.insertTextAfter(
+            defaultSpecifier,
+            `, {\n${declIndent}  ${MEMO_NAME},\n${declIndent}}`,
+          ),
+        ];
+      }
+      return [fixer.insertTextAfter(defaultSpecifier, addition)];
     }
   }
   return null;
@@ -521,7 +661,8 @@ function planMemoBinding(
   context: Readonly<RuleContext<'requireMemo', RequireMemoOptions>>,
   fixer: TSESLint.RuleFixer,
   node: ComponentNode,
-): { available: boolean; importFix: TSESLint.RuleFix | null } {
+  printWidth: number,
+): { available: boolean; importFix: TSESLint.RuleFix[] | null } {
   // Jest hoists a `jest.mock()` factory above the module's imports, so the
   // helper is unbound when the factory runs and jest rejects the reference
   // outright ("Invalid variable access: memo"). This holds whether the import
@@ -546,7 +687,7 @@ function planMemoBinding(
     return { available: true, importFix: null };
   }
 
-  const extensionFix = buildImportExtensionFix(fixer, program);
+  const extensionFix = buildImportExtensionFix(fixer, sourceCode, printWidth);
   if (extensionFix) {
     return { available: true, importFix: extensionFix };
   }
@@ -564,14 +705,16 @@ function planMemoBinding(
   // character 0.
   return {
     available: true,
-    importFix: firstImport
-      ? fixer.insertTextAfter(firstImport, `\n${importStatement}`)
-      : insertAtImportAnchor(
-          sourceCode,
-          fixer,
-          importInsertionAnchor(sourceCode),
-          `${importStatement}\n`,
-        ),
+    importFix: [
+      firstImport
+        ? fixer.insertTextAfter(firstImport, `\n${importStatement}`)
+        : insertAtImportAnchor(
+            sourceCode,
+            fixer,
+            importInsertionAnchor(sourceCode),
+            `${importStatement}\n`,
+          ),
+    ],
   };
 }
 
@@ -802,7 +945,12 @@ function memoizeDeclaration(
       return null;
     }
 
-    const { available, importFix } = planMemoBinding(context, fixer, node);
+    const { available, importFix } = planMemoBinding(
+      context,
+      fixer,
+      node,
+      printWidth,
+    );
     if (!available) {
       return null;
     }
@@ -821,7 +969,7 @@ function memoizeDeclaration(
       : inlineFixes(fixer, node, defaultExport);
 
     if (importFix) {
-      fixes.push(importFix);
+      fixes.push(...importFix);
     }
 
     return fixes;
@@ -919,13 +1067,19 @@ function splitFixes(
 function memoizeInitializer(
   context: Readonly<RuleContext<'requireMemo', RequireMemoOptions>>,
   node: ComponentNode,
+  printWidth: number,
 ): TSESLint.ReportFixFunction {
   return function fix(fixer) {
     if (!isRewritableFunction(node)) {
       return null;
     }
 
-    const { available, importFix } = planMemoBinding(context, fixer, node);
+    const { available, importFix } = planMemoBinding(
+      context,
+      fixer,
+      node,
+      printWidth,
+    );
     if (!available) {
       return null;
     }
@@ -936,7 +1090,7 @@ function memoizeInitializer(
     ];
 
     if (importFix) {
-      fixes.push(importFix);
+      fixes.push(...importFix);
     }
 
     return fixes;
@@ -993,7 +1147,7 @@ function checkFunction(
         fix: fixDeclaration
           ? memoizeDeclaration(context, node, printWidth)
           : fixInitializer
-          ? memoizeInitializer(context, node)
+          ? memoizeInitializer(context, node, printWidth)
           : undefined,
       });
     }
