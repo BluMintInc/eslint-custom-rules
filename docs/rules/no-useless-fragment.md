@@ -19,6 +19,22 @@ Two carve-outs keep the rule from flagging code where removing the fragment woul
 * **A single expression-container child is exempt** (issue #1195), e.g. `<>{portal}</>` or `<>{"text"}</>`. Unwrapping it to a bare `{portal}` is invalid in return/statement position, and wrapping a single `ReactNode` expression in a fragment is the idiomatic way to render it.
 * **A text or spread child is report-only (no autofix).** Unwrapping `<>hello</>` would turn the JSX text into a bare identifier reference, and `{...items}` is not a valid standalone expression — both require the developer to restructure the surrounding code by hand. A JSX element or fragment child auto-fixes by replacing the fragment with that child's source text.
 
+When the fragment and its child span multiple lines, the autofix re-indents the promoted subtree by the removed indentation step so the output sits at its new depth (matching what prettier would produce) instead of keeping the columns it had inside the fragment. Lines that begin inside a multi-line template literal, a backslash-continued string, or a block comment are content rather than layout, so the fix leaves them byte-identical.
+
+```jsx
+// before
+<>
+  <NestedComponent>
+    <ChildComponent />
+  </NestedComponent>
+</>;
+
+// after --fix
+<NestedComponent>
+  <ChildComponent />
+</NestedComponent>;
+```
+
 ### Examples of **incorrect** code for this rule:
 
 ```jsx

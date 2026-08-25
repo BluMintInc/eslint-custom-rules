@@ -1311,7 +1311,7 @@ const LITERAL_UNDRIVEN: Record<string, UndrivenCause> = {
   'no-unnecessary-destructuring': 'noPerturbableSite',
   'no-unnecessary-destructuring-rename': 'inventsNoName',
   'no-unused-usestate': 'inventsNoName',
-  'no-useless-fragment': 'noPerturbableSite',
+  'no-useless-fragment': 'inventsNoName',
   'no-useless-usememo-primitives': 'inventsNoName',
   // Inlines the memoized expression verbatim: every identifier it writes is
   // copied from the source, so no literal can be degenerate into a name (#1871).

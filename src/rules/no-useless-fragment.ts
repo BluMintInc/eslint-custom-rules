@@ -1,4 +1,4 @@
-import { TSESTree } from '@typescript-eslint/utils';
+import { AST_TOKEN_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 /**
@@ -33,6 +33,100 @@ const isFormattingWhitespace = (child: TSESTree.JSXChild): boolean =>
   child.type === 'JSXText' &&
   /^\s*$/.test(child.value) &&
   child.value.includes('\n');
+
+/**
+ * Multi-line tokens whose interior lines are CONTENT rather than layout: the
+ * inside of a template literal (and of a backslash-continued string) is part
+ * of the runtime value, and prettier leaves block-comment bodies verbatim.
+ * Re-indenting any of these lines would corrupt the value or fight prettier.
+ */
+const OPAQUE_MULTILINE_TOKEN_TYPES = new Set<string>([
+  AST_TOKEN_TYPES.Template,
+  AST_TOKEN_TYPES.String,
+  AST_TOKEN_TYPES.Block,
+]);
+
+/**
+ * Collects the absolute line numbers whose first character sits INSIDE an
+ * opaque multi-line token of `child`. Such a line begins mid-token, so its
+ * leading columns belong to the token's content and must not be shifted.
+ * The token's own first line starts outside it and stays shiftable; every
+ * later line it spans (including the one it ends on) begins inside it.
+ */
+const collectContentLines = (
+  sourceCode: Readonly<TSESLint.SourceCode>,
+  child: TSESTree.Node,
+): Set<number> => {
+  const contentLines = new Set<number>();
+  for (const token of sourceCode.getTokens(child, { includeComments: true })) {
+    if (token.loc.start.line === token.loc.end.line) {
+      continue;
+    }
+    if (!OPAQUE_MULTILINE_TOKEN_TYPES.has(token.type)) {
+      continue;
+    }
+    for (
+      let line = token.loc.start.line + 1;
+      line <= token.loc.end.line;
+      line++
+    ) {
+      contentLines.add(line);
+    }
+  }
+  return contentLines;
+};
+
+const shiftLineIndentation = (line: string, columnShift: number): string => {
+  // Whitespace-only lines carry no content to align, and padding them would
+  // introduce trailing whitespace prettier immediately strips.
+  if (/^\s*$/.test(line)) {
+    return line;
+  }
+  if (columnShift > 0) {
+    return ' '.repeat(columnShift) + line;
+  }
+  const leadingWhitespace = /^[ \t]*/.exec(line);
+  const leadingWidth = leadingWhitespace ? leadingWhitespace[0].length : 0;
+  // Clamp to the whitespace that is actually present so a dedent can never
+  // eat into content (e.g. a line already at column 0).
+  return line.slice(Math.min(-columnShift, leadingWidth));
+};
+
+/**
+ * Returns the child's source text re-indented for its promoted position.
+ * Replacing the fragment moves the child's first character from the child's
+ * column to the fragment's, but a verbatim paste leaves every LATER line at
+ * its old depth — one indentation step deeper than the new enclosing scope —
+ * which prettier immediately re-indents (a fix that never settles). Shifting
+ * each subsequent line by the same column delta as the first keeps the
+ * subtree's internal alignment intact at its new depth.
+ */
+const reindentPromotedChild = (
+  sourceCode: Readonly<TSESLint.SourceCode>,
+  fragment: TSESTree.JSXFragment,
+  child: TSESTree.Node,
+): string => {
+  const text = sourceCode.getText(child);
+  const columnShift = fragment.loc.start.column - child.loc.start.column;
+  if (columnShift === 0 || !text.includes('\n')) {
+    return text;
+  }
+  const contentLines = collectContentLines(sourceCode, child);
+  return text
+    .split('\n')
+    .map((line, index) => {
+      // The first line's column is set by the replacement position itself.
+      if (index === 0) {
+        return line;
+      }
+      const absoluteLine = child.loc.start.line + index;
+      if (contentLines.has(absoluteLine)) {
+        return line;
+      }
+      return shiftLineIndentation(line, columnShift);
+    })
+    .join('\n');
+};
 
 export const noUselessFragment = createRule<[], 'noUselessFragment'>({
   name: 'no-useless-fragment',
@@ -78,7 +172,10 @@ export const noUselessFragment = createRule<[], 'noUselessFragment'>({
           },
           fix: isFixable
             ? (fixer) =>
-                fixer.replaceText(node, context.sourceCode.getText(child))
+                fixer.replaceText(
+                  node,
+                  reindentPromotedChild(context.sourceCode, node, child),
+                )
             : null,
         });
       },
