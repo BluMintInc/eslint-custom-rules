@@ -227,6 +227,10 @@ function Stamp({ userData }: { userData: { date?: Date } }) {
 - Removes an unread `useEffect` dependency only when the effect also calls its corresponding setter, so deliberate re-run triggers survive `--fix`.
 - Never removes an entry from an array you manage by hand with a `react-hooks/exhaustive-deps` suppression, on any of the three hooks.
 
+## Quoting in the emitted dependency
+
+A computed string key is re-emitted with the quote a formatter would print — the one needing fewer escapes, so `data['special-key']` under `singleQuote` but `state["it's-key"]` where the key carries an apostrophe. The key's own spelling decides, not a constant: emitting the other quote is text the formatter rewrites on its next run, which churns every file the fix touches.
+
 ## When not to use it
 
 - You intentionally want your hook to rerun on any change to an object reference (for example, when you treat the object as an immutable snapshot).

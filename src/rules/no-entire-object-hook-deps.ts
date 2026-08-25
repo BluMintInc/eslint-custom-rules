@@ -34,6 +34,29 @@ const EFFECT_HOOK_NAMES = new Set(['useEffect']);
  */
 const DEFERRED_BODY_HOOK_NAMES = new Set(['useCallback']);
 
+/**
+ * A string key quoted the way a formatter quotes it.
+ *
+ * `JSON.stringify` always emits double quotes, while this repo and agora both
+ * format with `singleQuote`. A formatter also picks whichever quote needs FEWER
+ * escapes, so a key carrying an apostrophe stays double-quoted even then.
+ * Emitting the other spelling is text the formatter rewrites on its next run,
+ * and agora runs the formatter and `--fix` over the same tree — so that is a
+ * diff which never settles (#2118).
+ */
+function quoteKey(value: string): string {
+  const singles = (value.match(/'/g) ?? []).length;
+  const doubles = (value.match(/"/g) ?? []).length;
+  const json = JSON.stringify(value);
+  if (singles > doubles) {
+    return json;
+  }
+  // `JSON.stringify` has already escaped the control characters and
+  // backslashes; only the quote character itself has to change hands.
+  const body = json.slice(1, -1).replace(/\\"/g, '"').replace(/'/g, "\\'");
+  return `'${body}'`;
+}
+
 function isHookCall(node: TSESTree.CallExpression): boolean {
   const callee = node.callee;
   return (
@@ -247,7 +270,7 @@ function isMethodMember(
 }
 
 type PathSegment = {
-  /** Rendered link text: an identifier name (`foo`) or bracket key (`[0]`, `["key"]`). */
+  /** Rendered link text: an identifier name (`foo`) or bracket key (`[0]`, `['key']`). */
   text: string;
   computed: boolean;
   /** Whether this link is accessed via optional chaining (`?.`). */
@@ -369,7 +392,7 @@ function memberPathSegmentsIfRootedAt(
         text:
           typeof literalValue === 'number'
             ? `[${literalValue}]`
-            : `[${JSON.stringify(literalValue)}]`,
+            : `[${quoteKey(literalValue)}]`,
         computed: true,
         optional: memberExpr.optional,
       });
@@ -844,7 +867,7 @@ function getObjectUsagesInHook(
           text:
             typeof literalValue === 'number'
               ? `[${literalValue}]`
-              : `[${JSON.stringify(literalValue)}]`,
+              : `[${quoteKey(literalValue)}]`,
           computed: true,
           optional: memberExpr.optional,
         });
