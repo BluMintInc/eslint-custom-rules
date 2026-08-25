@@ -2120,7 +2120,12 @@ export class Widget {
 }`,
       },
       {
-        name: 'an existing decorator sharing the member line still owns that line',
+        // A member carrying a SINGLE decorator may keep it on the member's own
+        // line. Adding a second withdraws that choice — with more than one
+        // decorator each takes a line of its own — so the decorator written
+        // inline is broken out with the insertion rather than left for a
+        // formatter to move on its next run (#2115).
+        name: 'a decorator written inline is broken out once a second joins it',
         filename: 'file.tsx',
         code: `function Log(): MethodDecorator { return () => {}; }
 export class Widget {
@@ -2131,7 +2136,27 @@ export class Widget {
 function Log(): MethodDecorator { return () => {}; }
 export class Widget {
   @Memoize()
-  @Log() get view() { return <div />; }
+  @Log()
+  get view() { return <div />; }
+}`,
+      },
+      {
+        // A comment written after the decorator stays WITH the decorator —
+        // that is where it was attached — so the break goes after the comment
+        // rather than before it.
+        name: 'the break lands after a comment trailing the decorator',
+        filename: 'file.tsx',
+        code: `function Log(): MethodDecorator { return () => {}; }
+export class Widget {
+  @Log() /* c */ get view() { return <div />; }
+}`,
+        errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+        output: `import { Memoize } from '@blumintinc/typescript-memoize';
+function Log(): MethodDecorator { return () => {}; }
+export class Widget {
+  @Memoize()
+  @Log() /* c */
+  get view() { return <div />; }
 }`,
       },
       {
