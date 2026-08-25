@@ -1187,6 +1187,30 @@ const FIX_EXEMPT: Record<string, string> = {
   // exempted for above.
   'no-array-length-in-deps':
     'the memo declaration needs a statement position an expression body does not have',
+  // Its planner strips the annotation in place, so it can only ship an edit
+  // whose text settles where it is written. `keepsSurroundingLayout` withholds
+  // the fix on the two arrow shapes where it would not: `displacesBody`, where
+  // a carried comment run pushes a multi-line body off the `=>` onto a line of
+  // its own, leaving the body's interior and closing bracket a step behind its
+  // opening bracket; and `collapsesChainHead`, where the strip deletes the line
+  // terminator holding a broken arrow chain's group open and so re-decides
+  // where every OTHER link breaks. Both re-lay out text outside the
+  // annotation's span — the deletion class #1877 guards against — so the report
+  // stands and only the edit is withheld (#2120).
+  //
+  // Every discriminator is a property of the arrow spelling. A `function`
+  // declaration has no `=>` to displace a body from and no chain to hold open,
+  // so the guard returns early for it; a concise body occupies one line, so it
+  // has no interior to leave behind. The two remaining findings respell the
+  // arrow as a one-line `=> { return ...; }`, a shape prettier never prints and
+  // therefore one agora — which lints prettier-formatted source — never holds.
+  // Measured over the rule's corpus: 5 declines, all 5 on inputs whose previous
+  // output prettier rewrote, and 0 cases where a fix that already settled was
+  // lost. Because this entry un-gates the rule's other arms (#1839), the
+  // boundary is pinned in the rule's own suite —
+  // 'no-redundant-annotation-assertion --fix output survives Prettier'.
+  'no-redundant-annotation-assertion':
+    'the in-place strip cannot re-lay out an arrow body or chain it would displace; a declaration has neither',
   // The reorder pins non-function statements and swaps functions among their
   // slots, so a helper can be carried below a pinned module-scope caller
   // (`const CHAMPION = buildHit(...)`). A `function` declaration hoists and the
