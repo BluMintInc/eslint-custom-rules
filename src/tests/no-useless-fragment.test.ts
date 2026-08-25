@@ -157,8 +157,180 @@ ruleTesterJsx.run('no-useless-fragment', noUselessFragment, {
         },
       ],
       output: `<>
-    <Foo />
-  </>`,
+  <Foo />
+</>`,
+    },
+    // Issue #2131: unwrapping must re-indent the promoted subtree by the
+    // removed indentation step. A verbatim paste leaves every interior line
+    // one step deeper than its new enclosing scope, so prettier immediately
+    // rewrites the fixer's output and the fix never settles.
+    {
+      code: `<>
+  <NestedComponent>
+    <ChildComponent />
+  </NestedComponent>
+</>`,
+      errors: [
+        {
+          messageId: 'noUselessFragment',
+          data: { childKind: 'JSX element' },
+        },
+      ],
+      output: `<NestedComponent>
+  <ChildComponent />
+</NestedComponent>`,
+    },
+    // The re-indent is relative: a fragment already nested inside a component
+    // return dedents its subtree by exactly one step, not to column zero.
+    {
+      code: `const A = () => {
+  return (
+    <>
+      <Wrapper>
+        <Leaf />
+      </Wrapper>
+    </>
+  );
+};`,
+      errors: [
+        {
+          messageId: 'noUselessFragment',
+          data: { childKind: 'JSX element' },
+        },
+      ],
+      output: `const A = () => {
+  return (
+    <Wrapper>
+      <Leaf />
+    </Wrapper>
+  );
+};`,
+    },
+    // Every line of the promoted subtree shifts, including the lines of a
+    // multi-line opening tag and its `>` — not just the JSX children.
+    {
+      code: `<>
+  <Card
+    title="Title"
+    subtitle="Sub"
+  >
+    <Leaf />
+  </Card>
+</>`,
+      errors: [
+        {
+          messageId: 'noUselessFragment',
+          data: { childKind: 'JSX element' },
+        },
+      ],
+      output: `<Card
+  title="Title"
+  subtitle="Sub"
+>
+  <Leaf />
+</Card>`,
+    },
+    // Interior lines of a multi-line template literal are part of the
+    // runtime string, so the re-indent must leave them byte-identical —
+    // including the line the closing backtick sits on. The tag is one
+    // prettier has no embedded-language formatter for (unlike `gql`/`css`),
+    // so prettier also treats the interior as opaque content.
+    {
+      code: `<>
+  <Query>
+    {sql\`
+SELECT id
+  FROM t
+\`}
+  </Query>
+</>`,
+      errors: [
+        {
+          messageId: 'noUselessFragment',
+          data: { childKind: 'JSX element' },
+        },
+      ],
+      output: `<Query>
+  {sql\`
+SELECT id
+  FROM t
+\`}
+</Query>`,
+    },
+    // Interior lines of a block comment are content prettier leaves
+    // verbatim, so the re-indent must not move them; the comment's first
+    // line starts outside the token and shifts with the rest of the tree.
+    {
+      code: `<>
+  <Section>
+    {/* multi-line
+       annotation */}
+    <Leaf />
+  </Section>
+</>`,
+      errors: [
+        {
+          messageId: 'noUselessFragment',
+          data: { childKind: 'JSX element' },
+        },
+      ],
+      output: `<Section>
+  {/* multi-line
+       annotation */}
+  <Leaf />
+</Section>`,
+    },
+    // A child that starts LEFT of the fragment (hand-formatted code) shifts
+    // RIGHT so its internal alignment survives the promotion.
+    {
+      code: `const x = (
+  <>
+<Foo>
+  <Bar />
+</Foo>
+  </>
+);`,
+      errors: [
+        {
+          messageId: 'noUselessFragment',
+          data: { childKind: 'JSX element' },
+        },
+      ],
+      output: `const x = (
+  <Foo>
+    <Bar />
+  </Foo>
+);`,
+    },
+    // CRLF interior lines dedent like LF ones: splitting on `\n` leaves the
+    // `\r` at line ends, away from the leading indentation being shifted.
+    {
+      code: '<>\r\n  <Foo>\r\n    <Bar />\r\n  </Foo>\r\n</>',
+      errors: [
+        {
+          messageId: 'noUselessFragment',
+          data: { childKind: 'JSX element' },
+        },
+      ],
+      output: '<Foo>\r\n  <Bar />\r\n</Foo>',
+    },
+    // The dedent clamps to the whitespace actually present: a JSX text line
+    // already at column zero loses no characters.
+    {
+      code: `<>
+  <Pre>
+text at col zero
+  </Pre>
+</>`,
+      errors: [
+        {
+          messageId: 'noUselessFragment',
+          data: { childKind: 'JSX element' },
+        },
+      ],
+      output: `<Pre>
+text at col zero
+</Pre>`,
     },
   ],
 });
