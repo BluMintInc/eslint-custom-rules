@@ -3063,7 +3063,7 @@ const has = (obj, id) => (String(id) as string) in obj;
       errors: [lintError('String(id) as string')],
       output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
-const has = (obj, id) => (assertSafe(String(id) as string)) in obj;
+const has = (obj, id) => assertSafe(String(id) as string) in obj;
       `,
     },
     {
@@ -3244,7 +3244,7 @@ const has = (obj, id) => (String?.(id)) in obj;
       errors: [lintError('String?.(id)')],
       output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
-const has = (obj, id) => (assertSafe(String?.(id))) in obj;
+const has = (obj, id) => assertSafe(String?.(id)) in obj;
       `,
     },
     {
@@ -4452,7 +4452,8 @@ export const read = (kind: 'live' | 'simulated' | 'replay') => R[kind];
       output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 const R: Record<'live' | 'simulated', number> = { live: 1, simulated: 2 };
-export const read = (kind: 'live' | 'simulated' | 'replay') => R[assertSafe(kind)];
+export const read = (kind: 'live' | 'simulated' | 'replay') =>
+  R[assertSafe(kind)];
       `,
     },
     {
@@ -4465,7 +4466,8 @@ const read = (m: Record<string, number>, kind: 'live' | 'simulated') => m[kind];
       errors: [lintError('kind')],
       output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
-const read = (m: Record<string, number>, kind: 'live' | 'simulated') => m[assertSafe(kind)];
+const read = (m: Record<string, number>, kind: 'live' | 'simulated') =>
+  m[assertSafe(kind)];
       `,
     },
     {
@@ -4512,7 +4514,8 @@ export const get = <K extends string>(m: Record<K, number>, k: K) => m[k];
       errors: [lintError('k')],
       output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
-export const get = <K extends string>(m: Record<K, number>, k: K) => m[assertSafe(k)];
+export const get = <K extends string>(m: Record<K, number>, k: K) =>
+  m[assertSafe(k)];
       `,
     },
     {
@@ -4552,7 +4555,8 @@ const read = (wrap: { map: Record<Kind, number> }, kind: Kind) => wrap.map[kind]
       output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 type Kind = 'live' | 'simulated';
-const read = (wrap: { map: Record<Kind, number> }, kind: Kind) => wrap.map[assertSafe(kind)];
+const read = (wrap: { map: Record<Kind, number> }, kind: Kind) =>
+  wrap.map[assertSafe(kind)];
       `,
     },
     {
@@ -4964,7 +4968,8 @@ export const read = (m: Record<string, number>, id: string) => m[\`\${id}\`];
     // misses, and the in-scope binding stops counting as the helper — which
     // withholds the fix entirely.
     expect(output).toBe(`import { assertSafe } from '../../assertSafe';
-export const read = (m: Record<string, number>, id: string) => m[assertSafe(id)];
+export const read = (m: Record<string, number>, id: string) =>
+  m[assertSafe(id)];
 `);
   });
 });
@@ -5671,6 +5676,91 @@ const SPAN_TESTS: AssertSafeTests = {
         'const pair = [store[assertSafe(first)], store[assertSafe(second)]];',
       ].join('\n'),
     },
+    {
+      // Wrapping the key makes the parentheses around it redundant, and
+      // prettier deletes a redundant pair — which is the churn #2108 is
+      // about. A comment written inside the pair is the exception: the pair
+      // is the group the author wrote the comment into, so dropping it would
+      // move the comment out of that group. The pair stays, redundant or not.
+      name: 'grouping parens carrying a block comment survive the wrap',
+      code: [
+        'const has = (obj, id) => (/* c */ String(id) as string) in obj;',
+      ].join('\n'),
+      errors: [lintError('String(id) as string')],
+      output: [
+        IMPORT_LINE,
+        'const has = (obj, id) => (/* c */ assertSafe(String(id) as string)) in obj;',
+      ].join('\n'),
+    },
+    {
+      // A line comment decides which lines after it are commented out, so
+      // moving it changes meaning rather than layout.
+      name: 'grouping parens carrying a line comment survive the wrap',
+      code: [
+        'const has = (obj, id) =>',
+        '  (',
+        '    // c',
+        '    String(id) as string',
+        '  ) in obj;',
+      ].join('\n'),
+      errors: [lintError('String(id) as string')],
+      output: [
+        IMPORT_LINE,
+        'const has = (obj, id) =>',
+        '  (',
+        '    // c',
+        '    assertSafe(String(id) as string)',
+        '  ) in obj;',
+      ].join('\n'),
+    },
+    {
+      // The run of parentheses is dropped as a whole; an inner pair left
+      // behind is text prettier deletes on its next run.
+      name: 'a nested run of grouping parens is dropped whole',
+      code: ['const has = (obj, id) => ((String(id) as string)) in obj;'].join(
+        '\n',
+      ),
+      errors: [lintError('String(id) as string')],
+      output: [
+        IMPORT_LINE,
+        'const has = (obj, id) => assertSafe(String(id) as string) in obj;',
+      ].join('\n'),
+    },
+    {
+      // `return` may abut its argument’s parenthesis. Dropping the pair
+      // there would fuse the keyword to the emitted call —
+      // `returnassertSafe(...)` — so separating them is the one thing the
+      // parenthesis is still doing, and it stays.
+      name: 'grouping parens abutting a keyword are kept, or the two fuse',
+      code: [
+        'function f(obj, id) {',
+        '  return(String(id) as string) in obj;',
+        '}',
+      ].join('\n'),
+      errors: [lintError('String(id) as string')],
+      output: [
+        IMPORT_LINE,
+        'function f(obj, id) {',
+        '  return(assertSafe(String(id) as string)) in obj;',
+        '}',
+      ].join('\n'),
+    },
+    {
+      // The wrap widens this line past the print width, so a break after
+      // `=>` is what prettier would print — but only where the emitter can
+      // say WHERE the break goes. A comment between `=>` and the body is
+      // text this emitter does not own, so it declines and leaves the line
+      // long; the formatter then decides, which costs layout, never meaning.
+      name: 'a comment between => and the body declines the arrow break',
+      code: [
+        "const readSomething = (m: Record<string, number>, kind: 'live' | 'sim') => /* c */ m[kind];",
+      ].join('\n'),
+      errors: [lintError('kind')],
+      output: [
+        IMPORT_LINE,
+        "const readSomething = (m: Record<string, number>, kind: 'live' | 'sim') => /* c */ m[assertSafe(kind)];",
+      ].join('\n'),
+    },
   ],
 };
 
@@ -5679,6 +5769,80 @@ ruleTesterTs.run(
   enforceAssertSafeObjectKey,
   SPAN_TESTS,
 );
+
+// A wrap widens the line it lands on, so where prettier would then break
+// after `=>` the fixer emits that break itself rather than leave churn
+// (#2108). It declines wherever it cannot say WHERE the break goes — and an
+// access the author already broke across lines is one such place, because the
+// single line the width was measured on is not the whole of what moves.
+//
+// This case is driven through a bare `Linter` rather than declared as a
+// RuleTester fixture on purpose: reaching the guard REQUIRES a line past the
+// print width (the wrap only ever widens), so the output is one prettier must
+// re-wrap. Declaring it as a fixture would put a knowingly non-fixed-point
+// case into the corpus the #2108 sweep asserts over.
+describe('enforce-assert-safe-object-key: the arrow break declines (issue #2108)', () => {
+  const RULE_ID = '@blumintinc/blumint/enforce-assert-safe-object-key';
+
+  const fixOf = (code: string) => {
+    const linter = new Linter();
+    linter.defineParser(
+      'ts',
+      typescriptParser as unknown as Linter.ParserModule,
+    );
+    linter.defineRule(
+      RULE_ID,
+      enforceAssertSafeObjectKey as unknown as Rule.RuleModule,
+    );
+    return linter.verifyAndFix(
+      code,
+      {
+        parser: 'ts',
+        parserOptions: { ecmaVersion: 2022, sourceType: 'module' },
+        rules: { [RULE_ID]: 'error' },
+      } as unknown as Linter.Config,
+      { filename: 'x.ts' },
+    );
+  };
+
+  it('leaves an already-broken access alone rather than guess a break', () => {
+    const fixed = fixOf(
+      [
+        'const read = (m: Record<string, number>) => m[',
+        '    someVeryLongKeyNameThatPushesThisLinePastTheEightyColumnPrintWidth',
+        '  ];',
+      ].join('\n'),
+    );
+
+    // The key is still wrapped — declining the BREAK must never decline the
+    // safety fix that is the rule’s whole purpose.
+    expect(fixed.output).toContain(
+      'assertSafe(someVeryLongKeyNameThatPushesThisLinePastTheEightyColumnPrintWidth)',
+    );
+    // And no break was invented after the arrow.
+    expect(fixed.output).toContain('=> m[');
+    expect(parseFailure(fixed.output)).toBeNull();
+  });
+
+  it('a comment between => and the body also declines the break', () => {
+    const fixed = fixOf(
+      "const readSomething = (m: Record<string, number>, kind: 'live' | 'sim') => /* c */ m[kind];",
+    );
+
+    expect(fixed.output).toContain('/* c */ m[assertSafe(kind)]');
+    expect(parseFailure(fixed.output)).toBeNull();
+  });
+
+  it('the break IS emitted where the emitter can place it', () => {
+    // The positive control: without this, every assertion above would pass on
+    // a fixer that had simply stopped breaking anywhere.
+    const fixed = fixOf(
+      "const read = (m: Record<string, number>, kind: 'live' | 'simulated') => m[kind];",
+    );
+
+    expect(fixed.output).toContain('=>\n  m[assertSafe(kind)]');
+  });
+});
 
 // Issue #2067: the corruption this rule shipped was invisible to every fixture
 // above, because a fixture compares one rule's output against a string. It took
@@ -5940,12 +6104,12 @@ describe('enforce-assert-safe-object-key: every fixed fixture parses (issue #206
     // Floors just under the measured values: a suite that stops declaring
     // fixtures, or a rule that stops fixing them, would otherwise leave the
     // assertion below passing over nothing.
-    expect(FIXTURES.length).toBeGreaterThanOrEqual(205);
+    expect(FIXTURES.length).toBeGreaterThanOrEqual(210);
 
     const rewritten = FIXTURES.filter(
       (fixture) => fixWith(subject, fixture).output !== fixture.code,
     );
-    expect(rewritten.length).toBeGreaterThanOrEqual(190);
+    expect(rewritten.length).toBeGreaterThanOrEqual(196);
   });
 
   it('emits text that parses for every invalid fixture', () => {

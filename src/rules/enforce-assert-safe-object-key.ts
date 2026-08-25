@@ -766,10 +766,17 @@ function foldKeyDomains(domains: readonly KeyDomain[]): KeyDomain {
  * the key and its bracket splits that set in half. Claiming the access instead
  * leaves a competing rewrite of it either wholly discarded (and re-made against
  * the fixed text on a later pass) or wholly applied, both of which parse.
+ *
+ * `keyEnd` is where the written key ends once the parentheses around it are
+ * counted in, which is what the bracket closing a computed property is looked
+ * for after: in `{ [(id)]: value }` the token following the key itself is the
+ * `)`, and reading that as "no bracket here" would shrink the span back onto the
+ * key and leave the property's own brackets outside it.
  */
 function accessSpan(
   sourceCode: Readonly<TSESLint.SourceCode>,
   written: TSESTree.Node,
+  keyEnd: TSESTree.Node | TSESTree.Token = written,
 ): [number, number] | null {
   const { parent } = written;
   if (!parent) {
@@ -790,7 +797,7 @@ function accessSpan(
     // A computed property's range runs past its key to the end of its value,
     // which the wrap has no business claiming; the bracket that closes the key
     // is where this access ends.
-    const closing = sourceCode.getTokenAfter(written);
+    const closing = sourceCode.getTokenAfter(keyEnd);
     return closing?.value === ']'
       ? [parent.range[0], closing.range[1]]
       : [written.range[0], written.range[1]];
@@ -803,6 +810,142 @@ function accessSpan(
     return [parent.range[0], parent.range[1]];
   }
   return null;
+}
+
+/** A parenthesis pair the source writes directly around an expression. */
+type GroupingParens = {
+  open: TSESTree.Token;
+  close: TSESTree.Token;
+};
+
+/**
+ * The grouping parentheses written around a key, innermost first.
+ *
+ * A pair is claimed only when both halves face the key at once, which is what
+ * keeps a parenthesis belonging to some enclosing construct out of the run: the
+ * `(` of `if (key in obj)` and of `read(key in obj)` is answered by the `in`
+ * keyword rather than by a `)`, so the walk stops before it.
+ *
+ * Anything other than whitespace between a parenthesis and what it encloses ends
+ * the walk too. That text is a comment, and dropping the parenthesis would move
+ * the comment out of the group the author wrote it inside — where a line comment
+ * decides what the lines after it may hold.
+ */
+function groupingParensAround(
+  sourceCode: Readonly<TSESLint.SourceCode>,
+  node: TSESTree.Node,
+): GroupingParens[] {
+  const pairs: GroupingParens[] = [];
+  const { text } = sourceCode;
+  let innerStart = node.range[0];
+  let innerEnd = node.range[1];
+  let open = sourceCode.getTokenBefore(node);
+  let close = sourceCode.getTokenAfter(node);
+  while (open?.value === '(' && close?.value === ')') {
+    if (
+      text.slice(open.range[1], innerStart).trim() !== '' ||
+      text.slice(innerEnd, close.range[0]).trim() !== ''
+    ) {
+      break;
+    }
+    pairs.push({ open, close });
+    innerStart = open.range[0];
+    innerEnd = close.range[1];
+    open = sourceCode.getTokenBefore(open);
+    close = sourceCode.getTokenAfter(close);
+  }
+  return pairs;
+}
+
+/**
+ * Whether the parentheses the source wrote around a key can be dropped.
+ *
+ * The emission is a call, which is the tightest-binding expression there is, and
+ * every position that yields an access span takes one bare: between the brackets
+ * of a lookup or of a computed property, and as the left operand of `in`. So the
+ * pair is redundant the moment the key is wrapped, and prettier deletes it
+ * again — which is the whole defect (#2108).
+ *
+ * The one thing the parenthesis is doing is separating the key from the token
+ * before it. Dropping it where that token ends in an identifier character would
+ * fuse the two into one word, so the pair stays there.
+ */
+function dropsGroupingParens(
+  text: string,
+  span: readonly [number, number],
+  outermost: GroupingParens,
+): boolean {
+  const prefix = text.slice(span[0], outermost.open.range[0]);
+  const preceding =
+    prefix === '' ? text.slice(Math.max(0, span[0] - 1), span[0]) : prefix;
+  return !/[\p{ID_Continue}$]$/u.test(preceding);
+}
+
+/** An edit the fixer measures before it commits to emitting it. */
+type PlannedEdit = {
+  range: [number, number];
+  text: string;
+};
+
+/**
+ * Prettier's default print width, which is what this repo and agora both format
+ * with. Wrapping a key widens the line it sits on, and a line the formatter
+ * would break is a line the formatter DOES break: agora runs prettier and
+ * `eslint --fix` over the same tree, so an emission past this width churns the
+ * file on every pass (#2108).
+ */
+const PRINT_WIDTH = 80;
+
+/** Prettier's default `tabWidth`, the step it indents a broken body by. */
+const INDENT_STEP = '  ';
+
+/**
+ * Bodies prettier keeps on the arrow's own line instead of breaking after `=>`.
+ * Each of these opens a block of its own that absorbs the overflow, so a break
+ * inserted ahead of one is a layout prettier does not print.
+ */
+const HUGGED_ARROW_BODY_TYPES = new Set<AST_NODE_TYPES>([
+  AST_NODE_TYPES.ArrayExpression,
+  AST_NODE_TYPES.ObjectExpression,
+  AST_NODE_TYPES.ArrowFunctionExpression,
+  AST_NODE_TYPES.TemplateLiteral,
+  AST_NODE_TYPES.TaggedTemplateExpression,
+  AST_NODE_TYPES.SequenceExpression,
+  AST_NODE_TYPES.JSXElement,
+  AST_NODE_TYPES.JSXFragment,
+]);
+
+/**
+ * Positions where a concise arrow body is laid out by the construct around it
+ * rather than by the arrow's own group: an argument list hugs its last argument
+ * and breaks the list first, and an arrow chain is printed as one unit. The
+ * accepted positions are the ones measured against prettier 2.8.8 — a
+ * declarator's initializer, a property or class-property value, an assignment's
+ * right-hand side, and a returned or thrown value.
+ */
+const BREAKABLE_ARROW_OWNER_TYPES = new Set<AST_NODE_TYPES>([
+  AST_NODE_TYPES.VariableDeclarator,
+  AST_NODE_TYPES.Property,
+  AST_NODE_TYPES.PropertyDefinition,
+  AST_NODE_TYPES.AssignmentExpression,
+  AST_NODE_TYPES.ReturnStatement,
+]);
+
+/**
+ * The arrow function whose concise body holds the key, or null when the key
+ * sits somewhere the arrow's `=>` does not govern — in its parameters, in a
+ * block body, or in no arrow at all.
+ */
+function enclosingConciseArrow(
+  node: TSESTree.Node,
+): TSESTree.ArrowFunctionExpression | null {
+  let child: TSESTree.Node = node;
+  let parent = node.parent;
+  while (parent && parent.type !== AST_NODE_TYPES.ArrowFunctionExpression) {
+    child = parent;
+    parent = parent.parent;
+  }
+  return parent && parent.body === child ? parent : null;
 }
 
 /**
@@ -1056,27 +1199,115 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
      * span (discarded whole, and re-made against the fixed text on the next
      * pass) or wholly outside it. Both parse. The re-emitted head and tail are
      * copied verbatim from the source, so the text this fix produces is
-     * character-for-character what replacing the key alone produced.
+     * character-for-character what replacing the key alone produced — bar the
+     * grouping parentheses `dropsGroupingParens` settles.
      */
-    const wrapKey = (
-      fixer: TSESLint.RuleFixer,
-      node: TSESTree.Node,
-      argText: string,
-    ): TSESLint.RuleFix => {
-      const replacement = `assertSafe(${argText})`;
-      const span = accessSpan(context.sourceCode, node);
+    const planWrap = (node: TSESTree.Node, argText: string): PlannedEdit => {
+      const { sourceCode } = context;
+      const replacement = `${ASSERT_SAFE_NAME}(${argText})`;
+      const parens = groupingParensAround(sourceCode, node);
+      const outermost = parens[parens.length - 1];
+      const span = accessSpan(sourceCode, node, outermost?.close ?? node);
       if (!span) {
-        return fixer.replaceText(node, replacement);
+        return { range: [node.range[0], node.range[1]], text: replacement };
       }
       const [start, end] = span;
-      const { text } = context.sourceCode;
-      return fixer.replaceTextRange(
-        [start, end],
-        `${text.slice(start, node.range[0])}${replacement}${text.slice(
-          node.range[1],
-          end,
-        )}`,
-      );
+      const { text } = sourceCode;
+      const edits: PlannedEdit[] = [
+        { range: [node.range[0], node.range[1]], text: replacement },
+      ];
+      if (outermost && dropsGroupingParens(text, span, outermost)) {
+        for (const pair of parens) {
+          edits.push(
+            { range: [pair.open.range[0], pair.open.range[1]], text: '' },
+            { range: [pair.close.range[0], pair.close.range[1]], text: '' },
+          );
+        }
+        edits.sort((left, right) => left.range[0] - right.range[0]);
+      }
+      let emitted = '';
+      let cursor = start;
+      for (const edit of edits) {
+        emitted += `${text.slice(cursor, edit.range[0])}${edit.text}`;
+        cursor = edit.range[1];
+      }
+      return {
+        range: [start, end],
+        text: `${emitted}${text.slice(cursor, end)}`,
+      };
+    };
+
+    /**
+     * The line break prettier prints after `=>` once the wrap has widened the
+     * arrow body past the print width, or null where this emitter cannot say
+     * what prettier would print.
+     *
+     * Prettier lays a concise arrow body out as `group(indent([line, body]))`,
+     * so the break after `=>` is the FIRST one it reaches for: a body that fits
+     * on the indented line is laid out exactly this way, and one that does not
+     * is broken further inside, which this emitter declines rather than guesses
+     * at. Every other decline below is deliberate for the same reason — the
+     * one-line emission it falls back to is what shipped before the width was
+     * measured at all, so a decline costs formatting and never meaning.
+     */
+    const planArrowBreak = (
+      node: TSESTree.Node,
+      wrap: PlannedEdit,
+    ): PlannedEdit | null => {
+      const { sourceCode } = context;
+      const { line } = node.loc.start;
+      const original = sourceCode.lines[line - 1] ?? '';
+      const delta = wrap.text.length - (wrap.range[1] - wrap.range[0]);
+      if (original.length + delta <= PRINT_WIDTH) {
+        return null;
+      }
+      // A span that already crosses lines carries the author's own breaks, so
+      // the single line measured above is not the whole of what moves.
+      if (
+        wrap.text.includes('\n') ||
+        sourceCode.getLocFromIndex(wrap.range[0]).line !== line ||
+        sourceCode.getLocFromIndex(wrap.range[1]).line !== line
+      ) {
+        return null;
+      }
+      const arrow = enclosingConciseArrow(node);
+      const body = arrow?.body;
+      if (
+        !arrow ||
+        !body ||
+        body.type === AST_NODE_TYPES.BlockStatement ||
+        HUGGED_ARROW_BODY_TYPES.has(body.type) ||
+        !arrow.parent ||
+        !BREAKABLE_ARROW_OWNER_TYPES.has(arrow.parent.type)
+      ) {
+        return null;
+      }
+      const arrowToken = sourceCode.getTokenBefore(body);
+      if (
+        arrowToken?.value !== '=>' ||
+        arrowToken.loc.end.line !== line ||
+        body.loc.start.line !== line ||
+        body.loc.end.line !== line ||
+        sourceCode.text.slice(arrowToken.range[1], body.range[0]).trim() !== ''
+      ) {
+        return null;
+      }
+      // Prettier indents the body one step in from the line the arrow's own
+      // group opens on, which is the line its parameter list starts.
+      const anchor = sourceCode.lines[arrow.loc.start.line - 1] ?? '';
+      const bodyIndent = `${/^[\t ]*/.exec(anchor)?.[0] ?? ''}${INDENT_STEP}`;
+      const head = original.slice(0, arrowToken.loc.end.column).trimEnd();
+      const tail = original.slice(body.loc.start.column);
+      if (
+        head.length > PRINT_WIDTH ||
+        bodyIndent.length + tail.length + delta > PRINT_WIDTH
+      ) {
+        return null;
+      }
+      return {
+        range: [arrowToken.range[1], body.range[0]],
+        text: `\n${bodyIndent}`,
+      };
     };
 
     /**
@@ -1096,7 +1327,12 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
         importClaimed = true;
       }
 
-      fixes.push(wrapKey(fixer, node, argText));
+      const wrap = planWrap(node, argText);
+      const arrowBreak = planArrowBreak(node, wrap);
+      if (arrowBreak) {
+        fixes.push(fixer.replaceTextRange(arrowBreak.range, arrowBreak.text));
+      }
+      fixes.push(fixer.replaceTextRange(wrap.range, wrap.text));
 
       return fixes;
     };
