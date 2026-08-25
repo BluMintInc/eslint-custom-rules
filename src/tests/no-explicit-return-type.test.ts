@@ -3535,6 +3535,247 @@ number => 1;
 }
 `,
     },
+    // Issue #2129, declaration spelling: a line comment in the gap has to end
+    // its line, and re-emitted in place that break lands ahead of the body's
+    // `{` and strands the brace on a line of its own — a shape Prettier
+    // re-lays out the whole body around. The run is carried onto the body's
+    // first line instead, which is where Prettier itself settles it.
+    {
+      code: `export function readRow(): // doc
+number {
+  return 1;
+}
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'function "readRow"' },
+        },
+      ],
+      output: `export function readRow() {
+  // doc
+  return 1;
+}
+`,
+    },
+    // The multi-line block comment stays ahead of the brace, where Prettier
+    // leaves it: nothing about a block comment ends a line, so nothing moves.
+    {
+      code: `export function readRow(): /**
+ * doc
+ */ number {
+  return 1;
+}
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'function "readRow"' },
+        },
+      ],
+      output: `export function readRow() /**
+ * doc
+ */ {
+  return 1;
+}
+`,
+    },
+    {
+      code: `function buildReader() {
+  function readRow(): // doc
+  number {
+    return 1;
+  }
+  return readRow;
+}
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'function "readRow"' },
+        },
+      ],
+      output: `function buildReader() {
+  function readRow() {
+    // doc
+    return 1;
+  }
+  return readRow;
+}
+`,
+    },
+    {
+      code: `export async function readRow(): // doc
+Promise<number> {
+  return 1;
+}
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'function "readRow"' },
+        },
+      ],
+      output: `export async function readRow() {
+  // doc
+  return 1;
+}
+`,
+    },
+    {
+      code: `export const readRow = function (): // doc
+number {
+  return 1;
+};
+`,
+      errors: [{ messageId: 'noExplicitReturnTypeInferable' }],
+      output: `export const readRow = function () {
+  // doc
+  return 1;
+};
+`,
+    },
+    // A method's function node begins at its parameter list, so the run is
+    // anchored on the member itself and lands one step past it.
+    {
+      code: `export class Repo {
+  read(): // doc
+  number {
+    return 1;
+  }
+}
+`,
+      errors: [{ messageId: 'noExplicitReturnTypeInferable' }],
+      output: `export class Repo {
+  read() {
+    // doc
+    return 1;
+  }
+}
+`,
+    },
+    {
+      code: `export class Repo {
+  read(): /**
+   * doc
+   */ number {
+    return 1;
+  }
+}
+`,
+      errors: [{ messageId: 'noExplicitReturnTypeInferable' }],
+      output: `export class Repo {
+  read() /**
+   * doc
+   */ {
+    return 1;
+  }
+}
+`,
+    },
+    {
+      code: `export class Repo {
+  get total(): // doc
+  number {
+    return 1;
+  }
+}
+`,
+      errors: [{ messageId: 'noExplicitReturnTypeInferable' }],
+      output: `export class Repo {
+  get total() {
+    // doc
+    return 1;
+  }
+}
+`,
+    },
+    {
+      code: `export const repo = {
+  read(): // doc
+  number {
+    return 1;
+  },
+};
+`,
+      errors: [{ messageId: 'noExplicitReturnTypeInferable' }],
+      output: `export const repo = {
+  read() {
+    // doc
+    return 1;
+  },
+};
+`,
+    },
+    // A run holding both kinds of comment moves as one, each on a line.
+    {
+      code: `export function readRow(): /* a */ // doc
+number {
+  return 1;
+}
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'function "readRow"' },
+        },
+      ],
+      output: `export function readRow() {
+  /* a */
+  // doc
+  return 1;
+}
+`,
+    },
+    // An empty body gets its `}` back at the declaration's depth, and a body
+    // written on one line gets the separator that keeps its statement code.
+    {
+      code: `export function noop(): // doc
+number {}
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'function "noop"' },
+        },
+      ],
+      output: `export function noop() {
+  // doc
+}
+`,
+    },
+    {
+      code: `export function readRow(): // doc
+number { return 1; }
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'function "readRow"' },
+        },
+      ],
+      output: `export function readRow() {
+  // doc
+  return 1; }
+`,
+    },
+    // A directive's meaning is the line it sits on; carrying it into the body
+    // would retarget it, so the fix is withheld and the report ships alone.
+    {
+      code: `export function readRow(): // eslint-disable-next-line no-console
+number {
+  console.log(1);
+  return 1;
+}
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'function "readRow"' },
+        },
+      ],
+      output: null,
+    },
     // A comment between the annotation and the arrow is in the same restricted
     // gap, and so is a raw line break that the annotation was not carrying.
     {
@@ -3820,10 +4061,12 @@ number => 1;
     },
     // A block body is reached the same way: `=>` binds it whether or not a line
     // terminator precedes it. The `hugsArrow` carve-out cannot save the arrow's
-    // line here — a line comment would swallow the `{` — so the comment takes
-    // the same step in a broken body takes. Prettier re-indents the block's
-    // interior to match; those columns belong to the body, which is outside the
-    // gap this planner rewrites, so they are left as the source wrote them.
+    // line here — a line comment would swallow the `{` — and carrying the run
+    // past the `=>` would drop the `{` one step in while the block's interior
+    // and its `}` stay at the columns the source wrote them at, a shape
+    // Prettier re-lays out the whole body around. The run is carried onto the
+    // body's first line instead, level with the statement it precedes, so the
+    // brace stays beside the arrow and nothing behind it moves (#2129).
     {
       code: `export const readRow = () // doc
 : number => {
@@ -3836,11 +4079,287 @@ number => 1;
           data: { functionKind: 'arrow function "readRow"' },
         },
       ],
+      output: `export const readRow = () => {
+  // doc
+  return 1;
+};
+`,
+    },
+    // Issue #2129's reproduction verbatim: the same block body with the
+    // comment on the annotation's side of the colon, which is how Prettier
+    // writes a line comment in the gap.
+    {
+      code: `export const readRow = (): // doc
+number => {
+  return 1;
+};
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "readRow"' },
+        },
+      ],
+      output: `export const readRow = () => {
+  // doc
+  return 1;
+};
+`,
+    },
+    // Nested one step in, the run lands at the body's own depth, read from
+    // the statement it precedes rather than computed.
+    {
+      code: `function buildReader() {
+  const readRow = (): // doc
+  number => {
+    return 1;
+  };
+  return readRow;
+}
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "readRow"' },
+        },
+      ],
+      output: `function buildReader() {
+  const readRow = () => {
+    // doc
+    return 1;
+  };
+  return readRow;
+}
+`,
+    },
+    // A class property's arrow is anchored on the member, and an object
+    // property's on the property, so the run lands one step past each.
+    {
+      code: `export class Repo {
+  read = (): // doc
+  number => {
+    return 1;
+  };
+}
+`,
+      errors: [{ messageId: 'noExplicitReturnTypeInferable' }],
+      output: `export class Repo {
+  read = () => {
+    // doc
+    return 1;
+  };
+}
+`,
+    },
+    {
+      code: `export const repo = {
+  read: (): // doc
+  number => {
+    return 1;
+  },
+};
+`,
+      errors: [{ messageId: 'noExplicitReturnTypeInferable' }],
+      output: `export const repo = {
+  read: () => {
+    // doc
+    return 1;
+  },
+};
+`,
+    },
+    // Two block comments in the gap end a line between them just as a line
+    // comment does, and each is re-aligned to the body's depth on arrival.
+    {
+      code: `export const readRow = (): /**
+ * a
+ */ /**
+ * b
+ */ number => {
+  return 1;
+};
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "readRow"' },
+        },
+      ],
+      output: `export const readRow = () => {
+  /**
+   * a
+   */
+  /**
+   * b
+   */
+  return 1;
+};
+`,
+    },
+    // A body written on one line has no interior depth to leave behind, so it
+    // is not displaced: it moves whole onto the line below the run, as the
+    // planner already had it.
+    {
+      code: `export const readRow = (): // doc
+number => { return 1; };
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "readRow"' },
+        },
+      ],
+      output: `export const readRow = () =>
+  // doc
+  { return 1; };
+`,
+    },
+    // An object body spans lines just as a block does, but it has no first
+    // line of its own to carry the run onto, so the displacement cannot be
+    // rerouted: the fix is withheld and only the report ships.
+    {
+      code: `export const buildEntry = (): // doc
+{ a: number; b: number } => ({
+  a: 1,
+  b: 2,
+});
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "buildEntry"' },
+        },
+      ],
+      output: null,
+    },
+    // The neighbour on the other side of that carve-out: the body opens a line
+    // of its own at exactly the depth the carried run is written to, so nothing
+    // behind it moves and the fix ships.
+    {
+      code: `export const readRow = (): // doc
+number =>
+  {
+    return 1;
+  };
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "readRow"' },
+        },
+      ],
       output: `export const readRow = () =>
   // doc
   {
-  return 1;
-};
+    return 1;
+  };
+`,
+    },
+    // The lines a template literal occupies are inside a single token, so it
+    // has no interior columns to leave behind at the wrong depth — displacing
+    // it moves the whole literal intact, and the fix ships.
+    {
+      code: `export const render = (): // doc
+string =>
+  \`line one
+line two\`;
+`,
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeInferable',
+          data: { functionKind: 'arrow function "render"' },
+        },
+      ],
+      output: `export const render = () =>
+  // doc
+  \`line one
+line two\`;
+`,
+    },
+    // Prettier lays an arrow chain out as one group, and the line terminator
+    // this annotation carries is the only thing holding that group open.
+    // Stripping it re-decides where the OTHER link breaks, which is text
+    // outside this annotation's span, so the fix is withheld (#2129).
+    {
+      code: `export const buildReader =
+  () =>
+  (): /**
+   * doc
+   */ number =>
+    1;
+`,
+      errors: [{ messageId: 'noExplicitReturnTypeInferable' }],
+      output: null,
+    },
+    // A line comment holds the group open just as hard as a block comment
+    // carrying a terminator, so the same carve-out answers for it.
+    {
+      code: `export const buildReader =
+  () =>
+  (): // doc
+  number =>
+    1;
+`,
+      errors: [{ messageId: 'noExplicitReturnTypeInferable' }],
+      output: null,
+    },
+    // The neighbour that pins what the chain carve-out keys on: the chain is
+    // written just as broken, but the strip takes no line terminator out of
+    // the head, so the group stays where it was and the fix ships.
+    {
+      code: `export const buildFetcher =
+  (tenantIdentifier: string, tenantRegionName: string) =>
+  (requestIdentifier: string, requestRegionName: string): number =>
+    1;
+`,
+      errors: [{ messageId: 'noExplicitReturnTypeInferable' }],
+      output: `export const buildFetcher =
+  (tenantIdentifier: string, tenantRegionName: string) =>
+  (requestIdentifier: string, requestRegionName: string) =>
+    1;
+`,
+    },
+    // Same broken chain with a comment that stays in the gap: a comment is not
+    // itself the trigger, only the terminator one may carry.
+    {
+      code: `export const buildFetcher =
+  (tenantIdentifier: string, tenantRegionName: string) =>
+  (requestIdentifier: string, requestRegionName: string): /* doc */ number =>
+    1;
+`,
+      errors: [{ messageId: 'noExplicitReturnTypeInferable' }],
+      output: `export const buildFetcher =
+  (tenantIdentifier: string, tenantRegionName: string) =>
+  (requestIdentifier: string, requestRegionName: string) /* doc */ =>
+    1;
+`,
+    },
+    // A chain whose links share a line is a group nothing holds open, so the
+    // strip cannot collapse it and the fix ships.
+    {
+      code: `export const buildReader = () => (): /* doc */ number => 1;
+`,
+      errors: [{ messageId: 'noExplicitReturnTypeInferable' }],
+      output: `export const buildReader = () => () /* doc */ => 1;
+`,
+    },
+    // An arrow sitting in another arrow's PARAMETER list shares a parent type
+    // without sharing a chain: its own head is laid out on its own, so the
+    // chain carve-out must not reach it.
+    {
+      code: `export const buildReader = (
+  cb = (): /**
+   * doc
+   */ number => 1,
+) => cb;
+`,
+      errors: [{ messageId: 'noExplicitReturnTypeInferable' }],
+      output: `export const buildReader = (
+  cb = () =>
+    /**
+     * doc
+     */ 1,
+) => cb;
 `,
     },
     // A bracketed body that a line comment forces off the arrow's line goes one
@@ -5912,6 +6431,25 @@ describe('no-explicit-return-type --fix emits code Prettier leaves alone', () =>
       'line comment, block body',
       `export const f = (): // doc\nnumber => {\n  return 1;\n};\n`,
     ],
+    // Issue #2129's declaration spelling: the same run ahead of a body brace,
+    // on the subjects whose comments are carried in place rather than past an
+    // arrow. The block-comment arm pins that it stays ahead of the brace.
+    [
+      'line comment, function declaration',
+      `export function f(): // doc\nnumber {\n  return 1;\n}\n`,
+    ],
+    [
+      'block comment, function declaration',
+      `export function f(): ${DOC} number {\n  return 1;\n}\n`,
+    ],
+    [
+      'line comment, class method',
+      `export class C {\n  m(): // doc\n  number {\n    return 1;\n  }\n}\n`,
+    ],
+    [
+      'line comment, object method',
+      `const repo = {\n  read(): // doc\n  number {\n    return 1;\n  },\n};\n`,
+    ],
   ];
 
   /**
@@ -5927,13 +6465,15 @@ describe('no-explicit-return-type --fix emits code Prettier leaves alone', () =>
    * across a body to adjust parentheses is a hazard of its own (#2063).
    *
    * A line comment ahead of a block body forces the break that `hugsArrow`
-   * exists to avoid — the comment would otherwise swallow the `{` — and
-   * Prettier re-indents the whole block behind it. Those interior columns are
-   * the body's own text, equally outside the gap (#2069). What the planner does
-   * own, the line the comment lands on, matches Prettier exactly.
+   * exists to avoid — the comment would otherwise swallow the `{` — and a
+   * brace pushed onto a line of its own is one Prettier re-lays out the whole
+   * block around. The body's interior is outside the gap (#2069), so the run
+   * is carried onto the body's first line instead, where every column behind
+   * it keeps its place (#2129); that arm is pinned below rather than named
+   * as a residue.
    */
   const PAREN_RESIDUE = 'conditional body';
-  const BLOCK_INDENT_RESIDUE = 'line comment, block body';
+  const BLOCK_BODY_CARRY = 'line comment, block body';
 
   const settled = SOURCES.filter(([, source]) => isFixedPoint(source));
 
@@ -5941,7 +6481,7 @@ describe('no-explicit-return-type --fix emits code Prettier leaves alone', () =>
     // Equality, not a floor: a source edited into a shape Prettier rewrites is
     // one this guard stops asking about, which reads exactly like a pass.
     expect(settled.length).toBe(SOURCES.length);
-    expect(settled.length).toBeGreaterThanOrEqual(23);
+    expect(settled.length).toBeGreaterThanOrEqual(27);
 
     const outputs = new Map(
       settled.map(([label, source]) => {
@@ -5957,10 +6497,9 @@ describe('no-explicit-return-type --fix emits code Prettier leaves alone', () =>
       .filter(([, output]) => !isFixedPoint(output))
       .map(([label]) => label);
 
-    // In SOURCES order, which is why the line-comment arms sit last.
-    expect(unstable).toEqual([PAREN_RESIDUE, BLOCK_INDENT_RESIDUE]);
-    // What is left of each residue is the one thing named above and nothing
-    // else: the parenthesis pair, and the block interior's own columns.
+    expect(unstable).toEqual([PAREN_RESIDUE]);
+    // What is left of the residue is the one thing named above and nothing
+    // else: the parenthesis pair.
     expect(
       isFixedPoint(
         (outputs.get(PAREN_RESIDUE) as string).replace(
@@ -5969,13 +6508,26 @@ describe('no-explicit-return-type --fix emits code Prettier leaves alone', () =>
         ),
       ),
     ).toBe(true);
+
+    // The block-body arm lands the run inside the body, level with the
+    // statement it precedes, rather than ahead of a displaced brace.
+    expect(outputs.get(BLOCK_BODY_CARRY)).toBe(
+      `export const f = () => {\n  // doc\n  return 1;\n};\n`,
+    );
+  });
+
+  it('is not vacuous: the displaced brace the body carry replaced is detected', () => {
+    // The text the planner emitted before #2129 — the `{` one step in, its
+    // interior and `}` still at the declaration's depth — in both spellings
+    // the defect had, and the settled shape each was carried to.
     expect(
-      isFixedPoint(
-        (outputs.get(BLOCK_INDENT_RESIDUE) as string).replace(
-          '{\n  return 1;\n};\n',
-          '{\n    return 1;\n  };\n',
-        ),
-      ),
+      isFixedPoint(`export const f = () =>\n  // doc\n  {\n  return 1;\n};\n`),
+    ).toBe(false);
+    expect(
+      isFixedPoint(`export function f() // doc\n {\n  return 1;\n}\n`),
+    ).toBe(false);
+    expect(
+      isFixedPoint(`export function f() {\n  // doc\n  return 1;\n}\n`),
     ).toBe(true);
   });
 
