@@ -139,13 +139,34 @@ module) reuses that import rather than gaining a second one, and an import
 aliased to a different local name (`import { stableHash as hashOf }`) leaves
 the name free, so it never blocks the fix.
 
+Extending an existing declaration is width-aware, exactly like the emitted
+`useMemo` statement. The added specifier joins the line only while the result
+still fits `printWidth`; past that the fixer re-lays the import one specifier
+per line — the same form Prettier prints for that overflow — and a declaration
+Prettier already broke across lines gains the specifier on its own line:
+
+```tsx
+import {
+  stableHash as hashOf,
+  stableHash,
+} from 'functions/src/util/hash/stableHash';
+```
+
+The re-layout rewrites only the separators between the braces and the
+specifiers, so a comment inside a specifier survives verbatim. A comment
+sitting in one of those separator gaps is text the re-layout would have to
+delete; the fixer instead leaves that declaration untouched and adds a
+separate `import { stableHash } ...` declaration, as it also does for
+namespace forms (`* as ns`, `d, * as ns`) that leave no grammatical slot for
+a named specifier.
+
 This ensures effects re-run whenever array contents change, not just when its length changes. `stableHash` safely stringifies values to produce a stable hash for arrays and objects.
 
 ## Options
 
 - `hashImport.source` (default `functions/src/util/hash/stableHash`): Module path for the hash helper used by the fixer.
 - `hashImport.importName` (default `stableHash`): Imported name for the hash helper.
-- `printWidth` (default `80`): Column the autofix wraps the emitted declaration at.
+- `printWidth` (default `80`): Column the autofix wraps its emitted code at, both the memo declaration and an extended import.
 
 ```js
 '@blumintinc/blumint/no-array-length-in-deps': ['error', {
@@ -186,6 +207,10 @@ collapses a hand-broken short argument list straight back onto one line, so
 always wrapping would trade an over-width line on long expressions for a
 needlessly split one on every short case. The fixer measures the exact statement
 it is about to write and only breaks when that measurement overflows.
+
+The same measurement governs the import edit: an existing declaration gains
+`, stableHash` in place while the extended line still fits, and switches to
+the one-specifier-per-line layout once it does not.
 
 ## Warnings & Considerations
 
