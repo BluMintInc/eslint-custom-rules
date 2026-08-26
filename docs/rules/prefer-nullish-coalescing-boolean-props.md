@@ -67,7 +67,7 @@ const value =
   c;
 ```
 
-The break belongs to the chain, so only the chain's own breaks ask for it. A comment nested inside an operand's brackets is that operand's layout and leaves the chain on one line; a comment trailing the whole expression sits outside the chain and moves nothing. A chain that already opens its own line is at that depth already and comes back byte-identical.
+The break belongs to the chain, so only the chain's own breaks ask for it. A comment nested inside an operand's brackets is that operand's layout and leaves the chain on one line; a comment trailing the whole expression sits outside the chain and moves no operand. Such a comment rides out past the `;` (or list `,`) that closes the statement where that punctuator has nothing else on its line — `const value = a || (b // tail` over two lines converges to `const value = a ?? b; // tail` — because keeping it inside the replacement would strand the punctuator on a line of its own: layout prettier folds straight back, and the fold retargets an `eslint-disable-next-line` written on the comment's line. A punctuator sharing its line with other source is left in place (a line-bound comment landing after it would comment that source out), and the comment keeps its break inside the replacement instead. A chain that already opens its own line is at that depth already and comes back byte-identical.
 
 Prettier reads a logical chain as ONE group, so a chain broken anywhere is broken everywhere: a comment beside one operator still puts the operands it does not touch on lines of their own, and a link an earlier pass already converted is re-flowed rather than carried with the indentation it had while parentheses held it one level deeper.
 

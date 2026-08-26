@@ -2015,6 +2015,9 @@ export const chosen = size ?? 5;
       },
       // A comment TRAILING the whole expression is outside the chain, so it
       // breaks nothing the chain owns and the operands stay where they were.
+      // The comment itself rides out past the statement's `;`: kept inside the
+      // replacement, the line break it demands would strand that `;` on a
+      // line of its own (#2139).
       {
         code: `const value = a || (b // tail\n);`,
         errors: [
@@ -2023,7 +2026,96 @@ export const chosen = size ?? 5;
             data: { left: 'a', right: 'b' },
           },
         ],
-        output: `const value = a ?? b // tail\n;`,
+        output: `const value = a ?? b; // tail`,
+      },
+      // The same carry works when the punctuator's line is indented: the
+      // absorption cares only that nothing but line ending stands behind it.
+      {
+        code: `const value = a || (b // tail\n  );`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a', right: 'b' },
+          },
+        ],
+        output: `const value = a ?? b; // tail`,
+      },
+      // The replaced span can end PAST the node, at a redundant paren the
+      // widening claims. The punctuator lookup anchors on the span's own last
+      // token — anchored on the node it would find that paren instead of the
+      // `;` and silently decline the carry (#2139).
+      {
+        code: `const q = x ?? (a || (b // tail\n));`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a', right: 'b' },
+          },
+        ],
+        output: `const q = x ?? a ??\n  b; // tail`,
+      },
+      // A `,` with nothing behind it on its line is taken over the same way,
+      // so no emitted line holds a lone `,` (#2139).
+      {
+        code: `f(a || (b // tail\n),\n  c);`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a', right: 'b' },
+          },
+        ],
+        output: `f(a ?? b, // tail\n  c);`,
+      },
+      // A punctuator sharing its line with source is NOT taken over: a
+      // line-bound comment landing after it would comment that source out.
+      // The comment keeps its break inside the replacement instead, and the
+      // punctuator's line still holds the neighbouring source, so no line is
+      // left holding the punctuator alone.
+      {
+        code: `f(a || (b // tail\n), c);`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a', right: 'b' },
+          },
+        ],
+        output: `f(a ?? b // tail\n, c);`,
+      },
+      {
+        code: `const v = a || (b // tail\n); const other = 1;`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a', right: 'b' },
+          },
+        ],
+        output: `const v = a ?? b // tail\n; const other = 1;`,
+      },
+      // A single-line block comment forces no break, but a `;` still claims
+      // it: prettier prints a comment trailing a statement AFTER the token
+      // that closes the statement.
+      {
+        code: `const v = a || (b /* t */);`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a', right: 'b' },
+          },
+        ],
+        output: `const v = a ?? b; /* t */`,
+      },
+      // The carry composes with the landing-operator widening: the chain takes
+      // the `=`'s line break AND the trailing comment rides past the `;`,
+      // which is exactly the layout prettier prints for this input.
+      {
+        code: `const uid = primary.id || // c\n  (secondary.id // tail\n  );`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'primary.id', right: 'secondary.id' },
+          },
+        ],
+        output: `const uid =\n  primary.id ?? // c\n  secondary.id; // tail`,
       },
       // A comment nested inside an operand's own brackets belongs to that
       // operand's layout: the chain stays on one line, exactly as prettier
@@ -2064,9 +2156,10 @@ export const chosen = size ?? 5;
         ],
         output: `const value = (a ?? /* keep */ b) || d;`,
       },
-      // Text resuming after the expression belongs to the statement, so the
-      // break a trailing line comment forces returns to the opening line's
-      // depth rather than the chain body's.
+      // A trailing line comment kept inside the replacement would push the
+      // statement's `;` onto a line of its own — layout prettier folds back,
+      // and the fold retargets an `eslint-disable-next-line` written on the
+      // comment's line (#2139). The comment is carried past the `;` instead.
       {
         code: `const value = a || (b // tail\n);`,
         errors: [
@@ -2075,7 +2168,7 @@ export const chosen = size ?? 5;
             data: { left: 'a', right: 'b' },
           },
         ],
-        output: `const value = a ?? b // tail\n;`,
+        output: `const value = a ?? b; // tail`,
       },
     ],
   },
@@ -2638,5 +2731,208 @@ describe('prefer-nullish-coalescing-boolean-props: chain depth and gap breaks ar
     expect(format(code)).toBe(code);
     expect(lint(code).fixed).toBe(false);
     expect(lint(code).output).toBe(code);
+  });
+});
+
+// ===== REGRESSION TESTS FOR ISSUE #2139 =====
+// A trailing line comment kept inside the replacement ends the replacement with
+// the line break the comment demands, stranding the statement's `;` (or a list
+// `,`) on a line of its own. Whether that stray line changes what the file
+// ENFORCES is a question about ESLint's own line accounting and about what a
+// formatter does to the emission, so it is asked of both rather than of the
+// emitted text alone — the same discipline as #2138's block for
+// no-usememo-for-pass-by-value.
+describe('prefer-nullish-coalescing-boolean-props carried-comment terminator', () => {
+  const RULE_ID = '@blumintinc/blumint/prefer-nullish-coalescing-boolean-props';
+
+  const makeLinter = () => {
+    const linter = new Linter();
+    linter.defineParser('ts', tsParser as never);
+    linter.defineRule(
+      RULE_ID,
+      preferNullishCoalescingBooleanProps as unknown as Rule.RuleModule,
+    );
+    return linter;
+  };
+
+  const parserConfig = {
+    parser: 'ts',
+    parserOptions: {
+      ecmaVersion: 2020 as const,
+      sourceType: 'module' as const,
+    },
+  };
+
+  const lintWith = (code: string, rules: Linter.Config['rules']) =>
+    makeLinter().verify(
+      code,
+      { ...parserConfig, rules } as Linter.Config,
+      'example.ts',
+    );
+
+  const fix = (code: string) =>
+    makeLinter().verifyAndFix(
+      code,
+      { ...parserConfig, rules: { [RULE_ID]: 'error' } } as Linter.Config,
+      'example.ts',
+    ).output;
+
+  // The repository's own .prettierrc.json; 2.7.1 here and 2.8.8 at the
+  // consumer print every shape below identically.
+  const PRETTIER_OPTIONS: prettier.Options = {
+    parser: 'typescript',
+    printWidth: 80,
+    tabWidth: 2,
+    singleQuote: true,
+    semi: true,
+    trailingComma: 'all',
+  };
+
+  const isFixedPoint = (text: string) =>
+    prettier.format(text, PRETTIER_OPTIONS) === text;
+
+  const holdsLonePunctuatorLine = (text: string) =>
+    text.split('\n').some((line) => /^\s*[;,]\s*$/.test(line));
+
+  const REPRO = `const value = a || (b // tail\n);\n`;
+  const EXPECTED = `const value = a ?? b; // tail\n`;
+  /** The emission before #2139, kept as the control the fix has to beat. */
+  const STRANDED = `const value = a ?? b // tail\n;\n`;
+
+  it('carries the comment past the semicolon it would otherwise strand', () => {
+    expect(fix(REPRO)).toBe(EXPECTED);
+    expect(EXPECTED).toContain('// tail');
+  });
+
+  it('is not vacuous: the stranded terminator is what prettier folds back', () => {
+    expect(isFixedPoint(EXPECTED)).toBe(true);
+    expect(isFixedPoint(STRANDED)).toBe(false);
+    expect(prettier.format(STRANDED, PRETTIER_OPTIONS)).toBe(EXPECTED);
+    expect(holdsLonePunctuatorLine(STRANDED)).toBe(true);
+    expect(holdsLonePunctuatorLine(EXPECTED)).toBe(false);
+  });
+
+  const DIRECTIVE = `const x = a || (b // eslint-disable-next-line no-var\n);\nvar y = 1;\n`;
+  const EXPECTED_DIRECTIVE = `const x = a ?? b; // eslint-disable-next-line no-var\nvar y = 1;\n`;
+  const STRANDED_DIRECTIVE = `const x = a ?? b // eslint-disable-next-line no-var\n;\nvar y = 1;\n`;
+
+  const noVarReports = (code: string) =>
+    lintWith(code, { 'no-var': 'error' }).length;
+
+  it('leaves the directive governing the statement it is written above', () => {
+    const output = fix(DIRECTIVE);
+    expect(output).toBe(EXPECTED_DIRECTIVE);
+    expect(noVarReports(output)).toBe(0);
+    // Formatting the emission cannot move the directive onto another subject,
+    // because there is no stray line left for it to land on.
+    expect(noVarReports(prettier.format(output, PRETTIER_OPTIONS))).toBe(0);
+    expect(isFixedPoint(output)).toBe(true);
+  });
+
+  it('is not vacuous: the stranded terminator makes formatting flip enforcement', () => {
+    // The directive's subject is the stray `;` line, so `var y` reports — and
+    // stops reporting the moment prettier folds the `;` back up. agora runs
+    // prettier and `eslint --fix` over the same tree, so the pipeline's
+    // ordering would silently decide the outcome.
+    expect(noVarReports(STRANDED_DIRECTIVE)).toBe(1);
+    expect(
+      noVarReports(prettier.format(STRANDED_DIRECTIVE, PRETTIER_OPTIONS)),
+    ).toBe(0);
+  });
+
+  it('is not vacuous: the same emission without the directive reports', () => {
+    const undirected = EXPECTED_DIRECTIVE.replace(
+      ' // eslint-disable-next-line no-var',
+      '',
+    );
+    expect(undirected).not.toContain('eslint-disable-next-line');
+    expect(noVarReports(undirected)).toBe(1);
+  });
+
+  /**
+   * The punctuator is taken over only where nothing but the line ending stands
+   * behind it, so the declaration sharing that line survives the rewrite
+   * rather than being commented out by the carried comment.
+   */
+  const SHARED_LINE = `const v = a || (b // tail\n); const other = 1;\n`;
+
+  it('declines the punctuator that shares its line with source', () => {
+    const output = fix(SHARED_LINE);
+    expect(output).toContain('const other = 1;');
+    expect(output).toContain('// tail');
+    // The comment stays ahead of the punctuator, which is the only placement
+    // that leaves the neighbouring declaration executable.
+    expect(
+      lintWith(output, { [RULE_ID]: 'error' }).some(
+        (message) => message.fatal === true,
+      ),
+    ).toBe(false);
+    expect(output.indexOf('// tail')).toBeLessThan(
+      output.indexOf('const other = 1;'),
+    );
+  });
+
+  /** The names a snippet actually declares, read from its parsed body. */
+  const declaredNames = (code: string) => {
+    const names: string[] = [];
+    const linter = makeLinter();
+    linter.defineRule('collect-names', {
+      create: () => ({
+        VariableDeclarator: (node: { id: { type: string; name?: string } }) => {
+          if (node.id.type === 'Identifier' && node.id.name) {
+            names.push(node.id.name);
+          }
+        },
+      }),
+    } as unknown as Rule.RuleModule);
+    linter.verify(
+      code,
+      { ...parserConfig, rules: { 'collect-names': 'error' } } as Linter.Config,
+      'example.ts',
+    );
+    return names;
+  };
+
+  it('is not vacuous: absorbing that punctuator would comment the neighbour out', () => {
+    // What absorption would have emitted: the carried comment ahead of the
+    // source that shared the punctuator's line, which swallows it whole.
+    const absorbed = `const v = a ?? b; // tail const other = 1;\n`;
+    expect(declaredNames(absorbed)).toEqual(['v']);
+    expect(declaredNames(fix(SHARED_LINE))).toEqual(['v', 'other']);
+  });
+
+  // The `;` is not the only punctuator the break can strand: a list `,` with
+  // nothing behind it on its line is taken over the same way, and one sharing
+  // its line with the next element is declined for the same reason as above.
+  const COMMA = `f(a || (b // tail\n),\n  c);\n`;
+  const STRANDED_COMMA = `f(a ?? b // tail\n,\n  c);\n`;
+
+  it('carries the comment past a comma it would otherwise strand', () => {
+    const output = fix(COMMA);
+    expect(output).toBe(`f(a ?? b, // tail\n  c);\n`);
+    expect(holdsLonePunctuatorLine(output)).toBe(false);
+    expect(holdsLonePunctuatorLine(STRANDED_COMMA)).toBe(true);
+  });
+
+  // The replaced span can end PAST the node, at a redundant paren the widening
+  // claims. Anchoring the punctuator lookup on the node instead of on the
+  // span's last token finds that paren, silently declines, and re-strands the
+  // `;` — so this shape guards the anchor itself.
+  const PAREN_WIDENED = `const q = x ?? (a || (b // tail\n));\n`;
+
+  it('absorbs the semicolon behind a redundant paren the span claims', () => {
+    const output = fix(PAREN_WIDENED);
+    expect(output).toContain('b; // tail');
+    expect(holdsLonePunctuatorLine(output)).toBe(false);
+  });
+
+  it('emits no line holding only a punctuator, across every shape here', () => {
+    const outputs = [REPRO, DIRECTIVE, SHARED_LINE, COMMA, PAREN_WIDENED].map(
+      fix,
+    );
+    expect(outputs.filter(holdsLonePunctuatorLine)).toEqual([]);
+    // Planted control: the oracle sees the pre-fix emissions.
+    expect(holdsLonePunctuatorLine(STRANDED)).toBe(true);
+    expect(holdsLonePunctuatorLine(STRANDED_DIRECTIVE)).toBe(true);
   });
 });

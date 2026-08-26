@@ -78,13 +78,20 @@ export function requiresOwnLine(comment: TSESTree.Comment): boolean {
  * over: a line-bound comment landing after it would otherwise swallow
  * whatever shared that line. Asking for the next token INCLUDING comments
  * also keeps a comment the fixer does not own from being stepped over.
+ *
+ * The anchor is whatever the replaced SPAN ends at. Where that span is
+ * exactly the node, the node itself serves; where a widening claims tokens
+ * past the node — redundant parentheses the rewrite discards — the anchor
+ * must be the span's own last token, because asked of the node the lookup
+ * answers with a token INSIDE the span instead of the punctuator behind it
+ * (#2139).
  */
 export function absorbableClosingPunctuator(
   sourceCode: Readonly<TSESLint.SourceCode>,
-  node: TSESTree.Node,
+  anchor: TSESTree.Node | TSESTree.Token,
   trailingComments: readonly TSESTree.Comment[],
 ): TSESTree.Token | null {
-  const next = sourceCode.getTokenAfter(node, { includeComments: true });
+  const next = sourceCode.getTokenAfter(anchor, { includeComments: true });
   if (
     !next ||
     next.type !== AST_TOKEN_TYPES.Punctuator ||
