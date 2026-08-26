@@ -199,8 +199,8 @@ type Exemption = {
 const KNOWN_DIVERGENT: Record<string, Exemption> = {
   'enforce-assert-safe-object-key::prefer-union-from-const-array': {
     reason:
-      "PIPELINE: the #1875 fixtures declare in-file `type Kind = 'live' | 'simulated'` aliases to pin the compiler-bounded Record carve-out — 12 valid fixtures plus the fixed outputs of 8 invalid ones — and the sibling wants every such alias derived from an `as const` values array. The composed `--fix` rewrites the alias on all 20 and the carve-out reads the derived `(typeof KINDS)[number]` spelling — via name identity or the array's own literal elements — so the valid fixtures end silent under BOTH rules with zero `assertSafe` wraps, and the outputs keep their already-wrapped keys exempt (measured, every one).",
-    cases: { preferDerivedUnion: 20 },
+      "PIPELINE: the #1875 fixtures declare in-file `type Kind = 'live' | 'simulated'` aliases to pin the compiler-bounded Record carve-out — 12 valid fixtures plus the fixed outputs of 9 invalid ones — and the sibling wants every such alias derived from an `as const` values array. The composed `--fix` rewrites the alias on all 21 and the carve-out reads the derived `(typeof KINDS)[number]` spelling — via name identity or the array's own literal elements — so the valid fixtures end silent under BOTH rules with zero `assertSafe` wraps, and the outputs keep their already-wrapped keys exempt (measured, every one). Was 20 for a corpus-identity reason rather than a reach one: the carve-out's `String()` and template-interpolation fixtures used to fix to the BYTE-IDENTICAL `m[assertSafe(kind)]`, which the corpus deduped to a single case. #2144 stopped the fixer replacing a coercion with its operand, so those outputs are now `m[assertSafe(String(kind))]` and ``m[assertSafe(`${kind}`)]`` — two distinct texts, both entering the corpus on the same alias the entry was already signed off for. The disagreement reached no new shape.",
+    cases: { preferDerivedUnion: 21 },
   },
   'enforce-boolean-naming-prefixes::no-explicit-return-type': {
     reason:

@@ -36,11 +36,33 @@ import { assertSafe } from '../util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
 
+console.log(obj[assertSafe(String(id))]);
+console.log(obj[assertSafe(`${id}`)]);
 console.log(obj[assertSafe(id)]);
 console.log(obj[assertSafe(`${id}_suffix`)]);
 console.log(obj[assertSafe(id as string)]);
-const hasKey = assertSafe(id) in obj;
+const hasKey = assertSafe(String(id)) in obj;
 ```
+
+### A coercion is wrapped, not replaced
+
+`assertSafe()` **validates** a key; it never coerces one. It throws on any
+argument whose `typeof` is neither `string` nor `number`, so a `String(...)`
+call or a template the author wrote is part of the key rather than scaffolding
+around it. The fix wraps the key exactly as written:
+
+```ts
+// obj[String(id)] and obj[`${id}`] are rewritten to these
+console.log(obj[assertSafe(String(id))]);
+console.log(obj[assertSafe(`${id}`)]);
+```
+
+Emitting `assertSafe(id)` instead would hand `assertSafe` the raw operand and
+change what the key evaluates to. Where the operand is a boolean — the shape a
+`` Record<`${boolean}`, string> `` lookup is written in — that turns working
+code into code that throws `Invalid Key Type` on its first call. A lone
+substitution is treated exactly like every other template for the same reason:
+`` `${a}${b}` `` has always been wrapped whole.
 
 Caching the validated value in a variable is also accepted — the rule recognises
 identifiers that are initialised directly from `assertSafe(...)` and does not

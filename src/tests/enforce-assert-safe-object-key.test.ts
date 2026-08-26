@@ -1038,12 +1038,12 @@ const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
 console.log(obj[String(id)]);
       `,
-      errors: [lintError('id')],
+      errors: [lintError('String(id)')],
       output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
-console.log(obj[assertSafe(id)]);
+console.log(obj[assertSafe(String(id))]);
       `,
     },
     {
@@ -1052,12 +1052,12 @@ const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
 console.log(obj[\`\${id}\`]);
       `,
-      errors: [lintError('id')],
+      errors: [lintError('`${id}`')],
       output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
-console.log(obj[assertSafe(id)]);
+console.log(obj[assertSafe(\`\${id}\`)]);
       `,
     },
     {
@@ -1154,12 +1154,12 @@ const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
 console.log(obj[String(id)]);
       `,
-      errors: [lintError('id')],
+      errors: [lintError('String(id)')],
       output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
-console.log(obj[assertSafe(id)]);
+console.log(obj[assertSafe(String(id))]);
       `,
     },
     {
@@ -1169,12 +1169,12 @@ const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
 console.log(obj[\`\${id}\`]);
       `,
-      errors: [lintError('id')],
+      errors: [lintError('`${id}`')],
       output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
-console.log(obj[assertSafe(id)]);
+console.log(obj[assertSafe(\`\${id}\`)]);
       `,
     },
     {
@@ -1184,13 +1184,13 @@ const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
 const value = obj[String(id)];
       `,
-      errors: [lintError('id')],
+      errors: [lintError('String(id)')],
       output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 import something from 'other-module';
 const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
-const value = obj[assertSafe(id)];
+const value = obj[assertSafe(String(id))];
       `,
     },
     {
@@ -1200,13 +1200,13 @@ const id = 'key1';
 const value1 = obj[String(id)];
 const value2 = obj[\`\${id}\`];
       `,
-      errors: [lintError('id'), lintError('id')],
+      errors: [lintError('String(id)'), lintError('`${id}`')],
       output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
-const value1 = obj[assertSafe(id)];
-const value2 = obj[assertSafe(id)];
+const value1 = obj[assertSafe(String(id))];
+const value2 = obj[assertSafe(\`\${id}\`)];
       `,
     },
     // Additional test cases
@@ -1217,12 +1217,12 @@ function process(id) {
   return obj[String(id)];
 }
       `,
-      errors: [lintError('id')],
+      errors: [lintError('String(id)')],
       output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
 function process(id) {
-  return obj[assertSafe(id)];
+  return obj[assertSafe(String(id))];
 }
       `,
     },
@@ -1233,13 +1233,13 @@ const id = 'key1';
 const nested = { obj };
 console.log(nested.obj[String(id)]);
       `,
-      errors: [lintError('id')],
+      errors: [lintError('String(id)')],
       output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
 const nested = { obj };
-console.log(nested.obj[assertSafe(id)]);
+console.log(nested.obj[assertSafe(String(id))]);
       `,
     },
     {
@@ -1248,12 +1248,12 @@ const data = { users: { user1: { name: 'John' } } };
 const userId = 'user1';
 console.log(data.users[String(userId)].name);
       `,
-      errors: [lintError('userId')],
+      errors: [lintError('String(userId)')],
       output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 const data = { users: { user1: { name: 'John' } } };
 const userId = 'user1';
-console.log(data.users[assertSafe(userId)].name);
+console.log(data.users[assertSafe(String(userId))].name);
       `,
     },
     {
@@ -1268,7 +1268,7 @@ class DataStore {
   }
 }
       `,
-      errors: [lintError('id')],
+      errors: [lintError('String(id)')],
       output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 class DataStore {
@@ -1277,7 +1277,7 @@ class DataStore {
   }
 
   getValue(id) {
-    return this.data[assertSafe(id)];
+    return this.data[assertSafe(String(id))];
   }
 }
       `,
@@ -1304,12 +1304,12 @@ const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
 obj[String(id)] = 'new value';
       `,
-      errors: [lintError('id')],
+      errors: [lintError('String(id)')],
       output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
-obj[assertSafe(id)] = 'new value';
+obj[assertSafe(String(id))] = 'new value';
       `,
     },
     {
@@ -1318,12 +1318,12 @@ const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
 delete obj[String(id)];
       `,
-      errors: [lintError('id')],
+      errors: [lintError('String(id)')],
       output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
-delete obj[assertSafe(id)];
+delete obj[assertSafe(String(id))];
       `,
     },
     {
@@ -1332,12 +1332,12 @@ const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
 const hasKey = String(id) in obj;
       `,
-      errors: [lintError('id')],
+      errors: [lintError('String(id)')],
       output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
-const hasKey = assertSafe(id) in obj;
+const hasKey = assertSafe(String(id)) in obj;
       `,
     },
     {
@@ -1346,12 +1346,12 @@ const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
 const { [String(id)]: value } = obj;
       `,
-      errors: [lintError('id')],
+      errors: [lintError('String(id)')],
       output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
-const { [assertSafe(id)]: value } = obj;
+const { [assertSafe(String(id))]: value } = obj;
       `,
     },
     {
@@ -1362,13 +1362,13 @@ const id = 'key1';
 console.log(obj[String(id)]); // Redundant string conversion
 console.log(obj[\`\${id}\`]); // Unnecessary template literal usage
       `,
-      errors: [lintError('id'), lintError('id')],
+      errors: [lintError('String(id)'), lintError('`${id}`')],
       output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
-console.log(obj[assertSafe(id)]); // Redundant string conversion
-console.log(obj[assertSafe(id)]); // Unnecessary template literal usage
+console.log(obj[assertSafe(String(id))]); // Redundant string conversion
+console.log(obj[assertSafe(\`\${id}\`)]); // Unnecessary template literal usage
       `,
     },
     {
@@ -1681,12 +1681,12 @@ const obj = { 0: 'value1' };
 const idx = 0;
 console.log(obj[String(idx)]);
       `,
-      errors: [lintError('idx')],
+      errors: [lintError('String(idx)')],
       output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 const obj = { 0: 'value1' };
 const idx = 0;
-console.log(obj[assertSafe(idx)]);
+console.log(obj[assertSafe(String(idx))]);
       `,
     },
     {
@@ -2071,12 +2071,12 @@ class DataStore {
   }
 }
       `,
-      errors: [lintError('id')],
+      errors: [lintError('String(id)')],
       output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 class DataStore {
   getValue(id) {
-    return this.data[assertSafe(id)];
+    return this.data[assertSafe(String(id))];
   }
 }
       `,
@@ -2138,15 +2138,15 @@ const first = obj[id];
 const second = obj[String(id)];
 const third = obj[\`\${id}\`];
       `,
-      errors: [lintError('id'), lintError('id')],
+      errors: [lintError('String(id)'), lintError('`${id}`')],
       output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 const obj = { alpha: 1, beta: 2 };
 const id = 'alpha';
 // eslint-disable-next-line enforce-assert-safe-object-key
 const first = obj[id];
-const second = obj[assertSafe(id)];
-const third = obj[assertSafe(id)];
+const second = obj[assertSafe(String(id))];
+const third = obj[assertSafe(\`\${id}\`)];
       `,
     },
     {
@@ -2281,14 +2281,14 @@ const id = 'alpha';
 const { [String(id)]: first } = obj;
 const exists = String(id) in obj;
       `,
-      errors: [lintError('id')],
+      errors: [lintError('String(id)')],
       output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 const obj = { alpha: 1, beta: 2 };
 const id = 'alpha';
 // eslint-disable-next-line enforce-assert-safe-object-key
 const { [String(id)]: first } = obj;
-const exists = assertSafe(id) in obj;
+const exists = assertSafe(String(id)) in obj;
       `,
     },
     {
@@ -2337,7 +2337,7 @@ const obj = { alpha: 1, beta: 2 };
 const id = 'alpha';
 const first = obj[String(id)];
       `,
-      errors: [lintError('id')],
+      errors: [lintError('String(id)')],
       output: null,
     },
     {
@@ -2348,7 +2348,7 @@ const obj = { alpha: 1, beta: 2 };
 const id = 'alpha';
 const first = obj[\`\${id}\`];
       `,
-      errors: [lintError('id')],
+      errors: [lintError('`${id}`')],
       output: null,
     },
     {
@@ -2516,14 +2516,14 @@ const first = obj[id];
 const second = obj[String(id)];
 const third = obj[\`\${id}\`];
       `,
-      errors: [lintError('id'), lintError('id'), lintError('id')],
+      errors: [lintError('id'), lintError('String(id)'), lintError('`${id}`')],
       output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 const obj = { alpha: 1, beta: 2 };
 const id = 'alpha';
 const first = obj[assertSafe(id)];
-const second = obj[assertSafe(id)];
-const third = obj[assertSafe(id)];
+const second = obj[assertSafe(String(id))];
+const third = obj[assertSafe(\`\${id}\`)];
       `,
     },
     // ------------------------------------------------------------------
@@ -2641,12 +2641,12 @@ const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
 console.log(obj[String(id)]);
 `,
-      errors: [lintError('id')],
+      errors: [lintError('String(id)')],
       output: `'use client';
 import { assertSafe } from 'functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
-console.log(obj[assertSafe(id)]);
+console.log(obj[assertSafe(String(id))]);
 `,
     },
     {
@@ -2656,12 +2656,12 @@ const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
 console.log(obj[String(id)]);
 `,
-      errors: [lintError('id')],
+      errors: [lintError('String(id)')],
       output: `#!/usr/bin/env node
 import { assertSafe } from 'functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
-console.log(obj[assertSafe(id)]);
+console.log(obj[assertSafe(String(id))]);
 `,
     },
     {
@@ -2671,12 +2671,12 @@ const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
 console.log(obj[String(id)]);
 `,
-      errors: [lintError('id')],
+      errors: [lintError('String(id)')],
       output: `// @ts-nocheck
 import { assertSafe } from 'functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
-console.log(obj[assertSafe(id)]);
+console.log(obj[assertSafe(String(id))]);
 `,
     },
     {
@@ -2690,13 +2690,13 @@ const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
 console.log(obj[String(id)], something);
 `,
-      errors: [lintError('id')],
+      errors: [lintError('String(id)')],
       output: `'use client';
 import { assertSafe } from 'functions/src/util/assertSafe';
 import something from 'other-module';
 const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
-console.log(obj[assertSafe(id)], something);
+console.log(obj[assertSafe(String(id))], something);
 `,
     },
     // ------------------------------------------------------------------
@@ -4368,18 +4368,21 @@ export const read = (m: Record<Kind, string>, kind: Kind) => m[kind];
   invalid: [
     {
       // The documented core trigger: an explicit string conversion keeps
-      // reporting even when both bindings are bounded — the conversion is
-      // what the rule exists to flag, and assertSafe subsumes it.
+      // reporting even when both bindings are bounded — a conversion is a key
+      // the source computes, which is what the rule exists to flag. The fix
+      // wraps the conversion rather than dropping it, since assertSafe
+      // validates a key and never performs one (#2144).
       name: 'String() conversion of a bounded key still reports',
       code: `
 type Kind = 'live' | 'simulated';
 const read = (m: Record<Kind, string>, kind: Kind) => m[String(kind)];
       `,
-      errors: [lintError('kind')],
+      errors: [lintError('String(kind)')],
       output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 type Kind = 'live' | 'simulated';
-const read = (m: Record<Kind, string>, kind: Kind) => m[assertSafe(kind)];
+const read = (m: Record<Kind, string>, kind: Kind) =>
+  m[assertSafe(String(kind))];
       `,
     },
     {
@@ -4390,11 +4393,11 @@ const read = (m: Record<Kind, string>, kind: Kind) => m[assertSafe(kind)];
 type Kind = 'live' | 'simulated';
 const read = (m: Record<Kind, string>, kind: Kind) => m[\`\${kind}\`];
       `,
-      errors: [lintError('kind')],
+      errors: [lintError('`${kind}`')],
       output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 type Kind = 'live' | 'simulated';
-const read = (m: Record<Kind, string>, kind: Kind) => m[assertSafe(kind)];
+const read = (m: Record<Kind, string>, kind: Kind) => m[assertSafe(\`\${kind}\`)];
       `,
     },
     {
@@ -4713,9 +4716,9 @@ const fourth = String(id) in obj;
 
     expect(countImports(output)).toBe(1);
     expect(output).toContain('const first = obj[id];');
-    expect(output).toContain('const second = obj[assertSafe(id)];');
-    expect(output).toContain('const third = obj[assertSafe(id)];');
-    expect(output).toContain('const fourth = assertSafe(id) in obj;');
+    expect(output).toContain('const second = obj[assertSafe(String(id))];');
+    expect(output).toContain('const third = obj[assertSafe(`${id}`)];');
+    expect(output).toContain('const fourth = assertSafe(String(id)) in obj;');
     expectNoUnboundAssertSafe(output);
   });
 
@@ -4941,7 +4944,7 @@ describe('enforce-assert-safe-object-key: the ESLint cwd anchors the specifier (
     );
 
     expect(specifiersOf(output)).toEqual(['../util/assertSafe']);
-    expect(output).toContain('m[assertSafe(id)]');
+    expect(output).toContain('m[assertSafe(`${id}`)]');
   });
 
   it('derives a top-level src/ file specifier from the ESLint cwd', async () => {
@@ -4969,7 +4972,7 @@ export const read = (m: Record<string, number>, id: string) => m[\`\${id}\`];
     // withholds the fix entirely.
     expect(output).toBe(`import { assertSafe } from '../../assertSafe';
 export const read = (m: Record<string, number>, id: string) =>
-  m[assertSafe(id)];
+  m[assertSafe(\`\${id}\`)];
 `);
   });
 });
@@ -5046,7 +5049,7 @@ describe('enforce-assert-safe-object-key: the nearest manifest decides the exten
     expect(specifiersOf(output)).toEqual([
       '../functions/src/util/assertSafe.js',
     ]);
-    expect(output).toContain('m[assertSafe(id)]');
+    expect(output).toContain('m[assertSafe(`${id}`)]');
   });
 
   it('leaves a .js file under a "type": "commonjs" manifest extensionless', async () => {
@@ -5493,7 +5496,7 @@ const SPAN_TESTS: AssertSafeTests = {
         'declare const id: string;',
         'const row = {',
         '  [',
-        '    assertSafe(id)',
+        '    assertSafe(String(id))',
         '  ]: 1,',
         '};',
       ].join('\n'),
@@ -5513,7 +5516,7 @@ const SPAN_TESTS: AssertSafeTests = {
         'declare const store: Record<string, unknown>;',
         'declare const id: string;',
         'const present =',
-        '  assertSafe(id)',
+        '  assertSafe(`${id}`)',
         '  in store;',
       ].join('\n'),
     },
@@ -5551,7 +5554,7 @@ const SPAN_TESTS: AssertSafeTests = {
         'declare const store: Record<string, unknown>;',
         'declare const id: string;',
         'const entry = store[',
-        '  assertSafe(id)',
+        '  assertSafe(`${id}`)',
         '];',
       ].join('\n'),
     },
@@ -5990,6 +5993,366 @@ ruleTesterTs.run(
   'enforce-assert-safe-object-key: the fix owns the access it rewrites (issue #2067)',
   enforceAssertSafeObjectKey,
   SPAN_TESTS,
+);
+
+// A coercion the author wrote — `String(k)` or a template that interpolates
+// nothing else — is part of the key, not scaffolding around it. assertSafe
+// VALIDATES a key and never coerces one: it throws on any argument whose
+// `typeof` is neither `string` nor `number`. Replacing the coercion with its
+// operand therefore rewrites working code into code that throws on its first
+// call, which is what a `Record<`${boolean}`, …>` lookup did in agora (#2144).
+// The fix wraps the key as written, which is also what the multi-substitution
+// template has always done.
+const COERCION_TESTS: AssertSafeTests = {
+  valid: [
+    {
+      name: 'a template carrying fixed text before its substitution',
+      code: `
+declare const R: Record<string, number>;
+export const f = (id: string) => R[\`user-\${id}\`];
+      `,
+    },
+    {
+      name: 'a template carrying fixed text between two substitutions',
+      code: `
+declare const R: Record<string, number>;
+export const f = (a: string, b: string) => R[\`\${a}-\${b}\`];
+      `,
+    },
+    {
+      name: 'a wrapped template key is already validated',
+      code: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+declare const R: Record<string, number>;
+export const f = (id: string) => R[assertSafe(\`\${id}\`)];
+      `,
+    },
+    {
+      name: 'a wrapped String() key is already validated',
+      code: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+declare const R: Record<string, number>;
+export const f = (id: string) => R[assertSafe(String(id))];
+      `,
+    },
+    {
+      name: 'a wrapped String() key in a destructuring property',
+      code: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+declare const R: Record<string, number>;
+export const f = (id: string) => {
+  const { [assertSafe(String(id))]: v } = R;
+  return v;
+};
+      `,
+    },
+    {
+      name: 'a wrapped template key on the left of `in`',
+      code: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+declare const R: Record<string, number>;
+export const f = (id: string) => assertSafe(\`\${id}\`) in R;
+      `,
+    },
+  ],
+  invalid: [
+    {
+      // The issue's own reproduction. `assertSafe(isArmed)` throws
+      // `Invalid Key Type boolean` on every call; `assertSafe(`${isArmed}`)`
+      // hands it the string the template built, which is what the Record is
+      // keyed by.
+      name: 'a boolean-keyed Record lookup keeps its template (issue #2144)',
+      code: `
+const NOTICE: Readonly<Record<\`\${boolean}\`, string>> = {
+  false: 'unarmed',
+  true: 'armed',
+};
+export function describe(isArmed: boolean) {
+  return NOTICE[\`\${isArmed}\`];
+}
+      `,
+      errors: [lintError('`${isArmed}`')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const NOTICE: Readonly<Record<\`\${boolean}\`, string>> = {
+  false: 'unarmed',
+  true: 'armed',
+};
+export function describe(isArmed: boolean) {
+  return NOTICE[assertSafe(\`\${isArmed}\`)];
+}
+      `,
+    },
+    {
+      name: 'a member lookup keyed by a sole-substitution template',
+      code: `
+declare const store: Record<string, unknown>;
+export const read = (id: boolean) => store[\`\${id}\`];
+      `,
+      errors: [lintError('`${id}`')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+declare const store: Record<string, unknown>;
+export const read = (id: boolean) => store[assertSafe(\`\${id}\`)];
+      `,
+    },
+    {
+      name: 'a member lookup keyed by String()',
+      code: `
+declare const store: Record<string, unknown>;
+export const read = (id: boolean) => store[String(id)];
+      `,
+      errors: [lintError('String(id)')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+declare const store: Record<string, unknown>;
+export const read = (id: boolean) => store[assertSafe(String(id))];
+      `,
+    },
+    {
+      name: 'an `in` test keyed by a sole-substitution template',
+      code: `
+declare const store: Record<string, unknown>;
+export const has = (id: boolean) => \`\${id}\` in store;
+      `,
+      errors: [lintError('`${id}`')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+declare const store: Record<string, unknown>;
+export const has = (id: boolean) => assertSafe(\`\${id}\`) in store;
+      `,
+    },
+    {
+      name: 'an `in` test keyed by String()',
+      code: `
+declare const store: Record<string, unknown>;
+export const has = (id: boolean) => String(id) in store;
+      `,
+      errors: [lintError('String(id)')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+declare const store: Record<string, unknown>;
+export const has = (id: boolean) => assertSafe(String(id)) in store;
+      `,
+    },
+    {
+      name: 'a destructuring property keyed by a sole-substitution template',
+      code: `
+declare const store: Record<string, unknown>;
+export const read = (id: boolean) => {
+  const { [\`\${id}\`]: value } = store;
+  return value;
+};
+      `,
+      errors: [lintError('`${id}`')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+declare const store: Record<string, unknown>;
+export const read = (id: boolean) => {
+  const { [assertSafe(\`\${id}\`)]: value } = store;
+  return value;
+};
+      `,
+    },
+    {
+      name: 'a destructuring property keyed by String()',
+      code: `
+declare const store: Record<string, unknown>;
+export const read = (id: boolean) => {
+  const { [String(id)]: value } = store;
+  return value;
+};
+      `,
+      errors: [lintError('String(id)')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+declare const store: Record<string, unknown>;
+export const read = (id: boolean) => {
+  const { [assertSafe(String(id))]: value } = store;
+  return value;
+};
+      `,
+    },
+    {
+      // The shape that was already correct, kept as the regression guard that
+      // the sole-substitution case was aligned WITH rather than away from.
+      name: 'a multi-substitution template is still wrapped whole',
+      code: `
+declare const store: Record<string, unknown>;
+export const read = (a: boolean, b: boolean) => store[\`\${a}\${b}\`];
+      `,
+      errors: [lintError('`${a}${b}`')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+declare const store: Record<string, unknown>;
+export const read = (a: boolean, b: boolean) => store[assertSafe(\`\${a}\${b}\`)];
+      `,
+    },
+    {
+      name: 'an assertion around a template key keeps both',
+      code: `
+declare const store: Record<string, unknown>;
+export const read = (id: boolean) => store[\`\${id}\` as string];
+      `,
+      errors: [lintError('`${id}` as string')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+declare const store: Record<string, unknown>;
+export const read = (id: boolean) => store[assertSafe(\`\${id}\` as string)];
+      `,
+    },
+    {
+      name: 'an assertion around a String() key keeps both',
+      code: `
+declare const store: Record<string, unknown>;
+export const read = (id: boolean) => store[String(id) as string];
+      `,
+      errors: [lintError('String(id) as string')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+declare const store: Record<string, unknown>;
+export const read = (id: boolean) => store[assertSafe(String(id) as string)];
+      `,
+    },
+    {
+      name: 'a non-null assertion around a String() key keeps both',
+      code: `
+declare const store: Record<string, unknown>;
+export const read = (id: boolean) => store[String(id)!];
+      `,
+      errors: [lintError('String(id)!')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+declare const store: Record<string, unknown>;
+export const read = (id: boolean) => store[assertSafe(String(id)!)];
+      `,
+    },
+    {
+      // The await stays inside the template, where it resolves the value the
+      // template widens — moving it would validate the promise instead.
+      name: 'an awaited substitution stays inside the template',
+      code: `
+declare const store: Record<string, unknown>;
+export const read = async (p: Promise<boolean>) => store[\`\${await p}\`];
+      `,
+      errors: [lintError('`${await p}`')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+declare const store: Record<string, unknown>;
+export const read = async (p: Promise<boolean>) =>
+  store[assertSafe(\`\${await p}\`)];
+      `,
+    },
+    {
+      name: 'an optional-chained substitution stays inside the template',
+      code: `
+declare const store: Record<string, unknown>;
+export const read = (s?: { k: boolean }) => store[\`\${s?.k}\`];
+      `,
+      errors: [lintError('`${s?.k}`')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+declare const store: Record<string, unknown>;
+export const read = (s?: { k: boolean }) => store[assertSafe(\`\${s?.k}\`)];
+      `,
+    },
+    {
+      name: 'a member-expression operand stays inside String()',
+      code: `
+declare const store: Record<string, unknown>;
+export const read = (s: { k: boolean }) => store[String(s.k)];
+      `,
+      errors: [lintError('String(s.k)')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+declare const store: Record<string, unknown>;
+export const read = (s: { k: boolean }) => store[assertSafe(String(s.k))];
+      `,
+    },
+    {
+      name: 'a call-valued operand stays inside String()',
+      code: `
+declare const store: Record<string, unknown>;
+declare function resolve(): boolean;
+export const read = () => store[String(resolve())];
+      `,
+      errors: [lintError('String(resolve())')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+declare const store: Record<string, unknown>;
+declare function resolve(): boolean;
+export const read = () => store[assertSafe(String(resolve()))];
+      `,
+    },
+    {
+      name: 'a ternary operand stays inside the template',
+      code: `
+declare const store: Record<string, unknown>;
+export const read = (f: boolean, a: boolean, b: boolean) =>
+  store[\`\${f ? a : b}\`];
+      `,
+      errors: [lintError('`${f ? a : b}`')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+declare const store: Record<string, unknown>;
+export const read = (f: boolean, a: boolean, b: boolean) =>
+  store[assertSafe(\`\${f ? a : b}\`)];
+      `,
+    },
+    {
+      name: 'a nested String() operand is preserved in full',
+      code: `
+declare const store: Record<string, unknown>;
+export const read = (id: boolean) => store[String(String(id))];
+      `,
+      errors: [lintError('String(String(id))')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+declare const store: Record<string, unknown>;
+export const read = (id: boolean) => store[assertSafe(String(String(id)))];
+      `,
+    },
+    {
+      name: 'an assignment target keyed by a template keeps its coercion',
+      code: `
+declare const store: Record<string, unknown>;
+export const write = (id: boolean) => {
+  store[\`\${id}\`] = 1;
+};
+      `,
+      errors: [lintError('`${id}`')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+declare const store: Record<string, unknown>;
+export const write = (id: boolean) => {
+  store[assertSafe(\`\${id}\`)] = 1;
+};
+      `,
+    },
+    {
+      name: 'a delete target keyed by String() keeps its coercion',
+      code: `
+declare const store: Record<string, unknown>;
+export const drop = (id: boolean) => {
+  delete store[String(id)];
+};
+      `,
+      errors: [lintError('String(id)')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+declare const store: Record<string, unknown>;
+export const drop = (id: boolean) => {
+  delete store[assertSafe(String(id))];
+};
+      `,
+    },
+  ],
+};
+
+ruleTesterTs.run(
+  'enforce-assert-safe-object-key: a coercion is wrapped, not replaced (issue #2144)',
+  enforceAssertSafeObjectKey,
+  COERCION_TESTS,
 );
 
 // A wrap widens the line it lands on, so where prettier would then break
