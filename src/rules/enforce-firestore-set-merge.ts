@@ -897,7 +897,8 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
 
     /**
      * The edits that add `appended` to the end of a call's argument list, laid
-     * out the way the consumer's formatter prints the result.
+     * out the way the consumer's formatter prints the result — or `null` for
+     * the one tail no edit can extend without retargeting a directive.
      *
      * Neither layout re-emits an argument from its text. The broken one
      * rewrites the SEPARATORS between the arguments and shifts the indentation
@@ -915,7 +916,7 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
       node: TSESTree.CallExpression,
       appended: readonly string[],
       nameDelta: number,
-    ): TSESLint.RuleFix[] {
+    ): TSESLint.RuleFix[] | null {
       const args = node.arguments;
       const inline = () => [
         fixer.insertTextAfter(
@@ -929,17 +930,40 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
         return inline();
       }
       const { openParen, closeParen, spans } = layout;
-      const tail = spans[spans.length - 1];
-      // Between the last span and the closing parenthesis is the one gap the
-      // spans do not absorb, because a trailing comma may sit there. A comment
-      // past it would be inside a replaced range, so the list is left as it is
-      // and the option appended in place instead of deleting one.
-      if (
-        sourceCode
-          .getCommentsInside(node)
-          .some((comment) => comment.range[0] >= tail.end)
-      ) {
+      // Between the last argument's own last token and the closing parenthesis
+      // sit the trailing comma, if one was written, and any comment. The tail
+      // SPAN absorbs such a comment whenever no comma follows it, so the span's
+      // end is not a safe place to write a separator: a `,` emitted after a
+      // line comment is swallowed into the comment's text and the call no
+      // longer parses (#2140). Both boundaries are therefore taken from the
+      // TOKEN stream, where a comment can never be the answer.
+      const beforeClose = sourceCode.getTokenBefore(closeParen);
+      const lastArgumentToken =
+        beforeClose?.value === ','
+          ? sourceCode.getTokenBefore(beforeClose)
+          : beforeClose;
+      if (!beforeClose || !lastArgumentToken) {
         return inline();
+      }
+      const gapComments = sourceCode
+        .getCommentsInside(node)
+        .filter((comment) => comment.range[0] >= lastArgumentToken.range[1]);
+      const sameLineComments = gapComments.filter(
+        (comment) => comment.loc.start.line === lastArgumentToken.loc.end.line,
+      );
+      const ownLineComments = gapComments.filter(
+        (comment) => comment.loc.start.line !== lastArgumentToken.loc.end.line,
+      );
+      // A directive trailing the argument's line means the line that FOLLOWS
+      // it: emitting anything there hands `{ merge: true }` the suppression
+      // that was written for the closing line, and re-exposes whatever it was
+      // suppressing. No layout preserves both the option's position and the
+      // directive's subject, so the fix is withheld and the report left to the
+      // developer, who restructures the call with the directive in view
+      // (#1877). A directive on a line of its OWN is safe: the option lands
+      // BEFORE it, so everything the directive is adjacent to stays adjacent.
+      if (sameLineComments.some(isPositionalDirective)) {
+        return null;
       }
 
       // A broken list is indented one step past the line its parenthesis opens
@@ -972,13 +996,67 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
           fixes.push(fixer.replaceText(argument, relocated));
         }
       }
+      if (gapComments.length === 0) {
+        fixes.push(
+          fixer.replaceTextRange(
+            [lastArgumentToken.range[1], closeParen.range[0]],
+            `${appended
+              .map((argument) => `,\n${body}${argument}`)
+              .join('')},\n${indent}`,
+          ),
+        );
+        return fixes;
+      }
+
+      const separatorPresent = beforeClose.value === ',';
+      const lastSameLine = sameLineComments[sameLineComments.length - 1];
+      if (ownLineComments.length === 0) {
+        // The comment trails the argument it annotates, so it keeps that line
+        // and the option opens the next one. The separator has to sit between
+        // the argument and the comment — after a line comment it is comment
+        // text — so one is inserted at the argument's own last token unless
+        // the author already wrote it, and everything through the end of the
+        // annotation is left byte for byte as written.
+        if (!separatorPresent) {
+          fixes.push(fixer.insertTextAfter(lastArgumentToken, ','));
+        }
+        const annotationEnd = Math.max(
+          lastSameLine.range[1],
+          beforeClose.range[1],
+        );
+        fixes.push(
+          fixer.replaceTextRange(
+            [annotationEnd, closeParen.range[0]],
+            `${appended
+              .map((argument) => `\n${body}${argument},`)
+              .join('')}\n${indent}`,
+          ),
+        );
+        return fixes;
+      }
+
+      // A comment on a line of its own before the `)` was not written against
+      // the last argument, so the option lands BEFORE it — after the trailing
+      // annotation, if the line carries one — and the comment keeps both its
+      // bytes and its neighbours: what it sat above, it still sits above.
+      const appendedText = appended
+        .map((argument) => `\n${body}${argument},`)
+        .join('');
+      const anchor = Math.max(
+        separatorPresent ? beforeClose.range[1] : lastArgumentToken.range[1],
+        lastSameLine ? lastSameLine.range[1] : 0,
+      );
+      if (separatorPresent || lastSameLine) {
+        if (!separatorPresent) {
+          fixes.push(fixer.insertTextAfter(lastArgumentToken, ','));
+        }
+        fixes.push(fixer.insertTextAfterRange([anchor, anchor], appendedText));
+        return fixes;
+      }
+      // With neither a comma nor a trailing comment, the separator and the
+      // option travel as one insertion, since both land at the same offset.
       fixes.push(
-        fixer.replaceTextRange(
-          [tail.end, closeParen.range[0]],
-          `${appended
-            .map((argument) => `,\n${body}${argument}`)
-            .join('')},\n${indent}`,
-        ),
+        fixer.insertTextAfterRange([anchor, anchor], `,${appendedText}`),
       );
       return fixes;
     }
@@ -1059,15 +1137,16 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
         ];
       }
 
-      return [
-        fixer.replaceText(callee.property, 'set'),
-        ...appendArguments(
-          fixer,
-          node,
-          [MERGE_OPTION],
-          'set'.length - callee.property.name.length,
-        ),
-      ];
+      const appended = appendArguments(
+        fixer,
+        node,
+        [MERGE_OPTION],
+        'set'.length - callee.property.name.length,
+      );
+      if (!appended) {
+        return null;
+      }
+      return [fixer.replaceText(callee.property, 'set'), ...appended];
     }
 
     /**
@@ -1278,25 +1357,31 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
       return overlaps ? null : rewrites;
     }
 
-    /** `updateDoc(ref, data)` → `setDoc(ref, data, { merge: true })`. */
+    /**
+     * `updateDoc(ref, data)` → `setDoc(ref, data, { merge: true })`, or `null`
+     * where the argument list cannot be extended. No state is touched on the
+     * way to that answer: the caller marks the call batched only once every
+     * edit riding in the same fix is known to land, since a call marked by a
+     * fix that never ships would make its own report decline too.
+     */
     function rewriteCall(
       fixer: TSESLint.RuleFixer,
       rewrite: UpdateRewrite,
-    ): TSESLint.RuleFix[] {
-      batchedCalls.add(rewrite.call);
-      return [
-        fixer.replaceText(rewrite.identifier, SET_DOC),
-        // `setDoc` takes the document data between the reference and the
-        // options, so a call that passed no data gets an empty object to merge.
-        ...appendArguments(
-          fixer,
-          rewrite.call,
-          rewrite.call.arguments.length > 1
-            ? [MERGE_OPTION]
-            : [EMPTY_DATA, MERGE_OPTION],
-          SET_DOC.length - rewrite.identifier.name.length,
-        ),
-      ];
+    ): TSESLint.RuleFix[] | null {
+      // `setDoc` takes the document data between the reference and the
+      // options, so a call that passed no data gets an empty object to merge.
+      const appended = appendArguments(
+        fixer,
+        rewrite.call,
+        rewrite.call.arguments.length > 1
+          ? [MERGE_OPTION]
+          : [EMPTY_DATA, MERGE_OPTION],
+        SET_DOC.length - rewrite.identifier.name.length,
+      );
+      if (!appended) {
+        return null;
+      }
+      return [fixer.replaceText(rewrite.identifier, SET_DOC), ...appended];
     }
 
     /**
@@ -1357,14 +1442,37 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
       if (!rewrites) {
         // A reference survives the pass, so the name stays bound and `setDoc` is
         // added alongside it. Only the first surviving violation carries the
-        // binding; the rest emit the call against it.
+        // binding; the rest emit the call against it. The call rewrite is asked
+        // for FIRST: a declined rewrite must leave the binding plan untouched,
+        // or a later violation would trust an import this fix never emitted.
+        const callFixes = rewriteCall(fixer, {
+          identifier: callee,
+          call: node,
+        });
+        if (!callFixes) {
+          return null;
+        }
         const fixes: TSESLint.RuleFix[] = [];
         if (!setDocVariable && !plannedSetDocBinding) {
           fixes.push(fixer.insertTextAfter(updateBinding.node, `, ${SET_DOC}`));
           plannedSetDocBinding = true;
         }
-        fixes.push(...rewriteCall(fixer, { identifier: callee, call: node }));
+        batchedCalls.add(node);
+        fixes.push(...callFixes);
         return fixes;
+      }
+
+      // One call whose tail cannot be extended declines the WHOLE batch, before
+      // any flag records it as handled: a partial batch would retire an import
+      // some call still reads, and a call marked batched by a fix that never
+      // shipped would silently lose its own report's fix as well.
+      const rewriteFixes: TSESLint.RuleFix[] = [];
+      for (const rewrite of rewrites) {
+        const callFixes = rewriteCall(fixer, rewrite);
+        if (!callFixes) {
+          return null;
+        }
+        rewriteFixes.push(...callFixes);
       }
 
       const fixes: TSESLint.RuleFix[] = [];
@@ -1393,8 +1501,9 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
       }
 
       for (const rewrite of rewrites) {
-        fixes.push(...rewriteCall(fixer, rewrite));
+        batchedCalls.add(rewrite.call);
       }
+      fixes.push(...rewriteFixes);
       return fixes;
     }
 

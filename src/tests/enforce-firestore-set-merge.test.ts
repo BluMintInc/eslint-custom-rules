@@ -1,4 +1,5 @@
 import { Linter, Rule } from 'eslint';
+import * as prettier from 'prettier';
 import { ruleTesterTs } from '../utils/ruleTester';
 import { enforceFirestoreSetMerge } from '../rules/enforce-firestore-set-merge';
 
@@ -2199,10 +2200,10 @@ await userRef.set(
 );
 `,
     },
-    // Between the last argument and the closing parenthesis is the one gap the
-    // argument spans do not absorb, since a trailing comma may sit there. A
-    // comment past it would be inside a replaced range, so the list is left as
-    // it was written and the option appended in place rather than deleting one.
+    // A comment between the last argument and the closing parenthesis trails
+    // the argument it was written against, so it keeps that argument's line
+    // and the option opens the next one — relocating it past the option would
+    // hand it a subject it never described (#2140).
     {
       code: `
 const admin = require('firebase-admin');
@@ -2217,10 +2218,398 @@ await userRef.update({
 const admin = require('firebase-admin');
 const db = admin.firestore();
 const userRef = db.collection('users').doc(userId);
-await userRef.set({
-  theme: 'dark',
-}, { merge: true }, /* keep me */);
+await userRef.set(
+  {
+    theme: 'dark',
+  }, /* keep me */
+  { merge: true },
+);
 `,
+    },
+    // A line comment trailing the last argument of a call written with no
+    // trailing comma is absorbed into the argument's span, so a separator
+    // emitted at the span's end lands INSIDE the comment's text and the call
+    // stops parsing. The separator belongs after the argument's own last
+    // token, before the comment; the option opens the next line (#2140).
+    {
+      code: `
+import { updateDoc } from 'firebase/firestore';
+export async function save(ref) {
+  await updateDoc(
+    ref,
+    { theme: 'dark' } // trailing note
+  );
+}
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+import { setDoc } from 'firebase/firestore';
+export async function save(ref) {
+  await setDoc(
+    ref,
+    { theme: 'dark' }, // trailing note
+    { merge: true },
+  );
+}
+`,
+    },
+    // With the trailing comma written, the comment sits past it — outside the
+    // argument's span — and the append used to fall back to splicing the
+    // option onto the argument's own line, a layout the consumer's formatter
+    // immediately re-breaks. The comma is already the separator, so the
+    // comment keeps its line and the option opens the next one (#2140).
+    {
+      code: `
+import { updateDoc } from 'firebase/firestore';
+export async function save(ref) {
+  await updateDoc(
+    ref,
+    { theme: 'dark' }, // trailing note
+  );
+}
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+import { setDoc } from 'firebase/firestore';
+export async function save(ref) {
+  await setDoc(
+    ref,
+    { theme: 'dark' }, // trailing note
+    { merge: true },
+  );
+}
+`,
+    },
+    // A block comment carries the same way a line comment does: it stays on
+    // the line of the argument it annotates and the option opens the next one.
+    {
+      code: `
+import { updateDoc } from 'firebase/firestore';
+export async function save(ref) {
+  await updateDoc(
+    ref,
+    { theme: 'dark' }, /* trailing note */
+  );
+}
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+import { setDoc } from 'firebase/firestore';
+export async function save(ref) {
+  await setDoc(
+    ref,
+    { theme: 'dark' }, /* trailing note */
+    { merge: true },
+  );
+}
+`,
+    },
+    // The method-call path shares the tail logic: a trailing line comment on a
+    // comma-less last argument gets the separator between the argument and the
+    // comment, never after the comment.
+    {
+      code: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+const userRef = db.collection('users').doc(userId);
+await userRef.update(
+  { theme: 'dark' } // trailing note
+);
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+const userRef = db.collection('users').doc(userId);
+await userRef.set(
+  { theme: 'dark' }, // trailing note
+  { merge: true },
+);
+`,
+    },
+    // The block-comment spelling of the comma-less tail.
+    {
+      code: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+const userRef = db.collection('users').doc(userId);
+await userRef.update(
+  { theme: 'dark' } /* trailing note */
+);
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+const userRef = db.collection('users').doc(userId);
+await userRef.set(
+  { theme: 'dark' }, /* trailing note */
+  { merge: true },
+);
+`,
+    },
+    // A comment written BEFORE the trailing comma stays before it, and the
+    // comma the author wrote is the separator — no second one is inserted.
+    {
+      code: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+const userRef = db.collection('users').doc(userId);
+await userRef.update(
+  { theme: 'dark' } /* keep */,
+);
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+const userRef = db.collection('users').doc(userId);
+await userRef.set(
+  { theme: 'dark' } /* keep */,
+  { merge: true },
+);
+`,
+    },
+    // Several comments trailing the same line are all carried, in the order
+    // they were written.
+    {
+      code: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+const userRef = db.collection('users').doc(userId);
+await userRef.update(
+  { theme: 'dark' } /* a */ // b
+);
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+const userRef = db.collection('users').doc(userId);
+await userRef.set(
+  { theme: 'dark' }, /* a */ // b
+  { merge: true },
+);
+`,
+    },
+    // A call passing only the reference appends the empty data object AND the
+    // option past the carried comment, each on a line of its own.
+    {
+      code: `
+import { updateDoc } from 'firebase/firestore';
+export async function save(ref) {
+  await updateDoc(
+    ref // the target
+  );
+}
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+import { setDoc } from 'firebase/firestore';
+export async function save(ref) {
+  await setDoc(
+    ref, // the target
+    {},
+    { merge: true },
+  );
+}
+`,
+    },
+    // A comment on a line of its OWN before the `)` was not written against
+    // the last argument, so the option lands BEFORE it and the comment keeps
+    // its neighbours: what it sat above, it still sits above. The comma-less
+    // spelling of this shape used to emit its separator inside the comment
+    // (#2140).
+    {
+      code: `
+import { updateDoc } from 'firebase/firestore';
+export async function save(ref) {
+  await updateDoc(
+    ref,
+    { theme: 'dark' }
+    // note above the close
+  );
+}
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+import { setDoc } from 'firebase/firestore';
+export async function save(ref) {
+  await setDoc(
+    ref,
+    { theme: 'dark' },
+    { merge: true },
+    // note above the close
+  );
+}
+`,
+    },
+    // The trailing-comma spelling of the own-line comment lands the option in
+    // the same place.
+    {
+      code: `
+import { updateDoc } from 'firebase/firestore';
+export async function save(ref) {
+  await updateDoc(
+    ref,
+    { theme: 'dark' },
+    // note above the close
+  );
+}
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+import { setDoc } from 'firebase/firestore';
+export async function save(ref) {
+  await setDoc(
+    ref,
+    { theme: 'dark' },
+    { merge: true },
+    // note above the close
+  );
+}
+`,
+    },
+    // Both kinds at once: the trailing note keeps the argument's line, the
+    // option takes the next one, and the own-line note stays above the close.
+    {
+      code: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+const userRef = db.collection('users').doc(userId);
+await userRef.update(
+  { theme: 'dark' }, // same-line note
+  // own-line note
+);
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+const userRef = db.collection('users').doc(userId);
+await userRef.set(
+  { theme: 'dark' }, // same-line note
+  { merge: true },
+  // own-line note
+);
+`,
+    },
+    // The comma-less spelling of the mixed shape: the separator still lands
+    // between the argument and its trailing note, never after a line comment.
+    {
+      code: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+const userRef = db.collection('users').doc(userId);
+await userRef.update(
+  { theme: 'dark' } // same-line note
+  // own-line note
+);
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+const userRef = db.collection('users').doc(userId);
+await userRef.set(
+  { theme: 'dark' }, // same-line note
+  { merge: true },
+  // own-line note
+);
+`,
+    },
+    // A directive on a line of its OWN is safe to keep: the option lands
+    // before it, so the line it governs — the one after it — is the same
+    // closing line it governed before the fix.
+    {
+      code: `
+import { updateDoc } from 'firebase/firestore';
+export async function save(ref) {
+  await updateDoc(
+    ref,
+    { theme: 'dark' },
+    // eslint-disable-next-line no-extra-semi
+  );
+}
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+import { setDoc } from 'firebase/firestore';
+export async function save(ref) {
+  await setDoc(
+    ref,
+    { theme: 'dark' },
+    { merge: true },
+    // eslint-disable-next-line no-extra-semi
+  );
+}
+`,
+    },
+    // A trailing directive means the line that FOLLOWS it: an option emitted
+    // there would take over the suppression written for the closing line and
+    // re-expose whatever it was suppressing. No layout keeps both the option's
+    // position and the directive's subject, so the fix is withheld (#2140).
+    {
+      code: `
+import { updateDoc } from 'firebase/firestore';
+export async function save(ref) {
+  await updateDoc(
+    ref,
+    { theme: 'dark' }, // eslint-disable-next-line no-extra-semi
+  );
+}
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: null,
+    },
+    // The method-call path withholds its fix for the same trailing directive.
+    {
+      code: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+const userRef = db.collection('users').doc(userId);
+await userRef.update(
+  { theme: 'dark' }, // eslint-disable-next-line no-extra-semi
+);
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: null,
+    },
+    // Every disable spelling is treated as positional, `eslint-disable-line`
+    // included: a directive deciding a layout rewrite is declined whole rather
+    // than parsed for which lines it could survive on.
+    {
+      code: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+const userRef = db.collection('users').doc(userId);
+await userRef.update(
+  { theme: 'dark' }, // eslint-disable-line no-magic-numbers
+);
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: null,
+    },
+    // One directive-carrying tail declines the WHOLE import-retiring batch —
+    // and leaves every flag untouched, so no call is recorded as handled by a
+    // fix that never shipped. A partial batch would rename the import out from
+    // under the declined call.
+    {
+      code: `
+import { updateDoc } from 'firebase/firestore';
+export async function save(ref) {
+  await updateDoc(ref, { theme: 'light' });
+  await updateDoc(
+    ref,
+    { theme: 'dark' }, // eslint-disable-next-line no-extra-semi
+  );
+}
+`,
+      errors: [
+        { messageId: 'preferSetMerge' },
+        { messageId: 'preferSetMerge' },
+      ],
+      output: null,
     },
   ],
 });
@@ -2517,5 +2906,236 @@ export async function save(ref) {
 `);
     expect(countNoConsole(output)).toBe(0);
     expectNoUnboundSetDoc(output);
+  });
+});
+
+/**
+ * Whether the emitted tail still PARSES, and whether the consumer's formatter
+ * accepts its layout, are questions about ESLint's own token accounting and
+ * about what prettier does to the emission — so they are asked of both rather
+ * than of the emitted text alone (#2140). The controls keep the pre-fix
+ * emissions in view: each one must stay broken for the fixed assertions to be
+ * asserting anything.
+ */
+describe('enforce-firestore-set-merge trailing-comment tail (issue #2140)', () => {
+  const RULE_ID = '@blumintinc/blumint/enforce-firestore-set-merge';
+
+  const makeLinter = () => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      RULE_ID,
+      enforceFirestoreSetMerge as unknown as Rule.RuleModule,
+    );
+    return linter;
+  };
+
+  const config = (rules: Linter.Config['rules']) =>
+    ({
+      parser: '@typescript-eslint/parser',
+      parserOptions: {
+        ecmaVersion: 2020 as const,
+        sourceType: 'module' as const,
+      },
+      rules,
+    } as Linter.Config);
+
+  const lintWith = (code: string, rules: Linter.Config['rules']) =>
+    makeLinter().verify(code, config(rules), 'save.ts');
+
+  const fix = (code: string) =>
+    makeLinter().verifyAndFix(code, config({ [RULE_ID]: 'error' }), 'save.ts')
+      .output;
+
+  const parseFatals = (code: string) =>
+    lintWith(code, {}).filter((message) => message.fatal).length;
+
+  // The consumer's own prettier configuration: `trailingComma: 'all'` is what
+  // makes the emitted per-line trailing comma part of a fixed point at all.
+  const PRETTIER_OPTIONS: prettier.Options = {
+    parser: 'typescript',
+    printWidth: 80,
+    tabWidth: 2,
+    singleQuote: true,
+    semi: true,
+    trailingComma: 'all',
+  };
+
+  const isFixedPoint = (text: string) =>
+    prettier.format(text, PRETTIER_OPTIONS) === text;
+
+  const SHAPE_A = `import { updateDoc } from 'firebase/firestore';
+export async function save(ref) {
+  await updateDoc(
+    ref,
+    { theme: 'dark' } // trailing note
+  );
+}
+`;
+
+  const SHAPE_B = `import { updateDoc } from 'firebase/firestore';
+export async function save(ref) {
+  await updateDoc(
+    ref,
+    { theme: 'dark' }, // trailing note
+  );
+}
+`;
+
+  const EXPECTED = `import { setDoc } from 'firebase/firestore';
+export async function save(ref) {
+  await setDoc(
+    ref,
+    { theme: 'dark' }, // trailing note
+    { merge: true },
+  );
+}
+`;
+
+  /** The emission before #2140: the separator swallowed into the comment. */
+  const SWALLOWED_SEPARATOR = `import { setDoc } from 'firebase/firestore';
+export async function save(ref) {
+  await setDoc(
+    ref,
+    { theme: 'dark' } // trailing note,
+    { merge: true },
+  );
+}
+`;
+
+  /** The pre-#2140 fallback for the trailing-comma spelling: an inline splice. */
+  const INLINE_SPLICE = `import { setDoc } from 'firebase/firestore';
+export async function save(ref) {
+  await setDoc(
+    ref,
+    { theme: 'dark' }, { merge: true }, // trailing note
+  );
+}
+`;
+
+  it('emits the separator between the argument and its comment, never after it', () => {
+    const output = fix(SHAPE_A);
+    expect(output).toBe(EXPECTED);
+    expect(parseFatals(output)).toBe(0);
+    expect(lintWith(output, { [RULE_ID]: 'error' })).toHaveLength(0);
+    expect(isFixedPoint(output)).toBe(true);
+  });
+
+  it('is not vacuous: the swallowed separator neither parses nor formats', () => {
+    expect(parseFatals(SWALLOWED_SEPARATOR)).toBeGreaterThan(0);
+    expect(() =>
+      prettier.format(SWALLOWED_SEPARATOR, PRETTIER_OPTIONS),
+    ).toThrow();
+  });
+
+  it('keeps the broken layout when the trailing comma was already written', () => {
+    expect(isFixedPoint(SHAPE_B)).toBe(true);
+    const output = fix(SHAPE_B);
+    expect(output).toBe(EXPECTED);
+    expect(isFixedPoint(output)).toBe(true);
+  });
+
+  it('is not vacuous: the inline splice parses but is not a fixed point', () => {
+    expect(parseFatals(INLINE_SPLICE)).toBe(0);
+    expect(isFixedPoint(INLINE_SPLICE)).toBe(false);
+  });
+
+  const DIRECTIVE = `import { updateDoc } from 'firebase/firestore';
+export async function save(ref) {
+  await updateDoc(
+    ref,
+    { theme: 'dark' }, // eslint-disable-next-line no-extra-semi
+  );;
+}
+`;
+
+  /** What carrying the directive would emit: its subject line taken over. */
+  const NAIVE_CARRY = `import { setDoc } from 'firebase/firestore';
+export async function save(ref) {
+  await setDoc(
+    ref,
+    { theme: 'dark' }, // eslint-disable-next-line no-extra-semi
+    { merge: true },
+  );;
+}
+`;
+
+  const extraSemiReports = (code: string) =>
+    lintWith(code, { 'no-extra-semi': 'error' }).filter(
+      (message) => message.ruleId === 'no-extra-semi',
+    ).length;
+
+  it('withholds the fix rather than retarget a trailing directive', () => {
+    const output = fix(DIRECTIVE);
+    expect(output).toBe(DIRECTIVE);
+    // The report survives the decline: the developer is still told.
+    expect(lintWith(DIRECTIVE, { [RULE_ID]: 'error' })).toHaveLength(1);
+    // The directive's subject is measured, not eyeballed: what it suppresses
+    // before the pass is exactly what it suppresses after.
+    expect(extraSemiReports(DIRECTIVE)).toBe(0);
+    expect(extraSemiReports(output)).toBe(0);
+  });
+
+  it('is not vacuous: the same code without the directive reports', () => {
+    const undirected = DIRECTIVE.replace(
+      ' // eslint-disable-next-line no-extra-semi',
+      '',
+    );
+    expect(undirected).not.toContain('eslint-disable-next-line');
+    expect(extraSemiReports(undirected)).toBe(1);
+  });
+
+  it('is not vacuous: carrying the directive would have shifted its subject', () => {
+    expect(parseFatals(NAIVE_CARRY)).toBe(0);
+    expect(extraSemiReports(NAIVE_CARRY)).toBe(1);
+  });
+
+  const OWN_LINE_DIRECTIVE = `import { updateDoc } from 'firebase/firestore';
+export async function save(ref) {
+  await updateDoc(
+    ref,
+    { theme: 'dark' },
+    // eslint-disable-next-line no-extra-semi
+  );;
+}
+`;
+
+  const OWN_LINE_EXPECTED = `import { setDoc } from 'firebase/firestore';
+export async function save(ref) {
+  await setDoc(
+    ref,
+    { theme: 'dark' },
+    { merge: true },
+    // eslint-disable-next-line no-extra-semi
+  );;
+}
+`;
+
+  /** The option emitted past the own-line directive: its subject taken over. */
+  const OWN_LINE_OVERSHOT = `import { setDoc } from 'firebase/firestore';
+export async function save(ref) {
+  await setDoc(
+    ref,
+    { theme: 'dark' },
+    // eslint-disable-next-line no-extra-semi
+    { merge: true },
+  );;
+}
+`;
+
+  it('keeps an own-line directive governing the closing line it sat above', () => {
+    const output = fix(OWN_LINE_DIRECTIVE);
+    expect(output).toBe(OWN_LINE_EXPECTED);
+    expect(extraSemiReports(OWN_LINE_DIRECTIVE)).toBe(0);
+    expect(extraSemiReports(output)).toBe(0);
+  });
+
+  it('is not vacuous: appending past the own-line directive would retarget it', () => {
+    expect(parseFatals(OWN_LINE_OVERSHOT)).toBe(0);
+    expect(extraSemiReports(OWN_LINE_OVERSHOT)).toBe(1);
   });
 });
