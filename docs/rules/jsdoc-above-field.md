@@ -104,6 +104,15 @@ export type Contact = {
   /** @remarks shown in the UI */
   displayName: string;
 };
+
+// On the last member there is no next field, so a trailing block would be read
+// as that field's documentation. A blank line is what marks it as a note about
+// the shape instead — prettier preserves an authored one and never inserts one.
+type Trailing = {
+  phone?: string;
+
+  /** @remarks describes the shape, not a field */
+};
 ```
 
 ## Options
