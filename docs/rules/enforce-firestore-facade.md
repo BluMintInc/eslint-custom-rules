@@ -12,7 +12,37 @@ This rule reports direct Firestore CRUD calls and reminds you to use the provide
 
 - Use `FirestoreFetcher` or `FirestoreDocFetcher` for reads.
 - Use `DocSetter`, `DocSetterTransaction`, or `BatchManager` for writes and deletes.
-- Realtime Database refs and JavaScript collection methods (`Set`, `Map`, etc.) remain allowed; the rule only targets Firestore access.
+- Realtime Database references and JavaScript collection methods (`Set`, `Map`, etc.) remain allowed; the rule only targets Firestore access.
+
+## Realtime Database
+
+The setter facades wrap Firestore and have no Realtime Database counterpart, so reporting a RealtimeDB receiver would prescribe a remedy that cannot exist. A receiver counts as RealtimeDB when any of the following holds:
+
+- Its declared type is `Reference`, `ThenableReference`, or `Database` imported from `firebase-admin/database`, `firebase/database`, or `@firebase/database`. The signal is read from an annotation (`let tunnelRef: Reference | null = null`), from an assertion (`realtimeDb.ref(path) as Reference`), from an aliased import (`import type { Reference as RtdbRef }`), or from a namespace import (`database.Reference`). The **import source** decides, so a type coincidentally named `Reference` from an unrelated module leaves a genuine Firestore write reported.
+- It is `<handle>.ref(path)` or `<reference>.child(key)`, where the handle is a binding spelled `realtimeDb`, a binding declared as a RealtimeDB `Database`, or the result of `getDatabase()`.
+- It is a binding assigned any of the above. The assignment may follow the declaration, as it does for a module-level ref written from inside a function (`let tunnelRef: Reference | null = null; ... tunnelRef = database.ref(path);`).
+
+TypeScript-only wrappers are transparent throughout: `as`, `satisfies`, `!`, and `<T>` casts change an expression's type but never the receiver it evaluates to, so a wrapped RealtimeDB reference stays exempt.
+
+### Examples of **correct** Realtime Database code:
+
+```ts
+import type { Database, Reference } from 'firebase-admin/database';
+
+let tunnelRef: Reference | null = null;
+
+export async function registerTunnel(database: Database, path: string) {
+  tunnelRef = database.ref(path);
+  await tunnelRef.set({ registeredAt: Date.now() });
+  await tunnelRef.child('meta').update({ lastChanged: Date.now() });
+}
+
+export async function fetchStatus(userId: string) {
+  const statusRef = realtimeDb.ref('status/' + userId) as Reference;
+  const snapshot = await statusRef.get();
+  return snapshot.val();
+}
+```
 
 ## Client SDK vs Admin SDK
 
