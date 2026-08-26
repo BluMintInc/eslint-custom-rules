@@ -1,3 +1,10 @@
+## [1.20.177](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.176...v1.20.177) (2026-08-26)
+
+
+### Bug Fixes
+
+* **jsdoc-above-field:** claim a trailing block that closes its container (closes [#2145](https://github.com/BluMintInc/eslint-custom-rules/issues/2145)) ([f3dd9f4](https://github.com/BluMintInc/eslint-custom-rules/commit/f3dd9f434deb1a5b9cf60ba4ea28da3eb9d627d5))
+
 ## [1.20.176](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.175...v1.20.176) (2026-08-26)
 
 
