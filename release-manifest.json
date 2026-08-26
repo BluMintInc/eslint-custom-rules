@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.179",
+    "date": "2026-08-26T23:40:36.587Z",
+    "rules": [
+      {
+        "name": "enforce-firestore-set-merge",
+        "changeType": "fix",
+        "issues": [
+          2150
+        ],
+        "summary": "unwrap assertions in the RealtimeDB carve-out (closes #2150)"
+      }
+    ]
+  },
+  {
     "version": "1.20.178",
     "date": "2026-08-26T22:11:53.342Z",
     "rules": [
