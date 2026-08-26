@@ -2203,7 +2203,10 @@ await userRef.set(
     // A comment between the last argument and the closing parenthesis trails
     // the argument it was written against, so it keeps that argument's line
     // and the option opens the next one — relocating it past the option would
-    // hand it a subject it never described (#2140).
+    // hand it a subject it never described (#2140). Prettier prints a block
+    // comment on a list element BEFORE the comma, so the author's comma moves
+    // past the annotation rather than staying between the argument and the
+    // comment (#2142).
     {
       code: `
 const admin = require('firebase-admin');
@@ -2221,7 +2224,7 @@ const userRef = db.collection('users').doc(userId);
 await userRef.set(
   {
     theme: 'dark',
-  }, /* keep me */
+  } /* keep me */,
   { merge: true },
 );
 `,
@@ -2280,8 +2283,11 @@ export async function save(ref) {
 }
 `,
     },
-    // A block comment carries the same way a line comment does: it stays on
-    // the line of the argument it annotates and the option opens the next one.
+    // A block comment does not carry the way a line comment does: it forces
+    // no line terminator, so a break held up by nothing else is one prettier
+    // folds. The widened call fits the print width, so the list rides one
+    // line, with the author's comma moved past the annotation it preceded
+    // (#2142).
     {
       code: `
 import { updateDoc } from 'firebase/firestore';
@@ -2296,9 +2302,51 @@ export async function save(ref) {
       output: `
 import { setDoc } from 'firebase/firestore';
 export async function save(ref) {
+  await setDoc(ref, { theme: 'dark' } /* trailing note */, { merge: true });
+}
+`,
+    },
+    // The comma-less spelling of the fitting block-comment tail: the comment
+    // sits inside the argument's own span, and the appended separator lands
+    // after it (#2142).
+    {
+      code: `
+import { updateDoc } from 'firebase/firestore';
+export async function save(ref) {
+  await updateDoc(
+    ref,
+    { theme: 'dark' } /* trailing note */
+  );
+}
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+import { setDoc } from 'firebase/firestore';
+export async function save(ref) {
+  await setDoc(ref, { theme: 'dark' } /* trailing note */, { merge: true });
+}
+`,
+    },
+    // The control for the flat carve-out: a block-comment tail whose widened
+    // call does NOT fit the print width still breaks one argument per line,
+    // separator after the annotation (#2142).
+    {
+      code: `
+import { updateDoc } from 'firebase/firestore';
+export async function save(ref) {
+  await updateDoc(
+    ref,
+    { theme: 'dark', accent: 'blue', locale: 'en-US' } /* trailing note */
+  );
+}
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+import { setDoc } from 'firebase/firestore';
+export async function save(ref) {
   await setDoc(
     ref,
-    { theme: 'dark' }, /* trailing note */
+    { theme: 'dark', accent: 'blue', locale: 'en-US' } /* trailing note */,
     { merge: true },
   );
 }
@@ -2327,7 +2375,8 @@ await userRef.set(
 );
 `,
     },
-    // The block-comment spelling of the comma-less tail.
+    // The method-call path shares the flat carve-out: a fitting block-comment
+    // tail rides one line (#2142).
     {
       code: `
 const admin = require('firebase-admin');
@@ -2342,14 +2391,12 @@ await userRef.update(
 const admin = require('firebase-admin');
 const db = admin.firestore();
 const userRef = db.collection('users').doc(userId);
-await userRef.set(
-  { theme: 'dark' }, /* trailing note */
-  { merge: true },
-);
+await userRef.set({ theme: 'dark' } /* trailing note */, { merge: true });
 `,
     },
-    // A comment written BEFORE the trailing comma stays before it, and the
-    // comma the author wrote is the separator — no second one is inserted.
+    // A comment written BEFORE the trailing comma is already on prettier's
+    // side of the separator, so the comma the author wrote is the separator
+    // the option rides on — here on the one line the widened call fits.
     {
       code: `
 const admin = require('firebase-admin');
@@ -2364,14 +2411,35 @@ await userRef.update(
 const admin = require('firebase-admin');
 const db = admin.firestore();
 const userRef = db.collection('users').doc(userId);
+await userRef.set({ theme: 'dark' } /* keep */, { merge: true });
+`,
+    },
+    // Too wide to fold, the comment-then-comma spelling keeps its broken
+    // layout, the author's comma untouched — no second one is inserted.
+    {
+      code: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+const userRef = db.collection('users').doc(userId);
+await userRef.update(
+  { theme: 'dark', accent: 'blue', locale: 'en-US', fontSize: 14 } /* keep */,
+);
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+const userRef = db.collection('users').doc(userId);
 await userRef.set(
-  { theme: 'dark' } /* keep */,
+  { theme: 'dark', accent: 'blue', locale: 'en-US', fontSize: 14 } /* keep */,
   { merge: true },
 );
 `,
     },
     // Several comments trailing the same line are all carried, in the order
-    // they were written.
+    // they were written, and the separator lands where prettier prints it:
+    // past the block comment, before the line comment (#2142). The line
+    // comment pins the break, so the list stays broken.
     {
       code: `
 const admin = require('firebase-admin');
@@ -2387,7 +2455,7 @@ const admin = require('firebase-admin');
 const db = admin.firestore();
 const userRef = db.collection('users').doc(userId);
 await userRef.set(
-  { theme: 'dark' }, /* a */ // b
+  { theme: 'dark' } /* a */, // b
   { merge: true },
 );
 `,
@@ -2412,6 +2480,26 @@ export async function save(ref) {
     {},
     { merge: true },
   );
+}
+`,
+    },
+    // The block-comment spelling of the reference-only call folds instead:
+    // nothing pins the break, and both appended arguments fit the line
+    // (#2142).
+    {
+      code: `
+import { updateDoc } from 'firebase/firestore';
+export async function save(ref) {
+  await updateDoc(
+    ref /* the target */
+  );
+}
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+import { setDoc } from 'firebase/firestore';
+export async function save(ref) {
+  await setDoc(ref /* the target */, {}, { merge: true });
 }
 `,
     },
@@ -2513,6 +2601,55 @@ const db = admin.firestore();
 const userRef = db.collection('users').doc(userId);
 await userRef.set(
   { theme: 'dark' }, // same-line note
+  { merge: true },
+  // own-line note
+);
+`,
+    },
+    // With a BLOCK comment trailing the argument, the separator lands after
+    // it instead (#2142). The own-line note keeps the list broken and stays
+    // above the close.
+    {
+      code: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+const userRef = db.collection('users').doc(userId);
+await userRef.update(
+  { theme: 'dark' } /* payload */
+  // own-line note
+);
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+const userRef = db.collection('users').doc(userId);
+await userRef.set(
+  { theme: 'dark' } /* payload */,
+  { merge: true },
+  // own-line note
+);
+`,
+    },
+    // A comma written between the argument and its block comment is moved
+    // past the annotation here too, rather than doubled (#2142).
+    {
+      code: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+const userRef = db.collection('users').doc(userId);
+await userRef.update(
+  { theme: 'dark' }, /* payload */
+  // own-line note
+);
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+const userRef = db.collection('users').doc(userId);
+await userRef.set(
+  { theme: 'dark' } /* payload */,
   { merge: true },
   // own-line note
 );
@@ -3137,5 +3274,124 @@ export async function save(ref) {
   it('is not vacuous: appending past the own-line directive would retarget it', () => {
     expect(parseFatals(OWN_LINE_OVERSHOT)).toBe(0);
     expect(extraSemiReports(OWN_LINE_OVERSHOT)).toBe(1);
+  });
+
+  // Issue #2142, the block-comment axis of the same tail. Prettier prints a
+  // line comment on a list element after the comma and a block comment before
+  // it, and a block comment — no line terminator — pins no break, so a
+  // fitting call folds flat.
+  const BLOCK_A = `const admin = require('firebase-admin');
+const db = admin.firestore();
+const userRef = db.collection('users').doc(userId);
+await userRef.update({
+  theme: 'dark',
+}, /* keep me */);
+`;
+
+  const BLOCK_A_EXPECTED = `const admin = require('firebase-admin');
+const db = admin.firestore();
+const userRef = db.collection('users').doc(userId);
+await userRef.set(
+  {
+    theme: 'dark',
+  } /* keep me */,
+  { merge: true },
+);
+`;
+
+  /** The pre-#2142 emission: the block comment stranded past the separator. */
+  const BLOCK_A_SWAPPED = BLOCK_A_EXPECTED.replace(
+    '} /* keep me */,',
+    '}, /* keep me */',
+  );
+
+  it('moves the separator past a trailing block comment (#2142)', () => {
+    const output = fix(BLOCK_A);
+    expect(output).toBe(BLOCK_A_EXPECTED);
+    expect(parseFatals(output)).toBe(0);
+    expect(isFixedPoint(output)).toBe(true);
+  });
+
+  it('is not vacuous: the comma-first spelling parses but is not a fixed point', () => {
+    expect(BLOCK_A_SWAPPED).toContain('}, /* keep me */');
+    expect(parseFatals(BLOCK_A_SWAPPED)).toBe(0);
+    expect(isFixedPoint(BLOCK_A_SWAPPED)).toBe(false);
+  });
+
+  const BLOCK_B = `import { updateDoc } from 'firebase/firestore';
+export async function save(ref) {
+  await updateDoc(
+    ref,
+    { theme: 'dark' } /* trailing note */
+  );
+}
+`;
+
+  const BLOCK_B_EXPECTED = `import { setDoc } from 'firebase/firestore';
+export async function save(ref) {
+  await setDoc(ref, { theme: 'dark' } /* trailing note */, { merge: true });
+}
+`;
+
+  /** The pre-#2142 emission: broken one-per-line although the call fits. */
+  const BLOCK_B_BROKEN = `import { setDoc } from 'firebase/firestore';
+export async function save(ref) {
+  await setDoc(
+    ref,
+    { theme: 'dark' }, /* trailing note */
+    { merge: true },
+  );
+}
+`;
+
+  it('folds a list pinned by nothing but a block comment when it fits (#2142)', () => {
+    const output = fix(BLOCK_B);
+    expect(output).toBe(BLOCK_B_EXPECTED);
+    expect(parseFatals(output)).toBe(0);
+    expect(lintWith(output, { [RULE_ID]: 'error' })).toHaveLength(0);
+    expect(isFixedPoint(output)).toBe(true);
+  });
+
+  it('is not vacuous: the broken emission parses but is not a fixed point', () => {
+    expect(parseFatals(BLOCK_B_BROKEN)).toBe(0);
+    expect(isFixedPoint(BLOCK_B_BROKEN)).toBe(false);
+  });
+
+  const BLOCK_B_WIDE = `import { updateDoc } from 'firebase/firestore';
+export async function save(ref) {
+  await updateDoc(
+    ref,
+    { theme: 'dark', accent: 'blue', locale: 'en-US' } /* trailing note */
+  );
+}
+`;
+
+  const BLOCK_B_WIDE_EXPECTED = `import { setDoc } from 'firebase/firestore';
+export async function save(ref) {
+  await setDoc(
+    ref,
+    { theme: 'dark', accent: 'blue', locale: 'en-US' } /* trailing note */,
+    { merge: true },
+  );
+}
+`;
+
+  it('still breaks one-per-line when the widened call does not fit (#2142)', () => {
+    const output = fix(BLOCK_B_WIDE);
+    expect(output).toBe(BLOCK_B_WIDE_EXPECTED);
+    // The control that the fold is width-gated rather than breaking disabled:
+    // the same tail annotation, kept broken, and still a fixed point.
+    expect(output).toContain('\n    { merge: true },\n');
+    expect(parseFatals(output)).toBe(0);
+    expect(isFixedPoint(output)).toBe(true);
+  });
+
+  it('does not regress the line-comment tail: broken, and still a fixed point', () => {
+    // The #2140 shape re-asserted beside the block-comment fold: a `//`
+    // comment genuinely pins the break, so folding here would be the same
+    // defect pointing the other way.
+    const output = fix(SHAPE_A);
+    expect(output).toBe(EXPECTED);
+    expect(isFixedPoint(output)).toBe(true);
   });
 });

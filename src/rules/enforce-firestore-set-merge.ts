@@ -14,6 +14,7 @@ import { planPatternBindingRemoval } from '../utils/patternBindingRemoval';
 import {
   joinSegmentBody,
   requiresLineBreakAfter,
+  requiresOwnLine,
 } from '../utils/replacementSegments';
 import { declarationOf, resolveInEnclosingScopes } from '../utils/lexicalScope';
 import { reindentRelocated } from '../utils/reindentRelocated';
@@ -842,9 +843,9 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
      * inline there emits text the formatter immediately re-breaks, so the fix
      * is never a fixed point of the consumer's own formatting pass (#2097).
      *
-     * A list written across lines answers the first half outright: this fixer
-     * never rewrites an argument's own text, so the flat layout is not among
-     * the shapes it could emit at all.
+     * A list written across lines answers the first half outright and is
+     * handled before this is asked: the caller keeps it broken, except for
+     * the block-comment tail {@link flattenedListFixes} claims (#2142).
      *
      * The width half is answered only where the formatter's own answer is
      * modelled end to end. A trailing options object gets hugged against the
@@ -896,16 +897,140 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
     }
 
     /**
+     * The width the call prints at with its argument list riding one line:
+     * everything on the opening line through the parenthesis, each span
+     * joined by `, `, the tail comments a written comma strands outside the
+     * last span, the appended arguments, and whatever follows the closing
+     * parenthesis on its own line.
+     */
+    function flatListWidth(
+      layout: CallLayout,
+      appended: readonly string[],
+      nameDelta: number,
+      gapComments: readonly TSESTree.Comment[],
+    ): number {
+      const { openParen, closeParen, spans } = layout;
+      const lastSpanEnd = spans[spans.length - 1].end;
+      const suffix = (sourceCode.lines[closeParen.loc.start.line - 1] ?? '')
+        .slice(closeParen.loc.start.column)
+        .trimEnd();
+      return (
+        openParen.loc.end.column +
+        nameDelta +
+        spans.reduce((width, span) => width + (span.end - span.start), 0) +
+        (spans.length - 1) * ', '.length +
+        gapComments
+          .filter((comment) => comment.range[0] >= lastSpanEnd)
+          .reduce(
+            (width, comment) =>
+              width + ' '.length + (comment.range[1] - comment.range[0]),
+            0,
+          ) +
+        appended.reduce(
+          (width, argument) => width + ', '.length + argument.length,
+          0,
+        ) +
+        suffix.length
+      );
+    }
+
+    /**
+     * The edits that print an authored-broken list flat, with `appended` on
+     * its tail — or `null` where the flat layout is out of reach or out of
+     * scope.
+     *
+     * A list written across lines usually stays broken: a multi-line argument
+     * cannot be inlined without rewriting its text, and a line comment pins
+     * its break outright. A break held up by nothing but a BLOCK comment
+     * trailing the last argument is neither — a block comment is no line
+     * terminator, so the consumer's formatter collapses the whole call as
+     * soon as it fits the print width, and no broken emission is a fixed
+     * point of its formatting pass there (#2142). Only that annotated tail
+     * claims the flat layout; elsewhere the author's breaks are kept — a
+     * choice the formatter may fold, but one this fix did not create.
+     */
+    function flattenedListFixes(
+      fixer: TSESLint.RuleFixer,
+      node: TSESTree.CallExpression,
+      layout: CallLayout,
+      appended: readonly string[],
+      nameDelta: number,
+      beforeClose: TSESTree.Token,
+      gapComments: readonly TSESTree.Comment[],
+      ownLineComments: readonly TSESTree.Comment[],
+    ): TSESLint.RuleFix[] | null {
+      const { openParen, closeParen, spans } = layout;
+      if (
+        gapComments.length === 0 ||
+        ownLineComments.length > 0 ||
+        gapComments.some(requiresOwnLine) ||
+        calleeBreaksFirst(node.callee) ||
+        spans.some((span) =>
+          sourceCode.text.slice(span.start, span.end).includes('\n'),
+        ) ||
+        flatListWidth(layout, appended, nameDelta, gapComments) > PRINT_WIDTH
+      ) {
+        return null;
+      }
+      const fixes: TSESLint.RuleFix[] = [
+        fixer.replaceTextRange([openParen.range[1], spans[0].start], ''),
+      ];
+      for (let index = 1; index < spans.length; index++) {
+        fixes.push(
+          fixer.replaceTextRange(
+            [spans[index - 1].end, spans[index].start],
+            ', ',
+          ),
+        );
+      }
+      const lastSpanEnd = spans[spans.length - 1].end;
+      const flatTail = appended.map((argument) => `, ${argument}`).join('');
+      if (beforeClose.value !== ',') {
+        // With no written comma the tail comments sit inside the last span,
+        // so everything between the span and the parenthesis is whitespace.
+        fixes.push(
+          fixer.replaceTextRange([lastSpanEnd, closeParen.range[0]], flatTail),
+        );
+        return fixes;
+      }
+      const pastComma = gapComments.filter(
+        (comment) => comment.range[0] >= beforeClose.range[1],
+      );
+      if (pastComma.length === 0) {
+        // The written comma already trails the annotation; it is the
+        // separator the appended arguments ride on.
+        fixes.push(
+          fixer.replaceTextRange(
+            [beforeClose.range[1], closeParen.range[0]],
+            ` ${appended.join(', ')}`,
+          ),
+        );
+        return fixes;
+      }
+      // The written comma moves past the comments it precedes: prettier
+      // prints a block comment on a list element BEFORE the separator.
+      fixes.push(fixer.removeRange(beforeClose.range));
+      fixes.push(
+        fixer.replaceTextRange(
+          [pastComma[pastComma.length - 1].range[1], closeParen.range[0]],
+          flatTail,
+        ),
+      );
+      return fixes;
+    }
+
+    /**
      * The edits that add `appended` to the end of a call's argument list, laid
      * out the way the consumer's formatter prints the result — or `null` for
      * the one tail no edit can extend without retargeting a directive.
      *
-     * Neither layout re-emits an argument from its text. The broken one
-     * rewrites the SEPARATORS between the arguments and shifts the indentation
-     * of the ones that span lines, so everything between them — comments
-     * included, and a dropped `eslint-disable` silently re-enables the rule it
-     * was suppressing (#1877) — stays where it was written, attached to the
-     * argument it belongs to.
+     * No layout re-emits an argument from its text. The broken one rewrites
+     * the SEPARATORS between the arguments and shifts the indentation of the
+     * ones that span lines, and the flat one rewrites the separators alone,
+     * so everything between them — comments included, and a dropped
+     * `eslint-disable` silently re-enables the rule it was suppressing
+     * (#1877) — stays where it was written, attached to the argument it
+     * belongs to.
      *
      * `nameDelta` is how much the caller's own rename widens the call, since
      * the two edits land on the same line and the width answer is about the
@@ -926,10 +1051,19 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
       ];
 
       const layout = callLayout(node);
-      if (!layout || !requiresBrokenList(node, layout, appended, nameDelta)) {
+      if (!layout) {
         return inline();
       }
       const { openParen, closeParen, spans } = layout;
+      const listSpansLines = sourceCode.text
+        .slice(openParen.range[1], closeParen.range[0])
+        .includes('\n');
+      if (
+        !listSpansLines &&
+        !requiresBrokenList(node, layout, appended, nameDelta)
+      ) {
+        return inline();
+      }
       // Between the last argument's own last token and the closing parenthesis
       // sit the trailing comma, if one was written, and any comment. The tail
       // SPAN absorbs such a comment whenever no comma follows it, so the span's
@@ -964,6 +1098,21 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
       // BEFORE it, so everything the directive is adjacent to stays adjacent.
       if (sameLineComments.some(isPositionalDirective)) {
         return null;
+      }
+      if (listSpansLines) {
+        const flattened = flattenedListFixes(
+          fixer,
+          node,
+          layout,
+          appended,
+          nameDelta,
+          beforeClose,
+          gapComments,
+          ownLineComments,
+        );
+        if (flattened) {
+          return flattened;
+        }
       }
 
       // A broken list is indented one step past the line its parenthesis opens
@@ -1010,24 +1159,43 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
 
       const separatorPresent = beforeClose.value === ',';
       const lastSameLine = sameLineComments[sameLineComments.length - 1];
+      // WHERE the separator sits among the trailing comments is the
+      // formatter's call, not a constant: prettier prints a line comment on a
+      // list element after the comma and a block comment before it (#2142).
+      // The comma therefore lands past the leading run of block comments — at
+      // the argument's own last token when that run is empty — and a comma
+      // the author wrote on the wrong side of the run is moved rather than
+      // doubled. Everything else in the annotation is left byte for byte as
+      // written.
+      let blockRunEnd = lastArgumentToken.range[1];
+      for (const comment of sameLineComments) {
+        if (requiresLineBreakAfter(comment)) {
+          break;
+        }
+        blockRunEnd = comment.range[1];
+      }
+      const commaMisplaced =
+        separatorPresent && beforeClose.range[1] < blockRunEnd;
+      const needsComma = !separatorPresent || commaMisplaced;
+      if (commaMisplaced) {
+        fixes.push(fixer.removeRange(beforeClose.range));
+      }
       if (ownLineComments.length === 0) {
         // The comment trails the argument it annotates, so it keeps that line
-        // and the option opens the next one. The separator has to sit between
-        // the argument and the comment — after a line comment it is comment
-        // text — so one is inserted at the argument's own last token unless
-        // the author already wrote it, and everything through the end of the
-        // annotation is left byte for byte as written.
-        if (!separatorPresent) {
-          fixes.push(fixer.insertTextAfter(lastArgumentToken, ','));
-        }
+        // and the option opens the next one.
         const annotationEnd = Math.max(
           lastSameLine.range[1],
           beforeClose.range[1],
         );
+        if (needsComma && blockRunEnd < annotationEnd) {
+          fixes.push(
+            fixer.insertTextAfterRange([blockRunEnd, blockRunEnd], ','),
+          );
+        }
         fixes.push(
           fixer.replaceTextRange(
             [annotationEnd, closeParen.range[0]],
-            `${appended
+            `${needsComma && blockRunEnd >= annotationEnd ? ',' : ''}${appended
               .map((argument) => `\n${body}${argument},`)
               .join('')}\n${indent}`,
           ),
@@ -1043,18 +1211,22 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
         .map((argument) => `\n${body}${argument},`)
         .join('');
       const anchor = Math.max(
-        separatorPresent ? beforeClose.range[1] : lastArgumentToken.range[1],
+        separatorPresent && !commaMisplaced
+          ? beforeClose.range[1]
+          : lastArgumentToken.range[1],
         lastSameLine ? lastSameLine.range[1] : 0,
       );
-      if (separatorPresent || lastSameLine) {
-        if (!separatorPresent) {
-          fixes.push(fixer.insertTextAfter(lastArgumentToken, ','));
-        }
+      if (!needsComma) {
         fixes.push(fixer.insertTextAfterRange([anchor, anchor], appendedText));
         return fixes;
       }
-      // With neither a comma nor a trailing comment, the separator and the
-      // option travel as one insertion, since both land at the same offset.
+      if (blockRunEnd < anchor) {
+        fixes.push(fixer.insertTextAfterRange([blockRunEnd, blockRunEnd], ','));
+        fixes.push(fixer.insertTextAfterRange([anchor, anchor], appendedText));
+        return fixes;
+      }
+      // With the separator due at the annotation's own end, it and the option
+      // travel as one insertion, since both land at the same offset.
       fixes.push(
         fixer.insertTextAfterRange([anchor, anchor], `,${appendedText}`),
       );
