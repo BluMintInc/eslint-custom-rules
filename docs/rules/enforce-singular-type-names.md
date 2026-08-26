@@ -8,7 +8,7 @@ Type names should describe a single concept. Plural identifiers imply the declar
 
 ## Rule Details
 
-The rule checks TypeScript type aliases, interfaces, and enums. It uses `pluralize` to detect plural identifiers and reports names that are not singular. To avoid false positives on accepted conventions and mass nouns, the rule ignores names ending with `Props`, `Params`, `Options`, `Settings`, or `Data` (any casing).
+The rule checks TypeScript type aliases, interfaces, and enums. It uses `pluralize` to detect plural identifiers and reports names that are not singular. To avoid false positives on accepted conventions and mass nouns, the rule ignores names ending with `Props`, `Params`, `Options`, `Settings`, or `Data` (any casing), and it ignores identifiers whose final word is a singular noun that merely ends in `s` (see below).
 
 Why singular names matter:
 - Plural identifiers hide whether the symbol models one value or many, which leads to misuse as a container type.
@@ -25,6 +25,19 @@ Making that container nullable does not change what it models, so `T[] | null` a
 - A mixed union stays reported. `Edge[] | Edge` can hold a single value, so a plural name there still misleads, and a union of only `null | undefined` holds no collection at all.
 
 The exemption does not widen the set of recognised containers: keyed structures such as `Record<K, V>`, `Map<K, V>`, and `Set<T>` are reported whether or not they are nullable.
+
+### Singular nouns that end in `s` keep their name
+
+`pluralize` de-pluralizes by stripping a trailing `s`, so singular Latin and Greek nouns look plural to it. The rename it proposed was the tell that the identifier was never plural: `Axis` → `Axi`, `Basis` → `Basi`, `Lens` → `Len`, `Chaos` → `Chao`. These nouns are exempt.
+
+Two classes are exempt by shape, because no English plural ends that way:
+
+- **`-sis`** — `Analysis`, `Basis`, `Thesis`, `Diagnosis`, `Hypothesis`, `Synopsis`, `Parenthesis`, `Emphasis`, `Chassis`, `Genesis`, `Hysteresis`.
+- **`-ss`** — `Address`, `Progress`, `Access`, `Process`, `Success`.
+
+The neighbouring `-is`, `-us` and `-os` endings get no blanket exemption, because genuine plurals do end that way — `Emojis`, `Minis`, `Kiwis`, `Menus`, `Plateaus`, and `Taxis` (the plural of `taxi`, which is shaped exactly like `Axis`). Exempting those by shape would silence the rule on real collection names, so the nouns in them are enumerated instead: `Axis`, `Praxis`, `Iris`, `Metropolis`, `Status`, `Corpus`, `Census`, `Radius`, `Nucleus`, `Apparatus`, `Bonus`, `Consensus`, `Focus`, `Lens`, `Bias`, `Canvas`, `Chaos`, `Ethos`, and others.
+
+The exemption matches the identifier's **final word**, so it composes with any prefix: `DeferAxis`, `ChartRenderAxis`, `TeamStatus`, and `HTTPStatus` are all exempt, not just the bare noun. The plural of an exempt noun is still reported, so `Statuses`, `Addresses`, and `Analyses` remain errors.
 
 ### Examples of **incorrect** code for this rule:
 
@@ -55,6 +68,14 @@ type Edges = Edge[] | Edge;
 
 // Nullish members on their own carry no collection
 type Things = null | undefined;
+
+// A real plural that merely shares its shape with an exempt noun
+type Emojis = { glyph: string };
+type Menus = { items: string };
+
+// The plural of an exempt noun is still plural
+type Statuses = { code: number };
+type Analyses = { score: number };
 // Reported message example:
 // Type name 'Users' is plural, which signals a collection and hides whether this alias, interface, or enum represents one value or many. Plural type identifiers push callers to misuse the symbol for arrays or maps. Rename it to a singular noun such as 'User' so the declaration clearly models a single instance and leaves plural names for container types.
 ```
@@ -95,6 +116,14 @@ type Phases = ReadonlyArray<Phase>;
 type AllowedEdges = readonly Edge[] | null;
 type Rows = Readonly<Row[]> | undefined;
 type Entries = Entry[] | null | undefined;
+
+// Singular nouns that merely end in `s`, and any identifier built on one
+type Axis = { min: number; max: number };
+type DeferAxis = Readonly<{ label: string; suppressesCensus: boolean }>;
+type Analysis = { score: number };
+type Address = { line1: string };
+type HTTPStatus = { code: number };
+type Lens = { get: () => unknown };
 ```
 
 ## When Not To Use It
