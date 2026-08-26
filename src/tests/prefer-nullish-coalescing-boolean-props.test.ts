@@ -2043,7 +2043,10 @@ export const chosen = size ?? 5;
       // The replaced span can end PAST the node, at a redundant paren the
       // widening claims. The punctuator lookup anchors on the span's own last
       // token — anchored on the node it would find that paren instead of the
-      // `;` and silently decline the carry (#2139).
+      // `;` and silently decline the carry (#2139). And once the carry takes
+      // the comment out past the `;`, it sits in no gap of the chain, so the
+      // chain stays FLAT: counting it as a break would put every operand on a
+      // line of its own for a comment none of them holds (#2141).
       {
         code: `const q = x ?? (a || (b // tail\n));`,
         errors: [
@@ -2052,7 +2055,34 @@ export const chosen = size ?? 5;
             data: { left: 'a', right: 'b' },
           },
         ],
-        output: `const q = x ?? a ??\n  b; // tail`,
+        output: `const q = x ?? a ?? b; // tail`,
+      },
+      // The narrowing's control: a comment that REMAINS in a gap of the same
+      // chain shape still breaks the whole group one operand per line. Losing
+      // this break means #2141's fix switched chain-breaking off rather than
+      // discounting only the absorbed comment.
+      {
+        code: `const q = x ?? (a || // why\nb);`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a', right: 'b' },
+          },
+        ],
+        output: `const q = x ?? a ?? // why\n  b;`,
+      },
+      // Both at once: the gap comment keeps its break while the trailing
+      // comment rides out past the `;`. Either half alone cannot prove the
+      // break decision keys on the comments the emission actually holds.
+      {
+        code: `const q = x ?? (a || // why\n(b // tail\n));`,
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'a', right: 'b' },
+          },
+        ],
+        output: `const q = x ?? a ?? // why\n  b; // tail`,
       },
       // A `,` with nothing behind it on its line is taken over the same way,
       // so no emitted line holds a lone `,` (#2139).
@@ -2926,10 +2956,53 @@ describe('prefer-nullish-coalescing-boolean-props carried-comment terminator', (
     expect(holdsLonePunctuatorLine(output)).toBe(false);
   });
 
-  it('emits no line holding only a punctuator, across every shape here', () => {
-    const outputs = [REPRO, DIRECTIVE, SHARED_LINE, COMMA, PAREN_WIDENED].map(
-      fix,
+  // Once the trailing comment rides out past the `;`, it sits in no gap of
+  // the chain, so it must not count as a break INSIDE the chain: prettier
+  // prints a logical chain as one group, and a break granted for the absorbed
+  // comment would put every operand on a line of its own for a comment none
+  // of them holds (#2141). The single-link REPRO cannot catch this — it needs
+  // the chain with an already-`??` link, where the paren-widened span is
+  // taken.
+  const EXPECTED_PAREN_WIDENED = `const q = x ?? a ?? b; // tail\n`;
+  /** The emission before #2141, kept as the control the fix has to beat. */
+  const BROKEN_PAREN_WIDENED = `const q = x ?? a ??\n  b; // tail\n`;
+
+  it('keeps the chain flat once the trailing comment is absorbed', () => {
+    expect(fix(PAREN_WIDENED)).toBe(EXPECTED_PAREN_WIDENED);
+    expect(isFixedPoint(EXPECTED_PAREN_WIDENED)).toBe(true);
+  });
+
+  it('is not vacuous: the needlessly broken chain is what prettier flattens', () => {
+    expect(isFixedPoint(BROKEN_PAREN_WIDENED)).toBe(false);
+    expect(prettier.format(BROKEN_PAREN_WIDENED, PRETTIER_OPTIONS)).toBe(
+      EXPECTED_PAREN_WIDENED,
     );
+  });
+
+  // The narrowing's control: a comment that GENUINELY remains in a gap still
+  // breaks the whole group one operand per line, alone and beside an absorbed
+  // trailing comment. Losing either break means the fix switched
+  // chain-breaking off rather than discounting only the absorbed comment.
+  const GAP_COMMENT = `const q = x ?? (a || // why\nb);\n`;
+  const GAP_AND_TAIL = `const q = x ?? (a || // why\n(b // tail\n));\n`;
+
+  it('still breaks one-per-line for a comment that remains in a gap', () => {
+    expect(fix(GAP_COMMENT)).toBe(`const q = x ?? a ?? // why\n  b;\n`);
+    expect(fix(GAP_AND_TAIL)).toBe(
+      `const q = x ?? a ?? // why\n  b; // tail\n`,
+    );
+  });
+
+  it('emits no line holding only a punctuator, across every shape here', () => {
+    const outputs = [
+      REPRO,
+      DIRECTIVE,
+      SHARED_LINE,
+      COMMA,
+      PAREN_WIDENED,
+      GAP_COMMENT,
+      GAP_AND_TAIL,
+    ].map(fix);
     expect(outputs.filter(holdsLonePunctuatorLine)).toEqual([]);
     // Planted control: the oracle sees the pre-fix emissions.
     expect(holdsLonePunctuatorLine(STRANDED)).toBe(true);
