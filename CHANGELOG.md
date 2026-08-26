@@ -1,3 +1,10 @@
+## [1.20.178](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.177...v1.20.178) (2026-08-26)
+
+
+### Bug Fixes
+
+* **enforce-firestore-facade:** key the RealtimeDB carve-out on declared type (closes [#2149](https://github.com/BluMintInc/eslint-custom-rules/issues/2149)) ([8ec1bdc](https://github.com/BluMintInc/eslint-custom-rules/commit/8ec1bdcad467355965a4a5cd00b875272e80e4d5))
+
 ## [1.20.177](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.176...v1.20.177) (2026-08-26)
 
 
