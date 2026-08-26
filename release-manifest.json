@@ -1,5 +1,27 @@
 [
   {
+    "version": "1.20.176",
+    "date": "2026-08-26T11:56:32.903Z",
+    "rules": [
+      {
+        "name": "enforce-assert-safe-object-key",
+        "changeType": "fix",
+        "issues": [
+          2144
+        ],
+        "summary": "wrap a coerced key instead of replacing it (closes #2144)"
+      },
+      {
+        "name": "enforce-singular-type-names",
+        "changeType": "fix",
+        "issues": [
+          2143
+        ],
+        "summary": "exempt singular nouns that merely end in s (closes #2143)"
+      }
+    ]
+  },
+  {
     "version": "1.20.175",
     "date": "2026-08-26T06:19:14.998Z",
     "rules": [

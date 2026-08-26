@@ -1,3 +1,11 @@
+## [1.20.176](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.175...v1.20.176) (2026-08-26)
+
+
+### Bug Fixes
+
+* **enforce-assert-safe-object-key:** wrap a coerced key instead of replacing it (closes [#2144](https://github.com/BluMintInc/eslint-custom-rules/issues/2144)) ([8a52823](https://github.com/BluMintInc/eslint-custom-rules/commit/8a52823d4fb795d8df4a2627a8066fbe5cbb0116))
+* **enforce-singular-type-names:** exempt singular nouns that merely end in s (closes [#2143](https://github.com/BluMintInc/eslint-custom-rules/issues/2143)) ([45f329c](https://github.com/BluMintInc/eslint-custom-rules/commit/45f329ccf49432b1b32c72e6873982f2a0a2dd34))
+
 ## [1.20.175](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.174...v1.20.175) (2026-08-26)
 
 
