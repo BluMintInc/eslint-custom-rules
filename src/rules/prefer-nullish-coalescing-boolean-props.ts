@@ -1138,18 +1138,26 @@ function chainComments(
  * inside an operand's own brackets — a line comment in an object literal passed
  * to a call — belongs to that operand's layout and leaves the chain's own layout
  * alone, which is how prettier prints it.
+ *
+ * `absorbed` holds the comments the rewrite carries out past the statement's
+ * closing punctuator: those sit in no gap of the emitted chain, so counting one
+ * as a break would split a group that ends up holding no comment at all
+ * (#2141).
  */
 function chainBreaksLine(
   node: TSESTree.Node,
   sourceCode: Readonly<TSESLint.SourceCode>,
+  absorbed: ReadonlySet<TSESTree.Comment>,
 ): boolean {
   if (node.type !== AST_NODE_TYPES.LogicalExpression) {
     return false;
   }
   return (
-    strandedComments(node, sourceCode).some(requiresLineBreakAfter) ||
-    chainBreaksLine(node.left, sourceCode) ||
-    chainBreaksLine(node.right, sourceCode)
+    strandedComments(node, sourceCode).some(
+      (comment) => !absorbed.has(comment) && requiresLineBreakAfter(comment),
+    ) ||
+    chainBreaksLine(node.left, sourceCode, absorbed) ||
+    chainBreaksLine(node.right, sourceCode, absorbed)
   );
 }
 
@@ -1163,20 +1171,25 @@ function chainBreaksLine(
  * broken packs two operands onto a line the formatter then splits (#2106).
  *
  * A comment trailing the chain, or leading it, is outside every gap: prettier
- * prints it on the line the chain already occupies and moves no operand.
+ * prints it on the line the chain already occupies and moves no operand. The
+ * same goes for a comment in `absorbed` — one the fix carries out past the
+ * statement's closing punctuator: wherever the INPUT held it, the emission
+ * holds it behind the statement, outside every gap (#2141).
  */
 function chainBreaksAtAGap(
   chain: TSESTree.LogicalExpression,
   sourceCode: Readonly<TSESLint.SourceCode>,
+  absorbed: ReadonlySet<TSESTree.Comment>,
 ): boolean {
   const operands = chainOperands(chain);
   const { gaps } = chainComments(chain, sourceCode, operands);
   return (
     gaps.some((gap) =>
       [...gap.beforeOperator, ...gap.afterOperator].some(
-        requiresLineBreakAfter,
+        (comment) => !absorbed.has(comment) && requiresLineBreakAfter(comment),
       ),
-    ) || operands.some((operand) => chainBreaksLine(operand, sourceCode))
+    ) ||
+    operands.some((operand) => chainBreaksLine(operand, sourceCode, absorbed))
   );
 }
 
@@ -1518,6 +1531,44 @@ export const preferNullishCoalescingBooleanProps = createRule<[], MessageIds>({
                 });
                 segments.push(...comments.trailing.map(toSegment));
 
+                // A comment trailing the whole expression rides out past the
+                // punctuator that closes the statement the chain stands in,
+                // where one is available to take over. Kept inside the
+                // replacement, the line break such a comment demands strands
+                // that punctuator on a line of its own — layout a formatter
+                // folds straight back, and the fold moves an
+                // `eslint-disable-next-line` written on the comment's line
+                // onto a different subject, so the pipeline's formatting order
+                // decides which violations are enforced (#2139). The span this
+                // fix replaces can end PAST the node, at a redundant paren the
+                // widening claims, so the lookup anchors on that paren where
+                // the widening applies: asked of the node, it answers with the
+                // paren — a token inside the span — instead of the punctuator
+                // behind it. The landing widening reaches BACKWARD from the
+                // node and never past its end, so everywhere else the span
+                // ends at the node's own last token. The parenthesized
+                // (selfParens) replacement keeps every comment inside the
+                // emitted parens, where no punctuator can be stranded.
+                const spanEndToken = redundantParens(node, sourceCode)
+                  ? sourceCode.getTokenAfter(node)
+                  : sourceCode.getLastToken(node);
+                const closingPunctuator =
+                  !selfParens && comments.trailing.length > 0 && spanEndToken
+                    ? absorbableClosingPunctuator(
+                        sourceCode,
+                        spanEndToken,
+                        comments.trailing,
+                      )
+                    : null;
+                // The absorption is decided BEFORE the break decision because
+                // a comment carried past the punctuator sits in no gap of the
+                // emitted chain: counted as a break it would put every operand
+                // on a line of its own for a comment that no longer sits
+                // between any of them (#2141).
+                const absorbed: ReadonlySet<TSESTree.Comment> = new Set(
+                  closingPunctuator ? comments.trailing : [],
+                );
+
                 // Prettier prints a logical chain as ONE group: once anything
                 // inside it breaks the line, EVERY operand takes a line of its
                 // own. So a chain broken by a comment anywhere gets a break in
@@ -1529,6 +1580,7 @@ export const preferNullishCoalescingBooleanProps = createRule<[], MessageIds>({
                 const chainBreaks = chainBreaksAtAGap(
                   chainRootOf(node),
                   sourceCode,
+                  absorbed,
                 );
                 if (chainBreaks) {
                   for (const { start, end } of gapSpans) {
@@ -1567,32 +1619,6 @@ export const preferNullishCoalescingBooleanProps = createRule<[], MessageIds>({
                     : null;
                 const leading = landing ? `\n${bodyIndent}` : '';
                 const range = replacementRange(node, sourceCode, landing);
-                // A comment trailing the whole expression rides out past the
-                // punctuator that closes the statement the chain stands in,
-                // where one is available to take over. Kept inside the
-                // replacement, the line break such a comment demands strands
-                // that punctuator on a line of its own — layout a formatter
-                // folds straight back, and the fold moves an
-                // `eslint-disable-next-line` written on the comment's line
-                // onto a different subject, so the pipeline's formatting order
-                // decides which violations are enforced (#2139). The span this
-                // fix replaces can end PAST the node, at a redundant paren the
-                // widening claims, so the lookup anchors on the span's own
-                // last token: asked of the node, it answers with that paren —
-                // a token inside the span — instead of the punctuator behind
-                // it.
-                const spanEndToken =
-                  range[1] > node.range[1]
-                    ? sourceCode.getTokenAfter(node)
-                    : sourceCode.getLastToken(node);
-                const closingPunctuator =
-                  comments.trailing.length > 0 && spanEndToken
-                    ? absorbableClosingPunctuator(
-                        sourceCode,
-                        spanEndToken,
-                        comments.trailing,
-                      )
-                    : null;
                 const bodySegments = closingPunctuator
                   ? segments.slice(
                       0,
