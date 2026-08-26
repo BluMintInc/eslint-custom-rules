@@ -19,6 +19,148 @@ const NON_PLURALIZABLE_SUFFIXES = [
 const ARRAY_GENERIC_NAMES = new Set(['Array', 'ReadonlyArray']);
 
 /**
+ * Word-final suffixes that are singular by shape. No English plural ends in
+ * `-sis` or `-ss`, so both classes are exempt wholesale rather than enumerated:
+ * every `-sis` noun (`Analysis`, `Basis`, `Thesis`, `Diagnosis`, `Synopsis`,
+ * `Chassis`) and every `-ss` noun (`Address`, `Progress`, `Class`, `Success`)
+ * is covered, including ones no list would anticipate.
+ *
+ * The neighbouring `-is`/`-us`/`-os` classes get no such blanket rule, because
+ * genuine plurals do end that way — `Emojis`, `Minis`, `Menus`, `Plateaus`,
+ * `Taxis`. Exempting those by shape would silence the rule on real collection
+ * names, so they are enumerated in SINGULAR_NOUNS_ENDING_IN_S instead.
+ */
+const SINGULAR_WORD_SUFFIXES = ['sis', 'ss'];
+
+/**
+ * Singular nouns that end in `s` and that `pluralize` mistakes for plurals.
+ * Stripping the trailing `s` yields a non-word — `Axis` → `Axi`, `Lens` →
+ * `Len`, `Chaos` → `Chao` — which is the tell that the identifier was singular
+ * all along. Enumeration is the only safe discriminator here: `Axis` and
+ * `Minis` share a shape, so nothing but the noun itself separates a Latin/Greek
+ * singular from an ordinary plural.
+ *
+ * Entries `pluralize` already classifies correctly (`Status`, `Corpus`) are
+ * listed too, so a change in that library's heuristics cannot quietly
+ * reintroduce the false positive.
+ */
+const SINGULAR_NOUNS_ENDING_IN_S = new Set([
+  // Latin/Greek `-is` singulars outside the `-sis` family above.
+  'axis',
+  'praxis',
+  'prophylaxis',
+  'aegis',
+  'cannabis',
+  'chrysalis',
+  'clematis',
+  'dais',
+  'dermis',
+  'epidermis',
+  'epiglottis',
+  'glottis',
+  'hubris',
+  'ibis',
+  'iris',
+  'mantis',
+  'marquis',
+  'megalopolis',
+  'metropolis',
+  'pelvis',
+  'portcullis',
+  'proboscis',
+  'tennis',
+  'trellis',
+  // `-us` singulars.
+  'alumnus',
+  'apparatus',
+  'bonus',
+  'bus',
+  'cactus',
+  'campus',
+  'census',
+  'chorus',
+  'consensus',
+  'corpus',
+  'exodus',
+  'focus',
+  'fungus',
+  'genus',
+  'hiatus',
+  'impetus',
+  'locus',
+  'minus',
+  'modulus',
+  'nexus',
+  'nucleus',
+  'octopus',
+  'opus',
+  'plus',
+  'prospectus',
+  'radius',
+  'sinus',
+  'status',
+  'stimulus',
+  'surplus',
+  'syllabus',
+  'terminus',
+  'thesaurus',
+  'versus',
+  'virus',
+  // Remaining singular nouns ending in `s`.
+  'alias',
+  'apropos',
+  'asbestos',
+  'atlas',
+  'bias',
+  'canvas',
+  'chaos',
+  'cosmos',
+  'ethos',
+  'fracas',
+  'gas',
+  'kudos',
+  'lens',
+  'news',
+  'pancreas',
+  'pathos',
+  'rhinoceros',
+  'series',
+  'species',
+  'thermos',
+]);
+
+/**
+ * Splits a PascalCase/camelCase identifier into its words, keeping an
+ * all-caps run together: `DeferAxis` → `Defer`/`Axis`, `HTTPStatus` →
+ * `HTTP`/`Status`.
+ */
+const IDENTIFIER_WORD_PATTERN = /[A-Z]+(?![a-z])|[A-Z]?[a-z0-9]+/g;
+
+/**
+ * The exemption keys on the identifier's FINAL word rather than the whole
+ * identifier so it composes with any prefix: `Axis`, `DeferAxis` and
+ * `ChartRenderAxis` all resolve to `axis`. Whole-identifier matching would
+ * exempt only the bare noun and keep reporting every compound built on it.
+ */
+function trailingWordOf(name: string): string {
+  const words = name.match(IDENTIFIER_WORD_PATTERN);
+  return (words?.[words.length - 1] ?? name).toLowerCase();
+}
+
+/**
+ * True when the identifier's final word is a singular noun that merely ends in
+ * `s`. Checked before `pluralize`, whose naive trailing-`s` strip is what
+ * misreads these nouns in the first place.
+ */
+function endsWithSingularNoun(name: string): boolean {
+  const trailingWord = trailingWordOf(name);
+  return (
+    SINGULAR_NOUNS_ENDING_IN_S.has(trailingWord) ||
+    SINGULAR_WORD_SUFFIXES.some((suffix) => trailingWord.endsWith(suffix))
+  );
+}
+
+/**
  * Union members that only express absence. Stripping them keeps a nullable
  * container recognisable as a container: `T[]` and `T[] | null` describe the
  * same collection, so they must not disagree about whether a plural name fits.
@@ -131,6 +273,11 @@ export const enforceSingularTypeNames: TSESLint.RuleModule<
         )
       )
         return false;
+
+      // Singular nouns that end in `s` must be settled BEFORE pluralize sees
+      // them: its trailing-`s` strip turns `DeferAxis` into the non-word
+      // `DeferAxi` and reports a rename to it.
+      if (endsWithSingularNoun(name)) return false;
 
       // Skip checking if name is already singular according to pluralize
       if (pluralize.isSingular(name)) return false;

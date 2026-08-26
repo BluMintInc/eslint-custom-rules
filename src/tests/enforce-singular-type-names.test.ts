@@ -290,8 +290,140 @@ ruleTesterTs.run('enforce-singular-type-names', enforceSingularTypeNames, {
     'type DataContainer = { items: any[]; };', // starts with Data
     'type ContainerData = { items: any[]; };', // ends with Data
     'type DataProcessorData = { input: any; output: any; };', // both starts and ends with Data
+
+    // Singular nouns that merely END in `s`. `pluralize` de-pluralizes any
+    // trailing `s`, so these were reported with a non-word rename target
+    // (`Axis` -> `Axi`, `Lens` -> `Len`, `Chaos` -> `Chao`).
+    // The `-sis` family, exempt by suffix.
+    'type Analysis = { score: number; };',
+    'type Basis = { unit: string; };',
+    'type Diagnosis = { code: string; };',
+    'type Hypothesis = { claim: string; };',
+    'type Thesis = { title: string; };',
+    'type Crisis = { severity: number; };',
+    'type Synopsis = { text: string; };',
+    'type Parenthesis = { open: boolean; };',
+    'type Emphasis = { level: number; };',
+    'type Genesis = { at: number; };',
+    'type Nemesis = { name: string; };',
+    'type Oasis = { name: string; };',
+    'type Chassis = { serial: string; };',
+    'type Ellipsis = { count: number; };',
+    'type Hysteresis = { window: number; };',
+    'type Metamorphosis = { stage: number; };',
+    // The `-ss` family, exempt by suffix.
+    'type Address = { line1: string; };',
+    'type Progress = { percent: number; };',
+    'type Access = { granted: boolean; };',
+    'type Process = { pid: number; };',
+    'type Success = { value: unknown; };',
+    // Enumerated `-is` singulars outside the `-sis` family.
+    'type Axis = { min: number; max: number; };',
+    'type Praxis = { steps: string; };',
+    'type Iris = { radius: number; };',
+    'type Metropolis = { population: number; };',
+    // Enumerated `-us` singulars.
+    'type Status = { code: number; };',
+    'type Corpus = { documents: string; };',
+    'type Census = { taken: number; };',
+    'type Radius = { value: number; };',
+    'type Nucleus = { charge: number; };',
+    'type Apparatus = { parts: number; };',
+    'type Bonus = { amount: number; };',
+    'type Consensus = { reached: boolean; };',
+    'type Focus = { target: string; };',
+    // Enumerated singular nouns ending in `s` outside those families.
+    'type Lens = { get: () => unknown; };',
+    'type Bias = { weight: number; };',
+    'type Canvas = { width: number; };',
+    'type Chaos = { seed: number; };',
+    'type Ethos = { creed: string; };',
+
+    // The exemption keys on the identifier's trailing WORD, so it composes
+    // with any prefix rather than matching only the bare noun.
+    // The issue repro (agora, scripts/bug-maintainer/config.ts).
+    'type DeferAxis = Readonly<{ label: string; suppressesCensus: boolean; }>;',
+    'type TeamStatus = { code: number; };',
+    'type ChartRenderAxis = { ticks: number; };',
+    'type UserAddress = { line1: string; };',
+    'type RequestProcess = { pid: number; };',
+    'type ImageLens = { zoom: number; };',
+    // An all-caps run must not swallow the trailing word.
+    'type HTTPStatus = { code: number; };',
+    'type DOMCanvas = { width: number; };',
+
+    // The exemption applies to every declaration kind the rule visits, not
+    // just type aliases.
+    'interface Axis { min: number; max: number; }',
+    'interface DeferAxis { label: string; }',
+    'interface Address { line1: string; }',
+    'enum Axis { X, Y, Z }',
+    'enum Status { PENDING, DONE }',
+    'enum Progress { STARTED, FINISHED }',
+
+    // A genuine container of an exempt noun keeps its plural name.
+    'type Axes = Axis[];',
+    'type DeferAxes = readonly DeferAxis[];',
   ],
   invalid: [
+    // Anti-over-exemption controls. `-is`, `-us` and `-os` are NOT exempt by
+    // shape, because real plurals end that way; only the enumerated nouns are.
+    // Were the exemption widened to those suffixes, every case below would go
+    // silent.
+    {
+      code: 'type Emojis = { glyph: string; };',
+      errors: [error('Emojis', 'Emoji')],
+    },
+    {
+      code: 'type Minis = { size: number; };',
+      errors: [error('Minis', 'Mini')],
+    },
+    {
+      code: 'type Kiwis = { ripe: boolean; };',
+      errors: [error('Kiwis', 'Kiwi')],
+    },
+    {
+      code: 'type Menus = { items: string; };',
+      errors: [error('Menus', 'Menu')],
+    },
+    {
+      code: 'type Plateaus = { height: number; };',
+      errors: [error('Plateaus', 'Plateau')],
+    },
+    // `-xis` is likewise enumerated rather than blanket-exempt: `Taxis` is the
+    // plural of `taxi`, sharing its shape with `Axis`.
+    {
+      code: 'type Taxis = { fare: number; };',
+      errors: [error('Taxis', 'Taxi')],
+    },
+
+    // The PLURAL of an exempt noun stays reported — the exemption must not
+    // leak from `Status` to `Statuses`.
+    {
+      code: 'type Analyses = { score: number; };',
+      errors: [error('Analyses', 'Analysis')],
+    },
+    {
+      code: 'type Statuses = { code: number; };',
+      errors: [error('Statuses', 'Status')],
+    },
+    {
+      code: 'type Addresses = { line1: string; };',
+      errors: [error('Addresses', 'Address')],
+    },
+    {
+      code: 'type Buses = { route: string; };',
+      errors: [error('Buses', 'Bus')],
+    },
+    {
+      code: 'interface Processes { pid: number; }',
+      errors: [error('Processes', 'Process')],
+    },
+    {
+      code: 'enum Focuses { FIRST, LAST }',
+      errors: [error('Focuses', 'Focus')],
+    },
+
     // Basic plural type alias
     {
       code: 'type Users = { id: number; name: string; };',
