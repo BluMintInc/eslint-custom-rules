@@ -228,12 +228,25 @@ function isRealtimeAnnotation(
   return isRealtimeType(annotation?.typeAnnotation);
 }
 
-/** Whether an initializer constructs the Realtime Database batch manager. */
+/**
+ * Whether an initializer constructs the Realtime Database batch manager.
+ *
+ * The wrappers TypeScript writes around a value — `as T`, `satisfies T`, `!`,
+ * `<T>` — restate the expression's TYPE; none of them changes which class is
+ * constructed, so the construction underneath one is what the carve-out reads.
+ * {@link isRealtimeType} already looks through the type-level wrappers, and
+ * keying this arm on a bare `NewExpression` drifted the two apart: a field
+ * initialized `new RealtimeBatchManager() as RealtimeBatchManager` fell through
+ * to the Firestore arm and was told to call `set(…, { merge: true })` on a
+ * manager that has no `set` method at all, which no spelling of the code
+ * satisfies (#2150).
+ */
 function isRealtimeInstance(node: TSESTree.Node | null | undefined): boolean {
-  if (node?.type !== AST_NODE_TYPES.NewExpression) {
+  const constructed = node ? unwrapAssertions(node) : null;
+  if (constructed?.type !== AST_NODE_TYPES.NewExpression) {
     return false;
   }
-  const { callee } = node;
+  const { callee } = constructed;
   if (callee.type === AST_NODE_TYPES.Identifier) {
     return callee.name === REALTIME_BATCH_MANAGER;
   }

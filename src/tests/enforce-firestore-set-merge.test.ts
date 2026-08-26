@@ -181,6 +181,130 @@ ruleTesterTs.run('enforce-firestore-set-merge', enforceFirestoreSetMerge, {
         }
       `,
     },
+    // Issue #2150: a TypeScript wrapper on the initializer changes the
+    // expression's TYPE, never which class it constructs, so the carve-out reads
+    // the construction underneath it. The sibling annotation predicate already
+    // looks through type-level wrappers, and the two arms have to agree — a
+    // value-position wrapper that dropped through reported `preferSetMerge`
+    // against a manager with no `set` method to switch to, which no spelling of
+    // the code satisfies. Each wrapper ships in BOTH shapes the fixtures above
+    // use, namespaced and bare-imported, and every data argument is an object so
+    // the receiver arm is the only detector that can answer.
+    {
+      code: `
+        import * as realtimeDb from '../realtimeDb';
+        export class NamespacedSyncer {
+          private readonly batchManager = new realtimeDb.RealtimeBatchManager() as RealtimeBatchManager;
+          public sync(path: string, rate: { usd: number }) {
+            this.batchManager.update(path, rate);
+          }
+        }
+      `,
+    },
+    {
+      code: `
+        import * as realtimeDb from '../realtimeDb';
+        export class NamespacedSyncer {
+          private readonly batchManager = new realtimeDb.RealtimeBatchManager() satisfies RealtimeBatchManager;
+          public sync(path: string, rate: { usd: number }) {
+            this.batchManager.update(path, rate);
+          }
+        }
+      `,
+    },
+    {
+      code: `
+        import * as realtimeDb from '../realtimeDb';
+        export class NamespacedSyncer {
+          private readonly batchManager = new realtimeDb.RealtimeBatchManager()!;
+          public sync(path: string, rate: { usd: number }) {
+            this.batchManager.update(path, rate);
+          }
+        }
+      `,
+    },
+    {
+      code: `
+        import * as realtimeDb from '../realtimeDb';
+        export class NamespacedSyncer {
+          private readonly batchManager = <RealtimeBatchManager>new realtimeDb.RealtimeBatchManager();
+          public sync(path: string, rate: { usd: number }) {
+            this.batchManager.update(path, rate);
+          }
+        }
+      `,
+    },
+    {
+      code: `
+        import { RealtimeBatchManager } from '../realtimeDb/RealtimeBatchManager';
+        export class Erc20TokenRateSyncer {
+          private readonly batchManager = new RealtimeBatchManager() as RealtimeBatchManager;
+          public sync(path: string, rate: { usd: number }) {
+            this.batchManager.update(path, rate);
+          }
+        }
+      `,
+    },
+    {
+      code: `
+        import { RealtimeBatchManager } from '../realtimeDb/RealtimeBatchManager';
+        export class Erc20TokenRateSyncer {
+          private readonly batchManager = new RealtimeBatchManager() satisfies RealtimeBatchManager;
+          public sync(path: string, rate: { usd: number }) {
+            this.batchManager.update(path, rate);
+          }
+        }
+      `,
+    },
+    {
+      code: `
+        import { RealtimeBatchManager } from '../realtimeDb/RealtimeBatchManager';
+        export class Erc20TokenRateSyncer {
+          private readonly batchManager = new RealtimeBatchManager()!;
+          public sync(path: string, rate: { usd: number }) {
+            this.batchManager.update(path, rate);
+          }
+        }
+      `,
+    },
+    {
+      code: `
+        import { RealtimeBatchManager } from '../realtimeDb/RealtimeBatchManager';
+        export class Erc20TokenRateSyncer {
+          private readonly batchManager = <RealtimeBatchManager>new RealtimeBatchManager();
+          public sync(path: string, rate: { usd: number }) {
+            this.batchManager.update(path, rate);
+          }
+        }
+      `,
+    },
+    // Stacked wrappers unwrap to the same construction.
+    {
+      code: `
+        import { RealtimeBatchManager } from '../realtimeDb/RealtimeBatchManager';
+        export class Erc20TokenRateSyncer {
+          private readonly batchManager = (new RealtimeBatchManager() as RealtimeBatchManager)!;
+          public sync(path: string, rate: { usd: number }) {
+            this.batchManager.update(path, rate);
+          }
+        }
+      `,
+    },
+    // A defaulted constructor parameter property reads the construction through
+    // the same helper, so that arm looks through a wrapper too.
+    {
+      code: `
+        import { RealtimeBatchManager } from '../realtimeDb/RealtimeBatchManager';
+        export class DefaultedSyncer {
+          constructor(
+            private readonly batchManager = new RealtimeBatchManager() as RealtimeBatchManager,
+          ) {}
+          public sync(path: string, rate: { usd: number }) {
+            this.batchManager.update(path, rate);
+          }
+        }
+      `,
+    },
     // A defaulted constructor parameter property declares the field too.
     {
       code: `
@@ -1261,6 +1385,102 @@ export async function save(args) {
             });
           }
         }
+      `,
+    },
+    // Issue #2150 negative space: looking through the wrappers reads the
+    // construction underneath one, it does not exempt a wrapped initializer.
+    // The carve-out still keys on the RealtimeBatchManager constructor name, so
+    // the Firestore manager wrapped exactly like the valid fixtures above still
+    // reports and still fixes — a fix that made every wrapped init exempt would
+    // be a silencer, which is worse than the false positive it cures.
+    {
+      code: `
+        import { BatchManager } from '../firestore/BatchManager';
+        export class WrappedNotificationSyncer {
+          private readonly batchManager = new BatchManager() as BatchManager;
+          public sync(notificationRef, updates) {
+            this.batchManager.update(notificationRef, updates);
+          }
+        }
+      `,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+        import { BatchManager } from '../firestore/BatchManager';
+        export class WrappedNotificationSyncer {
+          private readonly batchManager = new BatchManager() as BatchManager;
+          public sync(notificationRef, updates) {
+            this.batchManager.set({
+              ref: notificationRef,
+              data: updates,
+              merge: true,
+            });
+          }
+        }
+      `,
+    },
+    {
+      code: `
+        import { BatchManager } from '../firestore/BatchManager';
+        export class WrappedNotificationSyncer {
+          private readonly batchManager = new BatchManager() satisfies BatchManager;
+          public sync(notificationRef, updates) {
+            this.batchManager.update(notificationRef, updates);
+          }
+        }
+      `,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+        import { BatchManager } from '../firestore/BatchManager';
+        export class WrappedNotificationSyncer {
+          private readonly batchManager = new BatchManager() satisfies BatchManager;
+          public sync(notificationRef, updates) {
+            this.batchManager.set({
+              ref: notificationRef,
+              data: updates,
+              merge: true,
+            });
+          }
+        }
+      `,
+    },
+    {
+      code: `
+        export class WrappedNotificationSyncer {
+          private readonly batchManager = <SomethingElse>new SomethingElse();
+          public sync(notificationRef, updates) {
+            this.batchManager.update(notificationRef, updates);
+          }
+        }
+      `,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+        export class WrappedNotificationSyncer {
+          private readonly batchManager = <SomethingElse>new SomethingElse();
+          public sync(notificationRef, updates) {
+            this.batchManager.set({
+              ref: notificationRef,
+              data: updates,
+              merge: true,
+            });
+          }
+        }
+      `,
+    },
+    // A genuine Firestore document reference carries its own wrapper too, and
+    // the receiver it produces is untouched by the batch manager carve-out.
+    {
+      code: `
+        const admin = require('firebase-admin');
+        const db = admin.firestore();
+        const docRef = db.collection('users').doc(userId) as DocumentReference;
+        await docRef.update({ name: 'x' });
+      `,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+        const admin = require('firebase-admin');
+        const db = admin.firestore();
+        const docRef = db.collection('users').doc(userId) as DocumentReference;
+        await docRef.set({ name: 'x' }, { merge: true });
       `,
     },
     // An unrelated class under the same field name is no evidence either.
