@@ -1541,19 +1541,19 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
      * position the author wrote it, and hands assertSafe what it produces — the
      * rewrite adds a validation, it does not move a dereference.
      *
-     * A key written without a wrapper keeps the narrower argument the fix has
-     * always emitted: `String(id)` and `` `${id}` `` collapse to `id`, whose
-     * conversion assertSafe subsumes.
+     * A coercion the author wrote is part of the key, so it is wrapped rather
+     * than replaced: `assertSafe(String(id))` and ``assertSafe(`${id}`)``, not
+     * `assertSafe(id)`. assertSafe VALIDATES a key, it does not coerce one —
+     * it throws on any argument whose `typeof` is neither `string` nor
+     * `number` — so dropping the `String()` call or the template hands it the
+     * raw operand and changes what the key evaluates to. A boolean operand
+     * turns a working `` record[`${flag}`] `` lookup into a throw (#2144).
+     * Wrapping the key exactly as written is also what makes the sole
+     * substitution behave like every other template: `` `${a}${b}` `` has
+     * always been wrapped whole.
      */
-    const reportWrittenKey = (
-      written: TSESTree.Node,
-      unwrapped: TSESTree.Node,
-      innerText: string,
-    ) =>
-      reportUseAssertSafe(
-        written,
-        written === unwrapped ? innerText : context.sourceCode.getText(written),
-      );
+    const reportWrittenKey = (written: TSESTree.Node) =>
+      reportUseAssertSafe(written, context.sourceCode.getText(written));
 
     /**
      * Returns true when the identifier was initialized directly from an
@@ -2222,9 +2222,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
             key.callee.type === AST_NODE_TYPES.Identifier &&
             key.callee.name === 'String'
           ) {
-            const arg = key.arguments[0];
-            const argText = context.sourceCode.getText(arg);
-            reportWrittenKey(written, key, argText);
+            reportWrittenKey(written);
           }
 
           // Check for template literals like `${id}`
@@ -2235,9 +2233,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
             key.quasis[0].value.raw === '' &&
             key.quasis[1].value.raw === ''
           ) {
-            const expr = key.expressions[0];
-            const exprText = context.sourceCode.getText(expr);
-            reportWrittenKey(written, key, exprText);
+            reportWrittenKey(written);
           }
         }
       },
@@ -2253,9 +2249,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
             left.callee.type === AST_NODE_TYPES.Identifier &&
             left.callee.name === 'String'
           ) {
-            const arg = left.arguments[0];
-            const argText = context.sourceCode.getText(arg);
-            reportWrittenKey(written, left, argText);
+            reportWrittenKey(written);
           }
 
           // Check for template literals like `${id}`
@@ -2266,9 +2260,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
             left.quasis[0].value.raw === '' &&
             left.quasis[1].value.raw === ''
           ) {
-            const expr = left.expressions[0];
-            const exprText = context.sourceCode.getText(expr);
-            reportWrittenKey(written, left, exprText);
+            reportWrittenKey(written);
           }
         }
       },
@@ -2326,9 +2318,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
             property.callee.type === AST_NODE_TYPES.Identifier &&
             property.callee.name === 'String'
           ) {
-            const arg = property.arguments[0];
-            const argText = context.sourceCode.getText(arg);
-            reportWrittenKey(written, property, argText);
+            reportWrittenKey(written);
             return;
           }
 
@@ -2363,24 +2353,14 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
               return;
             }
 
-            // `${id}` alone is the whole key, so the remedy names the inner
-            // expression and the fix wraps it directly. A template carrying
-            // fixed text has no such inner key — the string it builds is the
-            // key — so that whole template is what gets wrapped, which is the
-            // shape the docs show for `assertSafe(`${id}_suffix`)`.
-            const isSimpleVarInterpolation =
-              property.expressions.length === 1 &&
-              property.quasis.length === 2 &&
-              property.quasis[0].value.raw === '' &&
-              property.quasis[1].value.raw === '';
-            const unwrapped = isSimpleVarInterpolation
-              ? property.expressions[0]
-              : property;
-            reportWrittenKey(
-              written,
-              property,
-              context.sourceCode.getText(unwrapped),
-            );
+            // The string the template builds is the key, whether it carries
+            // fixed text or is a lone substitution, so the whole template is
+            // what gets wrapped — the shape the docs show for
+            // `assertSafe(`${id}_suffix`)`. Reaching inside for `${id}` would
+            // hand assertSafe the operand instead of the string the operand
+            // widens to, and assertSafe throws on anything that is not already
+            // a string or a number (#2144).
+            reportWrittenKey(written);
             return;
           }
 
@@ -2409,8 +2389,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
               return;
             }
 
-            const propText = context.sourceCode.getText(property);
-            reportWrittenKey(written, property, propText);
+            reportWrittenKey(written);
             return;
           }
 
@@ -2421,8 +2400,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
               return;
             }
 
-            const propText = context.sourceCode.getText(property);
-            reportWrittenKey(written, property, propText);
+            reportWrittenKey(written);
             return;
           }
 
@@ -2437,8 +2415,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
               return;
             }
 
-            const propText = context.sourceCode.getText(property);
-            reportWrittenKey(written, property, propText);
+            reportWrittenKey(written);
             return;
           }
 
@@ -2456,8 +2433,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
               return;
             }
 
-            const propText = context.sourceCode.getText(property);
-            reportWrittenKey(written, property, propText);
+            reportWrittenKey(written);
             return;
           }
         }
