@@ -10,6 +10,7 @@ import { createSuppressionChecker } from '../utils/disableDirectives';
 import { planOrphanedImportRemoval, TextRange } from '../utils/importRemoval';
 import {
   ReplacementSegment,
+  absorbableClosingPunctuator,
   joinSegmentBody,
   requiresLineBreakAfter,
   requiresOwnLine,
@@ -766,8 +767,10 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
         // exactly as in the comment-free fix, never by the comments themselves.
         // The call can start mid-line, so the indentation of the line it opens
         // on is the only anchor the carried comments have.
-        const startLine = sourceCode.lines[node.loc.start.line - 1] ?? '';
-        const indent = /^[\t ]*/.exec(startLine)?.[0] ?? '';
+        const indentOf = (line: string) => /^[\t ]*/.exec(line)?.[0] ?? '';
+        const indent = indentOf(
+          sourceCode.lines[node.loc.start.line - 1] ?? '',
+        );
         const text = sourceCode.getText();
         /**
          * A block comment's text carries the indentation of where it was
@@ -799,10 +802,15 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
             }),
           ].join('\n');
         };
-        const toSegment = (comment: TSESTree.Comment): ReplacementSegment => ({
-          text: reindented(comment, indent),
+        const segmentAt = (
+          comment: TSESTree.Comment,
+          toIndent: string,
+        ): ReplacementSegment => ({
+          text: reindented(comment, toIndent),
           breakAfter: requiresLineBreakAfter(comment),
         });
+        const toSegment = (comment: TSESTree.Comment): ReplacementSegment =>
+          segmentAt(comment, indent);
         // A stranded comment lies wholly on one side of the expression, since
         // a comment is a token and cannot straddle a node; keeping each on its
         // own side preserves what it annotates.
@@ -864,18 +872,49 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
             });
           }
 
+          // A comment carried from behind the expression rides out past the
+          // punctuator that closes the statement the call stood in, where one
+          // is available to take over. Kept inside the replacement, the line
+          // break such a comment demands strands that punctuator on a line of
+          // its own — layout a formatter folds straight back, and the fold
+          // moves an `eslint-disable-next-line` written there onto a different
+          // subject, so the rule's own output decides which violations the
+          // next run enforces (#2138). Where no punctuator can be taken over,
+          // the comment stays inside the replacement and keeps its break.
+          const closingPunctuator =
+            trailingComments.length > 0
+              ? absorbableClosingPunctuator(sourceCode, node, trailingComments)
+              : null;
+
           const segments: ReplacementSegment[] = [
             ...leadingComments
               .filter((comment) => !requiresOwnLine(comment))
               .map(toSegment),
             { text: replacementText, breakAfter: false },
-            ...trailingComments.map(toSegment),
+            ...(closingPunctuator ? [] : trailingComments.map(toSegment)),
           ];
           const body = joinSegmentBody(segments, indent);
-          const trailing = segments[segments.length - 1].breakAfter
-            ? `\n${indent}`
-            : '';
-          edits.push({ range: node.range, text: `${body}${trailing}` });
+          if (!closingPunctuator) {
+            const trailing = segments[segments.length - 1].breakAfter
+              ? `\n${indent}`
+              : '';
+            edits.push({ range: node.range, text: `${body}${trailing}` });
+          } else {
+            // A comment that lands out here annotates the statement rather
+            // than the expression, so it re-indents to the line the punctuator
+            // closes instead of to the line the call opened on.
+            const tailIndent = indentOf(
+              sourceCode.lines[closingPunctuator.loc.end.line - 1] ?? '',
+            );
+            const tail = joinSegmentBody(
+              trailingComments.map((comment) => segmentAt(comment, tailIndent)),
+              tailIndent,
+            );
+            edits.push({
+              range: [node.range[0], closingPunctuator.range[1]],
+              text: `${body}${closingPunctuator.value} ${tail}`,
+            });
+          }
         }
       }
 
