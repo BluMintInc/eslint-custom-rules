@@ -1,3 +1,12 @@
+## [1.20.174](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.173...v1.20.174) (2026-08-26)
+
+
+### Bug Fixes
+
+* **enforce-firestore-set-merge:** emit the appended option's separator before a trailing comment (closes [#2140](https://github.com/BluMintInc/eslint-custom-rules/issues/2140)) ([047317d](https://github.com/BluMintInc/eslint-custom-rules/commit/047317dc4dd4c3f5b0b1f5e5af18f3044e674916))
+* **no-usememo-for-pass-by-value:** carry the trailing comment past the statement terminator (closes [#2138](https://github.com/BluMintInc/eslint-custom-rules/issues/2138)) ([3d08b02](https://github.com/BluMintInc/eslint-custom-rules/commit/3d08b02ab298a5c8327f6ff12ea33fc187d3a5e1)), closes [#2079](https://github.com/BluMintInc/eslint-custom-rules/issues/2079)
+* **prefer-nullish-coalescing-boolean-props:** carry the trailing comment past the statement terminator (closes [#2139](https://github.com/BluMintInc/eslint-custom-rules/issues/2139)) ([eb2e030](https://github.com/BluMintInc/eslint-custom-rules/commit/eb2e0302db91d5545e27fdc197d2390e8dd0859c)), closes [#2138](https://github.com/BluMintInc/eslint-custom-rules/issues/2138)
+
 ## [1.20.173](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.172...v1.20.173) (2026-08-25)
 
 

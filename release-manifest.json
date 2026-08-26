@@ -1,5 +1,35 @@
 [
   {
+    "version": "1.20.174",
+    "date": "2026-08-26T04:47:21.242Z",
+    "rules": [
+      {
+        "name": "enforce-firestore-set-merge",
+        "changeType": "fix",
+        "issues": [
+          2140
+        ],
+        "summary": "emit the appended option's separator before a trailing comment (closes #2140)"
+      },
+      {
+        "name": "no-usememo-for-pass-by-value",
+        "changeType": "fix",
+        "issues": [
+          2138
+        ],
+        "summary": "carry the trailing comment past the statement terminator (closes #2138)"
+      },
+      {
+        "name": "prefer-nullish-coalescing-boolean-props",
+        "changeType": "fix",
+        "issues": [
+          2139
+        ],
+        "summary": "carry the trailing comment past the statement terminator (closes #2139)"
+      }
+    ]
+  },
+  {
     "version": "1.20.173",
     "date": "2026-08-25T23:22:38.601Z",
     "rules": [
