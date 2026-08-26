@@ -81,11 +81,24 @@ interface Account {
   token!: string;
 }`,
 
-    // A JSDoc block on its own line documents no field on the line above it
+    // A blank line is what keeps a block off the field above it: prettier
+    // preserves an authored one and never inserts one while reflowing, so the
+    // gap is the author's own mark that the note describes the shape
     `type Trailing = {
   phone?: string;
+
   /** @remarks describes the shape, not a field */
 };`,
+
+    // The same escape hatch on a class body
+    `class Account {
+  id!: string;
+
+  /**
+   * @remarks bookkeeping for the shape as a whole
+   * not for any one field
+   */
+}`,
 
     // Non-JSDoc block comment in the prettier-canonical position is not documentation
     `type Flags = {
@@ -121,6 +134,52 @@ interface Account {
   email!: string;
 }`,
 
+    // A member after the block is what makes the leading-documentation reading
+    // available, and it survives however tall the block is
+    `interface Profile {
+  username: string;
+  /**
+   * @remarks unique handle
+   * lowercase only
+   */
+  displayName: string;
+}`,
+
+    `class Session {
+  token!: string;
+  /**
+   * @remarks rotated hourly
+   * never logged
+   */
+  refresh!: string;
+}`,
+
+    {
+      code: `const options = {
+  retryDelay: 1000,
+  /**
+   * @remarks attempts before giving up
+   * capped at ten
+   */
+  retries: 3,
+};`,
+      options: [{ checkObjectLiterals: true }],
+    },
+
+    // A method closes itself rather than taking a separator, but it is still a
+    // member, so a block leading one is not the previous field's documentation
+    `class Account {
+  id!: string;
+  /** @remarks normalises the id */
+  normalize() {}
+}`,
+
+    `interface Account {
+  id: string;
+  /** @remarks resolves lazily */
+  load(): void;
+}`,
+
     // Object literal leading documentation stays leading documentation
     {
       code: `const options = {
@@ -131,10 +190,11 @@ interface Account {
       options: [{ checkObjectLiterals: true }],
     },
 
-    // A block after the last property's separator documents the shape
+    // The blank-line escape hatch on an object literal
     {
       code: `const options = {
   retryDelay: 1000,
+
   /** @remarks tuning knobs live here */
 };`,
       options: [{ checkObjectLiterals: true }],
@@ -726,6 +786,176 @@ interface Merged {
       errors: [
         { messageId: 'moveJsdocAbove' },
         { messageId: 'moveJsdocAbove' },
+      ],
+    },
+    // Prettier is not idempotent on a block too tall to share the field's line:
+    // the first pass reflows it ahead of the separator, and the second moves
+    // the separator back in front of it. That separator-first spelling is the
+    // fixed point formatted source converges to, and with nothing but the
+    // closing brace after the block the leading-documentation reading that the
+    // carve-out rests on is unavailable. Every `code` below is prettier 2.8.8's
+    // fixed point, and every `output` is one too.
+    {
+      code: `type Settings = {
+  timeout: number;
+  /**
+   * @remarks milliseconds
+   * ensure positive
+   */
+};`,
+      output: `type Settings = {
+  /**
+   * @remarks milliseconds
+   * ensure positive
+   */
+  timeout: number;
+};`,
+      errors: [{ messageId: 'moveJsdocAbove' }],
+    },
+    {
+      code: `type Example = {
+  value: string;
+  /**
+   * @example
+   *   const x = 1;
+   *     const y = 2;
+   */
+};`,
+      output: `type Example = {
+  /**
+   * @example
+   *   const x = 1;
+   *     const y = 2;
+   */
+  value: string;
+};`,
+      errors: [{ messageId: 'moveJsdocAbove' }],
+    },
+    {
+      code: `type Nested = {
+  field: string;
+  /** @remarks
+   *   nested line 1
+   *     nested line 2
+   */
+};`,
+      output: `type Nested = {
+  /** @remarks
+   * nested line 1
+   *   nested line 2
+   */
+  field: string;
+};`,
+      errors: [{ messageId: 'moveJsdocAbove' }],
+    },
+    {
+      code: `interface Profile {
+  username: string;
+  /**
+   * @remarks unique handle
+   * lowercase only
+   */
+}`,
+      output: `interface Profile {
+  /**
+   * @remarks unique handle
+   * lowercase only
+   */
+  username: string;
+}`,
+      errors: [{ messageId: 'moveJsdocAbove' }],
+    },
+    {
+      code: `class Session {
+  token!: string;
+  /**
+   * @remarks signed JWT
+   * rotated hourly
+   */
+}`,
+      output: `class Session {
+  /**
+   * @remarks signed JWT
+   * rotated hourly
+   */
+  token!: string;
+}`,
+      errors: [{ messageId: 'moveJsdocAbove' }],
+    },
+    {
+      code: `const headers = {
+  accept: 'json',
+  /**
+   * @remarks header is lowercase
+   */
+};`,
+      output: `const headers = {
+  /**
+   * @remarks header is lowercase
+   */
+  accept: 'json',
+};`,
+      options: [{ checkObjectLiterals: true }],
+      errors: [{ messageId: 'moveJsdocAbove' }],
+    },
+    // A one-line block reaches the same position whenever the author put it
+    // there, and it is just as unattached: past the last separator no member
+    // is left for it to lead.
+    {
+      code: `type Trailing = {
+  phone?: string;
+  /** @remarks describes the shape, not a field */
+};`,
+      output: `type Trailing = {
+  /** @remarks describes the shape, not a field */
+  phone?: string;
+};`,
+      errors: [{ messageId: 'moveJsdocAbove' }],
+    },
+    {
+      code: `class User {
+  @Column()
+  private readonly email?: string; /** @remarks must be lowercase */
+}`,
+      output: `class User {
+  /** @remarks must be lowercase */
+  @Column()
+  private readonly email?: string;
+}`,
+      errors: [{ messageId: 'moveJsdocAbove' }],
+    },
+    {
+      code: `const options = {
+  retryDelay: 1000,
+  /** @remarks tuning knobs live here */
+};`,
+      output: `const options = {
+  /** @remarks tuning knobs live here */
+  retryDelay: 1000,
+};`,
+      options: [{ checkObjectLiterals: true }],
+      errors: [{ messageId: 'moveJsdocAbove' }],
+    },
+    // Only the block with no member after it is claimed: the one between the
+    // two fields stays where prettier re-attributed it
+    {
+      code: `type InlineDocs = {
+  size: number;
+  /** sized in bytes */
+  label: string;
+  /** @remarks shown to users */
+};`,
+      output: `type InlineDocs = {
+  size: number;
+  /** sized in bytes */
+  /** @remarks shown to users */
+  label: string;
+};`,
+      errors: [
+        {
+          messageId: 'moveJsdocAbove',
+          data: { name: 'label', kind: 'type field' },
+        },
       ],
     },
     // The indent step comes from the file rather than from prettier's default,
