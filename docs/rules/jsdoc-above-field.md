@@ -14,15 +14,15 @@ A JSDoc block belongs to the field whose separator still follows it, whatever
 line it sits on. `phone?: string; /** … */`, the prettier-canonical
 `phone?: string /** … */;`, and the same block reflowed onto its own line ahead
 of the separator all document `phone` from below, and are reported alike.
-Prettier prints that last shape for any block that cannot share the field's
-line, so it is the spelling formatted source actually contains — matching on
-line sharing alone would leave the rule inert exactly there.
+Prettier is not idempotent on a block too tall to share the field's line: one
+pass reflows it ahead of the separator, and the next moves the separator back
+in front of it, so both spellings occur and neither may be ignored.
 
-Attachment stops at the separator. A block starting after the field's `;` or `,`
-on a later line is the leading documentation of whatever follows — or a note
-about the enclosing shape — and is left alone. That carve-out is also why a
-class field whose trailing block prettier parks _after_ its `;` goes unreported:
-that position is indistinguishable from leading documentation.
+Attachment stops at the separator: a block starting after the field's `;` or
+`,` on a later line leads whatever follows. On the last member of a container
+there is nothing to lead, so the field it trails claims it. A blank line
+restores the carve-out — prettier preserves an authored one and never inserts
+one while reflowing, so the gap marks a deliberate note about the shape.
 
 Prettier keeps a type literal or object literal on one line whenever the source
 has no newline after its `{`, so a documented field often shares its line with
@@ -47,13 +47,13 @@ export type Contact = {
   phone?: string /** @remarks stored as +15551234567 */;
 };
 
-// A block too tall to share the line is reflowed onto its own — still a violation
+// Prettier's fixed point for a block too tall to share the line — a violation
 export type Session = {
-  timeout: number
+  timeout: number;
   /**
    * @remarks milliseconds
    * ensure positive
-   */;
+   */
 };
 
 interface Profile {

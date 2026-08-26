@@ -188,22 +188,79 @@ export const jsdocAboveField = createRule<Options, MessageIds>({
       };
     };
 
+    const containerOf = (node: FieldNode): Container | undefined => {
+      const parent = node.parent;
+
+      if (parent?.type === AST_NODE_TYPES.TSTypeLiteral) {
+        return { node: parent, members: parent.members, separator: ';' };
+      }
+
+      if (parent?.type === AST_NODE_TYPES.TSInterfaceBody) {
+        return { node: parent, members: parent.body, separator: ';' };
+      }
+
+      if (parent?.type === AST_NODE_TYPES.ClassBody) {
+        return { node: parent, members: parent.body, separator: ';' };
+      }
+
+      if (parent?.type === AST_NODE_TYPES.ObjectExpression) {
+        return { node: parent, members: parent.properties, separator: ',' };
+      }
+
+      return undefined;
+    };
+
+    /**
+     * Whether nothing but the container's closing brace follows the block, so
+     * the field it trails is the only member it can belong to.
+     */
+    const closesContainer = (
+      node: FieldNode,
+      comment: TSESTree.Comment,
+    ): boolean => {
+      const container = containerOf(node);
+
+      if (!container) {
+        return false;
+      }
+
+      const closeBrace = sourceCode.getLastToken(container.node);
+
+      if (!closeBrace || comment.range[1] > closeBrace.range[0]) {
+        return false;
+      }
+
+      return !container.members.some(
+        (member) => member.range[0] >= comment.range[1],
+      );
+    };
+
     /**
      * Attaches a trailing JSDoc block by token order rather than by line.
      *
-     * Prettier reflows a multi-line block that trails a field onto its own
-     * line, ahead of the member's separator: the block that followed
-     * `timeout: number;` ends up between `timeout: number` and its `;`. Keying
-     * on the comment sharing the field's line makes the rule inert on exactly
-     * the formatted source it has to police, so a block the separator still
-     * follows counts as this member's however many lines down it starts.
+     * Prettier is not idempotent on a multi-line block that trails a field. One
+     * pass reflows it onto its own line ahead of the member's separator, so the
+     * block that followed `timeout: number;` sits between `timeout: number` and
+     * its `;`; the next pass moves the separator back in front of it, and that
+     * separator-first spelling is the fixed point formatted source converges
+     * to. Both intermediates and the fixed point document the field above them,
+     * so keying on the comment sharing the field's line — or on the separator
+     * still following it — leaves the rule inert on the shape it exists to
+     * police.
      *
-     * Past the separator the member has ended and position alone no longer
-     * identifies an owner: an own-line block there is the leading documentation
-     * of the next field, or a note about the enclosing shape. Only the same-line
-     * spelling can be claimed there, which is why that arm survives.
+     * Past the separator the member has ended and position alone stops naming
+     * an owner: an own-line block there reads as the leading documentation of
+     * the next field. That reading needs a next field, so it is unavailable on
+     * the last member of a container, where the preceding field is the only
+     * candidate left.
+     *
+     * A blank line is the one signal that survives the round trip intact:
+     * prettier preserves an authored one and never inserts one while reflowing,
+     * so a block held off by an empty line is a deliberate note about the
+     * enclosing shape rather than displaced documentation.
      */
     const trailingJSDocFor = (
+      node: FieldNode,
       span: FieldSpan,
     ): TSESTree.Comment | undefined => {
       return allComments.find((comment) => {
@@ -215,12 +272,14 @@ export const jsdocAboveField = createRule<Options, MessageIds>({
           return false;
         }
 
-        const precedesSeparator = comment.range[1] <= span.separatorEnd;
-        if (!precedesSeparator && comment.loc.start.line !== span.line) {
-          return false;
-        }
-
         const between = sourceCode.text.slice(span.offset, comment.range[0]);
+        const precedesSeparator = comment.range[1] <= span.separatorEnd;
+
+        if (!precedesSeparator && comment.loc.start.line !== span.line) {
+          if (!closesContainer(node, comment) || /\n[^\S\n]*\n/.test(between)) {
+            return false;
+          }
+        }
 
         return /^[\s;,]*$/.test(between);
       });
@@ -351,28 +410,6 @@ export const jsdocAboveField = createRule<Options, MessageIds>({
       /^[ \t]*/.exec(sourceCode.lines[node.loc.start.line - 1] ?? '')?.[0] ??
       '';
 
-    const containerOf = (node: FieldNode): Container | undefined => {
-      const parent = node.parent;
-
-      if (parent?.type === AST_NODE_TYPES.TSTypeLiteral) {
-        return { node: parent, members: parent.members, separator: ';' };
-      }
-
-      if (parent?.type === AST_NODE_TYPES.TSInterfaceBody) {
-        return { node: parent, members: parent.body, separator: ';' };
-      }
-
-      if (parent?.type === AST_NODE_TYPES.ClassBody) {
-        return { node: parent, members: parent.body, separator: ';' };
-      }
-
-      if (parent?.type === AST_NODE_TYPES.ObjectExpression) {
-        return { node: parent, members: parent.properties, separator: ',' };
-      }
-
-      return undefined;
-    };
-
     /**
      * A member's separator sits inside its range for type and class members
      * but outside it for object literal properties, so both spellings have to
@@ -455,7 +492,7 @@ export const jsdocAboveField = createRule<Options, MessageIds>({
             member === node
               ? comment
               : isRelevantNode(member)
-              ? trailingJSDocFor(fieldSpanOf(member))
+              ? trailingJSDocFor(member, fieldSpanOf(member))
               : undefined,
         };
       });
@@ -606,7 +643,7 @@ export const jsdocAboveField = createRule<Options, MessageIds>({
       }
 
       const span = fieldSpanOf(node);
-      const jsdocComment = trailingJSDocFor(span);
+      const jsdocComment = trailingJSDocFor(node, span);
 
       if (!jsdocComment) {
         return;
