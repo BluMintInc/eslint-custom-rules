@@ -10,6 +10,7 @@ import * as ts from 'typescript';
 import { createRule } from '../utils/createRule';
 import {
   ReplacementSegment,
+  absorbableClosingPunctuator,
   joinSegmentBody,
   joinSegments,
   requiresLineBreakAfter,
@@ -1565,13 +1566,65 @@ export const preferNullishCoalescingBooleanProps = createRule<[], MessageIds>({
                     ? landingOperator(node, sourceCode)
                     : null;
                 const leading = landing ? `\n${bodyIndent}` : '';
-                const body = joinSegmentBody(segments, tailIndent);
-                const trailing = segments[segments.length - 1].breakAfter
-                  ? `\n${lineIndent}`
+                const range = replacementRange(node, sourceCode, landing);
+                // A comment trailing the whole expression rides out past the
+                // punctuator that closes the statement the chain stands in,
+                // where one is available to take over. Kept inside the
+                // replacement, the line break such a comment demands strands
+                // that punctuator on a line of its own — layout a formatter
+                // folds straight back, and the fold moves an
+                // `eslint-disable-next-line` written on the comment's line
+                // onto a different subject, so the pipeline's formatting order
+                // decides which violations are enforced (#2139). The span this
+                // fix replaces can end PAST the node, at a redundant paren the
+                // widening claims, so the lookup anchors on the span's own
+                // last token: asked of the node, it answers with that paren —
+                // a token inside the span — instead of the punctuator behind
+                // it.
+                const spanEndToken =
+                  range[1] > node.range[1]
+                    ? sourceCode.getTokenAfter(node)
+                    : sourceCode.getLastToken(node);
+                const closingPunctuator =
+                  comments.trailing.length > 0 && spanEndToken
+                    ? absorbableClosingPunctuator(
+                        sourceCode,
+                        spanEndToken,
+                        comments.trailing,
+                      )
+                    : null;
+                const bodySegments = closingPunctuator
+                  ? segments.slice(
+                      0,
+                      segments.length - comments.trailing.length,
+                    )
+                  : segments;
+                const body = joinSegmentBody(bodySegments, tailIndent);
+                const trailing =
+                  !closingPunctuator && segments[segments.length - 1].breakAfter
+                    ? `\n${lineIndent}`
+                    : '';
+                // A comment that lands out past the punctuator annotates the
+                // statement rather than the expression, so it re-indents to
+                // the line the punctuator closes instead of to the chain's own
+                // depth.
+                const closingLine = closingPunctuator
+                  ? sourceCode.lines[closingPunctuator.loc.end.line - 1] ?? ''
                   : '';
+                const carriedTail = closingPunctuator
+                  ? joinSegmentBody(
+                      comments.trailing.map(toSegment),
+                      /^[\t ]*/.exec(closingLine)?.[0] ?? '',
+                    )
+                  : '';
+                const claimedRange: TSESTree.Range = closingPunctuator
+                  ? [range[0], closingPunctuator.range[1]]
+                  : range;
                 const replacement = fixer.replaceTextRange(
-                  replacementRange(node, sourceCode, landing),
-                  `${leading}${body}${trailing}`,
+                  claimedRange,
+                  closingPunctuator
+                    ? `${leading}${body}${closingPunctuator.value} ${carriedTail}`
+                    : `${leading}${body}${trailing}`,
                 );
                 if (!keyword || hoisted.length === 0) {
                   return replacement;
