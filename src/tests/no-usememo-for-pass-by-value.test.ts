@@ -1,4 +1,6 @@
 import path from 'path';
+import { Linter, Rule } from 'eslint';
+import * as prettier from 'prettier';
 import { ruleTesterJsx, ruleTesterTs } from '../utils/ruleTester';
 import { noUsememoForPassByValue } from '../rules/no-usememo-for-pass-by-value';
 
@@ -1259,10 +1261,214 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       }
       `,
       errors: [{ messageId: 'primitiveMemo' }],
+      // The carried comment rides out past the semicolon that closes the
+      // statement, which is where a formatter prints a comment annotating one.
+      // Kept inside the statement it would strand that semicolon on a line of
+      // its own, and folding the semicolon back moves any directive written
+      // there onto a different subject (#2138).
       output: `
       export function useTrailingCommentAfterExpression() {
-        return undefined // keep me
-        ;
+        return undefined; // keep me
+      }
+      `,
+    },
+    {
+      // The same absorption in declarator position, where a formatter does not
+      // merely tolerate the comment past the terminator but insists on it: it
+      // rewrites `const value = undefined /* c */;` and leaves the emission
+      // below alone.
+      ...baseOptions,
+      code: `
+      import { useMemo } from 'react';
+
+      export function useDeclaratorTrailingComment() {
+        const value = useMemo(() => {
+          return undefined; // keep me
+        }, []);
+        return value;
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+      export function useDeclaratorTrailingComment() {
+        const value = undefined; // keep me
+        return value;
+      }
+      `,
+    },
+    {
+      // A comma closes the element rather than a statement, and it is taken
+      // over only for a comment that needs a line of its own — which a line
+      // comment always does.
+      ...baseOptions,
+      code: `
+      import { useMemo } from 'react';
+
+      export function useObjectPropertyTrailingComment(flag: boolean) {
+        return {
+          label: useMemo(() => {
+            return flag; // keep me
+          }, [flag]),
+          flag,
+        };
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+      export function useObjectPropertyTrailingComment(flag: boolean) {
+        return {
+          label: flag, // keep me
+          flag,
+        };
+      }
+      `,
+    },
+    {
+      // The other side of that asymmetry: a formatter prints a block comment on
+      // a list element BEFORE the comma, the opposite of what it does at a
+      // semicolon, so the comma is left where it was written.
+      ...baseOptions,
+      code: `
+      import { useMemo } from 'react';
+
+      export function useObjectPropertyBlockComment(flag: boolean) {
+        return {
+          label: useMemo(() => {
+            return flag; /* keep me */
+          }, [flag]),
+          flag,
+        };
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+      export function useObjectPropertyBlockComment(flag: boolean) {
+        return {
+          label: flag /* keep me */,
+          flag,
+        };
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+      import { useMemo } from 'react';
+
+      export function useArrayElementTrailingComment(flag: boolean) {
+        return [
+          useMemo(() => {
+            return flag; // keep me
+          }, [flag]),
+          flag,
+        ];
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+      export function useArrayElementTrailingComment(flag: boolean) {
+        return [
+          flag, // keep me
+          flag,
+        ];
+      }
+      `,
+    },
+    {
+      // A punctuator sharing its line with source the fixer does not own cannot
+      // be taken over: the carried line comment would land in front of that
+      // source and comment it out. The comment keeps the break it needs
+      // instead, and the declaration behind the semicolon survives verbatim.
+      ...baseOptions,
+      code: `
+      import { useMemo } from 'react';
+
+      export function useSharedLine() {
+        const value = useMemo(() => {
+          return undefined; // keep me
+        }, []); const other = 1;
+        return [value, other];
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+      export function useSharedLine() {
+        const value = undefined // keep me
+        ; const other = 1;
+        return [value, other];
+      }
+      `,
+    },
+    {
+      // Same refusal for a comment behind the punctuator, which the fixer does
+      // not own either: folding the carried comment onto it would merge the two
+      // into one comment and destroy whatever the second one said.
+      ...baseOptions,
+      code: `
+      import { useMemo } from 'react';
+
+      export function useNoteAfterCall() {
+        const value = useMemo(() => {
+          return undefined; // keep me
+        }, []); // outer note
+        return value;
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+      export function useNoteAfterCall() {
+        const value = undefined // keep me
+        ; // outer note
+        return value;
+      }
+      `,
+    },
+    {
+      // The parenthesized emission is unchanged by any of this: its trailing
+      // comment stays inside the parentheses, which already hold the break it
+      // needs, and the semicolon behind them is left alone.
+      ...baseOptions,
+      code: `
+      import { useMemo } from 'react';
+
+      export function useNegatedTrailingComment(flag: boolean) {
+        return !useMemo(() => {
+          return flag; // keep me
+        }, [flag]);
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+      export function useNegatedTrailingComment(flag: boolean) {
+        return !(
+          flag // keep me
+        );
+      }
+      `,
+    },
+    {
+      // The directive repro of #2138. Carried onto the statement line, the
+      // directive governs the statement that follows it — the same subject a
+      // formatter's fold would have given it, so running one over this output
+      // cannot change which violations are enforced.
+      ...baseOptions,
+      code: `
+      import { useMemo } from 'react';
+
+      export function useDirectiveTrailingComment() {
+        const x = useMemo(() => {
+          return undefined; // eslint-disable-next-line no-var
+        }, []);
+        var y = 1;
+        return [x, y];
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+      export function useDirectiveTrailingComment() {
+        const x = undefined; // eslint-disable-next-line no-var
+        var y = 1;
+        return [x, y];
       }
       `,
     },
@@ -1281,7 +1487,7 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
       export function useCommentBeforeCloseBrace() {
-        return undefined /* keep me */;
+        return undefined; /* keep me */
       }
       `,
     },
@@ -1300,8 +1506,7 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
       export function useCommentInDependencyArray(flag: boolean) {
-        return flag // keep me
-        ;
+        return flag; // keep me
       }
       `,
     },
@@ -1333,7 +1538,7 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
       export function useCommentBetweenArguments() {
-        return undefined /* keep me */;
+        return undefined; /* keep me */
       }
       `,
     },
@@ -1494,11 +1699,13 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       // After the expression has begun, a line terminator cannot trip the
-      // restricted production, so a trailing comment stays where it was written.
+      // restricted production, so the trailing comment needs no parentheses; it
+      // rides past the semicolon all the same, because that is the side of the
+      // terminator a formatter prints a statement's own comment on.
       output: `
       export function useMultiLineTrailingComment(flag: boolean) {
-        return flag /* trailing
-        still trailing */;
+        return flag; /* trailing
+        still trailing */
       }
       `,
     },
@@ -1519,8 +1726,8 @@ ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
       output: `
       export function useManyComments(flag: boolean) {
         // first
-        return /* second */ flag // third
-        /* fourth */;
+        return /* second */ flag; // third
+        /* fourth */
       }
       `,
     },
@@ -2148,3 +2355,219 @@ export function useLabel(flag: boolean) {
     ],
   },
 );
+
+/**
+ * Whether the emitted terminator changes what the file ENFORCES is a question
+ * about ESLint's own line accounting and about what a formatter does to the
+ * emission, so it is asked of both rather than of the emitted text alone
+ * (#2138).
+ */
+describe('no-usememo-for-pass-by-value carried-comment terminator', () => {
+  const RULE_ID = '@blumintinc/blumint/no-usememo-for-pass-by-value';
+
+  const makeLinter = () => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      RULE_ID,
+      noUsememoForPassByValue as unknown as Rule.RuleModule,
+    );
+    return linter;
+  };
+
+  const lintWith = (code: string, rules: Linter.Config['rules']) =>
+    makeLinter().verify(
+      code,
+      {
+        parser: '@typescript-eslint/parser',
+        parserOptions,
+        rules,
+      } as Linter.Config,
+      baseOptions.filename,
+    );
+
+  const fix = (code: string) =>
+    makeLinter().verifyAndFix(
+      code,
+      {
+        parser: '@typescript-eslint/parser',
+        parserOptions,
+        rules: { [RULE_ID]: 'error' },
+      } as Linter.Config,
+      baseOptions.filename,
+    ).output;
+
+  const PRETTIER_OPTIONS: prettier.Options = {
+    parser: 'typescript',
+    printWidth: 80,
+    tabWidth: 2,
+    singleQuote: true,
+    semi: true,
+    trailingComma: 'all',
+  };
+
+  const isFixedPoint = (text: string) =>
+    prettier.format(text, PRETTIER_OPTIONS) === text;
+
+  const TRAILING_COMMENT = `import { useMemo } from 'react';
+
+export function useTrailingComment() {
+  return useMemo(() => {
+    return undefined; // keep me
+  }, []);
+}
+`;
+
+  const EXPECTED_TRAILING = `export function useTrailingComment() {
+  return undefined; // keep me
+}
+`;
+
+  /** The emission before #2138, kept as the control the fix has to beat. */
+  const STRANDED_TRAILING = `export function useTrailingComment() {
+  return undefined // keep me
+  ;
+}
+`;
+
+  it('carries the comment past the semicolon it would otherwise strand', () => {
+    expect(fix(TRAILING_COMMENT)).toBe(EXPECTED_TRAILING);
+    expect(EXPECTED_TRAILING).toContain('// keep me');
+  });
+
+  it('is not vacuous: the stranded terminator is what prettier folds back', () => {
+    expect(isFixedPoint(TRAILING_COMMENT)).toBe(true);
+    expect(isFixedPoint(EXPECTED_TRAILING)).toBe(true);
+    expect(isFixedPoint(STRANDED_TRAILING)).toBe(false);
+    expect(prettier.format(STRANDED_TRAILING, PRETTIER_OPTIONS)).toBe(
+      EXPECTED_TRAILING,
+    );
+  });
+
+  const DIRECTIVE = `import { useMemo } from 'react';
+
+export function useDirective() {
+  const x = useMemo(() => {
+    return undefined; // eslint-disable-next-line no-var
+  }, []);
+  var y = 1;
+  return [x, y];
+}
+`;
+
+  const EXPECTED_DIRECTIVE = `export function useDirective() {
+  const x = undefined; // eslint-disable-next-line no-var
+  var y = 1;
+  return [x, y];
+}
+`;
+
+  const STRANDED_DIRECTIVE = `export function useDirective() {
+  const x = undefined // eslint-disable-next-line no-var
+  ;
+  var y = 1;
+  return [x, y];
+}
+`;
+
+  const noVarReports = (code: string) =>
+    lintWith(code, { 'no-var': 'error' }).length;
+
+  it('leaves the directive governing the statement it is written above', () => {
+    const output = fix(DIRECTIVE);
+    expect(output).toBe(EXPECTED_DIRECTIVE);
+    expect(noVarReports(output)).toBe(0);
+    // Formatting the emission cannot move the directive onto another subject,
+    // because there is no stray line left for it to land on.
+    expect(noVarReports(prettier.format(output, PRETTIER_OPTIONS))).toBe(0);
+    expect(isFixedPoint(output)).toBe(true);
+  });
+
+  it('is not vacuous: the stranded terminator makes formatting flip enforcement', () => {
+    expect(noVarReports(STRANDED_DIRECTIVE)).toBe(1);
+    expect(
+      noVarReports(prettier.format(STRANDED_DIRECTIVE, PRETTIER_OPTIONS)),
+    ).toBe(0);
+  });
+
+  it('is not vacuous: the same emission without the directive reports', () => {
+    const undirected = EXPECTED_DIRECTIVE.replace(
+      ' // eslint-disable-next-line no-var',
+      '',
+    );
+    expect(undirected).not.toContain('eslint-disable-next-line');
+    expect(noVarReports(undirected)).toBe(1);
+  });
+
+  /**
+   * The punctuator is taken over only where nothing but the line ending stands
+   * behind it, so the declaration sharing that line survives the rewrite rather
+   * than being commented out by the carried comment.
+   */
+  const SHARED_LINE = `import { useMemo } from 'react';
+
+export function useSharedLine() {
+  const value = useMemo(() => {
+    return undefined; // keep me
+  }, []); const other = 1;
+  return [value, other];
+}
+`;
+
+  it('declines the punctuator that shares its line with source', () => {
+    const output = fix(SHARED_LINE);
+    expect(output).toContain('const other = 1;');
+    expect(output).toContain('// keep me');
+    // The comment stays ahead of the punctuator, which is the only placement
+    // that leaves the neighbouring declaration executable.
+    expect(
+      lintWith(output, { [RULE_ID]: 'error' }).some(
+        (message) => message.fatal === true,
+      ),
+    ).toBe(false);
+    expect(output.indexOf('// keep me')).toBeLessThan(
+      output.indexOf('const other = 1;'),
+    );
+  });
+
+  /** The names a snippet actually declares, read from its parsed body. */
+  const declaredNames = (code: string) => {
+    const names: string[] = [];
+    const linter = makeLinter();
+    linter.defineRule('collect-names', {
+      create: () => ({
+        VariableDeclarator: (node: { id: { type: string; name?: string } }) => {
+          if (node.id.type === 'Identifier' && node.id.name) {
+            names.push(node.id.name);
+          }
+        },
+      }),
+    } as unknown as Rule.RuleModule);
+    linter.verify(
+      code,
+      {
+        parser: '@typescript-eslint/parser',
+        parserOptions,
+        rules: { 'collect-names': 'error' },
+      } as Linter.Config,
+      baseOptions.filename,
+    );
+    return names;
+  };
+
+  it('is not vacuous: absorbing that punctuator would comment the neighbour out', () => {
+    // What absorption would have emitted: the carried comment ahead of the
+    // source that shared the punctuator's line, which swallows it whole.
+    const absorbed = `export function useSharedLine() {
+  const value = undefined; // keep me const other = 1;
+  return [value, other];
+}
+`;
+    expect(declaredNames(absorbed)).toEqual(['value']);
+    expect(declaredNames(fix(SHARED_LINE))).toEqual(['value', 'other']);
+  });
+});

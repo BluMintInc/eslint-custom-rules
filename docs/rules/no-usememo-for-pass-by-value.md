@@ -16,7 +16,7 @@ The fixer replaces `useMemo(() => expr, deps)` with `expr` (when the callback is
 
 Inlining discards the callback, the `return` keyword and the dependency array, so a comment written in any of those places has no anchor of its own in the replacement. The fixer carries every such comment into the rewritten code — deleting it silently and declining the fix are both fidelity bugs, since declining lets the mere presence of a comment decide whether the rule rewrites at all.
 
-A block comment written on a single line stays beside the expression, on the side it was written on:
+A block comment written on a single line ahead of the expression stays beside it, on the side it was written on:
 
 ```ts
 // Before
@@ -30,6 +30,44 @@ export function useLabel(slug: string) {
 // After --fix
 export function useLabel(slug: string) {
   return /* uppercased for the marquee */ slug.toUpperCase();
+}
+```
+
+A comment written *behind* the expression annotates the statement the call stood in rather than the expression itself, and a formatter prints such a comment after the token that closes that statement. The fixer emits it there, so the terminator is never stranded on a line of its own — layout a formatter folds straight back, and the fold moves an `eslint-disable-next-line` written there onto a different subject:
+
+```ts
+// Before
+export function useDelay() {
+  return useMemo(() => {
+    return 0; // the caller polls, so this stays constant
+  }, []);
+}
+
+// After --fix
+export function useDelay() {
+  return 0; // the caller polls, so this stays constant
+}
+```
+
+A comma is a weaker claim than a semicolon and is taken over only by a comment that needs a line of its own, because a formatter prints a `//` comment on a list element after the comma but a block comment on one before it. No punctuator is taken over at all when anything else shares its line: a carried line-bound comment landing after it would swallow whatever stood there.
+
+```ts
+// Before
+export function useTotals(count: number) {
+  return {
+    total: useMemo(() => {
+      return count; /* raw, not rounded */
+    }, [count]),
+    count,
+  };
+}
+
+// After --fix
+export function useTotals(count: number) {
+  return {
+    total: count /* raw, not rounded */,
+    count,
+  };
 }
 ```
 

@@ -1,4 +1,4 @@
-import { AST_TOKEN_TYPES, TSESTree } from '@typescript-eslint/utils';
+import { AST_TOKEN_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { parseDisableDirectives } from './disableDirectives';
 
 /**
@@ -55,6 +55,48 @@ export function spansMultipleLines(comment: TSESTree.Comment): boolean {
  */
 export function requiresOwnLine(comment: TSESTree.Comment): boolean {
   return requiresLineBreakAfter(comment) || spansMultipleLines(comment);
+}
+
+/**
+ * The punctuator a comment carried from behind the expression may move past.
+ *
+ * Such a comment annotates the statement the node stood in, and prettier
+ * prints it AFTER the token that closes that statement — `const x = 1; /* c
+ * *\/`, never `const x = 1 /* c *\/;`. Leaving it inside the statement is
+ * layout prettier rewrites, so the fixed file fails `prettier --check`
+ * (#2079). Leaving it there also strands the punctuator on a line of its own
+ * behind a line-bound comment, which retargets an `eslint-disable-next-line`
+ * onto that stray line the moment prettier folds it back (#2138).
+ *
+ * A comma is a weaker claim and takes only the comments that need a line of
+ * their own. Measured against this repo's prettier: a line comment on a list
+ * element is printed after the comma, while a block comment on one is
+ * printed before it — the opposite of what a semicolon gets. Moving a block
+ * comment past a comma would trade one layout prettier rewrites for another.
+ *
+ * Only a punctuator with nothing but line ending behind it may be taken
+ * over: a line-bound comment landing after it would otherwise swallow
+ * whatever shared that line. Asking for the next token INCLUDING comments
+ * also keeps a comment the fixer does not own from being stepped over.
+ */
+export function absorbableClosingPunctuator(
+  sourceCode: Readonly<TSESLint.SourceCode>,
+  node: TSESTree.Node,
+  trailingComments: readonly TSESTree.Comment[],
+): TSESTree.Token | null {
+  const next = sourceCode.getTokenAfter(node, { includeComments: true });
+  if (
+    !next ||
+    next.type !== AST_TOKEN_TYPES.Punctuator ||
+    (next.value !== ';' && next.value !== ',')
+  ) {
+    return null;
+  }
+  if (next.value === ',' && !trailingComments.every(requiresLineBreakAfter)) {
+    return null;
+  }
+  const line = sourceCode.lines[next.loc.end.line - 1] ?? '';
+  return line.slice(next.loc.end.column).trim() === '' ? next : null;
 }
 
 export type ReplacementSegment = { text: string; breakAfter: boolean };
