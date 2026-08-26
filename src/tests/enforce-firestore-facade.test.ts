@@ -1402,6 +1402,140 @@ ruleTesterTs.run('enforce-firestore-facade', enforceFirestoreFacade, {
         }
       `,
     },
+    // Shape B — canonical receiver, defeated by `as`
+    `
+import type { Reference } from 'firebase-admin/database';
+const userStatusRef = realtimeDb.ref('status/u1') as Reference;
+await userStatusRef.set({ status: 'online' });
+`,
+    // Shape B — `satisfies`
+    `
+import type { Reference } from 'firebase-admin/database';
+const roomRef = realtimeDb.ref('rooms/r1') satisfies Reference;
+await roomRef.set({ open: true });
+`,
+    // Shape B — non-null assertion
+    `
+const roomRef = realtimeDb.ref('rooms/r1')!;
+await roomRef.set({ open: true });
+`,
+    // Shape A — RealtimeDB Database held under another name, ref annotated as a RealtimeDB Reference
+    `
+import type { Reference, Database } from 'firebase-admin/database';
+let tunnelRef: Reference | null = null;
+async function register(db: Database, path: string) {
+  tunnelRef = db.ref(path);
+  await tunnelRef.set({ registeredAt: 1 });
+}
+`,
+    // Valid: update/remove/child chained off an asserted RealtimeDB reference
+    {
+      code: `
+        import type { Reference } from 'firebase-admin/database';
+
+        export async function refreshRoom(roomId: string) {
+          const roomRef = realtimeDb.ref('rooms/' + roomId) as Reference;
+          await roomRef.update({ lastChanged: Date.now() });
+          await roomRef.child('callers').update({ count: 0 });
+          await roomRef.child('callers').remove();
+        }
+      `,
+    },
+    // Valid: child ref hoisted off a non-null asserted RealtimeDB reference
+    {
+      code: `
+        export async function clearCallers(roomId: string) {
+          const roomRef = realtimeDb.ref('rooms/' + roomId)!;
+          const callersRef = roomRef.child('callers');
+          await callersRef.set({});
+          const snapshot = await callersRef.get();
+          return snapshot.val();
+        }
+      `,
+    },
+    // Valid: the client SDK spelling of the RealtimeDB Reference type
+    {
+      code: `
+        import type { Reference } from 'firebase/database';
+
+        export async function markOnline(userId: string, database: Reference) {
+          const presenceRef = database.child(userId) as Reference;
+          await presenceRef.set({ online: true });
+        }
+      `,
+    },
+    // Valid: Database-typed parameter makes its ref() a RealtimeDB reference
+    {
+      code: `
+        import type { Database } from 'firebase-admin/database';
+
+        export async function writeStatus(database: Database, path: string) {
+          const statusRef = database.ref(path);
+          await statusRef.update({ lastChanged: Date.now() });
+          await statusRef.get();
+        }
+      `,
+    },
+    // Valid: Database-typed module binding reached through a non-null assertion
+    {
+      code: `
+        import type { Database } from 'firebase-admin/database';
+
+        let developmentDb: Database | null = null;
+
+        export async function purgeTunnels(path: string) {
+          const purgeRef = developmentDb!.ref(path);
+          await purgeRef.update({ cleared: true });
+          await purgeRef.remove();
+        }
+      `,
+    },
+    // Valid: handle obtained from the modular getDatabase() accessor
+    {
+      code: `
+        import { getDatabase } from 'firebase/database';
+
+        const rtdb = getDatabase();
+        const seasonRef = rtdb.ref('seasons/s1');
+        await seasonRef.set({ open: true });
+      `,
+    },
+    // Valid: RealtimeDB types and accessor reached through a namespace import
+    {
+      code: `
+        import * as database from 'firebase-admin/database';
+
+        let statusRef: database.Reference | null = null;
+
+        export async function mark(path: string) {
+          statusRef = database.getDatabase().ref(path);
+          await statusRef.set({ ok: true });
+        }
+      `,
+    },
+    // Valid: asserted RealtimeDB reference used inline as the receiver
+    {
+      code: `
+        import type { Reference } from 'firebase-admin/database';
+
+        export async function openRoom(roomId: string, database: Database) {
+          await (database.ref('rooms/' + roomId) as Reference).set({ open: true });
+        }
+      `,
+    },
+    // Valid: aliased RealtimeDB Reference import
+    {
+      code: `
+        import type { Reference as RtdbRef } from 'firebase-admin/database';
+
+        let tunnelRef: RtdbRef | null = null;
+
+        export async function register(path: string) {
+          tunnelRef = realtimeDb.ref(path);
+          await tunnelRef.set({ registeredAt: Date.now() });
+        }
+      `,
+    },
   ],
   invalid: [
     // Invalid direct get usage
@@ -2147,6 +2281,78 @@ ruleTesterTs.run('enforce-firestore-facade', enforceFirestoreFacade, {
         await orderRef.update({ id: '2', status: 'pending' }); // Invalid - should be flagged
       `,
       errors: [{ messageId: 'noDirectSet' }, { messageId: 'noDirectUpdate' }],
+    },
+    // Invalid: a Reference type from an unrelated module must not silence a Firestore write
+    {
+      code: `
+        import type { Reference } from './types/Reference';
+
+        const orderRef = db.collection('orders').doc('o1') as Reference;
+        await orderRef.update({ status: 'shipped' });
+      `,
+      errors: [{ messageId: 'noDirectUpdate' }],
+    },
+    // Invalid: a Database type from an unrelated module must not silence a Firestore write
+    {
+      code: `
+        import type { Database } from './db/Database';
+
+        export async function bump(database: Database) {
+          const userRef = database.collection('users').doc('u1');
+          await userRef.set({ a: 1 });
+        }
+      `,
+      errors: [{ messageId: 'noDirectSet' }],
+    },
+    // Invalid: the admin Firestore DocumentReference type is not a RealtimeDB signal
+    {
+      code: `
+        import type { DocumentReference } from 'firebase-admin/firestore';
+
+        const userRef = db.doc(toUserPath(id)) as DocumentReference<User>;
+        await userRef.set({ nextVoiceChannel: roomId }, { merge: true });
+      `,
+      errors: [{ messageId: 'noDirectSet' }],
+    },
+    // Invalid: batch update on a snapshot's ref in a file that also touches RealtimeDB
+    {
+      code: `
+        import { realtimeDb } from '../config/firebaseAdmin';
+
+        const statusRef = realtimeDb.ref('status');
+        const batch = db.batch();
+        for (const doc of docs) {
+          batch.update(doc.ref, { isRead: true });
+        }
+        await batch.commit();
+      `,
+      errors: [{ messageId: 'noDirectUpdate' }],
+    },
+    // Invalid: CollectionGroup query read alongside a RealtimeDB import
+    {
+      code: `
+        import type { Reference } from 'firebase-admin/database';
+
+        const tunnelRef = realtimeDb.ref('tunnels') as Reference;
+        const queryRef = db.collectionGroup('notifications') as CollectionGroup<Notification>;
+        const snapshot = await queryRef.get();
+      `,
+      errors: [{ messageId: 'noDirectGet' }],
+    },
+    // Invalid: transaction writes in a file that also holds a RealtimeDB reference
+    {
+      code: `
+        import { db, realtimeDb } from '../config/firebaseAdmin';
+
+        const parentRef = realtimeDb.ref('status/u1')!;
+        const docRef = db.collection('users').doc('u1');
+
+        await db.runTransaction(async (transaction) => {
+          const current = await transaction.get(docRef);
+          transaction.set(docRef, { lastChanged: 1 }, { merge: true });
+        });
+      `,
+      errors: [{ messageId: 'noDirectGet' }, { messageId: 'noDirectSet' }],
     },
     // Note: Variable shadowing and conditional assignment tracking are complex scenarios
     // beyond the scope of this rule. The rule focuses on simple variable assignments
