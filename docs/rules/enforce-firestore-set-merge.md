@@ -39,15 +39,15 @@ scope. Either one is enough:
    naming the class (`RealtimeBatchManager`, `Readonly<RealtimeBatchManager>`,
    `realtimeDb.RealtimeBatchManager`) on the field, the variable, or a
    constructor parameter, including one the constructor only forwards to
-   `super()`. A superclass declared in the same file counts too, since a subclass
-   inherits the field. The superclass is resolved lexically, from the `extends`
-   clause outward through every enclosing statement container — a function body,
-   a namespace, a static block, a switch case, or the module itself — so a base
-   class written beside its subclass inside a function is as visible as a
-   top-level one, exported or not, and is found under either the
-   `class Base {}` or the `const Base = class {}` spelling. The innermost
-   declaration wins, so a nested class shadowing an outer one of the same name
-   answers for the code that sees the shadow.
+   `super()`. The initializer is read through the TypeScript wrappers that
+   restate a value's type — `as T`, `satisfies T`, `!`, `<T>` — since none of
+   them changes which class is constructed. A superclass declared in the same
+   file counts too, since a subclass inherits the field, and it is resolved
+   lexically from the `extends` clause outward through every enclosing statement
+   container — a function body, a namespace, a static block, a switch case, or
+   the module itself — under either the `class Base {}` or the
+   `const Base = class {}` spelling, exported or not. The innermost declaration
+   wins, so a nested class shadowing an outer one answers for the code below it.
 2. **The data argument is a primitive literal** — a boolean, number, string,
    template literal, or one of those behind an assertion. Firestore's update
    data is an object of field updates, so a primitive in that position proves the
@@ -56,8 +56,8 @@ scope. Either one is enough:
    nothing in that position, so only signal 1 answers for it.
 
 Evidence about a differently named member, or about a different class under the
-`batchManager` name (`new BatchManager()`), exempts nothing: those calls report
-and fix as before.
+`batchManager` name (`new BatchManager()`, however it is wrapped), exempts
+nothing: those calls report and fix as before.
 
 ### Autofix
 
