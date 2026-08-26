@@ -1,3 +1,11 @@
+## [1.20.175](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.174...v1.20.175) (2026-08-26)
+
+
+### Bug Fixes
+
+* **enforce-firestore-set-merge:** place a block comment before the separator and fold a list that fits (closes [#2142](https://github.com/BluMintInc/eslint-custom-rules/issues/2142)) ([a50d0da](https://github.com/BluMintInc/eslint-custom-rules/commit/a50d0dab9cb8b4e5a78751f5b9301ccf31f79822)), closes [#2140](https://github.com/BluMintInc/eslint-custom-rules/issues/2140) [#1877](https://github.com/BluMintInc/eslint-custom-rules/issues/1877) [#2140](https://github.com/BluMintInc/eslint-custom-rules/issues/2140)
+* **prefer-nullish-coalescing-boolean-props:** discount an absorbed comment from the chain-break decision (closes [#2141](https://github.com/BluMintInc/eslint-custom-rules/issues/2141)) ([ef1da8c](https://github.com/BluMintInc/eslint-custom-rules/commit/ef1da8cad114c884ad3b385ce3a739f2e3788ad2)), closes [#2139](https://github.com/BluMintInc/eslint-custom-rules/issues/2139)
+
 ## [1.20.174](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.173...v1.20.174) (2026-08-26)
 
 

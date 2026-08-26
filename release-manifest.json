@@ -1,5 +1,27 @@
 [
   {
+    "version": "1.20.175",
+    "date": "2026-08-26T06:19:14.998Z",
+    "rules": [
+      {
+        "name": "enforce-firestore-set-merge",
+        "changeType": "fix",
+        "issues": [
+          2142
+        ],
+        "summary": "place a block comment before the separator and fold a list that fits (closes #2142)"
+      },
+      {
+        "name": "prefer-nullish-coalescing-boolean-props",
+        "changeType": "fix",
+        "issues": [
+          2141
+        ],
+        "summary": "discount an absorbed comment from the chain-break decision (closes #2141)"
+      }
+    ]
+  },
+  {
     "version": "1.20.174",
     "date": "2026-08-26T04:47:21.242Z",
     "rules": [
