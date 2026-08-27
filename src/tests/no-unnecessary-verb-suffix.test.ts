@@ -869,6 +869,115 @@ ruleTesterTs.run('no-unnecessary-verb-suffix', noUnnecessaryVerbSuffix, {
     },
   } as const as QueryLike;
 `,
+
+    // === #2156: a class field holding a function declares the same callable
+    // member a method does, so both spellings answer to the same check. These
+    // cases fence the field arm so it stays as narrow as the method arm.
+    // Contracts here are spelled `type` rather than `interface` for the reason
+    // given at the top of this array. ===
+
+    // A field arrow whose name carries no verb-preposition suffix.
+    `
+  class TournamentService {
+    createMatch = (player: string) => {
+      return player;
+    };
+  }
+`,
+    // The same for a field holding a function expression.
+    `
+  class DataService {
+    computeValue = function (data: string) {
+      return data;
+    };
+  }
+`,
+    // A data field is not a function member, so its name is outside this
+    // rule's subject however it ends.
+    'class Cache { cachedFor = new Map<string, number>(); }',
+    'class Labels { readonly labelFor = "unknown"; }',
+    // A function-TYPED field holding no function declares nothing callable
+    // here: the value gate reads the initializer, not the annotation.
+    'class Registry { handlerFor: ((id: string) => void) | null = null; }',
+    // A field initialized from a call is a value this rule cannot read as a
+    // function declaration, so it stays inert — the deliberate false negative
+    // the value gate buys (CLAUDE.md ranks a false positive above one).
+    `
+  declare function debounce(callback: () => void): () => void;
+  class Saver {
+    saveChangesFor = debounce(() => {
+      return;
+    });
+  }
+`,
+    // An ambient member declares a type, not code: its initializer is not even
+    // valid TypeScript (TS1039), so nothing in it is the author's shipped
+    // implementation.
+    'class Ambient { declare initializeGameFor: (player: string) => void; }',
+    'class Ambient { declare initializeGameFor = (player: string) => {}; }',
+    // A computed key's identifier is a VARIABLE READ, not the member's name —
+    // renaming it would rewrite an unrelated binding.
+    `
+  const initializeGameFor = "run";
+  class Dynamic {
+    [initializeGameFor] = (player: string) => {
+      return player;
+    };
+  }
+`,
+    'class Dynamic { ["initializeGameFor"] = (player: string) => {}; }',
+    // A `#`-named field is unreachable from outside the class, exactly as a
+    // `#`-named method is, and the method arm is silent on both.
+    'class Private { #initializeGameFor = (player: string) => {}; }',
+    // Phrasal-verb endings fuse with their verb in a field name too.
+    'class Session { signIn = () => {}; }',
+    'class Session { logOut = () => {}; }',
+    // A single-word field name has no verb+suffix pattern to strip.
+    'class Client { fetch = (url: string) => url; }',
+    // A static field is judged by the same name rules as a static method.
+    'class MathUtils { static computeValue = (data: string) => data; }',
+    // A field whose name a contract the class implements declares is named by
+    // that contract, so renaming it would break conformance (#1350).
+    `
+  type Sortable = {
+    orderBy: (field: string) => void;
+  };
+  class BaseQuery implements Sortable {
+    orderBy = (field: string) => {
+      return;
+    };
+  }
+`,
+    // The same through a base class rather than an implemented contract.
+    `
+  type Sortable = {
+    orderBy: (field: string) => void;
+  };
+  class BaseQuery implements Sortable {
+    orderBy = (field: string) => {
+      return;
+    };
+  }
+  class ChildQuery extends BaseQuery {
+    orderBy = (field: string) => {
+      return;
+    };
+  }
+`,
+    // A contract that cannot be followed syntactically hides its member list,
+    // so the field keeps its exemption.
+    `
+  class NamespacedQuery implements firestore.Sortable {
+    orderBy = (field: string) => {
+      return;
+    };
+  }
+`,
+    // An abstract member carries no value and has its own node type, which
+    // neither arm registers — the field spelling matches the method spelling
+    // in staying silent here.
+    'abstract class Service { abstract initializeGameFor(player: string): void; }',
+    'abstract class Service { abstract initializeGameFor: (player: string) => void; }',
   ],
   invalid: [
     // Controls (#1227): a NOUN object before the particle is a genuine
@@ -2576,7 +2685,374 @@ function computeFrom(compute: string) {
   `,
       errors: [{ messageId: 'unnecessaryVerbSuffix' }],
     },
+
+    // === #2156: the class-field spelling of a function member. Writing `=`
+    // before the member changes nothing this rule judges — the name is still
+    // the author's and the call site is still a member access — so the field
+    // reports exactly as the method does, and report-only for the same reason:
+    // `this.x()` / `instance.x()` are not variable references the scope
+    // manager can find and rename. Every case pins `output: null` so a future
+    // fixer cannot orphan those call sites silently. ===
+    {
+      code: `
+class TournamentService {
+  initializeGameFor = (player: string) => {
+    return player;
+  };
+}
+  `,
+      errors: [
+        {
+          messageId: 'unnecessaryVerbSuffix',
+          data: {
+            name: 'initializeGameFor',
+            suffix: 'For',
+            suggestion: 'initializeGame',
+          },
+        },
+      ],
+      output: null,
+    },
+    // The function-expression spelling of the same field.
+    {
+      code: `
+class TournamentService {
+  initializeGameFor = function (player: string) {
+    return player;
+  };
+}
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+      output: null,
+    },
+    // A `static` field, whose call sites are `Class.x()`.
+    {
+      code: 'class MathUtils { static computeValueFrom = (data: string) => data; }',
+      errors: [
+        {
+          messageId: 'unnecessaryVerbSuffix',
+          data: {
+            name: 'computeValueFrom',
+            suffix: 'From',
+            suggestion: 'computeValue',
+          },
+        },
+      ],
+      output: null,
+    },
+    // Accessibility modifiers are not part of the name, so each spelling
+    // reports the same once.
+    {
+      code: 'class Converter { public convertDataTo = (format: string) => format; }',
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+      output: null,
+    },
+    {
+      code: 'class Validator { private validateInputWith = (rules: string) => rules; }',
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+      output: null,
+    },
+    {
+      code: 'class Finder { protected searchItemsIn = (container: string) => container; }',
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+      output: null,
+    },
+    {
+      code: 'class Emitter { readonly processEventOn = (element: string) => element; }',
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+      output: null,
+    },
+    {
+      code: 'class Repo { private static readonly loadRecordFrom = (id: string) => id; }',
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+      output: null,
+    },
+    // An `async` field arrow is the idiom agora writes most; the keyword sits
+    // on the value and leaves the member's name unchanged.
+    {
+      code: `
+class Loader {
+  fetchDataFrom = async (source: string) => {
+    return source;
+  };
+}
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+      output: null,
+    },
+    // A generic field arrow: type parameters belong to the value, not the name.
+    {
+      code: 'class Mapper { convertItemsTo = <T>(items: T[]) => items; }',
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+      output: null,
+    },
+    // The field's OWN annotation does not dictate its name: a declaration is
+    // free to be renamed with its type, which is why `const validateBy:
+    // Validator = ...` reports too.
+    {
+      code: `
+type Matcher = (player: string) => string;
+class TournamentService {
+  createMatchFor: Matcher = (player) => {
+    return player;
+  };
+}
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+      output: null,
+    },
+    // A class expression has no declaration statement of its own; the member
+    // is reached the same way.
+    {
+      code: `
+const TournamentService = class {
+  initializeGameFor = (player: string) => {
+    return player;
+  };
+};
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+      output: null,
+    },
+    // The heritage carve-out is not a blanket amnesty: a class may add members
+    // its contract never declares, and those names are the author's.
+    {
+      code: `
+type Sortable = {
+  limit: (count: number) => void;
+};
+class FakeQuery implements Sortable {
+  limit = (count: number) => {
+    return;
+  };
+  orderBy = (field: string) => {
+    return;
+  };
+}
+  `,
+      errors: [
+        {
+          messageId: 'unnecessaryVerbSuffix',
+          data: { name: 'orderBy', suffix: 'By', suggestion: 'order' },
+        },
+      ],
+      output: null,
+    },
+    // The same through a readable base class that does not declare the member.
+    {
+      code: `
+class BaseQuery {
+  limit = (count: number) => {
+    return;
+  };
+}
+class FakeQuery extends BaseQuery {
+  orderBy = (field: string) => {
+    return;
+  };
+}
+  `,
+      errors: [{ messageId: 'unnecessaryVerbSuffix' }],
+      output: null,
+    },
+    // Two field members of one class are two independent names.
+    {
+      code: `
+class Reporter {
+  computeValueFrom = (data: string) => data;
+  convertDataTo = (format: string) => format;
+}
+  `,
+      errors: [
+        { messageId: 'unnecessaryVerbSuffix' },
+        { messageId: 'unnecessaryVerbSuffix' },
+      ],
+      output: null,
+    },
+    // A method and a field in the same class report once each — the field arm
+    // must not double-count the value the method arm already judged.
+    {
+      code: `
+class Roster {
+  groupUsersBy(role: string) {
+    return role;
+  }
+  rankUsersBy = (role: string) => {
+    return role;
+  };
+}
+  `,
+      errors: [
+        { messageId: 'unnecessaryVerbSuffix' },
+        { messageId: 'unnecessaryVerbSuffix' },
+      ],
+      output: null,
+    },
+    // A NAMED function expression carries a second, independently renameable
+    // name — its own binding — so both are judged, exactly as they are in the
+    // object-literal spelling `{ initializeGameFor: function helperFrom() {} }`
+    // (measured: 2 reports there before this change and after it). Only the
+    // inner binding is scope-tracked, so only it is rewritten; the member name
+    // stays report-only, which is what keeps `this.initializeGameFor()` intact.
+    {
+      code: `
+class TournamentService {
+  initializeGameFor = function helperFrom(player: string) {
+    return player;
+  };
+}
+  `,
+      errors: [
+        { messageId: 'unnecessaryVerbSuffix' },
+        { messageId: 'unnecessaryVerbSuffix' },
+      ],
+      output: `
+class TournamentService {
+  initializeGameFor = function helper(player: string) {
+    return player;
+  };
+}
+  `,
+    },
   ],
+});
+
+// #2156 was an ASYMMETRY rather than a missing check: the same member reported
+// as a method and went silent the moment an `=` turned it into a field arrow,
+// so writing the member the way a bound member has to be written switched the
+// rule off. The two spellings are pinned against each other here, with counts,
+// because neither half of that failure is visible from one spelling alone — a
+// lost report and a duplicated one both show up as a count that stopped
+// matching its twin.
+describe('no-unnecessary-verb-suffix across member spellings', () => {
+  const RULE_ID = '@blumintinc/blumint/no-unnecessary-verb-suffix';
+  const FILENAME = 'x.ts';
+
+  const SPELLINGS: Record<
+    string,
+    { method: string; field: string; reports: number }
+  > = {
+    'suffixed member': {
+      method:
+        'class Probe { initializeGameFor(player: string) { return player; } }',
+      field: 'class Probe { initializeGameFor = (player: string) => player; }',
+      reports: 1,
+    },
+    'suffixed static member': {
+      method:
+        'class Probe { static computeValueFrom(data: string) { return data; } }',
+      field:
+        'class Probe { static computeValueFrom = (data: string) => data; }',
+      reports: 1,
+    },
+    'suffixed private member': {
+      method:
+        'class Probe { private validateInputWith(rules: string) { return rules; } }',
+      field:
+        'class Probe { private validateInputWith = (rules: string) => rules; }',
+      reports: 1,
+    },
+    'suffixed async member': {
+      method:
+        'class Probe { async fetchDataFrom(source: string) { return source; } }',
+      field:
+        'class Probe { fetchDataFrom = async (source: string) => source; }',
+      reports: 1,
+    },
+    'member with no verb-preposition suffix': {
+      method: 'class Probe { createMatch(player: string) { return player; } }',
+      field: 'class Probe { createMatch = (player: string) => player; }',
+      reports: 0,
+    },
+    'phrasal-verb member': {
+      method: 'class Probe { signIn() { return; } }',
+      field: 'class Probe { signIn = () => { return; }; }',
+      reports: 0,
+    },
+    'member dictated by an implemented contract': {
+      method: [
+        'type Sortable = { orderBy: (field: string) => void };',
+        'class Probe implements Sortable { orderBy(field: string) { return; } }',
+      ].join('\n'),
+      field: [
+        'type Sortable = { orderBy: (field: string) => void };',
+        'class Probe implements Sortable { orderBy = (field: string) => { return; }; }',
+      ].join('\n'),
+      reports: 0,
+    },
+    '#-named member': {
+      method:
+        'class Probe { #initializeGameFor(player: string) { return player; } }',
+      field: 'class Probe { #initializeGameFor = (player: string) => player; }',
+      reports: 0,
+    },
+    'abstract member': {
+      method:
+        'abstract class Probe { abstract initializeGameFor(player: string): void; }',
+      field:
+        'abstract class Probe { abstract initializeGameFor: (player: string) => void; }',
+      reports: 0,
+    },
+  };
+
+  const makeLinter = () => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      RULE_ID,
+      noUnnecessaryVerbSuffix as unknown as Rule.RuleModule,
+    );
+    return linter;
+  };
+
+  const config: Linter.Config = {
+    parser: '@typescript-eslint/parser',
+    parserOptions: {
+      ecmaVersion: 2022 as const,
+      sourceType: 'module' as const,
+    },
+    rules: { [RULE_ID]: 'error' },
+  };
+
+  it.each(Object.keys(SPELLINGS))(
+    'reports the same on a %s whichever spelling declares it',
+    (label) => {
+      const linter = makeLinter();
+      const { method, field, reports } = SPELLINGS[label];
+
+      const methodMessages = linter.verify(method, config, FILENAME);
+      const fieldMessages = linter.verify(field, config, FILENAME);
+
+      // A fatal parse carries no ruleId and would otherwise read as silence on
+      // both sides, making the parity hold vacuously.
+      expect(
+        [...methodMessages, ...fieldMessages].filter(
+          (message) => message.ruleId !== RULE_ID,
+        ),
+      ).toEqual([]);
+      expect({
+        method: methodMessages.length,
+        field: fieldMessages.length,
+      }).toEqual({ method: reports, field: reports });
+    },
+  );
+
+  it('pins both directions of the parity', () => {
+    // A matrix of silent cases alone would pass against a rule that reports
+    // nothing, and one of reporting cases alone against a rule that reports on
+    // everything.
+    const counts = Object.values(SPELLINGS).map((entry) => entry.reports);
+    expect(counts.filter((count) => count > 0).length).toBeGreaterThanOrEqual(
+      4,
+    );
+    expect(counts.filter((count) => count === 0).length).toBeGreaterThanOrEqual(
+      4,
+    );
+  });
 });
 
 // Both rules ship in the recommended config and the `as const` appender is

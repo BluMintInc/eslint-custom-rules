@@ -12,6 +12,8 @@ Discourages verb-preposition suffixes in function and method names when the suff
 
 This rule keeps names action-oriented by removing trailing verb-preposition suffixes (e.g., `From`, `For`, `With`, `To`, `By`, `In`, `On`). The suffix rarely carries new information because the parameters already express the relationship. Redundant endings make call sites harder to scan, obscure the primary verb, and create noisy diffs when the relationship changes. Rename the function to the verb phrase and let arguments communicate the context.
 
+The subject is the name of a function, however that function is declared: a function declaration, an arrow or function expression assigned to a variable, an object-literal member, an interface method signature, a class method, or a class field holding a function. Spelling a member one way rather than another never changes the answer.
+
 ### Examples of **incorrect** code:
 
 ```ts
@@ -29,6 +31,14 @@ class TournamentService {
   initializeGameFor(player) {}
   calculateScoreFrom(results) {}
   updateStateWith(data) {}
+}
+
+// A class field holding a function declares the same member a method does,
+// so the `=` spelling reads the same at every call site
+class TournamentServiceBound {
+  initializeGameFor = (player) => {};
+  static computeValueFrom = (data) => {};
+  private validateInputWith = function (rules) {};
 }
 
 // Arrow functions inherit the same readability problem
@@ -59,6 +69,24 @@ class TournamentService {
   filterUsers(criteria) {}
 }
 
+// Class fields holding functions follow it too; a field holding data is not a
+// function member and its name is outside the rule's subject
+class TournamentServiceBound {
+  initializeGame = (player) => {};
+  static computeValue = (data) => {};
+  private validateInput = function (rules) {};
+  cachedFor = new Map();
+}
+
+// A field whose name a declared contract pins stays exempt, exactly as the
+// method spelling does
+type Sortable = {
+  orderBy: (field: string) => void;
+};
+class BaseQuery implements Sortable {
+  orderBy = (field: string) => {};
+}
+
 // Arrow functions without redundant suffixes
 const transformData = (options) => {};
 const prepareState = (component) => {};
@@ -77,6 +105,37 @@ function processEventsUntilTimeout(events) {}  // Time boundary matters
 function computeScoreViaAlgorithm(data) {}     // Algorithm choice matters
 /* eslint-enable @blumintinc/blumint/no-unnecessary-verb-suffix */
 ```
+
+### A class field holding a function is a member like any other
+
+A callable member can be written two ways — `initializeGameFor(player) {}` or
+`initializeGameFor = (player) => {}` — and a class picks the second whenever the
+member must stay bound to its instance. The `=` changes nothing this rule reads:
+the name is still the author's, and the call site is still
+`service.initializeGameFor(player)`. Both spellings are therefore checked, and
+both suggest the same rename to `initializeGame`.
+
+The field arm is deliberately as narrow as the method arm:
+
+- **Only a function value counts.** A field initialized with an arrow function or
+  a function expression declares a callable member; `cachedFor = new Map()`,
+  `labelFor = 'unknown'` and `handlerFor: Fn | null = null` declare values, and a
+  value's name is outside this rule's subject. A field whose initializer is a
+  call (`saveChangesFor = debounce(...)`) is left alone too — a deliberate false
+  negative, since this plugin prefers one to a false positive.
+- **A name a contract pins stays exempt.** The heritage rules above apply to the
+  field spelling unchanged: a field implementing a member an `implements` clause
+  or a base class declares is named by that contract, so renaming it would break
+  conformance.
+- **Computed keys, `#`-private names and ambient (`declare`) members are
+  untouched.** A computed key's identifier is a read of some other binding, not
+  the member's name; `#`-private members and ambient declarations are the same
+  shapes the method arm passes over.
+
+The fix is withheld here for the reason it is withheld for methods: `this.x()`
+and `instance.x()` are member accesses, not variable references, so a
+single-file fixer cannot find and update the call sites. The violation is
+reported and the rename is left to an editor's rename-symbol command.
 
 ### Phrasal-verb endings are not redundant suffixes
 
@@ -355,10 +414,11 @@ where a rename could not be completed safely:
 - **Exported symbols** (`export function fooFrom() {}`, `export const barTo = …`)
   — a single-file fixer cannot reach references in other modules that import
   the symbol, so renaming here would break those consumers.
-- **Class methods, object-literal method properties, and interface method
-  signatures** — these are invoked through member expressions (`this.fooFrom()`,
-  `obj.fooFrom()`) that cannot be resolved to the declaration syntactically, so
-  their call sites cannot be found and updated.
+- **Class methods, class fields holding functions, object-literal method
+  properties, and interface method signatures** — these are invoked through
+  member expressions (`this.fooFrom()`, `obj.fooFrom()`) that cannot be resolved
+  to the declaration syntactically, so their call sites cannot be found and
+  updated.
 - **Renames that would collide with an existing binding.** If the suggested
   name is already bound in the declaration's scope, in the scope chain between
   a call site and that declaration, or inside the function's own body, the
