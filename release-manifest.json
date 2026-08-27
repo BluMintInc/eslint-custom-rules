@@ -1,5 +1,27 @@
 [
   {
+    "version": "1.20.180",
+    "date": "2026-08-27T01:52:25.340Z",
+    "rules": [
+      {
+        "name": "enforce-assert-safe-object-key",
+        "changeType": "fix",
+        "issues": [
+          2152
+        ],
+        "summary": "read the validated binding through the shared peel (closes #2152)"
+      },
+      {
+        "name": "enforce-id-capitalization",
+        "changeType": "fix",
+        "issues": [
+          2153
+        ],
+        "summary": "leave string literals that spell a type alone (closes #2153)"
+      }
+    ]
+  },
+  {
     "version": "1.20.179",
     "date": "2026-08-26T23:40:36.587Z",
     "rules": [
