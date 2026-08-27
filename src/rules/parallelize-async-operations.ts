@@ -34,6 +34,205 @@ const isTestFile = (filename: string) =>
   TEST_FILE_SUFFIX.test(filename) || TEST_FILE_DIRECTORY.test(filename);
 
 /**
+ * Module specifiers whose exports operate the filesystem.
+ *
+ * The `node:`-prefixed and bare spellings name the same built-in module, and
+ * `graceful-fs` is a drop-in wrapper over it, so a run mixing the spellings
+ * still touches ONE resource. Membership is by specifier rather than by callee
+ * name because the name alone proves nothing: a project's own `writeFile`
+ * helper shares the name while sharing no resource.
+ */
+const FS_MODULE_SOURCES = new Set([
+  'fs',
+  'node:fs',
+  'fs/promises',
+  'node:fs/promises',
+  'graceful-fs',
+]);
+
+/**
+ * Filesystem operations that only OBSERVE the filesystem.
+ *
+ * Two observations commute -- neither can change what the other returns -- so a
+ * run of them carries no ordering and stays parallelizable, which is where this
+ * rule's value lies for I/O-bound reads. Every other operation is treated as
+ * mutating.
+ *
+ * The set is an allowlist read fail-safe, so an operation it does not know
+ * counts as mutating. The failure directions are not symmetric: misreading a
+ * mutation as an observation races a write against its own precondition and
+ * ships a silent corruption, whereas misreading an observation as a mutation
+ * only declines a parallelization. An fs surface this list does not enumerate
+ * therefore keeps the barrier.
+ */
+const READ_ONLY_FS_OPERATIONS = new Set([
+  'readFile',
+  'readdir',
+  'stat',
+  'lstat',
+  'fstat',
+  'access',
+  'realpath',
+  'readlink',
+  'opendir',
+  'exists',
+]);
+
+/**
+ * The `*Sync` variant of an fs operation performs the same operation on the
+ * same resource, so it classifies identically to the asynchronous spelling and
+ * the suffix is dropped before the lookup. This keeps the allowlist to one
+ * entry per operation, which is what stops a `readFileSync` omission from
+ * quietly reclassifying a read as a mutation.
+ */
+const SYNC_OPERATION_SUFFIX = /Sync$/;
+
+function isReadOnlyFsOperation(operation: string): boolean {
+  return READ_ONLY_FS_OPERATIONS.has(
+    operation.replace(SYNC_OPERATION_SUFFIX, ''),
+  );
+}
+
+/**
+ * Strips the wrappers that carry no value of their own, so a shape test reaches
+ * the expression the source actually denotes.
+ *
+ * `a?.b` is wrapped in a ChainExpression, so a bare `MemberExpression` or
+ * `CallExpression` test sees the wrapper instead and answers no. Here that
+ * answer is the UNSAFE one -- an unrecognised `require` spelling yields no
+ * filesystem binding, which withdraws the ordering barrier rather than merely
+ * declining a parallelization -- so the optional spellings are unwrapped to the
+ * same node their non-optional spellings produce. `create` declares its own
+ * `unwrapExpression` for the same purpose; this one exists because binding
+ * collection runs at module scope, where that closure is out of reach.
+ */
+function unwrapWrappers(node: TSESTree.Node): TSESTree.Node {
+  let current: TSESTree.Node = node;
+  while (
+    current.type === AST_NODE_TYPES.ChainExpression ||
+    current.type === AST_NODE_TYPES.TSNonNullExpression ||
+    current.type === AST_NODE_TYPES.TSAsExpression
+  ) {
+    current = current.expression;
+  }
+  return current;
+}
+
+/**
+ * The module specifier a `require(...)` call loads, when the call names it as a
+ * string literal.
+ *
+ * `require('fs').promises` is the same load one member deeper, so a member
+ * expression rooted at the call answers with the call's own specifier: the
+ * binding it produces still reaches the filesystem.
+ */
+function requiredModuleSource(node: TSESTree.Node | null): string | null {
+  if (!node) {
+    return null;
+  }
+  const unwrapped = unwrapWrappers(node);
+  if (unwrapped.type === AST_NODE_TYPES.MemberExpression) {
+    return requiredModuleSource(unwrapped.object);
+  }
+  if (
+    unwrapped.type !== AST_NODE_TYPES.CallExpression ||
+    unwrapped.arguments.length !== 1
+  ) {
+    return null;
+  }
+  const callee = unwrapWrappers(unwrapped.callee);
+  if (callee.type !== AST_NODE_TYPES.Identifier || callee.name !== 'require') {
+    return null;
+  }
+  const [specifier] = unwrapped.arguments;
+  return specifier.type === AST_NODE_TYPES.Literal &&
+    typeof specifier.value === 'string'
+    ? specifier.value
+    : null;
+}
+
+/**
+ * Every binding in the file's module scope that denotes something loaded from a
+ * filesystem module, mapped to the EXPORTED name it denotes when it denotes a
+ * single operation (`import { writeFile as wf }` -> `wf` denotes `writeFile`),
+ * and to null when it denotes the module object itself (a namespace, default or
+ * whole-module `require` binding, whose operation is named at the call site
+ * instead).
+ *
+ * The exported name is what a bare callee is classified by, so a renamed import
+ * classifies as the operation it actually calls rather than falling to the
+ * mutating default on a name the fs surface never had.
+ *
+ * Resolution is lexical and same-file by design: `RuleTester` runs with no
+ * `parserOptions.project`, so a type-aware answer is unavailable exactly where
+ * the barrier has to be proven.
+ */
+function collectFsBindings(
+  program: TSESTree.Program,
+): Map<string, string | null> {
+  const bindings = new Map<string, string | null>();
+
+  const recordPattern = (id: TSESTree.Node): void => {
+    if (id.type === AST_NODE_TYPES.Identifier) {
+      bindings.set(id.name, null);
+      return;
+    }
+    if (id.type !== AST_NODE_TYPES.ObjectPattern) {
+      return;
+    }
+    for (const property of id.properties) {
+      if (
+        property.type !== AST_NODE_TYPES.Property ||
+        property.computed ||
+        property.key.type !== AST_NODE_TYPES.Identifier
+      ) {
+        continue;
+      }
+      const local = property.value;
+      if (local.type === AST_NODE_TYPES.Identifier) {
+        bindings.set(local.name, property.key.name);
+      }
+    }
+  };
+
+  for (const statement of program.body) {
+    const declaration =
+      statement.type === AST_NODE_TYPES.ExportNamedDeclaration &&
+      statement.declaration
+        ? statement.declaration
+        : statement;
+
+    if (declaration.type === AST_NODE_TYPES.ImportDeclaration) {
+      if (!FS_MODULE_SOURCES.has(declaration.source.value)) {
+        continue;
+      }
+      for (const specifier of declaration.specifiers) {
+        // A namespace or default specifier binds the module OBJECT, whose
+        // operation is named at the call site, so it records no exported name.
+        bindings.set(
+          specifier.local.name,
+          specifier.type === AST_NODE_TYPES.ImportSpecifier
+            ? specifier.imported.name
+            : null,
+        );
+      }
+      continue;
+    }
+
+    if (declaration.type === AST_NODE_TYPES.VariableDeclaration) {
+      for (const declarator of declaration.declarations) {
+        const source = requiredModuleSource(declarator.init);
+        if (source && FS_MODULE_SOURCES.has(source)) {
+          recordPattern(declarator.id);
+        }
+      }
+    }
+  }
+
+  return bindings;
+}
+
+/**
  * Matches prettier's own default. The autofix authors a whole statement a
  * formatter owns, so a layout it emits that prettier would not is rewritten on
  * the next `prettier --write` — and fails `prettier --check` in the meantime.
@@ -274,6 +473,17 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
     }
 
     const sourceCode = context.sourceCode;
+
+    // The file's filesystem bindings are a property of its module scope, not of
+    // any one run, so they are resolved once per file and reused by every
+    // candidate run the traversal reaches.
+    let fsBindings: Map<string, string | null> | null = null;
+    const getFsBindings = () => {
+      if (fsBindings === null) {
+        fsBindings = collectFsBindings(sourceCode.ast);
+      }
+      return fsBindings;
+    };
     // The width the autofix lays the rewritten statement out against. It lives
     // in the consumer's formatter configuration, which no rule context carries,
     // so a project formatting at 100 or 120 states it here.
@@ -1691,6 +1901,58 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
     }
 
     /**
+     * Names the filesystem operation an await performs, or null when the await
+     * does not reach the filesystem through a binding this file declares.
+     *
+     * The classification keys on the ORIGIN of the callee's root binding rather
+     * than on the callee's spelling, so a project-local helper that happens to
+     * be called `writeFile` is not mistaken for the fs export of that name, and
+     * a renamed import (`writeFile as wf`) is not missed for lacking it.
+     *
+     * The operation is read off the LAST member of a member callee
+     * (`fs.promises.writeFile` -> `writeFile`), which is where the module object
+     * spells it, and off the imported name for a bare callee, which is where a
+     * named import spells it. A computed member whose key is not a literal names
+     * an operation the source does not state, so it yields the empty string and
+     * classifies as mutating, matching the fail-safe the allowlist is read with.
+     */
+    function getFsOperationName(
+      awaitExpr: TSESTree.AwaitExpression,
+    ): string | null {
+      const argument = unwrapExpression(awaitExpr.argument);
+      if (argument.type !== AST_NODE_TYPES.CallExpression) {
+        return null;
+      }
+
+      const callee = unwrapExpression(argument.callee);
+      const root = getPathRoot(callee);
+      if (root.type !== AST_NODE_TYPES.Identifier) {
+        return null;
+      }
+
+      const bindings = getFsBindings();
+      if (!bindings.has(root.name)) {
+        return null;
+      }
+
+      if (callee.type === AST_NODE_TYPES.MemberExpression) {
+        const { property } = callee;
+        if (!callee.computed && property.type === AST_NODE_TYPES.Identifier) {
+          return property.name;
+        }
+        if (
+          property.type === AST_NODE_TYPES.Literal &&
+          typeof property.value === 'string'
+        ) {
+          return property.value;
+        }
+        return '';
+      }
+
+      return bindings.get(root.name) ?? root.name;
+    }
+
+    /**
      * Checks if there are dependencies between await expressions
      */
     function hasDependencies(
@@ -2098,6 +2360,52 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
             }
           }
         }
+      }
+
+      // 13. Shared external-resource ordering barrier (filesystem). Two awaits
+      // that operate the same filesystem are ordered by that resource, not by
+      // any JS value: `writeFile(pending, data)` then `rename(pending, path)`
+      // passes nothing from one call to the other, yet the second one's
+      // precondition is precisely the first one's side effect. Every barrier
+      // above reads bindings, receivers and slots -- the JS-level surface -- so
+      // a dependency carried entirely through an external resource is invisible
+      // to all of them, and the run reads as independent while being strictly
+      // ordered. Promise.all issues all of it in one tick, which either throws
+      // ENOENT or publishes a partial state, and WHICH of the two is a race, so
+      // the damage is timing-dependent rather than reproducible. (#2166)
+      //
+      // The barrier engages only when at least one operation MUTATES. Two
+      // observations of the filesystem commute -- neither can change what the
+      // other returns -- so `readFile(a)` then `readFile(b)` is a genuine
+      // latency mistake and keeps its report, which is where the rule earns
+      // most of its value on I/O-bound code. A mutation makes the ordering
+      // observable, and observable ordering is exactly what the rewrite
+      // destroys.
+      //
+      // A single fs await raises no ordering question: the resource has to be
+      // SHARED for the sequencing to exist, so a run mixing one fs call with
+      // unrelated network calls still parallelizes.
+      //
+      // Member-callee spellings (`fs.writeFile()`, `fs.promises.rename()`) are
+      // incidentally held by the shared-receiver barrier above, which keys on
+      // the receiver they have in common. They are classified here too because
+      // that coverage is a side effect of an unrelated question: it lapses the
+      // moment a file mixes spellings (`fs.writeFile()` then a named-import
+      // `rename()`), which shares the resource while sharing no receiver.
+      let fsAwaitCount = 0;
+      let mutatesFilesystem = false;
+      for (const node of awaitNodes) {
+        const awaitExpr = getAwaitExpression(node);
+        if (!awaitExpr) continue;
+        const operation = getFsOperationName(awaitExpr);
+        if (operation === null) continue;
+        fsAwaitCount++;
+        if (!isReadOnlyFsOperation(operation)) {
+          mutatesFilesystem = true;
+        }
+      }
+      if (fsAwaitCount >= 2 && mutatesFilesystem) {
+        return true;
       }
 
       return false;
