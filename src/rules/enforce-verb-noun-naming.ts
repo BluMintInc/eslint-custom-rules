@@ -3953,6 +3953,53 @@ function isComponentReference(identifier: TSESTree.Node): boolean {
   return false;
 }
 
+/**
+ * The declaration that owns a member's component evidence. A member spelled as
+ * a TypeScript overload set is one name declared several times: the type-only
+ * signatures carry no body and therefore no evidence of what the member
+ * renders, while the implementation carries all of it. Judging each declaration
+ * on its own reports a rename on the signature line of a component whose
+ * implementation line is exempt — for the same member, whose call sites the
+ * rename would break (#2168).
+ *
+ * Resolution is syntactic and same-file: the sibling of the same kind, key and
+ * staticness that declares a body. A signature with no implementation resolves
+ * to itself — an ambient declaration has nothing else to defer to, and answers
+ * on the evidence its own name and annotation carry.
+ */
+function componentEvidenceOwner(
+  node: TSESTree.MethodDefinition,
+): TSESTree.MethodDefinition {
+  // A declaration that carries a body carries its own evidence and answers for
+  // itself, so only a signature ever looks past the member it is written on.
+  if (node.value.type !== AST_NODE_TYPES.TSEmptyBodyFunctionExpression) {
+    return node;
+  }
+
+  if (node.computed || node.key.type !== AST_NODE_TYPES.Identifier) {
+    return node;
+  }
+
+  const classBody = node.parent;
+  if (classBody?.type !== AST_NODE_TYPES.ClassBody) {
+    return node;
+  }
+
+  const { name } = node.key;
+  const implementation = classBody.body.find(
+    (member): member is TSESTree.MethodDefinition =>
+      member.type === AST_NODE_TYPES.MethodDefinition &&
+      member.kind === node.kind &&
+      member.static === node.static &&
+      !member.computed &&
+      member.key.type === AST_NODE_TYPES.Identifier &&
+      member.key.name === name &&
+      member.value.type !== AST_NODE_TYPES.TSEmptyBodyFunctionExpression,
+  );
+
+  return implementation ?? node;
+}
+
 export const enforceVerbNounNaming = createRule<Options, MessageIds>({
   name: 'enforce-verb-noun-naming',
   meta: {
@@ -4139,7 +4186,8 @@ export const enforceVerbNounNaming = createRule<Options, MessageIds>({
       node:
         | TSESTree.FunctionDeclaration
         | TSESTree.ArrowFunctionExpression
-        | TSESTree.FunctionExpression,
+        | TSESTree.FunctionExpression
+        | TSESTree.TSEmptyBodyFunctionExpression,
     ): boolean {
       if (!node.params.length) return false;
 
@@ -4162,7 +4210,12 @@ export const enforceVerbNounNaming = createRule<Options, MessageIds>({
       }
       if (
         node.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-        node.type === AST_NODE_TYPES.FunctionExpression
+        node.type === AST_NODE_TYPES.FunctionExpression ||
+        // A type-only overload signature parses as an empty-bodied function
+        // expression. It holds its name on the member key exactly as the
+        // implementation beside it does, so the name-keyed component evidence
+        // has to reach it the same way (#2168).
+        node.type === AST_NODE_TYPES.TSEmptyBodyFunctionExpression
       ) {
         const parent = node.parent;
         if (
@@ -4201,7 +4254,8 @@ export const enforceVerbNounNaming = createRule<Options, MessageIds>({
       node:
         | TSESTree.FunctionDeclaration
         | TSESTree.ArrowFunctionExpression
-        | TSESTree.FunctionExpression,
+        | TSESTree.FunctionExpression
+        | TSESTree.TSEmptyBodyFunctionExpression,
     ): boolean {
       // Handle ArrowFunctionExpression: const Foo: React.FC = () => ...
       if (node.type === AST_NODE_TYPES.ArrowFunctionExpression) {
@@ -4297,13 +4351,24 @@ export const enforceVerbNounNaming = createRule<Options, MessageIds>({
       if (
         node.type !== AST_NODE_TYPES.FunctionDeclaration &&
         node.type !== AST_NODE_TYPES.ArrowFunctionExpression &&
-        node.type !== AST_NODE_TYPES.FunctionExpression
+        node.type !== AST_NODE_TYPES.FunctionExpression &&
+        // A type-only overload signature declares the same member as the
+        // implementation beside it, so the carve-out has to reach it (#2168).
+        node.type !== AST_NODE_TYPES.TSEmptyBodyFunctionExpression
       ) {
         return false;
       }
 
+      // A signature declares no body, so every piece of evidence read out of
+      // one — what it renders, the hooks it calls — is unavailable rather than
+      // absent. What it renders is settled by the implementation instead.
+      const bodied =
+        node.type === AST_NODE_TYPES.TSEmptyBodyFunctionExpression
+          ? undefined
+          : node;
+
       const functionName = getFunctionName(node);
-      const returnsJsx = ASTHelpers.returnsJSX(node.body, context);
+      const returnsJsx = ASTHelpers.returnsJSX(bodied?.body, context);
       const hasProps = hasPropsParameter(node);
       const hasReactType = hasReactTypeAnnotation(node);
       const isUnmemoized =
@@ -4331,9 +4396,10 @@ export const enforceVerbNounNaming = createRule<Options, MessageIds>({
         // is therefore also recognised by what it renders, by the hooks it calls,
         // and by how the rest of the file uses it.
         if (
-          !isGeneratorFunction(node) &&
-          (rendersEveryReturn(node) ||
-            callsReactHook(node) ||
+          bodied &&
+          !isGeneratorFunction(bodied) &&
+          (rendersEveryReturn(bodied) ||
+            callsReactHook(bodied) ||
             isUsedAsReactComponent(node, functionName))
         ) {
           return true;
@@ -4454,7 +4520,14 @@ export const enforceVerbNounNaming = createRule<Options, MessageIds>({
         // that is a component answers to it too. A `set` accessor is an
         // assignment target rather than a callable, so it can never be a
         // component and is deliberately left to the naming demand.
-        if (node.kind === 'method' && isReactComponent(node.value)) {
+        //
+        // The whole overload set answers with one voice, so a type-only
+        // signature is judged by the implementation that gives the member its
+        // body rather than by the nothing it renders itself.
+        if (
+          node.kind === 'method' &&
+          isReactComponent(componentEvidenceOwner(node).value)
+        ) {
           return;
         }
 
