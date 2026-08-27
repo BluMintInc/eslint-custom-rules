@@ -65,8 +65,8 @@ substitution is treated exactly like every other template for the same reason:
 `` `${a}${b}` `` has always been wrapped whole.
 
 Caching the validated value in a variable is also accepted — the rule recognises
-identifiers that are initialised directly from `assertSafe(...)` and does not
-require a second wrapping:
+identifiers that are initialised directly from `assertSafe(...)`, reading
+through any `as`, `satisfies`, `!`, `<T>` or `await` on that initializer:
 
 ```js
 import { assertSafe } from '../util/assertSafe';
@@ -74,8 +74,8 @@ import { assertSafe } from '../util/assertSafe';
 // safeKey holds an already-validated key; obj[safeKey] is fine.
 const safeKey = assertSafe(rawKey);
 const a = objA[safeKey];
-const b = objB[safeKey];
-const c = objC[safeKey];
+const branded = assertSafe(rawKey) as Encoded; // the assertion erases; same key
+const b = objB[branded];
 ```
 
 ### Parentheses the wrap makes redundant

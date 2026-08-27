@@ -1030,6 +1030,96 @@ class Reader {
 }
       `,
     },
+    // ------------------------------------------------------------------
+    // Issue #2152: a TypeScript wrapper on an `assertSafe(...)` initializer
+    // erases before the code runs, so the binding still holds the validated
+    // key. The index-site arm already reads through those wrappers; these pin
+    // the binding arm to the same answer. The cast is not stylistic in the
+    // reported code: `Object.keys` widens to `string` while the map is keyed
+    // by a branded type, so it is the shape this rule's own remedy produces.
+    // ------------------------------------------------------------------
+    {
+      name: 'an `as` assertion on the assertSafe initializer keeps the binding validated (issue #2152)',
+      code: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+declare const target: Record<TokenEncoded, string>;
+export const read = (key: string) => {
+  const safeKey = assertSafe(key) as TokenEncoded;
+  return target[safeKey] ?? '0';
+};
+      `,
+    },
+    {
+      name: 'a `satisfies` assertion on the assertSafe initializer keeps the binding validated (issue #2152)',
+      code: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+declare const target: Record<string, string>;
+export const read = (key: string) => {
+  const safeKey = assertSafe(key) satisfies string;
+  return target[safeKey];
+};
+      `,
+    },
+    {
+      name: 'a non-null assertion on the assertSafe initializer keeps the binding validated (issue #2152)',
+      code: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+declare const target: Record<string, string>;
+export const read = (key: string) => {
+  const safeKey = assertSafe(key)!;
+  return target[safeKey];
+};
+      `,
+    },
+    {
+      name: 'an angle-bracket assertion on the assertSafe initializer keeps the binding validated (issue #2152)',
+      code: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+declare const target: Record<TokenEncoded, string>;
+export const read = (key: string) => {
+  const safeKey = <TokenEncoded>assertSafe(key);
+  return target[safeKey];
+};
+      `,
+    },
+    {
+      name: 'an assertion over an optionally-called assertSafe keeps the binding validated (issue #2152)',
+      code: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+declare const target: Record<TokenEncoded, string>;
+export const read = (key: string) => {
+  const safeKey = assertSafe?.(key) as TokenEncoded;
+  return target[safeKey];
+};
+      `,
+    },
+    {
+      name: 'nested assertions in either order keep the binding validated (issue #2152)',
+      code: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+declare const target: Record<TokenEncoded, string>;
+export const read = (key: string) => {
+  const safeKey = (assertSafe(key) as TokenEncoded)!;
+  const other = <TokenEncoded>(assertSafe(key) satisfies string);
+  return [target[safeKey], target[other]];
+};
+      `,
+    },
+    {
+      // `await` on assertSafe's synchronous return resolves to the very value
+      // it validated, so the binding holds the validated key exactly as the
+      // unawaited spelling does; the index arm already exempts
+      // `m[await assertSafe(k)]` and the two arms must not disagree.
+      name: 'an awaited assertSafe initializer keeps the binding validated (issue #2152)',
+      code: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+declare const target: Record<string, string>;
+export const read = async (key: string) => {
+  const safeKey = await assertSafe(key);
+  return target[safeKey];
+};
+      `,
+    },
   ],
   invalid: [
     {
@@ -3863,6 +3953,51 @@ class Reader {
     return this.mapping[assertSafe(this[k])];
   }
 }
+      `,
+    },
+    // ------------------------------------------------------------------
+    // Issue #2152 controls: the validated-binding carve-out reads through the
+    // wrappers, but stays keyed on the callee being assertSafe. Widening it to
+    // "anything wrapped" would turn the rule into a no-op behind an `as`.
+    // ------------------------------------------------------------------
+    {
+      name: 'a wrapped call to something other than assertSafe still reports (issue #2152)',
+      code: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const obj = { key1: 'value1' };
+const read = (rawKey) => {
+  const k = coerce(rawKey) as string;
+  return obj[k];
+};
+      `,
+      errors: [lintError('k')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const obj = { key1: 'value1' };
+const read = (rawKey) => {
+  const k = coerce(rawKey) as string;
+  return obj[assertSafe(k)];
+};
+      `,
+    },
+    {
+      name: 'a wrapped non-call initializer still reports (issue #2152)',
+      code: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const obj = { key1: 'value1' };
+const read = (rawKey) => {
+  const k = rawKey as string;
+  return obj[k];
+};
+      `,
+      errors: [lintError('k')],
+      output: `
+import { assertSafe } from 'functions/src/util/assertSafe';
+const obj = { key1: 'value1' };
+const read = (rawKey) => {
+  const k = rawKey as string;
+  return obj[assertSafe(k)];
+};
       `,
     },
   ],
