@@ -114,6 +114,16 @@ const Panel = () => wrap(useMemo(() => React.createElement('div'), []));`,
       // leaves the hook call standing: a fixer that strips the carrier would
       // make this fixture assert nothing about the member-call spelling.
       `const Panel = () => React.useMemo(() => React.createElement('div'), []);`,
+      // Returning a function alongside the component's own hook call keeps the
+      // hook-evidence path alive: declining to descend into a function-valued
+      // concise body must not be widened into ignoring hooks the outer function
+      // really does call (#2171). The hook is keyed to a parameter so no sibling
+      // fixer can hoist the memo away and strip the carrier this asserts on.
+      `import React, { useCallback } from 'react';
+const Panel = (tag: string) => {
+  const render = useCallback(() => React.createElement(tag), [tag]);
+  return render;
+};`,
     ],
     invalid: [
       // Non-React functions should still be flagged
@@ -149,6 +159,40 @@ const Panel = () => wrap(useMemo(() => React.createElement('div'), []));`,
       {
         code: `import React, { useMemo } from 'react';
 const panel = () => useMemo(() => React.createElement('div'), []);`,
+        errors: [{ messageId: 'functionVerbPhrase' }],
+      },
+      // A hook called inside a returned function belongs to that function, so
+      // the outer one is a factory rather than a component. These three spell
+      // the same factory and have to agree; only the tersest one was exempt,
+      // because the scope boundary was tested on a node's children and never on
+      // the concise body handed to the walk (#2171).
+      {
+        code: `import React, { useMemo } from 'react';
+const Panel = () => () => useMemo(() => React.createElement('div'), []);`,
+        errors: [{ messageId: 'functionVerbPhrase' }],
+      },
+      {
+        code: `import React, { useMemo } from 'react';
+const Panel = () => { return () => useMemo(() => React.createElement('div'), []); };`,
+        errors: [{ messageId: 'functionVerbPhrase' }],
+      },
+      {
+        code: `import React, { useMemo } from 'react';
+const Panel = () => wrap(() => useMemo(() => React.createElement('div'), []));`,
+        errors: [{ messageId: 'functionVerbPhrase' }],
+      },
+      // Nesting the returned function one level deeper reaches the same verdict,
+      // so the boundary holds at every depth rather than at the first one only.
+      {
+        code: `import React, { useMemo } from 'react';
+const Panel = () => () => () => useMemo(() => React.createElement('div'), []);`,
+        errors: [{ messageId: 'functionVerbPhrase' }],
+      },
+      // A function-valued concise body is not evidence of a component whatever
+      // it contains, so the decline cannot be keyed to `function` syntax.
+      {
+        code: `import React, { useMemo } from 'react';
+const Panel = () => function () { return useMemo(() => React.createElement('div'), []); };`,
         errors: [{ messageId: 'functionVerbPhrase' }],
       },
     ],
