@@ -10,7 +10,7 @@ This rule helps you use getter syntax for synchronous class methods that take no
 
 ## Rule Details
 
-This rule reports parameterless, non-abstract, synchronous methods that return a value and are not in the ignore lists. It auto-fixes safe cases by:
+This rule reports parameterless, non-abstract, synchronous methods that return a value and are not in the ignore lists. "Synchronous" is decided by what the method returns, not by whether it carries the `async` keyword — see [Promise-returning methods](#promise-returning-methods). It auto-fixes safe cases by:
 
 - Converting the method declaration `methodName()` to the getter declaration `get <suggestedName>()`, so you use it as `instance.<suggestedName>` without parentheses
 - Preserving access modifiers, `static`, decorators, and return type annotations
@@ -18,6 +18,12 @@ This rule reports parameterless, non-abstract, synchronous methods that return a
 - Keeping boolean prefixes intact (`isValid()` → `get isValid()`)
 
 The fixer is withheld unless the method is declared `private`. A `public`, `protected`, or unspecified-accessibility method is API surface whose `instance.method()` call sites may live in other files, and this rule only inspects the current file — it does not attempt project-wide call-site discovery. Auto-converting such a method to a getter would silently break every external caller (the call would invoke the getter's return value), so the rule reports but leaves the change to the developer. Only `private` methods (whose call sites cannot escape the class) are eligible for the automatic fix.
+
+### Promise-returning methods
+
+A parameterless method that hands the caller a promise is exempt, whether or not the `async` keyword is written. TypeScript does not require `async` to return one, so `fetchToken(): Promise<string>` and `readEpoch() { return this.evaluate(); }` are both asynchronous methods; the rule reads what the method returns rather than the keyword. Such a method is never reported and never auto-fixed. A getter would turn a call that *starts* work into a property read, so `session.epoch` would spawn the work on what reads as a field access, and a reflective call site (`(session as any).readEpoch()`) would throw `TypeError: session.readEpoch is not a function`. For an asynchronous member the call parentheses are the honest signal, and the getter is what creates the disguise.
+
+The exemption is decided syntactically, because this rule requests no type information. It recognizes a `Promise`/`PromiseLike` return annotation — including a qualified spelling (`globalThis.Promise<T>`, `bluebird.Promise<T>`) and one nested in a union or intersection (`Promise<T> | undefined`) — and, for a method carrying no annotation, a body that returns `Promise.resolve/reject/all/allSettled/race/any(...)`, a `.then`/`.catch`/`.finally` chain, an `await`ed value, or a promise-returning sibling member of the same class (a called method or function-valued field, a getter, or a promise-typed field). A type alias that merely resolves to a promise is out of reach without a type checker, so the rule reports it; an explicit return annotation is the method's whole contract, so a non-thenable one (`(): string`) keeps the method reportable no matter what its body mentions.
 
 ### ECMA private names (`#method()`)
 
@@ -125,7 +131,7 @@ This subsumes the abstract case: a concrete method implementing an abstract memb
 - `stripPrefixes` (string[]): verb prefixes to drop when deriving the getter name. Boolean prefixes (`is/has/can/should/will/did/was`) are preserved.
 - `ignoredMethods` (string[]): method names that should never be converted.
 - `factoryMethods` (string[]): builder/factory terminal method names that are exempt (never converted), because they are imperative actions whose external callers would break as getters. Default `['build', 'create', 'make']`. (Independently, a parameterless method whose body can `throw` at the top level is always exempt — a getter must be a pure, non-throwing property read.)
-- `ignoreAsync` (boolean): skip `async` methods. Default `true`.
+- `ignoreAsync` (boolean): skip asynchronous methods — both those bearing the `async` keyword and those returning a promise without it. Default `true`. See [Promise-returning methods](#promise-returning-methods). The fixer never converts a promise-returning method even when this is `false`, because the rewrite cannot work at any call site.
 - `ignoreVoidReturn` (boolean): skip methods that only return `void`/`undefined`. Default `true`. Explicit `void`/`undefined` return types are always treated as non-value-returning and are not auto-fixed.
 - `ignoreAbstract` (boolean): skip abstract method declarations. Default `true`. Concrete implementations of an abstract member are exempt regardless of this option, under the heritage-clause rule above.
 - `respectJsDocSideEffects` (boolean): skip methods when the JSDoc block mentions side effects or mutation (including `@sideEffect`/`@mutates` tags and side-effect phrases anywhere in the block, @returns included). Default `true`.
@@ -175,6 +181,24 @@ class IndexSpecCanonicalizer {
 class MatchPreviewer {
   public static get base() {
     return { mode: 'ranked' as const };
+  }
+}
+```
+
+Promise-returning members stay methods, keyword or no keyword:
+
+```ts
+class Session {
+  private evaluate(): Promise<string> {
+    return Promise.resolve('epoch');
+  }
+
+  public readEpoch() {
+    return this.evaluate();
+  }
+
+  public async fetchToken(): Promise<string> {
+    return 'token';
   }
 }
 ```

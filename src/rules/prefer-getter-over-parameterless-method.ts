@@ -98,6 +98,80 @@ function isVoidishType(node: TSESTree.TypeNode | TSESTree.Node): boolean {
   }
 }
 
+/**
+ * Type names whose values are awaited rather than read. `PromiseLike` counts
+ * because thenability — not the `Promise` constructor — is what makes a value
+ * an awaited one, and a `PromiseLike` member is as unconvertible as a `Promise`
+ * one.
+ */
+const THENABLE_TYPE_NAMES = new Set(['Promise', 'PromiseLike']);
+
+/**
+ * `Promise` statics whose result is a promise whatever they are handed, so a
+ * `return Promise.all(...)` is a promise return with no annotation to read.
+ */
+const PROMISE_STATIC_PRODUCERS = new Set([
+  'resolve',
+  'reject',
+  'all',
+  'allSettled',
+  'race',
+  'any',
+]);
+
+/**
+ * Methods a promise answers, whose own result is another promise. `then` is the
+ * definition of thenable; `catch`/`finally` are sugar over it.
+ */
+const THENABLE_CHAIN_METHODS = new Set(['then', 'catch', 'finally']);
+
+/**
+ * The final segment of a type name, so a qualified spelling
+ * (`globalThis.Promise<T>`, `bluebird.Promise<T>`) is recognized as the thenable
+ * it names rather than dismissed for not being a bare `Identifier`.
+ */
+function rightmostTypeName(typeName: TSESTree.EntityName): string | null {
+  if (typeName.type === AST_NODE_TYPES.Identifier) return typeName.name;
+  if (typeName.type === AST_NODE_TYPES.TSQualifiedName) {
+    return typeName.right.name;
+  }
+  return null;
+}
+
+/**
+ * Whether a *written* type annotation denotes a thenable.
+ *
+ * This is deliberately syntactic and deliberately not exhaustive: the rule
+ * requests no parser services, so an alias that happens to resolve to a promise
+ * is out of reach. Failing to spot one costs a report the rule would otherwise
+ * have made, which is the safe direction — the unsafe one is prescribing (and
+ * on `private` members, applying) a getter rewrite that breaks every caller.
+ */
+function isThenableTypeNode(node: TSESTree.Node | undefined | null): boolean {
+  if (!node) return false;
+
+  switch (node.type) {
+    case AST_NODE_TYPES.TSTypeReference: {
+      const name = rightmostTypeName(node.typeName);
+      return name !== null && THENABLE_TYPE_NAMES.has(name);
+    }
+    // A container that can hold a thenable still hands the caller one:
+    // `Promise<T> | undefined` is awaited at the call site exactly as `Promise<T>`
+    // is, and an intersection carries every constituent's contract.
+    case AST_NODE_TYPES.TSUnionType:
+    case AST_NODE_TYPES.TSIntersectionType:
+      return node.types.some(isThenableTypeNode);
+    default:
+      return false;
+  }
+}
+
+/** Every function-valued node a class member can carry. */
+type FunctionLikeValue =
+  | TSESTree.FunctionExpression
+  | TSESTree.ArrowFunctionExpression
+  | TSESTree.TSEmptyBodyFunctionExpression;
+
 function isFunctionLikeNode(value: TSESTree.Node): boolean {
   return (
     value.type === AST_NODE_TYPES.FunctionExpression ||
@@ -826,6 +900,307 @@ export const preferGetterOverParameterlessMethod = createRule<
     }
 
     /**
+     * The expressions the method itself returns. A `return` inside a nested
+     * function is that callback's result, not the method's, so those are skipped
+     * exactly as every other body walk here skips them.
+     */
+    function collectReturnedExpressions(
+      body: TSESTree.BlockStatement,
+    ): TSESTree.Node[] {
+      const returned: TSESTree.Node[] = [];
+      const stack: TSESTree.Node[] = [...body.body];
+
+      while (stack.length) {
+        const current = stack.pop() as TSESTree.Node;
+        if (isFunctionLikeNode(current)) {
+          continue;
+        }
+        if (
+          current.type === AST_NODE_TYPES.ReturnStatement &&
+          current.argument
+        ) {
+          returned.push(current.argument);
+        }
+        pushChildNodes(current, stack);
+      }
+
+      return returned;
+    }
+
+    /**
+     * Whether a function-valued node hands back a thenable: by its `async`
+     * keyword, by its own return annotation, or — failing both — by what its
+     * body demonstrably returns.
+     *
+     * `owner` fixes the class body that `this.<name>` resolves against. It stays
+     * the originally reported method through every recursion, because a sibling
+     * reached from that method's body lives in the same class body.
+     */
+    function functionYieldsThenable(
+      owner: MethodLikeDefinition,
+      fn: FunctionLikeValue | null | undefined,
+      seen: Set<TSESTree.Node>,
+    ): boolean {
+      if (!fn) return false;
+      if (fn.async) return true;
+
+      const returnType = fn.returnType?.typeAnnotation;
+      if (returnType) {
+        return isThenableTypeNode(returnType);
+      }
+
+      const body = fn.body;
+      if (!body) return false;
+
+      // A concise arrow body IS the returned expression.
+      if (body.type !== AST_NODE_TYPES.BlockStatement) {
+        return isThenableExpression(owner, body, seen);
+      }
+
+      return collectReturnedExpressions(body).some((expression) =>
+        isThenableExpression(owner, expression, seen),
+      );
+    }
+
+    /** Recurses into a sibling's body once, never revisiting a function. */
+    function siblingFunctionYieldsThenable(
+      owner: MethodLikeDefinition,
+      fn: FunctionLikeValue | null | undefined,
+      seen: Set<TSESTree.Node>,
+    ): boolean {
+      // `a() { return this.b(); } b() { return this.a(); }` is legal and would
+      // otherwise recur forever; visiting each function at most once also bounds
+      // the work by the size of the class body.
+      if (!fn || seen.has(fn)) return false;
+      seen.add(fn);
+      return functionYieldsThenable(owner, fn, seen);
+    }
+
+    /**
+     * Whether `this.<name>` resolves, within the enclosing class body, to a
+     * member that yields a thenable.
+     *
+     * A promise-returning method is often written with no annotation of its own
+     * (`readEpoch() { return this.evaluate(); }`), so the sibling's declaration
+     * is the only syntactic evidence available without a type checker. The
+     * sibling's BODY is consulted when it carries no annotation either, so the
+     * exemption survives a sibling transform that strips one — `--fix` under the
+     * recommended config runs `no-explicit-return-type` over the same file, and
+     * an exemption that only an annotation can carry does not survive it.
+     *
+     * `viaCall` distinguishes `this.evaluate()` from `this.evaluate`: reading a
+     * method without calling it yields the function object, which is not a
+     * thenable however the method is annotated, while reading a getter or a
+     * field is what produces its declared type.
+     */
+    function siblingYieldsThenable(
+      owner: MethodLikeDefinition,
+      name: string,
+      viaCall: boolean,
+      seen: Set<TSESTree.Node>,
+    ): boolean {
+      const classBody = owner.parent;
+      if (!classBody || classBody.type !== AST_NODE_TYPES.ClassBody) {
+        return false;
+      }
+
+      return classBody.body.some((member) => {
+        if (member.type === AST_NODE_TYPES.StaticBlock) return false;
+
+        const memberName = memberNameOf(
+          (member as { key?: TSESTree.Node }).key,
+          (member as { computed?: boolean }).computed,
+        );
+        if (memberName !== name) return false;
+
+        if (
+          member.type === AST_NODE_TYPES.MethodDefinition ||
+          member.type === AST_NODE_TYPES.TSAbstractMethodDefinition
+        ) {
+          const readsAsValue = member.kind === 'get' ? !viaCall : viaCall;
+          return (
+            readsAsValue &&
+            siblingFunctionYieldsThenable(owner, member.value, seen)
+          );
+        }
+
+        if (
+          member.type === AST_NODE_TYPES.PropertyDefinition ||
+          member.type === AST_NODE_TYPES.TSAbstractPropertyDefinition
+        ) {
+          const annotation = member.typeAnnotation?.typeAnnotation;
+          const value = member.value;
+          const isFunctionValued =
+            !!value &&
+            (value.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+              value.type === AST_NODE_TYPES.FunctionExpression);
+
+          if (!viaCall) {
+            if (isThenableTypeNode(annotation)) return true;
+            // An un-annotated field initialized to a promise (`private pending =
+            // Promise.resolve(x)`) is thenable on its own evidence. A
+            // function-valued field is not: reading it yields the function.
+            return (
+              !annotation &&
+              !isFunctionValued &&
+              !!value &&
+              isThenableExpression(owner, value, seen)
+            );
+          }
+
+          // A called field is function-valued, so its RETURN type is what
+          // reaches the caller.
+          if (annotation?.type === AST_NODE_TYPES.TSFunctionType) {
+            return isThenableTypeNode(annotation.returnType?.typeAnnotation);
+          }
+
+          return (
+            isFunctionValued &&
+            siblingFunctionYieldsThenable(
+              owner,
+              value as FunctionLikeValue,
+              seen,
+            )
+          );
+        }
+
+        return false;
+      });
+    }
+
+    /** `Promise`, however it is qualified (`globalThis.Promise`, `bluebird.Promise`). */
+    function isPromiseNamespace(expression: TSESTree.Node): boolean {
+      if (expression.type === AST_NODE_TYPES.Identifier) {
+        return expression.name === 'Promise';
+      }
+      if (expression.type === AST_NODE_TYPES.MemberExpression) {
+        return (
+          memberNameOf(expression.property, expression.computed) === 'Promise'
+        );
+      }
+      return false;
+    }
+
+    function isThenableCall(
+      owner: MethodLikeDefinition,
+      call: TSESTree.CallExpression,
+      seen: Set<TSESTree.Node>,
+    ): boolean {
+      // An optional call is a `ChainExpression` WRAPPING the call, so the
+      // callee here is always the plain member expression; the chain wrapper is
+      // unwrapped one level up.
+      const callee = call.callee;
+      if (callee.type !== AST_NODE_TYPES.MemberExpression) return false;
+
+      const property = memberNameOf(callee.property, callee.computed);
+      if (property === null) return false;
+
+      if (
+        isPromiseNamespace(callee.object) &&
+        PROMISE_STATIC_PRODUCERS.has(property)
+      ) {
+        return true;
+      }
+
+      if (THENABLE_CHAIN_METHODS.has(property)) return true;
+
+      if (callee.object.type === AST_NODE_TYPES.ThisExpression) {
+        return siblingYieldsThenable(owner, property, true, seen);
+      }
+
+      return false;
+    }
+
+    /**
+     * Whether a returned expression is demonstrably a thenable. Recursion is
+     * confined to combinators that pass a value straight through (assertions,
+     * `?:`, `&&`/`||`/`??`, optional chains), so the answer always rests on one
+     * of the concrete producers above rather than on a guess about a name.
+     */
+    function isThenableExpression(
+      owner: MethodLikeDefinition,
+      expression: TSESTree.Node,
+      seen: Set<TSESTree.Node>,
+      depth = 0,
+    ): boolean {
+      if (depth > 4) return false;
+
+      switch (expression.type) {
+        // `return await x` only parses inside an `async` method, so the method
+        // itself hands the caller a promise.
+        case AST_NODE_TYPES.AwaitExpression:
+          return true;
+        case AST_NODE_TYPES.TSAsExpression:
+        case AST_NODE_TYPES.TSSatisfiesExpression:
+          return (
+            isThenableTypeNode(expression.typeAnnotation) ||
+            isThenableExpression(owner, expression.expression, seen, depth + 1)
+          );
+        case AST_NODE_TYPES.TSNonNullExpression:
+        case AST_NODE_TYPES.ChainExpression:
+          return isThenableExpression(
+            owner,
+            expression.expression,
+            seen,
+            depth + 1,
+          );
+        case AST_NODE_TYPES.ConditionalExpression:
+          return (
+            isThenableExpression(
+              owner,
+              expression.consequent,
+              seen,
+              depth + 1,
+            ) ||
+            isThenableExpression(owner, expression.alternate, seen, depth + 1)
+          );
+        case AST_NODE_TYPES.LogicalExpression:
+          return (
+            isThenableExpression(owner, expression.left, seen, depth + 1) ||
+            isThenableExpression(owner, expression.right, seen, depth + 1)
+          );
+        case AST_NODE_TYPES.CallExpression:
+          return isThenableCall(owner, expression, seen);
+        case AST_NODE_TYPES.MemberExpression:
+          // `return this.pending` where `pending: Promise<T>`.
+          return (
+            expression.object.type === AST_NODE_TYPES.ThisExpression &&
+            siblingYieldsThenable(
+              owner,
+              memberNameOf(expression.property, expression.computed) ?? '',
+              false,
+              seen,
+            )
+          );
+        default:
+          return false;
+      }
+    }
+
+    /**
+     * Whether the method hands the caller a thenable.
+     *
+     * TypeScript does not require the `async` keyword to return a promise, so
+     * keying on the keyword alone classified `fetchToken(): Promise<string>` as
+     * synchronous and asked for a getter (#2154). A getter is never a legal
+     * remedy here: it turns a call that starts work into a property read, so
+     * `session.epoch` spawns the work on what reads as a field access and any
+     * reflective call site (`(session as any).readEpoch()`) throws outright.
+     *
+     * An explicit return annotation is the method's whole contract, so a
+     * non-thenable one settles the question without reading the body — which is
+     * what keeps an annotated `(): string` method reportable even when its body
+     * mentions promises.
+     */
+    function returnsThenable(node: MethodLikeDefinition): boolean {
+      return functionYieldsThenable(
+        node,
+        node.value,
+        new Set<TSESTree.Node>([node.value]),
+      );
+    }
+
+    /**
      * Returns true when the method body contains a ThrowStatement that is
      * directly in the method's own scope (not inside a nested function/arrow).
      * A method that can throw at the top level is an imperative assertion, not
@@ -1222,7 +1597,11 @@ export const preferGetterOverParameterlessMethod = createRule<
         ) {
           return;
         }
-        if (config.ignoreAsync && node.value.async) return;
+        // `ignoreAsync` means "ignore asynchronous methods", not "ignore
+        // methods bearing the async keyword": TypeScript does not require the
+        // keyword to return a promise, so `fetchToken(): Promise<string>` is
+        // asynchronous with no keyword written at all (#2154).
+        if (config.ignoreAsync && returnsThenable(node)) return;
         if (
           config.ignoreAbstract &&
           node.type === AST_NODE_TYPES.TSAbstractMethodDefinition
@@ -1328,7 +1707,14 @@ export const preferGetterOverParameterlessMethod = createRule<
               ? (suggestedNameCounts.get(classBody)?.get(scopeKey) ?? 0) > 1
               : false;
 
-          const isAsync = node.value.async;
+          // A thenable-returning member has no legal getter form at all: the
+          // rewrite converts a call that starts work into a property read, and
+          // a reflective call site (`(session as any).readEpoch()`) throws
+          // afterwards. The eligibility gate already withholds the report for
+          // these, so this is a second, independent lock — a future change
+          // there must not silently re-enable a rewrite that cannot compile or
+          // run. It subsumes the former `async`-keyword-only withhold.
+          const isThenableReturning = returnsThenable(node);
 
           // A decorator cannot be applied to an ECMA private member under
           // `experimentalDecorators` (TS1206), so a decorated `#foo()` has no
@@ -1365,7 +1751,7 @@ export const preferGetterOverParameterlessMethod = createRule<
             fix:
               !isPrivate ||
               sideEffectReason ||
-              isAsync ||
+              isThenableReturning ||
               !leftParen ||
               !rightParen ||
               hasCollision ||
