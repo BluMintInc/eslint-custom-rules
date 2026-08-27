@@ -1557,7 +1557,8 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
 
     /**
      * Returns true when the identifier was initialized directly from an
-     * assertSafe(...) call, e.g. `const safeKey = assertSafe(rawKey)`.
+     * assertSafe(...) call, e.g. `const safeKey = assertSafe(rawKey)`, with any
+     * wrappers that erase before the code runs read through.
      * Only direct, single-step initializers count — transitive aliases
      * (const b = a) are not followed so they continue to be flagged.
      * findVariableInScope returns the nearest binding, so an inner variable
@@ -1570,12 +1571,21 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
       const variable = ASTHelpers.findVariableInScope(scope, node.name);
       if (!variable) return false;
       return variable.defs.some((def) => {
-        // `assertSafe?.(rawKey)` produces the very same validated key as
-        // `assertSafe(rawKey)` — the chain guards only a nullish callee — so
-        // the exemption reads through it rather than re-reporting the binding.
+        // The initializer is read through the same peel the index site uses, so
+        // the two arms agree about one expression: `assertSafe(rawKey) as
+        // TokenEncoded` binds the very key `assertSafe(rawKey)` does, the
+        // assertion having erased before the code runs, and `assertSafe?.(...)`
+        // is the same validated key again since the chain guards only a nullish
+        // callee. Demanding a bare call instead rejected the shape this rule's
+        // own remedy produces in typed code, where `Object.keys` widens to
+        // `string` and the record is keyed by a branded type (#2152).
+        //
+        // That peel includes `await`. assertSafe is synchronous, so awaiting it
+        // resolves to the very value it validated — the same reason the index
+        // arm has always exempted `m[await assertSafe(k)]`.
         const init =
           def.node.type === AST_NODE_TYPES.VariableDeclarator && def.node.init
-            ? unwrapOptionalChain(def.node.init)
+            ? unwrapWrittenKey(def.node.init)
             : null;
         return (
           !!init &&
