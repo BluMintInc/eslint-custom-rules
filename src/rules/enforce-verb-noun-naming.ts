@@ -4171,6 +4171,16 @@ export const enforceVerbNounNaming = createRule<Options, MessageIds>({
         ) {
           return parent.id.name;
         }
+        // A class field holds its name on the member key, so the component
+        // evidence keyed on the name has to reach `Foo = () => <div />` the
+        // same way it reaches `const Foo = () => <div />`.
+        if (
+          parent?.type === AST_NODE_TYPES.PropertyDefinition &&
+          !parent.computed &&
+          parent.key.type === AST_NODE_TYPES.Identifier
+        ) {
+          return parent.key.name;
+        }
       }
       return '';
     }
@@ -4203,6 +4213,25 @@ export const enforceVerbNounNaming = createRule<Options, MessageIds>({
         }
       }
 
+      // A class field carries its annotation on the member rather than on a
+      // binding: `Foo: React.FC = () => ...` declares a component exactly as
+      // the `const` spelling above does.
+      const memberParent = node.parent;
+      if (
+        memberParent?.type === AST_NODE_TYPES.PropertyDefinition &&
+        memberParent.typeAnnotation?.type === AST_NODE_TYPES.TSTypeAnnotation
+      ) {
+        const typeText = context.sourceCode.getText(
+          memberParent.typeAnnotation.typeAnnotation,
+        );
+        if (
+          /\bReact\.(FC|FunctionComponent)\b/.test(typeText) ||
+          /\b(FC|FunctionComponent)\b/.test(typeText)
+        ) {
+          return true;
+        }
+      }
+
       // Handle FunctionDeclaration/FunctionExpression/ArrowFunction return type: function Foo(): React.JSX.Element { ... }
       if (node.returnType?.type === AST_NODE_TYPES.TSTypeAnnotation) {
         const typeText = context.sourceCode.getText(
@@ -4228,6 +4257,15 @@ export const enforceVerbNounNaming = createRule<Options, MessageIds>({
       node: TSESTree.Node,
       functionName: string,
     ): boolean {
+      // A class field's name is a member, not a lexical binding, so a variable
+      // of the same name found in scope belongs to some other symbol entirely
+      // and says nothing about the field. `<this.Foo />` is a member expression
+      // and records no reference to resolve, so the field relies on the other
+      // component evidence.
+      if (node.parent?.type === AST_NODE_TYPES.PropertyDefinition) {
+        return false;
+      }
+
       const scope = ASTHelpers.getScope(context, node);
       const variable = ASTHelpers.findVariableInScope(scope, functionName);
       if (!variable) {
@@ -4337,6 +4375,50 @@ export const enforceVerbNounNaming = createRule<Options, MessageIds>({
               data: { name: node.id.name },
             });
           }
+        }
+      },
+
+      /**
+       * A callable class field is the same member as a method with one token
+       * changed — `this.data()` reads identically under either spelling — so
+       * the name answers to the same rule. Writing `=` cannot be a way to opt
+       * out of it. The value gate is what separates the two kinds of field:
+       * only a function-valued one names an action, so `data = 42` stays a
+       * noun-phrased datum, exactly as an assigned variable does.
+       */
+      PropertyDefinition(node) {
+        // A computed key is an expression rather than a name, so there is no
+        // identifier to judge or to rename.
+        if (node.computed) return;
+
+        if (node.key.type !== AST_NODE_TYPES.Identifier) return;
+
+        // A `declare` field only restates the type of a member initialized
+        // elsewhere; the declaration that carries the value owns the name.
+        if (node.declare) return;
+
+        const value = node.value;
+        if (
+          !value ||
+          (value.type !== AST_NODE_TYPES.ArrowFunctionExpression &&
+            value.type !== AST_NODE_TYPES.FunctionExpression)
+        ) {
+          return;
+        }
+
+        // A component is a noun by convention, and a field is a routine place
+        // to hold one — the generic-bound render helpers a class exposes are
+        // written this way precisely because they close over `this`.
+        if (isReactComponent(value)) {
+          return;
+        }
+
+        if (!isVerbPhrase(node.key.name)) {
+          context.report({
+            node: node.key,
+            messageId: 'functionVerbPhrase',
+            data: { name: node.key.name },
+          });
         }
       },
 
