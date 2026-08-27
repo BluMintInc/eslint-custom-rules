@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.181",
+    "date": "2026-08-27T06:29:43.247Z",
+    "rules": [
+      {
+        "name": "prefer-getter-over-parameterless-method",
+        "changeType": "fix",
+        "issues": [
+          2154
+        ],
+        "summary": "decide \"synchronous\" from the returned type, not the async keyword (closes #2154)"
+      }
+    ]
+  },
+  {
     "version": "1.20.180",
     "date": "2026-08-27T01:52:25.340Z",
     "rules": [

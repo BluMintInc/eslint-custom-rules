@@ -1,3 +1,10 @@
+## [1.20.181](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.180...v1.20.181) (2026-08-27)
+
+
+### Bug Fixes
+
+* **prefer-getter-over-parameterless-method:** decide "synchronous" from the returned type, not the async keyword (closes [#2154](https://github.com/BluMintInc/eslint-custom-rules/issues/2154)) ([216e01a](https://github.com/BluMintInc/eslint-custom-rules/commit/216e01aaf21f0feb4ca25129b1f9ee2fbb8f84f2))
+
 ## [1.20.180](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.179...v1.20.180) (2026-08-27)
 
 
