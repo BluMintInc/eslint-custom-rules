@@ -1,3 +1,11 @@
+## [1.20.180](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.179...v1.20.180) (2026-08-27)
+
+
+### Bug Fixes
+
+* **enforce-assert-safe-object-key:** read the validated binding through the shared peel (closes [#2152](https://github.com/BluMintInc/eslint-custom-rules/issues/2152)) ([2776b71](https://github.com/BluMintInc/eslint-custom-rules/commit/2776b719f836356fc7c03f8cf7ae9cf6ea2f58c3))
+* **enforce-id-capitalization:** leave string literals that spell a type alone (closes [#2153](https://github.com/BluMintInc/eslint-custom-rules/issues/2153)) ([128000a](https://github.com/BluMintInc/eslint-custom-rules/commit/128000aa652233c62a4b1c6311d0664614ff111d))
+
 ## [1.20.179](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.178...v1.20.179) (2026-08-26)
 
 
