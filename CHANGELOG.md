@@ -1,3 +1,10 @@
+## [1.20.179](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.178...v1.20.179) (2026-08-26)
+
+
+### Bug Fixes
+
+* **enforce-firestore-set-merge:** unwrap assertions in the RealtimeDB carve-out (closes [#2150](https://github.com/BluMintInc/eslint-custom-rules/issues/2150)) ([958d273](https://github.com/BluMintInc/eslint-custom-rules/commit/958d273bbfeb77f47af785227115b9579d9c56d3))
+
 ## [1.20.178](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.177...v1.20.178) (2026-08-26)
 
 
