@@ -3799,6 +3799,11 @@ const FUNCTION_LIKE_TYPES = new Set<string>([
 /**
  * Visits every descendant of `node` that belongs to the same function scope.
  * Nested functions are handed to `visit` but not descended into.
+ *
+ * `node` itself is never handed to `visit`. A caller that passes a statement
+ * body loses nothing by that, but one that can pass an expression — an arrow's
+ * concise body is the expression, not a statement wrapping it — has to answer
+ * for the handed node on its own (#2169).
  */
 function forEachNodeInOwnScope(
   node: TSESTree.Node,
@@ -3911,15 +3916,30 @@ function rendersEveryReturn(node: FunctionNode): boolean {
   return returned.length > 0 && returned.every(isRenderableValue);
 }
 
+/**
+ * Whether the function calls a React hook in its own scope.
+ *
+ * An arrow with a concise body has no statement wrapping the expression, so the
+ * hook call can be `node.body` itself rather than a descendant of it. Reading
+ * only descendants makes the exemption depend on how tersely the component is
+ * written: `() => useThing()` reports while `() => { return useThing(); }` and
+ * `() => wrap(useThing())` — strictly more code, identical meaning — do not
+ * (#2169). `rendersEveryReturn` carries the same concise-body arm.
+ */
 function callsReactHook(node: FunctionNode): boolean {
   let found = false;
-  forEachNodeInOwnScope(node.body, (child) => {
-    if (found || child.type !== AST_NODE_TYPES.CallExpression) {
+  const recordHookCall = (candidate: TSESTree.Node) => {
+    if (found || candidate.type !== AST_NODE_TYPES.CallExpression) {
       return;
     }
-    const name = calleeName(child.callee);
+    const name = calleeName(candidate.callee);
     found = !!name && HOOK_CALL.test(name);
-  });
+  };
+
+  if (node.body.type !== AST_NODE_TYPES.BlockStatement) {
+    recordHookCall(node.body);
+  }
+  forEachNodeInOwnScope(node.body, recordHookCall);
   return found;
 }
 
