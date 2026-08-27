@@ -1,5 +1,75 @@
 [
   {
+    "version": "1.20.182",
+    "date": "2026-08-27T12:12:45.593Z",
+    "rules": [
+      {
+        "name": "enforce-assert-throws",
+        "changeType": "fix",
+        "issues": [
+          2162
+        ],
+        "summary": "name a function-valued class field (closes #2162)"
+      },
+      {
+        "name": "enforce-boolean-naming-prefixes",
+        "changeType": "fix",
+        "issues": [
+          2159
+        ],
+        "summary": "read a field's boolean-returning function value (closes #2159)"
+      },
+      {
+        "name": "enforce-positive-naming",
+        "changeType": "fix",
+        "issues": [
+          2157
+        ],
+        "summary": "judge class fields and abstract members (closes #2157)"
+      },
+      {
+        "name": "enforce-verb-noun-naming",
+        "changeType": "fix",
+        "issues": [
+          2160
+        ],
+        "summary": "check a callable class field (closes #2160)"
+      },
+      {
+        "name": "no-misleading-boolean-prefixes",
+        "changeType": "fix",
+        "issues": [
+          2155
+        ],
+        "summary": "judge a boolean-prefixed class field holding a function (closes #2155)"
+      },
+      {
+        "name": "no-unnecessary-verb-suffix",
+        "changeType": "fix",
+        "issues": [
+          2156
+        ],
+        "summary": "check a class field holding a function (closes #2156)"
+      },
+      {
+        "name": "prefer-getter-over-parameterless-method",
+        "changeType": "fix",
+        "issues": [
+          2158
+        ],
+        "summary": "consider a function-valued class field (closes #2158)"
+      },
+      {
+        "name": "semantic-function-prefixes",
+        "changeType": "fix",
+        "issues": [
+          2161
+        ],
+        "summary": "judge a function-valued class property (closes #2161)"
+      }
+    ]
+  },
+  {
     "version": "1.20.181",
     "date": "2026-08-27T06:29:43.247Z",
     "rules": [

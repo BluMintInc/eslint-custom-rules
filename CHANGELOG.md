@@ -1,3 +1,17 @@
+## [1.20.182](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.181...v1.20.182) (2026-08-27)
+
+
+### Bug Fixes
+
+* **enforce-assert-throws:** name a function-valued class field (closes [#2162](https://github.com/BluMintInc/eslint-custom-rules/issues/2162)) ([51c8e4b](https://github.com/BluMintInc/eslint-custom-rules/commit/51c8e4b8d5d847079b1477f00eca800149c00679))
+* **enforce-boolean-naming-prefixes:** read a field's boolean-returning function value (closes [#2159](https://github.com/BluMintInc/eslint-custom-rules/issues/2159)) ([ffce169](https://github.com/BluMintInc/eslint-custom-rules/commit/ffce16952a9727d26498a5d889703c5c3e5f178f)), closes [#locked](https://github.com/BluMintInc/eslint-custom-rules/issues/locked)
+* **enforce-positive-naming:** judge class fields and abstract members (closes [#2157](https://github.com/BluMintInc/eslint-custom-rules/issues/2157)) ([239cc6b](https://github.com/BluMintInc/eslint-custom-rules/commit/239cc6bf0bdd55ad9a0a96c87d023d42927bd32d)), closes [#1692](https://github.com/BluMintInc/eslint-custom-rules/issues/1692)
+* **enforce-verb-noun-naming:** check a callable class field (closes [#2160](https://github.com/BluMintInc/eslint-custom-rules/issues/2160)) ([83b2cb3](https://github.com/BluMintInc/eslint-custom-rules/commit/83b2cb3b68f13bf8ef7a99f1a2d1d4cec22bdf07))
+* **no-misleading-boolean-prefixes:** judge a boolean-prefixed class field holding a function (closes [#2155](https://github.com/BluMintInc/eslint-custom-rules/issues/2155)) ([d5aee8d](https://github.com/BluMintInc/eslint-custom-rules/commit/d5aee8d4b6603e45283cfbf563a84a7ebbc000f9))
+* **no-unnecessary-verb-suffix:** check a class field holding a function (closes [#2156](https://github.com/BluMintInc/eslint-custom-rules/issues/2156)) ([d44a2ef](https://github.com/BluMintInc/eslint-custom-rules/commit/d44a2ef92d19d99c595e87fa01ae0855ea8fbf5a)), closes [#1256](https://github.com/BluMintInc/eslint-custom-rules/issues/1256)
+* **prefer-getter-over-parameterless-method:** consider a function-valued class field (closes [#2158](https://github.com/BluMintInc/eslint-custom-rules/issues/2158)) ([a1ccf15](https://github.com/BluMintInc/eslint-custom-rules/commit/a1ccf155e7cc02e7da24383def5d611c619d5aa8))
+* **semantic-function-prefixes:** judge a function-valued class property (closes [#2161](https://github.com/BluMintInc/eslint-custom-rules/issues/2161)) ([0a48a7b](https://github.com/BluMintInc/eslint-custom-rules/commit/0a48a7b1f382f2c68acb2c273944fa0df1e204e4))
+
 ## [1.20.181](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.180...v1.20.181) (2026-08-27)
 
 
