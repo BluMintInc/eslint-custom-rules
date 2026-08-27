@@ -318,6 +318,139 @@ export const stage = async (prefix: string, contents: string) => {
   return written;
 };
 `,
+    // #2167: five respellings that lost the barrier entirely, plus the
+    // neighbours each one generalizes to. Every one of them is a one-token
+    // respelling of a fixture above, and every one of them fused a write with
+    // the operation whose precondition that write is.
+    //
+    // An init rooted at an ALREADY-collected binding rather than at a literal
+    // `require` call. The origin is still an fs module object, so classifying
+    // it takes a pass that reads the collected bindings rather than syntax
+    // alone.
+    `
+const fs = require('fs');
+const { rename, writeFile } = fs.promises;
+export const publish = async (pending: string, path: string) => {
+  await writeFile(pending, 'x');
+  await rename(pending, path);
+};
+`,
+    // The ESM spelling of the same derivation, which is the one that survives
+    // TypeScript and therefore the one a consumer actually writes.
+    `
+import fs from 'node:fs';
+const { rename, writeFile } = fs.promises;
+export const publish = async (pending: string, path: string) => {
+  await writeFile(pending, 'x');
+  await rename(pending, path);
+};
+`,
+    // Derivation is transitive: a chain of intermediate bindings reaches the
+    // same filesystem the one-step spelling does.
+    `
+const fs = require('fs');
+const fsp = fs.promises;
+const { rename, writeFile } = fsp;
+export const publish = async (pending: string, path: string) => {
+  await writeFile(pending, 'x');
+  await rename(pending, path);
+};
+`,
+    // A binding is not a property of the MODULE scope. A function-scoped
+    // require reaches the same resource a top-level one does.
+    `
+export const seed = async (dir: string, file: string) => {
+  const { mkdir, writeFile } = require('node:fs/promises');
+  await mkdir(dir);
+  await writeFile(file, 'x');
+};
+`,
+    `
+export const seed = async (dir: string, file: string) => {
+  if (dir) {
+    const { mkdir, writeFile } = require('node:fs/promises');
+    await mkdir(dir);
+    await writeFile(file, 'x');
+  }
+};
+`,
+    // A function-scoped binding derived from a module-scoped one crosses both
+    // narrowings at once.
+    `
+const fsp = require('fs').promises;
+export const publish = async (pending: string, path: string) => {
+  const { rename, writeFile } = fsp;
+  await writeFile(pending, 'x');
+  await rename(pending, path);
+};
+`,
+    // A nested pattern names the operation at its LEAF, which is the member a
+    // member-expression spelling of the same access would have carried.
+    `
+const {
+  promises: { rename, writeFile },
+} = require('fs');
+export const publish = async (pending: string, path: string) => {
+  await writeFile(pending, 'x');
+  await rename(pending, path);
+};
+`,
+    `
+const {
+  promises: { rename: mv, writeFile: wf },
+} = require('fs');
+export const publish = async (pending: string, path: string) => {
+  await wf(pending, 'x');
+  await mv(pending, path);
+};
+`,
+    // A promise combinator chained onto an fs call does not change WHICH
+    // operation the call performs, so the write still orders the rename.
+    // Rooting the outer callee walks to the inner CALL instead of a binding,
+    // which names no operation at all.
+    `
+import { rename, writeFile } from 'fs/promises';
+export const publish = async (pending: string, path: string) => {
+  await writeFile(pending, 'x').catch(() => undefined);
+  await rename(pending, path);
+};
+`,
+    `
+import { rename, writeFile } from 'node:fs/promises';
+export const publish = async (pending: string, path: string) => {
+  await writeFile(pending, 'x').finally(() => undefined);
+  await rename(pending, path);
+};
+`,
+    `
+import fs from 'node:fs';
+import { rename } from 'node:fs/promises';
+export const publish = async (pending: string, path: string) => {
+  await fs.promises.writeFile(pending, 'x').then(() => undefined);
+  await rename(pending, path);
+};
+`,
+    // Shadowing, in the direction that must KEEP the barrier: the inner
+    // bindings are the fs ones, so an outer helper sharing their spelling
+    // cannot hide the resource they operate.
+    `
+const writeFile = async (path: string, data: string) => data;
+const rename = async (from: string, to: string) => to;
+export const publish = async (pending: string, path: string) => {
+  const { rename, writeFile } = require('node:fs/promises');
+  await writeFile(pending, 'x');
+  await rename(pending, path);
+};
+`,
+    // `import x = require('y')` binds the module object through a declaration
+    // of its own rather than through a specifier.
+    `
+import fs = require('fs');
+export const publish = async (pending: string, path: string) => {
+  await fs.promises.writeFile(pending, 'x');
+  await fs.promises.rename(pending, path);
+};
+`,
   ],
   invalid: [
     // Two observations commute, so the run is a latency mistake and keeps its
@@ -609,6 +742,160 @@ export const probe = async (a: string, b: string) => {
 import { exists, readFile } from 'graceful-fs';
 export const probe = async (a: string, b: string) => {
   await Promise.all([exists(a), readFile(b)]);
+};
+`,
+      errors: [{ messageId: 'parallelizeAsyncOperations' as const }],
+    },
+    // The over-barrier controls for #2167. Reaching MORE spellings must not
+    // turn "the file mentions fs" into a blanket skip: a run of pure
+    // observations still commutes, and one fs await beside unrelated work
+    // still shares its resource with nothing.
+    {
+      code: `
+import fs from 'node:fs';
+const { readFile, stat } = fs.promises;
+export const inspect = async (a: string, b: string) => {
+  const contents = await readFile(a);
+  const info = await stat(b);
+  return { contents, info };
+};
+`,
+      output: `
+import fs from 'node:fs';
+const { readFile, stat } = fs.promises;
+export const inspect = async (a: string, b: string) => {
+  const [contents, info] = await Promise.all([readFile(a), stat(b)]);
+  return { contents, info };
+};
+`,
+      errors: [{ messageId: 'parallelizeAsyncOperations' as const }],
+    },
+    {
+      code: `
+const {
+  promises: { readFile, stat },
+} = require('fs');
+export const inspect = async (a: string, b: string) => {
+  const contents = await readFile(a);
+  const info = await stat(b);
+  return { contents, info };
+};
+`,
+      output: `
+const {
+  promises: { readFile, stat },
+} = require('fs');
+export const inspect = async (a: string, b: string) => {
+  const [contents, info] = await Promise.all([readFile(a), stat(b)]);
+  return { contents, info };
+};
+`,
+      errors: [{ messageId: 'parallelizeAsyncOperations' as const }],
+    },
+    // Unwrapping a promise chain has to reach the read-only classification too,
+    // or every chained read would fall to the mutating default.
+    {
+      code: `
+import { readFile, stat } from 'node:fs/promises';
+export const inspect = async (a: string, b: string) => {
+  const contents = await readFile(a).then(String);
+  const info = await stat(b);
+  return { contents, info };
+};
+`,
+      output: `
+import { readFile, stat } from 'node:fs/promises';
+export const inspect = async (a: string, b: string) => {
+  const [contents, info] = await Promise.all([
+    readFile(a).then(String),
+    stat(b),
+  ]);
+  return { contents, info };
+};
+`,
+      errors: [{ messageId: 'parallelizeAsyncOperations' as const }],
+    },
+    {
+      code: `
+import fs from 'node:fs';
+import { notify } from './notify';
+const { writeFile } = fs.promises;
+export const probe = async (file: string, id: string) => {
+  await writeFile(file, 'x');
+  await notify(id);
+};
+`,
+      output: `
+import fs from 'node:fs';
+import { notify } from './notify';
+const { writeFile } = fs.promises;
+export const probe = async (file: string, id: string) => {
+  await Promise.all([writeFile(file, 'x'), notify(id)]);
+};
+`,
+      errors: [{ messageId: 'parallelizeAsyncOperations' as const }],
+    },
+    // Shadowing, in the direction that must DROP the barrier: the awaits call
+    // the inner helpers, which share the fs exports' spelling and nothing else.
+    // A name-keyed table answers fs here and suppresses a real report.
+    {
+      code: `
+import { rename, writeFile } from 'node:fs/promises';
+export const local = async (a: string, b: string) => {
+  const writeFile = async (path: string, data: string) => data;
+  const rename = async (from: string, to: string) => to;
+  await writeFile(a, 'x');
+  await rename(a, b);
+};
+`,
+      output: `
+import { rename, writeFile } from 'node:fs/promises';
+export const local = async (a: string, b: string) => {
+  const writeFile = async (path: string, data: string) => data;
+  const rename = async (from: string, to: string) => to;
+  await Promise.all([writeFile(a, 'x'), rename(a, b)]);
+};
+`,
+      errors: [{ messageId: 'parallelizeAsyncOperations' as const }],
+    },
+    // Derivation still keys on the ORIGIN: a module object spelled `fs` that
+    // was never loaded from a filesystem module carries no fs-ness to derive.
+    {
+      code: `
+import fs from './fake-fs';
+const { rename, writeFile } = fs.promises;
+export const probe = async (a: string, b: string) => {
+  await writeFile(a, 'x');
+  await rename(a, b);
+};
+`,
+      output: `
+import fs from './fake-fs';
+const { rename, writeFile } = fs.promises;
+export const probe = async (a: string, b: string) => {
+  await Promise.all([writeFile(a, 'x'), rename(a, b)]);
+};
+`,
+      errors: [{ messageId: 'parallelizeAsyncOperations' as const }],
+    },
+    // A bare alias denotes exactly what it aliases, so it keeps the EXPORTED
+    // name rather than falling to the mutating default on its local spelling.
+    {
+      code: `
+import { readFile } from 'node:fs/promises';
+const rf = readFile;
+export const probe = async (a: string, b: string) => {
+  const first = await rf(a);
+  const second = await rf(b);
+  return [first, second];
+};
+`,
+      output: `
+import { readFile } from 'node:fs/promises';
+const rf = readFile;
+export const probe = async (a: string, b: string) => {
+  const [first, second] = await Promise.all([rf(a), rf(b)]);
+  return [first, second];
 };
 `,
       errors: [{ messageId: 'parallelizeAsyncOperations' as const }],
