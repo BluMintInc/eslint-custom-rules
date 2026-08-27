@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.185",
+    "date": "2026-08-27T23:34:44.905Z",
+    "rules": [
+      {
+        "name": "enforce-verb-noun-naming",
+        "changeType": "fix",
+        "issues": [
+          2171
+        ],
+        "summary": "stop a concise body's own function from lending its hook (closes #2171)"
+      }
+    ]
+  },
+  {
     "version": "1.20.184",
     "date": "2026-08-27T22:07:43.784Z",
     "rules": [

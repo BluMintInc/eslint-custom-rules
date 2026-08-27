@@ -1,3 +1,10 @@
+## [1.20.185](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.184...v1.20.185) (2026-08-27)
+
+
+### Bug Fixes
+
+* **enforce-verb-noun-naming:** stop a concise body's own function from lending its hook (closes [#2171](https://github.com/BluMintInc/eslint-custom-rules/issues/2171)) ([a6ccf83](https://github.com/BluMintInc/eslint-custom-rules/commit/a6ccf837b7583792c08f305d39f97e53d05fa6a5)), closes [#2169](https://github.com/BluMintInc/eslint-custom-rules/issues/2169)
+
 ## [1.20.184](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.183...v1.20.184) (2026-08-27)
 
 
