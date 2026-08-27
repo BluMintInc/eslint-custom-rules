@@ -2020,6 +2020,35 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
     }
 
     /**
+     * Whether a class field's value is a function whose DECLARED return type is
+     * `boolean`.
+     *
+     * Booleanness is read from the return annotation alone, which is exactly
+     * what the method arm requires. Routing the value through
+     * `returnsBooleanValue` instead would additionally accept an un-annotated
+     * arrow whose expression body merely looks boolean (`valid = () => x > 0`),
+     * whose method counterpart (`valid() { return x > 0; }`) stays silent — so
+     * the two spellings would disagree in the opposite direction. A type
+     * predicate (`(v): v is Foo => …`) is excluded by the same keying, matching
+     * the method arm's explicit predicate carve-out.
+     */
+    function declaresBooleanReturningFunction(node: any): boolean {
+      const value = node.value;
+      if (
+        value?.type !== AST_NODE_TYPES.ArrowFunctionExpression &&
+        value?.type !== AST_NODE_TYPES.FunctionExpression
+      ) {
+        return false;
+      }
+
+      const returnAnnotation = value.returnType?.typeAnnotation;
+      return (
+        !!returnAnnotation &&
+        returnAnnotation.type === (AST_NODE_TYPES.TSBooleanKeyword as any)
+      );
+    }
+
+    /**
      * Check class property declarations for boolean values.
      *
      * Handles both concrete (`PropertyDefinition`) and abstract
@@ -2032,6 +2061,42 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
       if (!key) return;
 
       const propertyName = key.name;
+
+      // A field holding a boolean-returning function declares a member that is a
+      // method in every respect its NAME is judged on: callers write
+      // `instance.member()` and read a true/false answer from it, so writing `=`
+      // in front of the member cannot discharge the naming obligation the method
+      // spelling carries. The three real differences between the spellings —
+      // lexical `this`, own-instance placement and initialization order — are all
+      // orthogonal to the name, so the rename remedy is identical.
+      //
+      // Reported before the data-field paths and returned from, so a field that
+      // somehow satisfies both cannot draw two reports on one key.
+      //
+      // Two fields declare a name this site cannot rename: a computed key's
+      // static name belongs to the expression holding it, so renaming `k` in
+      // `[k] = …` renames nothing on the class, and an ambient (`declare`) field
+      // describes a shape provided elsewhere — a base class, a mixin, a
+      // framework — which owns the name.
+      const declaresRenameableName = !node.computed && !node.declare;
+
+      if (
+        declaresRenameableName &&
+        declaresBooleanReturningFunction(node) &&
+        !hasApprovedPrefix(propertyName)
+      ) {
+        context.report({
+          node: node.key,
+          messageId: 'missingBooleanPrefix',
+          data: {
+            type: 'method',
+            name: key.written,
+            capitalizedName: capitalizeFirst(propertyName),
+            prefixes: formatPrefixes(),
+          },
+        });
+        return;
+      }
 
       // Check if it's a boolean property
       let isBooleanProperty = false;
