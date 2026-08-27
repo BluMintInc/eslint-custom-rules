@@ -1,5 +1,36 @@
 [
   {
+    "version": "1.20.184",
+    "date": "2026-08-27T22:07:43.784Z",
+    "rules": [
+      {
+        "name": "enforce-verb-noun-naming",
+        "changeType": "fix",
+        "issues": [
+          2168,
+          2169
+        ],
+        "summary": "reach the hook call a concise arrow body IS (closes #2169); defer an overload signature to its implementation (closes #2168)"
+      },
+      {
+        "name": "no-entire-object-hook-deps",
+        "changeType": "fix",
+        "issues": [
+          2170
+        ],
+        "summary": "keep a ref dependency whole (closes #2170)"
+      },
+      {
+        "name": "parallelize-async-operations",
+        "changeType": "fix",
+        "issues": [
+          2167
+        ],
+        "summary": "resolve fs bindings as a scope-aware fixpoint (closes #2167)"
+      }
+    ]
+  },
+  {
     "version": "1.20.183",
     "date": "2026-08-27T17:21:40.008Z",
     "rules": [

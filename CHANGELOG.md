@@ -1,3 +1,13 @@
+## [1.20.184](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.183...v1.20.184) (2026-08-27)
+
+
+### Bug Fixes
+
+* **enforce-verb-noun-naming:** defer an overload signature to its implementation (closes [#2168](https://github.com/BluMintInc/eslint-custom-rules/issues/2168)) ([cc40a8e](https://github.com/BluMintInc/eslint-custom-rules/commit/cc40a8eea88caa0240a1ebf51d1ea342582f6dca)), closes [#2165](https://github.com/BluMintInc/eslint-custom-rules/issues/2165)
+* **enforce-verb-noun-naming:** reach the hook call a concise arrow body IS (closes [#2169](https://github.com/BluMintInc/eslint-custom-rules/issues/2169)) ([fbfc9a8](https://github.com/BluMintInc/eslint-custom-rules/commit/fbfc9a8c17e5e45b547abd4e5e20750c94a9212d))
+* **no-entire-object-hook-deps:** keep a ref dependency whole (closes [#2170](https://github.com/BluMintInc/eslint-custom-rules/issues/2170)) ([4afc33d](https://github.com/BluMintInc/eslint-custom-rules/commit/4afc33d2b4ddaa7186c943a1fcb5856519e68d68))
+* **parallelize-async-operations:** resolve fs bindings as a scope-aware fixpoint (closes [#2167](https://github.com/BluMintInc/eslint-custom-rules/issues/2167)) ([3401a24](https://github.com/BluMintInc/eslint-custom-rules/commit/3401a24587a76206597762493178153e2dc8b21f)), closes [#2166](https://github.com/BluMintInc/eslint-custom-rules/issues/2166) [#2166](https://github.com/BluMintInc/eslint-custom-rules/issues/2166)
+
 ## [1.20.183](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.182...v1.20.183) (2026-08-27)
 
 
