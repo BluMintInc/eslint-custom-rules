@@ -422,7 +422,6 @@ const UNDRIVEN: Record<string, UndrivenCause> = {
    * becomes part of the inferred return type and breaks the callers. No other
    * culprit reaches a fixture either rule reports on, so `asserted` measures 0.
    */
-  'prefer-getter-over-parameterless-method': 'noAssertionAdded',
   'prefer-type-over-interface': 'noAssertionAdded',
   'prefer-use-theme': 'noAssertionAdded',
   'prefer-usecallback-over-usememo-for-functions': 'noAssertionAdded',

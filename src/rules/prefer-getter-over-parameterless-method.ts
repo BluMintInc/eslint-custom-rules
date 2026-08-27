@@ -19,6 +19,27 @@ type MethodLikeDefinition =
   | TSESTree.MethodDefinition
   | TSESTree.TSAbstractMethodDefinition;
 
+type PropertyLikeDefinition =
+  | TSESTree.PropertyDefinition
+  | TSESTree.TSAbstractPropertyDefinition;
+
+/**
+ * Every class member that can carry a member function. A field initialized with
+ * an arrow (`fullName = () => ...`) is invoked exactly as its method twin is —
+ * `instance.fullName()` — so the two spellings are one subject, and writing `=`
+ * must not decide whether the rule looks (#2158).
+ */
+type MemberLikeDefinition = MethodLikeDefinition | PropertyLikeDefinition;
+
+function isPropertyLike(
+  node: MemberLikeDefinition,
+): node is PropertyLikeDefinition {
+  return (
+    node.type === AST_NODE_TYPES.PropertyDefinition ||
+    node.type === AST_NODE_TYPES.TSAbstractPropertyDefinition
+  );
+}
+
 const DEFAULT_PREFIXES = [
   'build',
   'get',
@@ -180,6 +201,58 @@ function isFunctionLikeNode(value: TSESTree.Node): boolean {
   );
 }
 
+/**
+ * The member function a class member carries, or null when it carries none. A
+ * method's value is always a function; a field's value is one only when it is
+ * written as an arrow or a function expression, which is what makes the field a
+ * member function rather than data.
+ */
+function memberFunctionOf(
+  node: MemberLikeDefinition,
+): FunctionLikeValue | null {
+  if (!isPropertyLike(node)) return node.value;
+
+  const value = node.value;
+  if (
+    value &&
+    (value.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+      value.type === AST_NODE_TYPES.FunctionExpression)
+  ) {
+    return value;
+  }
+  return null;
+}
+
+/**
+ * The return type a FIELD's own annotation declares for the function it holds.
+ * `render: () => void = () => this.draw()` states the member's contract beside
+ * the field name rather than on the arrow, and that contract is what a caller
+ * reads — so it answers the void and promise questions the same way an arrow's
+ * own `(): void` annotation does.
+ */
+function declaredFunctionReturnType(
+  node: MemberLikeDefinition,
+): TSESTree.TypeNode | null {
+  if (!isPropertyLike(node)) return null;
+
+  const annotation = node.typeAnnotation?.typeAnnotation;
+  if (!annotation || annotation.type !== AST_NODE_TYPES.TSFunctionType) {
+    return null;
+  }
+  return annotation.returnType?.typeAnnotation ?? null;
+}
+
+/**
+ * The nodes a top-level body walk starts from. A concise arrow body is a single
+ * expression rather than a statement list, and every walk here is about what
+ * the member's OWN scope does, so the expression is that scope's whole content.
+ */
+function bodyWalkRoots(fn: FunctionLikeValue): TSESTree.Node[] {
+  const body = fn.body;
+  if (!body) return [];
+  return body.type === AST_NODE_TYPES.BlockStatement ? [...body.body] : [body];
+}
+
 function lowerFirst(text: string): string {
   if (!text) return text;
   return text[0].toLowerCase() + text.slice(1);
@@ -206,12 +279,19 @@ function isEcmaPrivateName(name: string): boolean {
   return name.startsWith('#');
 }
 
-function computeBodyLineCount(body: TSESTree.BlockStatement): number {
+function computeBodyLineCount(fn: FunctionLikeValue): number {
+  const body = fn.body;
+  if (!body) return 0;
+  if (body.type !== AST_NODE_TYPES.BlockStatement) {
+    // A concise body has no braces of its own, so its span IS its content: a
+    // one-line body counts 0, exactly as the one-line block spelling does.
+    return Math.max(0, body.loc.end.line - body.loc.start.line);
+  }
   return Math.max(0, body.loc.end.line - body.loc.start.line - 1);
 }
 
 function hasNameCollision(
-  node: MethodLikeDefinition,
+  node: MemberLikeDefinition,
   newName: string,
 ): boolean {
   const classBody = node.parent;
@@ -227,7 +307,7 @@ function hasNameCollision(
   const targetIsEcmaPrivate = isEcmaPrivateName(newName);
 
   return classBody.body.some((member) => {
-    if ((member as unknown as MethodLikeDefinition) === node) {
+    if ((member as unknown as MemberLikeDefinition) === node) {
       return false;
     }
 
@@ -329,7 +409,7 @@ type HeritageContract =
   | { status: 'unresolvable' }
   | { status: 'resolved'; members: ContractMembers };
 
-function getClassOf(node: MethodLikeDefinition): ClassLikeNode | null {
+function getClassOf(node: MemberLikeDefinition): ClassLikeNode | null {
   const classBody = node.parent;
   if (!classBody || classBody.type !== AST_NODE_TYPES.ClassBody) {
     return null;
@@ -767,7 +847,7 @@ export const preferGetterOverParameterlessMethod = createRule<
       addCallUse(member, propName, callUsedNamesByClass, callUsedNamesInFile);
     }
 
-    function getJsDoc(node: MethodLikeDefinition) {
+    function getJsDoc(node: MemberLikeDefinition) {
       const comments = sourceCode.getCommentsBefore(node);
       const candidate = comments[comments.length - 1];
       if (
@@ -783,7 +863,7 @@ export const preferGetterOverParameterlessMethod = createRule<
       return null;
     }
 
-    function hasSideEffectTag(node: MethodLikeDefinition): boolean {
+    function hasSideEffectTag(node: MemberLikeDefinition): boolean {
       const jsDoc = getJsDoc(node);
       if (!jsDoc) {
         return false;
@@ -824,8 +904,8 @@ export const preferGetterOverParameterlessMethod = createRule<
       );
     }
 
-    function analyzeMutations(body: TSESTree.BlockStatement): string | null {
-      const stack: TSESTree.Node[] = [...body.body];
+    function analyzeMutations(fn: FunctionLikeValue): string | null {
+      const stack: TSESTree.Node[] = bodyWalkRoots(fn);
 
       while (stack.length) {
         const current = stack.pop() as TSESTree.Node;
@@ -869,8 +949,12 @@ export const preferGetterOverParameterlessMethod = createRule<
       return null;
     }
 
-    function returnsValue(node: MethodLikeDefinition): boolean {
-      const returnType = node.value.returnType?.typeAnnotation;
+    function returnsValue(
+      node: MemberLikeDefinition,
+      fn: FunctionLikeValue,
+    ): boolean {
+      const returnType =
+        fn.returnType?.typeAnnotation ?? declaredFunctionReturnType(node);
       if (returnType) {
         if (isVoidishType(returnType)) {
           return false;
@@ -878,8 +962,12 @@ export const preferGetterOverParameterlessMethod = createRule<
         return true;
       }
 
-      const body = node.value.body;
+      const body = fn.body;
       if (!body) return false;
+
+      // A concise arrow body IS the value handed back; the subject visitor has
+      // already required it to be one that cannot be read as a command.
+      if (body.type !== AST_NODE_TYPES.BlockStatement) return true;
 
       const stack: TSESTree.Node[] = [...body.body];
       while (stack.length) {
@@ -937,7 +1025,7 @@ export const preferGetterOverParameterlessMethod = createRule<
      * reached from that method's body lives in the same class body.
      */
     function functionYieldsThenable(
-      owner: MethodLikeDefinition,
+      owner: MemberLikeDefinition,
       fn: FunctionLikeValue | null | undefined,
       seen: Set<TSESTree.Node>,
     ): boolean {
@@ -964,7 +1052,7 @@ export const preferGetterOverParameterlessMethod = createRule<
 
     /** Recurses into a sibling's body once, never revisiting a function. */
     function siblingFunctionYieldsThenable(
-      owner: MethodLikeDefinition,
+      owner: MemberLikeDefinition,
       fn: FunctionLikeValue | null | undefined,
       seen: Set<TSESTree.Node>,
     ): boolean {
@@ -994,7 +1082,7 @@ export const preferGetterOverParameterlessMethod = createRule<
      * field is what produces its declared type.
      */
     function siblingYieldsThenable(
-      owner: MethodLikeDefinition,
+      owner: MemberLikeDefinition,
       name: string,
       viaCall: boolean,
       seen: Set<TSESTree.Node>,
@@ -1082,7 +1170,7 @@ export const preferGetterOverParameterlessMethod = createRule<
     }
 
     function isThenableCall(
-      owner: MethodLikeDefinition,
+      owner: MemberLikeDefinition,
       call: TSESTree.CallExpression,
       seen: Set<TSESTree.Node>,
     ): boolean {
@@ -1118,7 +1206,7 @@ export const preferGetterOverParameterlessMethod = createRule<
      * of the concrete producers above rather than on a guess about a name.
      */
     function isThenableExpression(
-      owner: MethodLikeDefinition,
+      owner: MemberLikeDefinition,
       expression: TSESTree.Node,
       seen: Set<TSESTree.Node>,
       depth = 0,
@@ -1192,12 +1280,19 @@ export const preferGetterOverParameterlessMethod = createRule<
      * what keeps an annotated `(): string` method reportable even when its body
      * mentions promises.
      */
-    function returnsThenable(node: MethodLikeDefinition): boolean {
-      return functionYieldsThenable(
-        node,
-        node.value,
-        new Set<TSESTree.Node>([node.value]),
-      );
+    function returnsThenable(node: MemberLikeDefinition): boolean {
+      const fn = memberFunctionOf(node);
+      if (!fn) return false;
+
+      // A field states its contract beside the name when the arrow carries no
+      // annotation of its own, and that contract settles the question exactly
+      // as an arrow's own annotation would.
+      if (!fn.returnType) {
+        const declared = declaredFunctionReturnType(node);
+        if (declared) return isThenableTypeNode(declared);
+      }
+
+      return functionYieldsThenable(node, fn, new Set<TSESTree.Node>([fn]));
     }
 
     /**
@@ -1206,8 +1301,8 @@ export const preferGetterOverParameterlessMethod = createRule<
      * A method that can throw at the top level is an imperative assertion, not
      * a computed property, so it must not become a getter.
      */
-    function containsTopLevelThrow(body: TSESTree.BlockStatement): boolean {
-      const stack: TSESTree.Node[] = [...body.body];
+    function containsTopLevelThrow(fn: FunctionLikeValue): boolean {
+      const stack: TSESTree.Node[] = bodyWalkRoots(fn);
       while (stack.length) {
         const current = stack.pop() as TSESTree.Node;
         // Do not descend into nested function-like scopes — a throw there is
@@ -1265,10 +1360,10 @@ export const preferGetterOverParameterlessMethod = createRule<
     }
 
     function bodyReferencesThisProperty(
-      body: TSESTree.BlockStatement,
+      fn: FunctionLikeValue,
       propName: string,
     ): boolean {
-      const stack: TSESTree.Node[] = [...body.body];
+      const stack: TSESTree.Node[] = bodyWalkRoots(fn);
 
       while (stack.length) {
         const current = stack.pop() as TSESTree.Node;
@@ -1404,6 +1499,8 @@ export const preferGetterOverParameterlessMethod = createRule<
       member: TSESTree.MemberExpression,
       callUsedNamesByClass: WeakMap<TSESTree.ClassBody, Set<string>>,
       callUsedNamesInFile: Set<string>,
+      detachedNamesByClass: WeakMap<TSESTree.ClassBody, Set<string>>,
+      detachedNamesInFile: Set<string>,
     ) {
       const propName = memberNameOf(member.property, member.computed);
       if (propName === null) {
@@ -1420,6 +1517,12 @@ export const preferGetterOverParameterlessMethod = createRule<
         callUsedNamesByClass,
         callUsedNamesInFile,
       );
+      addCallUseForMember(
+        member,
+        propName,
+        detachedNamesByClass,
+        detachedNamesInFile,
+      );
     }
 
     function trackThisDestructuring(
@@ -1427,10 +1530,19 @@ export const preferGetterOverParameterlessMethod = createRule<
       init: TSESTree.Node | null | undefined,
       callUsedNamesByClass: WeakMap<TSESTree.ClassBody, Set<string>>,
       callUsedNamesInFile: Set<string>,
+      detachedNamesByClass: WeakMap<TSESTree.ClassBody, Set<string>>,
+      detachedNamesInFile: Set<string>,
     ) {
       if (!init || init.type !== AST_NODE_TYPES.ThisExpression) {
         return;
       }
+
+      const record = (name: string) => {
+        addCallUse(pattern, name, callUsedNamesByClass, callUsedNamesInFile);
+        // Pulling a member off `this` without calling it takes the function
+        // value itself, which is the detachment a getter cannot survive.
+        addCallUse(pattern, name, detachedNamesByClass, detachedNamesInFile);
+      };
 
       for (const prop of pattern.properties) {
         if (prop.type === AST_NODE_TYPES.Property) {
@@ -1438,22 +1550,12 @@ export const preferGetterOverParameterlessMethod = createRule<
 
           const key = prop.key;
           if (key.type === AST_NODE_TYPES.Identifier) {
-            addCallUse(
-              pattern,
-              key.name,
-              callUsedNamesByClass,
-              callUsedNamesInFile,
-            );
+            record(key.name);
           } else if (
             key.type === AST_NODE_TYPES.Literal &&
             typeof key.value === 'string'
           ) {
-            addCallUse(
-              pattern,
-              key.value,
-              callUsedNamesByClass,
-              callUsedNamesInFile,
-            );
+            record(key.value);
           }
         }
       }
@@ -1472,7 +1574,7 @@ export const preferGetterOverParameterlessMethod = createRule<
      * proven safe and the whole class is spared: a false negative is preferable
      * to prescribing a remedy that does not compile.
      */
-    function isConstrainedByHeritage(node: MethodLikeDefinition): boolean {
+    function isConstrainedByHeritage(node: MemberLikeDefinition): boolean {
       // An ECMA private member is unreachable from outside its own class body,
       // so no `implements` or `extends` clause — resolvable or not — can oblige
       // it to stay a method: a base class's `#x` is a different member, and a
@@ -1500,14 +1602,98 @@ export const preferGetterOverParameterlessMethod = createRule<
 
     const callUsedNamesByClass = new WeakMap<TSESTree.ClassBody, Set<string>>();
     const callUsedNamesInFile = new Set<string>();
+    /**
+     * Names read WITHOUT being called — the strict subset of the call-use sets
+     * that means "the function value itself was taken". A field arrow exists to
+     * be handed around bound (`store.on('change', this.getSnapshot)`), and a
+     * getter would run on that read instead of yielding the function, so the
+     * field arm withholds its report there rather than prescribe a remedy that
+     * breaks the site.
+     */
+    const detachedNamesByClass = new WeakMap<TSESTree.ClassBody, Set<string>>();
+    const detachedNamesInFile = new Set<string>();
     const candidates: Array<{
-      node: MethodLikeDefinition;
+      node: MemberLikeDefinition;
+      fn: FunctionLikeValue;
       sideEffectReason: string | null;
       /** The member as written, `#`-prefixed for an ECMA private name. */
       memberName: string;
       /** The getter name to emit, carrying the same `#` the member has. */
       getterName: string;
+      /**
+       * Whether the member is a field. A field carries no fixer: converting an
+       * own enumerable per-instance property into a prototype accessor drops
+       * the key from `Object.keys(instance)` and object spread, which no gate
+       * here models and no single-file analysis can settle.
+       */
+      isField: boolean;
     }> = [];
+
+    /**
+     * The gates every member function answers, whichever way it is spelled.
+     */
+    function considerMember(
+      node: MemberLikeDefinition,
+      fn: FunctionLikeValue,
+      isField: boolean,
+    ) {
+      if (fn.params.length > 0) return;
+      if (node.optional) return;
+      if (node.computed) return;
+      if (fn.typeParameters) return;
+      // An ECMA private name (`#foo`) is the same privacy as the TypeScript
+      // `private` modifier — and mutually exclusive with it, since `private
+      // #foo` is TS18010 — so it carries a plain, strippable name that the
+      // rule analyzes exactly like an `Identifier` key. Literal, computed and
+      // template keys stay out: their names are not always statically known
+      // and the emitted getter would need quoting the fixer does not do.
+      if (
+        node.key.type !== AST_NODE_TYPES.Identifier &&
+        node.key.type !== AST_NODE_TYPES.PrivateIdentifier
+      ) {
+        return;
+      }
+      // `ignoreAsync` means "ignore asynchronous members", not "ignore members
+      // bearing the async keyword": TypeScript does not require the keyword to
+      // return a promise, so `fetchToken(): Promise<string>` is asynchronous
+      // with no keyword written at all (#2154).
+      if (config.ignoreAsync && returnsThenable(node)) return;
+      if ((node as unknown as { override?: boolean }).override) return;
+      if (!fn.body) return;
+      if (isConstrainedByHeritage(node)) return;
+
+      const name = node.key.name;
+      if (ignoredMethods.has(name)) return;
+      // Factory/builder terminal members are imperative actions (issue #990 #4).
+      // Exemption takes precedence over stripPrefixes so names like "build"
+      // are never prefix-stripped into a getter candidate.
+      if (factoryMethods.has(name)) return;
+
+      if (computeBodyLineCount(fn) < config.minBodyLines) {
+        return;
+      }
+
+      if (!returnsValue(node, fn)) return;
+      if (config.respectJsDocSideEffects && hasSideEffectTag(node)) return;
+
+      // A member that throws at the top level is an imperative assertion or
+      // command, not a computed property — getters must be pure/non-throwing.
+      if (containsTopLevelThrow(fn)) return;
+
+      const sideEffectReason = analyzeMutations(fn);
+      const suggestedName = suggestName(name);
+      const sigil =
+        node.key.type === AST_NODE_TYPES.PrivateIdentifier ? '#' : '';
+
+      candidates.push({
+        node,
+        fn,
+        sideEffectReason,
+        memberName: `${sigil}${name}`,
+        getterName: `${sigil}${suggestedName}`,
+        isField,
+      });
+    }
 
     return {
       CallExpression(node: TSESTree.CallExpression) {
@@ -1527,7 +1713,13 @@ export const preferGetterOverParameterlessMethod = createRule<
         }
       },
       MemberExpression(node: TSESTree.MemberExpression) {
-        trackMemberReference(node, callUsedNamesByClass, callUsedNamesInFile);
+        trackMemberReference(
+          node,
+          callUsedNamesByClass,
+          callUsedNamesInFile,
+          detachedNamesByClass,
+          detachedNamesInFile,
+        );
       },
       ChainExpression(node: TSESTree.ChainExpression) {
         if (node.expression.type === AST_NODE_TYPES.MemberExpression) {
@@ -1535,6 +1727,8 @@ export const preferGetterOverParameterlessMethod = createRule<
             node.expression,
             callUsedNamesByClass,
             callUsedNamesInFile,
+            detachedNamesByClass,
+            detachedNamesInFile,
           );
         }
       },
@@ -1545,6 +1739,8 @@ export const preferGetterOverParameterlessMethod = createRule<
             node.init ?? null,
             callUsedNamesByClass,
             callUsedNamesInFile,
+            detachedNamesByClass,
+            detachedNamesInFile,
           );
         }
       },
@@ -1555,6 +1751,23 @@ export const preferGetterOverParameterlessMethod = createRule<
             node.right,
             callUsedNamesByClass,
             callUsedNamesInFile,
+            detachedNamesByClass,
+            detachedNamesInFile,
+          );
+        }
+      },
+      JSXMemberExpression(node: TSESTree.JSXMemberExpression) {
+        // `<this.Panel />` takes the member's function value — JSX invokes the
+        // component itself — but it is a JSXMemberExpression, which the member
+        // trackers never see. A component declared as a field is exactly the
+        // shape a getter would break, so this counts as detachment.
+        const property = node.property;
+        if (property.type === AST_NODE_TYPES.JSXIdentifier) {
+          addCallUse(
+            node,
+            property.name,
+            detachedNamesByClass,
+            detachedNamesInFile,
           );
         }
       },
@@ -1580,69 +1793,42 @@ export const preferGetterOverParameterlessMethod = createRule<
         node: MethodLikeDefinition,
       ) {
         if (node.kind !== 'method') return;
-        if (node.value.params.length > 0) return;
         if (node.value.generator) return;
-        if (node.optional) return;
-        if (node.computed) return;
-        if (node.value.typeParameters) return;
-        // An ECMA private name (`#foo`) is the same privacy as the TypeScript
-        // `private` modifier — and mutually exclusive with it, since `private
-        // #foo` is TS18010 — so it carries a plain, strippable name that the
-        // rule analyzes exactly like an `Identifier` key. Literal, computed and
-        // template keys stay out: their names are not always statically known
-        // and the emitted getter would need quoting the fixer does not do.
-        if (
-          node.key.type !== AST_NODE_TYPES.Identifier &&
-          node.key.type !== AST_NODE_TYPES.PrivateIdentifier
-        ) {
-          return;
-        }
-        // `ignoreAsync` means "ignore asynchronous methods", not "ignore
-        // methods bearing the async keyword": TypeScript does not require the
-        // keyword to return a promise, so `fetchToken(): Promise<string>` is
-        // asynchronous with no keyword written at all (#2154).
-        if (config.ignoreAsync && returnsThenable(node)) return;
         if (
           config.ignoreAbstract &&
           node.type === AST_NODE_TYPES.TSAbstractMethodDefinition
         ) {
           return;
         }
-        if ((node as unknown as { override?: boolean }).override) return;
-        if (!node.value.body) return;
-        if (isConstrainedByHeritage(node)) return;
-
-        const name = node.key.name;
-        if (ignoredMethods.has(name)) return;
-        // Factory/builder terminal methods are imperative actions (issue #990 #4).
-        // Exemption takes precedence over stripPrefixes so names like "build"
-        // are never prefix-stripped into a getter candidate.
-        if (factoryMethods.has(name)) return;
+        // Getters cannot carry overload declarations, so leaving the signatures
+        // in place would produce invalid TypeScript. Only a method can have
+        // them: a field and an overload signature of the same name is not a
+        // legal class body.
         if (hasOverloadSignatures(node)) return;
 
-        const body = node.value.body;
-        if (computeBodyLineCount(body) < config.minBodyLines) {
+        considerMember(node, node.value, false);
+      },
+      'PropertyDefinition, TSAbstractPropertyDefinition'(
+        node: PropertyLikeDefinition,
+      ) {
+        // A field is a member function only when it holds one. Data fields,
+        // `declare` fields and `abstract` declarations hold no function at all,
+        // so they leave here rather than needing a gate of their own.
+        const fn = memberFunctionOf(node);
+        if (!fn) return;
+
+        // `foo = function* () {}` hands back an iterator through a protocol a
+        // getter has no way to express.
+        if (fn.type === AST_NODE_TYPES.FunctionExpression && fn.generator) {
           return;
         }
-
-        if (!returnsValue(node)) return;
-        if (config.respectJsDocSideEffects && hasSideEffectTag(node)) return;
-
-        // A method that throws at the top level is an imperative assertion or
-        // command, not a computed property — getters must be pure/non-throwing.
-        if (containsTopLevelThrow(body)) return;
-
-        const sideEffectReason = analyzeMutations(body);
-        const suggestedName = suggestName(name);
-        const sigil =
-          node.key.type === AST_NODE_TYPES.PrivateIdentifier ? '#' : '';
-
-        candidates.push({
-          node,
-          sideEffectReason,
-          memberName: `${sigil}${name}`,
-          getterName: `${sigil}${suggestedName}`,
-        });
+        if (
+          config.ignoreAbstract &&
+          node.type === AST_NODE_TYPES.TSAbstractPropertyDefinition
+        ) {
+          return;
+        }
+        considerMember(node, fn, true);
       },
       'Program:exit'() {
         const suggestedNameCounts = new WeakMap<
@@ -1653,13 +1839,38 @@ export const preferGetterOverParameterlessMethod = createRule<
         // An ECMA private name is one per-class namespace across both sides of
         // the class, so `static #x` and `#x` collide where `static x` and `x`
         // do not — its bucket must not be split by static-ness.
-        const scopeKeyOf = (node: MethodLikeDefinition, getterName: string) => {
+        const scopeKeyOf = (node: MemberLikeDefinition, getterName: string) => {
           if (isEcmaPrivateName(getterName)) return `private:${getterName}`;
           const side = (node as { static?: boolean }).static ?? false;
           return `${side ? 'static' : 'instance'}:${getterName}`;
         };
 
-        for (const { node, getterName } of candidates) {
+        /**
+         * A field handed around as a function value is the one shape whose
+         * getter remedy is wrong rather than merely unfixable: the caller that
+         * wrote `this.getSnapshot` wants the function, and a getter would run
+         * the body and hand back its result instead. The method arm keeps
+         * reporting such members — its remedy is to convert the member AND its
+         * call sites, which stays available — so this withholding is specific
+         * to the spelling whose purpose is detachment.
+         */
+        const isDetachedField = (candidate: typeof candidates[number]) => {
+          if (!candidate.isField) return false;
+          const classBody = candidate.node.parent;
+          const withinClass =
+            classBody?.type === AST_NODE_TYPES.ClassBody
+              ? detachedNamesByClass
+                  .get(classBody)
+                  ?.has(candidate.memberName) ?? false
+              : false;
+          return withinClass || detachedNamesInFile.has(candidate.memberName);
+        };
+
+        const reportable = candidates.filter(
+          (candidate) => !isDetachedField(candidate),
+        );
+
+        for (const { node, getterName } of reportable) {
           const classBody = node.parent;
           if (!classBody || classBody.type !== AST_NODE_TYPES.ClassBody) {
             continue;
@@ -1674,10 +1885,12 @@ export const preferGetterOverParameterlessMethod = createRule<
 
         for (const {
           node,
+          fn,
           sideEffectReason,
           memberName,
           getterName,
-        } of candidates) {
+          isField,
+        } of reportable) {
           const classBody = node.parent;
           const scopeKey = scopeKeyOf(node, getterName);
 
@@ -1690,11 +1903,10 @@ export const preferGetterOverParameterlessMethod = createRule<
               })
             : null;
 
-          const body = node.value.body;
-          const referencesSuggestedName =
-            body && body.type === AST_NODE_TYPES.BlockStatement
-              ? bodyReferencesThisProperty(body, getterName)
-              : false;
+          const referencesSuggestedName = bodyReferencesThisProperty(
+            fn,
+            getterName,
+          );
 
           const hasCollision = hasNameCollision(node, getterName);
           const isCallUsed =
@@ -1749,6 +1961,14 @@ export const preferGetterOverParameterlessMethod = createRule<
               reason: sideEffectReason ?? 'it returns a value',
             },
             fix:
+              // The field spelling is report-only. Its rewrite must consume the
+              // `= (`…`) =>` and the terminating `;`, reshape a concise body
+              // into a block, and drop a `readonly` modifier a getter cannot
+              // carry — and even done perfectly it turns an own enumerable
+              // per-instance property into a prototype accessor, which changes
+              // `Object.keys(instance)` and object spread. No gate here models
+              // that, so the developer applies it.
+              isField ||
               !isPrivate ||
               sideEffectReason ||
               isThenableReturning ||
