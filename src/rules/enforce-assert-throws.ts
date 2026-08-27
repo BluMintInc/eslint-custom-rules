@@ -74,6 +74,34 @@ function memberDisplayName(member: MemberName): string {
 }
 
 /**
+ * The member name a class field contributes, when the function under inspection is
+ * that field's own initializer. A field-declared helper is the same class member as
+ * its prototype-method spelling, so the assert- contract has to read the same name
+ * from both: deriving nothing here would let `assertFoo() {}` be rewritten to
+ * `assertFoo = () => {}` and escape the check without changing anything the check
+ * judges. The `value` identity test keeps a function nested somewhere inside a
+ * field's initializer — a callback, a wrapped factory — from borrowing the field's
+ * name.
+ *
+ * A computed key evaluates an expression at class-definition time instead of
+ * spelling a member name (`[assertKey] = ...` names a variable, not the member), so
+ * it contributes no name to a naming convention. A `declare` field states a type
+ * with no implementation, so it has no control flow that could throw.
+ */
+function propertyDefinitionMemberName(
+  parent: TSESTree.Node,
+  node: TSESTree.Node,
+): MemberName | null {
+  if (parent.type !== AST_NODE_TYPES.PropertyDefinition) {
+    return null;
+  }
+  if (parent.value !== node || parent.computed || parent.declare) {
+    return null;
+  }
+  return resolveMemberName(parent.key);
+}
+
+/**
  * Whether a member expression's property names an assert helper. The `#` sigil is a
  * privacy marker rather than part of the identifier the naming convention governs,
  * so `this.#assertFoo()` is an assert call exactly as `this.assertFoo()` is.
@@ -764,6 +792,8 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
           parent.id.type === AST_NODE_TYPES.Identifier
         ) {
           member = { name: parent.id.name, isEcmaPrivate: false };
+        } else if (parent) {
+          member = propertyDefinitionMemberName(parent, node);
         }
       }
 
