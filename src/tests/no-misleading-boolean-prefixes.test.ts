@@ -124,6 +124,49 @@ ruleTesterTs.run(
       'const hasItems = (arr?: any[]) => (arr?.length ?? 0) > 0;',
       'const hasItems = (arr?: any[]) => Boolean(arr?.length);',
       'function getItems(arr?: any[]) { return arr?.length; }',
+
+      // A class field holding a function answers the same call site its method
+      // twin does, so the property-arrow spelling is judged by the same
+      // standard — and clears it the same way (#2155).
+      'class C { isReady = (): boolean => false; }',
+      'class C { isReady = () => true; }',
+      'class C { hasItems = (arr: any[]) => arr.length > 0; }',
+      'class C { isTruthy = (x: any) => Boolean(x); }',
+      'class C { isEnabled = function (): boolean { return true; }; }',
+      'class C { public isReady = async (): Promise<boolean> => true; }',
+      'class C { static isReady = (): boolean => false; }',
+      'class C { isUser = (u: unknown): u is { id: number } => !!(u as any)?.id; }',
+      'const C = class { isReady = (): boolean => false; };',
+
+      // A field holding DATA makes no return-value promise, so it is not this
+      // rule's subject however it is named — `enforce-boolean-naming-prefixes`
+      // is the rule that judges a field's value against its name.
+      'class C { isDone = false; }',
+      'class C { isDone = "yes"; }',
+      'class C { hasItems = compute(); }',
+      'class C { isConfig = { a: 1 }; }',
+
+      // Declaration-only fields carry no initializer whose returns could be
+      // read, in each of the three spellings that produce one.
+      'class C { isDone!: () => string; }',
+      'class C { declare isDone: () => string; }',
+      'abstract class C { abstract isDone: () => string; }',
+      'abstract class C { abstract isDone(): string; }',
+
+      // A computed key names an expression rather than the member a caller
+      // writes, and a private name is not reachable from a call site at all, so
+      // neither is a name this rule can hold to a promise.
+      'class C { #isDone = () => "x"; }',
+      'class C { ["isDone"] = () => "x"; }',
+      'class C { [isDone] = () => "x"; }',
+
+      // The name gate runs first for fields too: no boolean prefix, no check.
+      'class C { getStatus = () => "done"; }',
+      'class C { isometricScale = () => 123; }',
+
+      // Pairs with the `prefixes: ['can']` invalid field case on identical
+      // code — the option is the only difference between them.
+      'class C { canRetry = () => "yes"; }',
     ],
     invalid: [
       // Examples from spec
@@ -386,6 +429,131 @@ ruleTesterTs.run(
       {
         code: 'const hasItems = (o) => (o?.a)?.length;',
         errors: [error('hasItems')],
+      },
+
+      // A class member written as a property arrow is the same member as its
+      // method twin — same call site, same boolean promise — so writing `=`
+      // must not silence the rule (#2155). Every modifier the spelling accepts
+      // is pinned, because the class arm used to see none of them.
+      {
+        code: 'class K { isDone = () => "done"; }',
+        errors: [error('isDone')],
+      },
+      {
+        code: 'class K { isDone = () => { return "done"; }; }',
+        errors: [error('isDone')],
+      },
+      {
+        code: 'class K { isDone = (): string => { return "done"; }; }',
+        errors: [error('isDone')],
+      },
+      {
+        code: 'class K { public isDone = () => "done"; }',
+        errors: [error('isDone')],
+      },
+      {
+        code: 'class K { private isDone = () => "done"; }',
+        errors: [error('isDone')],
+      },
+      {
+        code: 'class K { protected isDone = () => "done"; }',
+        errors: [error('isDone')],
+      },
+      {
+        code: 'class K { static isDone = () => "done"; }',
+        errors: [error('isDone')],
+      },
+      {
+        code: 'class K { readonly isDone = () => "done"; }',
+        errors: [error('isDone')],
+      },
+      {
+        code: 'class K { isDone = async () => "done"; }',
+        errors: [error('isDone')],
+      },
+      {
+        code: 'class K { isDone = async (): Promise<string> => "done"; }',
+        errors: [error('isDone')],
+      },
+      {
+        code: 'const K = class { isDone = () => "done"; };',
+        errors: [error('isDone')],
+      },
+
+      // A function expression initializer reaches the same member two ways: by
+      // the field key and by its own `id`. Exactly one report, anchored to the
+      // key, is the contract — a second one would be the double-report
+      // regression this pair exists to catch.
+      {
+        code: 'class K { isDone = function () { return "done"; }; }',
+        errors: [error('isDone')],
+      },
+      {
+        code: 'class K { isDone = function isDone() { return "done"; }; }',
+        errors: [error('isDone')],
+      },
+
+      // Both spellings in one class report once each, which is the symmetry the
+      // fix is for: neither arm may claim the other's member.
+      {
+        code: 'class K { isDone() { return "done"; } isReady = () => "ready"; }',
+        errors: [error('isDone'), error('isReady')],
+      },
+
+      // Every non-boolean return shape the other arms recognize reaches the
+      // field arm through the same shared check.
+      {
+        code: 'class K { hasItems = () => this.items.length; }',
+        errors: [error('hasItems')],
+      },
+      {
+        code: 'class K { isUser = () => ({ id: 1 }); }',
+        errors: [error('isUser')],
+      },
+      {
+        code: 'class K { isUser = () => ({ id: 1 } as const); }',
+        errors: [error('isUser')],
+      },
+      {
+        code: 'class K { hasName = () => `name`; }',
+        errors: [error('hasName')],
+      },
+      {
+        code: 'class K { isNullish = () => null; }',
+        errors: [error('isNullish')],
+      },
+      {
+        code: 'class K { hasNothing = () => undefined; }',
+        errors: [error('hasNothing')],
+      },
+      {
+        code: 'class K { isActive = () => {}; }',
+        errors: [error('isActive')],
+      },
+      {
+        code: 'class K { hasValue = () => { return; }; }',
+        errors: [error('hasValue')],
+      },
+      {
+        code: 'class K { isDone = () => { throw new Error("x"); }; }',
+        errors: [error('isDone')],
+      },
+      {
+        code: 'class K { is_ready = () => 1; }',
+        errors: [error('is_ready')],
+      },
+
+      // The `prefixes` option reaches the field arm too. Identical code to the
+      // corresponding valid case; only the option differs.
+      {
+        code: 'class K { canRetry = () => "yes"; }',
+        options: [{ prefixes: ['can'] }],
+        errors: [
+          {
+            messageId: 'nonBooleanReturn' as const,
+            data: { name: 'canRetry', prefixes: 'can' },
+          },
+        ],
       },
     ],
   },

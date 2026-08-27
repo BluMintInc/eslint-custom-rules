@@ -357,6 +357,32 @@ export const noMisleadingBooleanPrefixes = createRule<Options, MessageIds>({
       // If we can't determine it's non-boolean, do not report to avoid false positives
     }
 
+    /**
+     * Judges a class field only when it holds a function literal.
+     *
+     * Each gate excludes a member that makes no return-value promise, so none of
+     * them is conservatism for its own sake: a data field (`isDone = false`,
+     * `hasItems = compute()`) is a value rather than a callable contract, a
+     * computed key names a variable instead of the member a caller writes, and a
+     * `declare`, definite-assignment or abstract field carries no initializer
+     * whose returns could be read.
+     */
+    function checkClassProperty(
+      node: TSESTree.PropertyDefinition | TSESTree.TSAbstractPropertyDefinition,
+    ) {
+      if (node.computed || node.declare) return;
+      if (node.key.type !== AST_NODE_TYPES.Identifier) return;
+      const value = node.value;
+      if (
+        !value ||
+        (value.type !== AST_NODE_TYPES.FunctionExpression &&
+          value.type !== AST_NODE_TYPES.ArrowFunctionExpression)
+      ) {
+        return;
+      }
+      checkFunctionLike(value, node.key.name, node.key);
+    }
+
     return {
       FunctionDeclaration(node: TSESTree.FunctionDeclaration) {
         if (!node.id) return;
@@ -374,6 +400,11 @@ export const noMisleadingBooleanPrefixes = createRule<Options, MessageIds>({
         // If part of a property or method, let dedicated visitors handle it to avoid duplicates
         if (node.parent?.type === AST_NODE_TYPES.Property) return;
         if (node.parent?.type === AST_NODE_TYPES.MethodDefinition) return;
+        // A named function expression assigned to a class field carries two
+        // names — its own `id` and the field's key — and the field key is the
+        // one every call site writes. Without this bail-out the class-member
+        // arm below and the `node.id` fallback both fire on the same site.
+        if (node.parent?.type === AST_NODE_TYPES.PropertyDefinition) return;
         if (node.id) {
           checkFunctionLike(node, node.id.name, node.id);
         }
@@ -405,6 +436,20 @@ export const noMisleadingBooleanPrefixes = createRule<Options, MessageIds>({
           checkFunctionLike(node.value, node.key.name, node.key);
         }
       },
+      // A class field holding a function is a function everywhere it matters:
+      // `instance.isReady()` reads the same whether the member was written as a
+      // method or as `isReady = () => ...`, so the boolean prefix makes the same
+      // promise to the same call sites. Keying the class arm on `MethodDefinition`
+      // alone let a single `=` silence the rule (#2155), and the bound-property
+      // spelling is what an interface demanding a bound member forces.
+      //
+      // `TSAbstractPropertyDefinition` is registered beside it so the class arm
+      // subscribes to every key a field declaration can parse as, matching the
+      // inverse boolean-naming rule in the same recommended config. An abstract
+      // field parses with no initializer, so the value gate leaves that arm
+      // silent — the key is here to keep the two spellings from drifting apart.
+      PropertyDefinition: checkClassProperty,
+      TSAbstractPropertyDefinition: checkClassProperty,
     };
   },
 });

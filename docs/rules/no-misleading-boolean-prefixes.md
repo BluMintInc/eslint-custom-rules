@@ -59,6 +59,23 @@ function shouldCache() {
 }
 ```
 
+A class member spelled as a field holding a function is a function everywhere it
+matters: `state.isReady()` reads the same whether the member was written as a
+method or as a bound property, so the prefix makes the same promise to the same
+call sites. Both spellings are judged, under every modifier:
+
+```typescript
+class SessionState {
+  isReady = (): string => {
+    return 'ready';
+  };
+
+  public hasItems = async () => {
+    return this.items.length;
+  };
+}
+```
+
 ### Examples of correct code
 
 Boolean prefixes return explicit booleans, or the name drops the prefix.
@@ -97,12 +114,29 @@ function isEnabled() {
 }
 ```
 
+The same holds for the class-field spelling — the remedy is a real boolean or a
+name without the prefix, exactly as it is for a method:
+
+```typescript
+class SessionState {
+  isReady = (): boolean => {
+    return this.ready;
+  };
+
+  public hasItems = async (): Promise<boolean> => {
+    return this.items.length > 0;
+  };
+}
+```
+
 ## Allowed patterns
 
 - Type predicates (e.g., `function isUser(u): u is User { ... }`)
 - Explicit `boolean` return types or `Promise<boolean>` (and unions with `null`/`undefined`/`void`)
 - Obvious boolean expressions: comparisons (`>`, `===`), negations (`!x`, `!!x`), or `Boolean(x)`
 - Assertions declaring a boolean-like type (`value as boolean`, `value satisfies boolean`); an assertion naming any other type — or none, as with `as const` — leaves the asserted expression to decide
+- Class fields that hold a value rather than a function (`isDone = false`, `hasItems = compute()`), and fields with no initializer at all (`declare`, `!:` and `abstract`): there is no return value to judge. A field's own value is the subject of `enforce-boolean-naming-prefixes`
+- Members reached by a computed key (`['isDone'] = () => ...`) or a private name (`#isDone = () => ...`), where the checked name is not the one a call site writes
 
 ## How to fix
 
