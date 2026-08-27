@@ -50,6 +50,7 @@ import {
 } from '../utils/fixtureCorpus';
 import {
   RestrictedBreach,
+  RestrictedProduction,
   restrictedProductionBreaches,
   tokenSignatureOf,
 } from '../utils/restrictedProductions';
@@ -154,6 +155,20 @@ const stats = {
   plantsRejected: 0,
   plantFixes: 0,
   rulesPerturbed: new Set<string>(),
+  // Per-arm, because a single total cannot distinguish "both arms exercised"
+  // from "the arrow arm carried everything and `throw` planted nothing".
+  plantsBuiltByProduction: { arrow: 0, throw: 0 } as Record<
+    RestrictedProduction,
+    number
+  >,
+  plantFixesByProduction: { arrow: 0, throw: 0 } as Record<
+    RestrictedProduction,
+    number
+  >,
+  rulesPerturbedByProduction: {
+    arrow: new Set<string>(),
+    throw: new Set<string>(),
+  } as Record<RestrictedProduction, Set<string>>,
   suggestionsChecked: 0,
 };
 
@@ -171,7 +186,7 @@ for (const [rule, cases] of corpus.byRule) {
 
 const MULTILINE_BLOCK = '/*\n * planted\n */';
 
-type Plant = { kind: string; text: string };
+type Plant = { kind: string; text: string; production: RestrictedProduction };
 
 /**
  * Comment positions that are LEGAL in the input and sit one deletion away from a
@@ -181,6 +196,12 @@ type Plant = { kind: string; text: string };
  * illegal, so no fixer could be blamed for its output. What makes an annotation
  * the right anchor is that it is the only thing separating the comment from the
  * arrow, so the rules that remove one are exactly the rules that can strand it.
+ *
+ * Both productions the detector knows are planted. The `throw` arm anchors on
+ * the statement instead: its restricted gap sits between `throw` and its
+ * argument, so the positions one relocation away are before the statement,
+ * inside the thrown expression, and after it. Without it the `throw` detector
+ * is calibrated over an empty corpus — it can only ever return a false clean.
  */
 export function plantsFor(code: string): Plant[] {
   if (breachesIn(code).length) return [];
@@ -200,9 +221,14 @@ export function plantsFor(code: string): Plant[] {
     return [];
   }
 
-  const insert = (kind: string, at: number) => {
+  const insert = (
+    kind: string,
+    at: number,
+    production: RestrictedProduction,
+  ) => {
     plants.push({
       kind,
+      production,
       text: `${code.slice(0, at)} ${MULTILINE_BLOCK} ${code.slice(at)}`,
     });
   };
@@ -211,6 +237,8 @@ export function plantsFor(code: string): Plant[] {
     if (!node || typeof node !== 'object') return;
     const value = node as Record<string, unknown> & {
       type?: string;
+      range?: [number, number];
+      argument?: { range: [number, number] } | null;
       returnType?: { range: [number, number] };
     };
     if (
@@ -219,9 +247,15 @@ export function plantsFor(code: string): Plant[] {
         value.type === 'FunctionDeclaration') &&
       value.returnType
     ) {
-      insert('BEFORE_ANNOTATION', value.returnType.range[0]);
+      insert('BEFORE_ANNOTATION', value.returnType.range[0], 'arrow');
       // Inside the annotation, which a carrier may re-emit anywhere it likes.
-      insert('INSIDE_ANNOTATION', value.returnType.range[0] + 1);
+      insert('INSIDE_ANNOTATION', value.returnType.range[0] + 1, 'arrow');
+    }
+    if (value.type === 'ThrowStatement' && value.range && value.argument) {
+      insert('BEFORE_THROW', value.range[0], 'throw');
+      // Inside the thrown expression: legal, and a rebuild may re-host it.
+      insert('INSIDE_ARGUMENT', value.argument.range[0] + 1, 'throw');
+      insert('AFTER_ARGUMENT', value.argument.range[1], 'throw');
     }
     for (const [key, child] of Object.entries(value)) {
       if (key === 'parent') continue;
@@ -246,9 +280,17 @@ export function perturbCase(
 
   const rules = { [PREFIX + rule]: severityWithOptions(testCase) };
   // Capped per case, not per rule: one fixture dense in annotations would
-  // otherwise dominate the run without covering another rule.
-  for (const plant of plants.slice(0, 6)) {
+  // otherwise dominate the run without covering another rule. The cap is taken
+  // per PRODUCTION rather than over the flat list — an annotation-dense fixture
+  // would otherwise fill all six slots with `arrow` plants and starve the
+  // `throw` arm back to the empty corpus this plant exists to end.
+  const capped = (['arrow', 'throw'] as RestrictedProduction[]).flatMap(
+    (production) =>
+      plants.filter((plant) => plant.production === production).slice(0, 6),
+  );
+  for (const plant of capped) {
     stats.plantsBuilt++;
+    stats.plantsBuiltByProduction[plant.production]++;
     /**
      * Neutrality is PROVEN, not assumed. A marker landing inside a template
      * literal or JSX text is code, not a comment, and would manufacture a
@@ -265,7 +307,9 @@ export function perturbCase(
     const fixed = fixOf(plant.text, rules, testCase);
     if (!fixed || !fixed.fixed) continue;
     stats.plantFixes++;
+    stats.plantFixesByProduction[plant.production]++;
     stats.rulesPerturbed.add(rule);
+    stats.rulesPerturbedByProduction[plant.production].add(rule);
     const breaches = breachesIn(fixed.output);
     if (breaches.length) {
       into.push({
@@ -536,6 +580,28 @@ describe('the restricted-production guard is load-bearing', () => {
   });
 
   /**
+   * Per-arm floors. The totals above are dominated by `arrow`, so they stay
+   * green even if the `throw` arm plants nothing at all — which is precisely
+   * the state this arm was in before it was planted: a detector unit-tested
+   * against hand-written strings and never run over a fixture, able to return
+   * only a false clean. Each floor sits just under its measured value.
+   */
+  it('drives BOTH restricted productions over a real population', () => {
+    // Measured 177 / 22 / 4 and 2258 / 888 / 25 respectively; each floor sits
+    // just under, so a collapse is caught while ordinary corpus drift is not.
+    expect(stats.plantsBuiltByProduction.throw).toBeGreaterThanOrEqual(150);
+    expect(stats.plantFixesByProduction.throw).toBeGreaterThanOrEqual(18);
+    expect(stats.rulesPerturbedByProduction.throw.size).toBeGreaterThanOrEqual(
+      3,
+    );
+    expect(stats.plantsBuiltByProduction.arrow).toBeGreaterThanOrEqual(2000);
+    expect(stats.plantFixesByProduction.arrow).toBeGreaterThanOrEqual(800);
+    expect(stats.rulesPerturbedByProduction.arrow.size).toBeGreaterThanOrEqual(
+      20,
+    );
+  });
+
+  /**
    * The scope of the checker, re-measured rather than trusted. Five of the seven
    * restricted productions are omitted because the PARSER already rejects them
    * (so every parse-based guard sees them) or applies ASI exactly as V8 does. A
@@ -618,6 +684,7 @@ describe('the restricted-production guard is load-bearing', () => {
    */
   const CONTROL_STRIPPER = 'control-annotation-stripper';
   const CONTROL_INPLACE = 'control-inplace-renamer';
+  const CONTROL_THROW_HOISTER = 'control-throw-comment-hoister';
 
   linter.defineRule(PREFIX + CONTROL_STRIPPER, {
     meta: {
@@ -671,6 +738,67 @@ describe('the restricted-production guard is load-bearing', () => {
     },
   } as never);
 
+  /**
+   * The `throw` arm's own stranding fixer. The arrow control cannot stand in
+   * for it: `arrow` and `throw` are separate detector branches over separate
+   * gaps, so a green arrow control says nothing about whether a `throw` breach
+   * would be seen. This one re-emits the statement with a planted leading
+   * comment hoisted into the gap between `throw` and its argument.
+   */
+  linter.defineRule(PREFIX + CONTROL_THROW_HOISTER, {
+    meta: {
+      type: 'problem',
+      fixable: 'code',
+      schema: [],
+      messages: { m: 'x' },
+    },
+    create(context: never) {
+      const ctx = context as unknown as {
+        report: (d: unknown) => void;
+        getSourceCode: () => {
+          getText: (n?: unknown) => string;
+          getCommentsBefore: (n: unknown) => { type: string; value: string }[];
+        };
+      };
+      const sourceCode = ctx.getSourceCode();
+      return {
+        ThrowStatement(node: never) {
+          const statement = node as unknown as {
+            range: [number, number];
+            argument?: { range: [number, number] } | null;
+          };
+          const argument = statement.argument;
+          if (!argument) return;
+          // Fire only on the still-legal shape, so the FIX creates the breach
+          // rather than the input arriving with one.
+          const gap = sourceCode
+            .getText()
+            .slice(statement.range[0] + 'throw'.length, argument.range[0]);
+          if (gap.includes('\n')) return;
+          const hoistable = sourceCode
+            .getCommentsBefore(node)
+            .find(
+              (comment) =>
+                comment.type === 'Block' && comment.value.includes('\n'),
+            );
+          if (!hoistable) return;
+          const argumentText = sourceCode.getText(argument);
+          ctx.report({
+            node,
+            messageId: 'm',
+            fix: (fixer: {
+              replaceTextRange: (r: unknown, t: string) => unknown;
+            }) =>
+              fixer.replaceTextRange(
+                [statement.range[0], argument.range[1]],
+                `throw /*${hoistable.value}*/ ${argumentText}`,
+              ),
+          });
+        },
+      };
+    },
+  } as never);
+
   const plantedCase = (code: string): FixtureCase =>
     ({
       code,
@@ -701,6 +829,34 @@ describe('the restricted-production guard is load-bearing', () => {
     );
     // A control whose plant never reached a fix would prove nothing.
     expect(stats.plantFixes).toBeGreaterThan(before);
+    expect(found).toEqual([]);
+  });
+
+  it('detects a fixer that strands a comment in the THROW gap (positive control)', () => {
+    const found: Finding[] = [];
+    perturbCase(
+      CONTROL_THROW_HOISTER,
+      plantedCase('function g() {\n  throw new Error("x");\n}\n'),
+      found,
+    );
+    expect(found.length).toBeGreaterThan(0);
+    expect(found[0].breaches[0].production).toBe('throw');
+    // The plant that reached it must be a `throw` plant, not an arrow one that
+    // happened to sit in the same fixture.
+    expect(found[0].plantKind).toBe('BEFORE_THROW');
+  });
+
+  it('stays silent on a throw fixer that edits in place (negative control)', () => {
+    const found: Finding[] = [];
+    const before = stats.plantFixesByProduction.throw;
+    perturbCase(
+      CONTROL_INPLACE,
+      plantedCase('function g() {\n  throw new Error(renameMe);\n}\n'),
+      found,
+    );
+    // Same site set as the positive control, opposite verdict — and it must
+    // actually have reached a fix through the THROW arm specifically.
+    expect(stats.plantFixesByProduction.throw).toBeGreaterThan(before);
     expect(found).toEqual([]);
   });
 
