@@ -760,7 +760,7 @@ export const noUnnecessaryVerbSuffix = createRule<[], MessageIds>({
      * declares conformance to, rather than from its author (#1350).
      */
     function isDictatedByHeritage(
-      node: TSESTree.MethodDefinition,
+      node: TSESTree.MethodDefinition | TSESTree.PropertyDefinition,
       memberName: string,
     ): boolean {
       const classBody = node.parent;
@@ -1061,6 +1061,50 @@ export const noUnnecessaryVerbSuffix = createRule<[], MessageIds>({
             false,
           );
         }
+      },
+      PropertyDefinition(node): void {
+        // A class field holding a function declares the same callable member a
+        // method does — `member = () => {}` and `member() {}` differ by one
+        // token and by nothing this rule judges, since it reads only the
+        // member's name. Without this arm the `=` spelling silences the rule
+        // (#2156), and it is the spelling a class picks whenever a member must
+        // stay bound to its instance.
+        if (
+          node.computed ||
+          // An ambient member declares a type rather than code; its initializer
+          // is not valid TypeScript at all (TS1039), so nothing in it is an
+          // implementation whose name this rule can hold the author to.
+          node.declare ||
+          node.key.type !== AST_NODE_TYPES.Identifier
+        ) {
+          return;
+        }
+
+        // The value gate is what keeps data fields inert: `cachedFor = new
+        // Map()` names a value, not a function, and only a function member is
+        // this rule's subject. A field annotated with a function type but
+        // holding something else is inert for the same reason.
+        const { value } = node;
+        if (
+          !value ||
+          (value.type !== AST_NODE_TYPES.ArrowFunctionExpression &&
+            value.type !== AST_NODE_TYPES.FunctionExpression)
+        ) {
+          return;
+        }
+
+        // A member implementing a contract the class declares conformance to
+        // is named by that contract, so renaming it would break conformance.
+        if (isDictatedByHeritage(node, node.key.name)) {
+          return;
+        }
+
+        // Report-only for the reason the method arm gives: a field arrow is
+        // invoked through `this.x()` / `instance.x()`, member accesses the
+        // scope manager does not track as references, so a single-file fixer
+        // cannot rename the call sites and must not rename the declaration
+        // alone (#1256).
+        checkFunctionName(value, node.key.name, null, null, false);
       },
       TSMethodSignature(node): void {
         // Interface method signatures have their implementations and call sites
