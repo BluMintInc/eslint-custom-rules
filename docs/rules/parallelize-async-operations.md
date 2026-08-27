@@ -369,6 +369,19 @@ A **single** filesystem await raises no ordering question — the resource has t
 
 Classification keys on the **origin** of the callee's root binding, never on the callee's spelling. A project-local helper that happens to be named `writeFile` is not mistaken for the `fs` export of that name, and a renamed import (`import { writeFile as wf }`) is not missed for lacking it. The `node:`-prefixed and bare specifiers name the same module, `graceful-fs` is a drop-in wrapper over it, and `require('fs').promises` is the same load one member deeper — so a file mixing those spellings still touches one resource. A `*Sync` variant performs the same operation as its asynchronous spelling and classifies identically.
 
+Origin is followed **transitively, in every scope**. A binding whose initializer is rooted at another binding already known to reach `fs` reaches it too, so `const fs = require('fs')` followed by `const { rename, writeFile } = fs.promises` — and its ESM spelling `import fs from 'node:fs'` — classifies exactly as the one-statement form does. A nested pattern is read at its leaf (`const { promises: { writeFile } } = require('fs')`), a `require` inside a function or block body binds just as a top-level one does, and a promise combinator chained onto the call (`await writeFile(p, data).catch(handle)`) does not change which operation the call performs. Resolution is lexical and scope-aware, so a local helper declared inside a function keeps its own identity even where the enclosing module imports the `fs` export of the same name — and the reverse, an `fs` binding declared inside a function, is seen even where the module scope spells that name for something else.
+
+```typescript
+import fs from 'node:fs';
+
+const { rename, writeFile } = fs.promises;
+
+export const publish = async (pending: string, path: string) => {
+  await writeFile(pending, 'x');
+  await rename(pending, path);
+};
+```
+
 The read-only set is an **allowlist read fail-safe**: an operation it does not enumerate counts as mutating. The failure directions are not symmetric — misreading a mutation as an observation races a write against its own precondition and ships a silent corruption, whereas misreading an observation as a mutation only declines one parallelization. An `fs` surface this list has never heard of therefore keeps the barrier.
 
 ### ✅ Correct (test files are exempt)

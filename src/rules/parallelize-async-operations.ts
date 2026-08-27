@@ -152,85 +152,249 @@ function requiredModuleSource(node: TSESTree.Node | null): string | null {
 }
 
 /**
- * Every binding in the file's module scope that denotes something loaded from a
- * filesystem module, mapped to the EXPORTED name it denotes when it denotes a
- * single operation (`import { writeFile as wf }` -> `wf` denotes `writeFile`),
- * and to null when it denotes the module object itself (a namespace, default or
- * whole-module `require` binding, whose operation is named at the call site
- * instead).
+ * What a binding that reaches a filesystem module denotes: the EXPORTED name,
+ * when the binding is one operation (`import { writeFile as wf }` -> `wf`
+ * denotes `writeFile`), and null when it is the module OBJECT itself (a
+ * namespace, default or whole-module `require` binding, whose operation is
+ * named at the call site instead).
  *
  * The exported name is what a bare callee is classified by, so a renamed import
  * classifies as the operation it actually calls rather than falling to the
  * mutating default on a name the fs surface never had.
+ */
+type FsBinding = { operation: string | null };
+
+/**
+ * Answers what a use-site identifier denotes, or undefined when it denotes
+ * anything other than a filesystem binding.
  *
- * Resolution is lexical and same-file by design: `RuleTester` runs with no
- * `parserOptions.project`, so a type-aware answer is unavailable exactly where
- * the barrier has to be proven.
+ * Resolution is lexical, same-file and SCOPE-aware by design. `RuleTester` runs
+ * with no `parserOptions.project`, so a type-aware answer is unavailable
+ * exactly where the barrier has to be proven. Scope resolution supplies the one
+ * thing a name-keyed table cannot, which is shadowing: a local helper spelled
+ * `writeFile` inside a file that also imports the fs export of that name
+ * denotes a different variable, and the answer has to differ in BOTH
+ * directions.
+ */
+type FsBindingTable = (
+  identifier: TSESTree.Identifier,
+) => FsBinding | undefined;
+
+/**
+ * Every variable the file declares, in every scope.
+ *
+ * A filesystem binding is not a property of the module scope: a function-scoped
+ * `const { writeFile } = require('node:fs/promises')` reaches the same
+ * filesystem as a top-level one, and scanning only `Program.body` finds no
+ * binding for it at all. (#2167)
+ */
+function allScopeVariables(
+  scopeManager: TSESLint.Scope.ScopeManager | null,
+): TSESLint.Scope.Variable[] {
+  const globalScope = scopeManager?.globalScope;
+  if (!globalScope) {
+    return [];
+  }
+  const variables: TSESLint.Scope.Variable[] = [];
+  const stack: TSESLint.Scope.Scope[] = [globalScope];
+  while (stack.length > 0) {
+    const scope = stack.pop() as TSESLint.Scope.Scope;
+    variables.push(...scope.variables);
+    stack.push(...scope.childScopes);
+  }
+  return variables;
+}
+
+/**
+ * Walks a member chain down to the expression it is rooted at.
+ *
+ * `create` declares its own `getPathRoot` for the same purpose; this one exists
+ * because binding collection runs at module scope, where that closure is out of
+ * reach.
+ */
+function memberChainRoot(node: TSESTree.Node): TSESTree.Node {
+  let root = unwrapWrappers(node);
+  while (root.type === AST_NODE_TYPES.MemberExpression) {
+    root = unwrapWrappers(root.object);
+  }
+  return root;
+}
+
+/**
+ * The operation a destructuring leaf reads out of the container it destructures
+ * (`const { promises: { writeFile } } = fs` -> `writeFile`), and null when the
+ * pattern binds the container itself.
+ *
+ * The leaf's IMMEDIATE property key is the answer at every depth, which is what
+ * lets a nested pattern need no case of its own: that key is the last member a
+ * member-expression spelling of the same access would have carried. Reading the
+ * OUTER pattern instead is what dropped `{ promises: { writeFile } }`. (#2167)
+ *
+ * A computed key names an operation the source does not state, so it falls back
+ * to the module-object answer, under which a bare callee classifies by its
+ * local spelling and takes the mutating default.
+ */
+function destructuredOperation(name: TSESTree.Identifier): string | null {
+  // `const { writeFile = fallback } = fsp` binds through an AssignmentPattern,
+  // which sits between the leaf and the property that names it.
+  const bound: TSESTree.Node =
+    name.parent?.type === AST_NODE_TYPES.AssignmentPattern &&
+    name.parent.left === name
+      ? name.parent
+      : name;
+  const property = bound.parent;
+  if (
+    property?.type !== AST_NODE_TYPES.Property ||
+    property.value !== bound ||
+    property.computed
+  ) {
+    return null;
+  }
+  if (property.key.type === AST_NODE_TYPES.Identifier) {
+    return property.key.name;
+  }
+  return property.key.type === AST_NODE_TYPES.Literal &&
+    typeof property.key.value === 'string'
+    ? property.key.value
+    : null;
+}
+
+/**
+ * Resolves every binding in the file that reaches a filesystem module.
+ *
+ * Collection is a FIXPOINT rather than a single pass, because a binding's
+ * origin can be another binding: `const fs = require('fs')` followed by
+ * `const { rename, writeFile } = fs.promises` roots the second declarator at
+ * the first one rather than at a literal `require` call, so a pass that
+ * re-derives the origin from syntax alone finds no filesystem there. The
+ * spelling is what ESM leaves a consumer with (`import fs from 'node:fs'`),
+ * and losing it withdraws the ordering barrier -- the unsafe direction, since
+ * it fuses a write with the operation whose precondition that write is -- so
+ * the pass repeats until it classifies nothing further. (#2167)
  */
 function collectFsBindings(
-  program: TSESTree.Program,
-): Map<string, string | null> {
-  const bindings = new Map<string, string | null>();
+  scopeManager: TSESLint.Scope.ScopeManager | null,
+): FsBindingTable {
+  const variables = allScopeVariables(scopeManager);
+  const bindings = new Map<TSESLint.Scope.Variable, string | null>();
 
-  const recordPattern = (id: TSESTree.Node): void => {
-    if (id.type === AST_NODE_TYPES.Identifier) {
-      bindings.set(id.name, null);
-      return;
+  // Scope analysis resolves each use site to the variable it reads, which is
+  // what keeps an inner binding from inheriting an outer one's origin.
+  const variableOf = new Map<TSESTree.Node, TSESLint.Scope.Variable>();
+  for (const variable of variables) {
+    for (const reference of variable.references) {
+      variableOf.set(reference.identifier, variable);
     }
-    if (id.type !== AST_NODE_TYPES.ObjectPattern) {
-      return;
+  }
+
+  const lookup: FsBindingTable = (identifier) => {
+    const variable = variableOf.get(identifier);
+    if (!variable || !bindings.has(variable)) {
+      return undefined;
     }
-    for (const property of id.properties) {
-      if (
-        property.type !== AST_NODE_TYPES.Property ||
-        property.computed ||
-        property.key.type !== AST_NODE_TYPES.Identifier
-      ) {
-        continue;
-      }
-      const local = property.value;
-      if (local.type === AST_NODE_TYPES.Identifier) {
-        bindings.set(local.name, property.key.name);
-      }
-    }
+    return { operation: bindings.get(variable) ?? null };
   };
 
-  for (const statement of program.body) {
-    const declaration =
-      statement.type === AST_NODE_TYPES.ExportNamedDeclaration &&
-      statement.declaration
-        ? statement.declaration
-        : statement;
+  const importedBinding = (
+    definition: TSESLint.Scope.Definition,
+  ): FsBinding | undefined => {
+    if (definition.type !== TSESLint.Scope.DefinitionType.ImportBinding) {
+      return undefined;
+    }
+    const { node } = definition;
+    if (node.type === AST_NODE_TYPES.TSImportEqualsDeclaration) {
+      // `import fs = require('fs')` binds the module object through a
+      // declaration of its own rather than through a specifier.
+      const { moduleReference } = node;
+      const source =
+        moduleReference.type === AST_NODE_TYPES.TSExternalModuleReference &&
+        moduleReference.expression.type === AST_NODE_TYPES.Literal &&
+        typeof moduleReference.expression.value === 'string'
+          ? moduleReference.expression.value
+          : null;
+      return source !== null && FS_MODULE_SOURCES.has(source)
+        ? { operation: null }
+        : undefined;
+    }
+    const declaration = definition.parent;
+    if (
+      declaration?.type !== AST_NODE_TYPES.ImportDeclaration ||
+      !FS_MODULE_SOURCES.has(declaration.source.value)
+    ) {
+      return undefined;
+    }
+    // A namespace or default specifier binds the module OBJECT, whose operation
+    // is named at the call site, so it records no exported name.
+    return {
+      operation:
+        node.type === AST_NODE_TYPES.ImportSpecifier
+          ? node.imported.name
+          : null,
+    };
+  };
 
-    if (declaration.type === AST_NODE_TYPES.ImportDeclaration) {
-      if (!FS_MODULE_SOURCES.has(declaration.source.value)) {
-        continue;
-      }
-      for (const specifier of declaration.specifiers) {
-        // A namespace or default specifier binds the module OBJECT, whose
-        // operation is named at the call site, so it records no exported name.
-        bindings.set(
-          specifier.local.name,
-          specifier.type === AST_NODE_TYPES.ImportSpecifier
-            ? specifier.imported.name
-            : null,
-        );
-      }
-      continue;
+  const declaredBinding = (
+    definition: TSESLint.Scope.Definition,
+  ): FsBinding | undefined => {
+    if (definition.type !== TSESLint.Scope.DefinitionType.Variable) {
+      return undefined;
+    }
+    const { init, id } = definition.node;
+    if (!init) {
+      return undefined;
     }
 
-    if (declaration.type === AST_NODE_TYPES.VariableDeclaration) {
-      for (const declarator of declaration.declarations) {
-        const source = requiredModuleSource(declarator.init);
-        if (source && FS_MODULE_SOURCES.has(source)) {
-          recordPattern(declarator.id);
+    const source = requiredModuleSource(init);
+    if (source !== null && FS_MODULE_SOURCES.has(source)) {
+      return { operation: destructuredOperation(definition.name) };
+    }
+
+    const root = memberChainRoot(init);
+    if (root.type !== AST_NODE_TYPES.Identifier) {
+      return undefined;
+    }
+    const rooted = lookup(root);
+    if (!rooted) {
+      return undefined;
+    }
+    // A bare alias (`const wf = writeFile`) denotes exactly what it aliases, so
+    // it carries that classification over rather than taking the module-object
+    // answer a member access leaves behind.
+    return unwrapWrappers(init) === root && definition.name === id
+      ? rooted
+      : { operation: destructuredOperation(definition.name) };
+  };
+
+  let classified = true;
+  while (classified) {
+    classified = false;
+    for (const variable of variables) {
+      if (bindings.has(variable)) {
+        continue;
+      }
+      for (const definition of variable.defs) {
+        const binding =
+          importedBinding(definition) ?? declaredBinding(definition);
+        if (!binding) {
+          continue;
         }
+        bindings.set(variable, binding.operation);
+        classified = true;
+        break;
       }
     }
   }
 
-  return bindings;
+  return lookup;
 }
+
+/**
+ * The promise combinators a call can be chained with without changing WHICH
+ * operation it performs. `writeFile(pending, data).catch(handle)` writes the
+ * same file the bare call does, so the chain is stripped before the callee is
+ * rooted. (#2167)
+ */
+const PROMISE_CHAIN_METHODS = new Set(['then', 'catch', 'finally']);
 
 /**
  * Matches prettier's own default. The autofix authors a whole statement a
@@ -474,15 +638,14 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
 
     const sourceCode = context.sourceCode;
 
-    // The file's filesystem bindings are a property of its module scope, not of
-    // any one run, so they are resolved once per file and reused by every
+    // The file's filesystem bindings are a property of the file's scopes, not
+    // of any one run, so they are resolved once per file and reused by every
     // candidate run the traversal reaches.
-    let fsBindings: Map<string, string | null> | null = null;
-    const getFsBindings = () => {
-      if (fsBindings === null) {
-        fsBindings = collectFsBindings(sourceCode.ast);
-      }
-      return fsBindings;
+    let fsBindings: FsBindingTable | null = null;
+    const getFsBindings = (): FsBindingTable => {
+      const resolved = fsBindings ?? collectFsBindings(sourceCode.scopeManager);
+      fsBindings = resolved;
+      return resolved;
     };
     // The width the autofix lays the rewritten statement out against. It lives
     // in the consumer's formatter configuration, which no rule context carries,
@@ -1901,6 +2064,40 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
     }
 
     /**
+     * Strips the promise combinators a chained call is wrapped in, so the call
+     * UNDERNEATH is what gets classified.
+     *
+     * `await writeFile(pending, data).catch(handle)` performs exactly the write
+     * the bare spelling does. Rooting the outer callee walks to the inner CALL
+     * rather than to a binding, which names no filesystem operation at all and
+     * withdraws the ordering barrier -- the unsafe direction -- so the receiver
+     * of a `then`/`catch`/`finally` is unwrapped before the callee is rooted.
+     * (#2167)
+     */
+    function unwrapPromiseChain(node: TSESTree.Node): TSESTree.Node {
+      let current = unwrapExpression(node);
+      while (current.type === AST_NODE_TYPES.CallExpression) {
+        const callee = unwrapExpression(current.callee);
+        if (callee.type !== AST_NODE_TYPES.MemberExpression) {
+          break;
+        }
+        const { property } = callee;
+        const method =
+          !callee.computed && property.type === AST_NODE_TYPES.Identifier
+            ? property.name
+            : property.type === AST_NODE_TYPES.Literal &&
+              typeof property.value === 'string'
+            ? property.value
+            : null;
+        if (method === null || !PROMISE_CHAIN_METHODS.has(method)) {
+          break;
+        }
+        current = unwrapExpression(callee.object);
+      }
+      return current;
+    }
+
+    /**
      * Names the filesystem operation an await performs, or null when the await
      * does not reach the filesystem through a binding this file declares.
      *
@@ -1919,7 +2116,7 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
     function getFsOperationName(
       awaitExpr: TSESTree.AwaitExpression,
     ): string | null {
-      const argument = unwrapExpression(awaitExpr.argument);
+      const argument = unwrapPromiseChain(awaitExpr.argument);
       if (argument.type !== AST_NODE_TYPES.CallExpression) {
         return null;
       }
@@ -1930,8 +2127,8 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
         return null;
       }
 
-      const bindings = getFsBindings();
-      if (!bindings.has(root.name)) {
+      const binding = getFsBindings()(root);
+      if (!binding) {
         return null;
       }
 
@@ -1949,7 +2146,7 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
         return '';
       }
 
-      return bindings.get(root.name) ?? root.name;
+      return binding.operation ?? root.name;
     }
 
     /**
