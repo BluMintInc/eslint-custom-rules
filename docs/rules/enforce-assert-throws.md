@@ -11,6 +11,7 @@ Assert-prefixed helpers are meant to be fail-fast guards: they signal invariants
 - Assert-prefixed functions must throw an error, call `process.exit(1)`, or delegate to another assert helper to stop execution on failure.
 - Any function that calls an assert-prefixed helper must itself use the `assert-` prefix to communicate that it can terminate execution.
 - A class member is checked by its name alone, whichever way its privacy is spelled. `#assertFoo`, `private assertFoo` and a public `assertFoo` are all assert helpers, and `this.#assertFoo()` counts as calling one: the `#` sigil marks privacy, not the name. A `#` member is reported under the name as written (`#assertFoo`), which keeps it distinct from a sibling of the same name.
+- A member is also checked by its name alone whichever way the member itself is spelled. `assertFoo = () => {}` and `assertFoo = async function () {}` declare the same member as `assertFoo() {}`, so writing `=` in front of it changes nothing this rule judges: the assert- contract is about the control flow a caller of `this.assertFoo()` can expect, which reads the same whether the function sits on the prototype or on the instance. A key with no static name is checked in neither spelling — a computed key (`[key] = () => {}`) names an expression rather than a member, and a `declare` field states a type with no body to inspect.
 
 ### Examples of **incorrect** code for this rule:
 
@@ -55,6 +56,26 @@ class SessionManager {
 }
 ```
 
+```typescript
+class SessionManager {
+  assertSessionActive = (id: string) => {
+    return this.checkAuth(id); // A field holding the function is the same member as a method.
+  };
+}
+```
+
+```typescript
+class SessionManager {
+  public endSession = async (id: string) => {
+    this.assertSessionActive(id); // Calls an assert helper without the assert- prefix.
+  };
+
+  assertSessionActive(id: string) {
+    throw new Error('Session is not active');
+  }
+}
+```
+
 ### Examples of **correct** code for this rule:
 
 ```typescript
@@ -94,6 +115,20 @@ class SessionManager {
   #assertKnownSession(id: string) {
     throw new Error('Unknown session');
   }
+}
+```
+
+```typescript
+class SessionManager {
+  assertSessionActive = (id: string) => {
+    if (!this.checkAuth(id)) {
+      throw new Error('Session is not active');
+    }
+  };
+
+  endSession = (id: string) => {
+    this.close(id); // Invokes no assert helper, so no assert- prefix is needed.
+  };
 }
 ```
 
