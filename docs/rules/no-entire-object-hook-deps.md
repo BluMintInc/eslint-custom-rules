@@ -30,6 +30,14 @@ Such a member is a reference to the **prototype's** function, which is one share
 
 A **function-valued data property** is different and still narrows. `userData.getName`, where the type is `{ getName?: () => string }`, is per-instance state: it genuinely changes when the object carrying it is rebuilt, so depending on it is both narrower and correct.
 
+### A ref keeps the whole object
+
+A React ref is the one dependency a hook is meant to list whole, so a dependency whose **every** read inside the hook body goes through `.current` is left alone.
+
+React fills `ref.current` during commit, after the render that evaluated the dependency array, so `[ref.current]` pins a value the renderer has not written yet and the hook never re-runs when it later does — a mount-time registration effect written against it registers nothing at all. `react-hooks/exhaustive-deps` rejects that array for the same reason ("Mutable values like `ref.current` aren't valid dependencies because mutating them doesn't re-render the component"), so emitting it would put the two rules in direct contradiction. The narrowing this rule exists for has no target here either: it trades a whole object for the fields you read because the object's **other** properties would rerun the hook needlessly, and a ref object has no other property.
+
+The shape decides, not the type, so a ref reaching a hook through a prop type no program can resolve is covered too. `ref['current']` names the same slot as `ref.current` and counts the same, and a chain rooted there (`ref.current.scrollTop`) is the same read one link deeper. A **second property** on the same value proves it is an ordinary object: `obj.current` alongside `obj.other` narrows to `obj.current, obj.other` exactly as before.
+
 ### Guarded paths stop at the guard
 
 A dependency array is an array literal, so **every element is evaluated eagerly on every render** — outside the `if`, the `&&`, the ternary, the `instanceof` or the `!` assertion that made a deep access safe inside the hook body, and on renders where the memo is reused and the body never runs. A dependency path therefore stops at any link whose dereferenceability only a guard established:
@@ -219,6 +227,24 @@ function Stamp({ userData }: { userData: { date?: Date } }) {
 }
 ```
 
+`elementRef.current` is written by React during commit, so the array must depend on the ref object itself. Narrowing it would leave the effect reading `null` on mount and never re-running:
+
+```typescript
+function useScrollReset({
+  elementRef,
+}: {
+  elementRef: RefObject<HTMLElement>;
+}) {
+  useEffect(() => {
+    const element = elementRef.current;
+    if (!element) {
+      return;
+    }
+    element.scrollTop = 0;
+  }, [elementRef]);
+}
+```
+
 ## Auto-fix
 
 - Rewrites your dependency arrays to list the specific fields your hook reads.
@@ -226,6 +252,7 @@ function Stamp({ userData }: { userData: { date?: Date } }) {
 - Removes dependencies you keep in a `useMemo`/`useCallback` array but never use.
 - Removes an unread `useEffect` dependency only when the effect also calls its corresponding setter, so deliberate re-run triggers survive `--fix`.
 - Never removes an entry from an array you manage by hand with a `react-hooks/exhaustive-deps` suppression, on any of the three hooks.
+- Never narrows a dependency read only through `.current`, so `--fix` cannot emit the `[ref.current]` array that `react-hooks/exhaustive-deps` rejects.
 
 ## Quoting in the emitted dependency
 

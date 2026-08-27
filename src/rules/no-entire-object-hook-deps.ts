@@ -663,6 +663,119 @@ function callsCorrespondingSetter(
   return visit(hookBody);
 }
 
+/**
+ * The single property a member expression reads, or null when the key is
+ * dynamic.
+ *
+ * A literal string key is the same read as the dotted spelling — `ref['current']`
+ * and `ref.current` reach the identical slot — so both answer with the name.
+ */
+function staticPropertyName(node: TSESTree.MemberExpression): string | null {
+  if (!node.computed) {
+    return node.property.type === AST_NODE_TYPES.Identifier
+      ? node.property.name
+      : null;
+  }
+  return node.property.type === AST_NODE_TYPES.Literal &&
+    typeof node.property.value === 'string'
+    ? node.property.value
+    : null;
+}
+
+/** The one property a React ref object carries. */
+const REF_PROPERTY = 'current';
+
+/**
+ * Whether every read of `objectName` inside the hook body goes through
+ * `.current` — the syntactic signature of a React ref object.
+ *
+ * why: a ref is the one dependency a hook is meant to list whole. React writes
+ * `ref.current` during commit, after the render that evaluated the dependency
+ * array, so narrowing `[ref]` to `[ref.current]` pins the value the renderer
+ * has not written yet and the hook never re-runs when it later does — the
+ * mount-time registration effect silently registers nothing. React's own
+ * `react-hooks/exhaustive-deps` rejects that narrowed array outright ("Mutable
+ * values like 'ref.current' aren't valid dependencies"), so emitting it puts
+ * two recommended rules in direct contradiction and `--fix` oscillates between
+ * them (#2170).
+ *
+ * The rule's motivation also lapses here: it warns that a sibling property
+ * changing re-runs the hook needlessly, and a ref object has no sibling
+ * property. Recognising the ref by its access shape rather than by its type
+ * covers a ref arriving through a prop type no program can resolve, which is
+ * the shape the `RuleTester` and every untyped consumer actually see.
+ *
+ * A chain rooted at `.current` (`ref.current.scrollTop`) counts as a ref read:
+ * every link past the first is reachable only once the commit has populated the
+ * ref, so narrowing there is the same defect one link deeper — and it would
+ * additionally throw when the array dereferences a null `current` on the first
+ * render.
+ */
+function readsObjectOnlyAsRef(
+  hookBody: TSESTree.Node,
+  objectName: string,
+): boolean {
+  const visited = new Set<TSESTree.Node>();
+  let readsCurrent = false;
+  let readsAnythingElse = false;
+
+  function visit(node: TSESTree.Node): void {
+    if (!node || visited.has(node) || readsAnythingElse) return;
+    visited.add(node);
+
+    if (node.type === AST_NODE_TYPES.Identifier && node.name === objectName) {
+      // The wrappers that can sit between the identifier and the access it
+      // belongs to — `(ref as RefObject<T>).current`, `ref!.current`,
+      // `ref?.current` — are skipped so the read is attributed to its real
+      // context, exactly as the usage collector does.
+      let wrapperNode: TSESTree.Node = node;
+      let effectiveParent = node.parent;
+      while (
+        effectiveParent &&
+        (effectiveParent.type === AST_NODE_TYPES.TSAsExpression ||
+          effectiveParent.type === AST_NODE_TYPES.TSTypeAssertion ||
+          effectiveParent.type === AST_NODE_TYPES.ChainExpression ||
+          effectiveParent.type === AST_NODE_TYPES.TSNonNullExpression)
+      ) {
+        wrapperNode = effectiveParent;
+        effectiveParent = effectiveParent.parent;
+      }
+
+      // `other.objectName` and `{ objectName: value }` name a different slot
+      // and a label respectively, so neither is a read of this dependency.
+      const isMemberProperty =
+        effectiveParent?.type === AST_NODE_TYPES.MemberExpression &&
+        effectiveParent.property === wrapperNode &&
+        !effectiveParent.computed;
+      const isPropertyKey =
+        effectiveParent?.type === AST_NODE_TYPES.Property &&
+        effectiveParent.key === wrapperNode &&
+        !effectiveParent.computed &&
+        !effectiveParent.shorthand;
+
+      if (!isMemberProperty && !isPropertyKey) {
+        if (
+          effectiveParent?.type === AST_NODE_TYPES.MemberExpression &&
+          effectiveParent.object === wrapperNode &&
+          staticPropertyName(effectiveParent) === REF_PROPERTY
+        ) {
+          readsCurrent = true;
+        } else {
+          // Any other read — a second property, a bare reference handed to a
+          // call, a spread — proves the value is not a ref, so the ordinary
+          // narrowing applies.
+          readsAnythingElse = true;
+        }
+      }
+    }
+
+    forEachChildNode(node, visit);
+  }
+
+  visit(hookBody);
+  return readsCurrent && !readsAnythingElse;
+}
+
 function getObjectUsagesInHook(
   hookBody: TSESTree.Node,
   objectName: string,
@@ -1546,6 +1659,13 @@ export const noEntireObjectHookDeps = createRule<[], MessageIds>({
             // If we found specific field usages and the entire object is in deps
             // Skip reporting if needsEntireObject is true (indicates spread operator usage)
             else if (result.usages.size > 0 && !result.needsEntireObject) {
+              // A ref object has no narrowing target: `[ref.current]` reads a
+              // slot React fills after the render that evaluated the array, so
+              // the whole ref is the correct dependency (#2170).
+              if (readsObjectOnlyAsRef(callbackBody, objectName)) {
+                return;
+              }
+
               const fields = Array.from(result.usages).join(', ');
               context.report({
                 node: element as TSESTree.Node,
