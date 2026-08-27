@@ -3925,6 +3925,13 @@ function rendersEveryReturn(node: FunctionNode): boolean {
  * written: `() => useThing()` reports while `() => { return useThing(); }` and
  * `() => wrap(useThing())` — strictly more code, identical meaning — do not
  * (#2169). `rendersEveryReturn` carries the same concise-body arm.
+ *
+ * The handed node needs the scope boundary applied to it for the same reason:
+ * `forEachNodeInOwnScope` tests only children, so a concise body that is itself
+ * a function is descended into and its hooks credited to the enclosing
+ * function. `() => () => useThing()` calls no hook — the hook belongs to the
+ * returned function — yet stayed exempt while both longer spellings of it
+ * reported (#2171).
  */
 function callsReactHook(node: FunctionNode): boolean {
   let found = false;
@@ -3938,6 +3945,9 @@ function callsReactHook(node: FunctionNode): boolean {
 
   if (node.body.type !== AST_NODE_TYPES.BlockStatement) {
     recordHookCall(node.body);
+    if (FUNCTION_LIKE_TYPES.has(node.body.type)) {
+      return found;
+    }
   }
   forEachNodeInOwnScope(node.body, recordHookCall);
   return found;
