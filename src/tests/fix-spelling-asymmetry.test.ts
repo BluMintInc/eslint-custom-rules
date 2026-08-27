@@ -1046,12 +1046,6 @@ const FIX_UNDRIVEN: Record<string, UndrivenCause> = {
   'no-unpinned-dependencies': 'noTsFixture',
   'omit-index-html': 'noRespelling',
   'prefer-fragment-shorthand': 'noRespelling',
-  // All 104 function expressions in its fixtures are class method shorthand —
-  // the shape the rule is ABOUT — and a class method has no arrow-valued
-  // spelling, so `funcExpression->arrow` declines every one of them by name
-  // rather than discarding them as unparsable (#1870). With no other
-  // respellable site, the entry rests on the corpus, not on a harness defect.
-  'prefer-getter-over-parameterless-method': 'noRespelling',
   'prefer-params-over-parent-id': 'noFixInComparedPair',
   'sync-onwrite-name-func': 'noRespelling',
   'use-custom-link': 'noRespelling',
@@ -1096,7 +1090,6 @@ const DETECTION_UNDRIVEN: Record<string, UndrivenCause> = {
   'no-unpinned-dependencies': 'noTsFixture',
   'omit-index-html': 'noRespelling',
   'prefer-fragment-shorthand': 'noRespelling',
-  'prefer-getter-over-parameterless-method': 'noRespelling',
   'prefer-use-theme': 'silentOnComparedPairs',
   'require-https-error-cause': 'silentOnComparedPairs',
   'sync-onwrite-name-func': 'noRespelling',

@@ -488,6 +488,302 @@ ruleTesterTs.run(
         *#computeParts(): Generator<string> { yield 'x'; }
       }
       `,
+
+      /** Explicit Promise return annotation, no async keyword. */
+      `
+      class A {
+        fetchToken(): Promise<string> {
+          return Promise.resolve('x');
+        }
+      }
+      `,
+      /** Promise returned through a call, no annotation and no async keyword. */
+      `
+      class Session {
+        private evaluate(): Promise<string> { return Promise.resolve('x'); }
+        readEpoch() {
+          return this.evaluate();
+        }
+      }
+      `,
+      /** PromiseLike, which is thenable without being a Promise. */
+      `
+      class D {
+        load(): PromiseLike<number> {
+          return Promise.resolve(1);
+        }
+      }
+      `,
+      /** The private shape the autofix currently rewrites into a getter. */
+      `
+      class E {
+        private readEpoch(): Promise<string> {
+          return Promise.resolve('x');
+        }
+      }
+      `,
+
+      // A qualified thenable name is the same type: the rightmost segment is
+      // what names it.
+      `
+      class Qualified {
+        fetchToken(): globalThis.Promise<string> {
+          return Promise.resolve('x');
+        }
+      }
+      `,
+      `
+      class Vendored {
+        fetchToken(): bluebird.Promise<string> {
+          return Promise.resolve('x');
+        }
+      }
+      `,
+
+      // A container holding a thenable is still awaited at the call site.
+      `
+      class Optional {
+        fetchToken(): Promise<string> | undefined {
+          return Promise.resolve('x');
+        }
+      }
+      `,
+      `
+      class Branded {
+        fetchToken(): Promise<string> & { tag: 'token' } {
+          return Promise.resolve('x') as Promise<string> & { tag: 'token' };
+        }
+      }
+      `,
+
+      // Body route: every `Promise` static producer, with no annotation.
+      `
+      class Producers {
+        fetchAll() {
+          return Promise.all([Promise.resolve(1)]);
+        }
+      }
+      `,
+      `
+      class Settled {
+        fetchSettled() {
+          return Promise.allSettled([Promise.resolve(1)]);
+        }
+      }
+      `,
+      `
+      class Raced {
+        fetchFirst() {
+          return Promise.race([Promise.resolve(1)]);
+        }
+      }
+      `,
+      `
+      class Anyed {
+        fetchAny() {
+          return Promise.any([Promise.resolve(1)]);
+        }
+      }
+      `,
+      `
+      class Rejected {
+        fetchFailure() {
+          return Promise.reject(new Error('nope'));
+        }
+      }
+      `,
+      `
+      class QualifiedProducer {
+        fetchToken() {
+          return globalThis.Promise.resolve('x');
+        }
+      }
+      `,
+
+      // Body route: a `.then`/`.catch`/`.finally` chain is thenable by
+      // definition.
+      `
+      class Chained {
+        private evaluate(): Promise<string> { return Promise.resolve('x'); }
+        readEpoch() {
+          return this.evaluate().then((value) => value.length);
+        }
+      }
+      `,
+      `
+      class Recovered {
+        private evaluate(): Promise<string> { return Promise.resolve('x'); }
+        readEpoch() {
+          return this.evaluate().catch(() => 'fallback');
+        }
+      }
+      `,
+
+      // Body route: the sibling is an `async` method carrying no annotation.
+      `
+      class AsyncSibling {
+        private async evaluate() { return 'x'; }
+        readEpoch() {
+          return this.evaluate();
+        }
+      }
+      `,
+
+      // Body route: the sibling is an ECMA-private promise-returning method.
+      `
+      class EcmaPrivateSibling {
+        #evaluate(): Promise<string> { return Promise.resolve('x'); }
+        readEpoch() {
+          return this.#evaluate();
+        }
+      }
+      `,
+
+      // Body route: the sibling is a promise-valued FIELD, read without a call.
+      `
+      class PendingField {
+        private pending: Promise<string> = Promise.resolve('x');
+        readEpoch() {
+          return this.pending;
+        }
+      }
+      `,
+
+      // Body route: the sibling is a function-valued field, called.
+      `
+      class ArrowSibling {
+        private evaluate = async () => 'x';
+        readEpoch() {
+          return this.evaluate();
+        }
+      }
+      `,
+      `
+      class TypedArrowSibling {
+        private evaluate!: () => Promise<string>;
+        readEpoch() {
+          return this.evaluate();
+        }
+      }
+      `,
+
+      // Body route: the sibling is a promise-returning getter, read as one.
+      `
+      class GetterSibling {
+        private get pending(): Promise<string> { return Promise.resolve('x'); }
+        readEpoch() {
+          return this.pending;
+        }
+      }
+      `,
+
+      // Body route: combinators that pass a value straight through.
+      `
+      class Asserted {
+        private evaluate(): Promise<string> { return Promise.resolve('x'); }
+        readEpoch() {
+          return this.evaluate() as Promise<string>;
+        }
+      }
+      `,
+      `
+      class Coalesced {
+        private cached?: Promise<string>;
+        private evaluate(): Promise<string> { return Promise.resolve('x'); }
+        readEpoch() {
+          return this.cached ?? this.evaluate();
+        }
+      }
+      `,
+      `
+      class Branched {
+        private evaluate(): Promise<string> { return Promise.resolve('x'); }
+        readEpoch() {
+          return this.ready ? this.evaluate() : Promise.resolve('x');
+        }
+      }
+      `,
+
+      // The sibling carries NO annotation, so its own body has to be read. This
+      // is the shape `eslint --fix` leaves behind after `no-explicit-return-type`
+      // strips `: Promise<string>` off the sibling: an exemption only an
+      // annotation can carry does not survive the config's own fixers.
+      `
+      class StrippedSibling {
+        private evaluate() { return Promise.resolve('x'); }
+        readEpoch() {
+          return this.evaluate();
+        }
+      }
+      `,
+      `
+      class StrippedGetterSibling {
+        private get pending() { return Promise.resolve('x'); }
+        readEpoch() {
+          return this.pending;
+        }
+      }
+      `,
+
+      // An un-annotated promise-valued field is thenable on its own evidence.
+      `
+      class UntypedPendingField {
+        private pending = Promise.resolve('x');
+        readEpoch() {
+          return this.pending;
+        }
+      }
+      `,
+
+      // The resolution chains: neither hop carries an annotation.
+      `
+      class TwoHops {
+        private evaluate() { return Promise.resolve('x'); }
+        private relay() { return this.evaluate(); }
+        readEpoch() {
+          return this.relay();
+        }
+      }
+      `,
+
+      // An optional call is a ChainExpression wrapping the call, so the chain
+      // wrapper has to be unwrapped before the callee can be read.
+      `
+      class OptionallyChained {
+        private evaluate?: () => Promise<string>;
+        readEpoch() {
+          return this.evaluate?.();
+        }
+      }
+      `,
+
+      // `await` in the returned position means the method hands back a promise.
+      // TypeScript rejects the missing `async` keyword (TS1308) while the parser
+      // still yields an `AwaitExpression`, and treating a half-written method as
+      // asynchronous is the safe reading: the alternative prescribes a getter
+      // rewrite the moment the keyword is typed.
+      `
+      class HalfWritten {
+        private evaluate(): Promise<string> { return Promise.resolve('x'); }
+        readEpoch() {
+          return await this.evaluate();
+        }
+      }
+      `,
+
+      // Only ONE returned expression has to be thenable for the method to hand
+      // back a promise.
+      `
+      class MixedReturns {
+        private evaluate(): Promise<string> { return Promise.resolve('x'); }
+        readEpoch() {
+          if (this.ready) {
+            return 'cached';
+          }
+          return this.evaluate();
+        }
+      }
+      `,
     ],
     invalid: [
       {
@@ -1902,6 +2198,171 @@ ruleTesterTs.run(
               name: '#computeFingerprint',
               suggestedName: '#fingerprint',
             },
+          },
+        ],
+      },
+
+      // The thenable exemption must not swallow a genuinely synchronous method
+      // that merely SITS BESIDE a promise-returning one. Only `evaluate` is
+      // asynchronous here; `computeLabel` returns a plain string and is still a
+      // getter candidate, fix included.
+      {
+        code: [
+          'class Session {',
+          "  private evaluate(): Promise<string> { return Promise.resolve('x'); }",
+          '  private computeLabel(): string {',
+          "    return 'epoch';",
+          '  }',
+          '}',
+        ].join('\n'),
+        output: [
+          'class Session {',
+          "  private evaluate(): Promise<string> { return Promise.resolve('x'); }",
+          '  private get label(): string {',
+          "    return 'epoch';",
+          '  }',
+          '}',
+        ].join('\n'),
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: { name: 'computeLabel', suggestedName: 'label' },
+          },
+        ],
+      },
+
+      // Reading a promise-returning sibling WITHOUT calling it yields the
+      // function object, not a thenable, so the method stays reportable. This
+      // pins the call/read distinction the sibling lookup makes.
+      {
+        code: [
+          'class Session {',
+          "  private evaluate(): Promise<string> { return Promise.resolve('x'); }",
+          '  private computeRunner() {',
+          '    return this.evaluate;',
+          '  }',
+          '}',
+        ].join('\n'),
+        output: [
+          'class Session {',
+          "  private evaluate(): Promise<string> { return Promise.resolve('x'); }",
+          '  private get runner() {',
+          '    return this.evaluate;',
+          '  }',
+          '}',
+        ].join('\n'),
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: { name: 'computeRunner', suggestedName: 'runner' },
+          },
+        ],
+      },
+
+      // A promise produced inside a NESTED function is that callback's result,
+      // not the method's, so the method still returns a plain string.
+      {
+        code: [
+          'class Runner {',
+          '  private computeLabel() {',
+          '    const later = async () => {',
+          "      return Promise.resolve('x');",
+          '    };',
+          '    void later;',
+          "    return 'label';",
+          '  }',
+          '}',
+        ].join('\n'),
+        output: [
+          'class Runner {',
+          '  private get label() {',
+          '    const later = async () => {',
+          "      return Promise.resolve('x');",
+          '    };',
+          '    void later;',
+          "    return 'label';",
+          '  }',
+          '}',
+        ].join('\n'),
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: { name: 'computeLabel', suggestedName: 'label' },
+          },
+        ],
+      },
+
+      // An explicit non-thenable annotation is the method's whole contract, so
+      // it settles the question and the body is never consulted — a promise
+      // mentioned on the way to a `string` does not exempt anything.
+      {
+        code: [
+          'class Coerced {',
+          '  private computeToken(): string {',
+          "    return Promise.resolve('x') as unknown as string;",
+          '  }',
+          '}',
+        ].join('\n'),
+        output: [
+          'class Coerced {',
+          '  private get token(): string {',
+          "    return Promise.resolve('x') as unknown as string;",
+          '  }',
+          '}',
+        ].join('\n'),
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: { name: 'computeToken', suggestedName: 'token' },
+          },
+        ],
+      },
+
+      // Mutually recursive un-annotated siblings terminate rather than recurse
+      // forever, and neither proves a thenable, so both still report.
+      {
+        code: [
+          'class Mutual {',
+          '  private computeLeft() {',
+          '    return this.computeRight();',
+          '  }',
+          '  private computeRight() {',
+          '    return this.computeLeft();',
+          '  }',
+          '}',
+        ].join('\n'),
+        // Each name is call-used in the file, so both fixes are withheld.
+        output: null,
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: { name: 'computeLeft', suggestedName: 'left' },
+          },
+          {
+            messageId: 'preferGetter',
+            data: { name: 'computeRight', suggestedName: 'right' },
+          },
+        ],
+      },
+
+      // `ignoreAsync: false` re-enables the REPORT for an asynchronous method,
+      // and the fixer's own thenable lock still withholds the rewrite: this
+      // member is `private` with no call site, which is the exact shape the
+      // broken autofix used to rewrite (#2154).
+      {
+        code: [
+          'class AsyncOptOut {',
+          '  private readEpoch(): Promise<string> {',
+          "    return Promise.resolve('x');",
+          '  }',
+          '}',
+        ].join('\n'),
+        options: [{ ignoreAsync: false }],
+        output: null,
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: { name: 'readEpoch', suggestedName: 'readEpoch' },
           },
         ],
       },
