@@ -22,6 +22,7 @@ This rule requires your boolean-typed or boolean-valued identifiers to start wit
 - Your functions and methods that return boolean values.
 - Your function parameters typed as boolean and boolean properties inside parameter object type literals.
 - Your class properties with boolean types or values, including `abstract` properties (`abstract enabled: boolean`) and constructor parameter properties (`constructor(private enabled: boolean) {}`). Both declare a field you own, so they carry the same naming obligation as a concrete property; a parameter property is reported once, as a property rather than as a parameter.
+- Your class fields holding a function with a declared `boolean` return — `accountLocked = (): boolean => { ... }` and `accountLocked = function (): boolean { ... }`. That field is a method in every respect its name is judged on, so `accountLocked(): boolean {}` and `accountLocked = (): boolean => {}` get the same report. Booleanness is read from the declared return annotation, exactly as for a method: an un-annotated `accountLocked = () => this.failedAttempts > 3` is left alone in both spellings. Computed keys (`[key] = (): boolean => ...`) and ambient `declare` fields are skipped, since neither declares a name this site can rename.
 - Both spellings of privacy: a `private` modifier and an [ECMA private name](#ecma-private-members-name) (`#enabled`) declare the same member, so `#enabled = false` is checked exactly like `private enabled = false`.
 - Boolean property signatures in interfaces and type aliases **only when you opt in** via [`enforceForPropertySignatures`](#enforceforpropertysignatures). They are skipped by default because their names are frequently dictated by contracts you cannot rename (external API shapes, third-party interfaces, persisted data-model schemas such as Firestore fields).
 - The rule excludes type predicates and identifiers starting with `_`, which are treated as internal state.
@@ -67,6 +68,12 @@ class UserAccount {
   accountLocked(): boolean {
     return this.failedAttempts > 3;
   }
+
+  // A field holding a boolean-returning function is the same member, one token
+  // different, and is reported the same way
+  sessionActive = (): boolean => {
+    return this.expiresAt > Date.now();
+  };
 }
 
 // Abstract properties every implementer inherits the name from
@@ -135,6 +142,13 @@ class UserAccount {
   isAccountLocked(): boolean {
     return this.failedAttempts > 3;
   }
+
+  isSessionActive = (): boolean => {
+    return this.expiresAt > Date.now();
+  };
+
+  // Left alone in both spellings: nothing declares a boolean return here
+  sessionState = () => this.expiresAt;
 }
 
 abstract class BaseFeature {

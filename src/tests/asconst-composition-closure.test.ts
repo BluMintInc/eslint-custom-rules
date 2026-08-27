@@ -356,7 +356,6 @@ const UNDRIVEN: Record<string, UndrivenCause> = {
   'class-methods-read-top-to-bottom': 'noAssertionAdded',
   'dynamic-https-errors': 'noAssertionAdded',
   'enforce-assert-throws': 'noAssertionAdded',
-  'enforce-boolean-naming-prefixes': 'noAssertionAdded',
   'enforce-date-ttime': 'noAssertionAdded',
   'enforce-dynamic-file-naming': 'noAssertionAdded',
   'enforce-dynamic-imports': 'noAssertionAdded',
