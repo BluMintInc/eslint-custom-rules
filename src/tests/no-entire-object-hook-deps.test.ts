@@ -1274,6 +1274,94 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
     },
+    // Issue #2170: a React ref is the one dependency a hook lists whole.
+    // Narrowing `[ref]` to `[ref.current]` reads a slot React fills after the
+    // render that evaluated the array, and `react-hooks/exhaustive-deps`
+    // rejects that array outright — so the two rules would contradict.
+    {
+      code: `
+    import { useEffect, RefObject } from 'react';
+    function useScrollRegistration({ elementRef }: { elementRef: RefObject<HTMLElement> }) {
+      useEffect(() => {
+        const element = elementRef.current;
+        if (!element) {
+          return;
+        }
+        element.scrollTop = 0;
+      }, [elementRef]);
+    }
+  `,
+      filename: 'useScrollRegistration.tsx',
+    },
+    // `.current` read several times, including a write: the ref idiom, not a
+    // single lucky access shape.
+    {
+      code: `
+        const MyComponent = ({ inputRef }) => {
+          useEffect(() => {
+            const node = inputRef.current;
+            if (inputRef.current) {
+              inputRef.current.focus();
+            }
+            return () => {
+              inputRef.current = null;
+              node?.blur();
+            };
+          }, [inputRef]);
+          return null;
+        };
+      `,
+    },
+    // `.current` reached only through nested and conditional expressions.
+    {
+      code: `
+        const MyComponent = ({ boxRef }) => {
+          const height = useMemo(() => {
+            return boxRef.current ? boxRef.current.offsetHeight : 0;
+          }, [boxRef]);
+          return <div>{height}</div>;
+        };
+      `,
+    },
+    // A chain rooted at `.current` is the same ref read one link deeper — and
+    // `[scrollRef.current.scrollTop]` would additionally throw on the first
+    // render, when the commit has not populated the ref yet.
+    {
+      code: `
+        const MyComponent = ({ scrollRef }) => {
+          useEffect(() => {
+            console.log(scrollRef.current.scrollTop);
+          }, [scrollRef]);
+          return null;
+        };
+      `,
+    },
+    // A literal computed key reaches the identical slot as the dotted
+    // spelling, so it carries the identical hazard.
+    {
+      code: `
+        const MyComponent = ({ nodeRef }) => {
+          useEffect(() => {
+            observe(nodeRef['current']);
+          }, [nodeRef]);
+          return null;
+        };
+      `,
+    },
+    // The wrappers a ref access is commonly written through — `!`, `as`, `?.`
+    // — still name `.current`.
+    {
+      code: `
+        const MyComponent = ({ mapRef }: { mapRef: RefObject<Map> }) => {
+          useEffect(() => {
+            (mapRef as RefObject<Map>).current;
+            mapRef!.current;
+            mapRef?.current;
+          }, [mapRef]);
+          return null;
+        };
+      `,
+    },
   ],
   invalid: [
     ...optionalComputedFixCases,
@@ -3018,6 +3106,70 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
             try { console.log(user.name); } catch (e) {}
           }, [user.name]);
           return <button onClick={greet}>Greet</button>;
+        };
+      `,
+    },
+    // Boundary of the #2170 ref carve-out: the exemption is "every read is
+    // `.current`", never "some read is". A second property proves the value is
+    // an ordinary object, so both fields are narrowed as before.
+    {
+      code: `
+        const MyComponent = ({ obj }: { obj: { current: string; other: string } }) => {
+          useEffect(() => {
+            console.log(obj.current, obj.other);
+          }, [obj]);
+          return null;
+        };
+      `,
+      errors: [avoid('obj', 'obj.current, obj.other')],
+      output: `
+        const MyComponent = ({ obj }: { obj: { current: string; other: string } }) => {
+          useEffect(() => {
+            console.log(obj.current, obj.other);
+          }, [obj.current, obj.other]);
+          return null;
+        };
+      `,
+    },
+    // The carve-out is keyed on `current` alone: an object read through any
+    // other single field narrows exactly as it always did.
+    {
+      code: `
+        const MyComponent = ({ obj }: { obj: { foo: string } }) => {
+          useEffect(() => {
+            console.log(obj.foo);
+          }, [obj]);
+          return null;
+        };
+      `,
+      errors: [avoid('obj', 'obj.foo')],
+      output: `
+        const MyComponent = ({ obj }: { obj: { foo: string } }) => {
+          useEffect(() => {
+            console.log(obj.foo);
+          }, [obj.foo]);
+          return null;
+        };
+      `,
+    },
+    // The carve-out is per dependency: a ref sharing an array with an ordinary
+    // object leaves that object's narrowing intact.
+    {
+      code: `
+        const MyComponent = ({ elementRef, user }) => {
+          useEffect(() => {
+            elementRef.current?.setAttribute('data-name', user.name);
+          }, [elementRef, user]);
+          return null;
+        };
+      `,
+      errors: [avoid('user', 'user.name')],
+      output: `
+        const MyComponent = ({ elementRef, user }) => {
+          useEffect(() => {
+            elementRef.current?.setAttribute('data-name', user.name);
+          }, [elementRef, user.name]);
+          return null;
         };
       `,
     },
