@@ -116,13 +116,17 @@ function StatusPanel(props) {                               // exempt: renders v
 }
 ```
 
-The same evidence decides a class method, so the two spellings of one member never disagree:
+The same evidence decides a class method, so the two spellings of one member never disagree. A member spelled as an overload set answers once as well: a type-only signature carries no body and so no evidence of its own, and is judged by the implementation that gives the member its body.
 
 ```ts
 // src/util/helper.ts
 class Centralizer {
   Panel(): React.JSX.Element { return null; }           // exempt: renders nothing, and declares a React type
   PanelField: React.FC = () => null;                    // exempt: the field spelling of the same member
+  Frame(): React.JSX.Element;                           // exempt: the signature defers to its implementation
+  Frame(props?: FrameProps) {                           // exempt: renders via createElement
+    return React.createElement('div', null, props);
+  }
   Snapshot() { return { rows: this.rows }; }            // reports: returns data
   SnapshotField = () => ({ rows: this.rows });          // reports: the field spelling agrees
 }

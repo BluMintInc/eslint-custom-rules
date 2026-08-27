@@ -362,6 +362,65 @@ ruleTesterTs.run(
 }`,
         parserOptions: jsx,
       },
+
+      // A type-only overload signature declares the same member as the
+      // implementation beside it. Adding one changes no runtime semantics, so
+      // it cannot change the answer either: the whole set speaks with the voice
+      // of the declaration that carries the body (#2168).
+      {
+        name: 'an overloaded component method, signature and implementation',
+        filename: 'Centralizer.tsx',
+        code: `class Centralizer {
+  Panel(): JSX.Element;
+  Panel(props?: { id: string }) {
+    return <div />;
+  }
+}`,
+        parserOptions: jsx,
+      },
+      {
+        name: 'several overload signatures on one component member',
+        filename: 'Centralizer.tsx',
+        code: `class Centralizer {
+  Panel(): JSX.Element;
+  Panel(props: { id: string }): JSX.Element;
+  Panel(props?: { id: string }) {
+    return <div />;
+  }
+}`,
+        parserOptions: jsx,
+      },
+      {
+        name: 'an overload signature on a static component method',
+        filename: 'Centralizer.tsx',
+        code: `class Centralizer {
+  public static Panel(): JSX.Element;
+  public static Panel(props?: { id: string }) {
+    return <div />;
+  }
+}`,
+        parserOptions: jsx,
+      },
+      {
+        // The implementation owns the evidence in a `.ts` file too, where the
+        // exemption is earned by rendering rather than by the file extension.
+        name: 'an overloaded component method rendering through createElement in a .ts file',
+        code: `class Centralizer {
+  Panel(): React.JSX.Element;
+  Panel(props?: Props) {
+    return React.createElement('div');
+  }
+}`,
+      },
+      {
+        name: 'a verb-phrased overload set keeps passing',
+        code: `class Service {
+  fetchUser(): User;
+  fetchUser(id?: string) {
+    return this.users[id];
+  }
+}`,
+      },
     ],
     invalid: [
       // The load-bearing controls: real agora methods that must keep reporting.
@@ -531,8 +590,9 @@ class Centralizer {
         errors: [{ messageId: 'functionVerbPhrase', data: { name: 'data' } }],
       },
       {
-        // Each overload signature is its own `MethodDefinition`, and none has a
-        // body to offer component evidence.
+        // Each overload signature is its own `MethodDefinition`, so a member
+        // whose implementation is no component draws a report on every line
+        // that spells its name.
         name: 'overload signatures each report',
         code: `class Service {
   data(a: string): void;
@@ -661,6 +721,86 @@ class Centralizer {
             data: { name: 'PanelField' },
             line: 5,
             column: 10,
+          },
+        ],
+      },
+      {
+        // The negative controls for #2168. Deferring a signature to its
+        // implementation buys an exemption only where the implementation earns
+        // one; anything less would make "carries an overload" a way to opt out
+        // of the rule.
+        name: 'an overloaded non-component method reports on every declaration',
+        code: `class Service {
+  data(): string;
+  data(x?: number) {
+    return 'x';
+  }
+}`,
+        errors: [
+          { messageId: 'functionVerbPhrase', data: { name: 'data' }, line: 2 },
+          { messageId: 'functionVerbPhrase', data: { name: 'data' }, line: 3 },
+        ],
+      },
+      {
+        // The implementation owns the answer, and a lowercase name taking no
+        // props is no component however much JSX it returns — the React type
+        // on the signature does not rescue it.
+        name: 'an overloaded lowercase method returning JSX still reports',
+        filename: 'Widget.tsx',
+        code: `class Widget {
+  panel(): JSX.Element;
+  panel(id?: string) {
+    return <div id={id} />;
+  }
+}`,
+        parserOptions: jsx,
+        errors: [
+          { messageId: 'functionVerbPhrase', data: { name: 'panel' }, line: 2 },
+          { messageId: 'functionVerbPhrase', data: { name: 'panel' }, line: 3 },
+        ],
+      },
+      {
+        // The `.ts` asymmetry survives the overload set: an annotation that
+        // names no React type is no evidence, on a signature or anywhere else.
+        name: 'an overloaded PascalCase method with no render evidence in a .ts file',
+        code: `class Centralizer {
+  Panel(): number;
+  Panel(x?: number) {
+    return this.value;
+  }
+}`,
+        errors: [
+          { messageId: 'functionVerbPhrase', data: { name: 'Panel' }, line: 2 },
+          { messageId: 'functionVerbPhrase', data: { name: 'Panel' }, line: 3 },
+        ],
+      },
+      {
+        // A signature resolves to the implementation of its own member, keyed
+        // on staticness as well as on name, so the static set cannot inherit
+        // the exemption the instance set earns.
+        name: 'a static overload set beside an instance component of the same name',
+        code: `class Centralizer {
+  Panel(): React.JSX.Element;
+  Panel(props?: Props) {
+    return React.createElement('div');
+  }
+  public static Panel(): number;
+  public static Panel(x?: number) {
+    return 1;
+  }
+}`,
+        errors: [
+          {
+            messageId: 'functionVerbPhrase',
+            data: { name: 'Panel' },
+            line: 6,
+            column: 17,
+          },
+          {
+            messageId: 'functionVerbPhrase',
+            data: { name: 'Panel' },
+            line: 7,
+            column: 17,
           },
         ],
       },
