@@ -26,6 +26,20 @@ Prefix matching reads the bare word, so the `is` prefix, the Next.js names and t
 
 Keys the rule does not read are out of scope: a computed method (`[expr]() {}`) has no statically knowable name, and a quoted key (`'updateUser'() {}`) is likewise not checked.
 
+## A function-valued class property is a member
+
+A class member written as a field initializer is in scope on the same terms as a method. `getUser = () => {}` declares the same named, callable member as `getUser() {}` — the spellings differ in binding and `this` semantics, neither of which this rule judges — so a single `=` does not decide whether the name is read. Every modifier spelling participates: `public`, `protected`, `private`, `static`, `readonly`, `override`, a modifier-less field and an ECMA private field (`#updateUser = () => {}`).
+
+What the field spelling does _not_ extend to:
+
+- **Data fields.** The rule reads a field only when its initializer is a function (an arrow, a function expression, or a generator). `updateCount = 0`, `getters = {}` and `getData = makeGetter()` name a value rather than an operation, so they are not checked.
+- **Fields with no initializer.** `declare getData: () => void`, `getData!: () => void` and `getData?: () => void` declare no implementation to name.
+- **Unreadable keys.** `[expr] = () => {}` and `'getData' = () => {}` are skipped exactly as their method counterparts are.
+- **Auto-accessors.** `accessor getData = () => {}` desugars to a getter/setter pair, the member kind the rule already skips.
+- **Object-literal properties.** `{ getData: () => {} }` is not a class member; such keys routinely mirror an external contract the author cannot rename, so they stay out of scope.
+
+A named function expression is reported under its own binding: `getUser = function fetchInner() {}` names `fetchInner`, the same precedence the rule applies to `const getUser = function fetchInner() {}`. Exactly one report lands per member either way.
+
 ## Compound lexemes
 
 A generic prefix is only generic when it is a standalone verb applied to an object. When the banned word is the head of a lexicalized verb-particle compound, it names the operation exactly: `checkIn` is the phrasal verb *to check in*, not the verb `check` applied to `In`. Renaming it to `validateIn` would be strictly less meaningful, so the rule exempts these.
@@ -55,6 +69,9 @@ class FormService {
   transformPayload() {}
   #modifyPayload() {}
   #isReady() {}
+  public sanitizePayload = async () => {};
+  updateCount = 0;
+  getters = {};
 }
 ```
 
@@ -70,6 +87,12 @@ class FormService {
 class Account {
   // ❌ an ECMA private method is the same privacy as `private updateUser()`
   #updateUser() {}
+}
+class UserService {
+  // ❌ a field initializer is the same member as `getUserData() {}`
+  getUserData = () => {};
+  public processPayload = async () => {};
+  #updateSecret = function () {};
 }
 ```
 
