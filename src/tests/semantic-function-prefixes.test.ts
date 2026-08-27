@@ -980,3 +980,330 @@ ruleTesterTs.run('semantic-function-prefixes', semanticFunctionPrefixes, {
     },
   ],
 });
+
+/**
+ * A class member spelled as a function-valued FIELD (`getUser = () => {}`) is
+ * the same declaration as `getUser() {}` for everything this rule judges, so a
+ * single `=` must not decide whether the name is read (#2161).
+ *
+ * Every case here asserts an EXACT report count. The function-expression and
+ * arrow visitors also traverse a field's initializer, so a miscount is how a
+ * double report would announce itself.
+ */
+ruleTesterTs.run(
+  'semantic-function-prefixes (class-property spelling)',
+  semanticFunctionPrefixes,
+  {
+    valid: [
+      // Semantic field names are accepted in every function-valued spelling.
+      'class Service { fetchData = () => {}; }',
+      'class Service { modifyRecord = async () => {}; }',
+      'class Service { validateInput = function () {}; }',
+      'class Service { transformPayload = function* () {}; }',
+      /**
+       * Data fields name a value, not an operation, so the generic-verb
+       * heuristic does not apply: the rule reads a field only when its
+       * initializer is a function.
+       */
+      `
+      class Counters {
+        updateCount = 0;
+        getters = {};
+        checkList = [1, 2];
+        processFlag = true;
+        getterMap = new Map();
+        getData = makeGetter();
+      }
+      `,
+      // A field with no initializer declares no implementation to name.
+      'class Api { declare getData: () => void; }',
+      'class Api { getData!: () => void; }',
+      'class Api { getData?: () => void; }',
+      /**
+       * Unreadable keys stay out of scope in the field spelling exactly as they
+       * do in the method spelling.
+       */
+      'class Api { [getKey()] = () => {}; }',
+      "class Api { ['getData'] = () => {}; }",
+      "class Api { 'getData' = () => {}; }",
+      // Every name-level exemption applies to a field unchanged.
+      'class Widget { isReady = () => {}; }',
+      'class Page { static getStaticProps = () => {}; }',
+      'class Page { getServerSideProps = async () => {}; }',
+      `
+      class TeamMutator {
+        checkIn = (memberId: string) => memberId;
+        checkOut = (memberId: string) => memberId;
+        checkInAndSet = async (memberId: string) => memberId;
+        #checkInMember = (memberId: string) => memberId;
+      }
+      `,
+      // A banned word that is the whole name is not a prefix.
+      `
+      class Registry {
+        get = () => {};
+        update = function () {};
+        process = async () => {};
+      }
+      `,
+      // A banned word that is merely a substring of the first segment.
+      `
+      class Assets {
+        downloadFile = () => {};
+        windowSize = () => {};
+        endowmentFund = () => {};
+      }
+      `,
+      /**
+       * An auto-accessor field is an `AccessorProperty`, which desugars to a
+       * getter/setter pair — the member kind this rule already skips.
+       */
+      'class Api { accessor getData = () => {}; }',
+      /**
+       * `TSAbstractMethodDefinition` / `TSAbstractPropertyDefinition` are
+       * distinct node types that this rule has never visited in either
+       * spelling. Pinned so the abstract gap stays a known, symmetric one
+       * rather than an accident of the field arm.
+       */
+      `
+      abstract class Repository {
+        abstract getUserData(): void;
+        abstract getHandler: () => void;
+      }
+      `,
+      /**
+       * Object literals stay out of scope: their keys routinely mirror an
+       * external contract the author cannot rename.
+       */
+      'const config = { getData: () => {}, updateUser: function () {} };',
+      /**
+       * A named function expression carries its own binding, and the function
+       * arm reports on that name. Both spellings defer to it identically, so
+       * neither reports the outer name — the precedence is the same one the
+       * variable spelling has always applied.
+       */
+      `
+      const getUserData = function fetchInner() {};
+      class Api {
+        getUserData = function fetchInner() {};
+      }
+      `,
+    ],
+    invalid: [
+      // The reproduction from #2161: a `=` away from the method spelling.
+      {
+        code: 'class Api { getUserData = () => {}; }',
+        errors: [error('getUserData', 'get')],
+      },
+      {
+        code: `
+        class UserServiceArrow {
+          getUserData = () => {};
+          public processPayload = async () => {};
+          private checkInput = function () {};
+          static getStuffFromDb = () => {};
+          #updateSecret = () => {};
+        }
+        `,
+        errors: [
+          error('getUserData', 'get'),
+          error('processPayload', 'process'),
+          error('checkInput', 'check'),
+          error('getStuffFromDb', 'get'),
+          error('#updateSecret', 'update'),
+        ],
+      },
+      // Visibility is not a carve-out for a field, just as it is not for a method.
+      {
+        code: `
+        class UserService {
+          protected manageTasks = () => {};
+          public doWork = async () => {};
+        }
+        `,
+        errors: [error('manageTasks', 'manage'), error('doWork', 'do')],
+      },
+      /**
+       * DOUBLE-REPORT GUARD. The function-expression visitor reports the inner
+       * binding `getUserData`; the field arm must not report the key as well.
+       */
+      {
+        code: 'class Api { getUserData = function getUserData() {}; }',
+        errors: [error('getUserData', 'get')],
+      },
+      /**
+       * The converse: a semantic field name over a generic inner binding still
+       * reports once, from the arm that always owned it.
+       */
+      {
+        code: 'class Api { fetchThing = function getInner() {}; }',
+        errors: [error('getInner', 'get')],
+      },
+      // A field initializer's own nested declarations keep reporting on their own.
+      {
+        code: `
+        class Api {
+          fetchThing = () => {
+            const getInner = () => {};
+            return getInner;
+          };
+        }
+        `,
+        errors: [error('getInner', 'get')],
+      },
+      // Modifier spellings that only a field can carry.
+      {
+        code: 'class Child extends Base { override getData = () => {}; }',
+        errors: [error('getData', 'get')],
+      },
+      {
+        code: 'class Api { readonly getData = () => {}; }',
+        errors: [error('getData', 'get')],
+      },
+      {
+        code: 'class Api { getData? = () => {}; }',
+        errors: [error('getData', 'get')],
+      },
+      {
+        code: 'class Api { @observable getData = () => {}; }',
+        errors: [error('getData', 'get')],
+      },
+      // An explicit type annotation does not hide the key.
+      {
+        code: 'class Api { getData: () => void = () => {}; }',
+        errors: [error('getData', 'get')],
+      },
+      // Generator initializers are function values too.
+      {
+        code: 'class Api { getItems = function* () {}; }',
+        errors: [error('getItems', 'get')],
+      },
+      {
+        code: 'class Api { getItems = async function* () {}; }',
+        errors: [error('getItems', 'get')],
+      },
+      // A class expression and a class nested in a function are still classes.
+      {
+        code: 'const Service = class { getData = () => {}; };',
+        errors: [error('getData', 'get')],
+      },
+      {
+        code: 'function buildService() { return class { getData = () => {}; }; }',
+        errors: [error('getData', 'get')],
+      },
+      // PascalCase segmentation reads the same on a field key.
+      {
+        code: 'class Api { GetUserData = () => {}; }',
+        errors: [error('GetUserData', 'get')],
+      },
+      /**
+       * The compound-lexeme carve-out is matched on whole camelCase segments in
+       * the field spelling too: `checkIn` is exempt above, these are not.
+       */
+      {
+        code: `
+        class Registration {
+          checkInput = () => {};
+          checkOutdatedRoster = async () => {};
+          checkInvites = function () {};
+        }
+        `,
+        errors: [
+          error('checkInput', 'check'),
+          error('checkOutdatedRoster', 'check'),
+          error('checkInvites', 'check'),
+        ],
+      },
+      // A merely grammatical verb-particle sequence is not a compound.
+      {
+        code: `
+        class Sync {
+          updateInPlace = () => {};
+          getOutOfSyncItems = () => {};
+          processOutQueue = async () => {};
+        }
+        `,
+        errors: [
+          error('updateInPlace', 'update'),
+          error('getOutOfSyncItems', 'get'),
+          error('processOutQueue', 'process'),
+        ],
+      },
+      /**
+       * An ECMA private field is the same privacy as `private`, and the message
+       * names the member as written so it stays distinct from a public sibling.
+       */
+      {
+        code: 'class Account { static #processData = () => {}; }',
+        errors: [error('#processData', 'process')],
+      },
+      {
+        code: `
+        class Account {
+          updateUser = () => {};
+          #updateUser = () => {};
+        }
+        `,
+        errors: [error('updateUser', 'update'), error('#updateUser', 'update')],
+      },
+      {
+        code: 'class Registration { #checkInput = () => {}; }',
+        errors: [error('#checkInput', 'check')],
+      },
+      /**
+       * The two spellings of one member report identically — the asymmetry
+       * #2161 reports is that only the first of these two used to be seen.
+       */
+      {
+        code: `
+        class Twin {
+          getUserData() {}
+          getUserDataToo = () => {};
+        }
+        `,
+        errors: [error('getUserData', 'get'), error('getUserDataToo', 'get')],
+      },
+      // Fields, methods and free functions coexist without changing each other's verdict.
+      {
+        code: `
+        function getTopLevel() {}
+        class Mixed {
+          getMethod() {}
+          getField = () => {};
+          fetchOk = () => {};
+        }
+        const getArrow = () => {};
+        `,
+        errors: [
+          error('getTopLevel', 'get'),
+          error('getMethod', 'get'),
+          error('getField', 'get'),
+          error('getArrow', 'get'),
+        ],
+      },
+      /**
+       * A name imposed by an implemented interface still reports. That is the
+       * rule's pre-existing stance for the method spelling — heritage has never
+       * been a carve-out here — and the field spelling inherits it rather than
+       * inventing a narrower scope. These are the shapes #2161 measured in the
+       * consumer codebase.
+       */
+      {
+        code: `
+        class TwitchAuthProvider implements AuthProvider {
+          getCurrentScopesForUser = (userId: string) => [userId];
+          getAccessTokenForUser = async (userId: string) => userId;
+          getAppAccessToken = async () => 'token';
+          getAnyAccessToken = async () => 'token';
+        }
+        `,
+        errors: [
+          error('getCurrentScopesForUser', 'get'),
+          error('getAccessTokenForUser', 'get'),
+          error('getAppAccessToken', 'get'),
+          error('getAnyAccessToken', 'get'),
+        ],
+      },
+    ],
+  },
+);

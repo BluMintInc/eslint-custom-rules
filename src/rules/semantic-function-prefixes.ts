@@ -204,6 +204,63 @@ export const semanticFunctionPrefixes = createRule<[], MessageIds>({
       );
     }
 
+    /**
+     * A class member written as a function-valued field (`getUser = () => {}`)
+     * declares the same thing as `getUser() {}`: a named, callable member of the
+     * class. The two spellings differ only in binding and `this` semantics, not
+     * in what this rule judges, so a single `=` must not decide whether the name
+     * is read.
+     */
+    function checkPropertyName(node: TSESTree.PropertyDefinition) {
+      const value = node.value;
+
+      /**
+       * Only a function-valued field names an operation. `updateCount = 0` and
+       * `getters = {}` are data whose names describe a value, not a verb applied
+       * to one, and a field with no initializer (`declare getData: Fn`,
+       * `getData!: Fn`) declares no implementation to name.
+       */
+      if (
+        value?.type !== AST_NODE_TYPES.ArrowFunctionExpression &&
+        value?.type !== AST_NODE_TYPES.FunctionExpression
+      ) {
+        return;
+      }
+
+      /**
+       * A named function expression carries its own binding, which the function
+       * arm reads and reports on. Deferring to it keeps exactly one report per
+       * site and matches the precedence the rule already applies to the variable
+       * spelling, where `const getUser = function getData() {}` is reported as
+       * `getData`.
+       */
+      if (value.type === AST_NODE_TYPES.FunctionExpression && value.id) {
+        return;
+      }
+
+      const { key } = node;
+
+      // Same readable-key requirement as the method arm; see checkMethodName.
+      if (
+        node.computed ||
+        (key.type !== AST_NODE_TYPES.Identifier &&
+          key.type !== AST_NODE_TYPES.PrivateIdentifier)
+      ) {
+        return;
+      }
+
+      const propertyName = key.name;
+      if (!propertyName) return;
+
+      reportIfGenericPrefix(
+        key,
+        propertyName,
+        getMethodName(node, context.getSourceCode(), {
+          privateIdentifierPrefix: '#',
+        }),
+      );
+    }
+
     function checkFunctionName(
       node:
         | TSESTree.FunctionDeclaration
@@ -236,6 +293,7 @@ export const semanticFunctionPrefixes = createRule<[], MessageIds>({
       FunctionExpression: checkFunctionName,
       ArrowFunctionExpression: checkFunctionName,
       MethodDefinition: checkMethodName,
+      PropertyDefinition: checkPropertyName,
     };
   },
 });
