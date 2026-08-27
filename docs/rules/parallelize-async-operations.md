@@ -339,6 +339,38 @@ await documents.reduce(async (promise, doc) => {
 }, Promise.resolve());
 ```
 
+### ✅ Correct (filesystem ordering)
+
+Two awaits that both operate the filesystem are ordered by **that resource**, not by any JavaScript value. `writeFile(pending, data)` followed by `rename(pending, path)` passes nothing from one call to the other — every argument is a plain string computed before either await — yet the second call's precondition is precisely the first one's side effect. Every barrier above reads bindings, receivers and slots, so a dependency carried entirely through an external resource is invisible to all of them, and the run reads as independent while being strictly ordered. `Promise.all([...])` issues all of it in one tick, which either throws `ENOENT` or publishes a partial state, and *which of the two* is a race.
+
+```typescript
+import { mkdir, rename, writeFile } from 'node:fs/promises';
+
+export const publish = async (dir: string, pending: string, path: string) => {
+  await mkdir(dir, { recursive: true });
+  await writeFile(pending, 'x');
+  await rename(pending, path);
+};
+```
+
+The barrier engages only when at least one operation **mutates**. Two observations of the filesystem commute — neither can change what the other returns — so a run of pure reads is a genuine latency mistake and keeps its report, which is where the rule earns most of its value on I/O-bound code:
+
+```typescript
+import { readFile, stat } from 'node:fs/promises';
+
+export const inspect = async (a: string, b: string) => {
+  // Reported and merged as usual: neither read can affect the other.
+  const [contents, info] = await Promise.all([readFile(a), stat(b)]);
+  return { contents, info };
+};
+```
+
+A **single** filesystem await raises no ordering question — the resource has to be shared for the sequencing to exist — so a run mixing one `writeFile` with unrelated network calls still parallelizes.
+
+Classification keys on the **origin** of the callee's root binding, never on the callee's spelling. A project-local helper that happens to be named `writeFile` is not mistaken for the `fs` export of that name, and a renamed import (`import { writeFile as wf }`) is not missed for lacking it. The `node:`-prefixed and bare specifiers name the same module, `graceful-fs` is a drop-in wrapper over it, and `require('fs').promises` is the same load one member deeper — so a file mixing those spellings still touches one resource. A `*Sync` variant performs the same operation as its asynchronous spelling and classifies identically.
+
+The read-only set is an **allowlist read fail-safe**: an operation it does not enumerate counts as mutating. The failure directions are not symmetric — misreading a mutation as an observation races a write against its own precondition and ships a silent corruption, whereas misreading an observation as a mutation only declines one parallelization. An `fs` surface this list has never heard of therefore keeps the barrier.
+
 ### ✅ Correct (test files are exempt)
 
 Test files are skipped entirely. A test suite serves no requests and is not latency-critical, so the rule's rationale — that sequential awaits make network and I/O latency add up — does not apply to it. Its awaits instead encode **ordering**: an awaited assertion observes the DOM or server state produced by a preceding awaited interaction. That dependency is a side effect rather than a value, so it is invisible to every barrier above, and `Promise.all([...])` would race the assertion against the interaction.
