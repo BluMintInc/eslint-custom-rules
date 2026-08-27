@@ -1,5 +1,27 @@
 [
   {
+    "version": "1.20.183",
+    "date": "2026-08-27T17:21:40.008Z",
+    "rules": [
+      {
+        "name": "enforce-verb-noun-naming",
+        "changeType": "fix",
+        "issues": [
+          2165
+        ],
+        "summary": "reach the class-METHOD spelling with the React-component carve-out (closes #2165)"
+      },
+      {
+        "name": "parallelize-async-operations",
+        "changeType": "fix",
+        "issues": [
+          2166
+        ],
+        "summary": "barrier awaits that share the filesystem (closes #2166)"
+      }
+    ]
+  },
+  {
     "version": "1.20.182",
     "date": "2026-08-27T12:12:45.593Z",
     "rules": [

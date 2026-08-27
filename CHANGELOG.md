@@ -1,3 +1,11 @@
+## [1.20.183](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.182...v1.20.183) (2026-08-27)
+
+
+### Bug Fixes
+
+* **enforce-verb-noun-naming:** reach the class-METHOD spelling with the React-component carve-out (closes [#2165](https://github.com/BluMintInc/eslint-custom-rules/issues/2165)) ([b32b5e9](https://github.com/BluMintInc/eslint-custom-rules/commit/b32b5e99e64bb126993952923bf3f7d7e395f9de))
+* **parallelize-async-operations:** barrier awaits that share the filesystem (closes [#2166](https://github.com/BluMintInc/eslint-custom-rules/issues/2166)) ([ccf9b2e](https://github.com/BluMintInc/eslint-custom-rules/commit/ccf9b2e9bbc6f43f3b1cc53ce89fd0095ed61a1e))
+
 ## [1.20.182](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.181...v1.20.182) (2026-08-27)
 
 
