@@ -4181,6 +4181,18 @@ export const enforceVerbNounNaming = createRule<Options, MessageIds>({
         ) {
           return parent.key.name;
         }
+        // A method holds its name on the member key exactly as a field does.
+        // Without this arm a method's `FunctionExpression` is anonymous, and an
+        // anonymous function never reaches the PascalCase component evidence —
+        // leaving `Panel() { return <div />; }` judged by the weak
+        // props-and-JSX fallback alone, which a parameterless component fails.
+        if (
+          parent?.type === AST_NODE_TYPES.MethodDefinition &&
+          !parent.computed &&
+          parent.key.type === AST_NODE_TYPES.Identifier
+        ) {
+          return parent.key.name;
+        }
       }
       return '';
     }
@@ -4257,12 +4269,17 @@ export const enforceVerbNounNaming = createRule<Options, MessageIds>({
       node: TSESTree.Node,
       functionName: string,
     ): boolean {
-      // A class field's name is a member, not a lexical binding, so a variable
+      // A class member's name is a member, not a lexical binding, so a variable
       // of the same name found in scope belongs to some other symbol entirely
-      // and says nothing about the field. `<this.Foo />` is a member expression
-      // and records no reference to resolve, so the field relies on the other
-      // component evidence.
-      if (node.parent?.type === AST_NODE_TYPES.PropertyDefinition) {
+      // and says nothing about the member. `<this.Foo />` is a member expression
+      // and records no reference to resolve, so the member relies on the other
+      // component evidence. This holds for a method as much as for a field:
+      // resolving `Panel` lexically from inside a class would answer with an
+      // imported component of that name.
+      if (
+        node.parent?.type === AST_NODE_TYPES.PropertyDefinition ||
+        node.parent?.type === AST_NODE_TYPES.MethodDefinition
+      ) {
         return false;
       }
 
@@ -4430,6 +4447,16 @@ export const enforceVerbNounNaming = createRule<Options, MessageIds>({
 
         // Skip constructors since they are special class methods
         if (node.kind === 'constructor') return;
+
+        // A component is a noun by convention, and `Panel() { return <div />; }`
+        // is the same member as `Panel = () => <div />` with one token changed.
+        // The carve-out reaches every other spelling of a function, so a method
+        // that is a component answers to it too. A `set` accessor is an
+        // assignment target rather than a callable, so it can never be a
+        // component and is deliberately left to the naming demand.
+        if (node.kind === 'method' && isReactComponent(node.value)) {
+          return;
+        }
 
         if (!isVerbPhrase(node.key.name)) {
           context.report({

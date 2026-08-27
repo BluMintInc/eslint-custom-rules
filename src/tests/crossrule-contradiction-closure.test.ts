@@ -334,8 +334,8 @@ const KNOWN_DIVERGENT: Record<string, Exemption> = {
   },
   'enforce-verb-noun-naming::no-explicit-return-type': {
     reason:
-      'PIPELINE: the fixtures annotate an inferable return beside the name under test; `--fix` strips both.',
-    cases: { noExplicitReturnTypeInferable: 2 },
+      'PIPELINE: the fixtures annotate an inferable return beside the name under test; `--fix` strips both. 2 -> 5 with #2165, which extends the React-component carve-out to the class-METHOD spelling: a method in a `.ts` file carries its React type as a return annotation (`public Panel(): React.JSX.Element`), so the three joiners are the annotation-carrier fixtures for that path plus its field-spelling parity twin. The annotation being stripped is the documented hazard rather than a contradiction — which is exactly why the rule recognises a component by what it renders, the hooks it calls and how the file uses it as well, and this suite pins each of those carriers on its own fixture, all of them clean under both rules (measured).',
+    cases: { noExplicitReturnTypeInferable: 5 },
   },
   'firestore-transaction-reads-before-writes::enforce-assert-safe-object-key': {
     reason:
