@@ -956,7 +956,22 @@ const BOOLEAN_POSITIVE_ALTERNATIVES: Record<string, string[]> = {
 type FunctionLikeNode =
   | TSESTree.FunctionDeclaration
   | TSESTree.FunctionExpression
-  | TSESTree.ArrowFunctionExpression;
+  | TSESTree.ArrowFunctionExpression
+  // An `abstract` member and an overload signature carry a body-less function
+  // whose only evidence of booleanness is its return annotation.
+  | TSESTree.TSEmptyBodyFunctionExpression;
+
+/**
+ * Class members carrying a name and an optional value. A field spelled
+ * `isNotReady = () => ...` is the same member as `isNotReady() { ... }` — only
+ * the token between the name and the value differs — so both, plus their
+ * `abstract` declaration-only forms, are judged by one handler.
+ */
+type ClassMemberNode =
+  | TSESTree.MethodDefinition
+  | TSESTree.PropertyDefinition
+  | TSESTree.TSAbstractMethodDefinition
+  | TSESTree.TSAbstractPropertyDefinition;
 
 /**
  * Recognizes type nodes that denote a boolean-only value: the `boolean`
@@ -1166,6 +1181,11 @@ function classifyFunctionReturn(fn: FunctionLikeNode): ReturnKind {
       ? 'boolean'
       : 'nonBoolean';
   }
+  // A body-less function (`abstract isNotBlank(value?: string);`) with no
+  // return annotation offers no syntactic verdict at all.
+  if (!fn.body) {
+    return 'indeterminate';
+  }
   if (fn.body.type !== AST_NODE_TYPES.BlockStatement) {
     return classifyExpression(fn.body);
   }
@@ -1197,8 +1217,29 @@ function isExemptFunctionValue(
   return (
     !!node &&
     (node.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-      node.type === AST_NODE_TYPES.FunctionExpression) &&
+      node.type === AST_NODE_TYPES.FunctionExpression ||
+      // `abstract isNotBlank(value?: string): string | true;` declares the
+      // validator without a body, and must be exempt on the same grounds as
+      // the implementation that satisfies it.
+      node.type === AST_NODE_TYPES.TSEmptyBodyFunctionExpression) &&
     isExemptFromBooleanNaming(node)
+  );
+}
+
+/**
+ * A member declared with a function type but no initializer
+ * (`isNotBlank!: (value?: string) => string | true`) carries its return shape
+ * only in the annotation. Reading it keeps the #1692 validator carve-out from
+ * depending on whether the predicate is declared or implemented in place.
+ */
+function isExemptFunctionTypeAnnotation(
+  annotation: TSESTree.TSTypeAnnotation | undefined,
+): boolean {
+  const typeNode = annotation?.typeAnnotation;
+  return (
+    typeNode?.type === AST_NODE_TYPES.TSFunctionType &&
+    !!typeNode.returnType &&
+    !isBooleanOnlyType(typeNode.returnType.typeAnnotation)
   );
 }
 
@@ -1551,26 +1592,51 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
     }
 
     /**
-     * Check method definitions for negative naming
+     * Check class members — methods, fields and their `abstract` forms — for
+     * negative naming. The docs' subject is "class members", and a field is one:
+     * `isNotReady = () => ...` and `isNotReady() { ... }` force a reader through
+     * the same mental inversion, so writing `=` must not silence the rule.
      */
-    function checkMethodDefinition(node: TSESTree.MethodDefinition) {
+    function checkClassMember(node: ClassMemberNode) {
       if (node.key.type !== AST_NODE_TYPES.Identifier) return;
 
-      // Only check boolean-returning methods
+      // A computed key references a name bound elsewhere, where the rule
+      // already judges it; reporting here would blame the wrong declaration.
+      if (node.computed) return;
+
+      // A `declare` field restates the type of a member owned by a base class
+      // or an ambient declaration, so its name is not this class's to choose.
+      if (
+        (node.type === AST_NODE_TYPES.PropertyDefinition ||
+          node.type === AST_NODE_TYPES.TSAbstractPropertyDefinition) &&
+        node.declare
+      ) {
+        return;
+      }
+
+      // Only check boolean-returning members
       if (!isBooleanLike(node.key)) return;
 
-      // Skip validator predicates returning a non-boolean value.
+      // Skip validator predicates returning a non-boolean value, whether the
+      // shape comes from the value or from a declaration-only annotation.
       if (isExemptFunctionValue(node.value)) return;
+      if (
+        (node.type === AST_NODE_TYPES.PropertyDefinition ||
+          node.type === AST_NODE_TYPES.TSAbstractPropertyDefinition) &&
+        isExemptFunctionTypeAnnotation(node.typeAnnotation)
+      ) {
+        return;
+      }
 
-      const methodName = node.key.name;
-      const { isNegative, alternatives } = hasBooleanNegativeNaming(methodName);
+      const memberName = node.key.name;
+      const { isNegative, alternatives } = hasBooleanNegativeNaming(memberName);
 
       if (isNegative) {
         context.report({
           node: node.key,
           messageId: 'avoidNegativeNaming',
           data: {
-            name: methodName,
+            name: memberName,
             alternatives: formatAlternatives(alternatives),
           },
         });
@@ -1682,7 +1748,13 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
           checkFunctionDeclaration(node);
         }
       },
-      MethodDefinition: checkMethodDefinition,
+      MethodDefinition: checkClassMember,
+      // A class field is a class member: the property spelling of a method
+      // (`isNotReady = () => ...`) and a plain boolean field
+      // (`isNotReady = false`) are both what the docs promise to cover.
+      PropertyDefinition: checkClassMember,
+      TSAbstractMethodDefinition: checkClassMember,
+      TSAbstractPropertyDefinition: checkClassMember,
       Property: checkProperty,
       TSPropertySignature: checkPropertySignature,
       Identifier(node: TSESTree.Identifier) {
