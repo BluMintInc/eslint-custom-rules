@@ -45,6 +45,7 @@ interface User { id: string; } // Interface properties
 type UserData = { id: number; } // Type properties
 export type CallerRequestButtonsProps = Pick<CallerCardBaseProps, 'status' | 'id'>; // Type definitions with Pick utility
 type UserSummary = Pick<User, 'id' | 'name'>; // Type utility with property names
+const matchId: Match['id'] = 'match-123'; // Indexed-access keys name a property
 const flexible = "This grid system is flexible."; // "id" as part of another word
 const rapid = "Rapid development"; // "id" as part of another word
 element.getAttribute("id"); // DOM attribute names are code, not text
