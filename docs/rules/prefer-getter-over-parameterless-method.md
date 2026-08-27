@@ -83,6 +83,36 @@ The exemption is resolved from the file under lint alone, and its breadth depend
 
 This subsumes the abstract case: a concrete method implementing an abstract member declared by a same-file base class is contract-bound (however many links up the `extends` chain the declaration sits), so it is skipped too. The `ignoreAbstract` option covers only the abstract *declaration* itself.
 
+### Class fields that hold a function
+
+A member written as a field — `fullName = () => { ... }` — is invoked exactly as its method twin is, `instance.fullName()`, so writing `=` does not exempt it. Both spellings answer the same questions: parameterless, non-abstract, synchronous, value-returning, outside the ignore lists, and unconstrained by a heritage clause.
+
+```ts
+class IndexSpecCanonicalizer {
+  private computeFingerprint = () => {
+    return createHash('sha256').update(this.json).digest('hex');
+  };
+}
+```
+
+becomes
+
+```ts
+class IndexSpecCanonicalizer {
+  private get fingerprint() {
+    return createHash('sha256').update(this.json).digest('hex');
+  }
+}
+```
+
+Three behaviours are specific to this spelling:
+
+- **The field spelling is never auto-fixed**, whatever its accessibility. The rewrite has to consume the `= (`…`) =>` and the terminating `;`, reshape a concise body into a block, and drop a `readonly` modifier a getter cannot carry — and even done perfectly it turns an own enumerable per-instance property into a prototype accessor, so the key leaves `Object.keys(instance)` and object spread. No gate models that, so the rule reports and leaves the edit to the developer. (`readonly` is not itself a reason to stay a field: a getter with no setter is read-only by construction.)
+- **A field is judged the same whichever way its body is spelled.** `refresh = () => this.reload()` and `refresh = () => { return this.reload(); }` are one member, so both are in scope. Reading a concise call as a command and a block-bodied call as a value would split that member in two on a distinction the syntax does not carry — `hash(this.json)` and `this.reload()` are the same shape. What separates a command from a value is the rule's own side-effect evidence (a JSDoc side-effect tag, a top-level `throw`, or a mutation the body performs), and those gates apply to both spellings alike.
+- **A member handed around as a function is left alone.** `store.on('change', this.getSnapshot)`, `const snapshot = this.getSnapshot` and the JSX form `<this.Panel />` all want the function itself, which is what the arrow spelling exists to provide; a getter would run the body on that read and hand back its result instead. Calling the member (`this.fullName()`) is not detachment and does not withhold the report.
+
+Fields that hold no function are outside the rule entirely: data fields, `declare` fields, `abstract` declarations, computed keys, generator-valued fields and generic (`<T>`) arrows have no parameterless getter form to convert to.
+
 ### Default Options
 
 ```json
@@ -162,6 +192,14 @@ class MatchPreviewer {
 }
 ```
 
+```ts
+class UserProfile {
+  public fullName = () => {
+    return this.first + this.last;
+  };
+}
+```
+
 ### ✅ Correct
 
 ```ts
@@ -181,6 +219,28 @@ class IndexSpecCanonicalizer {
 class MatchPreviewer {
   public static get base() {
     return { mode: 'ranked' as const };
+  }
+}
+```
+
+```ts
+class UserProfile {
+  public get fullName() {
+    return this.first + this.last;
+  }
+}
+```
+
+A field that holds a function stays a field when it is handed around as one:
+
+```ts
+class Watcher {
+  private getSnapshot = () => {
+    return this.state;
+  };
+
+  public attach(store: Store) {
+    store.on('change', this.getSnapshot);
   }
 }
 ```
