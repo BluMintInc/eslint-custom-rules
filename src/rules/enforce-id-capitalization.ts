@@ -53,11 +53,46 @@ export const enforceIdCapitalization = createRule<Options, MessageIds>({
     // phrase, so anything matching this is a name rather than displayed text.
     const IDENTIFIER_TOKEN = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
 
+    // Every value spelled as a string-literal TYPE in this file. A value
+    // literal with the same spelling is pinned by that type, so capitalizing
+    // the value on its own contradicts it (TS2322) while the type itself is
+    // code the rule must leave alone — there is no half of the pair that can
+    // be rewritten safely, so neither is. Membership is exact: a type
+    // `'id'` pins the literal `'id'`, not the prose `'Please enter your id.'`.
+    const literalTypeValues = new Set<string>();
+
+    // A `TSLiteralType` can be written after the value it pins, so the verdict
+    // is only complete once the whole file has been walked. Candidates are
+    // therefore collected during traversal and reported at `Program:exit`.
+    const candidates: { node: TSESTree.Node; fixedText: string }[] = [];
+
+    /**
+     * A string literal that spells a TYPE is code, never displayed prose. It
+     * names a property (`Match['id']`), a discriminant, or a member of a
+     * literal union, so capitalizing it renames something the program refers
+     * to by that exact spelling and the fixed file stops compiling — an
+     * indexed-access key rewritten to `Match['ID']` is a TS2339 (#2153).
+     *
+     * The question is asked about the type position itself rather than by
+     * listing parent node types: every literal in a type is wrapped in a
+     * `TSLiteralType`, so one check covers indexed-access keys, mapped-type
+     * `as` clauses, tuple members, generic defaults and conditional-type
+     * branches at once. Enumerating parents instead leaves each spelling that
+     * is not on the list unguarded, which is how this defect shipped.
+     */
+    function isTypePositionLiteral(node: TSESTree.Node): boolean {
+      return !!node.parent && node.parent.type === AST_NODE_TYPES.TSLiteralType;
+    }
+
     /**
      * Check if a node is in a context that should be excluded from the rule
      * (e.g., parameter names, property names, type definitions)
      */
     function isExcludedContext(node: any): boolean {
+      if (isTypePositionLiteral(node)) {
+        return true;
+      }
+
       // Check if the node is a property of an object pattern (destructuring)
       if (
         node.parent &&
@@ -300,31 +335,59 @@ export const enforceIdCapitalization = createRule<Options, MessageIds>({
           return `${prefix}ID${suffix}`;
         });
 
-        context.report({
-          node,
-          messageId: 'enforceIdCapitalization',
-          fix: (fixer) => {
-            // JSX text carries no delimiters, so its own text is the content.
-            if (node.type === AST_NODE_TYPES.JSXText) {
-              return fixer.replaceText(node, fixedText);
-            }
-            if (node.type === AST_NODE_TYPES.Literal) {
-              const replacement = fixStringLiteral(node, fixedText);
-              return replacement === null
-                ? null
-                : fixer.replaceText(node, replacement);
-            }
-            // Any other node kind (a TemplateElement, say) is a fragment of a
-            // larger construct whose delimiters and `${}` expressions live
-            // outside this node; rebuilding it from the parsed value would
-            // destroy them, so report without a fix.
-            return null;
-          },
-        });
+        candidates.push({ node, fixedText });
       }
     }
 
+    /**
+     * A value literal whose exact spelling is also written as a type in this
+     * file is a token that type names, not prose: `const kind: 'id' = 'id'`
+     * only compiles while both halves agree, and the type half is off limits.
+     */
+    function isPinnedByLiteralType(node: TSESTree.Node): boolean {
+      return (
+        node.type === AST_NODE_TYPES.Literal &&
+        typeof node.value === 'string' &&
+        literalTypeValues.has(node.value)
+      );
+    }
+
+    function reportCandidate(node: TSESTree.Node, fixedText: string) {
+      context.report({
+        node,
+        messageId: 'enforceIdCapitalization',
+        fix: (fixer) => {
+          // JSX text carries no delimiters, so its own text is the content.
+          if (node.type === AST_NODE_TYPES.JSXText) {
+            return fixer.replaceText(node, fixedText);
+          }
+          if (node.type === AST_NODE_TYPES.Literal) {
+            const replacement = fixStringLiteral(node, fixedText);
+            return replacement === null
+              ? null
+              : fixer.replaceText(node, replacement);
+          }
+          // Any other node kind (a TemplateElement, say) is a fragment of a
+          // larger construct whose delimiters and `${}` expressions live
+          // outside this node; rebuilding it from the parsed value would
+          // destroy them, so report without a fix.
+          return null;
+        },
+      });
+    }
+
     return {
+      // Record the spellings the file's types claim before any verdict is
+      // emitted; a value literal matching one of them cannot be rewritten.
+      TSLiteralType(node) {
+        if (
+          node.literal.type === AST_NODE_TYPES.Literal &&
+          typeof node.literal.value === 'string'
+        ) {
+          literalTypeValues.add(node.literal.value);
+        }
+      },
+
       // Check string literals
       Literal(node) {
         if (typeof node.value === 'string') {
@@ -335,6 +398,17 @@ export const enforceIdCapitalization = createRule<Options, MessageIds>({
       // Check JSX text
       JSXText(node) {
         checkForIdInString(node, node.value);
+      },
+
+      'Program:exit'() {
+        for (const { node, fixedText } of candidates) {
+          // JSX text is rendered, so no type can pin it — the check is scoped
+          // to literals, whose spelling a type can name.
+          if (isPinnedByLiteralType(node)) {
+            continue;
+          }
+          reportCandidate(node, fixedText);
+        }
       },
 
       // We don't need a separate handler for CallExpression since we already handle Literals

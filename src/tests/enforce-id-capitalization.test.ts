@@ -92,6 +92,19 @@ ruleTesterJsx.run('enforce-id-capitalization', enforceIdCapitalization, {
       errors: [{ messageId: 'enforceIdCapitalization' }],
       output: `<input placeholder='enter your ID' />`,
     },
+    // JSX text is rendered, so no type can pin it: a literal type in the same
+    // file leaves the displayed text reported and fixed (#2153).
+    {
+      code: `
+        type Kind = 'id';
+        const prompt = <div>Please enter your id</div>;
+      `,
+      errors: [{ messageId: 'enforceIdCapitalization' }],
+      output: `
+        type Kind = 'id';
+        const prompt = <div>Please enter your ID</div>;
+      `,
+    },
     // JSX attribute values are not escape-processed, so a backslash there is a
     // literal character and must not be doubled by the fix
     {
@@ -211,6 +224,63 @@ ruleTesterTs.run('enforce-id-capitalization', enforceIdCapitalization, {
     {
       code: `const GROUPS = [['id', 'name'], ['status']];`,
     },
+    // Repro from #2153: the index literal of an indexed-access type names a
+    // property. Rewriting it to 'ID' yields TS2339 and breaks the build.
+    {
+      code: `const x: Match['id'] = 'm';`,
+    },
+    {
+      code: `const m = { id: 'm-1' as Match['id'] };`,
+    },
+    {
+      code: `const y = doc.id as TokenMetadata<'offchain'>['id'];`,
+    },
+    {
+      code: `const z: Api.Models.Match['id'] = 'm';`,
+    },
+    {
+      code: `function findId(): Match['id'] { return 'm'; }`,
+    },
+    {
+      code: `function setId(id: Match['id']) {}`,
+    },
+    // The rest of the #2153 audit: every other place a string literal can sit
+    // in a type. None of them is displayed prose, and each names something the
+    // program refers to by that exact spelling.
+    {
+      code: `type Selection = 'user id' | 'team id';`,
+    },
+    {
+      code: `let selection: 'user id' | 'team id';`,
+    },
+    // A mapped type's `as` clause renames the key it produces
+    {
+      code: `let m: { [K in keyof Match as 'id']: string };`,
+    },
+    // A literal type parameter default
+    {
+      code: `function toKey<T extends string = 'id'>() {}`,
+    },
+    // The checked branch of a conditional type
+    {
+      code: `function narrow<T>(v: T extends 'id' ? string : number) {}`,
+    },
+    {
+      code: `type WithoutId = Exclude<keyof Match, 'id'>;`,
+    },
+    // A tuple member that is a literal type
+    {
+      code: `let pair: ['id', 'name'];`,
+    },
+    // A value whose own type spells it is a token that type pins, not prose:
+    // capitalizing the value alone is TS2322, and the type half is code the
+    // rule must not touch, so neither half moves.
+    {
+      code: `const kind: 'id' = 'id';`,
+    },
+    {
+      code: `class MatchRef { readonly kind: 'id' = 'id'; }`,
+    },
   ],
   invalid: [
     // A bare 'id' translation key is still user-facing and must stay flagged —
@@ -303,6 +373,26 @@ ruleTesterTs.run('enforce-id-capitalization', enforceIdCapitalization, {
       code: String.raw`const message = 'enter your id\nhere';`,
       errors: [{ messageId: 'enforceIdCapitalization' }],
       output: String.raw`const message = 'enter your ID\nhere';`,
+    },
+    // The type-position exemption is exact, not a blanket silencer: a literal
+    // type spelling 'id' does not shield prose that merely contains the word.
+    {
+      code: `
+        type Kind = 'id';
+        const message = 'Please enter your id.';
+      `,
+      errors: [{ messageId: 'enforceIdCapitalization' }],
+      output: `
+        type Kind = 'id';
+        const message = 'Please enter your ID.';
+      `,
+    },
+    // A string literal interpolated into a template is a value, so it is still
+    // prose — the surrounding template does not put it in a type position.
+    {
+      code: "const message = `prefix ${'your id'} suffix`;",
+      errors: [{ messageId: 'enforceIdCapitalization' }],
+      output: "const message = `prefix ${'your ID'} suffix`;",
     },
     // Make sure user-facing text in components with destructured parameters is still flagged
     {
