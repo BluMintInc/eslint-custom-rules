@@ -109,6 +109,15 @@ export const Page = memo(function PageUnmemoized({ items }) {
 });
 ```
 
+A component's body is read for JSX the same way whichever way that body is
+spelled. A concise arrow body and the `return` of a block body are the same
+value, so `(props) => view` and `(props) => { return view; }` are the same
+component when `view` is a single-assignment binding holding JSX. Resolution
+follows a binding only while its value is unambiguous: a reassigned binding, or
+one whose initializer is itself a function, is left alone — a function value is
+not a JSX value, which is why a render helper handed back from a component-named
+arrow stays unreported.
+
 A component nested in a render body is also claimed by
 [`memo-nested-react-components`](./memo-nested-react-components.md), whose
 remedy — hoist the component out of the render body — is the one that repairs

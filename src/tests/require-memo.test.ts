@@ -396,6 +396,38 @@ export function makeRow() {
       filename: 'src/components/SomeComponent.tsx',
       code: `export default function Component() { return <div />; }`,
     },
+    // #2186 controls. Resolving a concise body's identifier to its initializer
+    // must not turn every named binding into JSX; each of these names a value
+    // that is not one, spelled the way the reported case is spelled.
+    //
+    // A binding whose value is a FUNCTION is not JSX, so the arrow returns a
+    // render helper rather than an element.
+    {
+      filename: 'src/components/SomeComponent.tsx',
+      code: `const makeRow = () => <div />;
+const Row = (props: { x: string }) => makeRow;`,
+    },
+    // A reassigned binding does not deterministically name its initializer's
+    // value, so it is not followed.
+    {
+      filename: 'src/components/SomeComponent.tsx',
+      code: `let view = <div />;
+view = <span />;
+const Row = (props: { x: string }) => view;`,
+    },
+    // A self-referential initializer terminates the resolution rather than
+    // recurring through it.
+    {
+      filename: 'src/components/SomeComponent.tsx',
+      code: `const view = view;
+const Row = (props: { x: string }) => view;`,
+    },
+    // A non-JSX initializer stays non-JSX.
+    {
+      filename: 'src/components/SomeComponent.tsx',
+      code: `const label = 'hi';
+const Row = (props: { x: string }) => label;`,
+    },
   ],
   invalid: [
     withDefaults({
@@ -404,6 +436,41 @@ export function makeRow() {
 const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</div>; });`,
       filename: 'src/components/SomeComponent.tsx',
       name: 'Component',
+    }),
+    // #2186 subject: a concise body naming a JSX-valued binding renders exactly
+    // what the block-bodied twin below renders, so the two must be reported
+    // alike. The identifier resolution used to reach only the `return` form.
+    withDefaults({
+      code: `const view = <div />;
+const Row = (props: { x: string }) => view;`,
+      output: `import { memo } from '../util/memo';
+const view = <div />;
+const Row = memo((props: { x: string }) => view);`,
+      filename: 'src/components/SomeComponent.tsx',
+      name: 'Row',
+    }),
+    // #2186 control: the block-bodied twin, which the rule has always caught.
+    withDefaults({
+      code: `const view = <div />;
+const Row = (props: { x: string }) => { return view; };`,
+      output: `import { memo } from '../util/memo';
+const view = <div />;
+const Row = memo((props: { x: string }) => { return view; });`,
+      filename: 'src/components/SomeComponent.tsx',
+      name: 'Row',
+    }),
+    // A chain of single-assignment bindings resolves the same way either
+    // spelling reaches it.
+    withDefaults({
+      code: `const view = <div />;
+const alias = view;
+const Row = (props: { x: string }) => alias;`,
+      output: `import { memo } from '../util/memo';
+const view = <div />;
+const alias = view;
+const Row = memo((props: { x: string }) => alias);`,
+      filename: 'src/components/SomeComponent.tsx',
+      name: 'Row',
     }),
     withDefaults({
       code: `function Component({foo}) { return <div>{foo}</div>; }`,
