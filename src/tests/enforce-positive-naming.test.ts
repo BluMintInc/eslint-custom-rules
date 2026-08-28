@@ -56,6 +56,64 @@ ruleTesterTs.run('enforce-positive-naming', enforcePositiveNaming, {
     // Non-boolean methods should not be flagged
     'const utils = { disableFeature(id: string) { /* implementation */ } };',
     'class ErrorHandler { handleError(err: Error) { /* implementation */ } }',
+
+    // A type-only expression wrapper (`as T`, `satisfies T`, `!`) changes no
+    // runtime semantics, so the validator carve-out must survive it (#2174).
+    `
+    type V = (value?: string) => string | true;
+    export const isNotBlank = ((value?: string) => validate(value)) as V;
+    `,
+    `
+    type V = (value?: string) => string | true;
+    export const isNotBlank = ((value?: string) => validate(value)) satisfies V;
+    `,
+    'export const isNotBlank = ((value?: string) => validate(value))!;',
+    `
+    type V = (value?: string) => string | true;
+    export const isNotBlank = (function (value?: string) {
+      return validate(value);
+    }) as V;
+    `,
+    `
+    type V = (value?: string) => string | true;
+    export const isNotBlank = ((value?: string) => {
+      if (!value) {
+        return 'Must not be blank';
+      }
+      return true;
+    }) as V;
+    `,
+    `
+    type V = (value?: string) => string | true;
+    class Form {
+      isNotBlank = ((value?: string) => validate(value)) as V;
+    }
+    `,
+    `
+    type V = (value?: string) => string | true;
+    const validators = {
+      isNotBlank: ((value?: string) => validate(value)) as V,
+    };
+    `,
+    // Stacked wrappers unwrap to the same function.
+    `
+    type V = (value?: string) => string | true;
+    export const isNotBlank = (((value?: string) => validate(value)) as V)!;
+    `,
+    // The angle-bracket assertion is the same type-only wrapper.
+    `
+    type V = (value?: string) => string | true;
+    export const isNotBlank = <V>((value?: string) => validate(value));
+    `,
+
+    // A property signature carries its return shape solely in the annotation,
+    // so the carve-out must read it there too (#2175).
+    'interface Form { isNotBlank: (value?: string) => string | true; }',
+    'interface Form { isNotBlank?: (value?: string) => string | true; }',
+    'interface Form { readonly isNotBlank: (value?: string) => string | true; }',
+    'type Form = { isNotBlank: (value?: string) => string | true };',
+    'interface Form { hasNoErrors: (value?: string) => string | true; }',
+    'interface Form { isNotBlank: (value?: string) => void; }',
   ],
   invalid: [
     // Invalid boolean variables with "not" prefix
@@ -234,6 +292,81 @@ ruleTesterTs.run('enforce-positive-naming', enforcePositiveNaming, {
           data: {
             name: 'doesNotExist',
             alternatives: 'doesExist',
+          },
+        },
+      ],
+    },
+    // Anti-regression for #2174: unwrapping the assertion must not exempt a
+    // function that is still proven to return a boolean.
+    {
+      code: `
+type B = (value?: string) => boolean;
+export const isNotBlank = ((value?: string): boolean => !!value) as B;
+      `,
+      errors: [
+        {
+          messageId: 'avoidNegativeNaming',
+          data: {
+            name: 'isNotBlank',
+            alternatives: 'isBlank',
+          },
+        },
+      ],
+    },
+    {
+      code: `
+type B = (value?: string) => boolean;
+class Form {
+  isNotBlank = ((value?: string): boolean => !!value) as B;
+}
+      `,
+      errors: [
+        {
+          messageId: 'avoidNegativeNaming',
+          data: {
+            name: 'isNotBlank',
+            alternatives: 'isBlank',
+          },
+        },
+      ],
+    },
+    // Anti-regression for #2175: a property signature whose function type
+    // returns a boolean is a genuine boolean predicate and still reports.
+    {
+      code: `
+type B = (value?: string) => boolean;
+export const isNotBlank = <B>((value?: string): boolean => !!value);
+      `,
+      errors: [
+        {
+          messageId: 'avoidNegativeNaming',
+          data: {
+            name: 'isNotBlank',
+            alternatives: 'isBlank',
+          },
+        },
+      ],
+    },
+    {
+      code: 'interface Form { isNotBlank: (value?: string) => boolean; }',
+      errors: [
+        {
+          messageId: 'avoidNegativeNaming',
+          data: {
+            name: 'isNotBlank',
+            alternatives: 'isBlank',
+          },
+        },
+      ],
+    },
+    {
+      code: 'interface Form { isNotVerified: boolean; }',
+      errors: [
+        {
+          messageId: 'avoidNegativeNaming',
+          data: {
+            name: 'isNotVerified',
+            alternatives: 'isVerified',
           },
         },
       ],
