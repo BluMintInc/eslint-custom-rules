@@ -1,3 +1,10 @@
+## [1.20.187](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.186...v1.20.187) (2026-08-28)
+
+
+### Bug Fixes
+
+* **react-usememo-should-be-component:** read an unbraced case consequent through the same predicate as a braced one (closes [#2206](https://github.com/BluMintInc/eslint-custom-rules/issues/2206)) ([3d91749](https://github.com/BluMintInc/eslint-custom-rules/commit/3d9174987081e094b23c0cfabbd564e691008ab0)), closes [#2201](https://github.com/BluMintInc/eslint-custom-rules/issues/2201)
+
 ## [1.20.186](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.185...v1.20.186) (2026-08-28)
 
 

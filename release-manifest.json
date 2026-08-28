@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.187",
+    "date": "2026-08-28T10:18:26.589Z",
+    "rules": [
+      {
+        "name": "react-usememo-should-be-component",
+        "changeType": "fix",
+        "issues": [
+          2206
+        ],
+        "summary": "read an unbraced case consequent through the same predicate as a braced one (closes #2206)"
+      }
+    ]
+  },
+  {
     "version": "1.20.186",
     "date": "2026-08-28T09:27:29.922Z",
     "rules": [
