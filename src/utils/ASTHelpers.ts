@@ -564,8 +564,12 @@ export class ASTHelpers {
       case 'MethodDefinition':
       case 'TSAbstractMethodDefinition': {
         // The method's own function expression does not rebind `this`, so its
-        // parameters and body are walked as instance context. A computed key
-        // and decorators evaluate outside the instance, hence the split.
+        // parameters and body PRESERVE whatever context they were handed —
+        // they do not restore one. Hardcoding `true` here discarded the
+        // `false` a nested class had just handed down, crediting `this.x`
+        // inside a nested class's method to the enclosing class (#2193).
+        // A computed key and decorators evaluate outside the instance, hence
+        // the split.
         const method = node as any;
         this.collectClassMemberReferences(
           method.key,
@@ -585,14 +589,14 @@ export class ASTHelpers {
           this.collectClassMemberReferences(
             param,
             className,
-            true,
+            isThisTheInstance,
             dependencies,
           );
         }
         this.collectClassMemberReferences(
           method.value?.body,
           className,
-          true,
+          isThisTheInstance,
           dependencies,
         );
         return;
