@@ -2780,6 +2780,17 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
     }
 
     /**
+     * Whether a statement sits DIRECTLY in a `case`/`default` clause instead of
+     * inside a block.
+     *
+     * An unbraced consequent has no scope of its own: it shares the switch
+     * body's single block scope with every sibling clause. (#2204)
+     */
+    function isInUnbracedSwitchCase(node: TSESTree.Node): boolean {
+      return node.parent?.type === AST_NODE_TYPES.SwitchCase;
+    }
+
+    /**
      * Generates a fix for sequential awaits
      *
      * Returns null when the sequential awaits cannot be safely rewritten as a Promise.all.
@@ -2973,6 +2984,23 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
       let promiseAllText: string;
 
       if (hasVariableDeclarations) {
+        // A lexical declaration emitted directly into an unbraced `case`
+        // clause binds in the SWITCH body's scope, not the clause's: core
+        // `no-case-declarations` rejects it, and the name leaks across every
+        // sibling clause, where it sits in the temporal dead zone. Merging the
+        // run into one `const [a, b] = await Promise.all([...])` keeps that
+        // hazard, and bracing the clause from here would have to rewrite text
+        // the run does not own -- the `break` and every other statement in the
+        // consequent -- so the fix is declined and the report stands on its
+        // own. `var` is function-scoped and carries neither problem, so a
+        // `var` run in the same position still fixes. (#2204)
+        if (
+          isInUnbracedSwitchCase(awaitNodes[0]) &&
+          Array.from(declKinds).some((kind) => kind !== 'var')
+        ) {
+          return null;
+        }
+
         if (declKinds.size !== 1) {
           return null;
         }
@@ -3082,6 +3110,15 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
       },
       BlockStatement(node) {
         processStatementList(node.body);
+      },
+      // An unbraced `case`/`default` consequent is a statement list with no
+      // BlockStatement wrapper, so scanning only `Program` and
+      // `BlockStatement` never reaches it and a parallelizable await run
+      // inside a case label goes unreported. A braced consequent is the single
+      // BlockStatement the arm above already scans, so this arm finds no
+      // awaits there and cannot double-report. (#2204)
+      SwitchCase(node) {
+        processStatementList(node.consequent);
       },
     };
   },

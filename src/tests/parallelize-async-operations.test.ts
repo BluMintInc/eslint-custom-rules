@@ -5007,3 +5007,426 @@ async function rebuildEverything() {
     },
   ],
 });
+
+// An unbraced `case`/`default` consequent is a statement list that no
+// BlockStatement wraps, so a scan registered only on `Program` and
+// `BlockStatement` never reaches it. Bracing the clause is a pure spelling
+// choice for a run that declares nothing, so the two spellings must agree.
+// The exception is a run that DECLARES: `const [a, b] = await Promise.all(...)`
+// emitted into an unbraced clause binds at switch scope, so the fix is
+// declined there and only the report stands. (#2204)
+ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
+  valid: [
+    // Dependent awaits stay sequential in an unbraced clause exactly as they do
+    // anywhere else: the second operand reads the first's result.
+    `
+async function go(flag) {
+  switch (flag) {
+    case 1:
+      const user = await fetchUser();
+      const posts = await fetchPosts(user);
+      break;
+  }
+}
+`,
+    // The same dependency, braced. Both spellings must stay silent, so the
+    // clause arm cannot be reporting for a reason the block arm rejects.
+    `
+async function go(flag) {
+  switch (flag) {
+    case 1: {
+      const user = await fetchUser();
+      const posts = await fetchPosts(user);
+      break;
+    }
+  }
+}
+`,
+    // A single await in a clause is not a run.
+    `
+async function go(flag) {
+  switch (flag) {
+    case 1:
+      await only();
+      break;
+    case 2:
+      await other();
+      break;
+  }
+}
+`,
+    // A clause with no consequent at all (fall-through label) must not trip the
+    // empty-list path.
+    `
+async function go(flag) {
+  switch (flag) {
+    case 1:
+    case 2:
+      break;
+  }
+}
+`,
+    // A switch inside a loop is still a loop: `areInLoop` walks past the clause
+    // to the enclosing `for`, so the clause arm inherits that barrier.
+    `
+async function go(flags) {
+  for (const flag of flags) {
+    switch (flag) {
+      case 1:
+        await first();
+        await second();
+        break;
+    }
+  }
+}
+`,
+    // A try block is still a try block when the clause is unbraced.
+    `
+async function go(flag) {
+  switch (flag) {
+    case 1:
+      try {
+        await first();
+        await second();
+      } catch (error) {
+        handle(error);
+      }
+      break;
+  }
+}
+`,
+  ],
+  invalid: [
+    // SUBJECT (#2204): the unbraced clause reports and fixes exactly as its
+    // braced control does.
+    {
+      code: `
+async function go(flag) {
+  switch (flag) {
+    case 1:
+      await first();
+      await second();
+      break;
+  }
+}
+`,
+      errors: [error(2)],
+      output: `
+async function go(flag) {
+  switch (flag) {
+    case 1:
+      await Promise.all([first(), second()]);
+      break;
+  }
+}
+`,
+    },
+    // CONTROL (#2204): the same meaning spelled with a block. Reported and
+    // fixed before the clause arm exists, and unchanged by it.
+    {
+      code: `
+async function go(flag) {
+  switch (flag) {
+    case 1: {
+      await first();
+      await second();
+      break;
+    }
+  }
+}
+`,
+      errors: [error(2)],
+      output: `
+async function go(flag) {
+  switch (flag) {
+    case 1: {
+      await Promise.all([first(), second()]);
+      break;
+    }
+  }
+}
+`,
+    },
+    // The decline. `const [a, b] = await Promise.all([...])` written here binds
+    // in the switch body's scope, where every sibling clause can reach it, so
+    // the fix is withheld and the author brackets the clause first. `output:
+    // null` asserts no rewrite; the report still fires.
+    {
+      code: `
+async function go(flag) {
+  switch (flag) {
+    case 1:
+      const a = await first();
+      const b = await second();
+      break;
+  }
+}
+`,
+      errors: [error(2)],
+      output: null,
+    },
+    // `let` is lexical for the same reason, so it declines for the same reason.
+    {
+      code: `
+async function go(flag) {
+  switch (flag) {
+    case 1:
+      let a = await first();
+      let b = await second();
+      break;
+  }
+}
+`,
+      errors: [error(2)],
+      output: null,
+    },
+    // A run mixing a declaration with a discarded-result await emits the same
+    // lexical declaration, so it declines too.
+    {
+      code: `
+async function go(flag) {
+  switch (flag) {
+    case 1:
+      await first();
+      const b = await second();
+      break;
+  }
+}
+`,
+      errors: [error(2)],
+      output: null,
+    },
+    // The decline must NOT widen to a braced clause: the block gives the
+    // declaration a scope of its own, so the same run fixes there.
+    {
+      code: `
+async function go(flag) {
+  switch (flag) {
+    case 1: {
+      const a = await first();
+      const b = await second();
+      break;
+    }
+  }
+}
+`,
+      errors: [error(2)],
+      output: `
+async function go(flag) {
+  switch (flag) {
+    case 1: {
+      const [a, b] = await Promise.all([first(), second()]);
+      break;
+    }
+  }
+}
+`,
+    },
+    // Nor to a non-declaration emission in an unbraced clause, which is the
+    // SUBJECT shape one statement longer.
+    {
+      code: `
+async function go(flag) {
+  switch (flag) {
+    case 1:
+      await first();
+      await second();
+      await third();
+      break;
+  }
+}
+`,
+      errors: [error(3)],
+      output: `
+async function go(flag) {
+  switch (flag) {
+    case 1:
+      await Promise.all([first(), second(), third()]);
+      break;
+  }
+}
+`,
+    },
+    // Nor to `var`, which is function-scoped: it is neither a
+    // `no-case-declarations` violation nor a binding the clause boundary was
+    // ever containing, so it keeps its fix.
+    {
+      code: `
+async function go(flag) {
+  switch (flag) {
+    case 1:
+      var a = await first();
+      var b = await second();
+      break;
+  }
+}
+`,
+      errors: [error(2)],
+      output: `
+async function go(flag) {
+  switch (flag) {
+    case 1:
+      var [a, b] = await Promise.all([first(), second()]);
+      break;
+  }
+}
+`,
+    },
+    // An unbraced `default` is the same statement list under a different label.
+    {
+      code: `
+async function go(flag) {
+  switch (flag) {
+    default:
+      await first();
+      await second();
+  }
+}
+`,
+      errors: [error(2)],
+      output: `
+async function go(flag) {
+  switch (flag) {
+    default:
+      await Promise.all([first(), second()]);
+  }
+}
+`,
+    },
+    // Each clause owns its own run: two clauses report twice and fix
+    // independently, rather than one report spanning the switch.
+    {
+      code: `
+async function go(flag) {
+  switch (flag) {
+    case 1:
+      await alpha();
+      await beta();
+      break;
+    case 2:
+      await gamma();
+      await delta();
+      break;
+    default:
+      await epsilon();
+      await zeta();
+  }
+}
+`,
+      errors: [error(2), error(2), error(2)],
+      output: `
+async function go(flag) {
+  switch (flag) {
+    case 1:
+      await Promise.all([alpha(), beta()]);
+      break;
+    case 2:
+      await Promise.all([gamma(), delta()]);
+      break;
+    default:
+      await Promise.all([epsilon(), zeta()]);
+  }
+}
+`,
+    },
+    // Fall-through labels share ONE consequent, which is the list that carries
+    // the run; the empty clauses above it contribute nothing.
+    {
+      code: `
+async function go(flag) {
+  switch (flag) {
+    case 1:
+    case 2:
+      await alpha();
+      await beta();
+      break;
+  }
+}
+`,
+      errors: [error(2)],
+      output: `
+async function go(flag) {
+  switch (flag) {
+    case 1:
+    case 2:
+      await Promise.all([alpha(), beta()]);
+      break;
+  }
+}
+`,
+    },
+    // A non-await statement between two runs splits them, in a clause exactly
+    // as in a block.
+    {
+      code: `
+async function go(flag) {
+  switch (flag) {
+    case 1:
+      await alpha();
+      await beta();
+      log();
+      await gamma();
+      await delta();
+      break;
+  }
+}
+`,
+      errors: [error(2), error(2)],
+      output: `
+async function go(flag) {
+  switch (flag) {
+    case 1:
+      await Promise.all([alpha(), beta()]);
+      log();
+      await Promise.all([gamma(), delta()]);
+      break;
+  }
+}
+`,
+    },
+    // A run nested in a block INSIDE an unbraced clause is reached by the block
+    // arm, and the clause arm must not report it a second time.
+    {
+      code: `
+async function go(flag) {
+  switch (flag) {
+    case 1:
+      if (ready) {
+        await first();
+        await second();
+      }
+      break;
+  }
+}
+`,
+      errors: [error(2)],
+      output: `
+async function go(flag) {
+  switch (flag) {
+    case 1:
+      if (ready) {
+        await Promise.all([first(), second()]);
+      }
+      break;
+  }
+}
+`,
+    },
+    // POSITIVE CONTROL: the plain function-body shape the rule has always
+    // handled reports and fixes unchanged.
+    {
+      code: `
+async function go() {
+  const a = await first();
+  const b = await second();
+}
+`,
+      errors: [error(2)],
+      output: `
+async function go() {
+  const [a, b] = await Promise.all([first(), second()]);
+}
+`,
+    },
+  ],
+});
