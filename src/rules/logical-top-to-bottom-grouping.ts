@@ -1948,38 +1948,49 @@ function collectFunctionBodyDependencies(
   });
 
   let resolved = true;
-  traverseAst(fn.body, {
-    skipFunctions: true,
-    visit(current) {
-      if (
-        current.type !== AST_NODE_TYPES.CallExpression &&
-        current.type !== AST_NODE_TYPES.ChainExpression
-      ) {
-        return undefined;
-      }
+  const resolveCallsIn = (region: TSESTree.Node): void => {
+    traverseAst(region, {
+      skipFunctions: true,
+      visit(current) {
+        if (
+          current.type !== AST_NODE_TYPES.CallExpression &&
+          current.type !== AST_NODE_TYPES.ChainExpression
+        ) {
+          return undefined;
+        }
 
-      const callExpression =
-        current.type === AST_NODE_TYPES.CallExpression
-          ? current
-          : extractCallExpression(current as TSESTree.Expression);
-      if (!callExpression) {
-        return undefined;
-      }
+        const callExpression =
+          current.type === AST_NODE_TYPES.CallExpression
+            ? current
+            : extractCallExpression(current as TSESTree.Expression);
+        if (!callExpression) {
+          return undefined;
+        }
 
-      const nestedResolved = collectCalleeDependencies(
-        context.body,
-        callExpression.callee,
-        dependencies,
-        context.callIndex,
-        context.visitedCallees,
-      );
-      if (!nestedResolved) {
-        resolved = false;
-        return { skipChildren: true };
-      }
-      return undefined;
-    },
-  });
+        const nestedResolved = collectCalleeDependencies(
+          context.body,
+          callExpression.callee,
+          dependencies,
+          context.callIndex,
+          context.visitedCallees,
+        );
+        if (!nestedResolved) {
+          resolved = false;
+          return { skipChildren: true };
+        }
+        return undefined;
+      },
+    });
+  };
+
+  // Parameter initializers run on entry, so a call sitting in a default reaches
+  // the callee's captures exactly as a call in the body does. Restricting this
+  // walk to the body contributes the callee's NAME without any of its captures,
+  // and the reordering fix then hoists the effect above a binding that callee
+  // reads -- a TDZ ReferenceError at runtime with no lint-visible symptom.
+  // `collectFunctionCaptures` above spans `fn.params` for the same reason.
+  fn.params.forEach((param) => resolveCallsIn(param));
+  resolveCallsIn(fn.body);
 
   return resolved;
 }

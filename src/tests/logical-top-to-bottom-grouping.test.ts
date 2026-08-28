@@ -702,6 +702,103 @@ function run(harness) {
 `,
       parserOptions: { ecmaFeatures: { jsx: true } },
     },
+    // A parameter default runs on entry, so a call sitting there reaches the
+    // callee's captures exactly as a call in the body does. Resolving the callee
+    // only for body calls left `secret` off the effect's dependency set and the
+    // hoist crossed `const secret = 1`, turning working code into a TDZ
+    // ReferenceError.
+    `
+function run() {
+  const makeDefault = () => secret;
+
+  const secret = 1;
+
+  ((h = makeDefault()) => { report(h); })();
+
+  use(secret);
+}
+`,
+    // Not arrow-specific: a function expression's parameter default carries the
+    // same reach.
+    `
+function run() {
+  const makeDefault = () => secret;
+
+  const secret = 1;
+
+  (function (h = makeDefault()) { report(h); })();
+
+  use(secret);
+}
+`,
+    // A default nested inside a destructuring pattern is still a parameter
+    // initializer, so the callee walk has to reach it there too.
+    `
+function run() {
+  const makeDefault = () => secret;
+
+  const secret = 1;
+
+  (({ h = makeDefault() } = {}) => { report(h); })();
+
+  use(secret);
+}
+`,
+    // A default reading the binding directly was always safe, because captures
+    // are collected across the parameter list. Kept as the control that pins
+    // which half of the pair regressed.
+    `
+function run() {
+  const secret = 1;
+
+  ((h = secret) => { report(h); })();
+
+  use(secret);
+}
+`,
+    // The semantically equivalent spelling: the same call moved into the body.
+    // A correct rule treats it identically to the parameter-default spelling.
+    `
+function run() {
+  const makeDefault = () => secret;
+
+  const secret = 1;
+
+  (() => { const h = makeDefault(); report(h); })();
+
+  use(secret);
+}
+`,
+    // The captured binding is what forbids the hoist however many hops away it
+    // sits, so a default whose callee is resolved through a chain of
+    // declarations is blocked by the read at the far end of that chain.
+    `
+function run() {
+  const readSecret = () => secret;
+  const makeDefault = () => readSecret();
+
+  const secret = 1;
+
+  ((h = makeDefault()) => { report(h); })();
+
+  use(secret);
+}
+`,
+    // Function declarations hoist, so the callee resolves regardless of source
+    // order; the capture it carries still pins the effect below `secret`.
+    `
+function run() {
+  const secret = 1;
+
+  ((h = makeDefault()) => { report(h); })();
+
+  function makeDefault() {
+    return secret;
+  }
+
+  use(secret);
+}
+`,
   ],
   invalid: [
     // A shebang is only a shebang at character 0. ESLint presents it as a
@@ -1984,6 +2081,67 @@ function build(harness) {
 `,
       parserOptions: { ecmaFeatures: { jsx: true } },
       errors: [{ messageId: 'moveDeclarationCloser' }],
+    },
+    // The positive half of the parameter-default pair: this callee captures
+    // nothing, so nothing forbids the hoist and the effect still moves. Without
+    // it, silencing the false positive by refusing to look at parameters at all
+    // would pass unnoticed.
+    {
+      code: `
+function run() {
+  const makeDefault = () => 42;
+
+  const secret = 1;
+
+  ((h = makeDefault()) => { report(h); })();
+
+  use(secret);
+}
+`,
+      output: `
+function run() {
+  const makeDefault = () => 42;
+
+  ((h = makeDefault()) => { report(h); })();
+
+  const secret = 1;
+
+  use(secret);
+}
+`,
+      errors: [{ messageId: 'moveSideEffect' }],
+    },
+    // The callee's capture is a dependency, not a blanket veto: the effect still
+    // rises above the unrelated `noise` declaration, and stops exactly at the
+    // binding the callee reads.
+    {
+      code: `
+function run() {
+  const makeDefault = () => shared;
+
+  const shared = 1;
+
+  const noise = 2;
+
+  ((h = makeDefault()) => { report(h); })();
+
+  use(noise);
+}
+`,
+      output: `
+function run() {
+  const makeDefault = () => shared;
+
+  const shared = 1;
+
+  ((h = makeDefault()) => { report(h); })();
+
+  const noise = 2;
+
+  use(noise);
+}
+`,
+      errors: [{ messageId: 'moveSideEffect' }],
     },
   ],
 });
