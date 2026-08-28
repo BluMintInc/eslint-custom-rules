@@ -348,9 +348,61 @@ export const Button = () => {
       { testFilePatterns: string[] },
     ],
   },
+  // #2192 control: the JSX exemption itself. A callback that RENDERS is what
+  // the carve-out is for, and both spellings of it stay exempt.
+  `
+import { useCallback } from 'react';
+const C = () => {
+  const cb = useCallback(() => <div />, []);
+  return cb;
+};
+`,
+  `
+import { useCallback } from 'react';
+const C = () => {
+  const cb = useCallback(() => { return <div />; }, []);
+  return cb;
+};
+`,
 ];
 
 const invalid = [
+  // #2192 subject: a callback returning a FUNCTION does not render, so the JSX
+  // exemption is not its to claim. The concise spelling used to take it because
+  // the handed body WAS the inner arrow, which returnsJSX unwraps.
+  {
+    code: `
+import { useCallback } from 'react';
+const C = () => {
+  const cb = useCallback(() => () => <div />, []);
+  return cb;
+};
+    `,
+    errors: [{ messageId: 'preferUtilityFunction' as const }],
+    output: `
+const cb = () => () => <div />;
+const C = () => {
+  return cb;
+};
+    `,
+  },
+  // #2192 control: the block-bodied twin, which has always reported.
+  {
+    code: `
+import { useCallback } from 'react';
+const C = () => {
+  const cb = useCallback(() => { return () => <div />; }, []);
+  return cb;
+};
+    `,
+    errors: [{ messageId: 'preferUtilityFunction' as const }],
+    output: `
+const cb = () => { return () => <div />; };
+const C = () => {
+  return cb;
+};
+    `,
+  },
   {
     code: `
 import { useCallback } from 'react';
