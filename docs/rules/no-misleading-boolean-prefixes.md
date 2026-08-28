@@ -59,6 +59,24 @@ function shouldCache() {
 }
 ```
 
+The same wrappers are transparent where a function is *named*, not just where it
+returns: `const isReady = (() => 'yes') as ReadyCheck` binds the very function
+`const isReady = () => 'yes'` binds, so it makes the same promise to the same
+call sites. Every naming site is read through them — variable, object property
+and class field:
+
+```typescript
+type ReadyCheck = () => string;
+
+const isReady = (() => 'yes') as ReadyCheck;
+
+const session = { isReady: (() => 'yes') satisfies ReadyCheck };
+
+class SessionState {
+  isReady = (() => 'yes')!;
+}
+```
+
 A class member spelled as a field holding a function is a function everywhere it
 matters: `state.isReady()` reads the same whether the member was written as a
 method or as a bound property, so the prefix makes the same promise to the same
@@ -112,6 +130,8 @@ function isReady(value: unknown) {
 function isEnabled() {
   return true as const;
 }
+
+const hasAccess = (() => true) as () => boolean;
 ```
 
 The same holds for the class-field spelling — the remedy is a real boolean or a
@@ -135,6 +155,7 @@ class SessionState {
 - Explicit `boolean` return types or `Promise<boolean>` (and unions with `null`/`undefined`/`void`)
 - Obvious boolean expressions: comparisons (`>`, `===`), negations (`!x`, `!!x`), or `Boolean(x)`
 - Assertions declaring a boolean-like type (`value as boolean`, `value satisfies boolean`); an assertion naming any other type — or none, as with `as const` — leaves the asserted expression to decide
+- A wrapper between a name and its function (`const isReady = (() => true) as ReadyCheck`) is looked through rather than trusted: the function underneath is judged, exactly as the unwrapped spelling is
 - Class fields that hold a value rather than a function (`isDone = false`, `hasItems = compute()`), and fields with no initializer at all (`declare`, `!:` and `abstract`): there is no return value to judge. A field's own value is the subject of `enforce-boolean-naming-prefixes`
 - Members reached by a computed key (`['isDone'] = () => ...`) or a private name (`#isDone = () => ...`), where the checked name is not the one a call site writes
 
