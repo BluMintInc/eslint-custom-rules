@@ -407,7 +407,12 @@ export const noUnmemoizedMemoWithoutProps = createRule<Options, MessageIds>({
         return;
       }
 
-      const returnsJsx = ASTHelpers.returnsJSX(node.body, context);
+      // The FUNCTION is handed over, never its body. Handing `node.body`
+      // makes a concise arrow's body arrive as the handed node, and
+      // returnsJSX answers about a handed FUNCTION by unwrapping it — so
+      // `() => () => <span/>` was read as a component while the identical
+      // `() => { return () => <span/>; }` correctly was not (#2190).
+      const returnsJsx = ASTHelpers.returnsJSX(node, context);
       if (!returnsJsx) {
         return;
       }
