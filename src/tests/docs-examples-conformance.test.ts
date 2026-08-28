@@ -1144,10 +1144,6 @@ export const SILENT_INCORRECT_STATEMENTS: Record<string, string> = {
     'the report on the destructured require at fence line 1 carries a fix that rewrites `customMockFirestore(` to `mockFirestore(` inside this very describe, so one report already covers and repairs it',
   'enforce-centralized-mock-firestore:139:3':
     'usage scaffolding identical to the correct fence; the report sits on the exported declaration at fence line 1 and is deliberately unfixable, since collapsing that export is what repairs this call',
-  'enforce-firestore-set-merge:188:3':
-    'DEBT (#1743): flagging `docRef.update(...)` requires the file to declare a namespaced `admin.firestore()` instance, which this fence has no reason to carry and the modular SDK never produces. Delete this entry when #1743 lands',
-  'enforce-firestore-set-merge:188:6':
-    "DEBT (#1743): detection requires the receiver's last member to be `batchManager`, so `batchManager.batch.update(...)` never matches and this documented violation is unenforced. Delete this entry when #1743 lands",
   'flatten-push-calls:19:3':
     'one violation per consecutive run: the report lands on `handlers.push` at fence line 2 and its fixer replaces the range spanning all three statements with `handlers.push(fnA, fnB, fnC)`',
   'flatten-push-calls:19:4':
@@ -1418,11 +1414,12 @@ describe('claimed statements inside firing "incorrect" fences must report (#1742
       if (reason.startsWith('DEBT')) expect(reason).toMatch(/#\d+/);
     }
 
-    // Pinned so a new unenforced violation cannot be filed away as debt
-    // silently — raising this means deciding to ship another one.
+    // Pinned at zero: every documented incorrect statement is enforced, so a
+    // new unenforced one cannot be filed away as debt silently — raising this
+    // means deciding to ship a documented violation nobody is warned about.
     expect(
       entries.filter(([, reason]) => reason.startsWith('DEBT')),
-    ).toHaveLength(2);
+    ).toHaveLength(0);
   });
 });
 
