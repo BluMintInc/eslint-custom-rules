@@ -185,8 +185,18 @@ export async function saveSize(ref) {
 
 ### Examples of **incorrect** code for this rule:
 
+The `admin.firestore()` handle below is load-bearing, not scaffolding. A receiver
+written as a plain identifier carries no Firestore marker of its own, so the
+file's handle is the evidence that proves one — see [Identifying a Firestore
+receiver](#identifying-a-firestore-receiver). Drop the handle and three of these
+four calls become unprovable receivers that the rule deliberately leaves alone,
+so the block would stop demonstrating the violation it is here to show.
+
 ```ts
+import * as admin from 'firebase-admin';
 import { updateDoc } from 'firebase/firestore';
+
+const db = admin.firestore();
 
 await docRef.update({ name: 'Ada' });
 await updateDoc(docRef, { active: true });
