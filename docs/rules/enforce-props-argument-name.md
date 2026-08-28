@@ -66,7 +66,9 @@ The fix is suppressed (the violation is still reported) whenever the rename cann
 - The suggested name is already bound in the parameter's own scope, so the rename would be a redeclaration.
 - A scope between a reference and the declaration binds the suggested name, so the rewritten reference would resolve to that binding instead.
 - The parameter's scope (or a nested one) already uses the suggested name for something else, which the rename would capture.
-- The parameter is a constructor parameter property that is referenced elsewhere (as `this.<name>` or as a plain identifier), since those uses are not part of the parameter's binding.
+- The parameter is a constructor parameter property whose name is referenced elsewhere — as `this.<name>`, as `this['<name>']`, as a plain identifier, or as a member read on an instance (`widget.settings`). A parameter property declares a class field as well as a constructor-local binding, and those field reads are not part of the parameter's binding, so a declaration-only rename would strand them.
+
+  How far that scan reaches follows the field's visibility, because visibility is what bounds its legal readers: for a `private` parameter property the enclosing class is a complete scan, while a `public`, `protected`, or modifier-less `readonly` parameter property publishes the field to the whole file, so the scan covers the file. Scanning only the class let a `public` field's external reader survive the rename and point at a member the class no longer had.
 
 When several `*Props` parameters in one signature must be renamed, their rewrites span overlapping regions, so ESLint applies one per pass; a normal `--fix` run converges over its usual multi-pass loop.
 

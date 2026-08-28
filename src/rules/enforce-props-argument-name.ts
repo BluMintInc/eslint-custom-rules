@@ -132,6 +132,132 @@ const renameWouldCollide = (
   return scopeSubtreeReferencesName(declarationScope, newName);
 };
 
+/**
+ * The member name a `this.<x>` access reads, whatever its spelling.
+ *
+ * Keying the check on the dot spelling alone left `this['settings']` invisible,
+ * so the rename shipped and stranded it — the class no longer had the member the
+ * getter reads (#1881/#1882). A computed access with a static string is the SAME
+ * member as the dot form, and the fixer cannot rewrite it either, so it has to
+ * count. `null` marks a genuinely dynamic key, which names no member statically
+ * and therefore strands nothing.
+ */
+const staticMemberName = (
+  node: TSESTree.MemberExpression,
+): string | null | undefined => {
+  if (!node.computed) {
+    return node.property.type === AST_NODE_TYPES.Identifier
+      ? node.property.name
+      : null;
+  }
+  if (
+    node.property.type === AST_NODE_TYPES.Literal &&
+    typeof node.property.value === 'string'
+  ) {
+    return node.property.value;
+  }
+  if (
+    node.property.type === AST_NODE_TYPES.TemplateLiteral &&
+    node.property.expressions.length === 0 &&
+    node.property.quasis.length === 1
+  ) {
+    return node.property.quasis[0].value.cooked;
+  }
+  return null;
+};
+
+/**
+ * How far from its declaration a stranded read of a parameter property can sit.
+ *
+ * A parameter property declares a class FIELD as well as a constructor-local
+ * binding, and `private` is what confines the field's legal readers to the class
+ * body: for a private field the class node is a complete scan root. Every other
+ * visibility — `public`, `protected`, and a modifier-less `readonly`, which is
+ * public — publishes the field to the whole file, so `widget.settings` in a
+ * sibling function, or `this.settings` in a subclass declared elsewhere in the
+ * file, outlives a declaration-only rename and points at a member the class no
+ * longer has. Handing the scan the enclosing class hid exactly those reads, so
+ * the fixer corrupted the file it was fixing (#2177/#2178).
+ */
+const parameterPropertyScanRoot = (
+  param: TSESTree.TSParameterProperty,
+  enclosingClass: TSESTree.ClassDeclaration | TSESTree.ClassExpression,
+): TSESTree.Node => {
+  if (param.accessibility === 'private') {
+    return enclosingClass;
+  }
+  let root: TSESTree.Node = enclosingClass;
+  while (root.parent) {
+    root = root.parent;
+  }
+  return root;
+};
+
+/**
+ * Reports whether renaming a constructor parameter property is unsafe to
+ * autofix.
+ *
+ * A parameter property (`private readonly settings: FooProps`) declares BOTH a
+ * constructor-local binding and a `this.settings` class field. The scope
+ * analyzer only models the binding, so a scope-driven rename rewrites the
+ * declaration while leaving every member read pointing at a name that no longer
+ * exists (Issue #1358). Since the field half of the rename cannot be resolved
+ * through scope analysis, the fix is withheld whenever the name occurs anywhere
+ * under `scanRoot` other than at its declaration.
+ *
+ * The member check is object-agnostic on purpose: `widget.settings` reads the
+ * same field as `this.settings`, and the fixer can rewrite neither.
+ */
+const parameterPropertyRenameIsUnsafe = (
+  scanRoot: TSESTree.Node,
+  name: string,
+  declarationId: TSESTree.Identifier,
+): boolean => {
+  let unsafe = false;
+
+  const visit = (node: TSESTree.Node): void => {
+    if (unsafe) {
+      return;
+    }
+
+    if (
+      node.type === AST_NODE_TYPES.MemberExpression &&
+      staticMemberName(node) === name
+    ) {
+      unsafe = true;
+      return;
+    }
+
+    if (
+      node.type === AST_NODE_TYPES.Identifier &&
+      node.name === name &&
+      node !== declarationId
+    ) {
+      unsafe = true;
+      return;
+    }
+
+    for (const key of Object.keys(node)) {
+      if (key === 'parent') {
+        continue;
+      }
+      const value = (node as unknown as Record<string, unknown>)[key];
+      if (Array.isArray(value)) {
+        for (const child of value) {
+          if (ASTHelpers.isNode(child)) {
+            visit(child);
+          }
+        }
+      } else if (ASTHelpers.isNode(value)) {
+        visit(value);
+      }
+    }
+  };
+
+  visit(scanRoot);
+  return unsafe;
+};
+
 export const enforcePropsArgumentName = createRule<Options, MessageIds>({
   name: 'enforce-props-argument-name',
   meta: {
@@ -478,96 +604,6 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
       });
     }
 
-    /**
-     * The member name a `this.<x>` access reads, whatever its spelling.
-     *
-     * Keying the check on the dot spelling alone left `this['settings']`
-     * invisible, so the rename shipped and stranded it — the class no longer had
-     * the member the getter reads (#1881). A computed access with a static
-     * string is the SAME member as the dot form, and the fixer cannot rewrite it
-     * either, so it has to count. `null` marks a genuinely dynamic key, which
-     * names no member statically.
-     */
-    function staticMemberName(node: TSESTree.MemberExpression): string | null {
-      if (!node.computed) {
-        return node.property.type === AST_NODE_TYPES.Identifier
-          ? node.property.name
-          : null;
-      }
-      if (
-        node.property.type === AST_NODE_TYPES.Literal &&
-        typeof node.property.value === 'string'
-      ) {
-        return node.property.value;
-      }
-      if (
-        node.property.type === AST_NODE_TYPES.TemplateLiteral &&
-        node.property.expressions.length === 0 &&
-        node.property.quasis.length === 1
-      ) {
-        return node.property.quasis[0].value.cooked;
-      }
-      return null;
-    }
-
-    // Determine whether renaming a constructor parameter property is unsafe to
-    // autofix. A parameter property (`private readonly foo: T`) creates BOTH a
-    // constructor-local binding and a `this.foo` class field, so a
-    // declaration-only rename would leave dangling references: plain `foo`
-    // usages inside the constructor (e.g. `super(foo)`) and `this.foo` accesses
-    // anywhere in the class. Mirrors #1123 — when a rename cannot be applied
-    // everywhere syntactically, emit no fix rather than corrupt the code.
-    function parameterPropertyRenameIsUnsafe(
-      classNode: TSESTree.ClassDeclaration | TSESTree.ClassExpression,
-      name: string,
-      declarationId: TSESTree.Identifier,
-    ): boolean {
-      let unsafe = false;
-
-      const visit = (node: TSESTree.Node): void => {
-        if (unsafe) {
-          return;
-        }
-
-        if (
-          node.type === AST_NODE_TYPES.MemberExpression &&
-          node.object.type === AST_NODE_TYPES.ThisExpression &&
-          staticMemberName(node) === name
-        ) {
-          unsafe = true;
-          return;
-        }
-
-        if (
-          node.type === AST_NODE_TYPES.Identifier &&
-          node.name === name &&
-          node !== declarationId
-        ) {
-          unsafe = true;
-          return;
-        }
-
-        for (const key of Object.keys(node)) {
-          if (key === 'parent') {
-            continue;
-          }
-          const value = (node as unknown as Record<string, unknown>)[key];
-          if (Array.isArray(value)) {
-            for (const child of value) {
-              if (ASTHelpers.isNode(child)) {
-                visit(child);
-              }
-            }
-          } else if (ASTHelpers.isNode(value)) {
-            visit(value);
-          }
-        }
-      };
-
-      visit(classNode);
-      return unsafe;
-    }
-
     // Find the class (declaration or expression) that owns a method definition.
     function getEnclosingClass(
       node: TSESTree.MethodDefinition,
@@ -643,12 +679,16 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
                 fix: (fixer) => {
                   // A parameter-property rename touches both the parameter and
                   // the `this.<name>` field; refuse to autofix when the name is
-                  // referenced elsewhere, since a declaration-only rename would
-                  // leave dangling references.
+                  // referenced anywhere within reach of that field, since a
+                  // declaration-only rename would leave dangling references.
                   if (
                     param.type === AST_NODE_TYPES.TSParameterProperty &&
                     enclosingClass &&
-                    parameterPropertyRenameIsUnsafe(enclosingClass, id.name, id)
+                    parameterPropertyRenameIsUnsafe(
+                      parameterPropertyScanRoot(param, enclosingClass),
+                      id.name,
+                      id,
+                    )
                   ) {
                     return null;
                   }

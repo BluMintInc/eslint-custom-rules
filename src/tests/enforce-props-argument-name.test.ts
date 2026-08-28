@@ -1239,6 +1239,173 @@ ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
         }
       `,
     },
+
+    // #2177: a `public` parameter property publishes the field to the whole
+    // file, so `w.settings` in a sibling function reads the very member the
+    // rename removes. The safety scan was handed the enclosing class and could
+    // not see that read, so `--fix` renamed the declaration and left the reader
+    // pointing at a member the class no longer has (TS2339).
+    {
+      name: 'a public parameter property read outside the class withholds the rename',
+      code: `
+        type FooProps = { a: number };
+        class Widget {
+          constructor(public readonly settings: FooProps) {}
+        }
+        export function read(w: Widget) {
+          return w.settings.a;
+        }
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'FooProps' },
+        },
+      ],
+      output: null,
+    },
+
+    // #2177: a `protected` field is readable by a subclass declared elsewhere in
+    // the file — the same read, one class node away from the scan root.
+    {
+      name: 'a protected parameter property read by a subclass withholds the rename',
+      code: `
+        type FooProps = { a: number };
+        export class Widget {
+          constructor(protected readonly settings: FooProps) {}
+        }
+        export class Sub extends Widget {
+          get a() {
+            return this.settings.a;
+          }
+        }
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'FooProps' },
+        },
+      ],
+      output: null,
+    },
+
+    // #2177: a bracket-spelled external read names the SAME member as the dot
+    // form (the #1881 spelling, one scope out), and the fixer rewrites neither.
+    {
+      name: 'a bracket-spelled external read withholds the rename',
+      code: `
+        type FooProps = { a: number };
+        class Widget {
+          constructor(public readonly settings: FooProps) {}
+        }
+        export function read(w: Widget) {
+          return w['settings'].a;
+        }
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'FooProps' },
+        },
+      ],
+      output: null,
+    },
+
+    // Control for #2177: nothing outside the class reads the field, so widening
+    // the scan past the class must not cost the fix.
+    {
+      name: 'a public parameter property with no reader still autofixes',
+      code: `
+        type FooProps = { a: number };
+        class Widget {
+          constructor(public readonly settings: FooProps) {}
+        }
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'FooProps' },
+        },
+      ],
+      output: `
+        type FooProps = { a: number };
+        class Widget {
+          constructor(public readonly props: FooProps) {}
+        }
+      `,
+    },
+
+    // Boundary for #2177: `private` confines every legal read to the class body,
+    // so the scan stays class-scoped and the rename still applies. The external
+    // `w.settings` below is already a TS2341 error before the fix runs, so it is
+    // not a read the rename can strand.
+    {
+      name: 'a private parameter property keeps its class-scoped scan',
+      code: `
+        type FooProps = { a: number };
+        class Widget {
+          constructor(private readonly settings: FooProps) {}
+        }
+        export function read(w: Widget) {
+          return w.settings.a;
+        }
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'FooProps' },
+        },
+      ],
+      output: `
+        type FooProps = { a: number };
+        class Widget {
+          constructor(private readonly props: FooProps) {}
+        }
+        export function read(w: Widget) {
+          return w.settings.a;
+        }
+      `,
+    },
+
+    // Pair contract for #2180: a parameter property carrying a default value is
+    // still a Props parameter here, so a two-Props constructor gets prefixed
+    // names. enforce-props-naming-consistency defers to exactly this suggestion,
+    // and used to contradict it by counting the defaulted parameter as absent.
+    {
+      name: 'a defaulted parameter property counts toward multi-Props naming',
+      code: `
+        type AProps = { a: number };
+        type BProps = { b: number };
+        const fallback = { a: 1 };
+        class Widget {
+          constructor(
+            private readonly alpha: AProps = fallback,
+            private readonly beta: BProps,
+          ) {}
+        }
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterNameWithPrefix',
+          data: { typeName: 'AProps', suggestedName: 'aProps' },
+        },
+        {
+          messageId: 'usePropsParameterNameWithPrefix',
+          data: { typeName: 'BProps', suggestedName: 'bProps' },
+        },
+      ],
+      output: `
+        type AProps = { a: number };
+        type BProps = { b: number };
+        const fallback = { a: 1 };
+        class Widget {
+          constructor(
+            private readonly aProps: AProps = fallback,
+            private readonly bProps: BProps,
+          ) {}
+        }
+      `,
+    },
   ],
 });
 
