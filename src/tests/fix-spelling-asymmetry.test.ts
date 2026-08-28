@@ -1076,7 +1076,6 @@ const DETECTION_UNDRIVEN: Record<string, UndrivenCause> = {
   'enforce-typescript-markdown-code-blocks': 'noTsFixture',
   'jsdoc-above-field': 'noRespelling',
   'no-conditional-literals-in-jsx': 'noRespelling',
-  'no-filter-without-return': 'silentOnComparedPairs',
   'no-harness-coupled-disables': 'noRespelling',
   'no-memoize-on-static': 'silentOnComparedPairs',
   'no-misused-switch-case': 'noRespelling',

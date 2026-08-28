@@ -37,6 +37,10 @@ ruleTesterTs.run('no-filter-without-return', noFilterWithoutReturn, {
           return true
         })`,
     `['a'].filter((x) => x === 'a' ? true : false)`,
+    // #2194 controls: the callback's OWN return is what satisfies the rule, and
+    // it still does with a nested function alongside it.
+    `['a'].filter((x) => { function inner() { return true; } return inner(); })`,
+    `['a'].filter((x) => { const inner = () => true; return inner(x); })`,
   ],
   invalid: [
     {
@@ -70,6 +74,60 @@ ruleTesterTs.run('no-filter-without-return', noFilterWithoutReturn, {
       code:
         // If-else with return only in the else branch
         "['a'].filter((x) => { if (x !== 'a') { console.log(x) } else { return true } })",
+      errors: [
+        {
+          messageId: 'unexpected',
+          data: {
+            filterCall: "['a'].filter",
+          },
+        },
+      ],
+    },
+    {
+      // #2194 subject: the `return` belongs to `inner`, not to the callback,
+      // so the callback still yields undefined for every element. The walk had
+      // no function boundary and credited the nested return to the callback.
+      code: `['a'].filter((x) => { function inner() { return true; } })`,
+      errors: [
+        {
+          messageId: 'unexpected',
+          data: {
+            filterCall: "['a'].filter",
+          },
+        },
+      ],
+    },
+    {
+      // #2194 control: the same nested function spelled as an initializer,
+      // which the walk skipped for an unrelated reason (`declarations` is an
+      // array key) and so always reported. The two must agree.
+      code: `['a'].filter((x) => { const inner = function () { return true; }; })`,
+      errors: [
+        {
+          messageId: 'unexpected',
+          data: {
+            filterCall: "['a'].filter",
+          },
+        },
+      ],
+    },
+    {
+      // A nested arrow is a boundary too, and so is a return nested inside a
+      // branch of one.
+      code: `['a'].filter((x) => { const inner = () => { if (x) { return true; } return false; }; })`,
+      errors: [
+        {
+          messageId: 'unexpected',
+          data: {
+            filterCall: "['a'].filter",
+          },
+        },
+      ],
+    },
+    {
+      // The boundary applies inside an `if` arm as well, where the both-branches
+      // rule would otherwise be satisfied by a nested function's return.
+      code: `['a'].filter((x) => { if (x) { function inner() { return true; } } else { return false; } })`,
       errors: [
         {
           messageId: 'unexpected',

@@ -747,21 +747,53 @@ export class ASTHelpers {
     return typeof value === 'object' && value !== null && 'type' in value;
   }
 
+  /**
+   * A `return` inside a nested function returns from THAT function, so it can
+   * never satisfy the enclosing one. Descent stops at every function boundary
+   * for that reason.
+   *
+   * The boundary applies to CHILDREN only: a caller handing a function node is
+   * asking about that function's own body, so unwrapping the handed node is the
+   * question, not a leak. Without the boundary the answer was decided by
+   * spelling — a `function inner() { return true; }` nested in a filter
+   * callback was credited to the callback (`body` is a single-node key the
+   * generic walk descends), while the identical `const inner = function () {
+   * return true; };` was not (`declarations` is an array key it skips) (#2194).
+   */
+  private static isFunctionScopeBoundary(node: TSESTree.Node): boolean {
+    return (
+      node.type === AST_NODE_TYPES.FunctionDeclaration ||
+      node.type === AST_NODE_TYPES.FunctionExpression ||
+      node.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+      (node.type as string) === 'TSDeclareFunction'
+    );
+  }
+
+  /** `hasReturnStatement` for a CHILD node, which a function boundary stops. */
+  private static childHasReturnStatement(node: TSESTree.Node): boolean {
+    if (this.isFunctionScopeBoundary(node)) {
+      return false;
+    }
+    return this.hasReturnStatement(node);
+  }
+
   public static hasReturnStatement(node: TSESTree.Node): boolean {
     if (node.type === AST_NODE_TYPES.ReturnStatement) {
       return true;
     }
     if (node.type === AST_NODE_TYPES.IfStatement) {
       const ifStmt = node as any;
-      const consequentHasReturn = this.hasReturnStatement(ifStmt.consequent);
+      const consequentHasReturn = this.childHasReturnStatement(
+        ifStmt.consequent,
+      );
       const alternateHasReturn =
-        !!ifStmt.alternate && this.hasReturnStatement(ifStmt.alternate);
+        !!ifStmt.alternate && this.childHasReturnStatement(ifStmt.alternate);
       return consequentHasReturn && alternateHasReturn;
     }
     if (node.type === AST_NODE_TYPES.BlockStatement) {
       const blockStmt = node as any;
       for (const statement of blockStmt.body) {
-        if (this.hasReturnStatement(statement)) {
+        if (this.childHasReturnStatement(statement)) {
           return true;
         }
       }
@@ -773,7 +805,7 @@ export class ASTHelpers {
       }
       const value = node[key as keyof typeof node];
       if (this.isNode(value)) {
-        if (this.hasReturnStatement(value)) {
+        if (this.childHasReturnStatement(value)) {
           return true;
         }
       }

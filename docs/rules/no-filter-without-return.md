@@ -15,6 +15,13 @@ This rule disallows `Array.filter` callbacks that use braces but never return a 
 - A missing `return` in a block-bodied predicate causes `filter` to drop every item, which is easy to miss because the callback still runs without any obvious error.
 - Explicitly returning the condition documents the keep/remove rule and avoids subtle bugs when the code later adds logic branches.
 
+The `return` has to be the CALLBACK's own. A `return` written inside a function
+declared within the callback — a named helper, a function expression, a nested
+arrow, or a callback passed to something else — returns from that function, so
+it leaves the predicate yielding `undefined` just the same. Declaring a helper
+next to the missing `return` is the shape most likely to hide the bug, because
+the code reads as though a value is produced.
+
 ### How to fix
 
 - Add `return <condition>` inside the block.
@@ -40,6 +47,12 @@ This rule disallows `Array.filter` callbacks that use braces but never return a 
     return true
   }
 })
+
+['a'].filter((x) => {
+  function inner() {
+    return true
+  }
+})
 ```
 
 ### Examples of **correct** code for this rule:
@@ -60,4 +73,10 @@ This rule disallows `Array.filter` callbacks that use braces but never return a 
 })
 ['a'].filter((x) => x === 'a' ? true : false)
 ['a'].filter((x) => x !== 'a')
+['a'].filter((x) => {
+  function inner() {
+    return x === 'a'
+  }
+  return inner()
+})
 ```
