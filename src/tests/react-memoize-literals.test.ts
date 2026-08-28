@@ -645,6 +645,107 @@ export function useMixedPortals() {
 }
       `,
     },
+    // Array literal whose only member is a local JSX binding (#2202). The
+    // fixture above is silent on its inline `<span />` alone; this one pins the
+    // binding resolution by itself. The exemption belongs to the VALUE a member
+    // resolves to, not to the container holding it, so `[Portal]` and
+    // `{ Portal }` must agree.
+    {
+      code: `
+export function useWidget() {
+  const Portal = <div />;
+  return [Portal];
+}
+      `,
+    },
+    // Desugared shorthand (#2203): the same object as the `{ Portal }` fixture
+    // above, spelled with an explicit key.
+    {
+      code: `
+export function useWidget() {
+  const Portal = <div />;
+  return { Portal: Portal };
+}
+      `,
+    },
+    // Renamed key over the same JSX binding (#2203). This spelling cannot be
+    // collapsed to shorthand at all, and the key has no bearing on stability.
+    {
+      code: `
+export function useWidget() {
+  const Portal = <div />;
+  return { portal: Portal };
+}
+      `,
+    },
+    // A computed key is equally irrelevant: the property VALUE decides.
+    {
+      code: `
+export function useKeyedPortal({ slot }) {
+  const Portal = <div />;
+  return { [slot]: Portal };
+}
+      `,
+    },
+    // Plain-data members alongside the JSX binding, in each container kind: one
+    // JSX member is enough to make the whole literal non-stabilisable.
+    {
+      code: `
+export function useJsxPair({ id }) {
+  const Portal = <div />;
+  return [Portal, id];
+}
+      `,
+    },
+    {
+      code: `
+export function useNamedPortal() {
+  const Portal = <div />;
+  return { slot: Portal, retries: 0 };
+}
+      `,
+    },
+    // Tuple idiom: the assertion wraps the array, so the element resolution runs
+    // after unwrapNestedExpressions reaches the ArrayExpression (#2202).
+    {
+      code: `
+export function useTuplePortal() {
+  const Portal = <div />;
+  return [Portal] as const;
+}
+      `,
+    },
+    // Fragment binding in an array, mirroring the shorthand fragment fixture.
+    {
+      code: `
+export function useSnackbarPortal() {
+  const Portal = <>alert</>;
+  return [Portal];
+}
+      `,
+    },
+    // An arrow-function hook with a block body owns its local bindings exactly
+    // as a function declaration does.
+    {
+      code: `
+export const usePanelPortal = () => {
+  const Portal = <section />;
+  return [Portal];
+};
+      `,
+    },
+    // The binding scan reads each declarator's own initializer, so a `let`
+    // initialized with JSX stays exempt across a later reassignment. The array
+    // arm inherits precisely the conservatism the object arm applies.
+    {
+      code: `
+export function useMutablePortal() {
+  let Portal = <div />;
+  Portal = <span />;
+  return [Portal];
+}
+      `,
+    },
     // Concise-arrow hook (non-block body) returning object with inline JSX.
     // Tests the ArrowFunctionExpression concise-body path in isReturnValueFromHook.
     {
@@ -2030,6 +2131,138 @@ const useConfig = () => ({ theme: 'dark', mode: 'auto' });
             hookName: 'useConfig',
           },
         },
+      ],
+    },
+    // Regression guard (#2203): an explicit-key property whose value is NOT a
+    // JSX binding must still be flagged. Resolving identifier values must not
+    // exempt on the mere presence of an identifier.
+    {
+      code: `
+function useCounter() {
+  const n = 1;
+  return { n: n };
+}
+      `,
+      errors: [
+        {
+          messageId: 'hookReturnLiteral',
+          data: {
+            literalType: 'object literal',
+            hookName: 'useCounter',
+          },
+        },
+      ],
+    },
+    // Regression guard (#2202): the same demand on an array element.
+    {
+      code: `
+function useCounters() {
+  const n = 1;
+  return [n];
+}
+      `,
+      errors: [
+        {
+          messageId: 'hookReturnLiteral',
+          data: {
+            literalType: 'array literal',
+            hookName: 'useCounters',
+          },
+        },
+      ],
+    },
+    // Only a declarator whose own initializer is JSX qualifies: a `let` left
+    // uninitialized and assigned conditionally is not known to hold JSX at the
+    // return, so the array stays flagged.
+    {
+      code: `
+function useConditionalPortal({ flag }) {
+  let Portal;
+  if (flag) {
+    Portal = <div />;
+  }
+  return [Portal];
+}
+      `,
+      errors: [
+        {
+          messageId: 'hookReturnLiteral',
+          data: {
+            literalType: 'array literal',
+            hookName: 'useConditionalPortal',
+          },
+        },
+      ],
+    },
+    // Only the owner function's own top-level declarations are scanned. A
+    // module-scope JSX binding is already stable across renders, so the array
+    // holding it is stabilisable and stays flagged.
+    {
+      code: `
+const Portal = <div />;
+function useModulePortal() {
+  return [Portal];
+}
+      `,
+      errors: [
+        {
+          messageId: 'hookReturnLiteral',
+          data: {
+            literalType: 'array literal',
+            hookName: 'useModulePortal',
+          },
+        },
+      ],
+    },
+    // A parameter is not a local JSX declaration.
+    {
+      code: `
+function useParamPortal(Portal) {
+  return [Portal];
+}
+      `,
+      errors: [
+        {
+          messageId: 'hookReturnLiteral',
+          data: {
+            literalType: 'array literal',
+            hookName: 'useParamPortal',
+          },
+        },
+      ],
+    },
+    // An initializer that merely CALLS something is not JSX: the binding scan
+    // reads the initializer syntactically rather than inferring a return type.
+    {
+      code: `
+function useRenderedPortal() {
+  const Portal = renderPortal();
+  return [Portal];
+}
+      `,
+      errors: [
+        {
+          messageId: 'hookReturnLiteral',
+          data: {
+            literalType: 'array literal',
+            hookName: 'useRenderedPortal',
+          },
+        },
+      ],
+    },
+    // The exemption reaches a literal's own members only, at the same depth the
+    // inline path reaches: `[{ Portal: <div /> }]` is reported identically, the
+    // nested object drawing its own complaint and the array the hook return.
+    {
+      code: `
+function useNestedPortal() {
+  const Portal = <div />;
+  return [{ Portal }];
+}
+      `,
+      errors: [
+        { messageId: 'hookReturnLiteral' },
+        { messageId: 'componentLiteral' },
       ],
     },
     // Literal returned from nested function inside hook should not be treated as a hook return

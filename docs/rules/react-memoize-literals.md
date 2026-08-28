@@ -207,6 +207,32 @@ A literal that reads a prop, a local, a destructured value or another hook's
 result still gets its suggestion — those dependencies are real and the author
 completes the placeholder with them.
 
+#### A returned literal holding JSX is exempt
+
+A JSX element is a fresh reference on every render, so a literal carrying one
+cannot be stabilised by `useMemo`: the wrapper recomputes on every call
+regardless. A literal returned from a hook is therefore exempt when one of its
+members is JSX, written inline or declared as a binding in the same hook body.
+
+The exemption follows the member's **value**, so neither the container nor the
+key spelling changes the answer. An array and an object are treated alike, and a
+shorthand, explicit, renamed or computed key are treated alike.
+
+```tsx
+export function useConfirmation() {
+  const Portal = <ConfirmDialog />;
+
+  // Exempt in every spelling: [Portal], { Portal }, { Portal: Portal },
+  // { portal: Portal }, { [slot]: Portal }.
+  return [Portal];
+}
+```
+
+Only declarations in the hook's own body qualify. A module-scope binding is
+already stable across renders, and a parameter or a `let` assigned after its
+declaration is not known to hold JSX, so a literal carrying one of those stays
+reported.
+
 ## When Not To Use It
 
 - Components that intentionally regenerate literals on every render (e.g., to force recalculation) and where the cost is acceptable.
