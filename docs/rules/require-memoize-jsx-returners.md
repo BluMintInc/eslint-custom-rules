@@ -334,3 +334,34 @@ class Widget {
 A member's reported location spans its decorators, so a disable comment must sit
 **above** the first decorator to suppress the report; one placed between a
 decorator and the member signature does not.
+
+### Members spelled as a class-property arrow
+
+A member written as a **property arrow** — `renderRow = () => <div />` — is
+never reported, while the identical member spelled as a method or getter is.
+The remedy this rule names is `@Memoize()`, and that is a **method** decorator:
+`@blumintinc/typescript-memoize` declares it as
+`(target, propertyKey, descriptor: TypedPropertyDescriptor<any>) => ...`. Under
+`experimentalDecorators` TypeScript rejects it on a property outright:
+`TS1240: Unable to resolve signature of property decorator when called as an
+expression. The runtime will invoke the decorator with 2 arguments, but the
+decorator expects 3.`
+
+Because this rule ships `fixable: 'code'`, reporting here would splice a
+decorator that does not compile into the source under `--fix` — strictly worse
+than the silence.
+
+```tsx
+// Not reported: `@Memoize()` is not valid on a property.
+export class Widget {
+  renderRow = () => {
+    return <div />;
+  };
+}
+```
+
+Respelling the member as a method or getter restores both the report and the
+fix, and is the remedy for a property arrow whose JSX is worth memoizing. This
+carve-out rests on the same ground as the class-expression and private-name
+ones above, and is tied to the legacy-decorator signature in the same way that
+`enforce-memoize-async`'s matching carve-out is.
