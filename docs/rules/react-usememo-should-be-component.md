@@ -203,3 +203,46 @@ const Component = ({ items }) => {
   );
 };
 ```
+
+## Unbraced `case` clauses
+
+Braces on a `case` or `default` clause group statements; they do not change what
+the clause means. A JSX return one level inside an unbraced consequent —
+within a `try`, a loop body, a label or a nested `switch` — therefore reports
+exactly as its braced twin does. The two spellings are read through the same
+predicate, so no statement position is visible in one and hidden in the other.
+
+#### ❌ Incorrect: JSX returned from a `try` in an unbraced `case`
+
+```jsx
+const Component = ({ items, kind }) => {
+  const panel = useMemo(() => {
+    switch (kind) {
+      case 1:
+        try {
+          return <Panel items={items} />;
+        } catch (error) {
+          return null;
+        }
+    }
+  }, [items, kind]);
+
+  return <div>{panel}</div>;
+};
+```
+
+#### ✅ Correct: extract the component and branch on it in the markup
+
+```jsx
+const Panel = React.memo(({ items }) => {
+  try {
+    return <PanelBody items={items} />;
+  } catch (error) {
+    return null;
+  }
+});
+
+const Component = ({ items, kind }) => {
+  return <div>{kind === 1 ? <Panel items={items} /> : null}</div>;
+};
+```

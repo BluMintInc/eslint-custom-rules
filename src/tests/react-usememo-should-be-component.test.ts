@@ -1216,6 +1216,48 @@ ruleTesterJsx.run(
         };
       `,
       },
+      // #2206 negative control: an unbraced consequent whose nested try
+      // returns no JSX must stay silent, so the widened descent is bounded by
+      // the JSX test rather than by the statement shape.
+      `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ items }) => {
+          const thing = useMemo(() => {
+            switch (kind) {
+              case 1:
+                try {
+                  return items.length;
+                } catch (e) {
+                  return 0;
+                }
+            }
+          }, []);
+
+          return <div>{thing}</div>;
+        };
+      `,
+      // #2206 negative control: JSX returned by a helper nested inside an
+      // unbraced consequent belongs to that helper's own render lifecycle, so
+      // the descent must not claim it — matching the braced spelling, which is
+      // likewise silent.
+      `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ items }) => {
+          const thing = useMemo(() => {
+            switch (kind) {
+              case 1:
+                for (const item of items) {
+                  const buildRow = (row) => <Row row={row} />;
+                  return buildRow(item).length;
+                }
+            }
+          }, []);
+
+          return <div>{thing}</div>;
+        };
+      `,
     ],
     invalid: [
       // useMemo returning JSX directly
@@ -1960,6 +2002,216 @@ const C = () => {
             {
               const panel = <Panel items={items} />;
               return panel;
+            }
+          }, []);
+
+          return <div>{thing}</div>;
+        };
+      `,
+        errors: [
+          {
+            messageId: 'useMemoShouldBeComponent',
+            data: { memoName: 'thing' },
+          },
+        ],
+      },
+      // #2206 JSX return one level inside an UNBRACED switch-case consequent.
+      // Braces on a `case` clause carry no meaning, so each of these must
+      // report exactly as its braced twin already does.
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ items }) => {
+          const thing = useMemo(() => {
+            switch (kind) {
+              case 1:
+                try {
+                  return <Panel items={items} />;
+                } catch (e) {
+                  return null;
+                }
+            }
+          }, []);
+
+          return <div>{thing}</div>;
+        };
+      `,
+        errors: [
+          {
+            messageId: 'useMemoShouldBeComponent',
+            data: { memoName: 'thing' },
+          },
+        ],
+      },
+      // #2206 the braced twin of the case above — the established behaviour the
+      // unbraced spelling is required to match.
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ items }) => {
+          const thing = useMemo(() => {
+            switch (kind) {
+              case 1: {
+                try {
+                  return <Panel items={items} />;
+                } catch (e) {
+                  return null;
+                }
+              }
+            }
+          }, []);
+
+          return <div>{thing}</div>;
+        };
+      `,
+        errors: [
+          {
+            messageId: 'useMemoShouldBeComponent',
+            data: { memoName: 'thing' },
+          },
+        ],
+      },
+      // #2206 try/finally directly in an unbraced consequent
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ items }) => {
+          const thing = useMemo(() => {
+            switch (kind) {
+              case 1:
+                try {
+                  return <Panel items={items} />;
+                } finally {
+                  cleanup();
+                }
+            }
+          }, []);
+
+          return <div>{thing}</div>;
+        };
+      `,
+        errors: [
+          {
+            messageId: 'useMemoShouldBeComponent',
+            data: { memoName: 'thing' },
+          },
+        ],
+      },
+      // #2206 loop body directly in an unbraced consequent
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ items }) => {
+          const thing = useMemo(() => {
+            switch (kind) {
+              case 1:
+                for (const item of items) {
+                  return <Panel item={item} />;
+                }
+            }
+          }, []);
+
+          return <div>{thing}</div>;
+        };
+      `,
+        errors: [
+          {
+            messageId: 'useMemoShouldBeComponent',
+            data: { memoName: 'thing' },
+          },
+        ],
+      },
+      // #2206 while body directly in an unbraced consequent
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ items }) => {
+          const thing = useMemo(() => {
+            switch (kind) {
+              case 1:
+                while (pending) {
+                  return <Panel items={items} />;
+                }
+            }
+          }, []);
+
+          return <div>{thing}</div>;
+        };
+      `,
+        errors: [
+          {
+            messageId: 'useMemoShouldBeComponent',
+            data: { memoName: 'thing' },
+          },
+        ],
+      },
+      // #2206 labeled statement directly in an unbraced consequent
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ items }) => {
+          const thing = useMemo(() => {
+            switch (kind) {
+              case 1:
+                outer: {
+                  return <Panel items={items} />;
+                }
+            }
+          }, []);
+
+          return <div>{thing}</div>;
+        };
+      `,
+        errors: [
+          {
+            messageId: 'useMemoShouldBeComponent',
+            data: { memoName: 'thing' },
+          },
+        ],
+      },
+      // #2206 a switch nested directly in an unbraced consequent
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ items }) => {
+          const thing = useMemo(() => {
+            switch (kind) {
+              case 1:
+                switch (variant) {
+                  case 2:
+                    return <Panel items={items} />;
+                }
+            }
+          }, []);
+
+          return <div>{thing}</div>;
+        };
+      `,
+        errors: [
+          {
+            messageId: 'useMemoShouldBeComponent',
+            data: { memoName: 'thing' },
+          },
+        ],
+      },
+      // #2206 a JSX binding declared directly in an unbraced consequent
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ items }) => {
+          const thing = useMemo(() => {
+            switch (kind) {
+              case 1:
+                const panel = <Panel items={items} />;
+                return panel;
             }
           }, []);
 

@@ -271,19 +271,15 @@ const containsJsxInSwitchStatement = (
 ): boolean => {
   for (const switchCase of node.cases) {
     for (const statement of switchCase.consequent) {
-      if (
-        statement.type === AST_NODE_TYPES.ReturnStatement &&
-        statement.argument
-      ) {
-        if (isJsxElement(statement.argument)) {
-          return true;
-        }
-      }
-
-      if (statement.type === AST_NODE_TYPES.BlockStatement) {
-        if (containsJsxInBlockStatement(statement)) {
-          return true;
-        }
+      // Braces on a `case` clause carry no meaning for this question, so the
+      // two spellings must agree. `case 1: { S }` reaches S through
+      // containsJsxInBlockStatement -> containsJsxInStatement; evaluating the
+      // identical predicate on an unbraced `case 1: S` is what makes the pair
+      // agree. Matching only ReturnStatement and BlockStatement here left a JSX
+      // return one level inside a try/catch/finally, a loop, a label or a
+      // nested switch invisible while its braced twin reported (#2206).
+      if (containsJsxInStatement(statement)) {
+        return true;
       }
     }
   }
