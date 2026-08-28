@@ -1054,6 +1054,168 @@ ruleTesterJsx.run(
         };
       `,
       },
+      // #2201 try/catch returning a non-JSX value
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ items }) => {
+          const thing = useMemo(() => {
+            try {
+              return compute(items);
+            } catch (e) {
+              return null;
+            }
+          }, []);
+
+          return <div>{thing}</div>;
+        };
+      `,
+      },
+      // #2201 for-of loop accumulating non-JSX values
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ items }) => {
+          const thing = useMemo(() => {
+            const total = [];
+            for (const item of items) {
+              total.push(item.value * 2);
+            }
+            return total;
+          }, []);
+
+          return <div>{thing}</div>;
+        };
+      `,
+      },
+      // #2201 while loop accumulating non-JSX values
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ items }) => {
+          const thing = useMemo(() => {
+            let count = 0;
+            while (count < items.length) {
+              count += items[count].value;
+            }
+            return count;
+          }, []);
+
+          return <div>{thing}</div>;
+        };
+      `,
+      },
+      // #2201 do-while loop accumulating non-JSX values
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ items }) => {
+          const thing = useMemo(() => {
+            let index = 0;
+            do {
+              index += 1;
+            } while (index < items.length);
+            return index;
+          }, []);
+
+          return <div>{thing}</div>;
+        };
+      `,
+      },
+      // #2201 labeled block returning a non-JSX value
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ items }) => {
+          const thing = useMemo(() => {
+            outer: {
+              return items.length;
+            }
+          }, []);
+
+          return <div>{thing}</div>;
+        };
+      `,
+      },
+      // #2201 bare nested block returning a non-JSX value
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ items }) => {
+          const thing = useMemo(() => {
+            {
+              return items.length;
+            }
+          }, []);
+
+          return <div>{thing}</div>;
+        };
+      `,
+      },
+      // #2201 try inside a for loop returning a non-JSX value
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ items }) => {
+          const thing = useMemo(() => {
+            for (const item of items) {
+              try {
+                return item.value;
+              } catch (e) {
+                continue;
+              }
+            }
+            return 0;
+          }, []);
+
+          return <div>{thing}</div>;
+        };
+      `,
+      },
+      // #2201 loop building an array of JSX stays exempt like map()
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ items }) => {
+          const thing = useMemo(() => {
+            const rows = [];
+            for (const item of items) {
+              rows.push(<Row item={item} />);
+            }
+            return rows;
+          }, []);
+
+          return <div>{thing}</div>;
+        };
+      `,
+      },
+      // #2201 helper arrow declared inside a try stays exempt
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ items }) => {
+          const thing = useMemo(() => {
+            try {
+              const buildRow = (item) => <Row item={item} />;
+              return items.map(buildRow);
+            } catch (e) {
+              return [];
+            }
+          }, []);
+
+          return <div>{thing}</div>;
+        };
+      `,
+      },
     ],
     invalid: [
       // useMemo returning JSX directly
@@ -1454,6 +1616,360 @@ ruleTesterJsx.run(
           {
             messageId: 'useMemoShouldBeComponent',
             data: { memoName: 'userGreeting' },
+          },
+        ],
+      },
+      // #2201 subject: JSX returned from a try block inside useMemo
+      {
+        code: `
+const C = () => {
+  const thing = useMemo(() => { try { return <div />; } catch (e) { return null; } }, []);
+  return <div>{thing}</div>;
+};
+      `,
+        errors: [
+          {
+            messageId: 'useMemoShouldBeComponent',
+            data: { memoName: 'thing' },
+          },
+        ],
+      },
+      // #2201 positive control: the same meaning spelled with a plain if still reports
+      {
+        code: `
+const C = () => {
+  const thing = useMemo(() => { if (x) { return <div />; } return null; }, []);
+  return <div>{thing}</div>;
+};
+      `,
+        errors: [
+          {
+            messageId: 'useMemoShouldBeComponent',
+            data: { memoName: 'thing' },
+          },
+        ],
+      },
+      // #2201 try region: JSX returned from the try block
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ items }) => {
+          const thing = useMemo(() => {
+            try {
+              return <Panel items={items} />;
+            } catch (e) {
+              return null;
+            }
+          }, []);
+
+          return <div>{thing}</div>;
+        };
+      `,
+        errors: [
+          {
+            messageId: 'useMemoShouldBeComponent',
+            data: { memoName: 'thing' },
+          },
+        ],
+      },
+      // #2201 catch region: JSX returned from the catch handler
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ items }) => {
+          const thing = useMemo(() => {
+            try {
+              return compute(items);
+            } catch (e) {
+              return <ErrorView error={e} />;
+            }
+          }, []);
+
+          return <div>{thing}</div>;
+        };
+      `,
+        errors: [
+          {
+            messageId: 'useMemoShouldBeComponent',
+            data: { memoName: 'thing' },
+          },
+        ],
+      },
+      // #2201 finally region: JSX returned from the finalizer
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ items }) => {
+          const thing = useMemo(() => {
+            try {
+              return compute(items);
+            } finally {
+              return <Fallback />;
+            }
+          }, []);
+
+          return <div>{thing}</div>;
+        };
+      `,
+        errors: [
+          {
+            messageId: 'useMemoShouldBeComponent',
+            data: { memoName: 'thing' },
+          },
+        ],
+      },
+      // #2201 for-of loop body returns JSX
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ items }) => {
+          const thing = useMemo(() => {
+            for (const item of items) {
+              return <Row item={item} />;
+            }
+            return null;
+          }, []);
+
+          return <div>{thing}</div>;
+        };
+      `,
+        errors: [
+          {
+            messageId: 'useMemoShouldBeComponent',
+            data: { memoName: 'thing' },
+          },
+        ],
+      },
+      // #2201 for-of loop with an unbraced body returning JSX
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ items }) => {
+          const thing = useMemo(() => {
+            for (const item of items) return <Row item={item} />;
+            return null;
+          }, []);
+
+          return <div>{thing}</div>;
+        };
+      `,
+        errors: [
+          {
+            messageId: 'useMemoShouldBeComponent',
+            data: { memoName: 'thing' },
+          },
+        ],
+      },
+      // #2201 classic for loop body returns JSX
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ items }) => {
+          const thing = useMemo(() => {
+            for (let i = 0; i < items.length; i++) {
+              return <Row item={items[i]} />;
+            }
+            return null;
+          }, []);
+
+          return <div>{thing}</div>;
+        };
+      `,
+        errors: [
+          {
+            messageId: 'useMemoShouldBeComponent',
+            data: { memoName: 'thing' },
+          },
+        ],
+      },
+      // #2201 for-in loop body returns JSX
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ items }) => {
+          const thing = useMemo(() => {
+            for (const key in items) {
+              return <Row item={items[key]} />;
+            }
+            return null;
+          }, []);
+
+          return <div>{thing}</div>;
+        };
+      `,
+        errors: [
+          {
+            messageId: 'useMemoShouldBeComponent',
+            data: { memoName: 'thing' },
+          },
+        ],
+      },
+      // #2201 while loop body returns JSX
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ items }) => {
+          const thing = useMemo(() => {
+            while (items.length) {
+              return <Row item={items[0]} />;
+            }
+            return null;
+          }, []);
+
+          return <div>{thing}</div>;
+        };
+      `,
+        errors: [
+          {
+            messageId: 'useMemoShouldBeComponent',
+            data: { memoName: 'thing' },
+          },
+        ],
+      },
+      // #2201 do-while loop body returns JSX
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ items }) => {
+          const thing = useMemo(() => {
+            do {
+              return <Row item={items[0]} />;
+            } while (items.length);
+          }, []);
+
+          return <div>{thing}</div>;
+        };
+      `,
+        errors: [
+          {
+            messageId: 'useMemoShouldBeComponent',
+            data: { memoName: 'thing' },
+          },
+        ],
+      },
+      // #2201 labeled block returns JSX
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ items }) => {
+          const thing = useMemo(() => {
+            outer: {
+              return <Panel items={items} />;
+            }
+          }, []);
+
+          return <div>{thing}</div>;
+        };
+      `,
+        errors: [
+          {
+            messageId: 'useMemoShouldBeComponent',
+            data: { memoName: 'thing' },
+          },
+        ],
+      },
+      // #2201 labeled loop returns JSX
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ items }) => {
+          const thing = useMemo(() => {
+            outer: for (const item of items) {
+              return <Row item={item} />;
+            }
+            return null;
+          }, []);
+
+          return <div>{thing}</div>;
+        };
+      `,
+        errors: [
+          {
+            messageId: 'useMemoShouldBeComponent',
+            data: { memoName: 'thing' },
+          },
+        ],
+      },
+      // #2201 bare nested block returns JSX
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ items }) => {
+          const thing = useMemo(() => {
+            {
+              return <Panel items={items} />;
+            }
+          }, []);
+
+          return <div>{thing}</div>;
+        };
+      `,
+        errors: [
+          {
+            messageId: 'useMemoShouldBeComponent',
+            data: { memoName: 'thing' },
+          },
+        ],
+      },
+      // #2201 doubly nested: try inside a for loop returns JSX
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ items }) => {
+          const thing = useMemo(() => {
+            for (const item of items) {
+              try {
+                return <Row item={item} />;
+              } catch (e) {
+                continue;
+              }
+            }
+            return null;
+          }, []);
+
+          return <div>{thing}</div>;
+        };
+      `,
+        errors: [
+          {
+            messageId: 'useMemoShouldBeComponent',
+            data: { memoName: 'thing' },
+          },
+        ],
+      },
+      // #2201 nested block declaring JSX before returning it
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ items }) => {
+          const thing = useMemo(() => {
+            {
+              const panel = <Panel items={items} />;
+              return panel;
+            }
+          }, []);
+
+          return <div>{thing}</div>;
+        };
+      `,
+        errors: [
+          {
+            messageId: 'useMemoShouldBeComponent',
+            data: { memoName: 'thing' },
           },
         ],
       },

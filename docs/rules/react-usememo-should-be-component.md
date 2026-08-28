@@ -159,3 +159,47 @@ const AvatarStatusUnmemoized = ({
 
 - [React.memo documentation](https://reactjs.org/docs/react-api.html#reactmemo)
 - [useMemo documentation](https://reactjs.org/docs/hooks-reference.html#usememo)
+
+## Statements that enclose a block
+
+"Returns JSX" is read through every statement that can enclose a block —
+`try`/`catch`/`finally`, the body of a `for`, `for…of`, `for…in`, `while` or
+`do…while` loop, a labeled statement and a bare nested block — not only
+`if`/`else` and `switch`. A JSX return sitting one block deeper hides the same
+component as the `if` spelling, so both report.
+
+#### ❌ Incorrect: JSX returned from a `try` block inside `useMemo`
+
+```jsx
+const Component = ({ items }) => {
+  const panel = useMemo(() => {
+    try {
+      return <Panel items={items} />;
+    } catch (error) {
+      return null;
+    }
+  }, [items]);
+
+  return <div>{panel}</div>;
+};
+```
+
+#### ✅ Correct: extract the component and let it own the fallback
+
+```jsx
+const Panel = React.memo(({ items }) => {
+  try {
+    return <PanelBody items={items} />;
+  } catch (error) {
+    return null;
+  }
+});
+
+const Component = ({ items }) => {
+  return (
+    <div>
+      <Panel items={items} />
+    </div>
+  );
+};
+```
