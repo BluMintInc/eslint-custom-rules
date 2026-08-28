@@ -569,6 +569,50 @@ Skip or disable the rule if any of the following apply:
    await Promise.all(items.map((item) => limit(() => processItem(item))));
    ```
 
+## Switch cases
+
+An unbraced `case` or `default` consequent is a statement list like any other, and the rule scans it like any other. Bracing a clause is a spelling choice for a run that declares nothing, so both spellings report and both fix:
+
+```typescript
+// before
+switch (kind) {
+  case 'user':
+    await warmProfileCache();
+    await warmAvatarCache();
+    break;
+}
+
+// after --fix
+switch (kind) {
+  case 'user':
+    await Promise.all([warmProfileCache(), warmAvatarCache()]);
+    break;
+}
+```
+
+A run that DECLARES is the one exception, and only while the clause is unbraced. The rewrite merges the run into a single `const [profile, avatar] = await Promise.all([...])`, and a lexical declaration written straight into a `case` clause binds in the switch body's scope rather than the clause's: core `no-case-declarations` rejects it, and the name leaks into every sibling clause, where it sits in the temporal dead zone. Bracing the clause is not the fixer's to do — the block would have to swallow the `break` and every other statement in the consequent, text the reported run does not own. So the rule reports the run and declines the fix. Bracket the clause yourself and the same run fixes:
+
+```typescript
+// Reported, left alone by --fix: the merged `const` would bind at switch scope.
+switch (kind) {
+  case 'user':
+    const profile = await fetchProfile();
+    const avatar = await fetchAvatar();
+    break;
+}
+
+// Reported and rewritten by --fix: the block gives the declaration its own scope.
+switch (kind) {
+  case 'user': {
+    const profile = await fetchProfile();
+    const avatar = await fetchAvatar();
+    break;
+  }
+}
+```
+
+The decline is narrow. It withholds the fix only from a lexical declaration (`const`, `let`) in an unbraced clause. A discarded-result run in an unbraced clause fixes, a `var` run in an unbraced clause fixes — `var` is function-scoped, so it carries neither hazard — and every braced clause fixes.
+
 ## Implementation
 
 - [Rule source](../../src/rules/parallelize-async-operations.ts)
