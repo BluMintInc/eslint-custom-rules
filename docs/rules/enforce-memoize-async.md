@@ -725,6 +725,64 @@ same ground. The carve-out is mode-dependent in the same way the
 class-expression one is: standard (TC39) decorators do accept a private-named
 member, so targeting `experimentalDecorators: false` calls for revisiting it.
 
+### Members spelled as a class-property arrow
+
+A member written as a **property arrow** — `load = async () => {}` — is never
+reported, while the identical member spelled as a method is. `@Memoize()` is a
+**method** decorator: `@blumintinc/typescript-memoize` declares it as
+`(target, propertyKey, descriptor: TypedPropertyDescriptor<any>) => ...`, a
+three-argument form. Under `experimentalDecorators` TypeScript rejects it on a
+property outright: `TS1240: Unable to resolve signature of property decorator
+when called as an expression. The runtime will invoke the decorator with 2
+arguments, but the decorator expects 3.`
+
+The rejection is not merely a type-level complaint; the emitted code fails at
+class-definition time. For a **method**, tsc passes `null` as the descriptor
+argument of its `__decorate` helper, which makes the helper look the real
+descriptor up via `Object.getOwnPropertyDescriptor`. For a **property** it
+passes `void 0` instead, so a decorator that reads `descriptor.value` — as
+`Memoize` does, to wrap the original — is handed `undefined` and throws
+`TypeError: Cannot read properties of undefined (reading 'value')`.
+
+So report and fix are both withheld. This rule ships `fixable: 'code'`, so
+reporting here would splice a decorator that does not compile into the source
+under `--fix` — strictly worse than the silence, and against this plugin's
+"prefer false negatives over false positives" philosophy.
+
+```ts
+// Not reported: `@Memoize()` is not valid on a property.
+export class Loader {
+  load = async () => {
+    return 1;
+  };
+
+  fetch = async (id: string) => {
+    return id;
+  };
+}
+```
+
+The remedy for a property arrow whose result is worth caching is to respell it
+as a method, which restores both the report and the fix:
+
+```ts
+import { Memoize } from '@blumintinc/typescript-memoize';
+
+export class Loader {
+  @Memoize()
+  async load() {
+    return 1;
+  }
+}
+```
+
+This is a third carve-out resting on the same ground as the class-expression
+and private-name ones above: the decorator cannot be written on the member at
+all, and a report naming an edit its reader cannot make is worse than silence.
+It is tied to the legacy-decorator signature, so a move off
+`experimentalDecorators` — where a field decorator receives its own
+`(value, context)` form — calls for revisiting it.
+
 ## When Not To Use It
 
 - Methods whose results must always be fresh (e.g., real-time data or mutation calls).

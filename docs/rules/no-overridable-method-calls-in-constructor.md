@@ -101,6 +101,45 @@ class Car extends Vehicle {
 }
 ```
 
+### Members spelled as a class-property arrow
+
+A constructor call to a member written as a **property arrow** —
+`init = () => {}` — is never reported, while the same call to the same member
+spelled as a method is. The silence is deliberate: a field arrow is an **own
+property** assigned to the instance during construction, not a prototype
+member, so it is not overridable in the sense this rule guards against.
+
+The hazard the rule describes is a subclass override executing before the
+subclass constructor has initialized its fields. Prototype methods are
+vulnerable because the subclass's override is already installed on the
+prototype chain when the base constructor runs. A field is not: a subclass's
+own field initializers run only **after** `super()` returns, so the base
+constructor always invokes the base's own arrow, never a subclass's.
+
+```ts
+// Not reported: `init` is an own property, so no subclass override can
+// intercept this call.
+export class Base {
+  init = () => {
+    return 1;
+  };
+
+  constructor() {
+    this.init();
+  }
+}
+```
+
+The remedy this rule names — "make the member private or static so construction
+never executes overridable code" — is therefore already satisfied by the field
+spelling, and reporting it would name an edit with nothing to fix.
+
+Instance fields are initialized before the constructor body runs — immediately
+after `super()` returns in a derived class — so the arrow is already assigned by
+the time the constructor calls it, whether the field is declared above or below
+the constructor. A subclass's same-named field is assigned only after `super()`
+has returned, which is exactly why the base constructor can never reach it.
+
 ## When Not To Use It
 
 - Projects that avoid inheritance entirely (e.g., prefer composition).
