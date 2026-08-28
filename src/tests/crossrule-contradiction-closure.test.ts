@@ -287,11 +287,6 @@ const KNOWN_DIVERGENT: Record<string, Exemption> = {
       'PIPELINE: the fixtures annotate an inferable boolean return to display the name under test; `--fix` strips all 6.',
     cases: { noExplicitReturnTypeInferable: 6 },
   },
-  'enforce-props-argument-name::enforce-props-naming-consistency': {
-    reason:
-      'INCIDENTAL: the fixture names a constructor parameter `panelSettings` to exercise the class carve-out; the sibling asks for `props`, which is clean under both (measured).',
-    cases: { usePropsName: 1 },
-  },
   'enforce-props-naming-consistency::enforce-props-argument-name': {
     reason:
       'PIPELINE: `--fix` renames the parameter on all 3 fixtures, after which both rules agree.',

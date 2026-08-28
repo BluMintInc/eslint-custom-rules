@@ -137,6 +137,74 @@ ruleTesterTs.run(
         }
       `,
       },
+
+      // #2179: the #1276 carve-out. enforce-props-argument-name — the
+      // authoritative rule this one defers to — treats a distinct name on a
+      // subclass constructor parameter property as intentional, because renaming
+      // it to `props` can collide with a private `props` in the base class
+      // (TS2415) and strands `super(settings)` / `this.settings`. Reporting it
+      // here made that carve-out void in the shipped recommended config.
+      {
+        code: `
+        type SubProps = { a: number };
+        class Widget extends Base {
+          constructor(private readonly settings: SubProps) {
+            super();
+          }
+        }
+      `,
+      },
+      // The same carve-out when the superclass is a mixin call expression.
+      {
+        code: `
+        type PanelProps = { title: string };
+        class ExtendedPanel extends withMixin(BasePanel) {
+          constructor(private readonly panelSettings: PanelProps) {
+            super(panelSettings);
+          }
+        }
+      `,
+      },
+      // The same carve-out when the superclass is a member expression.
+      {
+        code: `
+        type WidgetProps = { id: string };
+        class ExtendedWidget extends Some.Base.Widget {
+          constructor(private readonly widgetSettings: WidgetProps) {
+            super(widgetSettings);
+          }
+        }
+      `,
+      },
+      // #2180: a default value nests the identifier in an `AssignmentPattern`,
+      // and the deferral counter only recognised a bare `Identifier`. The
+      // defaulted parameter went uncounted, this two-Props constructor read as a
+      // single-Props one, and the rule renamed `next` to `props` — a rename its
+      // own deferral contract forbids, and one enforce-props-argument-name
+      // contradicts (it keeps both descriptive names when two parameters share a
+      // Props type, and asks for prefixed names when they do not).
+      {
+        code: `
+        type RowProps = { id: string };
+        const fallback = { id: '' };
+        class Differ {
+          constructor(
+            private readonly prev: RowProps = fallback,
+            private readonly next: RowProps,
+          ) {}
+        }
+      `,
+      },
+      // The same counter gap on a plain function signature.
+      {
+        code: `
+        type RowProps = { id: string };
+        const fallback = { id: '' };
+        function diff(prev: RowProps = fallback, next: RowProps) {
+          return [prev, next];
+        }
+      `,
+      },
     ],
     invalid: [
       // Issue #1358 repro: the annotation must survive and body references must
@@ -682,6 +750,192 @@ ruleTesterTs.run(
         function User(props: UserProps) {
           const { name } = props;
           return [props.age, name, props];
+        }
+      `,
+      },
+
+      // #2178: a `public` parameter property publishes the field to the whole
+      // file, so `w.settings` in a sibling function reads the very member the
+      // rename removes. The safety scan was handed the enclosing class and could
+      // not see that read, so `--fix` renamed the declaration and left the
+      // reader pointing at a member the class no longer has (TS2339).
+      {
+        name: 'a public parameter property read outside the class withholds the rename',
+        code: `
+        type FooProps = { a: number };
+        class Widget {
+          constructor(public readonly settings: FooProps) {}
+        }
+        export function read(w: Widget) {
+          return w.settings.a;
+        }
+      `,
+        errors: [
+          { messageId: 'usePropsName', data: { paramName: 'settings' } },
+        ],
+        output: null,
+      },
+      // #2178: a `protected` field is readable by a subclass declared elsewhere
+      // in the file — the same read, one class node away from the scan root.
+      {
+        name: 'a protected parameter property read by a subclass withholds the rename',
+        code: `
+        type FooProps = { a: number };
+        export class Widget {
+          constructor(protected readonly settings: FooProps) {}
+        }
+        export class Sub extends Widget {
+          get a() {
+            return this.settings.a;
+          }
+        }
+      `,
+        errors: [
+          { messageId: 'usePropsName', data: { paramName: 'settings' } },
+        ],
+        output: null,
+      },
+      // #2178: a bracket-spelled external read names the SAME member as the dot
+      // form (the #1882 spelling, one scope out), and the fixer rewrites neither.
+      {
+        name: 'a bracket-spelled external read withholds the rename',
+        code: `
+        type FooProps = { a: number };
+        class Widget {
+          constructor(public readonly settings: FooProps) {}
+        }
+        export function read(w: Widget) {
+          return w['settings'].a;
+        }
+      `,
+        errors: [
+          { messageId: 'usePropsName', data: { paramName: 'settings' } },
+        ],
+        output: null,
+      },
+      // Control for #2178: nothing outside the class reads the field, so
+      // widening the scan past the class must not cost the fix.
+      {
+        name: 'a public parameter property with no reader still autofixes',
+        code: `
+        type FooProps = { a: number };
+        class Widget {
+          constructor(public readonly settings: FooProps) {}
+        }
+      `,
+        errors: [
+          { messageId: 'usePropsName', data: { paramName: 'settings' } },
+        ],
+        output: `
+        type FooProps = { a: number };
+        class Widget {
+          constructor(public readonly props: FooProps) {}
+        }
+      `,
+      },
+      // Boundary for #2178: `private` confines every legal read to the class
+      // body, so the scan stays class-scoped and the rename still applies. The
+      // external `w.settings` below is already a TS2341 error before the fix
+      // runs, so it is not a read the rename can strand.
+      {
+        name: 'a private parameter property keeps its class-scoped scan',
+        code: `
+        type FooProps = { a: number };
+        class Widget {
+          constructor(private readonly settings: FooProps) {}
+        }
+        export function read(w: Widget) {
+          return w.settings.a;
+        }
+      `,
+        errors: [
+          { messageId: 'usePropsName', data: { paramName: 'settings' } },
+        ],
+        output: `
+        type FooProps = { a: number };
+        class Widget {
+          constructor(private readonly props: FooProps) {}
+        }
+        export function read(w: Widget) {
+          return w.settings.a;
+        }
+      `,
+      },
+      // Control for #2179: the carve-out is keyed on `extends`. Drop the extends
+      // clause and the identical parameter property is reported and renamed, so
+      // the gate cannot silently swallow the non-subclass case.
+      {
+        name: 'the same parameter property without an extends clause is still reported',
+        code: `
+        type SubProps = { a: number };
+        class Widget {
+          constructor(private readonly settings: SubProps) {
+            console.log('ready');
+          }
+        }
+      `,
+        errors: [
+          { messageId: 'usePropsName', data: { paramName: 'settings' } },
+        ],
+        output: `
+        type SubProps = { a: number };
+        class Widget {
+          constructor(private readonly props: SubProps) {
+            console.log('ready');
+          }
+        }
+      `,
+      },
+      // Control for #2179: the carve-out is keyed on parameter PROPERTIES. A
+      // plain constructor parameter in a subclass declares no field, so a local
+      // rename cannot collide with an inherited one and is still enforced —
+      // matching enforce-props-argument-name on the same input.
+      {
+        name: 'a plain constructor parameter in a subclass is still reported',
+        code: `
+        type ThingProps = { id: string };
+        class Base {}
+        class Thing extends Base {
+          constructor(settings: ThingProps) {
+            super();
+          }
+        }
+      `,
+        errors: [
+          { messageId: 'usePropsName', data: { paramName: 'settings' } },
+        ],
+        output: `
+        type ThingProps = { id: string };
+        class Base {}
+        class Thing extends Base {
+          constructor(props: ThingProps) {
+            super();
+          }
+        }
+      `,
+      },
+      // Control for #2180: the deferral counter counts Props-TYPED parameters,
+      // not defaulted ones. A defaulted parameter of an unrelated type leaves a
+      // lone Props parameter, which is still this rule's to report.
+      {
+        name: 'a defaulted non-Props parameter does not trigger the multi-Props deferral',
+        code: `
+        type BProps = { b: number };
+        class Widget {
+          constructor(
+            private readonly flag: string = 'x',
+            private readonly beta: BProps,
+          ) {}
+        }
+      `,
+        errors: [{ messageId: 'usePropsName', data: { paramName: 'beta' } }],
+        output: `
+        type BProps = { b: number };
+        class Widget {
+          constructor(
+            private readonly flag: string = 'x',
+            private readonly props: BProps,
+          ) {}
         }
       `,
       },
