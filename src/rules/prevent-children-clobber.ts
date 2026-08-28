@@ -66,7 +66,11 @@ function isComponentLike(
     return true;
   }
 
-  return ASTHelpers.returnsJSX(node.body, context);
+  // Asked about the FUNCTION, not its body: a concise arrow's body arrives
+  // as the handed node, and returnsJSX unwraps a handed function rather than
+  // reading it as the value it is. That made a factory returning a render
+  // function look component-like in its concise spelling only (#2191).
+  return ASTHelpers.returnsJSX(node, context);
 }
 
 function patternHasChildrenProperty(pattern: TSESTree.ObjectPattern): boolean {
