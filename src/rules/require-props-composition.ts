@@ -314,11 +314,89 @@ function typeNodeComposesWithProps(
 }
 
 /**
- * Collect all capitalized JSX element names used in a component's function
- * body (handles all JSX regardless of nesting depth / conditional branches).
+ * The function a capitalized `const` declaration binds — a component declared
+ * inside the region being scanned. Recognizes the `memo(...)` wrapper the
+ * repo's memoization rules push components into.
+ */
+function componentFunctionOfDeclarator(
+  node: TSESTree.Node,
+): TSESTree.Node | null {
+  if (node.type !== AST_NODE_TYPES.VariableDeclarator) return null;
+  if (
+    node.id.type !== AST_NODE_TYPES.Identifier ||
+    !/^[A-Z]/.test(node.id.name)
+  ) {
+    return null;
+  }
+  if (!node.init) return null;
+  // A whole optional chain arrives wrapped, so `memo?.(...)` reads as a
+  // ChainExpression rather than the CallExpression below. Without the unwrap
+  // the nullish spelling of a nested component would slip past the boundary —
+  // a barrier that silently does not apply is worse than none.
+  const init =
+    node.init.type === AST_NODE_TYPES.ChainExpression
+      ? node.init.expression
+      : node.init;
+  if (
+    init.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+    init.type === AST_NODE_TYPES.FunctionExpression
+  ) {
+    return init;
+  }
+  if (init.type === AST_NODE_TYPES.CallExpression) {
+    const arg0 = init.arguments[0];
+    if (
+      arg0 &&
+      (arg0.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+        arg0.type === AST_NODE_TYPES.FunctionExpression)
+    ) {
+      return arg0;
+    }
+  }
+  return null;
+}
+
+/**
+ * A `function Inner() { ... }` component declared inside the region being
+ * scanned — the statement spelling of `componentFunctionOfDeclarator`.
+ */
+function isComponentFunctionDeclaration(node: TSESTree.Node): boolean {
+  return (
+    node.type === AST_NODE_TYPES.FunctionDeclaration &&
+    !!node.id &&
+    /^[A-Z]/.test(node.id.name)
+  );
+}
+
+/**
+ * Collect all capitalized JSX element names a component renders itself
+ * (handles all JSX regardless of nesting depth / conditional branches).
+ *
+ * The walk ends at a component DECLARED inside the region: that component's JSX
+ * is its own render output, checked when the rule visits that declaration, so
+ * crediting it to the enclosing component demands composition with a child the
+ * enclosing component never renders — while the identical code with the inner
+ * component hoisted to module scope stays silent (issue #2182). The boundary is
+ * a capitalized declaration rather than any function, because an anonymous
+ * callback (`items.map((i) => <Child />)`) binds no component and IS the
+ * enclosing component's own output.
  */
 function collectJsxElementNames(node: TSESTree.Node): Set<string> {
   const names = new Set<string>();
+
+  // The node handed to the walk is the component under check, so its own
+  // function is never a boundary; only a declaration met while descending is.
+  // Membership rather than a parent-child check, because a wrapper puts the
+  // function several levels below the declarator that names it
+  // (`const Inner = memo(() => ...)`).
+  const boundaries = new Set<TSESTree.Node>();
+
+  function visitChild(child: TSESTree.Node): void {
+    if (boundaries.has(child) || isComponentFunctionDeclaration(child)) {
+      return;
+    }
+    visit(child);
+  }
 
   function visit(n: TSESTree.Node | null | undefined): void {
     if (!n || typeof n !== 'object') return;
@@ -334,6 +412,11 @@ function collectJsxElementNames(node: TSESTree.Node): Set<string> {
       }
     }
 
+    const nestedComponent = componentFunctionOfDeclarator(n);
+    if (nestedComponent) {
+      boundaries.add(nestedComponent);
+    }
+
     // Traverse all child nodes
     for (const key of Object.keys(n)) {
       if (key === 'parent') continue;
@@ -342,11 +425,11 @@ function collectJsxElementNames(node: TSESTree.Node): Set<string> {
       if (Array.isArray(child)) {
         for (const item of child) {
           if (item && typeof item === 'object' && 'type' in item) {
-            visit(item as TSESTree.Node);
+            visitChild(item as TSESTree.Node);
           }
         }
       } else if (child && typeof child === 'object' && 'type' in child) {
-        visit(child as TSESTree.Node);
+        visitChild(child as TSESTree.Node);
       }
     }
   }
@@ -388,6 +471,74 @@ function collectPatternBindings(
 }
 
 /**
+ * Every binding name a destructuring pattern introduces, capitalized or not,
+ * the `...rest` element included. A lowercase binding names no component slot,
+ * but it still HOLDS props, so a slot destructured out of it one hop later is
+ * caller-injected all the same — which is why the carve-out follows `rest`
+ * without ever treating `rest` itself as a slot (issue #2184).
+ */
+function collectPatternBindingNames(
+  pattern: TSESTree.Node,
+  into: Set<string>,
+): void {
+  switch (pattern.type) {
+    case AST_NODE_TYPES.Identifier:
+      into.add(pattern.name);
+      break;
+    case AST_NODE_TYPES.ObjectPattern:
+      for (const property of pattern.properties) {
+        collectPatternBindingNames(
+          property.type === AST_NODE_TYPES.Property
+            ? property.value
+            : property.argument,
+          into,
+        );
+      }
+      break;
+    case AST_NODE_TYPES.ArrayPattern:
+      for (const element of pattern.elements) {
+        if (element) collectPatternBindingNames(element, into);
+      }
+      break;
+    case AST_NODE_TYPES.AssignmentPattern:
+      collectPatternBindingNames(pattern.left, into);
+      break;
+    case AST_NODE_TYPES.RestElement:
+      collectPatternBindingNames(pattern.argument, into);
+      break;
+    default:
+      break;
+  }
+}
+
+/**
+ * Whether an initializer reads out of a name that holds props. Only the
+ * spellings that preserve the reference are followed — a member access
+ * (`props.slots`) and the type-level wrappers that erase to nothing — so a
+ * value produced by a call or an object literal is never mistaken for a
+ * caller-injected slot.
+ */
+function isPropsRootedExpression(
+  node: TSESTree.Node,
+  roots: Set<string>,
+): boolean {
+  switch (node.type) {
+    case AST_NODE_TYPES.Identifier:
+      return roots.has(node.name);
+    case AST_NODE_TYPES.MemberExpression:
+      return isPropsRootedExpression(node.object, roots);
+    // `props?.slots` reaches the same value as `props.slots`, and an exemption
+    // the nullish spelling withdraws is a false positive keyed on punctuation.
+    case AST_NODE_TYPES.ChainExpression:
+    case AST_NODE_TYPES.TSAsExpression:
+    case AST_NODE_TYPES.TSNonNullExpression:
+      return isPropsRootedExpression(node.expression, roots);
+    default:
+      return false;
+  }
+}
+
+/**
  * Names of JSX elements that resolve to one of the component's own props — a
  * rendering strategy injected by the caller (`ViewComponent: ComponentType<T>`)
  * rather than a fixed child.
@@ -405,29 +556,58 @@ function collectPropSlotNames(
     | TSESTree.FunctionDeclaration,
 ): Set<string> {
   const slots = new Set<string>();
-  const propsParam = funcNode.params[0];
-  if (!propsParam) return slots;
+  const rawParam = funcNode.params[0];
+  if (!rawParam) return slots;
 
-  if (propsParam.type === AST_NODE_TYPES.ObjectPattern) {
+  // `({ Slot }: Props = {})` hands the walk the default rather than the
+  // pattern. The binding is the same either way, so the parameter is unwrapped
+  // exactly as collectPatternBindings unwraps a defaulted property one level
+  // in (issue #2181).
+  const propsParam =
+    rawParam.type === AST_NODE_TYPES.AssignmentPattern
+      ? rawParam.left
+      : rawParam;
+
+  // Names holding the props object or a slice of it. The parameter seeds the
+  // set; the body scan grows it one binding at a time.
+  const propsRoots = new Set<string>();
+
+  if (propsParam.type === AST_NODE_TYPES.Identifier) {
+    propsRoots.add(propsParam.name);
+  } else if (propsParam.type === AST_NODE_TYPES.ObjectPattern) {
     collectPatternBindings(propsParam, slots);
+    collectPatternBindingNames(propsParam, propsRoots);
+  } else {
     return slots;
   }
 
-  // `(props: Props) => ...` — the slot may be destructured out of `props` in
-  // the body instead of in the signature.
-  if (propsParam.type !== AST_NODE_TYPES.Identifier) return slots;
-  const propsName = propsParam.name;
-
-  function visit(node: TSESTree.Node | null | undefined): void {
-    if (!node || typeof node !== 'object') return;
+  // The body scan runs on BOTH parameter spellings: a slot reached through an
+  // intermediate binding (`({ slots }) => { const { Slot } = slots; }`) is
+  // chosen by the caller exactly as one destructured straight off the
+  // parameter is, so the signature arm cannot return before the body is read
+  // (issue #2184). Following the chain needs a fixed point rather than a
+  // single hop, because a binding may be read before the walk reaches the
+  // declaration that made it props-rooted.
+  function visit(node: TSESTree.Node | null | undefined): boolean {
+    if (!node || typeof node !== 'object') return false;
+    let grew = false;
 
     if (
       node.type === AST_NODE_TYPES.VariableDeclarator &&
-      node.id.type === AST_NODE_TYPES.ObjectPattern &&
-      node.init?.type === AST_NODE_TYPES.Identifier &&
-      node.init.name === propsName
+      node.init &&
+      isPropsRootedExpression(node.init, propsRoots)
     ) {
-      collectPatternBindings(node.id, slots);
+      if (node.id.type === AST_NODE_TYPES.ObjectPattern) {
+        collectPatternBindings(node.id, slots);
+      } else if (
+        node.id.type === AST_NODE_TYPES.Identifier &&
+        /^[A-Z]/.test(node.id.name)
+      ) {
+        slots.add(node.id.name);
+      }
+      const rootCount = propsRoots.size;
+      collectPatternBindingNames(node.id, propsRoots);
+      grew = propsRoots.size !== rootCount;
     }
 
     for (const key of Object.keys(node)) {
@@ -437,16 +617,22 @@ function collectPropSlotNames(
       if (Array.isArray(child)) {
         for (const item of child) {
           if (item && typeof item === 'object' && 'type' in item) {
-            visit(item as TSESTree.Node);
+            grew = visit(item as TSESTree.Node) || grew;
           }
         }
       } else if (child && typeof child === 'object' && 'type' in child) {
-        visit(child as TSESTree.Node);
+        grew = visit(child as TSESTree.Node) || grew;
       }
     }
+
+    return grew;
   }
 
-  visit(funcNode.body);
+  // Terminates because propsRoots only ever grows, bounded by the bindings the
+  // body declares.
+  while (visit(funcNode.body)) {
+    // Another pass: a name learned late re-arms the declarations above it.
+  }
   return slots;
 }
 
@@ -1940,9 +2126,14 @@ export const requirePropsComposition = createRule<Options, MessageIds>({
       reportNode: TSESTree.Node,
       prog: TSESTree.Program,
     ): void {
-      // Collect all JSX element names used in the component body
+      // Collect all JSX element names the component renders. The walk is
+      // rooted at the function rather than at its body because a parameter
+      // default is render output too: `({ header = <Child /> }) => ...` renders
+      // <Child /> whenever the caller omits `header`, exactly as the body's
+      // `header ?? <Child />` does, and params are the body's siblings so a
+      // body-rooted walk never reaches them (issue #2183).
       const body = funcNode.body ?? funcNode;
-      const allJsxNames = collectJsxElementNames(body);
+      const allJsxNames = collectJsxElementNames(funcNode);
       const propSlots = collectPropSlotNames(funcNode);
 
       // A rendered child is resolved from the JSX site outward, so a component

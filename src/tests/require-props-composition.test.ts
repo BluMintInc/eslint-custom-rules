@@ -1806,6 +1806,286 @@ export const ErrorPageContent = ({ statusCode, err }: ErrorPageContentProps) => 
 );
 `,
     },
+    // 113. Issue #2181: a props parameter carrying its own default still binds
+    // the slot the caller injects. `collectPatternBindings` unwraps a defaulted
+    // PROPERTY, so the parameter spelling of the same default must reach the
+    // same answer — the alternative demands `SlotProps`, a type that exists
+    // nowhere.
+    {
+      filename: DEFAULT_FILENAME,
+      code: `
+type ChildProps = { a: string; b: number };
+const Child = (p: ChildProps) => <div>{p.a}</div>;
+type ParentProps = { Slot?: React.ComponentType };
+const Parent = ({ Slot }: ParentProps = {}) => <Slot />;
+`,
+    },
+    // 114. Issue #2181: the function-declaration spelling of the same default.
+    {
+      filename: DEFAULT_FILENAME,
+      code: `
+type ChildProps = { a: string; b: number };
+const Child = (p: ChildProps) => <div>{p.a}</div>;
+type ParentProps = { Slot?: React.ComponentType };
+function Parent({ Slot }: ParentProps = {}) {
+  return <Slot />;
+}
+`,
+    },
+    // 115. Issue #2181: a renamed slot under a parameter default — the rename
+    // the carve-out already follows one level in.
+    {
+      filename: DEFAULT_FILENAME,
+      code: `
+type ChildProps = { a: string; b: number };
+const Child = (p: ChildProps) => <div>{p.a}</div>;
+type ParentProps = { Slot?: React.ComponentType };
+const Parent = ({ Slot: Renderer }: ParentProps = {}) => <Renderer />;
+`,
+    },
+    // 116. Issue #2181: the identifier parameter under a default loses the
+    // body-scan arm the same way the pattern loses the signature arm.
+    {
+      filename: DEFAULT_FILENAME,
+      code: `
+type ChildProps = { a: string; b: number };
+const Child = (p: ChildProps) => <div>{p.a}</div>;
+type ParentProps = { Slot?: React.ComponentType };
+const Parent = (props: ParentProps = {}) => {
+  const { Slot } = props;
+  return <Slot />;
+};
+`,
+    },
+    // 117. Issue #2181: memo-wrapped, the shape the repo's memoization rules
+    // push components into.
+    {
+      filename: DEFAULT_FILENAME,
+      code: `
+type ChildProps = { a: string; b: number };
+const Child = (p: ChildProps) => <div>{p.a}</div>;
+type ParentProps = { Slot?: React.ComponentType };
+const Parent = memo(({ Slot }: ParentProps = {}) => <Slot />);
+`,
+    },
+    // 118. Issue #2181 control: the documented property-level default, which
+    // must keep the verdict it has — the parameter spelling above is required to
+    // MATCH this, not to acquire a new exemption.
+    {
+      filename: DEFAULT_FILENAME,
+      code: `
+type ChildProps = { a: string; b: number };
+const Child = (p: ChildProps) => <div>{p.a}</div>;
+const Fallback = () => <i />;
+type ParentProps = { Slot?: React.ComponentType };
+const Parent = ({ Slot = Fallback }: ParentProps) => <Slot />;
+`,
+    },
+    // 119. Issue #2182: a component declared inside this body renders its own
+    // children. `Parent` renders only a <div>, so charging it with `Inner`'s
+    // `Child` names a dependency it does not have — and fixture 123 is the same
+    // code with `Inner` hoisted, which must reach the same verdict.
+    {
+      filename: DEFAULT_FILENAME,
+      code: `
+type ChildProps = { a: string; b: number };
+const Child = (p: ChildProps) => <div>{p.a}</div>;
+type InnerProps = Pick<ChildProps, 'a'>;
+type ParentProps = { z: string };
+const Parent = (p: ParentProps) => {
+  const buildRenderer = () => {
+    const Inner = (q: InnerProps) => <Child a={q.a} b={1} />;
+    return Inner;
+  };
+  return <div>{p.z}</div>;
+};
+`,
+    },
+    // 120. Issue #2182: the statement spelling of the same nested declaration.
+    {
+      filename: DEFAULT_FILENAME,
+      code: `
+type ChildProps = { a: string; b: number };
+const Child = (p: ChildProps) => <div>{p.a}</div>;
+type InnerProps = Pick<ChildProps, 'a'>;
+type ParentProps = { z: string };
+const Parent = (p: ParentProps) => {
+  const buildRenderer = () => {
+    function Inner(q: InnerProps) {
+      return <Child a={q.a} b={1} />;
+    }
+    return Inner;
+  };
+  return <div>{p.z}</div>;
+};
+`,
+    },
+    // 121. Issue #2182: the boundary has to survive the wrapper that puts the
+    // function several levels below the declarator naming it.
+    {
+      filename: DEFAULT_FILENAME,
+      code: `
+type ChildProps = { a: string; b: number };
+const Child = (p: ChildProps) => <div>{p.a}</div>;
+type InnerProps = Pick<ChildProps, 'a'>;
+type ParentProps = { z: string };
+const Parent = (p: ParentProps) => {
+  const buildRenderer = () => {
+    const Inner = memo((q: InnerProps) => <Child a={q.a} b={1} />);
+    return Inner;
+  };
+  return <div>{p.z}</div>;
+};
+`,
+    },
+    // 122. Issue #2182: the nullish spelling of that wrapper. A boundary keyed
+    // on `CallExpression` alone is withdrawn by `memo?.()`, which would leave
+    // the carve-out present but keyed on punctuation.
+    {
+      filename: DEFAULT_FILENAME,
+      code: `
+type ChildProps = { a: string; b: number };
+const Child = (p: ChildProps) => <div>{p.a}</div>;
+type InnerProps = Pick<ChildProps, 'a'>;
+type ParentProps = { z: string };
+const Parent = (p: ParentProps) => {
+  const buildRenderer = () => {
+    const Inner = memo?.((q: InnerProps) => <Child a={q.a} b={1} />);
+    return Inner;
+  };
+  return <div>{p.z}</div>;
+};
+`,
+    },
+    // 123. Issue #2182 control: the same code with the inner component hoisted
+    // to module scope. Already silent, and the pair is what pins the rule's own
+    // documented invariant that where a child is DECLARED makes no difference.
+    {
+      filename: DEFAULT_FILENAME,
+      code: `
+type ChildProps = { a: string; b: number };
+const Child = (p: ChildProps) => <div>{p.a}</div>;
+type InnerProps = Pick<ChildProps, 'a'>;
+const Inner = (q: InnerProps) => <Child a={q.a} b={1} />;
+type ParentProps = { z: string };
+const Parent = (p: ParentProps) => <div>{p.z}</div>;
+`,
+    },
+    // 124. Issue #2183 control: reading parameter defaults widens the dependency
+    // scan, so a parent that DOES compose with the child its default renders
+    // must stay silent — the widening reports uncomposed children, not defaults.
+    {
+      filename: DEFAULT_FILENAME,
+      code: `
+type ChildProps = { a: string; b: number };
+const Child = (p: ChildProps) => <div>{p.a}</div>;
+type ParentProps = Pick<ChildProps, 'a'> & { header?: React.ReactNode };
+const Parent = ({ a, header = <Child a="t" b={1} /> }: ParentProps) => (
+  <div>
+    {a}
+    {header}
+  </div>
+);
+`,
+    },
+    // 125. Issue #2184: a slot destructured out of an intermediate props binding
+    // is chosen by the caller exactly as one destructured straight off the
+    // parameter is (fixture 131, the one-step spelling, is already silent).
+    {
+      filename: DEFAULT_FILENAME,
+      code: `
+type ChildProps = { a: string; b: number };
+const Child = (p: ChildProps) => <div>{p.a}</div>;
+type ParentProps = { slots: { Slot: React.ComponentType } };
+const Parent = ({ slots }: ParentProps) => {
+  const { Slot } = slots;
+  return <Slot />;
+};
+`,
+    },
+    // 126. Issue #2184: two hops from an identifier parameter, which is why the
+    // chain is followed to a fixed point rather than one binding deep.
+    {
+      filename: DEFAULT_FILENAME,
+      code: `
+type ChildProps = { a: string; b: number };
+const Child = (p: ChildProps) => <div>{p.a}</div>;
+type ParentProps = { slots: { Slot: React.ComponentType } };
+const Parent = (props: ParentProps) => {
+  const { slots } = props;
+  const { Slot } = slots;
+  return <Slot />;
+};
+`,
+    },
+    // 127. Issue #2184: a plain alias of a props binding hands over the same
+    // caller-chosen component.
+    {
+      filename: DEFAULT_FILENAME,
+      code: `
+type ChildProps = { a: string; b: number };
+const Child = (p: ChildProps) => <div>{p.a}</div>;
+type ParentProps = { renderItem: React.ComponentType };
+const Parent = ({ renderItem }: ParentProps) => {
+  const Item = renderItem;
+  return <Item />;
+};
+`,
+    },
+    // 128. Issue #2184: `...rest` names no slot of its own — the documented
+    // carve-out — but it still HOLDS props, so the slot taken out of it one hop
+    // later is caller-injected all the same.
+    {
+      filename: DEFAULT_FILENAME,
+      code: `
+type ChildProps = { a: string; b: number };
+const Child = (p: ChildProps) => <div>{p.a}</div>;
+type ParentProps = { Slot: React.ComponentType };
+const Parent = ({ ...rest }: ParentProps) => {
+  const { Slot } = rest;
+  return <Slot />;
+};
+`,
+    },
+    // 129. Issue #2184: a member access reaches the same value the intermediate
+    // binding does.
+    {
+      filename: DEFAULT_FILENAME,
+      code: `
+type ChildProps = { a: string; b: number };
+const Child = (p: ChildProps) => <div>{p.a}</div>;
+type ParentProps = { slots: { Slot: React.ComponentType } };
+const Parent = (props: ParentProps) => {
+  const { Slot } = props.slots;
+  return <Slot />;
+};
+`,
+    },
+    // 130. Issue #2184: the nullish spelling of that access. An exemption a `?.`
+    // withdraws is a false positive keyed on punctuation.
+    {
+      filename: DEFAULT_FILENAME,
+      code: `
+type ChildProps = { a: string; b: number };
+const Child = (p: ChildProps) => <div>{p.a}</div>;
+type ParentProps = { slots?: { Slot: React.ComponentType } };
+const Parent = (props: ParentProps) => {
+  const { Slot } = props?.slots;
+  return <Slot />;
+};
+`,
+    },
+    // 131. Issue #2184 control: the one-step nested destructure the docs already
+    // list as covered, which the spellings above are required to match.
+    {
+      filename: DEFAULT_FILENAME,
+      code: `
+type ChildProps = { a: string; b: number };
+const Child = (p: ChildProps) => <div>{p.a}</div>;
+type ParentProps = { slots: { Slot: React.ComponentType } };
+const Parent = ({ slots: { Slot } }: ParentProps) => <Slot />;
+`,
+    },
   ],
 
   invalid: [
@@ -3363,6 +3643,197 @@ export const ErrorPanel = ({ err }: ErrorPanelProps) => (
 );
 `,
       errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 92. Issue #2181 negative control: a parameter default is not a blanket
+    // exemption. `Child` is a fixed child, not a caller-injected slot, so the
+    // unwrap must not silence the component that carries the default.
+    {
+      filename: DEFAULT_FILENAME,
+      code: `
+type ChildProps = { a: string; b: number };
+const Child = (p: ChildProps) => <div>{p.a}</div>;
+type ParentProps = { a?: string };
+const Parent = ({ a = 'x' }: ParentProps = {}) => <Child a={a} b={1} />;
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 93. Issue #2182: the boundary drops the nested component's own child from
+    // the dependency list without silencing the report `Parent` earns on its
+    // own. Pinned on the interpolated list, which a messageId alone cannot see:
+    // before the boundary this read "renders 'Child', 'Panel'".
+    {
+      filename: DEFAULT_FILENAME,
+      code: `
+type ChildProps = { a: string; b: number };
+const Child = (p: ChildProps) => <div>{p.a}</div>;
+type PanelProps = { a: string; b: number };
+const Panel = (p: PanelProps) => <section>{p.a}</section>;
+type InnerProps = Pick<ChildProps, 'a'>;
+type ParentProps = { z: string };
+const Parent = (p: ParentProps) => {
+  const Inner = (q: InnerProps) => <Child a={q.a} b={1} />;
+  return <Panel a={p.z} b={1} />;
+};
+`,
+      errors: [
+        {
+          messageId: 'missingPropsComposition',
+          data: {
+            componentName: 'Parent',
+            propsTypeName: 'ParentProps',
+            dependencyList: "'Panel'",
+            missingList: "'PanelProps'",
+            primaryDep: 'PanelProps',
+          },
+        },
+      ],
+    },
+    // 94. Issue #2182: a nested component the parent DOES render stays a
+    // dependency — it is in the parent's own JSX — while the child only that
+    // nested component renders is not. The nested spelling now charges exactly
+    // what the hoisted spelling charges.
+    {
+      filename: DEFAULT_FILENAME,
+      code: `
+type ChildProps = { a: string; b: number };
+const Child = (p: ChildProps) => <div>{p.a}</div>;
+type InnerProps = Pick<ChildProps, 'a'>;
+type ParentProps = { z: string };
+const Parent = (p: ParentProps) => {
+  const Inner = (q: InnerProps) => <Child a={q.a} b={1} />;
+  return <Inner a={p.z} />;
+};
+`,
+      errors: [
+        {
+          messageId: 'missingPropsComposition',
+          data: {
+            componentName: 'Parent',
+            propsTypeName: 'ParentProps',
+            dependencyList: "'Inner'",
+            missingList: "'InnerProps'",
+            primaryDep: 'InnerProps',
+          },
+        },
+      ],
+    },
+    // 95. Issue #2182 negative control: an anonymous callback binds no
+    // component. JSX inside a `.map()` is the parent's own render output, so a
+    // blanket function boundary would have silenced it.
+    {
+      filename: DEFAULT_FILENAME,
+      code: `
+type ChildProps = { a: string; b: number };
+const Child = (p: ChildProps) => <div>{p.a}</div>;
+type ParentProps = { items: string[] };
+const Parent = (p: ParentProps) => {
+  return <div>{p.items.map((i) => <Child a={i} b={1} />)}</div>;
+};
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 96. Issue #2182 negative control: a lowercase render helper is not a
+    // component declaration either — its JSX is the parent's output.
+    {
+      filename: DEFAULT_FILENAME,
+      code: `
+type ChildProps = { a: string; b: number };
+const Child = (p: ChildProps) => <div>{p.a}</div>;
+type ParentProps = { z: string };
+const Parent = (p: ParentProps) => {
+  const renderChild = () => <Child a={p.z} b={1} />;
+  return <div>{renderChild()}</div>;
+};
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 97. Issue #2183: a parameter default renders <Child /> whenever the caller
+    // omits `header`, exactly as fixture 99's `header ?? <Child />` does. The
+    // params are the body's siblings, so a body-rooted walk never saw them.
+    {
+      filename: DEFAULT_FILENAME,
+      code: `
+type ChildProps = { a: string; b: number };
+const Child = (p: ChildProps) => <div>{p.a}</div>;
+type ParentProps = { header?: React.ReactNode };
+const Parent = ({ header = <Child a="t" b={1} /> }: ParentProps) => <div>{header}</div>;
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 98. Issue #2183: the function-declaration spelling of the same default.
+    {
+      filename: DEFAULT_FILENAME,
+      code: `
+type ChildProps = { a: string; b: number };
+const Child = (p: ChildProps) => <div>{p.a}</div>;
+type ParentProps = { header?: React.ReactNode };
+function Parent({ header = <Child a="t" b={1} /> }: ParentProps) {
+  return <div>{header}</div>;
+}
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 99. Issue #2183 control: the body spelling of the same fallback, which
+    // already reported and must keep reporting.
+    {
+      filename: DEFAULT_FILENAME,
+      code: `
+type ChildProps = { a: string; b: number };
+const Child = (p: ChildProps) => <div>{p.a}</div>;
+type ParentProps = { header?: React.ReactNode };
+const Parent = ({ header }: ParentProps) => <div>{header ?? <Child a="t" b={1} />}</div>;
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 100. Issue #2184 negative control: the chain is followed from PROPS, not
+    // from any object. A component destructured out of an imported registry is
+    // a fixed child the parent chose, so it still needs composition.
+    {
+      filename: DEFAULT_FILENAME,
+      code: `
+import { registry } from '../registry';
+type ChildProps = { a: string; b: number };
+const Child = (p: ChildProps) => <div>{p.a}</div>;
+type ParentProps = { z: string };
+const Parent = ({ z }: ParentProps) => {
+  const { Renderer } = registry;
+  return <Renderer a={z} b={1} />;
+};
+`,
+      errors: [{ messageId: 'missingPropsComposition' }],
+    },
+    // 101. Issue #2184 negative control: the exemption is per NAME, not per
+    // component. A fixed child rendered beside an aliased slot keeps its
+    // report — pinned on the interpolated list, which before the fix read
+    // "renders 'Slot', 'Child'".
+    {
+      filename: DEFAULT_FILENAME,
+      code: `
+type ChildProps = { a: string; b: number };
+const Child = (p: ChildProps) => <div>{p.a}</div>;
+type ParentProps = { slots: { Slot: React.ComponentType } };
+const Parent = ({ slots }: ParentProps) => {
+  const { Slot } = slots;
+  return (
+    <div>
+      <Slot />
+      <Child a="x" b={1} />
+    </div>
+  );
+};
+`,
+      errors: [
+        {
+          messageId: 'missingPropsComposition',
+          data: {
+            componentName: 'Parent',
+            propsTypeName: 'ParentProps',
+            dependencyList: "'Child'",
+            missingList: "'ChildProps'",
+            primaryDep: 'ChildProps',
+          },
+        },
+      ],
     },
   ],
 });
