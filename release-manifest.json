@@ -1,5 +1,184 @@
 [
   {
+    "version": "1.20.186",
+    "date": "2026-08-28T09:27:29.922Z",
+    "rules": [
+      {
+        "name": "class-methods-read-top-to-bottom",
+        "changeType": "fix",
+        "issues": [
+          2193
+        ],
+        "summary": "preserve the handed `this` context (closes #2193)"
+      },
+      {
+        "name": "enforce-dynamic-firebase-imports",
+        "changeType": "fix",
+        "issues": [
+          2172,
+          2173
+        ],
+        "summary": "apply the reach boundary to the handed node (closes #2172, closes #2173)"
+      },
+      {
+        "name": "enforce-firestore-doc-ref-generic",
+        "changeType": "fix",
+        "issues": [
+          2189
+        ],
+        "summary": "read an interface's body, not only extends (closes #2189)"
+      },
+      {
+        "name": "enforce-positive-naming",
+        "changeType": "fix",
+        "issues": [
+          2174,
+          2175
+        ],
+        "summary": "read the function under a type-only wrapper and on a property signature (closes #2174, closes #2175)"
+      },
+      {
+        "name": "enforce-props-argument-name",
+        "changeType": "fix",
+        "issues": [
+          2177
+        ],
+        "summary": "scan for readers of a public parameter property beyond its class (closes #2177)"
+      },
+      {
+        "name": "enforce-props-naming-consistency",
+        "changeType": "fix",
+        "issues": [
+          2178,
+          2179,
+          2180
+        ],
+        "summary": "adopt the sibling's class boundary, subclass carve-out and param unwrap (closes #2178, closes #2179, closes #2180)"
+      },
+      {
+        "name": "logical-top-to-bottom-grouping",
+        "changeType": "fix",
+        "issues": [
+          2195
+        ],
+        "summary": "resolve callees in parameter defaults (closes #2195)"
+      },
+      {
+        "name": "no-empty-dependency-use-callbacks",
+        "changeType": "fix",
+        "issues": [
+          2192
+        ],
+        "summary": "limit the JSX exemption to a renderer (closes #2192)"
+      },
+      {
+        "name": "no-filter-without-return",
+        "changeType": "fix",
+        "issues": [
+          2194
+        ],
+        "summary": "stop hasReturnStatement at function-scope boundaries (closes #2194)"
+      },
+      {
+        "name": "no-misleading-boolean-prefixes",
+        "changeType": "fix",
+        "issues": [
+          2176
+        ],
+        "summary": "see the function through a type-only wrapper at the naming site (closes #2176)"
+      },
+      {
+        "name": "no-unmemoized-memo-without-props",
+        "changeType": "fix",
+        "issues": [
+          2190
+        ],
+        "summary": "hand returnsJSX the function, not its body (closes #2190)"
+      },
+      {
+        "name": "no-unused-props",
+        "changeType": "fix",
+        "issues": [
+          2185,
+          2187,
+          2188
+        ],
+        "summary": "make the rebind gate prune the statement list, and expand utility types inside an intersection (closes #2185, closes #2187, closes #2188)"
+      },
+      {
+        "name": "parallelize-async-operations",
+        "changeType": "fix",
+        "issues": [
+          2204
+        ],
+        "summary": "scan unbraced switch-case consequents (closes #2204)"
+      },
+      {
+        "name": "prefer-utility-function-own-file",
+        "changeType": "fix",
+        "issues": [
+          2197,
+          2199,
+          2200
+        ],
+        "summary": "read a function's own parameter list, not just its body (closes #2197, closes #2199, closes #2200)"
+      },
+      {
+        "name": "prevent-children-clobber",
+        "changeType": "fix",
+        "issues": [
+          2191
+        ],
+        "summary": "ask isComponentLike about the function, not its body (closes #2191)"
+      },
+      {
+        "name": "react-memoize-literals",
+        "changeType": "fix",
+        "issues": [
+          2202,
+          2203
+        ],
+        "summary": "key the JSX-member carve-out on the value, not the container or the spelling (closes #2202, closes #2203)"
+      },
+      {
+        "name": "react-usememo-should-be-component",
+        "changeType": "fix",
+        "issues": [
+          2201
+        ],
+        "summary": "descend into blocks nested below the top level (closes #2201)"
+      },
+      {
+        "name": "require-memo",
+        "changeType": "fix",
+        "issues": [
+          2186
+        ],
+        "summary": "resolve a concise arrow body's identifier to its initializer (closes #2186)"
+      },
+      {
+        "name": "require-props-composition",
+        "changeType": "fix",
+        "issues": [
+          2181,
+          2182,
+          2183,
+          2184
+        ],
+        "summary": "apply each walk's behaviour to the node it is handed (closes #2181, closes #2182, closes #2183, closes #2184)"
+      },
+      {
+        "name": "vertically-group-related-functions",
+        "changeType": "fix",
+        "issues": [
+          2196,
+          2198
+        ],
+        "summary": "record calls in parameter defaults as dependencies (closes #2196, closes #2198)"
+      }
+    ]
+  },
+  {
     "version": "1.20.185",
     "date": "2026-08-27T23:34:44.905Z",
     "rules": [
