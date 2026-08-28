@@ -116,13 +116,25 @@ const childNodesOf = (node: TSESTree.Node): TSESTree.Node[] => {
   return children;
 };
 
-/** The type nodes a declaration states about the type it declares. */
+/**
+ * The type nodes a declaration states about the type it declares.
+ *
+ * An alias hands over its whole right-hand side, so every type its members name
+ * is reached. The interface spelling has to hand over as much or the two answer
+ * differently about the same declaration: its heritage clauses state what it
+ * inherits, and its body states what it declares. Reading the clauses alone
+ * left a reference type written as an interface MEMBER invisible, so
+ * `as Schema['user']` reported a schema the file states in full — while the
+ * alias `prefer-type-over-interface --fix` rewrites that interface into was
+ * already exempt, making one fix pass the difference between reporting and
+ * silence (#2189).
+ */
 const statedTypeNodesOf = (
   declaration: NamedTypeDeclaration,
 ): TSESTree.Node[] =>
   declaration.type === AST_NODE_TYPES.TSTypeAliasDeclaration
     ? [declaration.typeAnnotation]
-    : declaration.extends ?? [];
+    : [...(declaration.extends ?? []), declaration.body];
 
 /**
  * The expression an optional link wraps, so a receiver spelled with `?.` is

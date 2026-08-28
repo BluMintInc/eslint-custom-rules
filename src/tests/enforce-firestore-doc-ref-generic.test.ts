@@ -2375,6 +2375,67 @@ ruleTesterTs.run(
         ] as const;
       `,
       },
+      /**
+       * A Firestore reference type declared as an interface MEMBER states the
+       * document schema exactly as the same member states it in the type alias
+       * `prefer-type-over-interface --fix` rewrites that interface into. Reading
+       * only the `extends` clause made the two spellings disagree, so an
+       * assertion naming the member drew a report the file already answers, and
+       * the suggested remedy was uncompilable: the operand `db.doc(path)`
+       * declares no type parameters for a generic to go in (#2189).
+       */
+      {
+        code: `
+        type User = { name: string };
+        interface Schema { user: DocumentReference<User> }
+        const userRef = db.doc('users/1') as Schema['user'];
+      `,
+      },
+      // The alias spelling of the same declaration, which one `eslint --fix`
+      // pass turns the case above into with no semantic change. It is the
+      // control the interface arm has to answer alike.
+      {
+        code: `
+        type User = { name: string };
+        type Schema = { user: DocumentReference<User> };
+        const userRef = db.doc('users/1') as Schema['user'];
+      `,
+      },
+      {
+        code: `
+        type User = { name: string };
+        interface Schema { users: CollectionReference<User> }
+        const usersCollection = db.collection('users') as Schema['users'];
+      `,
+      },
+      // The member holding the schema may be declared on a base interface, so
+      // the heritage clause and the body have to be read on the same walk
+      // rather than as alternatives.
+      {
+        code: `
+        type User = { name: string };
+        interface Base { user: DocumentReference<User> }
+        interface Schema extends Base {}
+        const userRef = db.doc('users/1') as Schema['user'];
+      `,
+      },
+      // `export` is not a distinction the document shape knows anything about.
+      {
+        code: `
+        type User = { name: string };
+        export interface Schema { user: DocumentReference<User> }
+        const userRef = db.doc('users/1') as Schema['user'];
+      `,
+      },
+      // The heritage arm this fix widens rather than replaces: a reference type
+      // named in `extends` states the schema of the interface that inherits it.
+      {
+        code: `
+        type User = { name: string };
+        interface UserRef extends DocumentReference<User> {}
+        const userRef = db.doc('users/1') as UserRef;
+      `,
+      },
     ],
     invalid: [
       /**
@@ -3978,6 +4039,48 @@ ruleTesterTs.run(
       // that states no schema hands none to the `.doc()` built on it.
       {
         code: `const ref = (matchRef.collection('mappings') as any).doc(matchId);`,
+        errors: [missingGenericError('DocumentReference')],
+      },
+      /**
+       * Reading an interface's members (#2189) is bounded by the same question
+       * the alias arm answers: the declaration has to actually name a Firestore
+       * reference surface. An interface whose members name none states no
+       * document schema, so an assertion onto one earns no exemption.
+       */
+      {
+        code: `
+        type User = { name: string };
+        interface Schema { user: User }
+        const userRef = db.doc('users/1') as Schema['user'];
+      `,
+        errors: [missingGenericError('DocumentReference')],
+      },
+      {
+        code: `
+        interface Config { retries: number }
+        const usersCollection = db.collection('users') as unknown as Config;
+      `,
+        errors: [missingGenericError('CollectionReference')],
+      },
+      // A member that refers back to the interface it is declared on has to
+      // terminate the member walk rather than exhaust the stack, and it states
+      // no schema on the way out.
+      {
+        code: `
+        interface Loop { self: Loop }
+        const userRef = db.doc('users/1') as Loop['self'];
+      `,
+        errors: [missingGenericError('DocumentReference')],
+      },
+      // The declaration alone exempts nothing: without an assertion naming it,
+      // an interface that states a schema perfectly well is not evidence about
+      // a reference built beside it.
+      {
+        code: `
+        type User = { name: string };
+        interface Schema { user: DocumentReference<User> }
+        const userRef = db.doc('users/1');
+      `,
         errors: [missingGenericError('DocumentReference')],
       },
     ],

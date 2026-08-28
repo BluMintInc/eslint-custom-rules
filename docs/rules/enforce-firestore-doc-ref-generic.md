@@ -161,7 +161,25 @@ const getUserId = (): string => {
 
 ## What a type assertion states
 
-An assertion supplies the schema when the type it asserts names a Firestore reference — `db.collection('users') as CollectionReference<User>` is as complete a statement as the annotation `const usersCollection: CollectionReference<User> = ...`. What earns the exemption is the type named, not the assertion's position: an assertion types the references inside the literal it wraps, so `[db.collection('a'), db.collection('b')] as CollectionReference<User>[]` and `{ users: db.collection('users') } as Record<string, CollectionReference<User>>` both state the schema several type nodes away from the call. `Query` counts alongside the three reference types because `.where(...)` narrows a collection to it while keeping the same document generic. A local alias is resolved first, so `type UsersCollection = CollectionReference<User>` states what it stands for.
+An assertion supplies the schema when the type it asserts names a Firestore reference — `db.collection('users') as CollectionReference<User>` is as complete a statement as the annotation `const usersCollection: CollectionReference<User> = ...`. What earns the exemption is the type named, not the assertion's position: an assertion types the references inside the literal it wraps, so `[db.collection('a'), db.collection('b')] as CollectionReference<User>[]` and `{ users: db.collection('users') } as Record<string, CollectionReference<User>>` both state the schema several type nodes away from the call. `Query` counts alongside the three reference types because `.where(...)` narrows a collection to it while keeping the same document generic. A local declaration is resolved first, so `type UsersCollection = CollectionReference<User>` states what it stands for. An interface is read the same way and just as deeply: both what it inherits through `extends` and what its own members declare count, so a reference type held by a member is stated by an assertion that names that member.
+
+```ts
+// Silent: the member `Schema['user']` names `DocumentReference<User>`, which
+// states the schema as completely as writing that type at the assertion would.
+interface Schema {
+  user: DocumentReference<User>;
+}
+const userRef = db.doc('users/1') as Schema['user'];
+
+// Reported: no member of `Config` names a reference type, so it states nothing
+// about the document shape and earns no exemption.
+interface Config {
+  retries: number;
+}
+const usersCollection = db.collection('users') as unknown as Config;
+```
+
+Reading only the `extends` clause would make the two spellings disagree about the same declaration. `prefer-type-over-interface` ships in the same `recommended` config and is fixable, so one `eslint --fix` pass rewrites that interface into the type alias whose members were always read — moving a file from reporting to silent without changing anything it states.
 
 `as const` states no type at all. It preserves whatever the expression already infers to and adds `readonly`, so a reference under one keeps the loose `DocumentData` schema this rule exists to reject:
 
