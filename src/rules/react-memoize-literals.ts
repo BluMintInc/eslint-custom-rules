@@ -1216,8 +1216,9 @@ function isJSXNode(node: TSESTree.Node): boolean {
 /**
  * Collects the names of variables declared in the owning function's top-level
  * block body whose initializers resolve to JSX elements or fragments. Used to
- * detect shorthand object properties like `{ Portal }` where
- * `const Portal = <div />` precedes the return statement.
+ * resolve identifier members of a returned literal — `{ Portal }`,
+ * `{ portal: Portal }`, `[Portal]` — back to the `const Portal = <div />`
+ * that precedes the return statement.
  *
  * Only top-level declarations are scanned; inner function scopes have their
  * own render lifecycles and are not candidates for this exemption.
@@ -1248,14 +1249,50 @@ function collectLocalJSXBindings(
 }
 
 /**
+ * Builds the predicate that answers, for one member of a literal returned by
+ * `owner`, whether that member's VALUE is a JSX element or fragment: either
+ * inline JSX, or an identifier naming a JSX binding local to `owner`.
+ *
+ * Object and array members share one predicate because they pose the same
+ * question — the container holding a member does not change whether that
+ * member is a fresh reference each render. Answering it separately per
+ * container exempts `{ Portal }` while reporting the identical `[Portal]`
+ * (#2202).
+ *
+ * The binding scan is deferred until an identifier member is actually seen,
+ * so the common inline-JSX case costs no body walk.
+ */
+function createJSXMemberPredicate(
+  owner:
+    | TSESTree.FunctionDeclaration
+    | TSESTree.FunctionExpression
+    | TSESTree.ArrowFunctionExpression,
+): (value: TSESTree.Node) => boolean {
+  let localJSXBindings: Set<string> | null = null;
+
+  return (value: TSESTree.Node): boolean => {
+    if (isJSXNode(value)) {
+      return true;
+    }
+    if (value.type !== AST_NODE_TYPES.Identifier) {
+      return false;
+    }
+    if (!localJSXBindings) {
+      localJSXBindings = collectLocalJSXBindings(owner);
+    }
+    return localJSXBindings.has(value.name);
+  };
+}
+
+/**
  * Returns true when an ObjectExpression returned from a hook contains at
  * least one property whose value is a JSX element or fragment — either
- * directly inline (`{ Portal: <div /> }`) or via a shorthand identifier
- * (`{ Portal }`) that resolves to a JSX initializer in the same function
- * scope. Such objects cannot be stabilised by wrapping them in useMemo
- * because the JSX member is a fresh reference on every render regardless of
- * the wrapper. This is the same "no stability benefit" rationale applied to
- * sx/style JSX attribute values.
+ * directly inline (`{ Portal: <div /> }`) or via an identifier
+ * (`{ Portal }`, `{ Portal: Portal }`, `{ portal: Portal }`) resolving to a
+ * JSX initializer in the same function scope. Such objects cannot be
+ * stabilised by wrapping them in useMemo because the JSX member is a fresh
+ * reference on every render regardless of the wrapper. This is the same "no
+ * stability benefit" rationale applied to sx/style JSX attribute values.
  */
 function objectLiteralContainsJSXValue(
   node: TSESTree.ObjectExpression,
@@ -1264,28 +1301,18 @@ function objectLiteralContainsJSXValue(
     | TSESTree.FunctionExpression
     | TSESTree.ArrowFunctionExpression,
 ): boolean {
-  // Resolve shorthand bindings lazily — only when at least one shorthand
-  // property is present, to avoid the body scan for the common inline case.
-  let localJSXBindings: Set<string> | null = null;
+  const memberIsJSX = createJSXMemberPredicate(owner);
 
   for (const prop of node.properties) {
     if (prop.type === AST_NODE_TYPES.SpreadElement) continue;
 
-    const value = unwrapNestedExpressions(prop.value as TSESTree.Node);
-
-    // Direct inline JSX: { Portal: <div /> } or { el: <></> }
-    if (isJSXNode(value)) {
+    // Only the property VALUE bears on referential stability; the key that
+    // holds it does not. Requiring `prop.shorthand` keys the carve-out on
+    // spelling instead, exempting `{ Portal }` while reporting the desugared
+    // `{ Portal: Portal }` and the renamed `{ portal: Portal }` — the very
+    // same fresh-each-render element (#2203).
+    if (memberIsJSX(unwrapNestedExpressions(prop.value as TSESTree.Node))) {
       return true;
-    }
-
-    // Shorthand identifier: { Portal } — resolve to a local JSX binding.
-    if (prop.shorthand && value.type === AST_NODE_TYPES.Identifier) {
-      if (!localJSXBindings) {
-        localJSXBindings = collectLocalJSXBindings(owner);
-      }
-      if (localJSXBindings.has(value.name)) {
-        return true;
-      }
     }
   }
 
@@ -1294,16 +1321,27 @@ function objectLiteralContainsJSXValue(
 
 /**
  * Returns true when an ArrayExpression returned from a hook contains at least
- * one element that is a JSX element or fragment (after unwrapping expression
- * wrappers). The same "no stability benefit" rationale applies: a JSX element
- * is a fresh reference each render, so wrapping the array in useMemo would
- * recompute on every call without improving referential stability.
+ * one element whose value is a JSX element or fragment, either inline
+ * (`[<div />]`) or via an identifier naming a local JSX binding (`[Portal]`),
+ * in both cases after unwrapping expression wrappers. The same "no stability
+ * benefit" rationale applies: a JSX element is a fresh reference each render,
+ * so wrapping the array in useMemo would recompute on every call without
+ * improving referential stability. That holds independently of the container,
+ * so the array arm resolves identifiers exactly as the object arm does
+ * (#2202).
  */
-function arrayLiteralContainsJSXValue(node: TSESTree.ArrayExpression): boolean {
+function arrayLiteralContainsJSXValue(
+  node: TSESTree.ArrayExpression,
+  owner:
+    | TSESTree.FunctionDeclaration
+    | TSESTree.FunctionExpression
+    | TSESTree.ArrowFunctionExpression,
+): boolean {
+  const memberIsJSX = createJSXMemberPredicate(owner);
+
   for (const element of node.elements) {
     if (!element) continue;
-    const unwrapped = unwrapNestedExpressions(element as TSESTree.Node);
-    if (isJSXNode(unwrapped)) {
+    if (memberIsJSX(unwrapNestedExpressions(element as TSESTree.Node))) {
       return true;
     }
   }
@@ -2160,7 +2198,7 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
         }
         if (
           node.type === AST_NODE_TYPES.ArrayExpression &&
-          arrayLiteralContainsJSXValue(node as TSESTree.ArrayExpression)
+          arrayLiteralContainsJSXValue(node as TSESTree.ArrayExpression, owner)
         ) {
           return;
         }
