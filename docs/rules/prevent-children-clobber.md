@@ -19,6 +19,15 @@ The rule reports when:
 
 The rule only flags spreads of identifiers introduced as rest-objects in the current function scope (e.g., `...rest` in a parameter list), not re-exported identifiers from outer scopes.
 
+The enclosing function must also be component-like: either it carries a
+component name, or it returns JSX. That second test reads the function's value
+the same way whichever way its body is spelled — a concise arrow body and the
+`return` of a block body are the same value — and a function is not a JSX value.
+A camelCase factory such as `const buildDialog = ({ title, ...props }) => () => <Dialog {...props}>…</Dialog>`
+therefore returns a render function rather than an element, is not component-like,
+and its rest binding is left alone in both spellings. Naming it `BuildDialog`
+satisfies the name test and brings the spread back into scope.
+
 ## Examples
 
 ### Examples of incorrect code

@@ -697,6 +697,33 @@ ruleTesterJsx.run('prevent-children-clobber', preventChildrenClobber, {
       `,
       filename: 'component.tsx',
     },
+    // #2191 subject: a camelCase factory returns a FUNCTION, not JSX, so it is
+    // not component-like and its rest binding is not this rule's business. The
+    // concise spelling used to pass the gate because the handed body WAS the
+    // inner arrow, which returnsJSX unwraps.
+    {
+      code: `
+        const buildDialog = ({ title, ...props }: DialogProps) => () => (
+          <Dialog {...props}>
+            <AlertStandard message={title} />
+          </Dialog>
+        );
+      `,
+      filename: 'component.tsx',
+    },
+    // #2191 control: the block-bodied twin, which the gate has always rejected.
+    {
+      code: `
+        const buildDialog = ({ title, ...props }: DialogProps) => {
+          return () => (
+            <Dialog {...props}>
+              <AlertStandard message={title} />
+            </Dialog>
+          );
+        };
+      `,
+      filename: 'component.tsx',
+    },
   ],
   invalid: [
     {
@@ -1337,6 +1364,20 @@ ruleTesterJsx.run('prevent-children-clobber', preventChildrenClobber, {
             <Label />
           </Button>
         ));
+      `,
+      filename: 'component.tsx',
+      errors: [{ messageId: 'childrenClobbered' }],
+    },
+    // #2191 positive control: the SAME factory shape under a component name
+    // still reports, so tightening the returnsJSX gate did not make the rule
+    // blind to a spread that really does discard children.
+    {
+      code: `
+        const BuildDialog = ({ title, ...props }: DialogProps) => () => (
+          <Dialog {...props}>
+            <AlertStandard message={title} />
+          </Dialog>
+        );
       `,
       filename: 'component.tsx',
       errors: [{ messageId: 'childrenClobbered' }],
