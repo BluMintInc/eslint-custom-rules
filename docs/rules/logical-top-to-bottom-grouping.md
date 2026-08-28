@@ -250,6 +250,26 @@ function run() {
 }
 ```
 
+**A parameter default is part of what the call reads.** Parameter initializers
+run on entry, before the body, so a call sitting in a default reaches whatever
+that callee closes over exactly as a call in the body does. The reads a default
+performs — directly, or transitively through the function it calls — are
+dependencies of the statement, in every spelling of the default:
+
+```typescript
+// ✅ Correct — and left alone: `makeDefault` reads `secret`, so the effect
+// cannot be hoisted above the declaration that produces it
+const makeDefault = () => secret;
+
+const secret = 1;
+
+((h = makeDefault()) => {
+  report(h);
+})();
+
+use(secret);
+```
+
 ### Sequential awaits are never split
 
 Two or more adjacent `await` statements are a run, and the search treats keeping that
