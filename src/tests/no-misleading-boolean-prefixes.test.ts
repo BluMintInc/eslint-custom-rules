@@ -167,6 +167,32 @@ ruleTesterTs.run(
       // Pairs with the `prefixes: ['can']` invalid field case on identical
       // code — the option is the only difference between them.
       'class C { canRetry = () => "yes"; }',
+
+      // Reaching through a type-only wrapper at the naming site must not
+      // manufacture a report: a wrapped function that answers boolean clears
+      // the check exactly as its unwrapped spelling does.
+      'type P = () => boolean; const isReady = (() => true) as P;',
+      'const isReady = ((): boolean => true)!;',
+      'const isPositive = ((n: number) => n > 0) satisfies (n: number) => boolean;',
+      'const isTruthy = <(x: any) => boolean>((x: any) => Boolean(x));',
+      'const o = { isReady: (() => true) as () => boolean };',
+      'class C { isReady = (() => true) as () => boolean; }',
+
+      // An undeterminable return stays undeterminable under a wrapper, and the
+      // name gate still runs before any of this.
+      'const isReady = ((o: any) => o.ready) as () => unknown;',
+      'const getUser = (() => "yes") as () => string;',
+
+      // Only type-only wrappers are transparent. An operator that can yield an
+      // operand other than the function leaves the name bound to a value this
+      // rule makes no promise about, so the climb must stop there.
+      'const isReady = ((() => "yes") as () => string) || fallback;',
+      'const isReady = cond ? (() => "yes") : other;',
+
+      // A wrapped DATA field is still data rather than a callable contract, so
+      // unwrapping its initializer must not enrol it (#2155 boundary).
+      'class C { isDone = "yes" as string; }',
+      'class C { hasItems = compute() as string[]; }',
     ],
     invalid: [
       // Examples from spec
@@ -554,6 +580,108 @@ ruleTesterTs.run(
             data: { name: 'canRetry', prefixes: 'can' },
           },
         ],
+      },
+
+      // A type-only wrapper between a name and its function restates a type and
+      // changes no runtime value, so `isReady()` still hands its callers a
+      // string (#2176). The rule already reaches through these wrappers in the
+      // return position; the naming site asks the same question one node up.
+      {
+        code: 'type P = () => string; const isReady = (() => "yes") as P;',
+        errors: [error('isReady')],
+      },
+      // The control the subject pairs with — the unwrapped spelling, which the
+      // rule has always reported. The two spellings must not diverge.
+      {
+        code: 'const isReady = () => "yes";',
+        errors: [error('isReady')],
+      },
+      {
+        code: 'type P = () => string; const isReady = (() => "yes") satisfies P;',
+        errors: [error('isReady')],
+      },
+      {
+        code: 'const isReady = (() => "yes")!;',
+        errors: [error('isReady')],
+      },
+      {
+        code: 'type P = () => string; const isReady = <P>(() => "yes");',
+        errors: [error('isReady')],
+      },
+
+      // Wrappers nest at the naming site too, so one unwrap is not enough.
+      {
+        code: 'type P = () => string; const isReady = ((() => "yes") as unknown) as P;',
+        errors: [error('isReady')],
+      },
+      {
+        code: 'type P = () => string; const isReady = ((() => "yes") satisfies P)!;',
+        errors: [error('isReady')],
+      },
+
+      // A function expression reaches the declarator name through the wrapper
+      // the same way, and its own `id` must not add a second report.
+      {
+        code: 'type P = () => string; const isReady = (function () { return "yes"; }) as P;',
+        errors: [error('isReady')],
+      },
+      {
+        code: 'type P = () => string; const isReady = (function isReady() { return "yes"; }) as P;',
+        errors: [error('isReady')],
+      },
+
+      // An explicit non-boolean return annotation is read through the wrapper.
+      {
+        code: 'type P = () => string; const isReady = ((): string => "yes") as P;',
+        errors: [error('isReady')],
+      },
+
+      // The same wrapper blinds every naming site the rule claims, so each arm
+      // is pinned: object property, class field, and the function-expression
+      // spelling of both.
+      {
+        code: 'type P = () => string; const o = { isReady: (() => "yes") as P };',
+        errors: [error('isReady')],
+      },
+      {
+        code: 'const o = { isReady: (() => "yes")! };',
+        errors: [error('isReady')],
+      },
+      {
+        code: 'type P = () => string; const o = { isReady: (function () { return "yes"; }) as P };',
+        errors: [error('isReady')],
+      },
+      {
+        code: 'type P = () => string; class K { isReady = (() => "yes") as P; }',
+        errors: [error('isReady')],
+      },
+      {
+        code: 'class K { isReady = (() => "yes")!; }',
+        errors: [error('isReady')],
+      },
+      {
+        code: 'type P = () => string; class K { isReady = (function isReady() { return "yes"; }) as P; }',
+        errors: [error('isReady')],
+      },
+      // A wrapped function expression reaches its member by two names — its own
+      // `id` and the key every call site writes. Exactly one report, anchored to
+      // the key, is the contract; giving the two names different spellings is
+      // what makes a second report visible.
+      {
+        code: 'type P = () => string; const o = { isReady: (function inner() { return "yes"; }) as P };',
+        errors: [error('isReady')],
+      },
+      {
+        code: 'type P = () => string; class K { isReady = (function inner() { return "yes"; }) as P; }',
+        errors: [error('isReady')],
+      },
+      {
+        code: 'type P = () => void; class K { isActive = (() => {}) as P; }',
+        errors: [error('isActive')],
+      },
+      {
+        code: 'type P = () => string; const K = class { isReady = (() => "yes") as P; };',
+        errors: [error('isReady')],
       },
     ],
   },

@@ -23,6 +23,73 @@ function unwrapTypeNode(node: TSESTree.TypeNode): TSESTree.TypeNode {
   return current;
 }
 
+/**
+ * Expression wrappers that restate a type and leave the runtime value alone.
+ *
+ * `isExpressionBooleanLike` already reaches through these in the RETURN
+ * position (#1606, #1829); the naming site asks the same question one node
+ * higher, so `const isReady = (() => 'yes') as P` is the very function
+ * `const isReady = () => 'yes'` declares and must answer for it (#2176).
+ */
+const TYPE_ONLY_EXPRESSION_WRAPPERS = new Set<string>([
+  AST_NODE_TYPES.TSAsExpression,
+  AST_NODE_TYPES.TSSatisfiesExpression,
+  AST_NODE_TYPES.TSNonNullExpression,
+  AST_NODE_TYPES.TSTypeAssertion,
+]);
+
+type TypeOnlyExpressionWrapper =
+  | TSESTree.TSAsExpression
+  | TSESTree.TSSatisfiesExpression
+  | TSESTree.TSNonNullExpression
+  | TSESTree.TSTypeAssertion;
+
+function isTypeOnlyExpressionWrapper(
+  node: TSESTree.Node,
+): node is TypeOnlyExpressionWrapper {
+  return TYPE_ONLY_EXPRESSION_WRAPPERS.has(node.type);
+}
+
+/**
+ * Descends to the value a name is actually bound to. Wrappers nest
+ * (`(fn as unknown) as P`), so one unwrap is not enough.
+ *
+ * Parentheses need no handling of their own: the parser records them in token
+ * ranges rather than as a node, so `(() => 'yes')` already arrives here as the
+ * arrow function itself.
+ */
+function unwrapTypeOnlyExpression<T extends TSESTree.Node>(
+  node: T,
+): T | TSESTree.Expression {
+  let current: T | TSESTree.Expression = node;
+  while (isTypeOnlyExpressionWrapper(current)) {
+    current = current.expression;
+  }
+  return current;
+}
+
+/**
+ * Climbs to the node that gives a function its name, stepping over the
+ * type-only wrappers that sit between the two.
+ *
+ * The climb only crosses a wrapper whose asserted operand is the node beneath,
+ * so a construct that merely *contains* a function — `(fn as P) || fallback`
+ * hands the name a value that may not be the function at all — still stops it.
+ */
+function nameBearingParentOf(node: TSESTree.Node): TSESTree.Node | undefined {
+  let child: TSESTree.Node = node;
+  let parent = child.parent;
+  while (
+    parent &&
+    isTypeOnlyExpressionWrapper(parent) &&
+    parent.expression === child
+  ) {
+    child = parent;
+    parent = child.parent;
+  }
+  return parent;
+}
+
 function isUppercaseLetter(char: string): boolean {
   return char >= 'A' && char <= 'Z';
 }
@@ -372,7 +439,7 @@ export const noMisleadingBooleanPrefixes = createRule<Options, MessageIds>({
     ) {
       if (node.computed || node.declare) return;
       if (node.key.type !== AST_NODE_TYPES.Identifier) return;
-      const value = node.value;
+      const value = node.value && unwrapTypeOnlyExpression(node.value);
       if (
         !value ||
         (value.type !== AST_NODE_TYPES.FunctionExpression &&
@@ -389,36 +456,41 @@ export const noMisleadingBooleanPrefixes = createRule<Options, MessageIds>({
         checkFunctionLike(node, node.id.name, node.id);
       },
       FunctionExpression(node: TSESTree.FunctionExpression) {
+        // Every gate below reads the name-bearing parent rather than the
+        // syntactic one, so a type-only wrapper cannot detach the function from
+        // its name — nor let two arms claim the same member (#2176).
+        const parent = nameBearingParentOf(node);
         // Prefer variable declarator or method/property name
         if (
-          node.parent?.type === AST_NODE_TYPES.VariableDeclarator &&
-          node.parent.id.type === AST_NODE_TYPES.Identifier
+          parent?.type === AST_NODE_TYPES.VariableDeclarator &&
+          parent.id.type === AST_NODE_TYPES.Identifier
         ) {
-          checkFunctionLike(node, node.parent.id.name, node.parent.id);
+          checkFunctionLike(node, parent.id.name, parent.id);
           return;
         }
         // If part of a property or method, let dedicated visitors handle it to avoid duplicates
-        if (node.parent?.type === AST_NODE_TYPES.Property) return;
-        if (node.parent?.type === AST_NODE_TYPES.MethodDefinition) return;
+        if (parent?.type === AST_NODE_TYPES.Property) return;
+        if (parent?.type === AST_NODE_TYPES.MethodDefinition) return;
         // A named function expression assigned to a class field carries two
         // names — its own `id` and the field's key — and the field key is the
         // one every call site writes. Without this bail-out the class-member
         // arm below and the `node.id` fallback both fire on the same site.
-        if (node.parent?.type === AST_NODE_TYPES.PropertyDefinition) return;
+        if (parent?.type === AST_NODE_TYPES.PropertyDefinition) return;
         if (node.id) {
           checkFunctionLike(node, node.id.name, node.id);
         }
       },
       ArrowFunctionExpression(node: TSESTree.ArrowFunctionExpression) {
+        const parent = nameBearingParentOf(node);
         if (
-          node.parent?.type === AST_NODE_TYPES.VariableDeclarator &&
-          node.parent.id.type === AST_NODE_TYPES.Identifier
+          parent?.type === AST_NODE_TYPES.VariableDeclarator &&
+          parent.id.type === AST_NODE_TYPES.Identifier
         ) {
-          checkFunctionLike(node, node.parent.id.name, node.parent.id);
+          checkFunctionLike(node, parent.id.name, parent.id);
           return;
         }
         // If part of a property, let the Property visitor handle it to avoid duplicates
-        if (node.parent?.type === AST_NODE_TYPES.Property) return;
+        if (parent?.type === AST_NODE_TYPES.Property) return;
       },
       MethodDefinition(node: TSESTree.MethodDefinition) {
         if (node.key.type !== AST_NODE_TYPES.Identifier) return;
@@ -429,11 +501,12 @@ export const noMisleadingBooleanPrefixes = createRule<Options, MessageIds>({
       },
       Property(node: TSESTree.Property) {
         if (node.key.type !== AST_NODE_TYPES.Identifier) return;
+        const value = unwrapTypeOnlyExpression(node.value);
         if (
-          node.value.type === AST_NODE_TYPES.FunctionExpression ||
-          node.value.type === AST_NODE_TYPES.ArrowFunctionExpression
+          value.type === AST_NODE_TYPES.FunctionExpression ||
+          value.type === AST_NODE_TYPES.ArrowFunctionExpression
         ) {
-          checkFunctionLike(node.value, node.key.name, node.key);
+          checkFunctionLike(value, node.key.name, node.key);
         }
       },
       // A class field holding a function is a function everywhere it matters:
