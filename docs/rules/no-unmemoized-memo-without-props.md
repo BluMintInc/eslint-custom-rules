@@ -16,6 +16,13 @@ A report requires all of the following:
 - The component's name ends in `Unmemoized`, its body returns JSX, and it is passed as the first argument of a `memo(...)` call. `memo` is recognized as the named `memo` export of `react` or of a `util/memo` module (under any local alias), the default export of a `util/memo` module, or a `memo` member access on a default or namespace import of `react` (`React.memo`). A `memo` imported from anywhere else is a different function and is ignored.
 - The component takes no props.
 
+"Returns JSX" is read the same way whichever way the body is spelled: a concise
+arrow body and the `return` of a block body are the same value. A function is
+not a JSX value, so a curried `XUnmemoized = () => () => <span />` returns a
+render function rather than an element, is not a props-less component, and is
+not reported — the same verdict the block-bodied `() => { return () => <span />; }`
+has always received.
+
 "No props" means the parameter list is empty, or it is a single parameter that is provably empty: an empty destructure (`({})`, or `({} = {})`), a parameter annotated with an empty type literal (`{}`), or a parameter annotated with a type alias or interface declared in the same file whose body is empty. Anything else counts as props — several parameters, a rest parameter, a rest property, an untyped identifier parameter, a non-empty inline type, or a type name the rule cannot see the definition of. When in doubt the rule stays silent, because a false positive here asks a developer to delete a memo that is doing real work.
 
 ### Examples of incorrect code

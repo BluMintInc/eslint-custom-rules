@@ -143,6 +143,37 @@ ruleTesterJsx.run(
           export { maybeMemo };
         `,
       },
+      // #2186/#2190 subject: a curried arrow returns a FUNCTION, not JSX, so it
+      // is not a props-less component and memo() around it is not redundant.
+      // The rule used to read the concise spelling as a component because the
+      // handed body WAS the inner function, which returnsJSX unwraps.
+      {
+        filename: 'component.tsx',
+        code: `
+          import { memo } from '../../../util/memo';
+          export const SimpleUnmemoized = () => () => <span>text</span>;
+          export const Simple = memo(SimpleUnmemoized);
+        `,
+      },
+      // #2190 control: the block-bodied twin of the same function, which the
+      // rule has always left alone. The two must agree.
+      {
+        filename: 'component.tsx',
+        code: `
+          import { memo } from '../../../util/memo';
+          export const SimpleUnmemoized = () => { return () => <span>text</span>; };
+          export const Simple = memo(SimpleUnmemoized);
+        `,
+      },
+      // The same shape spelled with a nested function expression.
+      {
+        filename: 'component.tsx',
+        code: `
+          import { memo } from '../../../util/memo';
+          export const FactoryUnmemoized = () => function Inner() { return <span>text</span>; };
+          export const Factory = memo(FactoryUnmemoized);
+        `,
+      },
     ],
     invalid: [
       {
@@ -256,6 +287,18 @@ ruleTesterJsx.run(
           export const Overloaded = memo(OverloadedUnmemoized);
         `,
         errors: [baseError('OverloadedUnmemoized')],
+      },
+      // #2190 positive control: a concise arrow that really does render is
+      // still a props-less component, so narrowing the concise arm did not
+      // silence the shape it was meant to keep.
+      {
+        filename: 'component.tsx',
+        code: `
+          import { memo } from '../../../util/memo';
+          export const RenderedUnmemoized = () => <span>text</span>;
+          export const Rendered = memo(RenderedUnmemoized);
+        `,
+        errors: [baseError('RenderedUnmemoized')],
       },
     ],
   },
