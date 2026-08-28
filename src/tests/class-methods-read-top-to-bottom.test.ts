@@ -1150,6 +1150,118 @@ export class Repro {
   }
 }`,
       },
+      // #2193 subject: a class nested in a method rebinds `this`, so the
+      // nested method's `this.helper` names Inner's member and lends Outer no
+      // dependency. The MethodDefinition walk used to restore instance context
+      // rather than preserve it, which credited the read to Outer and reordered
+      // it on an edge that does not exist.
+      {
+        code: `class Outer {
+  public helper() {
+    return 2;
+  }
+
+  public outerMethod() {
+    class Inner {
+      public inner() {
+        return this.helper();
+      }
+    }
+    return Inner;
+  }
+}`,
+      },
+      // #2193 control: the arrow-field spelling of the same nested method has
+      // identical `this` semantics and has always been read correctly.
+      {
+        code: `class Outer {
+  public helper() {
+    return 2;
+  }
+
+  public outerMethod() {
+    class Inner {
+      public inner = () => {
+        return this.helper();
+      };
+    }
+    return Inner;
+  }
+}`,
+      },
+      // The boundary holds however the nested member is spelled. A static
+      // method rebinds `this` to the nested CLASS, not even an instance.
+      {
+        code: `class Outer {
+  public helper() {
+    return 2;
+  }
+
+  public outerMethod() {
+    class Inner {
+      static inner() {
+        return this.helper();
+      }
+    }
+    return Inner;
+  }
+}`,
+      },
+      // A getter is a MethodDefinition too, so it takes the same path.
+      {
+        code: `class Outer {
+  public helper() {
+    return 2;
+  }
+
+  public outerMethod() {
+    class Inner {
+      get value() {
+        return this.helper();
+      }
+    }
+    return Inner;
+  }
+}`,
+      },
+      // A constructor parameter default runs against the nested instance.
+      {
+        code: `class Outer {
+  public helper() {
+    return 2;
+  }
+
+  public outerMethod() {
+    class Inner {
+      constructor(readonly seed = this.helper()) {}
+    }
+    return Inner;
+  }
+}`,
+      },
+      // An anonymous class expression rebinds `this` exactly as a declaration
+      // does, and the boundary composes across depth.
+      {
+        code: `class Outer {
+  public helper() {
+    return 2;
+  }
+
+  public outerMethod() {
+    class Mid {
+      public mid() {
+        class Deep {
+          public deep() {
+            return this.helper();
+          }
+        }
+        return Deep;
+      }
+    }
+    return Mid;
+  }
+}`,
+      },
     ],
     invalid: [
       {
@@ -2031,6 +2143,40 @@ export class Repro {
       r = this.#q;
     }
     return Inner;
+  }
+}`,
+        errors: [{ messageId: 'classMethodsReadTopToBottom' }],
+      },
+      // #2193 positive control: a `<ClassName>.member` read does not depend on
+      // `this`, so it still resolves OUTWARD from a nested class. Honouring the
+      // rebind boundary must not cost the static edge.
+      {
+        code: `class Outer {
+  public static helper() {
+    return 2;
+  }
+
+  public static outerMethod() {
+    class Inner {
+      public inner() {
+        return Outer.helper();
+      }
+    }
+    return Inner;
+  }
+}`,
+        output: `class Outer {
+  public static outerMethod() {
+    class Inner {
+      public inner() {
+        return Outer.helper();
+      }
+    }
+    return Inner;
+  }
+
+  public static helper() {
+    return 2;
   }
 }`,
         errors: [{ messageId: 'classMethodsReadTopToBottom' }],

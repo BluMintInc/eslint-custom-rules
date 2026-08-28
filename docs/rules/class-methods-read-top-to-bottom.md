@@ -29,6 +29,8 @@ A member is a dependency of a method when the method reads it through `this.<mem
 
 Names alone never create a dependency. A local variable, a parameter, a destructured binding, a `catch` binding or an imported function that merely shares a member's name is a different binding, so it does not pull that member anywhere. For the same reason, `this` inside a nested non-arrow `function () {}` denotes that function's own receiver rather than the instance, and `super.helper()` names the base class's member, so neither creates a dependency on this class's member.
 
+A class nested inside a member rebinds `this` exactly as a nested `function` does, and the rebind holds all the way down: `this.helper()` written in a nested class's method, getter, setter, constructor, parameter default or static method names a member of that nested class, at any depth of nesting, and lends the enclosing class nothing. Only the `this` receiver is rebound — a `<ClassName>.helper()` read names the same member wherever it is written, so it still creates a dependency from inside a nested class.
+
 ### Examples of incorrect code for this rule:
 
 ```typescript
