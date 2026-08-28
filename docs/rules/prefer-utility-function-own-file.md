@@ -142,6 +142,62 @@ When `true`, functions that reference module-scoped variables or sibling functio
 
 Set to `false` to flag all sizable co-located utility functions, even those that close over module scope.
 
+## Parameter lists are part of what a function references
+
+A parameter list carries two different things, and both matter to the closure
+checks above.
+
+**A parameter default is a reference.** A default expression evaluates in the
+enclosing scope, so a default naming a module-scoped binding captures it exactly
+as a body reference does. Such a function closes over module scope and is
+skipped under `ignoreClosures` — it cannot move to its own file without also
+moving what its default names:
+
+```ts
+const runCli = () => 1;
+
+// Skipped: the default captures the module-scoped `runCli`.
+const formatReport = (input: string[], make = runCli) => {
+  // ... 8+ statements
+};
+```
+
+The same holds in the reverse direction. A sibling that consumes the candidate
+as its own parameter default depends on it, so the candidate is the module's
+shared internal primitive and stays where it is:
+
+```ts
+// Skipped: the sibling's default consumes `formatReport`.
+export function primaryThing(fmt = formatReport) {
+  return fmt;
+}
+
+const formatReport = (input: string[]) => {
+  // ... 8+ statements
+};
+```
+
+**A parameter name is a binding, not a reference.** A sibling parameter that
+shadows the candidate's name introduces a different binding, so uses of that name
+inside the sibling say nothing about the module-level function. The candidate is
+still free-standing, so it is still flagged:
+
+```ts
+// Flagged: `formatReport` inside `primaryThing` is the parameter, not the
+// module-level helper, so the file does not depend on the helper.
+export function primaryThing(formatReport: (v: string) => string) {
+  return formatReport('x');
+}
+
+const formatReport = (input: string[]) => {
+  // ... 8+ statements
+};
+```
+
+A function's own parameters read the same way: a default naming an earlier
+parameter of the same function refers to that parameter, so it captures nothing
+from module scope.
+
 ## When To Disable
 
 Disable on a per-line basis with `// eslint-disable-next-line @blumintinc/blumint/prefer-utility-function-own-file` when:

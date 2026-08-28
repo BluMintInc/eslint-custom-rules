@@ -780,8 +780,9 @@ export const preferUtilityFunctionOwnFile = createRule<Options, MessageIds>({
  * are NOT imported. Imported names and standard globals are considered
  * "extractable" (you'd just re-import them).
  *
- * Strategy: collect referenced identifiers in the body, subtract param names,
- * then check if any remain that are names of other top-level declarations.
+ * Strategy: collect referenced identifiers in the function, subtract param
+ * names, then check if any remain that are names of other top-level
+ * declarations.
  */
 function functionClosesOverModuleScope(
   fn:
@@ -793,19 +794,16 @@ function functionClosesOverModuleScope(
   const body = getFunctionBody(fn);
   if (!body) return false;
 
-  // Collect names that are parameters of this function
-  const paramNames = new Set<string>();
-  for (const param of fn.params) {
-    collectPatternNames(param as TSESTree.Parameter, paramNames);
-  }
-
-  // Collect all identifiers referenced inside the function body
-  const referencedIds = collectReferencedIdentifiers(body);
-
-  // Remove params (they're passed in, fine)
-  for (const param of paramNames) {
-    referencedIds.delete(param);
-  }
+  // Hand the whole function, not just its body: a signature-level default
+  // (`(input, make = runCli)`) captures module scope exactly as a body
+  // reference does, and extraction breaks it identically. A walk that starts at
+  // the body reaches parameter defaults of NESTED functions only, never the
+  // candidate's own (issue #2197). The helper's function case registers
+  // `fn.params` as locals and walks their defaults, so parameter NAMES are
+  // subtracted while the default expressions survive — except where a default
+  // names another parameter, which is a reference to that parameter rather than
+  // to module scope.
+  const referencedIds = collectReferencedIdentifiers(fn);
 
   // If ANY referenced identifier is a top-level sibling binding name, then this
   // function closes over module scope.
@@ -826,7 +824,8 @@ function functionClosesOverModuleScope(
  * siblings from the primitive they depend on.
  *
  * Two kinds of sibling can consume the candidate:
- * - Another top-level function that references it in its body.
+ * - Another top-level function that references it in its body or in one of
+ *   its own parameter defaults (`function primaryThing(fmt = formatReport)`).
  * - A non-function top-level initializer expression that references it — e.g. a
  *   `Record` registry object literal or array literal whose entries invoke the
  *   candidate factory (`export const RENDERERS = { b: buildRenderer('b') }`).
@@ -854,7 +853,14 @@ function isReferencedBySibling(
     if (other.name === candidate.name) continue;
     const body = getFunctionBody(other.fn);
     if (!body) continue;
-    const refs = collectReferencedIdentifiers(body);
+    // Hand the whole sibling, not just its body, so its own parameter list is
+    // read as part of what it references. The two halves of the parameter list
+    // pull in opposite directions and only agree when they travel together: a
+    // parameter that shadows the candidate's name is a different binding, so
+    // its uses are not references to the candidate (issue #2199), while a
+    // parameter default that consumes the candidate (`(fmt = formatReport)`)
+    // is a real dependency of the file on the candidate (issue #2200).
+    const refs = collectReferencedIdentifiers(other.fn);
     if (refs.has(candidate.name)) return true;
   }
   for (const init of nonFunctionInitializers) {
