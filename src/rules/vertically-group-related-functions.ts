@@ -361,6 +361,16 @@ function collectDependencies(
     });
   };
 
+  // A call sitting in a parameter default runs on every invocation of the
+  // function, exactly as a call in its body does, so it carries the same
+  // caller -> callee edge and must be recorded as a dependency. Restricting the
+  // walk to the body loses that edge, which both demands a reorder of source
+  // the call graph already justifies (#2196) and exempts a genuine misordering
+  // whose sole call sits in a default (#2198). Each parameter is walked whole
+  // rather than just an `AssignmentPattern`'s right-hand side, so a default
+  // nested inside a destructuring pattern (`{ h = handleClick() } = {}`) and a
+  // computed key (`{ [handleClick()]: v }`) are counted on the same footing.
+  fnNode.params.forEach((param) => visit(param));
   visit(fnNode.body);
 
   return [...dependencies];
