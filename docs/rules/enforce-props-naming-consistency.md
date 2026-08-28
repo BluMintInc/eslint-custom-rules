@@ -91,7 +91,7 @@ function processData(settings: ConfigurationSettings) {
 
 #### Multiple Parameters with Props Types
 
-When a function has multiple parameters with types ending in "Props", the rule does not report to avoid naming conflicts. In such cases, prefer descriptive names that retain the `Props` suffix:
+When a function or constructor has multiple parameters with types ending in "Props", the rule does not report and defers to `enforce-props-argument-name`, which names them without conflicting. A parameter counts toward that total however it is written: as a bare parameter, as a constructor parameter property (`private readonly settings: WidgetProps`), and with or without a default value (`settings: WidgetProps = FALLBACK`). In such cases, prefer descriptive names that retain the `Props` suffix:
 
 ```ts
 // This will not trigger the rule due to multiple Props parameters
@@ -99,6 +99,10 @@ function mergeConfigs(uiProps: UIProps, dataProps: DataProps) {
   // Consistent with this rule's intent: keep the `Props` suffix in parameter names
 }
 ```
+
+#### Subclass Constructor Parameter Properties
+
+The rule does not report on a `*Props`-typed constructor parameter property (e.g. `constructor(private readonly fullProps: ExtendedManagerProps)`) when the enclosing class has an `extends` clause, matching `enforce-props-argument-name`. Neither rule can inspect the base class, and renaming the subclass parameter to `props` there is unsafe: it can produce a `TS2415` private-property collision with a `props` field the base class already declares, and it strands `super(fullProps)` / `this.fullProps`. A distinct name on a subclass parameter property is treated as intentional.
 
 #### Destructured Parameters
 
@@ -169,7 +173,7 @@ The fix is withheld (the violation is still reported) whenever the rename cannot
   }
   ```
 
-- **Constructor parameter properties whose name is used elsewhere in the class** — `constructor(private readonly settings: WidgetProps)` declares both a constructor-local binding and a `this.settings` field. Scope analysis only models the binding, so a rename would leave `this.settings` (or a plain `settings` use) dangling:
+- **Constructor parameter properties whose name is used elsewhere** — `constructor(private readonly settings: WidgetProps)` declares both a constructor-local binding and a `this.settings` field. Scope analysis only models the binding, so a rename would leave `this.settings` (or a plain `settings` use, or a `widget.settings` read on an instance) dangling:
 
   ```ts
   // Reported, not fixed
@@ -181,7 +185,7 @@ The fix is withheld (the violation is still reported) whenever the rename cannot
   }
   ```
 
-  A parameter property whose name appears nowhere else in the class is renamed normally.
+  How far that check reaches follows the field's visibility, because visibility is what bounds its legal readers: for a `private` parameter property the enclosing class is a complete scan, while a `public`, `protected`, or modifier-less `readonly` parameter property publishes the field to the whole file, so the scan covers the file — a `widget.settings` read in a sibling function, or a `this.settings` read in a subclass declared further down, withholds the fix just as an in-class read does. A parameter property whose name appears nowhere within reach of the field is renamed normally.
 
 Parameters on body-less signatures (interface and object-type method members) are documentation-only and can never be referenced, so their declaration-only rename is complete:
 
