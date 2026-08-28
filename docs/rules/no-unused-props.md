@@ -33,6 +33,20 @@ rule wrapped. A wrapper argument that only names a component
 (`memo(WidgetUnmemoized)`) is answered by the declaration holding the function,
 so each unused prop is reported once rather than once per re-wrapping binding.
 
+A local that re-binds the props parameter is a different variable. A
+block-scoped `const props = ...` (or `let`) shadows the parameter for the rest
+of its block, so destructuring or reading that local says nothing about the
+component's props — the shadowed props stay unused. A `var props = ...` is not a
+shadow at all: it re-declares the same function-scoped binding, so its
+initializer still reads the real props and `var props = forward(props)` forwards
+them.
+
+A utility type describes the same props wherever it sits. `Partial<Base>`,
+`Required<Base>` and the other single-argument wrappers contribute the members of
+a locally declared `Base` whether they stand alone or appear as one member of an
+intersection; only a base this file cannot resolve is treated as forwarded
+wholesale.
+
 ### Examples of **incorrect** code for this rule:
 
 The props type may be carried either by the parameter annotation or by an
@@ -86,6 +100,37 @@ type WidgetProps = {
 };
 
 const Widget = memo(({ title }: WidgetProps) => <h1>{title}</h1>);
+```
+
+```tsx
+type BaseProps = {
+  title: string;
+  subtitle: string; // subtitle is declared but never read or forwarded
+};
+
+// Partial<BaseProps> contributes its base's members here exactly as it would
+// standing alone
+type PanelProps = Partial<BaseProps> & { onClose?: () => void };
+
+const Panel = ({ title, onClose }: PanelProps) => (
+  <h1 onClick={onClose}>{title}</h1>
+);
+```
+
+```tsx
+type WidgetProps = {
+  title: string;
+  subtitle: string; // reading the SHADOW below does not use this prop
+};
+
+const Widget = (props: WidgetProps) => {
+  const { title } = props;
+  if (title) {
+    const props = { subtitle: 'fallback' };
+    return <h2>{props.subtitle}</h2>;
+  }
+  return <h1>{title}</h1>;
+};
 ```
 
 ### Examples of **correct** code for this rule:
@@ -159,6 +204,22 @@ const Widget = memo(
       <h2>{subtitle}</h2>
     </div>
   )),
+);
+```
+
+```tsx
+type BaseProps = {
+  title: string;
+  subtitle: string;
+};
+
+type PanelProps = Partial<BaseProps> & { onClose?: () => void };
+
+const Panel = ({ title, subtitle, onClose }: PanelProps) => (
+  <div onClick={onClose}>
+    <h1>{title}</h1>
+    <h2>{subtitle}</h2>
+  </div>
 );
 ```
 

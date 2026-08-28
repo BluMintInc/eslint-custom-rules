@@ -1164,6 +1164,109 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
         sourceType: 'module',
       },
     },
+    // The five fixtures below are memo-wrapped because `crossrule-contradiction-
+    // closure` signs off on how many of this suite's blessed fixtures the
+    // `require-memo` sibling reports on; a bare component would join that count
+    // without adding anything the wrapper hides, since memo is transparent here.
+    //
+    // A `var` rebind of the param is the SAME function-scoped binding, not a
+    // shadow, so its initializer still reads the real props; that forwarding is
+    // an opaque consumption and nothing may be reported (#2188).
+    {
+      code: `
+        import { memo } from 'react';
+        type WidgetProps = { alpha: string; beta: string };
+        declare function forward(x: unknown): any;
+        const Widget = memo(function Widget(props: WidgetProps) {
+          const { alpha } = props;
+          var props = forward(props);
+          return <div>{alpha}</div>;
+        });
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // Control for #2188: the same forwarding under a non-colliding name, which
+    // the walker has always credited.
+    {
+      code: `
+        import { memo } from 'react';
+        type WidgetProps = { alpha: string; beta: string };
+        declare function forward(x: unknown): any;
+        const Widget = memo(function Widget(props: WidgetProps) {
+          const { alpha } = props;
+          var forwarded = forward(props);
+          return <div>{alpha}{forwarded}</div>;
+        });
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // A block-scoped shadow ends at its own block: statements after the
+    // enclosing block still reach the real param (#2185 must not over-prune).
+    {
+      code: `
+        import { memo } from 'react';
+        type WidgetProps = { alpha: string; beta: string };
+        const Widget = memo((props: WidgetProps) => {
+          const { alpha } = props;
+          if (alpha) {
+            const props = { gamma: 'x' };
+            return <div>{props.gamma}</div>;
+          }
+          const { beta } = props;
+          return <div>{alpha}{beta}</div>;
+        });
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // A utility type over a locally declared base enumerates the same inside an
+    // intersection as alone, so consuming every member stays silent (#2187).
+    {
+      code: `
+        import { memo } from 'react';
+        type BaseProps = { alpha: string; beta: string };
+        type WidgetProps = Partial<BaseProps> & { gamma?: string };
+        const Widget = memo(({ alpha, beta, gamma }: WidgetProps) => (
+          <div>{alpha}{beta}{gamma}</div>
+        ));
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // A utility type whose base is NOT locally declared stays an opaque
+    // forwarding marker in an intersection, exactly as it does alone (#2187).
+    {
+      code: `
+        import { memo } from 'react';
+        import type { ImportedProps } from './imported';
+        type WidgetProps = Partial<ImportedProps> & { gamma: string };
+        const Widget = memo(({ gamma }: WidgetProps) => <div>{gamma}</div>);
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
   ],
   invalid: [
     {
@@ -3029,6 +3132,192 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
         {
           messageId: 'unusedProp',
           data: { propName: 'unused' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // #2185: a block-scoped `const props = ...` shadow must prune every LATER
+    // sibling statement too, so a destructure of the SHADOW cannot credit the
+    // component's props type.
+    {
+      code: `
+        type WidgetProps = { alpha: string; beta: string };
+        const Widget = (props: WidgetProps) => {
+          const { alpha } = props;
+          if (alpha) {
+            const props = { beta: 'x' };
+            const { beta } = props;
+            return <div>{beta}</div>;
+          }
+          return <div>{alpha}</div>;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'beta' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // Control for #2185: the identical code with the local renamed, which the
+    // walker has always reported.
+    {
+      code: `
+        type WidgetProps = { alpha: string; beta: string };
+        const Widget = (props: WidgetProps) => {
+          const { alpha } = props;
+          if (alpha) {
+            const local = { beta: 'x' };
+            const { beta } = local;
+            return <div>{beta}</div>;
+          }
+          return <div>{alpha}</div>;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'beta' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // #2185: the shadow's opaque member access must not leak to the param
+    // either — a `props.x` read of the SHADOW cannot suppress the component.
+    {
+      code: `
+        type WidgetProps = { alpha: string; beta: string };
+        const Widget = (props: WidgetProps) => {
+          const { alpha } = props;
+          if (alpha) {
+            const props = { beta: 'x' };
+            return <div>{props.beta}</div>;
+          }
+          return <div>{alpha}</div>;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'beta' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // #2185: the realistic shape — a child's props built inside a callback and
+    // named `props`. The spread of that SHADOW used to register as an opaque
+    // consumption of the component's own props and silence the whole component.
+    {
+      code: `
+        type WidgetProps = { alpha: string; items: string[] };
+        declare function makeChildProps(item: string): any;
+        declare const Child: any;
+        const Widget = (props: WidgetProps) => {
+          const { items } = props;
+          return (
+            <div>
+              {items.map((item) => {
+                const props = makeChildProps(item);
+                return <Child {...props} />;
+              })}
+            </div>
+          );
+        };
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'alpha' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // #2187: `Partial<Base>` must enumerate its base's members as an
+    // intersection member, not collapse to an opaque `...Partial` marker.
+    {
+      code: `
+        type BaseProps = { alpha: string; beta: string };
+        type WidgetProps = Partial<BaseProps> & {};
+        const Widget = ({ alpha }: WidgetProps) => <div>{alpha}</div>;
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'beta' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // Control for #2187: the same type unintersected, which extractProps has
+    // always enumerated.
+    {
+      code: `
+        type BaseProps = { alpha: string; beta: string };
+        type WidgetProps = Partial<BaseProps>;
+        const Widget = ({ alpha }: WidgetProps) => <div>{alpha}</div>;
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'beta' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    // #2187: the expansion is order-independent inside the intersection.
+    {
+      code: `
+        type BaseProps = { alpha: string; beta: string };
+        type WidgetProps = { gamma: string } & Required<BaseProps>;
+        const Widget = ({ alpha, gamma }: WidgetProps) => <div>{alpha}{gamma}</div>;
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'beta' },
           type: AST_NODE_TYPES.Identifier,
         },
       ],
