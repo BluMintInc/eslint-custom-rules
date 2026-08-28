@@ -600,6 +600,282 @@ const ProductPage = () => null;
 export default ProductPage;
 `,
       },
+
+      // --- Parameter lists are part of what a function references (#2197,
+      // #2199, #2200) ---
+
+      // 27. Issue #2197 subject: the candidate closes over the module-scoped
+      // `runCli` through its OWN parameter default. A signature-level default
+      // captures module scope exactly as a body reference does, so the closure
+      // exemption must fire.
+      {
+        name: 'candidate closes over module scope through its own parameter default',
+        filename: 'src/scripts/reportEntry.ts',
+        code: `
+const runCli = () => 1;
+
+export function primaryThing() {
+  return runCli;
+}
+
+const formatReport = (input: string[], make = runCli) => {
+  const a = input[0];
+  const b = input[1];
+  const c = a + b;
+  const d = c + c;
+  const e = d + d;
+  const f = e + e;
+  const g = f + f;
+  return g;
+};
+`,
+      },
+
+      // 28. Issue #2197 control: the same capture spelled inside a nested
+      // arrow's parameter default. The two spellings mean the same thing and
+      // must lint identically.
+      {
+        name: 'candidate closes over module scope through a nested parameter default',
+        filename: 'src/scripts/reportEntry.ts',
+        code: `
+const runCli = () => 1;
+
+export function primaryThing() {
+  return runCli;
+}
+
+const formatReport = (input: string[]) => {
+  const inner = (make = runCli) => make;
+  const a = input[0];
+  const b = input[1];
+  const c = a + b;
+  const d = c + c;
+  const e = d + d;
+  const f = e + e;
+  return inner;
+};
+`,
+      },
+
+      // 29. Function-declaration spelling of the same capture.
+      {
+        name: 'function declaration captures module scope through its own parameter default',
+        filename: 'src/scripts/reportEntry.ts',
+        code: `
+const runCli = () => 1;
+
+export function primaryThing() {
+  return runCli;
+}
+
+function formatReport(input: string[], make = runCli) {
+  const a = input[0];
+  const b = input[1];
+  const c = a + b;
+  const d = c + c;
+  const e = d + d;
+  const f = e + e;
+  const g = f + f;
+  return g;
+}
+`,
+      },
+
+      // 30. Function-expression spelling of the same capture.
+      {
+        name: 'function expression captures module scope through its own parameter default',
+        filename: 'src/scripts/reportEntry.ts',
+        code: `
+const runCli = () => 1;
+
+export function primaryThing() {
+  return runCli;
+}
+
+const formatReport = function (input: string[], make = runCli) {
+  const a = input[0];
+  const b = input[1];
+  const c = a + b;
+  const d = c + c;
+  const e = d + d;
+  const f = e + e;
+  const g = f + f;
+  return g;
+};
+`,
+      },
+
+      // 31. The capture sits in a default nested inside a destructuring
+      // pattern, so the walk has to descend the pattern rather than stop at
+      // the parameter node.
+      {
+        name: 'candidate captures module scope through a default nested in a destructured parameter',
+        filename: 'src/scripts/reportEntry.ts',
+        code: `
+const runCli = () => 1;
+
+export function primaryThing() {
+  return runCli;
+}
+
+const formatReport = ({
+  input,
+  make = runCli,
+}: {
+  input: string[];
+  make?: () => number;
+}) => {
+  const a = input[0];
+  const b = input[1];
+  const c = a + b;
+  const d = c + c;
+  const e = d + d;
+  const f = e + e;
+  const g = f + f;
+  return g;
+};
+`,
+      },
+
+      // 32. Issue #2200 subject: the sibling consumes the candidate as its own
+      // parameter default, so the file depends on the candidate and the
+      // reverse-closure exemption must fire.
+      {
+        name: 'sibling consumes the candidate as its own parameter default',
+        filename: 'src/scripts/reportEntry.ts',
+        code: `
+export function primaryThing(fmt = formatReport) {
+  return fmt;
+}
+
+const formatReport = (input: string[]) => {
+  const a = input[0];
+  const b = input[1];
+  const c = a + b;
+  const d = c + c;
+  const e = d + d;
+  const f = e + e;
+  const g = f + f;
+  return g;
+};
+`,
+      },
+
+      // 33. Issue #2200 control: the same consumption spelled in a nested
+      // arrow's parameter default.
+      {
+        name: 'sibling consumes the candidate as a nested parameter default',
+        filename: 'src/scripts/reportEntry.ts',
+        code: `
+export function primaryThing() {
+  const use = (fmt = formatReport) => fmt;
+  return use;
+}
+
+const formatReport = (input: string[]) => {
+  const a = input[0];
+  const b = input[1];
+  const c = a + b;
+  const d = c + c;
+  const e = d + d;
+  const f = e + e;
+  const g = f + f;
+  return g;
+};
+`,
+      },
+
+      // 34. Arrow-const sibling consuming the candidate as a parameter default.
+      {
+        name: 'arrow sibling consumes the candidate as its own parameter default',
+        filename: 'src/scripts/reportEntry.ts',
+        code: `
+export const primaryThing = (fmt = formatReport) => {
+  return fmt;
+};
+
+const formatReport = (input: string[]) => {
+  const a = input[0];
+  const b = input[1];
+  const c = a + b;
+  const d = c + c;
+  const e = d + d;
+  const f = e + e;
+  const g = f + f;
+  return g;
+};
+`,
+      },
+
+      // 35. Function-expression sibling consuming the candidate as a parameter
+      // default.
+      {
+        name: 'function expression sibling consumes the candidate as its own parameter default',
+        filename: 'src/scripts/reportEntry.ts',
+        code: `
+export const primaryThing = function (fmt = formatReport) {
+  return fmt;
+};
+
+const formatReport = (input: string[]) => {
+  const a = input[0];
+  const b = input[1];
+  const c = a + b;
+  const d = c + c;
+  const e = d + d;
+  const f = e + e;
+  const g = f + f;
+  return g;
+};
+`,
+      },
+
+      // 36. The sibling's consumption sits in a default nested inside a
+      // destructured parameter.
+      {
+        name: 'sibling consumes the candidate through a default nested in a destructured parameter',
+        filename: 'src/scripts/reportEntry.ts',
+        code: `
+export function primaryThing({ fmt = formatReport } = {}) {
+  return fmt;
+}
+
+const formatReport = (input: string[]) => {
+  const a = input[0];
+  const b = input[1];
+  const c = a + b;
+  const d = c + c;
+  const e = d + d;
+  const f = e + e;
+  const g = f + f;
+  return g;
+};
+`,
+      },
+
+      // 37. Positive control for the reverse-closure exemption: a sibling that
+      // genuinely calls the module-level candidate keeps it exempt. Reading
+      // parameter lists must not withdraw the exemption where it belongs.
+      {
+        name: 'sibling that genuinely calls the candidate keeps it exempt',
+        filename: 'src/scripts/reportEntry.ts',
+        code: `
+export function primaryThing() {
+  return formatReport(['x']);
+}
+
+const formatReport = (input: string[]) => {
+  const a = input[0];
+  const b = input[1];
+  const c = a + b;
+  const d = c + c;
+  const e = d + d;
+  const f = e + e;
+  const g = f + f;
+  return g;
+};
+`,
+      },
     ],
 
     invalid: [
@@ -827,6 +1103,211 @@ const DashboardPage = () => null;
 export default DashboardPage;
 `,
         filename: 'src/pages/dashboard/index.tsx',
+        errors: [{ messageId: 'extractUtility' }],
+      },
+
+      // --- Parameter lists are part of what a function references (#2197,
+      // #2199, #2200) ---
+
+      // 16. Issue #2199 subject: the sibling's OWN parameter shadows the
+      // candidate's name, so its uses bind to the parameter and are not
+      // references to the module-level candidate. The candidate is still a
+      // free-standing utility and is still flagged.
+      {
+        name: "sibling parameter shadowing the candidate's name is a different binding",
+        filename: 'src/scripts/reportEntry.ts',
+        code: `
+export function primaryThing(formatReport: (v: string) => string) {
+  return formatReport('x');
+}
+
+const formatReport = (input: string[]) => {
+  const a = input[0];
+  const b = input[1];
+  const c = a + b;
+  const d = c + c;
+  const e = d + d;
+  const f = e + e;
+  const g = f + f;
+  return g;
+};
+`,
+        errors: [{ messageId: 'extractUtility' }],
+      },
+
+      // 17. Issue #2199 control: the same shadowing spelled on a nested arrow.
+      {
+        name: 'nested shadowing parameter is a different binding',
+        filename: 'src/scripts/reportEntry.ts',
+        code: `
+export function primaryThing() {
+  const use = (formatReport: (v: string) => string) => formatReport('x');
+  return use;
+}
+
+const formatReport = (input: string[]) => {
+  const a = input[0];
+  const b = input[1];
+  const c = a + b;
+  const d = c + c;
+  const e = d + d;
+  const f = e + e;
+  const g = f + f;
+  return g;
+};
+`,
+        errors: [{ messageId: 'extractUtility' }],
+      },
+
+      // 18. Arrow-const sibling whose parameter shadows the candidate's name.
+      {
+        name: 'arrow sibling parameter shadows the candidate name',
+        filename: 'src/scripts/reportEntry.ts',
+        code: `
+export const primaryThing = (formatReport: (v: string) => string) => {
+  return formatReport('x');
+};
+
+const formatReport = (input: string[]) => {
+  const a = input[0];
+  const b = input[1];
+  const c = a + b;
+  const d = c + c;
+  const e = d + d;
+  const f = e + e;
+  const g = f + f;
+  return g;
+};
+`,
+        errors: [{ messageId: 'extractUtility' }],
+      },
+
+      // 19. Function-expression sibling whose parameter shadows the candidate's
+      // name.
+      {
+        name: 'function expression sibling parameter shadows the candidate name',
+        filename: 'src/scripts/reportEntry.ts',
+        code: `
+export const primaryThing = function (formatReport: (v: string) => string) {
+  return formatReport('x');
+};
+
+const formatReport = (input: string[]) => {
+  const a = input[0];
+  const b = input[1];
+  const c = a + b;
+  const d = c + c;
+  const e = d + d;
+  const f = e + e;
+  const g = f + f;
+  return g;
+};
+`,
+        errors: [{ messageId: 'extractUtility' }],
+      },
+
+      // 20. The shadowing binding is introduced by a destructured parameter,
+      // so the local-name walk has to descend the pattern.
+      {
+        name: 'destructured sibling parameter shadows the candidate name',
+        filename: 'src/scripts/reportEntry.ts',
+        code: `
+export function primaryThing({
+  formatReport,
+}: {
+  formatReport: (v: string) => string;
+}) {
+  return formatReport('x');
+}
+
+const formatReport = (input: string[]) => {
+  const a = input[0];
+  const b = input[1];
+  const c = a + b;
+  const d = c + c;
+  const e = d + d;
+  const f = e + e;
+  const g = f + f;
+  return g;
+};
+`,
+        errors: [{ messageId: 'extractUtility' }],
+      },
+
+      // 21. The shadowed name reaches a local binding before being used, so the
+      // shadowing verdict cannot depend on the use sitting in return position.
+      {
+        name: 'shadowing sibling parameter consumed through a local binding',
+        filename: 'src/scripts/reportEntry.ts',
+        code: `
+export function primaryThing(formatReport: (v: string) => string) {
+  const inner = formatReport('x');
+  return inner;
+}
+
+const formatReport = (input: string[]) => {
+  const a = input[0];
+  const b = input[1];
+  const c = a + b;
+  const d = c + c;
+  const e = d + d;
+  const f = e + e;
+  const g = f + f;
+  return g;
+};
+`,
+        errors: [{ messageId: 'extractUtility' }],
+      },
+
+      // 22. Parameter-name subtraction edge: the candidate's own default names
+      // one of its own parameters, so `runCli` there resolves to the parameter
+      // and not to the module-scoped binding of the same name. Nothing is
+      // captured and the candidate remains extractable.
+      {
+        name: 'own parameter default naming an earlier parameter captures nothing',
+        filename: 'src/scripts/reportEntry.ts',
+        code: `
+const runCli = () => 1;
+
+export function primaryThing() {
+  return runCli;
+}
+
+const formatReport = (runCli: () => number, make = runCli) => {
+  const a = 1;
+  const b = 2;
+  const c = a + b;
+  const d = c + c;
+  const e = d + d;
+  const f = e + e;
+  const g = f + f;
+  return g + make();
+};
+`,
+        errors: [{ messageId: 'extractUtility' }],
+      },
+
+      // 23. Positive control for the plain movable shape: no capture, no
+      // sibling consumer, so the rule still reports what it always reported.
+      {
+        name: 'plain movable utility with no capture and no sibling consumer',
+        filename: 'src/scripts/reportEntry.ts',
+        code: `
+export function primaryThing() {
+  return 1;
+}
+
+const formatReport = (input: string[]) => {
+  const a = input[0];
+  const b = input[1];
+  const c = a + b;
+  const d = c + c;
+  const e = d + d;
+  const f = e + e;
+  const g = f + f;
+  return g;
+};
+`,
         errors: [{ messageId: 'extractUtility' }],
       },
     ],
