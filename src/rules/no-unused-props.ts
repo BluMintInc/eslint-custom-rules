@@ -547,6 +547,21 @@ export const noUnusedProps = createRule({
             d.id.type === AST_NODE_TYPES.Identifier && d.id.name === paramName,
         );
 
+      /**
+       * A block-scoped `const`/`let <paramName> = ...` declaration, which is a
+       * genuine shadow: a distinct binding covering the rest of its block.
+       *
+       * `var` is excluded because it re-declares the SAME function-scoped
+       * binding as the parameter rather than shadowing it, so its initializer
+       * still reads the real props — `var props = forward(props)` forwards them
+       * opaquely and must keep every prop alive (#2188).
+       */
+      const isLexicalParamRebind = (child: unknown): boolean =>
+        ASTHelpers.isNode(child) &&
+        child.type === AST_NODE_TYPES.VariableDeclaration &&
+        child.kind !== 'var' &&
+        declaresParamName(child.declarations);
+
       /** Identifier nodes that are the `init` of a `const {} = props` declarator. */
       const destructureInits = new Set<TSESTree.Node>();
 
@@ -596,23 +611,23 @@ export const noUnusedProps = createRule({
         ) {
           return;
         }
-        if (
-          node.type === AST_NODE_TYPES.VariableDeclaration &&
-          declaresParamName(node.declarations)
-        ) {
-          // A `const <paramName> = ...` rebind shadows the param from here on.
-          return;
-        }
-
         for (const key of Object.keys(node)) {
           if (key === 'parent') {
             continue;
           }
           const value = (node as unknown as Record<string, unknown>)[key];
           if (Array.isArray(value)) {
-            value.forEach((child) =>
-              visit(child as TSESTree.Node | null | undefined, node, key),
-            );
+            for (const child of value) {
+              // A lexical rebind shadows the param over the REST of its block,
+              // so neither the declaration nor any later sibling statement can
+              // reach the param. Pruning only the declaration's own subtree left
+              // every following sibling crediting uses of the shadow to the
+              // component's props type (#2185).
+              if (isLexicalParamRebind(child)) {
+                break;
+              }
+              visit(child as TSESTree.Node | null | undefined, node, key);
+            }
           } else if (
             value &&
             typeof (value as { type?: unknown }).type === 'string'
@@ -1071,6 +1086,47 @@ export const noUnusedProps = createRule({
             );
           };
 
+          /**
+           * Expands `Partial<Base>`, `Required<Base>` and the other single-arg
+           * utility wrappers into the members of `Base`.
+           *
+           * Returns whether the base type resolved to a local declaration whose
+           * members were enumerated. A caller that gets `false` keeps its own
+           * opaque-forwarding fallback, so a base the file cannot see is still
+           * treated as forwarded rather than reported.
+           *
+           * Both the handed type node and an intersection MEMBER route through
+           * here: `Partial<Base> & {}` describes the same props as
+           * `Partial<Base>`, and only the handed node used to be expanded
+           * (#2187).
+           */
+          const addUtilityTypeBaseProps = (
+            typeNode: TSESTree.TSTypeReference,
+          ): boolean => {
+            if (
+              typeNode.typeName.type !== AST_NODE_TYPES.Identifier ||
+              !UTILITY_TYPES.has(typeNode.typeName.name) ||
+              !typeNode.typeParameters
+            ) {
+              return false;
+            }
+
+            const baseType = typeNode.typeParameters.params[0];
+            if (
+              baseType?.type !== AST_NODE_TYPES.TSTypeReference ||
+              baseType.typeName.type !== AST_NODE_TYPES.Identifier
+            ) {
+              return false;
+            }
+
+            const typeAliasNode = findTypeAliasDeclaration(
+              baseType.typeName.name,
+            );
+            return typeAliasNode
+              ? addBaseTypeProps(typeAliasNode.typeAnnotation)
+              : false;
+          };
+
           function extractProps(
             typeNode: TSESTree.TypeNode,
             currentScope: TSESLint.Scope.Scope,
@@ -1141,8 +1197,11 @@ export const noUnusedProps = createRule({
                       const [baseType, omittedProps] =
                         type.typeParameters.params;
                       handleOmitType(baseType, omittedProps, currentScope);
-                    } else {
-                      // For referenced types in intersections, we need to find their type declaration
+                    } else if (!addUtilityTypeBaseProps(type)) {
+                      // `Partial<Base> & ...` contributes Base's members just
+                      // like the un-intersected spelling (#2187). Only a
+                      // reference that expands to nothing reaches here, where a
+                      // referenced type is resolved through its declaration.
                       const typeAliasNode = findTypeAliasDeclaration(
                         typeName.name,
                       );
@@ -1250,21 +1309,9 @@ export const noUnusedProps = createRule({
                     baseType.type === AST_NODE_TYPES.TSTypeReference &&
                     baseType.typeName.type === AST_NODE_TYPES.Identifier
                   ) {
-                    const baseTypeName = baseType.typeName.name;
-
-                    const typeAliasNode =
-                      findTypeAliasDeclaration(baseTypeName);
-                    if (typeAliasNode) {
-                      // For Partial<T>, Required<T>, etc., add all properties from the base type
-                      const added = addBaseTypeProps(
-                        typeAliasNode.typeAnnotation,
-                      );
-                      if (!added) {
-                        props[`...${baseTypeName}`] = baseType.typeName;
-                        markUnknownSpreadType(spreadTypeProps, baseTypeName);
-                      }
-                    } else {
-                      // If we can't find the base type definition, treat it as a spread type
+                    if (!addUtilityTypeBaseProps(typeNode)) {
+                      // A base type this file cannot see is forwarded wholesale.
+                      const baseTypeName = baseType.typeName.name;
                       props[`...${baseTypeName}`] = baseType.typeName;
                       markUnknownSpreadType(spreadTypeProps, baseTypeName);
                     }
