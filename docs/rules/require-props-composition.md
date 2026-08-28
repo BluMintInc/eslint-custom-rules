@@ -391,6 +391,52 @@ Two consequences follow from resolution being lexical rather than file-wide:
   rule has nothing to test composition against and skips the component rather
   than guessing.
 
+### What counts as the component's own render output
+
+The dependency scan reads the whole component function — its body **and its
+parameters**. A destructured parameter default renders whenever the caller omits
+that prop, so it is render output exactly as a `??` fallback written in the body
+is, and the two spellings reach the same verdict:
+
+```tsx
+export type PanelProps = Readonly<{ header?: ReactNode }>;
+
+// Reported for `Header`: <Header /> renders whenever `header` is omitted,
+// exactly as `header ?? <Header />` in the body would.
+export const Panel = ({ header = <Header title="Details" /> }: PanelProps) => (
+  <div>{header}</div>
+);
+```
+
+The scan stops at a **component declared inside the body**. Such a component
+renders its own children and is checked on its own declaration, so its JSX is
+never charged to the component enclosing it — the nested spelling reaches the
+same verdict as hoisting the declaration to module scope:
+
+```tsx
+type CellProps = { label: string; dense: boolean };
+type RowProps = Pick<CellProps, 'label'>;
+export type ListPanelProps = Pick<RowProps, 'label'> & { rows: string[] };
+
+export const ListPanel = ({ rows }: ListPanelProps) => {
+  // `Row` renders `Cell`, so `Cell` is a dependency of `Row` — checked where
+  // `Row` is declared — and never one of `ListPanel`. `ListPanel` renders
+  // `Row`, and composes with `RowProps`.
+  const Row = ({ label }: RowProps) => <Cell label={label} dense />;
+  return (
+    <>
+      {rows.map((label) => (
+        <Row key={label} label={label} />
+      ))}
+    </>
+  );
+};
+```
+
+The boundary is a component *declaration*, not any nested function. An anonymous
+callback binds no component, so the JSX inside `rows.map((row) => <Row ... />)`
+above is `ListPanel`'s own output and counts as its dependency.
+
 ## Options
 
 ```js
@@ -432,7 +478,21 @@ export const RangeView = ({ value, ViewComponent, ...rest }: RangeViewProps) => 
 };
 ```
 
-The parent cannot compose with `ViewComponent`: the concrete component is chosen per call site, there is no `ViewComponentProps` type to `Pick` from, and the slot's accepted props are already constrained by the prop's own annotation. This covers the slot destructured in the signature, destructured from `props` in the body, renamed (`{ render: Renderer }`), defaulted (`{ Slot = Fallback }`), nested (`{ slots: { Header } }`), and the `<props.Slot />` spelling. Fixed children rendered alongside a slot are still checked.
+The parent cannot compose with `ViewComponent`: the concrete component is chosen per call site, there is no `ViewComponentProps` type to `Pick` from, and the slot's accepted props are already constrained by the prop's own annotation. This covers the slot destructured in the signature, destructured from `props` in the body, renamed (`{ render: Renderer }`), defaulted (`{ Slot = Fallback }`), nested (`{ slots: { Header } }`), and the `<props.Slot />` spelling.
+
+A default written on the **parameter** rather than on the property is the same binding, so it is unwrapped the same way:
+
+```tsx
+export type RangeViewProps = {
+  ViewComponent?: ComponentType<ViewComponentPropsBase<string>>;
+};
+
+export const RangeView = ({ ViewComponent }: RangeViewProps = {}) => (
+  <ViewComponent />
+);
+```
+
+The slot is also followed through an **intermediate props binding**, to a fixed point rather than one hop: `({ slots }) => { const { Header } = slots; }`, the alias `const Item = renderItem`, the member access `const { Header } = props.slots`, and a slot taken out of a `...rest` element all name the same caller-injected component. The chain is rooted at the props parameter only — a component destructured out of any other object is a fixed child the parent chose, and still needs composition. Fixed children rendered alongside a slot are still checked.
 
 ## Examples
 
