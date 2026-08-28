@@ -456,104 +456,156 @@ const containsJsxInExpression = (node: TSESTree.Expression): boolean => {
 };
 
 /**
+ * Enumerates the statements nested one level inside a statement that can
+ * enclose a block: try/catch/finally, every loop body, a labeled statement's
+ * body and a bare nested block. A loop or label body is not required to be a
+ * block, so the enumeration yields statements rather than blocks.
+ *
+ * `if` and `switch` are deliberately absent: their dedicated arms in
+ * containsJsxInStatement descend on their own, and enumerating them here would
+ * widen those established outcomes.
+ */
+const nestedStatementsOf = (
+  statement: TSESTree.Statement,
+): TSESTree.Statement[] => {
+  switch (statement.type) {
+    case AST_NODE_TYPES.BlockStatement:
+      return statement.body;
+
+    case AST_NODE_TYPES.TryStatement:
+      return [
+        statement.block,
+        ...(statement.handler ? [statement.handler.body] : []),
+        ...(statement.finalizer ? [statement.finalizer] : []),
+      ];
+
+    case AST_NODE_TYPES.ForStatement:
+    case AST_NODE_TYPES.ForInStatement:
+    case AST_NODE_TYPES.ForOfStatement:
+    case AST_NODE_TYPES.WhileStatement:
+    case AST_NODE_TYPES.DoWhileStatement:
+    case AST_NODE_TYPES.LabeledStatement:
+      return [statement.body];
+
+    default:
+      return [];
+  }
+};
+
+/**
+ * Checks if a single statement contains JSX elements
+ */
+const containsJsxInStatement = (statement: TSESTree.Statement): boolean => {
+  // Check return statements
+  if (statement.type === AST_NODE_TYPES.ReturnStatement && statement.argument) {
+    if (containsJsxInExpression(statement.argument)) {
+      return true;
+    }
+  }
+
+  // Check if statements
+  if (statement.type === AST_NODE_TYPES.IfStatement) {
+    if (
+      statement.consequent.type === AST_NODE_TYPES.ReturnStatement &&
+      statement.consequent.argument &&
+      containsJsxInExpression(statement.consequent.argument)
+    ) {
+      return true;
+    }
+    if (
+      statement.consequent.type === AST_NODE_TYPES.BlockStatement &&
+      containsJsxInBlockStatement(statement.consequent)
+    ) {
+      return true;
+    }
+    if (statement.alternate) {
+      if (
+        statement.alternate.type === AST_NODE_TYPES.ReturnStatement &&
+        statement.alternate.argument &&
+        containsJsxInExpression(statement.alternate.argument)
+      ) {
+        return true;
+      }
+      if (
+        statement.alternate.type === AST_NODE_TYPES.BlockStatement &&
+        containsJsxInBlockStatement(statement.alternate)
+      ) {
+        return true;
+      }
+      if (statement.alternate.type === AST_NODE_TYPES.IfStatement) {
+        // Handle else if
+        if (containsJsxInExpression(statement.alternate.test)) {
+          return true;
+        }
+        if (
+          statement.alternate.consequent &&
+          ((statement.alternate.consequent.type ===
+            AST_NODE_TYPES.ReturnStatement &&
+            statement.alternate.consequent.argument &&
+            containsJsxInExpression(statement.alternate.consequent.argument)) ||
+            (statement.alternate.consequent.type ===
+              AST_NODE_TYPES.BlockStatement &&
+              containsJsxInBlockStatement(statement.alternate.consequent)))
+        ) {
+          return true;
+        }
+      }
+    }
+  }
+
+  // Check switch statements
+  if (statement.type === AST_NODE_TYPES.SwitchStatement) {
+    if (containsJsxInSwitchStatement(statement)) {
+      return true;
+    }
+  }
+
+  // Check variable declarations for JSX
+  if (statement.type === AST_NODE_TYPES.VariableDeclaration) {
+    for (const declarator of statement.declarations) {
+      if (declarator.init) {
+        // Ignore nested function expressions (helpers/callbacks) even if they return JSX
+        if (
+          declarator.init.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+          declarator.init.type === AST_NODE_TYPES.FunctionExpression
+        ) {
+          continue;
+        }
+        if (containsJsxInExpression(declarator.init)) {
+          return true;
+        }
+      }
+    }
+  }
+
+  // Check expressions
+  if (
+    statement.type === AST_NODE_TYPES.ExpressionStatement &&
+    containsJsxInExpression(statement.expression)
+  ) {
+    return true;
+  }
+
+  // A JSX return one block deeper than an `if` -- inside try/catch/finally, a
+  // loop, a label or a bare block -- hides exactly the component the `if`
+  // spelling above reports, so those bodies get the same treatment (#2201).
+  for (const nested of nestedStatementsOf(statement)) {
+    if (containsJsxInStatement(nested)) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
+/**
  * Checks if a block statement contains JSX elements
  */
 const containsJsxInBlockStatement = (
   node: TSESTree.BlockStatement,
 ): boolean => {
   for (const statement of node.body) {
-    // Check return statements
-    if (
-      statement.type === AST_NODE_TYPES.ReturnStatement &&
-      statement.argument
-    ) {
-      if (containsJsxInExpression(statement.argument)) {
-        return true;
-      }
-    }
-
-    // Check if statements
-    if (statement.type === AST_NODE_TYPES.IfStatement) {
-      if (
-        statement.consequent.type === AST_NODE_TYPES.ReturnStatement &&
-        statement.consequent.argument &&
-        containsJsxInExpression(statement.consequent.argument)
-      ) {
-        return true;
-      }
-      if (
-        statement.consequent.type === AST_NODE_TYPES.BlockStatement &&
-        containsJsxInBlockStatement(statement.consequent)
-      ) {
-        return true;
-      }
-      if (statement.alternate) {
-        if (
-          statement.alternate.type === AST_NODE_TYPES.ReturnStatement &&
-          statement.alternate.argument &&
-          containsJsxInExpression(statement.alternate.argument)
-        ) {
-          return true;
-        }
-        if (
-          statement.alternate.type === AST_NODE_TYPES.BlockStatement &&
-          containsJsxInBlockStatement(statement.alternate)
-        ) {
-          return true;
-        }
-        if (statement.alternate.type === AST_NODE_TYPES.IfStatement) {
-          // Handle else if
-          if (containsJsxInExpression(statement.alternate.test)) {
-            return true;
-          }
-          if (
-            statement.alternate.consequent &&
-            ((statement.alternate.consequent.type ===
-              AST_NODE_TYPES.ReturnStatement &&
-              statement.alternate.consequent.argument &&
-              containsJsxInExpression(
-                statement.alternate.consequent.argument,
-              )) ||
-              (statement.alternate.consequent.type ===
-                AST_NODE_TYPES.BlockStatement &&
-                containsJsxInBlockStatement(statement.alternate.consequent)))
-          ) {
-            return true;
-          }
-        }
-      }
-    }
-
-    // Check switch statements
-    if (statement.type === AST_NODE_TYPES.SwitchStatement) {
-      if (containsJsxInSwitchStatement(statement)) {
-        return true;
-      }
-    }
-
-    // Check variable declarations for JSX
-    if (statement.type === AST_NODE_TYPES.VariableDeclaration) {
-      for (const declarator of statement.declarations) {
-        if (declarator.init) {
-          // Ignore nested function expressions (helpers/callbacks) even if they return JSX
-          if (
-            declarator.init.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-            declarator.init.type === AST_NODE_TYPES.FunctionExpression
-          ) {
-            continue;
-          }
-          if (containsJsxInExpression(declarator.init)) {
-            return true;
-          }
-        }
-      }
-    }
-
-    // Check expressions
-    if (
-      statement.type === AST_NODE_TYPES.ExpressionStatement &&
-      containsJsxInExpression(statement.expression)
-    ) {
+    if (containsJsxInStatement(statement)) {
       return true;
     }
   }
