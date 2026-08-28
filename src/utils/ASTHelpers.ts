@@ -837,8 +837,22 @@ export class ASTHelpers {
     return (node as any)?.type === 'ParenthesizedExpression';
   }
 
+  /**
+   * Is this VALUE a JSX value?
+   *
+   * The identifier arm is what makes the answer independent of where the value
+   * sits. It used to live only in `returnsJSXFromStatement`'s ReturnStatement
+   * branch, so `() => { return view; }` resolved `view` to its initializer
+   * while the identical `() => view` did not, and a component spelled with a
+   * concise body was silently exempt (#2186). Both spellings route here now.
+   *
+   * `resolving` carries the declarators already followed: `const a = a` and
+   * mutually-referential bindings would otherwise recur forever.
+   */
   private static returnsJSXValue(
     node: TSESTree.Node | null | undefined,
+    context?: Readonly<TSESLint.RuleContext<string, readonly unknown[]>>,
+    resolving?: ReadonlySet<TSESTree.Node>,
   ): boolean {
     if (!node) {
       return false;
@@ -853,15 +867,15 @@ export class ASTHelpers {
 
     if (node.type === AST_NODE_TYPES.LogicalExpression) {
       return (
-        this.returnsJSXValue((node as any).left) ||
-        this.returnsJSXValue((node as any).right)
+        this.returnsJSXValue((node as any).left, context, resolving) ||
+        this.returnsJSXValue((node as any).right, context, resolving)
       );
     }
 
     if (node.type === AST_NODE_TYPES.ConditionalExpression) {
       return (
-        this.returnsJSXValue((node as any).consequent) ||
-        this.returnsJSXValue((node as any).alternate)
+        this.returnsJSXValue((node as any).consequent, context, resolving) ||
+        this.returnsJSXValue((node as any).alternate, context, resolving)
       );
     }
 
@@ -871,15 +885,68 @@ export class ASTHelpers {
       node.type === AST_NODE_TYPES.TSTypeAssertion ||
       node.type === AST_NODE_TYPES.TSNonNullExpression
     ) {
-      return this.returnsJSXValue((node as any).expression);
+      return this.returnsJSXValue((node as any).expression, context, resolving);
     }
 
     if (this.isParenthesizedExpression(node)) {
-      return this.returnsJSXValue((node as any).expression);
+      return this.returnsJSXValue((node as any).expression, context, resolving);
+    }
+
+    if (node.type === AST_NODE_TYPES.Identifier && context) {
+      return this.identifierHoldsJSXValue(node, context, resolving);
     }
 
     // Function/class values are not JSX values.
     return false;
+  }
+
+  /**
+   * Whether an identifier names a binding whose value is JSX.
+   *
+   * Only a binding written exactly once is followed: a reassigned one does not
+   * deterministically name its initializer's value, and following it would
+   * trade a conservative miss for a wrong answer. A function or class
+   * initializer answers `false` here, same as anywhere else — the value is a
+   * function, not JSX.
+   */
+  private static identifierHoldsJSXValue(
+    node: TSESTree.Identifier,
+    context: Readonly<TSESLint.RuleContext<string, readonly unknown[]>>,
+    resolving?: ReadonlySet<TSESTree.Node>,
+  ): boolean {
+    const scope = this.getScope(context, node);
+    if (!scope) {
+      return false;
+    }
+
+    const variable = this.findVariableInScope(scope, node.name);
+    if (!variable || variable.defs.length !== 1) {
+      return false;
+    }
+
+    const isReassigned = variable.references.some(
+      (ref) => ref.isWrite() && !(ref as any).init,
+    );
+    if (isReassigned) {
+      return false;
+    }
+
+    const def = variable.defs[0];
+    if (
+      def.type !== 'Variable' ||
+      def.node.type !== AST_NODE_TYPES.VariableDeclarator ||
+      !def.node.init
+    ) {
+      return false;
+    }
+
+    if (resolving?.has(def.node)) {
+      return false;
+    }
+
+    const followed = new Set(resolving ?? []);
+    followed.add(def.node);
+    return this.returnsJSXValue(def.node.init, context, followed);
   }
 
   private static returnsJSXFromStatement(
@@ -891,42 +958,11 @@ export class ASTHelpers {
     }
 
     if (node.type === AST_NODE_TYPES.ReturnStatement) {
-      const arg = (node as any).argument;
-      if (arg?.type === AST_NODE_TYPES.Identifier && context) {
-        // Resolve variable to its initializer if possible
-        const scope = this.getScope(context, arg);
-
-        if (scope) {
-          const variable = this.findVariableInScope(scope, arg.name);
-          if (variable && variable.defs.length === 1) {
-            const def = variable.defs[0];
-
-            // Check if the variable is reassigned after initialization.
-            // We only follow variables that are defined once and never reassigned
-            // to ensure we're following a deterministic JSX-returning value.
-            // This is intentionally conservative to avoid ambiguous multi-write cases,
-            // which affects React component detection accuracy.
-            const isReassigned = variable.references.some(
-              (ref) => ref.isWrite() && !(ref as any).init,
-            );
-            if (isReassigned) {
-              return this.returnsJSXValue(arg);
-            }
-
-            if (
-              def.type === 'Variable' &&
-              def.node.type === AST_NODE_TYPES.VariableDeclarator &&
-              def.node.init
-            ) {
-              // ReturnStatement returns a value; treat function/class initializers as non-JSX values.
-              return this.returnsJSXValue(def.node.init);
-            }
-          }
-        } else {
-          return this.returnsJSXValue(arg);
-        }
-      }
-      return this.returnsJSXValue(arg);
+      // A ReturnStatement returns a VALUE, so the whole question — identifier
+      // resolution included — belongs to returnsJSXValue. Keeping a private
+      // copy of the resolution here is what made the answer depend on whether
+      // the value sat behind a `return` or in a concise arrow body (#2186).
+      return this.returnsJSXValue((node as any).argument, context);
     }
 
     if (node.type === AST_NODE_TYPES.VariableDeclaration) {
@@ -992,7 +1028,7 @@ export class ASTHelpers {
       if (node.type === AST_NODE_TYPES.ArrowFunctionExpression) {
         return func.body.type === AST_NODE_TYPES.BlockStatement
           ? this.returnsJSXFromStatement(func.body, context)
-          : this.returnsJSXValue(func.body);
+          : this.returnsJSXValue(func.body, context);
       }
       return this.returnsJSXFromStatement(func.body, context);
     }
@@ -1017,7 +1053,8 @@ export class ASTHelpers {
 
     // Treat remaining nodes as statement-path or value checks.
     return (
-      this.returnsJSXFromStatement(node, context) || this.returnsJSXValue(node)
+      this.returnsJSXFromStatement(node, context) ||
+      this.returnsJSXValue(node, context)
     );
   }
 

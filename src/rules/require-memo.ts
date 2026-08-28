@@ -1114,10 +1114,10 @@ function checkFunction(
     return;
   }
 
-  if (
-    ASTHelpers.returnsJSX(node.body, context) &&
-    ASTHelpers.hasParameters(node)
-  ) {
+  // The FUNCTION is the subject, not its body: handing the body makes a
+  // concise arrow's body arrive as the handed node, which returnsJSX unwraps
+  // when it is itself a function rather than reading it as a value (#2186).
+  if (ASTHelpers.returnsJSX(node, context) && ASTHelpers.hasParameters(node)) {
     const isDeclarationComponent = isUnmemoizedFunctionComponent(node);
     const isArrowComponent = isUnmemoizedArrowFunction(node, parentNode);
     if (isDeclarationComponent || isArrowComponent) {
