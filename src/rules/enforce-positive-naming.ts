@@ -1208,21 +1208,45 @@ function isExemptFromBooleanNaming(fn: FunctionLikeNode): boolean {
 }
 
 /**
+ * Strips the type-only expression wrappers (`fn as T`, `fn satisfies T`, `fn!`,
+ * `<T>fn`) that can sit between a name and the value it is bound to. None of
+ * them changes what the value is at runtime, so a wrapped function's return
+ * shape is the shape of the function inside. Reading only the outermost node
+ * made the validator carve-out depend on the assertion's presence (#2174).
+ */
+function unwrapTypeOnlyExpression(node: TSESTree.Node): TSESTree.Node {
+  let current = node;
+  while (
+    current.type === AST_NODE_TYPES.TSAsExpression ||
+    current.type === AST_NODE_TYPES.TSSatisfiesExpression ||
+    current.type === AST_NODE_TYPES.TSNonNullExpression ||
+    current.type === AST_NODE_TYPES.TSTypeAssertion
+  ) {
+    current = current.expression;
+  }
+  return current;
+}
+
+/**
  * When a declarator/property value is a function, whether that function is
- * exempt from boolean negative-naming.
+ * exempt from boolean negative-naming. The value is unwrapped first: exemption
+ * turns on what the function returns, never on how the binding is asserted.
  */
 function isExemptFunctionValue(
   node: TSESTree.Node | null | undefined,
 ): boolean {
+  if (!node) {
+    return false;
+  }
+  const value = unwrapTypeOnlyExpression(node);
   return (
-    !!node &&
-    (node.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-      node.type === AST_NODE_TYPES.FunctionExpression ||
+    (value.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+      value.type === AST_NODE_TYPES.FunctionExpression ||
       // `abstract isNotBlank(value?: string): string | true;` declares the
       // validator without a body, and must be exempt on the same grounds as
       // the implementation that satisfies it.
-      node.type === AST_NODE_TYPES.TSEmptyBodyFunctionExpression) &&
-    isExemptFromBooleanNaming(node)
+      value.type === AST_NODE_TYPES.TSEmptyBodyFunctionExpression) &&
+    isExemptFromBooleanNaming(value)
   );
 }
 
@@ -1687,6 +1711,12 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
         )
       )
         return;
+
+      // A signature has no value, so its function type is the only place its
+      // return shape can live. Skipping the annotation here exempted a
+      // validator declared as a class field while reporting the identical
+      // member declared in an interface or type literal (#2175).
+      if (isExemptFunctionTypeAnnotation(node.typeAnnotation)) return;
 
       // Ensure we have a valid property name
       const propertyName = node.key.name;

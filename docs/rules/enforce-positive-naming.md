@@ -21,7 +21,7 @@ The rule ignores:
 - Computed member keys (`[NAME] = false`), whose identifier is declared elsewhere and is judged at that declaration instead.
 - `declare` class fields, which restate the type of a member owned by a base class or an ambient declaration, so the name is not the class's to choose.
 - Words that incidentally contain these prefixes but are not negations (e.g., `index`, `display`, `input`), using curated exception lists to avoid false positives.
-- `is`/`has`-prefixed functions whose return shape is not boolean—e.g. validator predicates that return `string | true` (an error message on rejection, `true` on acceptance). The value is not a boolean and its negated name (`isNotBlank`, `isNonNegative`) is the domain-correct term, so renaming it would invert the predicate's meaning. Detected via an explicit non-boolean return-type annotation or a `return` yielding a string/number/object/array literal.
+- `is`/`has`-prefixed functions whose return shape is not boolean—e.g. validator predicates that return `string | true` (an error message on rejection, `true` on acceptance). The value is not a boolean and its negated name (`isNotBlank`, `isNonNegative`) is the domain-correct term, so renaming it would invert the predicate's meaning. Detected via an explicit non-boolean return-type annotation or a `return` yielding a string/number/object/array literal. The return shape is read wherever the declaration puts it: on the function itself, or—for a declaration-only member with no value—on its inline function type, whether that member is a class field (`isNotBlank!: (value?: string) => string | true`) or an interface/type-literal property signature. A type-only wrapper around the value (`fn as T`, `fn satisfies T`, `fn!`, `<T>fn`) is looked through, since none of them changes what the function returns.
 - `is`/`has`-prefixed functions whose returns yield no syntactic verdict at all, such as `const isNotBlank = (value?: string) => validate(value)`. Only a function *proven* to return a boolean—a boolean literal, a negation, a comparison, `Boolean(...)`, or a `boolean` return-type annotation—is flagged on its name. This matters because [`no-explicit-return-type`](./no-explicit-return-type.md) is recommended and fixable: it deletes the `string | true` annotation that carries the exemption above, and inferring "boolean" from the name alone would then report a rename that inverts the validator's meaning. Preferring a false negative here is deliberate.
 
 ### Examples of **incorrect** code for this rule:
@@ -57,6 +57,16 @@ class Form {
   isNotBlank = (value?: string) => validate(value);
   isNotEmpty!: (value?: string) => string | true;
 }
+
+// A property signature is the same declaration-only spelling, so it reads the
+// same annotation.
+type FormValidators = {
+  isNotBlank: (value?: string) => string | true;
+};
+
+// A type-only wrapper does not change what the function returns.
+type Validator = (value?: string) => string | true;
+const isNotEmpty = ((value?: string) => validate(value)) as Validator;
 ```
 
 ## When Not To Use It
