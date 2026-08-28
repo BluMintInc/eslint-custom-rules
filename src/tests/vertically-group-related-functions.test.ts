@@ -228,6 +228,93 @@ ruleTesterTs.run(
         }
         `,
       },
+      {
+        // Regression for #2196: a call in the handed function's own parameter
+        // default is a dependency exactly as a call in its body is, so the
+        // call graph already justifies this order and nothing may move.
+        code: `
+function getThing(h = handleClick()) {
+  return h;
+}
+
+function handleClick() {
+  return 1;
+}
+`,
+      },
+      {
+        // Control for #2196: the same meaning spelled with the call nested in
+        // a body-level arrow. The two spellings must reach the same verdict.
+        code: `
+function getThing() {
+  const inner = (h = handleClick()) => h;
+  return inner;
+}
+
+function handleClick() {
+  return 1;
+}
+`,
+      },
+      {
+        // Arrow spelling of the same edge, with the caller already above the
+        // helper it invokes from a parameter default.
+        code: `
+const alpha = (b = handleThing()) => b;
+
+const handleThing = () => 1;
+`,
+      },
+      {
+        // Body-level twin of the arrow spelling above; both must be silent.
+        code: `
+const alpha = () => {
+  return handleThing();
+};
+
+const handleThing = () => 1;
+`,
+      },
+      {
+        // A default nested inside a destructuring pattern carries the edge on
+        // the same footing as a top-level default.
+        code: `
+function getThing({ h = handleClick() } = {}) {
+  return h;
+}
+
+function handleClick() {
+  return 1;
+}
+`,
+      },
+      {
+        // A computed destructuring key runs on every invocation too, so the
+        // call it holds is a dependency.
+        code: `
+function getThing({ [handleClick()]: v } = {}) {
+  return v;
+}
+
+function handleClick() {
+  return 'k';
+}
+`,
+      },
+      {
+        // Positive control: the plain body-level call in caller-above-callee
+        // order stays silent, so the fixtures above are not passing because
+        // the rule went globally quiet.
+        code: `
+function handleClick() {
+  return getThing();
+}
+
+function getThing() {
+  return 1;
+}
+`,
+      },
     ],
     invalid: [
       // A shebang is only a shebang at character 0. ESLint presents it as a
@@ -807,6 +894,186 @@ function main() {
 function helper() {
   return OFFSET * 2;
 }
+`,
+      },
+      {
+        // Regression for #2198: the only call sits in the caller's parameter
+        // default, and the misordering is reported with the dependency reason
+        // — proof the caller -> callee edge is recorded rather than the group
+        // tiebreak coincidentally agreeing.
+        code: `
+const beta = () => 1;
+
+const alpha = (b = beta()) => {
+  return b;
+};
+`,
+        errors: [
+          {
+            message:
+              'Function "alpha" is out of order: it calls beta and callers should sit above the helpers they invoke. Move it at the start of the function block to keep related call chains grouped so readers can scan the file top-down.',
+          },
+        ],
+        output: `
+const alpha = (b = beta()) => {
+  return b;
+};
+
+const beta = () => 1;
+`,
+      },
+      {
+        // Control for #2198: the same call nested in a body-level arrow. It
+        // reports identically to the parameter-default subject above.
+        code: `
+const beta = () => 1;
+
+const alpha = () => {
+  const inner = (b = beta()) => b;
+  return inner;
+};
+`,
+        errors: [
+          {
+            message:
+              'Function "alpha" is out of order: it calls beta and callers should sit above the helpers they invoke. Move it at the start of the function block to keep related call chains grouped so readers can scan the file top-down.',
+          },
+        ],
+        output: `
+const alpha = () => {
+  const inner = (b = beta()) => b;
+  return inner;
+};
+
+const beta = () => 1;
+`,
+      },
+      {
+        // Function-expression spelling of the same edge.
+        code: `
+const beta = function () {
+  return 1;
+};
+
+const alpha = function (b = beta()) {
+  return b;
+};
+`,
+        errors: [
+          {
+            message:
+              'Function "alpha" is out of order: it calls beta and callers should sit above the helpers they invoke. Move it at the start of the function block to keep related call chains grouped so readers can scan the file top-down.',
+          },
+        ],
+        output: `
+const alpha = function (b = beta()) {
+  return b;
+};
+
+const beta = function () {
+  return 1;
+};
+`,
+      },
+      {
+        // Function-declaration spelling, same group on both sides, so only the
+        // recorded edge can order the pair.
+        code: `
+function alpha() {}
+
+function beta(x = alpha()) {
+  return x;
+}
+`,
+        errors: [
+          {
+            message:
+              'Function "beta" is out of order: it calls alpha and callers should sit above the helpers they invoke. Move it at the start of the function block to keep related call chains grouped so readers can scan the file top-down.',
+          },
+        ],
+        output: `
+function beta(x = alpha()) {
+  return x;
+}
+
+function alpha() {}
+`,
+      },
+      {
+        // Positive control for the fixture above: the identical call written
+        // in the body reports the same instruction and the same reorder.
+        code: `
+function alpha() {}
+
+function beta() {
+  return alpha();
+}
+`,
+        errors: [
+          {
+            message:
+              'Function "beta" is out of order: it calls alpha and callers should sit above the helpers they invoke. Move it at the start of the function block to keep related call chains grouped so readers can scan the file top-down.',
+          },
+        ],
+        output: `
+function beta() {
+  return alpha();
+}
+
+function alpha() {}
+`,
+      },
+      {
+        // A parameter default that names a binding without invoking it is not
+        // a call, so it records no edge in a default any more than it does in
+        // a body, and the group tiebreak alone decides the order.
+        code: `
+function getThing(h = handleClick) {
+  return h;
+}
+
+function handleClick() {
+  return 1;
+}
+`,
+        errors: [
+          {
+            message:
+              'Function "handleClick" is out of order: keep related functions adjacent. Move it at the start of the function block to keep related call chains grouped so readers can scan the file top-down.',
+          },
+        ],
+        output: `
+function handleClick() {
+  return 1;
+}
+
+function getThing(h = handleClick) {
+  return h;
+}
+`,
+      },
+      {
+        // The edge outranks the group tiebreak that would otherwise leave the
+        // event handler on top: renderRow invokes handleThing from a default.
+        code: `
+const handleThing = () => 1;
+
+const renderRow = (label = handleThing()) => {
+  return label;
+};
+`,
+        errors: [
+          {
+            message:
+              'Function "renderRow" is out of order: it calls handleThing and callers should sit above the helpers they invoke. Move it at the start of the function block to keep related call chains grouped so readers can scan the file top-down.',
+          },
+        ],
+        output: `
+const renderRow = (label = handleThing()) => {
+  return label;
+};
+
+const handleThing = () => 1;
 `,
       },
     ],

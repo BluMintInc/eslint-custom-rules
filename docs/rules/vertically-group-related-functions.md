@@ -136,3 +136,34 @@ A `#!` shebang belongs to the file rather than to the statement beneath it, so
 the reordering fix never moves it: it stays on line 1 even when the first
 function in the file is the one being relocated. Anywhere else, `#!` is a syntax
 error (`TS18026`) and the file stops being executable.
+
+## Calls in parameter defaults
+
+A parameter default is evaluated on every call, so a call sitting in one is a
+dependency exactly as a call in the body is: `getThing(h = handleClick())`
+depends on `handleClick` no differently from a `getThing` whose body calls it.
+The same holds for a default nested inside a destructuring pattern
+(`{ h = handleClick() } = {}`) and for a computed key (`{ [handleClick()]: v }`),
+since both run on every invocation. A bare mention that never invokes
+(`h = handleClick`) is not a call and records no edge, in a default or in a body
+alike.
+
+### Examples of incorrect code
+
+```typescript
+const beta = () => 1;
+
+const alpha = (b = beta()) => {
+  return b;
+};
+```
+
+### Examples of correct code
+
+```typescript
+const alpha = (b = beta()) => {
+  return b;
+};
+
+const beta = () => 1;
+```
