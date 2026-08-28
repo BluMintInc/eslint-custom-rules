@@ -248,7 +248,7 @@ whole fix is declined and the report stands unfixed. Hoisting anyway would
 trade this rule's report for a `no-unused-vars` one that nothing re-reports,
 because the hoist has already resolved the violation that would have found it.
 
-Callbacks that reference component scope or return JSX are not reported to avoid false positives. Callbacks declared in multi-variable statements may be reported without an auto-fix to avoid unsafe refactors. If a callback must stay for memoization or HMR reasons, add an `eslint-disable-next-line @blumintinc/blumint/no-empty-dependency-use-callbacks` comment with a short justification.
+Callbacks that reference component scope or return JSX are not reported to avoid false positives. The JSX exemption is for a callback that RENDERS, and it reads the callback's value the same way whichever way its body is spelled: a callback that returns a FUNCTION returns a function, not JSX, so `useCallback(() => () => <div />, [])` is reported exactly as its block-bodied twin is. Callbacks declared in multi-variable statements may be reported without an auto-fix to avoid unsafe refactors. If a callback must stay for memoization or HMR reasons, add an `eslint-disable-next-line @blumintinc/blumint/no-empty-dependency-use-callbacks` comment with a short justification.
 Callbacks declared with `let`/`var` are reported without a fix to avoid mutating declaration kinds; use `const` before applying `--fix` if hoisting is safe.
 Callbacks that rely on type aliases, interfaces, enums, or namespaces defined in any enclosing block scope are treated as component-bound and will not be hoisted.
 If the module already defines a value with the same name, the fixer is skipped to avoid introducing duplicate declarations.

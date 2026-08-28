@@ -917,7 +917,12 @@ export const noEmptyDependencyUseCallbacks = createRule<Options, MessageIds>({
       const callback = getCallbackArg(callExpression);
       if (!callback) return;
 
-      if (ASTHelpers.returnsJSX(callback.body, context)) return;
+      // The exemption is for a callback that RENDERS. Handing `callback.body`
+      // let a callback returning a FUNCTION claim it, because returnsJSX
+      // unwraps a handed function instead of judging it as a value — so
+      // `useCallback(() => () => <div/>, [])` was exempt while the identical
+      // block-bodied spelling reported (#2192).
+      if (ASTHelpers.returnsJSX(callback, context)) return;
 
       const extraTypeRoots: TSESTree.Node[] = [];
       if (
