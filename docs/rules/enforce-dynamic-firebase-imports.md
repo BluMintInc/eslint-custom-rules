@@ -256,7 +256,13 @@ so that ordinary branching keeps its fix:
 
 Statements the anchor's own branch returns past are not part of that window:
 they never run behind the injected `await`, so a guard written there withholds
-nothing.
+nothing. Neither is anything held by a nested body — a `function` declaration,
+a function expression or arrow, a class `static` block, a `namespace` — however
+that body is written. What such a body holds runs when IT is invoked, which is
+not a moment the relocated `await` moves, so a guard and a flip spelled inside
+one leave the fix intact. A test that IS a closure (`if (() => busy)`) reads
+nothing for the same reason: it evaluates to the function, never to what the
+function would read when called.
 
 ### Concise bodies
 

@@ -228,13 +228,25 @@ const prologueLengthOf = (statements: readonly TSESTree.Node[]): number => {
 };
 
 /**
- * The children of `node` that the async function's own execution reaches.
+ * Whether the async function's own execution stops AT `node` rather than
+ * running what it holds.
  *
  * A nested function, a class static block and a `namespace` body are cut, the
  * same boundary {@link referenceSitesOf} draws: what they hold runs when THEY
  * are invoked, which is not a moment the relocated `await` moves, so their
  * contents say nothing about the placement.
+ *
+ * The predicate is asked of every node a reach walk touches, the handed root
+ * included. The boundary belongs to the NODE, not to the edge it is reached
+ * by: cutting children alone lets a walk seeded ON one — a hoisted `function`
+ * declaration standing as a statement of the region, or an `if` test that IS a
+ * closure — run through it and credit its body's guards and reads to the
+ * region (#2172, #2173).
  */
+const isReachBoundary = (node: TSESTree.Node): boolean =>
+  isFunctionNode(node) || AWAIT_OPAQUE_BODIES.has(node.type);
+
+/** The children of `node` that the async function's own execution reaches. */
 const reachedChildrenOf = (node: TSESTree.Node): TSESTree.Node[] => {
   const children: TSESTree.Node[] = [];
   for (const [key, value] of Object.entries(node)) {
@@ -244,11 +256,7 @@ const reachedChildrenOf = (node: TSESTree.Node): TSESTree.Node[] => {
       continue;
     }
     for (const child of Array.isArray(value) ? value : [value]) {
-      if (
-        ASTHelpers.isNode(child) &&
-        !isFunctionNode(child) &&
-        !AWAIT_OPAQUE_BODIES.has(child.type)
-      ) {
+      if (ASTHelpers.isNode(child) && !isReachBoundary(child)) {
         children.push(child);
       }
     }
@@ -256,11 +264,19 @@ const reachedChildrenOf = (node: TSESTree.Node): TSESTree.Node[] => {
   return children;
 };
 
+/**
+ * Visits every node the async function's own execution reaches from `root`.
+ *
+ * `root` takes the same cut as the nodes below it: a walk handed a boundary
+ * visits nothing, because the question the callers ask — what runs behind the
+ * relocated `await` — has one answer for a nested body whether it is reached
+ * as a child or handed in directly.
+ */
 const walkReached = (
   root: TSESTree.Node,
   visit: (node: TSESTree.Node) => void,
 ): void => {
-  const pending: TSESTree.Node[] = [root];
+  const pending: TSESTree.Node[] = isReachBoundary(root) ? [] : [root];
   while (pending.length > 0) {
     const node = pending.pop() as TSESTree.Node;
     visit(node);
@@ -295,6 +311,12 @@ const pathTextOf = (node: TSESTree.Node): string | null => {
 };
 
 const readPathsInto = (node: TSESTree.Node, paths: Set<string>): void => {
+  // The handed node takes the same cut as the children below it: a test that IS
+  // a function literal (`if (() => busy)`) evaluates to the closure, never to
+  // what the closure would read when called.
+  if (isReachBoundary(node)) {
+    return;
+  }
   const path = pathTextOf(node);
   if (path !== null) {
     paths.add(path);

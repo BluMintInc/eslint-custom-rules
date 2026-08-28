@@ -2132,6 +2132,353 @@ export const run = async (id: string) => {
   }
 };`,
       },
+      // ---------------------------------------------------------------------
+      // A nested body's contents say nothing about the placement, whichever
+      // side of the reach walk it arrives on. The boundary belongs to the NODE,
+      // not to the edge it was reached by (#2172, #2173).
+      // ---------------------------------------------------------------------
+
+      // A hoisted `function` declaration standing as a statement of the region
+      // is handed to the reach walk as its root. Its guard and its flip run
+      // when `guard` is CALLED, which is not a moment the relocated `await`
+      // moves, so the declaration lands where the identical closure spelled as
+      // a function expression puts it
+      {
+        code: `import { create } from '../firebaseCloud/transaction/create';
+
+let busy = false;
+
+export const run = async (id: string) => {
+  const handle = create(id);
+  function guard() {
+    if (busy) {
+      return true;
+    }
+    busy = true;
+    return false;
+  }
+  return guard() ? handle : null;
+};`,
+        filename: 'src/hooks/useRun.ts',
+        errors: [error('../firebaseCloud/transaction/create')],
+        output: `
+let busy = false;
+
+export const run = async (id: string) => {
+  const { create } = await import('../firebaseCloud/transaction/create');
+  const handle = create(id);
+  function guard() {
+    if (busy) {
+      return true;
+    }
+    busy = true;
+    return false;
+  }
+  return guard() ? handle : null;
+};`,
+      },
+      // The control the subject above has to agree with: the same closure as a
+      // function expression, which the walk cuts as a CHILD
+      {
+        code: `import { create } from '../firebaseCloud/transaction/create';
+
+let busy = false;
+
+export const run = async (id: string) => {
+  const handle = create(id);
+  const guard = function () {
+    if (busy) {
+      return true;
+    }
+    busy = true;
+    return false;
+  };
+  return guard() ? handle : null;
+};`,
+        filename: 'src/hooks/useRun.ts',
+        errors: [error('../firebaseCloud/transaction/create')],
+        output: `
+let busy = false;
+
+export const run = async (id: string) => {
+  const { create } = await import('../firebaseCloud/transaction/create');
+  const handle = create(id);
+  const guard = function () {
+    if (busy) {
+      return true;
+    }
+    busy = true;
+    return false;
+  };
+  return guard() ? handle : null;
+};`,
+      },
+      // The same declaration never called at all: nothing in it runs on any
+      // path the relocated `await` touches, so there is no window to widen
+      {
+        code: `import { create } from '../firebaseCloud/transaction/create';
+
+let busy = false;
+
+export const run = async (id: string) => {
+  const handle = create(id);
+  function guard() {
+    if (busy) {
+      return true;
+    }
+    busy = true;
+    return false;
+  }
+  return handle;
+};`,
+        filename: 'src/hooks/useRun.ts',
+        errors: [error('../firebaseCloud/transaction/create')],
+        output: `
+let busy = false;
+
+export const run = async (id: string) => {
+  const { create } = await import('../firebaseCloud/transaction/create');
+  const handle = create(id);
+  function guard() {
+    if (busy) {
+      return true;
+    }
+    busy = true;
+    return false;
+  }
+  return handle;
+};`,
+      },
+      // A phantom veto is not merely a withheld fix here: it made the loop's own
+      // position unavailable, so the declaration fell back INSIDE the `for` body
+      // — one module load per iteration, the exact harm the loop hand-back
+      // exists to prevent. The declaration heads the async body instead
+      {
+        code: `import { create } from '../firebaseCloud/transaction/create';
+
+let busy = false;
+
+export const trackAll = async (ids: string[]) => {
+  for (const id of ids) {
+    create(id);
+    continue;
+  }
+  function guard() {
+    if (busy) {
+      return true;
+    }
+    busy = true;
+    return false;
+  }
+  return guard();
+};`,
+        filename: 'src/hooks/useTrackAll.ts',
+        errors: [error('../firebaseCloud/transaction/create')],
+        output: `
+let busy = false;
+
+export const trackAll = async (ids: string[]) => {
+  const { create } = await import('../firebaseCloud/transaction/create');
+  for (const id of ids) {
+    create(id);
+    continue;
+  }
+  function guard() {
+    if (busy) {
+      return true;
+    }
+    busy = true;
+    return false;
+  }
+  return guard();
+};`,
+      },
+      // Its control: the same loop with the closure spelled as an expression,
+      // which already hoisted the load ahead of the loop
+      {
+        code: `import { create } from '../firebaseCloud/transaction/create';
+
+let busy = false;
+
+export const trackAll = async (ids: string[]) => {
+  for (const id of ids) {
+    create(id);
+    continue;
+  }
+  const guard = function () {
+    if (busy) {
+      return true;
+    }
+    busy = true;
+    return false;
+  };
+  return guard();
+};`,
+        filename: 'src/hooks/useTrackAll.ts',
+        errors: [error('../firebaseCloud/transaction/create')],
+        output: `
+let busy = false;
+
+export const trackAll = async (ids: string[]) => {
+  const { create } = await import('../firebaseCloud/transaction/create');
+  for (const id of ids) {
+    create(id);
+    continue;
+  }
+  const guard = function () {
+    if (busy) {
+      return true;
+    }
+    busy = true;
+    return false;
+  };
+  return guard();
+};`,
+      },
+      // A class static block in the region is cut the same way, whether it is
+      // reached through the class that holds it or handed in directly
+      {
+        code: `import { create } from '../firebaseCloud/transaction/create';
+
+let busy = false;
+
+export const run = async (id: string) => {
+  const handle = create(id);
+  class Holder {
+    static {
+      if (busy) {
+        busy = false;
+      }
+      busy = true;
+    }
+  }
+  return [handle, Holder];
+};`,
+        filename: 'src/hooks/useRun.ts',
+        errors: [error('../firebaseCloud/transaction/create')],
+        output: `
+let busy = false;
+
+export const run = async (id: string) => {
+  const { create } = await import('../firebaseCloud/transaction/create');
+  const handle = create(id);
+  class Holder {
+    static {
+      if (busy) {
+        busy = false;
+      }
+      busy = true;
+    }
+  }
+  return [handle, Holder];
+};`,
+      },
+      // A guard test that IS a function literal evaluates to the closure, never
+      // to what the closure would read when called, so nothing it mentions is
+      // state this test observes (#2173)
+      {
+        code: `import { create } from '../firebaseCloud/transaction/create';
+
+let busy = false;
+
+export const run = async (id: string) => {
+  const handle = create(id);
+  if (() => busy) {
+    busy = true;
+  }
+  return handle;
+};`,
+        filename: 'src/hooks/useRun.ts',
+        errors: [error('../firebaseCloud/transaction/create')],
+        output: `
+let busy = false;
+
+export const run = async (id: string) => {
+  const { create } = await import('../firebaseCloud/transaction/create');
+  const handle = create(id);
+  if (() => busy) {
+    busy = true;
+  }
+  return handle;
+};`,
+      },
+      // Its control: the same closure one level down, as a call argument, which
+      // the walk already cut as a CHILD
+      {
+        code: `import { create } from '../firebaseCloud/transaction/create';
+
+let busy = false;
+
+export const run = async (id: string) => {
+  const handle = create(id);
+  if (wrap(() => busy)) {
+    busy = true;
+  }
+  return handle;
+};`,
+        filename: 'src/hooks/useRun.ts',
+        errors: [error('../firebaseCloud/transaction/create')],
+        output: `
+let busy = false;
+
+export const run = async (id: string) => {
+  const { create } = await import('../firebaseCloud/transaction/create');
+  const handle = create(id);
+  if (wrap(() => busy)) {
+    busy = true;
+  }
+  return handle;
+};`,
+      },
+      // The boundary is on the nested body alone: a guard and a flip written
+      // DIRECTLY in the region still run in the caller's own task, and the
+      // report keeps standing without a fix
+      {
+        code: `import { create } from '../firebaseCloud/transaction/create';
+
+let busy = false;
+
+export const run = async (id: string) => {
+  const handle = create(id);
+  if (busy) {
+    return null;
+  }
+  busy = true;
+  return handle;
+};`,
+        filename: 'src/hooks/useRun.ts',
+        errors: [error('../firebaseCloud/transaction/create')],
+        output: null,
+      },
+      // An immediately invoked closure as the test: the walk is handed the
+      // CALL, whose callee it cuts as a child, so the boundary landing on the
+      // handed node leaves this spelling exactly where it was
+      {
+        code: `import { create } from '../firebaseCloud/transaction/create';
+
+let busy = false;
+
+export const run = async (id: string) => {
+  const handle = create(id);
+  if ((() => busy)()) {
+    busy = true;
+  }
+  return handle;
+};`,
+        filename: 'src/hooks/useRun.ts',
+        errors: [error('../firebaseCloud/transaction/create')],
+        output: `
+let busy = false;
+
+export const run = async (id: string) => {
+  const { create } = await import('../firebaseCloud/transaction/create');
+  const handle = create(id);
+  if ((() => busy)()) {
+    busy = true;
+  }
+  return handle;
+};`,
+      },
     ],
   },
 );
