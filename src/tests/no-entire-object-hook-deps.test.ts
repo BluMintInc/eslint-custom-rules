@@ -2517,6 +2517,126 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
       errors: [removeUnused('hydrated')],
       output: null,
     },
+    // Issue #2210: TWO hooks list the same unread dependency. Each entry alone
+    // looks survivable — the other array entry reads the binding — so a check
+    // scoped to one report's own range lets both fixes through, and the pair
+    // applies in a single pass and strands `const hydrated = useHydrated();`
+    // anyway. Reads that are themselves dependency entries therefore do not
+    // count as survivors.
+    {
+      code: `
+    const EventEndedText = ({ endDate }) => {
+      const hydrated = useHydrated();
+      const label = useMemo(() => formatRelative({ date: toValidDate(endDate) }), [endDate, hydrated]);
+      const tone = useCallback(() => toneFor(endDate), [endDate, hydrated]);
+      return <span className={tone()}>{label}</span>;
+    };
+  `,
+      errors: [removeUnused('hydrated'), removeUnused('hydrated')],
+      output: null,
+    },
+    // The widened check still keys on a surviving READER: the same two-hook
+    // shape with one in-body read of `hydrated` keeps its autofix on BOTH
+    // entries, because the declaration retains a consumer afterwards.
+    {
+      code: `
+        const EventEndedText = ({ endDate }) => {
+          const hydrated = useHydrated();
+          const label = useMemo(() => formatRelative({ date: toValidDate(endDate) }), [endDate, hydrated]);
+          const tone = useCallback(() => toneFor(endDate), [endDate, hydrated]);
+          return <span className={tone()} data-ready={hydrated}>{label}</span>;
+        };
+      `,
+      errors: [removeUnused('hydrated'), removeUnused('hydrated')],
+      output: `
+        const EventEndedText = ({ endDate }) => {
+          const hydrated = useHydrated();
+          const label = useMemo(() => formatRelative({ date: toValidDate(endDate) }), [endDate]);
+          const tone = useCallback(() => toneFor(endDate), [endDate]);
+          return <span className={tone()} data-ready={hydrated}>{label}</span>;
+        };
+      `,
+    },
+    // Only a HOOK's dependency array is discounted as a reader. An array
+    // literal handed to anything else is an ordinary read, so the entries stay
+    // fixable — the discount cannot spread to every array in the file.
+    {
+      code: `
+        const EventEndedText = ({ endDate }) => {
+          const hydrated = useHydrated();
+          const flags = useReadyFlags([hydrated]);
+          const label = useMemo(() => formatRelative({ date: toValidDate(endDate) }), [endDate, hydrated]);
+          return <span data-flags={flags}>{label}</span>;
+        };
+      `,
+      errors: [removeUnused('hydrated')],
+      output: `
+        const EventEndedText = ({ endDate }) => {
+          const hydrated = useHydrated();
+          const flags = useReadyFlags([hydrated]);
+          const label = useMemo(() => formatRelative({ date: toValidDate(endDate) }), [endDate]);
+          return <span data-flags={flags}>{label}</span>;
+        };
+      `,
+    },
+    // A PARAMETER listed by two hooks and read nowhere else keeps both
+    // autofixes. Neither instrument that motivates the check flags an unread
+    // parameter, so declining would cost two fixes without preventing a
+    // breakage.
+    {
+      code: `
+        const EventEndedText = ({ endDate, hydrated }) => {
+          const label = useMemo(() => formatRelative({ date: toValidDate(endDate) }), [endDate, hydrated]);
+          const tone = useCallback(() => toneFor(endDate), [endDate, hydrated]);
+          return <span className={tone()}>{label}</span>;
+        };
+      `,
+      errors: [removeUnused('hydrated'), removeUnused('hydrated')],
+      output: `
+        const EventEndedText = ({ endDate, hydrated }) => {
+          const label = useMemo(() => formatRelative({ date: toValidDate(endDate) }), [endDate]);
+          const tone = useCallback(() => toneFor(endDate), [endDate]);
+          return <span className={tone()}>{label}</span>;
+        };
+      `,
+    },
+    // Shadowing under the two-hook shape: both entries resolve to the INNER
+    // `hydrated`, whose only reads are those entries. The OUTER binding of the
+    // same name has an ordinary reader, so a check keyed on the NAME would
+    // count it as a survivor and rewrite both arrays anyway.
+    {
+      code: `
+        const hydrated = globalHydrated;
+        export const readOuter = () => hydrated;
+        const EventEndedText = ({ endDate }) => {
+          const hydrated = useHydrated();
+          const label = useMemo(() => formatRelative({ date: toValidDate(endDate) }), [endDate, hydrated]);
+          const tone = useCallback(() => toneFor(endDate), [endDate, hydrated]);
+          return <span className={tone()}>{label}</span>;
+        };
+      `,
+      errors: [removeUnused('hydrated'), removeUnused('hydrated')],
+      output: null,
+    },
+    // The inverse shadowing arm: the OUTER binding is read only by dependency
+    // arrays while an inner binding of the same name carries the ordinary
+    // reads. Resolving by identifier NODE keeps the inner reads out of the
+    // outer's survivor set, so the outer's entries are declined.
+    {
+      code: `
+        const hydrated = globalHydrated;
+        const EventEndedText = ({ endDate }) => {
+          const label = useMemo(() => formatRelative({ date: toValidDate(endDate) }), [endDate, hydrated]);
+          return <span>{label}</span>;
+        };
+        export const OtherText = ({ endDate }) => {
+          const hydrated = useHydrated();
+          return <span data-ready={hydrated}>{endDate}</span>;
+        };
+      `,
+      errors: [removeUnused('hydrated')],
+      output: null,
+    },
     // A disable directive naming a different rule says nothing about the
     // dependency array.
     {

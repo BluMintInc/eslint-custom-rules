@@ -1559,19 +1559,66 @@ export const noEntireObjectHookDeps = createRule<[], MessageIds>({
     }
 
     /**
-     * Whether deleting `element` from the dependency array would leave its
-     * binding with no reader left in the file.
+     * Every identifier that a hook dependency array holds as an entry.
      *
-     * why: a value declared and then read ONLY inside a dependency array is by
+     * why: an entry is a recompute trigger rather than a consumer of the value,
+     * so it cannot keep a declaration alive once the entries are pruned. The
+     * set is built from the rule's own notion of a dependency array — the last
+     * argument of a hook call — so it can never disagree with what the fixer
+     * edits. Keying on the identifier NODE, rather than on ancestry walked from
+     * a reference, keeps the answer available for entries the traversal has not
+     * reached yet, which is precisely the later-hook entry that #2210 turns on.
+     */
+    let dependencyEntryIdentifiers: Set<TSESTree.Node> | null = null;
+
+    function collectDependencyEntryIdentifiers(): Set<TSESTree.Node> {
+      if (dependencyEntryIdentifiers) {
+        return dependencyEntryIdentifiers;
+      }
+
+      const entries = new Set<TSESTree.Node>();
+      const visit = (node: TSESTree.Node): void => {
+        if (node.type === AST_NODE_TYPES.CallExpression && isHookCall(node)) {
+          const deps = node.arguments[node.arguments.length - 1];
+          if (deps && deps.type === AST_NODE_TYPES.ArrayExpression) {
+            for (const entry of deps.elements) {
+              if (entry) entries.add(unwrapExpression(entry));
+            }
+          }
+        }
+        forEachChildNode(node, visit);
+      };
+      visit(sourceCode.ast as TSESTree.Node);
+
+      dependencyEntryIdentifiers = entries;
+      return entries;
+    }
+
+    /**
+     * Whether removing `element`'s binding from every dependency array that
+     * lists it would leave the binding with no reader in the file.
+     *
+     * why: a value declared and then read ONLY inside dependency arrays is by
      * construction load-bearing — the declaration would be pointless otherwise
-     * — so removing the entry both discards a deliberate recompute trigger and
-     * strands the declaration. The consumer runs `no-unused-vars` as an error
-     * and builds with `noUnusedLocals`, so the rewrite turns a green file red
-     * on their machine while staying green here. Every sibling instance of this
-     * class was fixed by deleting the stranded declaration too, but that remedy
-     * is unavailable here: the declaration is a hook CALL, and dropping it
-     * changes the component's hook order. Declining the edit is the only safe
-     * remedy, so the report stands and the autofix steps aside.
+     * — so removing any one entry discards a deliberate recompute trigger, and
+     * removing all of them strands the declaration. The consumer runs
+     * `no-unused-vars` as an error and builds with `noUnusedLocals`, so the
+     * rewrite turns a green file red on their machine while staying green here.
+     * Every sibling instance of this class was fixed by deleting the stranded
+     * declaration too, but that remedy is unavailable here: the declaration is
+     * a hook CALL, and dropping it changes the component's hook order.
+     * Declining the edit is the only safe remedy, so the report stands and the
+     * autofix steps aside.
+     *
+     * The verdict deliberately ignores which entry is under repair. A test
+     * scoped to one report's own range calls a sibling array's entry a
+     * survivor, and when two hooks list the same unread dependency both reports
+     * reach that conclusion, both fixes apply in one pass, and the binding is
+     * stranded after all (#2210). Discounting every entry instead gates on a
+     * property this fixer owns: no other fixer can manufacture a
+     * non-dependency read, so no sibling edit can move the answer. The
+     * inference is safe in the conservative direction — if a sibling report is
+     * suppressed the cost is a withheld fix, never a dangling reference.
      *
      * Parameters are deliberately exempt. An unread parameter is not an unused
      * BINDING to either instrument — `no-unused-vars` runs with `args: 'none'`
@@ -1593,15 +1640,15 @@ export const noEntireObjectHookDeps = createRule<[], MessageIds>({
         return false;
       }
 
-      const [start, end] = element.range!;
+      const entries = collectDependencyEntryIdentifiers();
       // why: a declarator's own initializer counts as a WRITE reference, so a
       // survivor test that accepts any reference never fires for `const x = …`
       // — the shape this check exists for (#1868 is the same trap).
-      return !variable.references.some((reference) => {
-        if (!reference.isRead()) return false;
-        const [from, to] = reference.identifier.range!;
-        return from < start || to > end;
-      });
+      return !variable.references.some(
+        (reference) =>
+          reference.isRead() &&
+          !entries.has(reference.identifier as TSESTree.Node),
+      );
     }
 
     // why: scanning every comment once per file rather than once per hook call
