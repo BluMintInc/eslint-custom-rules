@@ -1529,6 +1529,81 @@ export const noEntireObjectHookDeps = createRule<[], MessageIds>({
 
     const sourceCode = context.getSourceCode();
 
+    /**
+     * The variable each reference resolves to, keyed by the referencing
+     * identifier NODE rather than by name.
+     *
+     * why: identity keying is what makes the orphan check below immune to
+     * shadowing — a name lookup would resolve an inner `hydrated` against an
+     * outer binding of the same name and read its uses as survivors.
+     */
+    let variableByReference: Map<
+      TSESTree.Node,
+      TSESLint.Scope.Variable
+    > | null = null;
+
+    function resolveBinding(
+      identifier: TSESTree.Node,
+    ): TSESLint.Scope.Variable | null {
+      if (!variableByReference) {
+        variableByReference = new Map();
+        for (const scope of sourceCode.scopeManager?.scopes ?? []) {
+          for (const variable of scope.variables) {
+            for (const reference of variable.references) {
+              variableByReference.set(reference.identifier, variable);
+            }
+          }
+        }
+      }
+      return variableByReference.get(identifier) ?? null;
+    }
+
+    /**
+     * Whether deleting `element` from the dependency array would leave its
+     * binding with no reader left in the file.
+     *
+     * why: a value declared and then read ONLY inside a dependency array is by
+     * construction load-bearing — the declaration would be pointless otherwise
+     * — so removing the entry both discards a deliberate recompute trigger and
+     * strands the declaration. The consumer runs `no-unused-vars` as an error
+     * and builds with `noUnusedLocals`, so the rewrite turns a green file red
+     * on their machine while staying green here. Every sibling instance of this
+     * class was fixed by deleting the stranded declaration too, but that remedy
+     * is unavailable here: the declaration is a hook CALL, and dropping it
+     * changes the component's hook order. Declining the edit is the only safe
+     * remedy, so the report stands and the autofix steps aside.
+     *
+     * Parameters are deliberately exempt. An unread parameter is not an unused
+     * BINDING to either instrument — `no-unused-vars` runs with `args: 'none'`
+     * and `noUnusedLocals` does not cover parameters — so declining there would
+     * withhold a fix without preventing any breakage, and it would silently
+     * settle the reporting question #1621 defers.
+     */
+    function wouldStrandBinding(element: TSESTree.Node): boolean {
+      const identifier = unwrapExpression(element);
+      if (identifier.type !== AST_NODE_TYPES.Identifier) return false;
+
+      const variable = resolveBinding(identifier);
+      if (!variable || variable.defs.length === 0) return false;
+      if (
+        variable.defs.some(
+          (def) => def.type === ('Parameter' as typeof def.type),
+        )
+      ) {
+        return false;
+      }
+
+      const [start, end] = element.range!;
+      // why: a declarator's own initializer counts as a WRITE reference, so a
+      // survivor test that accepts any reference never fires for `const x = …`
+      // — the shape this check exists for (#1868 is the same trap).
+      return !variable.references.some((reference) => {
+        if (!reference.isRead()) return false;
+        const [from, to] = reference.identifier.range!;
+        return from < start || to > end;
+      });
+    }
+
     // why: scanning every comment once per file rather than once per hook call
     // keeps the check off the hot path of files with many hooks.
     let manuallyManagedLines: Set<number> | null = null;
@@ -1684,6 +1759,11 @@ export const noEntireObjectHookDeps = createRule<[], MessageIds>({
                   const elementIndex = depsArg.elements.indexOf(element);
 
                   if (elementIndex === -1) return null;
+
+                  // The report stands either way; only the rewrite is withheld.
+                  if (wouldStrandBinding(element as TSESTree.Node)) {
+                    return null;
+                  }
 
                   // If this is the only element, just remove it
                   if (depsArg.elements.length === 1) {

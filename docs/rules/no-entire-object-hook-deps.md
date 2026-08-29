@@ -252,6 +252,7 @@ function useScrollReset({
 - Removes dependencies you keep in a `useMemo`/`useCallback` array but never use.
 - Removes an unread `useEffect` dependency only when the effect also calls its corresponding setter, so deliberate re-run triggers survive `--fix`.
 - Never removes an entry from an array you manage by hand with a `react-hooks/exhaustive-deps` suppression, on any of the three hooks.
+- Reports but does not rewrite when the entry is the only thing left reading its binding. A value declared and then read only inside a dependency array is load-bearing by construction — the declaration would be pointless otherwise — so removing the entry would both discard a deliberate recompute trigger and strand the declaration, which `no-unused-vars` and `noUnusedLocals` then flag. Deleting the declaration alongside it is not an option when it is a hook call, since that changes the component's hook order, so the fix steps aside and leaves the choice to you. A parameter is exempt: neither check flags an unread one, so those entries are still removed.
 - Never narrows a dependency read only through `.current`, so `--fix` cannot emit the `[ref.current]` array that `react-hooks/exhaustive-deps` rejects.
 - Keeps every comment standing between two dependencies. Removing an entry removes its separator too, so the edit reaches the neighbouring entry — but a note in that gap may document the dependency you are keeping, or suppress another rule for it, so each one is re-emitted on a line of its own instead of being deleted with the entry.
 
