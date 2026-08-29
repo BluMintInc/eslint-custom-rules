@@ -3383,5 +3383,253 @@ const Component = ({ ids, user }: { ids: Set<string>; user: { id: string; name: 
 };
 `,
     },
+    // Issue #2208: removing a dependency also removes its separator, so the
+    // deleted span reaches a NEIGHBOURING element and covers the margin
+    // between the two. Every comment standing in that margin has to survive —
+    // it may document the dependency that is being kept, or suppress another
+    // rule for it.
+    {
+      code: `
+        const MyComponent = ({ value, trigger }) => {
+          const result = useMemo(() => {
+            return value * 2;
+          }, [
+            trigger,
+            // value drives the memo and must stay listed
+            value,
+          ]);
+          return <div>{result}</div>;
+        };
+      `,
+      errors: [removeUnused('trigger')],
+      output: `
+        const MyComponent = ({ value, trigger }) => {
+          const result = useMemo(() => {
+            return value * 2;
+          }, [
+            // value drives the memo and must stay listed
+            value,
+          ]);
+          return <div>{result}</div>;
+        };
+      `,
+    },
+    // The comment sits before the LAST dependency, so the removed span runs
+    // backwards from the previous element instead of forwards.
+    {
+      code: `
+        const MyComponent = ({ value, trigger }) => {
+          const result = useMemo(() => {
+            return value * 2;
+          }, [
+            value,
+            // kept for the migration window
+            trigger,
+          ]);
+          return <div>{result}</div>;
+        };
+      `,
+      errors: [removeUnused('trigger')],
+      output: `
+        const MyComponent = ({ value, trigger }) => {
+          const result = useMemo(() => {
+            return value * 2;
+          }, [
+            value
+            // kept for the migration window
+            ,
+          ]);
+          return <div>{result}</div>;
+        };
+      `,
+    },
+    // A block comment carries the same way a line comment does.
+    {
+      code: `
+        const MyComponent = ({ value, trigger }) => {
+          const result = useMemo(() => {
+            return value * 2;
+          }, [
+            trigger,
+            /* value drives the memo */
+            value,
+          ]);
+          return <div>{result}</div>;
+        };
+      `,
+      errors: [removeUnused('trigger')],
+      output: `
+        const MyComponent = ({ value, trigger }) => {
+          const result = useMemo(() => {
+            return value * 2;
+          }, [
+            /* value drives the memo */
+            value,
+          ]);
+          return <div>{result}</div>;
+        };
+      `,
+    },
+    // Several comments in one margin each keep a line of their own: a `//`
+    // comment swallows the rest of its line, so folding them together would
+    // comment out the dependency that survives.
+    {
+      code: `
+        const MyComponent = ({ value, trigger }) => {
+          const result = useMemo(() => {
+            return value * 2;
+          }, [
+            trigger,
+            // first note
+            // second note
+            value,
+          ]);
+          return <div>{result}</div>;
+        };
+      `,
+      errors: [removeUnused('trigger')],
+      output: `
+        const MyComponent = ({ value, trigger }) => {
+          const result = useMemo(() => {
+            return value * 2;
+          }, [
+            // first note
+            // second note
+            value,
+          ]);
+          return <div>{result}</div>;
+        };
+      `,
+    },
+    // A comment trailing the removed dependency on its own line is in the
+    // margin too, so it is carried rather than dropped.
+    {
+      code: `
+        const MyComponent = ({ value, trigger }) => {
+          const result = useMemo(() => {
+            return value * 2;
+          }, [
+            trigger, // trigger is inert here
+            value,
+          ]);
+          return <div>{result}</div>;
+        };
+      `,
+      errors: [removeUnused('trigger')],
+      output: `
+        const MyComponent = ({ value, trigger }) => {
+          const result = useMemo(() => {
+            return value * 2;
+          }, [
+            // trigger is inert here
+            value,
+          ]);
+          return <div>{result}</div>;
+        };
+      `,
+    },
   ]),
+});
+
+// Issue #2208: the sharp edge of a comment lost from the removal margin is a
+// disable directive — deleting one silently re-enables the rule it protected.
+// This runs on a private `Linter` rather than the shared RuleTester because the
+// directive has to name a rule OTHER than `react-hooks/exhaustive-deps`: that
+// one name makes the rule skip the hook entirely (`hasManuallyManagedDeps`),
+// so it cannot witness the fixer at all.
+describe('no-entire-object-hook-deps carries margin comments (issue #2208)', () => {
+  const buildLinter = () => {
+    const linter = new Linter();
+    linter.defineParser('@typescript-eslint/parser', tsParser as never);
+    linter.defineRule('local/neohd', noEntireObjectHookDeps as never);
+    // Stands in for any rule a developer suppresses on a single dependency.
+    linter.defineRule('local/flag', {
+      meta: { type: 'problem', schema: [], messages: { m: 'flagged' } },
+      create: (ctx: never) => ({
+        'ArrayExpression > Identifier'(node: { name: string }) {
+          if (node.name === 'value') {
+            (ctx as unknown as { report: (d: unknown) => void }).report({
+              node,
+              messageId: 'm',
+            });
+          }
+        },
+      }),
+    } as never);
+    return linter;
+  };
+
+  const config = {
+    parser: '@typescript-eslint/parser',
+    parserOptions: {
+      ecmaVersion: 2020 as const,
+      sourceType: 'module' as const,
+      ecmaFeatures: { jsx: true },
+    },
+    rules: { 'local/neohd': 'error' as const, 'local/flag': 'error' as const },
+  };
+
+  const withDirectiveInMargin = `
+const useThing = (value, trigger) => {
+  return useMemo(() => value * 2, [
+    trigger,
+    // eslint-disable-next-line local/flag
+    value,
+  ]);
+};
+`;
+
+  it('keeps a disable directive that protects the surviving dependency', () => {
+    const linter = buildLinter();
+    const before = linter.verify(withDirectiveInMargin, config, 'a.tsx');
+    const { output } = linter.verifyAndFix(
+      withDirectiveInMargin,
+      config,
+      'a.tsx',
+    );
+    const after = linter.verify(output, config, 'a.tsx');
+
+    // The fixer must have actually fired, or this asserts nothing.
+    expect(
+      before.filter((message) => message.ruleId === 'local/neohd'),
+    ).toHaveLength(1);
+    expect(output).not.toBe(withDirectiveInMargin);
+    expect(output).toContain('eslint-disable-next-line local/flag');
+
+    // The directive still suppresses: un-suppression would show up as 0 -> 1.
+    expect(
+      before.filter((message) => message.ruleId === 'local/flag'),
+    ).toHaveLength(0);
+    expect(
+      after.filter((message) => message.ruleId === 'local/flag'),
+    ).toHaveLength(0);
+  });
+
+  it('leaves a directive outside the removal span untouched (control)', () => {
+    const linter = buildLinter();
+    const outsideSpan = `
+const useThing = (value, trigger) => {
+  return useMemo(() => value * 2, [
+    trigger,
+    value,
+    // eslint-disable-next-line local/flag
+  ]);
+};
+`;
+    const { output } = linter.verifyAndFix(outsideSpan, config, 'a.tsx');
+    expect(output).toContain('eslint-disable-next-line local/flag');
+  });
+
+  it('drops the dependency and its separator when no comment is in the way', () => {
+    const linter = buildLinter();
+    const plain = `
+const useThing = (value, trigger) => {
+  return useMemo(() => value * 2, [trigger, value]);
+};
+`;
+    const { output } = linter.verifyAndFix(plain, config, 'a.tsx');
+    // Negative control for the carrier: with nothing to preserve the output is
+    // the plain removal, so carrying cannot be leaving debris behind.
+    expect(output).toContain('[value]');
+  });
 });
