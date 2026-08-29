@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.191",
+    "date": "2026-08-29T19:38:08.123Z",
+    "rules": [
+      {
+        "name": "no-entire-object-hook-deps",
+        "changeType": "fix",
+        "issues": [
+          2210
+        ],
+        "summary": "discount every dependency entry from the strand check (closes #2210)"
+      }
+    ]
+  },
+  {
     "version": "1.20.190",
     "date": "2026-08-29T13:41:20.482Z",
     "rules": [

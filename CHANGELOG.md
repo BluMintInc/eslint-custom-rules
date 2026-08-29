@@ -1,3 +1,10 @@
+## [1.20.191](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.190...v1.20.191) (2026-08-29)
+
+
+### Bug Fixes
+
+* **no-entire-object-hook-deps:** discount every dependency entry from the strand check (closes [#2210](https://github.com/BluMintInc/eslint-custom-rules/issues/2210)) ([1bfbb7c](https://github.com/BluMintInc/eslint-custom-rules/commit/1bfbb7cadda84d34e72dc84f542e69efe6419604)), closes [#2209](https://github.com/BluMintInc/eslint-custom-rules/issues/2209) [#1649](https://github.com/BluMintInc/eslint-custom-rules/issues/1649)
+
 ## [1.20.190](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.189...v1.20.190) (2026-08-29)
 
 
