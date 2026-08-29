@@ -1,3 +1,10 @@
+## [1.20.190](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.189...v1.20.190) (2026-08-29)
+
+
+### Bug Fixes
+
+* **no-entire-object-hook-deps:** decline a removal that strands its binding (closes [#2209](https://github.com/BluMintInc/eslint-custom-rules/issues/2209)) ([e76e2e9](https://github.com/BluMintInc/eslint-custom-rules/commit/e76e2e9fbdd6c488ba4dc745d73fad2eaa20b23f)), closes [#1621](https://github.com/BluMintInc/eslint-custom-rules/issues/1621)
+
 ## [1.20.189](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.188...v1.20.189) (2026-08-29)
 
 

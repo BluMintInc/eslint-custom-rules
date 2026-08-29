@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.190",
+    "date": "2026-08-29T13:41:20.482Z",
+    "rules": [
+      {
+        "name": "no-entire-object-hook-deps",
+        "changeType": "fix",
+        "issues": [
+          2209
+        ],
+        "summary": "decline a removal that strands its binding (closes #2209)"
+      }
+    ]
+  },
+  {
     "version": "1.20.189",
     "date": "2026-08-29T11:57:05.586Z",
     "rules": [
