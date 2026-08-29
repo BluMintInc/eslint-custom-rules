@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.188",
+    "date": "2026-08-29T07:11:55.294Z",
+    "rules": [
+      {
+        "name": "require-memo",
+        "changeType": "fix",
+        "issues": [
+          2207
+        ],
+        "summary": "anchor the memo import on the nearest src, not the first (closes #2207)"
+      }
+    ]
+  },
+  {
     "version": "1.20.187",
     "date": "2026-08-28T10:18:26.589Z",
     "rules": [

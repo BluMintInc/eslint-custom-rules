@@ -1,3 +1,10 @@
+## [1.20.188](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.187...v1.20.188) (2026-08-29)
+
+
+### Bug Fixes
+
+* **require-memo:** anchor the memo import on the nearest src, not the first (closes [#2207](https://github.com/BluMintInc/eslint-custom-rules/issues/2207)) ([f4895bb](https://github.com/BluMintInc/eslint-custom-rules/commit/f4895bb884122cfb887374b79e21126336cbfe83))
+
 ## [1.20.187](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.186...v1.20.187) (2026-08-28)
 
 
