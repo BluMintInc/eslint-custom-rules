@@ -1,3 +1,10 @@
+## [1.20.189](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.188...v1.20.189) (2026-08-29)
+
+
+### Bug Fixes
+
+* **no-entire-object-hook-deps:** carry comments in the removed dep's margin (closes [#2208](https://github.com/BluMintInc/eslint-custom-rules/issues/2208)) ([cbe099d](https://github.com/BluMintInc/eslint-custom-rules/commit/cbe099d3c21c1700ada8dfe9c763f4c97f1c6fef)), closes [#1877](https://github.com/BluMintInc/eslint-custom-rules/issues/1877)
+
 ## [1.20.188](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.187...v1.20.188) (2026-08-29)
 
 

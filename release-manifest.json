@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.189",
+    "date": "2026-08-29T11:57:05.586Z",
+    "rules": [
+      {
+        "name": "no-entire-object-hook-deps",
+        "changeType": "fix",
+        "issues": [
+          2208
+        ],
+        "summary": "carry comments in the removed dep's margin (closes #2208)"
+      }
+    ]
+  },
+  {
     "version": "1.20.188",
     "date": "2026-08-29T07:11:55.294Z",
     "rules": [
