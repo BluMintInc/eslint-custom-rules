@@ -536,7 +536,23 @@ function compareCase(rule: string, tc: InvalidCase, into: Finding[]): void {
     stats.skippedFatal++;
     return;
   }
-  if (base.length === 0) return;
+  /**
+   * Perturbation sites come from THIS fixer's OWN reports.
+   *
+   * why: `verify` also returns ESLint's own `Definition for rule … was not
+   * found` row when a fixture carries a directive naming a rule this bare
+   * `Linter` never registered, and that row is located ON the directive
+   * comment. Appending a marker there rewrites the directive's rule list, and
+   * inserting a line above it separates the directive from the line it
+   * suppresses — neither of which the token-signature proof can see, because
+   * comments are not tokens. The fixture is then re-linted with its suppression
+   * silently withdrawn and the resulting transform reads as a fidelity defect
+   * of the fixer. Filtering by `ruleId` first is the same discipline
+   * `composed-fix-core-violation-closure` applies to its counters, and for the
+   * same reason: a rule-not-found row reads as both silence and inflation.
+   */
+  const reports = base.filter((message) => message.ruleId === PREFIX + rule);
+  if (reports.length === 0) return;
   stats.reported++;
 
   const baseFix = fixOf(tc.code, solo, tc);
@@ -550,7 +566,7 @@ function compareCase(rule: string, tc: InvalidCase, into: Finding[]): void {
   if (baseSignature === null) return;
   if (baseFix.fixed) stats.baselineFixed++;
 
-  const variants = buildVariants(tc, signature, base);
+  const variants = buildVariants(tc, signature, reports);
 
   for (const variant of variants) {
     const variantFix = fixOf(variant.text, solo, tc);
@@ -635,11 +651,13 @@ function compareSuggestions(
     stats.skippedFatalSuggestion++;
     return;
   }
-  if (base.length === 0) return;
+  // Sites are this rule's own reports; see the note in `compareCase`.
+  const reports = base.filter((message) => message.ruleId === id);
+  if (reports.length === 0) return;
   const baseEdits = suggestionEditsOf(tc.code, base, id);
   if (baseEdits.length === 0) return;
 
-  for (const variant of buildVariants(tc, signature, base)) {
+  for (const variant of buildVariants(tc, signature, reports)) {
     const variantMessages = verify(variant.text, solo, tc);
     if (!variantMessages) continue;
     const variantEdits = suggestionEditsOf(variant.text, variantMessages, id);

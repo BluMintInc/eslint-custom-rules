@@ -69,19 +69,30 @@ const plugin = require('../index') as {
 const PREFIX = '@blumintinc/blumint/';
 
 /**
- * One rule is discounted BY NAME, at this guard's own level, exactly as
- * `fix-closure-core-rules` and `fix-orphan-binding-closure` do and for the same
- * measured reason: with no program every dependency reads as `unknown`-typed, so
- * `no-entire-object-hook-deps` deletes deps it would leave alone in a consumer's
- * CI (#1621), and anything downstream of those deletions is an artefact of the
- * missing program rather than of the fixer.
+ * EMPTY, and kept as the place an exclusion must be written.
  *
- * It is NOT added to `silentWithoutProgramRuleNames` — that set means "reports
- * nothing here", and this rule reports too MUCH — and it is one name rather than
- * all 16 rules mentioning `getParserServices`, because discounting one measured
- * divergence never justified unprobing fifteen others (#1879).
+ * Its one entry was `no-entire-object-hook-deps`, discounted because with no
+ * program every dependency reads as `unknown`-typed, so the rule reports and
+ * deletes deps a consumer's CI would leave alone (#1621). That rationale is
+ * about which dependencies get REPORTED. What this guard asks is what the fixer
+ * then WRITES, which is range arithmetic and entirely syntactic — so the
+ * exclusion was broader than its own reason, and no oracle had ever been
+ * pointed at the hole it left. Three defects came out of it once one was:
+ * #2208, a removal span anchored on a neighbouring element that swallowed the
+ * comment between them; #2209 and #2210, a removal that stranded its binding.
+ *
+ * Dropping the name is MEASURED, not asserted: with the rule composed here the
+ * suite is green, and it is driven non-vacuously rather than merely admitted.
+ * The #1621 divergence itself is untouched and still real; it simply never
+ * showed up as the thing this guard asks about.
+ *
+ * An entry here is one NAME rather than all 16 rules mentioning
+ * `getParserServices` — discounting one measured divergence never justified
+ * unprobing fifteen others (#1879) — and never belongs in
+ * `silentWithoutProgramRuleNames`, which means "reports nothing here", nor at
+ * rule-global scope, which un-gates every other arm at once (#1839).
  */
-const DIVERGENT_WITHOUT_PROGRAM = new Set(['no-entire-object-hook-deps']);
+const DIVERGENT_WITHOUT_PROGRAM = new Set([]);
 
 const linter = new Linter();
 defineCorpusParsers(linter);
@@ -204,7 +215,9 @@ function classifyCoreViolations(
     fatal: false,
     introduced,
     messages: after
-      .filter((message) => message.ruleId && introduced.includes(message.ruleId))
+      .filter(
+        (message) => message.ruleId && introduced.includes(message.ruleId),
+      )
       .map((message) => `${message.ruleId}: ${message.message}`),
   };
 }

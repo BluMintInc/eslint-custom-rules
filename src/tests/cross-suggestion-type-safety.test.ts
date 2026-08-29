@@ -865,14 +865,30 @@ for (const control of CONTROLS) {
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
 /**
- * A rule whose behaviour under a bare `Linter` diverges from production, named
- * individually rather than by dropping the whole `typeAwareRuleNames` set: a
- * rule-global exclusion un-gates every other arm the rule participates in
- * (#1839). `no-entire-object-hook-deps` needs cross-FILE symbol resolution to
- * decide what a hook dependency reads, which an isolated single-file program
- * cannot supply, so what it emits here is not what it emits in a consumer.
+ * EMPTY, and kept as the place an exclusion must be written.
+ *
+ * Its one entry was `no-entire-object-hook-deps`, discounted because with no
+ * program every dependency reads as `unknown`-typed, so the rule reports and
+ * deletes deps a consumer's CI would leave alone (#1621). That rationale is
+ * about which dependencies get REPORTED. What this guard asks is what the fixer
+ * then WRITES, which is range arithmetic and entirely syntactic — so the
+ * exclusion was broader than its own reason, and no oracle had ever been
+ * pointed at the hole it left. Three defects came out of it once one was:
+ * #2208, a removal span anchored on a neighbouring element that swallowed the
+ * comment between them; #2209 and #2210, a removal that stranded its binding.
+ *
+ * Dropping the name is MEASURED, not asserted: with the rule composed here the
+ * suite is green, and it is driven non-vacuously rather than merely admitted.
+ * The #1621 divergence itself is untouched and still real; it simply never
+ * showed up as the thing this guard asks about.
+ *
+ * An entry here is one NAME rather than all 16 rules mentioning
+ * `getParserServices` — discounting one measured divergence never justified
+ * unprobing fifteen others (#1879) — and never belongs in
+ * `silentWithoutProgramRuleNames`, which means "reports nothing here", nor at
+ * rule-global scope, which un-gates every other arm at once (#1839).
  */
-const DIVERGENT_WITHOUT_PROGRAM = new Set(['no-entire-object-hook-deps']);
+const DIVERGENT_WITHOUT_PROGRAM = new Set([]);
 
 /**
  * The screening config: the shipped recommended set. Screening with it, rather

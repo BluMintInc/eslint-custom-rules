@@ -52,10 +52,12 @@ const PREFIX = '@blumintinc/blumint/';
  *
  * The #1621 divergence itself is untouched and still real; it simply never
  * showed up as a CORE violation, which is the only question this guard asks.
- * The nine cross-corpus guards that discount the same rule ask different
- * questions and keep their own entries — a rule-global exemption would un-gate
- * every arm at once (#1839), and discounting one divergence never justified
- * unprobing the other fifteen `getParserServices` rules (#1879).
+ * The nine cross-corpus guards that discounted the same rule emptied their own
+ * entries the same way and for the same kind of reason: each asks what the
+ * fixer WRITES, which the #1621 reporting divergence does not speak to. Scope
+ * stays per-guard rather than rule-global, since a rule-global exemption
+ * un-gates every arm at once (#1839), and discounting one divergence never
+ * justified unprobing the other fifteen `getParserServices` rules (#1879).
  *
  * An entry here is MEASURED, not asserted: `discounts only rules that still
  * diverge` puts the rule back and requires a fixture to go red, so an exemption
@@ -315,7 +317,8 @@ describe('the recommended config is closed under its own autofixes (core rules)'
             context.report({
               node,
               message: 'plant',
-              fix: (fixer) => fixer.insertTextAfter(node, '\nconst plantedOrphan = 1;\n'),
+              fix: (fixer) =>
+                fixer.insertTextAfter(node, '\nconst plantedOrphan = 1;\n'),
             });
           },
         };
