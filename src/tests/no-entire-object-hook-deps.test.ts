@@ -2432,8 +2432,10 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
     },
-    // Issue #1547: the agora shape WITHOUT a disable comment still reports and
-    // still autofixes — the exemption is not a blanket off-switch.
+    // Issue #1547: the agora shape WITHOUT a disable comment still REPORTS —
+    // the exemption is not a blanket off-switch. The autofix is withheld
+    // because `hydrated` has no other reader, so deleting the entry would
+    // strand `const hydrated = useHydrated();` and red the consumer's build.
     {
       code: `
         const EventEndedText = ({ endDate }) => {
@@ -2443,13 +2445,77 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
       errors: [removeUnused('hydrated')],
+      output: null,
+    },
+    // The stranding check is keyed on a surviving READER, not on any reference:
+    // the same shape with one in-body read of `hydrated` elsewhere keeps its
+    // autofix, because the declaration still has a consumer afterwards.
+    {
+      code: `
+        const EventEndedText = ({ endDate }) => {
+          const hydrated = useHydrated();
+          const label = useMemo(() => formatRelative({ date: toValidDate(endDate) }), [endDate, hydrated]);
+          return <span data-ready={hydrated}>{label}</span>;
+        };
+      `,
+      errors: [removeUnused('hydrated')],
       output: `
         const EventEndedText = ({ endDate }) => {
           const hydrated = useHydrated();
           const label = useMemo(() => formatRelative({ date: toValidDate(endDate) }), [endDate]);
+          return <span data-ready={hydrated}>{label}</span>;
+        };
+      `,
+    },
+    // A PARAMETER read only by the array keeps its autofix. Neither instrument
+    // that motivates the check flags one — `no-unused-vars` runs `args: 'none'`
+    // and `noUnusedLocals` does not cover parameters — so withholding here
+    // would cost a fix without preventing a breakage, and would settle the
+    // reporting question #1621 defers.
+    {
+      code: `
+        const EventEndedText = ({ endDate, hydrated }) => {
+          const label = useMemo(() => formatRelative({ date: toValidDate(endDate) }), [endDate, hydrated]);
           return <span>{label}</span>;
         };
       `,
+      errors: [removeUnused('hydrated')],
+      output: `
+        const EventEndedText = ({ endDate, hydrated }) => {
+          const label = useMemo(() => formatRelative({ date: toValidDate(endDate) }), [endDate]);
+          return <span>{label}</span>;
+        };
+      `,
+    },
+    // An IMPORT read only by the array is stranded the same way a local is, and
+    // the import cannot be deleted alongside it either.
+    {
+      code: `
+        import { EPOCH } from './epoch';
+        const EventEndedText = ({ endDate }) => {
+          const label = useMemo(() => formatRelative({ date: toValidDate(endDate) }), [endDate, EPOCH]);
+          return <span>{label}</span>;
+        };
+      `,
+      errors: [removeUnused('EPOCH')],
+      output: null,
+    },
+    // Shadowing: the entry resolves to the INNER `hydrated`, which no reader
+    // survives. The OUTER binding of the same name is read twice, so a check
+    // keyed on the NAME would find those survivors and rewrite anyway — which
+    // is what makes this case discriminate rather than merely pass.
+    {
+      code: `
+        const hydrated = globalHydrated;
+        export const readOuter = () => hydrated;
+        const EventEndedText = ({ endDate }) => {
+          const hydrated = useHydrated();
+          const label = useMemo(() => formatRelative({ date: toValidDate(endDate) }), [endDate, hydrated]);
+          return <span>{label}</span>;
+        };
+      `,
+      errors: [removeUnused('hydrated')],
+      output: null,
     },
     // A disable directive naming a different rule says nothing about the
     // dependency array.

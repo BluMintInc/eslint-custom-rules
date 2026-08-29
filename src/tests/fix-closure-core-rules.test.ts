@@ -19,7 +19,7 @@
  * cannot express it. That is the dimension this file adds — the per-rule suites
  * already cover each fixer in isolation.
  */
-import { Linter } from 'eslint';
+import { Linter, Rule } from 'eslint';
 import * as tsParser from '@typescript-eslint/parser';
 import {
   silentWithoutProgramRuleNames,
@@ -36,31 +36,33 @@ const plugin = require('../index') as {
 const PREFIX = '@blumintinc/blumint/';
 
 /**
- * One rule is discounted BY NAME, at this guard's own level.
+ * Rules discounted BY NAME, at this guard's own level. The set is EMPTY, and
+ * that is an earned outcome rather than an oversight.
  *
- * `no-entire-object-hook-deps` is the concrete divergence: with no program every
- * dependency reads as `unknown`-typed, so it reports and auto-deletes deps it
- * would leave alone in a consumer's CI (the verdict flip tracked by #1621).
- * Including it makes the #1652 fixture fail for a reason that cannot happen in
- * production.
+ * Its one entry was `no-entire-object-hook-deps`, discounted because with no
+ * program every dependency reads as `unknown`-typed, so it reports and deletes
+ * deps a consumer's CI would leave alone (the verdict flip tracked by #1621).
  *
- * It is named here rather than added to `silentWithoutProgramRuleNames` because
- * that set means "reports NOTHING here" — this rule reports too MUCH — and
- * because a rule-global entry would un-gate every other arm the rule
- * participates in (#1839). It is a single name rather than all 16 rules
- * mentioning `getParserServices` because discounting one divergence never
- * justified unprobing fifteen others (#1879).
+ * What actually made a fixture go red was narrower than that reason. On the
+ * #1652 fixture a sibling fixer hoists `list?.length` into a `listHash`
+ * binding, and this rule then deleted that dependency — the last reference —
+ * leaving `'listHash' is assigned a value but never used`. #2209 taught the
+ * rule to decline a removal that strands its binding, so composing it now
+ * introduces nothing here, measured over all three fixtures.
  *
- * The entry is MEASURED, not asserted: `still needs to discount %s` below puts
- * the rule back and requires a fixture to go red, so if #1621 is settled this
- * exemption fails as stale instead of quietly outliving its reason.
+ * The #1621 divergence itself is untouched and still real; it simply never
+ * showed up as a CORE violation, which is the only question this guard asks.
+ * The nine cross-corpus guards that discount the same rule ask different
+ * questions and keep their own entries — a rule-global exemption would un-gate
+ * every arm at once (#1839), and discounting one divergence never justified
+ * unprobing the other fifteen `getParserServices` rules (#1879).
+ *
+ * An entry here is MEASURED, not asserted: `discounts only rules that still
+ * diverge` puts the rule back and requires a fixture to go red, so an exemption
+ * fails as stale rather than quietly outliving its reason. That is how this one
+ * came out.
  */
-const DIVERGENT_WITHOUT_PROGRAM = new Map<string, string>([
-  [
-    'no-entire-object-hook-deps',
-    'with no program every dependency reads as `unknown`-typed, so it deletes deps it would keep in a consumer CI (#1621)',
-  ],
-]);
+const DIVERGENT_WITHOUT_PROGRAM = new Map<string, string>([]);
 
 const RECOMMENDED: Record<string, unknown> = {};
 for (const [id, severity] of Object.entries(plugin.configs.recommended.rules)) {
@@ -270,23 +272,62 @@ describe('the recommended config is closed under its own autofixes (core rules)'
    * blanket one could never be checked, because it could not say what it was
    * paying for.
    */
-  it.each([...DIVERGENT_WITHOUT_PROGRAM.keys()])(
-    'still needs to discount %s (the exemption is earned, not stale)',
-    (name) => {
-      const withRule = {
+  const introducesCoreViolation = (rules: Record<string, unknown>) =>
+    FIXTURES.some(({ filename, code }) => {
+      const before = coreViolations(code, filename);
+      const fixed = linter.verifyAndFix(code, config(rules, filename), {
+        filename,
+      }).output;
+      return coreViolations(fixed, filename).some(
+        (violation) => !before.includes(violation),
+      );
+    });
+
+  /**
+   * `it.each` throws on an empty table, and the discount set is legitimately
+   * empty once every entry has been earned back by a fix. A loop keeps the
+   * per-name assertion while tolerating that state; skipping the test instead
+   * would leave the next entry added here unchecked.
+   */
+  it('discounts only rules that still diverge (earned, not stale)', () => {
+    const stale = [...DIVERGENT_WITHOUT_PROGRAM.keys()].filter(
+      (name) =>
+        !introducesCoreViolation({
+          ...RECOMMENDED,
+          [PREFIX + name]: plugin.configs.recommended.rules[PREFIX + name],
+        }),
+    );
+    expect(stale).toEqual([]);
+  });
+
+  /**
+   * With the set empty the assertion above passes over nothing, so the probe it
+   * relies on is pinned separately: a planted fixer that introduces a core
+   * violation must read as divergent, and the unmodified config must not.
+   * Without this pair an inert probe would certify every future entry as stale.
+   */
+  it('the earned-exemption probe detects a divergence (controls)', () => {
+    linter.defineRule('control/strands-a-binding', {
+      meta: { fixable: 'code', type: 'problem', schema: [] },
+      create(context: Rule.RuleContext) {
+        return {
+          Program(node: never) {
+            context.report({
+              node,
+              message: 'plant',
+              fix: (fixer) => fixer.insertTextAfter(node, '\nconst plantedOrphan = 1;\n'),
+            });
+          },
+        };
+      },
+    } as never);
+
+    expect(
+      introducesCoreViolation({
         ...RECOMMENDED,
-        [PREFIX + name]: plugin.configs.recommended.rules[PREFIX + name],
-      };
-      const stillDiverges = FIXTURES.some(({ filename, code }) => {
-        const before = coreViolations(code, filename);
-        const fixed = linter.verifyAndFix(code, config(withRule, filename), {
-          filename,
-        }).output;
-        return coreViolations(fixed, filename).some(
-          (violation) => !before.includes(violation),
-        );
-      });
-      expect(stillDiverges).toBe(true);
-    },
-  );
+        'control/strands-a-binding': 'error',
+      }),
+    ).toBe(true);
+    expect(introducesCoreViolation(RECOMMENDED)).toBe(false);
+  });
 });
