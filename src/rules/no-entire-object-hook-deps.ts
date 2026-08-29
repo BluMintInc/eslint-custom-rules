@@ -1,6 +1,7 @@
 import {
   AST_NODE_TYPES,
   AST_TOKEN_TYPES,
+  TSESLint,
   TSESTree,
 } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
@@ -1414,6 +1415,66 @@ function getObjectUsagesInHook(
   };
 }
 
+/** The run of spaces/tabs opening the line that `offset` sits on. */
+function indentAt(text: string, offset: number) {
+  const lineStart = text.lastIndexOf('\n', offset - 1) + 1;
+  return /^[ \t]*/.exec(text.slice(lineStart, offset))?.[0] ?? '';
+}
+
+/**
+ * Drop `span`, but re-emit any comment standing inside it.
+ *
+ * Removing a dependency means removing its separator too, so the span reaches
+ * to a NEIGHBOURING element and therefore covers the margin between the two.
+ * That margin is not the fixer's to delete: it can hold an
+ * `eslint-disable-next-line` protecting the dependency that survives, and
+ * dropping that directive silently re-enables another rule (#2208). Declining
+ * the fix instead would only trade the lost comment for a transform that a
+ * comment decides (#1877), so the comment is carried rather than obeyed.
+ *
+ * Each carried comment is re-emitted on a line of its own: a `//` comment
+ * swallows whatever follows it on the same line, so folding one inline would
+ * comment out the dependency that was meant to survive.
+ */
+function removeCarryingComments(
+  fixer: TSESLint.RuleFixer,
+  sourceCode: Readonly<TSESLint.SourceCode>,
+  span: [number, number],
+  anchor: 'toNextElement' | 'fromPrevElement',
+) {
+  const carried = sourceCode
+    .getAllComments()
+    .filter(
+      (comment) => comment.range[0] >= span[0] && comment.range[1] <= span[1],
+    );
+
+  // With nothing to preserve the span is pure separator and whitespace, so the
+  // plain removal keeps the comment-free output exactly as it has always been.
+  if (carried.length === 0) {
+    return fixer.removeRange(span);
+  }
+
+  const text = sourceCode.getText();
+  // Anchor the indentation on the end the surviving code sits against.
+  const indent = indentAt(
+    text,
+    anchor === 'toNextElement' ? span[1] : carried[0].range[0],
+  );
+  const body = carried
+    .map((comment) => text.slice(comment.range[0], comment.range[1]))
+    .join(`\n${indent}`);
+
+  // Both spellings close on a fresh line: whatever the span abutted — the next
+  // dependency, or the separator trailing the last one — would otherwise land
+  // on the final carried comment's line and be commented out.
+  return fixer.replaceTextRange(
+    span,
+    anchor === 'toNextElement'
+      ? `${body}\n${indent}`
+      : `\n${indent}${body}\n${indent}`,
+  );
+}
+
 export const noEntireObjectHookDeps = createRule<[], MessageIds>({
   name: 'no-entire-object-hook-deps',
   meta: {
@@ -1633,22 +1694,30 @@ export const noEntireObjectHookDeps = createRule<[], MessageIds>({
                   if (elementIndex === depsArg.elements.length - 1) {
                     const prevElement = depsArg.elements[elementIndex - 1];
                     if (prevElement) {
-                      const range: [number, number] = [
-                        prevElement.range![1],
-                        (element as TSESTree.Node).range![1],
-                      ];
-                      return fixer.removeRange(range);
+                      return removeCarryingComments(
+                        fixer,
+                        sourceCode,
+                        [
+                          prevElement.range![1],
+                          (element as TSESTree.Node).range![1],
+                        ],
+                        'fromPrevElement',
+                      );
                     }
                   }
 
                   // Otherwise, remove the element and the following comma
                   const nextElement = depsArg.elements[elementIndex + 1];
                   if (nextElement) {
-                    const range: [number, number] = [
-                      (element as TSESTree.Node).range![0],
-                      nextElement.range![0],
-                    ];
-                    return fixer.removeRange(range);
+                    return removeCarryingComments(
+                      fixer,
+                      sourceCode,
+                      [
+                        (element as TSESTree.Node).range![0],
+                        nextElement.range![0],
+                      ],
+                      'toNextElement',
+                    );
                   }
 
                   // Fallback to just removing the element
