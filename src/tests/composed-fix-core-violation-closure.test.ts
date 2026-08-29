@@ -66,13 +66,15 @@
  *
  * SCOPE — what this does NOT see, written as a to-do for the next reader:
  *
- *   - `no-entire-object-hook-deps` is held OUT of the composed config, by name,
- *     exactly as both solo neighbours hold it out and for the same measured
- *     reason (#1621): with no `ts.Program` every dependency reads as
- *     `unknown`-typed and the rule deletes deps a consumer's CI would keep, so
- *     everything downstream of those deletions is an artefact of the harness.
- *     Any composition that rule participates in is therefore UNSWEPT here. It
- *     needs a program-backed harness, not a baseline entry.
+ *   - `no-entire-object-hook-deps` used to be held OUT of the composed config by
+ *     name, which left every composition it participates in unswept. A
+ *     program-backed replication of this oracle over the whole corpus settled
+ *     what that hid: the rule fires on 264 fixtures, 159 of them owned by other
+ *     suites, and exactly one oracle rose — a stranded binding that ablation
+ *     attributed to the rule ALONE and that reproduced in the typed and
+ *     isolated arms alike (#2210). The exclusion is gone and the rule is
+ *     composed here like any other; the #1621 reporting divergence it cited is
+ *     untouched and simply is not what this guard asks about.
  *   - The oracle is five core rules plus two restricted productions. Everything
  *     else core is unswept — `no-undef` deliberately (with no `env` every
  *     ambient global reads as undefined, an artefact), the rest simply because
@@ -128,15 +130,30 @@ const plugin = require('../index') as {
 const PREFIX = '@blumintinc/blumint/';
 
 /**
- * One rule is discounted BY NAME, at this guard's own level, exactly as
- * `fix-core-violation-closure` and `fix-orphan-binding-closure` do. See SCOPE.
+ * EMPTY, and kept as the place an exclusion must be written.
  *
- * It is NOT added to `silentWithoutProgramRuleNames` — that set means "reports
- * nothing here", and this rule reports too MUCH — and it is one name rather than
- * all 16 rules mentioning `getParserServices`, because discounting one measured
- * divergence never justified unprobing fifteen others (#1879).
+ * Its one entry was `no-entire-object-hook-deps`, discounted because with no
+ * program every dependency reads as `unknown`-typed, so the rule reports and
+ * deletes deps a consumer's CI would leave alone (#1621). That rationale is
+ * about which dependencies get REPORTED. What this guard asks is what the fixer
+ * then WRITES, which is range arithmetic and entirely syntactic — so the
+ * exclusion was broader than its own reason, and no oracle had ever been
+ * pointed at the hole it left. Three defects came out of it once one was:
+ * #2208, a removal span anchored on a neighbouring element that swallowed the
+ * comment between them; #2209 and #2210, a removal that stranded its binding.
+ *
+ * Dropping the name is MEASURED, not asserted: with the rule composed here the
+ * suite is green, and it is driven non-vacuously rather than merely admitted.
+ * The #1621 divergence itself is untouched and still real; it simply never
+ * showed up as the thing this guard asks about.
+ *
+ * An entry here is one NAME rather than all 16 rules mentioning
+ * `getParserServices` — discounting one measured divergence never justified
+ * unprobing fifteen others (#1879) — and never belongs in
+ * `silentWithoutProgramRuleNames`, which means "reports nothing here", nor at
+ * rule-global scope, which un-gates every other arm at once (#1839).
  */
-const DIVERGENT_WITHOUT_PROGRAM = new Set(['no-entire-object-hook-deps']);
+const DIVERGENT_WITHOUT_PROGRAM = new Set([]);
 
 const EXCLUDED = new Set([
   ...silentWithoutProgramRuleNames,

@@ -107,19 +107,30 @@ const FIXABLE_RULES = new Set(
 );
 
 /**
- * One rule is discounted BY NAME, at this guard's own level, exactly as
- * `fix-core-violation-closure` and `fix-orphan-binding-closure` do and for the
- * same measured reason: with no program every dependency reads as
- * `unknown`-typed, so `no-entire-object-hook-deps` deletes deps it would leave
- * alone in a consumer's CI (#1621), and anything downstream of those deletions
- * is an artefact of the missing program rather than of the fixer.
+ * EMPTY, and kept as the place an exclusion must be written.
  *
- * It is NOT added to `silentWithoutProgramRuleNames` — that set means "reports
- * nothing here", and this rule reports too MUCH — and it is one name rather than
- * all 16 rules mentioning `getParserServices`, because discounting one measured
- * divergence never justified unprobing fifteen others (#1879).
+ * Its one entry was `no-entire-object-hook-deps`, discounted because with no
+ * program every dependency reads as `unknown`-typed, so the rule reports and
+ * deletes deps a consumer's CI would leave alone (#1621). That rationale is
+ * about which dependencies get REPORTED. What this guard asks is what the fixer
+ * then WRITES, which is range arithmetic and entirely syntactic — so the
+ * exclusion was broader than its own reason, and no oracle had ever been
+ * pointed at the hole it left. Three defects came out of it once one was:
+ * #2208, a removal span anchored on a neighbouring element that swallowed the
+ * comment between them; #2209 and #2210, a removal that stranded its binding.
+ *
+ * Dropping the name is MEASURED, not asserted: with the rule composed here the
+ * suite is green, and it is driven non-vacuously rather than merely admitted.
+ * The #1621 divergence itself is untouched and still real; it simply never
+ * showed up as the thing this guard asks about.
+ *
+ * An entry here is one NAME rather than all 16 rules mentioning
+ * `getParserServices` — discounting one measured divergence never justified
+ * unprobing fifteen others (#1879) — and never belongs in
+ * `silentWithoutProgramRuleNames`, which means "reports nothing here", nor at
+ * rule-global scope, which un-gates every other arm at once (#1839).
  */
-const DIVERGENT_WITHOUT_PROGRAM = new Set(['no-entire-object-hook-deps']);
+const DIVERGENT_WITHOUT_PROGRAM = new Set([]);
 
 const linter = new Linter();
 defineCorpusParsers(linter);
@@ -549,7 +560,23 @@ function compareCross(
   }
   // The screen ran the whole config; this rule alone may still say nothing, and
   // a rule that does not report cannot have produced a fix.
-  if (base.length === 0) return;
+  /**
+   * Perturbation sites come from THIS fixer's OWN reports.
+   *
+   * why: `verify` also returns ESLint's own `Definition for rule … was not
+   * found` row when a fixture carries a directive naming a rule this bare
+   * `Linter` never registered, and that row is located ON the directive
+   * comment. Appending a marker there rewrites the directive's rule list, and
+   * inserting a line above it separates the directive from the line it
+   * suppresses — neither of which the token-signature proof can see, because
+   * comments are not tokens. The fixture is then re-linted with its suppression
+   * silently withdrawn and the resulting transform reads as a fidelity defect
+   * of the fixer. Filtering by `ruleId` first is the same discipline
+   * `composed-fix-core-violation-closure` applies to its counters, and for the
+   * same reason: a rule-not-found row reads as both silence and inflation.
+   */
+  const reports = base.filter((message) => message.ruleId === PREFIX + fixer);
+  if (reports.length === 0) return;
 
   const baseFix = fixOf(testCase.code, solo, testCase, () => {
     stats.baseFixThrew++;
@@ -575,7 +602,7 @@ function compareCross(
     stats.crossFixersRewriting.add(fixer);
   }
 
-  for (const variant of buildVariants(testCase, signature, base)) {
+  for (const variant of buildVariants(testCase, signature, reports)) {
     const variantFix = fixOf(variant.text, solo, testCase, () => {
       stats.variantFixThrew++;
     });
@@ -873,19 +900,27 @@ describe('a fixer does not write text it does not own, on any rule’s fixtures'
   });
 
   /**
-   * The two rules this sweep exists because of, named.
+   * The rules this sweep exists because of, named.
    *
-   * An aggregate cross floor is satisfied by 57 other rules while these two
+   * An aggregate cross floor is satisfied by 57 other rules while these
    * quietly stop being driven over foreign fixtures — which is precisely the
    * state that hid #2023 and #2024, since each was reachable through exactly one
    * other rule's suite. Naming them turns "the coverage that found them was
    * deleted" into a failure instead of a smaller number nobody reads.
+   *
+   * `no-entire-object-hook-deps` is named for a second reason: it was excluded
+   * from this sweep BY NAME until the exclusion was measured unnecessary, and an
+   * un-exclusion that stops driving the rule is indistinguishable from the
+   * exclusion still being there. Its fixer deletes, which is the highest-harm
+   * shape, and three defects (#2208, #2209, #2210) came out of the hole the
+   * exclusion left.
    */
   it('still drives the fixers that this pairing caught, over foreign fixtures', () => {
     expect(
       [
         'logical-top-to-bottom-grouping',
         'prefer-nullish-coalescing-boolean-props',
+        'no-entire-object-hook-deps',
       ].filter((rule) => !SWEEP.crossFixerNames.has(rule)),
     ).toEqual([]);
   });
