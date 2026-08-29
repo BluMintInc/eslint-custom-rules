@@ -1770,5 +1770,74 @@ export const TournamentRegistrationPanel = memo(function TournamentRegistrationP
       filename: 'src/components/T.tsx',
       name: 'TournamentRegistrationPanel',
     }),
+
+    /**
+     * The import specifier is anchored on the source root NEAREST the file.
+     * `context.getFilename()` is absolute under every real ESLint entry point,
+     * so a checkout living under a directory named `src` puts a second `src`
+     * segment in the path; anchoring on the outer one emits a specifier that
+     * resolves outside the project (#2207).
+     */
+    withDefaults({
+      code: `const Foo = ({ a }: { a: string }) => {
+  return <div>{a}</div>;
+};
+export default Foo;`,
+      filename: '/home/dev/src/proj/src/components/Foo.tsx',
+      output: `import { memo } from '../util/memo';
+const Foo = memo(({ a }: { a: string }) => {
+  return <div>{a}</div>;
+});
+export default Foo;`,
+      name: 'Foo',
+    }),
+
+    // A deeper file under the same doubled-`src` checkout: depth counts from
+    // the inner source root, not from the outer segment.
+    withDefaults({
+      code: `const Panel = ({ a }: { a: string }) => {
+  return <div>{a}</div>;
+};
+export default Panel;`,
+      filename: '/srv/src/app/src/features/panel/Panel.tsx',
+      output: `import { memo } from '../../util/memo';
+const Panel = memo(({ a }: { a: string }) => {
+  return <div>{a}</div>;
+});
+export default Panel;`,
+      name: 'Panel',
+    }),
+
+    // Control: the ordinary absolute path, with a single `src`. Anchoring is
+    // unchanged here, which is what makes the two cases above a real
+    // discrimination rather than a blanket shift in depth.
+    withDefaults({
+      code: `const Widget = ({ a }: { a: string }) => {
+  return <div>{a}</div>;
+};
+export default Widget;`,
+      filename: '/home/dev/proj/src/components/Widget.tsx',
+      output: `import { memo } from '../util/memo';
+const Widget = memo(({ a }: { a: string }) => {
+  return <div>{a}</div>;
+});
+export default Widget;`,
+      name: 'Widget',
+    }),
+
+    // A file directly in the source root still takes the depth-0 spelling.
+    withDefaults({
+      code: `const App = ({ a }: { a: string }) => {
+  return <div>{a}</div>;
+};
+export default App;`,
+      filename: '/home/dev/src/proj/src/App.tsx',
+      output: `import { memo } from './util/memo';
+const App = memo(({ a }: { a: string }) => {
+  return <div>{a}</div>;
+});
+export default App;`,
+      name: 'App',
+    }),
   ],
 });

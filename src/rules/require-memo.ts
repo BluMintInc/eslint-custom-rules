@@ -1160,7 +1160,18 @@ function calculateImportPath(currentFilePath: string): string {
 
   // Split the current file path into parts and normalize
   const parts = currentFilePath.split(/[\\/]/); // Handle both Unix and Windows paths
-  const srcIndex = parts.indexOf('src');
+  /**
+   * The source root is the `src` NEAREST the file, not the first one in the
+   * path. `context.getFilename()` is always absolute under every real ESLint
+   * entry point, so the absolute prefix is part of the path being searched: a
+   * checkout under a directory named `src` (`~/src/proj/src/components/Foo.tsx`)
+   * would otherwise anchor on that outer segment and emit a specifier that walks
+   * out of the project entirely.
+   *
+   * Directory segments only — a file that is itself named `src` names no
+   * directory the import could be relative to.
+   */
+  const srcIndex = parts.slice(0, -1).lastIndexOf('src');
 
   if (srcIndex === -1) {
     // If we're not in a src directory, use absolute path
