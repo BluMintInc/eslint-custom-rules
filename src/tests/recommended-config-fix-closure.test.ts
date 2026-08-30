@@ -1,6 +1,14 @@
 import fs from 'fs';
 import path from 'path';
 import { Linter } from 'eslint';
+import {
+  defaultFilenameFor,
+  defineCorpusParsers,
+  FixtureCase,
+  harvestFixtureCorpus,
+  parserKeyFor,
+  parserOptionsFor,
+} from '../utils/fixtureCorpus';
 
 // Using require to avoid test build-time ESM interop issues; the guard only
 // needs the plugin object shape (rules, configs), not types.
@@ -12,8 +20,6 @@ const plugin = require('..') as {
   >;
   configs: { recommended: { rules: Record<string, unknown> } };
 };
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const tsParser = require('@typescript-eslint/parser');
 
 const PREFIX = '@blumintinc/blumint/';
 const DOCS_DIR = path.join(__dirname, '../../docs/rules');
@@ -44,16 +50,43 @@ const DOCS_DIR = path.join(__dirname, '../../docs/rules');
  * suggestions, or running them through the fix loop, would judge the fixer
  * against a state no user can reach.
  *
- * Corpus: every fenced code block in `docs/rules/<rule>.md`, fixed by that
- * rule alone. Polarity ("correct"/"incorrect") is deliberately NOT consulted —
- * a block the rule does not report on produces no fix and drops out on its own,
- * so taking every block costs nothing and roughly doubles the corpus.
- * IMPORTING each rule's own test file is the dead end: `src/tests/*.test.ts`
- * call `RuleTester.run` and `describe`/`it` at module scope, so importing them
+ * Corpus, channel 1: every fenced code block in `docs/rules/<rule>.md`, fixed
+ * by that rule alone. Polarity ("correct"/"incorrect") is deliberately NOT
+ * consulted — a block the rule does not report on produces no fix and drops out
+ * on its own, so taking every block costs nothing and roughly doubles the
+ * corpus.
+ *
+ * Corpus, channel 2: harvested `RuleTester` fixtures, via the shared
+ * `harvestFixtureCorpus`. The documented blocks are structurally OPTION-BLIND:
+ * a docs snippet declares a non-default option only through an
+ * `// eslint-options:` hint, which 7 of 194 pages carry, so 31 of the 35
+ * optioned-and-fixable recommended rules were gated at their DEFAULTS and
+ * nothing else (#2224). An option that redirects a fixer into emitting code
+ * another recommended rule rejects was therefore invisible here — while
+ * `option-liveness-closure` pins at least 19 options that change fix output and
+ * ONLY fix output, which is precisely this guard's subject matter. Two of the
+ * pairs below (`hashImport` pointing the injected import at a consumer-chosen
+ * module) exist only under a non-default option and were unreachable until this
+ * channel landed.
+ *
+ * Channel 2 is deliberately NOT every fixture. Admitting all 13,754
+ * fixable-rule fixtures yields 4,654 pairs and 38 contradiction pairs beyond
+ * FIX_INDUCED_BASELINE — a corpus-BREADTH question, and a different one from
+ * this. Widening to it means triaging 38 pairs as fixer defects or design
+ * deferrals, which is its own piece of work rather than a side effect of
+ * carrying options. Admitted instead are the two sets the docs channel provably
+ * cannot reach: every fixture carrying `options`, and every fixture of a
+ * fixable rule the docs channel exercises not at all.
+ *
+ * The fixtures are harvested, never IMPORTED: `src/tests/*.test.ts` call
+ * `RuleTester.run` and `describe`/`it` at module scope, so importing one
  * re-executes the entire suite inside this file (2350 tests, 2 minutes, 48
- * cross-file side-effect failures when measured). PARSING one as text is not,
- * and the suggestion channel does exactly that on top of the documented blocks
- * — see `harvestTestSnippets` for why the docs alone cannot reach it.
+ * cross-file side-effect failures when measured). `harvestRuleTesterCases`
+ * shadows `run` instead, which captures the real case OBJECTS — code, options,
+ * filename, parserOptions together. Text-scraping the string literals out of
+ * the same file, which this guard's suggestion channel used to do, drops every
+ * one of those siblings on the floor and probes a snippet under a configuration
+ * its author never wrote (#1732, #1984).
  */
 
 /** Fence languages that hold TypeScript this harness can parse. */
@@ -220,21 +253,55 @@ const linter = new Linter();
 for (const [name, rule] of Object.entries(plugin.rules)) {
   linter.defineRule(PREFIX + name, rule as never);
 }
-linter.defineParser('ts', tsParser);
+/**
+ * Registers `ts`, `json` and `markdown`, not TypeScript alone. A JSON or
+ * Markdown fixture handed to `@typescript-eslint/parser` is a FATAL parse, and
+ * every consumer below filters messages by `ruleId`, so that fatal is
+ * indistinguishable from the rule staying silent (#1860). The `ts` key it
+ * defines is `@typescript-eslint/parser`, which is what the documented blocks
+ * were already parsed with.
+ */
+defineCorpusParsers(linter);
 
+/**
+ * The parser and parser options a snippet is linted under.
+ *
+ * A documented block is TypeScript by construction, so it keeps the harness's
+ * own options. A harvested fixture carries its author's: `parserKeyFor` picks
+ * the parser its tester declared, and `parserOptionsFor` merges what the case
+ * itself asked for. Fixing that to `ts` would make every JSON and Markdown
+ * fixture a fatal parse, and a fatal parse is indistinguishable from a silent
+ * rule once messages are filtered by `ruleId`.
+ */
 const buildConfig = (
   filename: string,
   rules: Linter.Config['rules'],
+  testCase?: FixtureCase,
 ): Linter.Config =>
   ({
-    parser: 'ts',
-    parserOptions: {
-      ecmaVersion: 2022,
-      sourceType: 'module',
-      ecmaFeatures: { jsx: filename.endsWith('.tsx') },
-    },
+    parser: testCase ? parserKeyFor(testCase) : 'ts',
+    parserOptions: testCase
+      ? parserOptionsFor(testCase)
+      : {
+          ecmaVersion: 2022,
+          sourceType: 'module',
+          ecmaFeatures: { jsx: filename.endsWith('.tsx') },
+        },
     rules,
   } as unknown as Linter.Config);
+
+/**
+ * A rule's severity entry carrying the options a snippet was written for.
+ *
+ * Spelt out here rather than taken from `fixtureCorpus`'s `severityWithOptions`
+ * because both channels feed it: a docs `// eslint-options:` hint is a single
+ * object, a fixture's `options` is the RuleTester options ARRAY, and both end up
+ * as `['error', ...options]`. Note what this is not: `severityWithOptions` is a
+ * severity entry, not a rules object, so spreading it into one injects
+ * `{"0":"e","1":"r",...}` and drops the options entirely.
+ */
+const severityFor = (options: readonly unknown[] | null) =>
+  options && options.length ? ['error', ...options] : 'error';
 
 /** The rule set a consumer actually runs, every rule at `error`. */
 const OBSERVER_RULES: Record<string, 'error'> = Object.fromEntries(
@@ -254,18 +321,22 @@ export function observe(
   code: string,
   filename: string,
   scopedRule?: string,
-  scopedOptions?: unknown,
+  scopedOptions?: readonly unknown[] | null,
+  testCase?: FixtureCase,
 ): Counts | null {
   const rules =
-    scopedRule && scopedOptions
-      ? { ...OBSERVER_RULES, [PREFIX + scopedRule]: ['error', scopedOptions] }
+    scopedRule && scopedOptions && scopedOptions.length
+      ? {
+          ...OBSERVER_RULES,
+          [PREFIX + scopedRule]: severityFor(scopedOptions),
+        }
       : OBSERVER_RULES;
 
   let messages;
   try {
     messages = linter.verify(
       code,
-      buildConfig(filename, rules as Linter.Config['rules']),
+      buildConfig(filename, rules as Linter.Config['rules'], testCase),
       { filename },
     );
   } catch {
@@ -293,13 +364,24 @@ export type CorpusEntry = {
   /** Where the input came from, so a finding is reproducible by hand. */
   origin: string;
   filename: string;
-  options: unknown | null;
+  /**
+   * The options the snippet was fixed AND observed under, as a RuleTester
+   * options array. A docs `// eslint-options:` hint arrives as a one-element
+   * array; a harvested fixture's own `options` arrives verbatim.
+   */
+  options: readonly unknown[] | null;
+  /**
+   * The harvested fixture this entry came from, when it came from one. It
+   * carries the parser and parser options its author declared, which is what
+   * keeps a non-TypeScript fixture from being observed as a fatal parse.
+   */
+  testCase?: FixtureCase;
   before: string;
   after: string;
 };
 
 /** Every documented snippet that the owning rule's fixer actually rewrites. */
-function buildCorpus(): CorpusEntry[] {
+function buildDocsCorpus(): CorpusEntry[] {
   const corpus: CorpusEntry[] = [];
 
   for (const rule of fixableRuleNames) {
@@ -311,9 +393,10 @@ function buildCorpus(): CorpusEntry[] {
     );
 
     for (const block of blocks) {
-      const options = optionsHint(block.code);
+      const hint = optionsHint(block.code);
+      const options = hint === null ? null : [hint];
       const rules = {
-        [PREFIX + rule]: options ? ['error', options] : 'error',
+        [PREFIX + rule]: severityFor(options),
       } as Linter.Config['rules'];
       const jsxish = block.lang === 'tsx' || block.lang === 'jsx';
       const hinted = filenameHint(block.code);
@@ -380,6 +463,189 @@ function buildCorpus(): CorpusEntry[] {
   return corpus;
 }
 
+/** Every harvested `RuleTester` case, keyed by rule and carrying its options. */
+const fixtureCorpus = harvestFixtureCorpus();
+
+/** Non-vacuity accounting for the fixture channel; every field is asserted. */
+const fixtureStats = {
+  considered: 0,
+  /** Cases whose owning rule's fixer rewrote them under the authentic name. */
+  rewritten: 0,
+  /** Cases the fan-out below rescued, i.e. rewritten only under another path. */
+  rescuedByFanOut: 0,
+  /** Cases that transformed nowhere. Silence here is a fact, not a defect. */
+  inert: 0,
+  /**
+   * Cases the rule threw on. Counted and ASSERTED rather than swallowed: a skip
+   * counter no expectation reads discards inputs in silence, which is how a
+   * corpus shrinks without anything going red (#2222).
+   */
+  crashed: 0,
+  /** Fixture-derived entries whose case declared non-default options. */
+  optionedPairs: 0,
+};
+
+/**
+ * Which filename a harvested fixture is probed under.
+ *
+ * Two independent questions supply a filename, and neither answer substitutes
+ * for the other:
+ *
+ *   - `defaultFilenameFor` answers a question about the CODE. An extension
+ *     fixes the TypeScript `ScriptKind`, and `ecmaFeatures.jsx` does NOT
+ *     override it, so a fixture holding JSX under a `.ts` path is a FATAL
+ *     parse — indistinguishable from a silent rule once messages are filtered
+ *     by `ruleId`, and worth 106 valid cases across 7 rules the last time a
+ *     guard took the tester's word for it (#1984).
+ *   - `FILENAME_CANDIDATES` answers a question about the PATH. Rules keyed on
+ *     cloud-function entry points, test-file exemptions, component directories
+ *     and the `.dynamic` suffix are silent anywhere else, and a single
+ *     hard-coded path leaves their fixers unexercised (#1599).
+ *
+ * So both are used, in this order. A fixture that DECLARES a filename keeps it
+ * outright: its author chose the path the fixture is about, and overriding that
+ * would probe a configuration nobody wrote. A fixture that declares none is
+ * probed first under its authentic, code-derived name. The path fan-out is a
+ * SECOND CHANCE only — and, following `fixtureCorpus`'s own measurement that
+ * blanket re-probing costs 3.5x for zero extra rules covered, it is spent per
+ * RULE rather than per case: a rule that transformed nothing at all anywhere is
+ * exactly the case where the fan-out buys something. Each candidate's extension
+ * follows the one the CODE picked, so the fan-out cannot reintroduce the fatal
+ * parse it is layered on top of.
+ */
+const fanOutCandidates = (testCase: FixtureCase): string[] => {
+  // A JSON or Markdown fixture re-probed under a TypeScript path is parsed as
+  // TypeScript and reads as a rule that fell silent.
+  if (testCase.filename || testCase.language !== 'ts') return [];
+  const jsxish = defaultFilenameFor(testCase).endsWith('.tsx');
+  return FILENAME_CANDIDATES.map((candidate) =>
+    anchor(jsxish ? candidate.replace(/\.ts$/, '.tsx') : candidate),
+  );
+};
+
+/**
+ * Whether the `.dynamic` suffix is worth a SEPARATE pass for this fixture.
+ *
+ * Held apart from the candidate list because the two are consumed differently:
+ * a candidate list is searched until one filename yields, whereas the suffix
+ * pass runs in ADDITION to whatever the search found — `DYNAMIC_FILENAME_CANDIDATE`
+ * documents why. A `.tsx` fixture is excluded because the suffix rules key on
+ * `.dynamic.ts`.
+ */
+const wantsDynamicPass = (testCase: FixtureCase): boolean =>
+  !testCase.filename &&
+  testCase.language === 'ts' &&
+  !defaultFilenameFor(testCase).endsWith('.tsx');
+
+const fanOutFilenames = (testCase: FixtureCase): string[] => [
+  ...fanOutCandidates(testCase),
+  ...(wantsDynamicPass(testCase) ? [anchor(DYNAMIC_FILENAME_CANDIDATE)] : []),
+];
+
+/** The one entry a fixture yields under `filename`, or null if it is inert. */
+function fixtureEntry(
+  rule: string,
+  testCase: FixtureCase,
+  filename: string,
+): CorpusEntry | null {
+  const options = testCase.options?.length ? testCase.options : null;
+  let result;
+  try {
+    result = linter.verifyAndFix(
+      testCase.code,
+      buildConfig(
+        filename,
+        { [PREFIX + rule]: severityFor(options) } as Linter.Config['rules'],
+        testCase,
+      ),
+      { filename },
+    );
+  } catch {
+    // Rule crashes are a separate, already-guarded axis.
+    fixtureStats.crashed++;
+    return null;
+  }
+  if (!result.fixed || result.output === testCase.code) return null;
+  return {
+    rule,
+    kind: 'fix',
+    line: 0,
+    origin: `src/tests/${testCase.origin} (${testCase.bucket}) ${
+      options ? `options ${JSON.stringify(options)}` : 'no options'
+    }`,
+    filename,
+    options,
+    testCase,
+    before: testCase.code,
+    after: result.output,
+  };
+}
+
+/**
+ * The fixture channel: the inputs the documented blocks provably cannot reach.
+ *
+ * `optioned` is the whole point of #2224 — a fixer's output can depend on an
+ * option, and every option-dependent output was previously judged only at its
+ * default. `unexercised` closes the reachability residue the docs channel
+ * leaves: `prefer-params-over-parent-id` (a cloud-function-path rule, so the
+ * `.f.ts` candidate above exists partly for it) contributed ZERO pairs, and
+ * `no-unpinned-dependencies` and `enforce-typescript-markdown-code-blocks` are
+ * unreachable from a TypeScript-only harness at all. All three ship
+ * `recommended: 'error'` with a fixer.
+ */
+function buildFixtureCorpus(docsExercised: ReadonlySet<string>): CorpusEntry[] {
+  const corpus: CorpusEntry[] = [];
+
+  for (const rule of fixableRuleNames) {
+    const wholeRule = !docsExercised.has(rule);
+    const cases = (fixtureCorpus.byRule.get(rule) || []).filter(
+      (testCase) => wholeRule || Boolean(testCase.options?.length),
+    );
+
+    const inert: FixtureCase[] = [];
+    for (const testCase of cases) {
+      fixtureStats.considered++;
+      const entry = fixtureEntry(
+        rule,
+        testCase,
+        testCase.filename || defaultFilenameFor(testCase),
+      );
+      if (!entry) {
+        inert.push(testCase);
+        continue;
+      }
+      fixtureStats.rewritten++;
+      if (entry.options) fixtureStats.optionedPairs++;
+      corpus.push(entry);
+    }
+
+    // Per RULE, not per case: see `fanOutFilenames`. This rescues ZERO cases as
+    // measured — every fixable rule is already reached under an authentic
+    // filename — and is kept because the cost is one pass over the rules that
+    // transformed nothing, while the alternative is a silent hole the day a
+    // path-keyed rule's fixtures stop declaring their own filename. The same
+    // candidates are load-bearing on the suggestion channel, where they are
+    // worth 15 of its 271 pairs.
+    if (corpus.some((entry) => entry.rule === rule)) {
+      fixtureStats.inert += inert.length;
+      continue;
+    }
+    for (const testCase of inert) {
+      const rescued = fanOutFilenames(testCase)
+        .map((filename) => fixtureEntry(rule, testCase, filename))
+        .find(Boolean);
+      if (!rescued) {
+        fixtureStats.inert++;
+        continue;
+      }
+      fixtureStats.rescuedByFanOut++;
+      if (rescued.options) fixtureStats.optionedPairs++;
+      corpus.push(rescued);
+    }
+  }
+  return corpus;
+}
+
 const applyEdit = (
   text: string,
   fix: { range: readonly number[]; text: string },
@@ -398,10 +664,13 @@ function suggestionOutputs(
   filename: string,
   rules: Linter.Config['rules'],
   ruleId: string,
+  testCase?: FixtureCase,
 ): string[] {
   let messages;
   try {
-    messages = linter.verify(code, buildConfig(filename, rules), { filename });
+    messages = linter.verify(code, buildConfig(filename, rules, testCase), {
+      filename,
+    });
   } catch {
     // Rule crashes are a separate, already-guarded axis.
     return [];
@@ -420,76 +689,6 @@ function suggestionOutputs(
   return outputs;
 }
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
-const walkAst = (node: any, visit: (n: any) => void) => {
-  if (!node || typeof node.type !== 'string') return;
-  visit(node);
-  for (const key of Object.keys(node)) {
-    if (key === 'parent') continue;
-    const value = node[key];
-    if (Array.isArray(value)) value.forEach((child) => walkAst(child, visit));
-    else if (
-      value &&
-      typeof value === 'object' &&
-      typeof value.type === 'string'
-    ) {
-      walkAst(value, visit);
-    }
-  }
-};
-
-/**
- * A rule's own test file, read as TEXT and parsed — never imported.
- *
- * The documented blocks are the right corpus for the fix path and are kept as
- * the primary one here, but they cannot reach every suggestion: the whole
- * `react-memoize-literals` doc set produces reports whose suggestions the rule
- * declines (nested hook arguments carry none, and #1600 made it decline a
- * literal that closes over nothing), so a docs-only suggestion corpus would
- * leave the very rule that motivated #1601 at zero. Each rule's own test file
- * is the one input set guaranteed to trigger it.
- *
- * Importing that file is still the dead end the header describes — it calls
- * `RuleTester.run` at module scope — so the text is parsed and its string and
- * no-substitution template literals are harvested, exactly as
- * `fixer-convergence` and `fixer-type-safety` already do.
- */
-function harvestTestSnippets(rule: string): string[] {
-  const testFile = path.join(__dirname, `${rule}.test.ts`);
-  if (!fs.existsSync(testFile)) return [];
-  let parsed;
-  try {
-    parsed = tsParser.parse(fs.readFileSync(testFile, 'utf8'), {
-      ecmaVersion: 2022,
-      sourceType: 'module',
-      ecmaFeatures: { jsx: true },
-      loc: true,
-      range: true,
-      comment: true,
-      tokens: true,
-    });
-  } catch {
-    return [];
-  }
-  const snippets: string[] = [];
-  const seen = new Set<string>();
-  const push = (value: unknown) => {
-    // Shorter than this is a messageId or a rule name, not a snippet.
-    if (typeof value !== 'string' || value.length < 25) return;
-    if (!/[;{(=<]/.test(value) || seen.has(value)) return;
-    seen.add(value);
-    snippets.push(value);
-  };
-  walkAst(parsed, (node: any) => {
-    if (node.type === 'Literal') push(node.value);
-    if (node.type === 'TemplateLiteral' && node.expressions.length === 0) {
-      push(node.quasis.map((quasi: any) => quasi.value.cooked).join(''));
-    }
-  });
-  return snippets;
-}
-/* eslint-enable @typescript-eslint/no-explicit-any */
-
 /** Every snippet on which a suggestion-emitting rule offers an edit. */
 function buildSuggestionCorpus(): CorpusEntry[] {
   const corpus: CorpusEntry[] = [];
@@ -499,16 +698,23 @@ function buildSuggestionCorpus(): CorpusEntry[] {
     origin: string,
     line: number,
     code: string,
-    options: unknown | null,
+    options: readonly unknown[] | null,
     candidates: string[],
     dynamicPass: boolean,
+    testCase?: FixtureCase,
   ) => {
     const rules = {
-      [PREFIX + rule]: options ? ['error', options] : 'error',
+      [PREFIX + rule]: severityFor(options),
     } as Linter.Config['rules'];
 
     for (const filename of candidates) {
-      const outputs = suggestionOutputs(code, filename, rules, PREFIX + rule);
+      const outputs = suggestionOutputs(
+        code,
+        filename,
+        rules,
+        PREFIX + rule,
+        testCase,
+      );
       if (!outputs.length) continue;
       for (const after of outputs) {
         corpus.push({
@@ -518,6 +724,7 @@ function buildSuggestionCorpus(): CorpusEntry[] {
           origin,
           filename,
           options,
+          testCase,
           before: code,
           after,
         });
@@ -534,6 +741,7 @@ function buildSuggestionCorpus(): CorpusEntry[] {
       filename,
       rules,
       PREFIX + rule,
+      testCase,
     )) {
       corpus.push({
         rule,
@@ -542,6 +750,7 @@ function buildSuggestionCorpus(): CorpusEntry[] {
         origin,
         filename,
         options,
+        testCase,
         before: code,
         after,
       });
@@ -567,27 +776,57 @@ function buildSuggestionCorpus(): CorpusEntry[] {
           `docs/rules/${rule}.md:${block.line}`,
           block.line,
           block.code,
-          optionsHint(block.code),
+          (() => {
+            const hint = optionsHint(block.code);
+            return hint === null ? null : [hint];
+          })(),
           hinted ? [hinted] : jsxish ? asTsx : asTs,
           !hinted && !jsxish,
         );
       }
     }
 
-    const snippets = harvestTestSnippets(rule);
-    for (let index = 0; index < snippets.length; index++) {
+    /**
+     * The fixture channel, in place of a text scrape of the same test file.
+     *
+     * The documented blocks cannot reach every suggestion — the whole
+     * `react-memoize-literals` doc set produces reports whose suggestions the
+     * rule declines, so a docs-only corpus left the very rule that motivated
+     * #1601 at zero — and the previous stand-in read `src/tests/<rule>.test.ts`
+     * as TEXT and kept its static string literals. That loses two things at
+     * once: a case assembled by interpolation is invisible, and a case that
+     * does survive arrives stripped of the `options`, `filename` and
+     * `parserOptions` it was written for, so it is probed under a configuration
+     * its author never wrote (#1732, #2224).
+     *
+     * The whole fixture set is taken, not just the optioned part: this replaces
+     * a channel that already took every literal in the file, and the five
+     * suggesting rules are small enough that narrowing it would only lose
+     * coverage.
+     *
+     * Each case is probed under its AUTHENTIC name first — the parser follows
+     * the code rather than the tester, which is the fatal-parse trap — and the
+     * path candidates follow only as a second chance, exactly as on the fix
+     * channel. Dropping the fan-out here instead cost 93 pairs against the
+     * scrape it replaced: the path-keyed rules are reachable from a fixture
+     * only under a path that matches them.
+     */
+    for (const testCase of fixtureCorpus.byRule.get(rule) || []) {
+      const options = testCase.options?.length ? testCase.options : null;
       collect(
         rule,
-        `src/tests/${rule}.test.ts snippet #${index}`,
-        index,
-        snippets[index],
-        null,
-        // Whether a harvested snippet needs the JSX parser is declared nowhere,
-        // so the `.tsx` candidates follow the `.ts` ones; a JSX snippet reports
-        // fatally under `.ts` and contributes nothing there, and the loop stops
-        // at the first filename that yields a suggestion either way.
-        [...asTs, ...asTsx],
-        true,
+        `src/tests/${testCase.origin} (${testCase.bucket}) ${
+          options ? `options ${JSON.stringify(options)}` : 'no options'
+        }`,
+        0,
+        testCase.code,
+        options,
+        [
+          testCase.filename || defaultFilenameFor(testCase),
+          ...fanOutCandidates(testCase),
+        ],
+        wantsDynamicPass(testCase),
+        testCase,
       );
     }
   }
@@ -617,12 +856,14 @@ export function findIntroduced(entries: readonly CorpusEntry[]): Finding[] {
       entry.filename,
       entry.rule,
       entry.options,
+      entry.testCase,
     );
     const after = observe(
       entry.after,
       entry.filename,
       entry.rule,
       entry.options,
+      entry.testCase,
     );
     if (!before || !after) continue;
 
@@ -688,6 +929,8 @@ export const FIX_INDUCED_BASELINE: Record<string, string> = {
     'collapsing the rest pattern yields module-scope bindings export-if-in-doubt demands be exported',
   'no-useless-usememo-primitives -> global-const-style':
     'unwrapping the useMemo leaves a camelCase module-scope const, which global-const-style requires be UPPER_SNAKE_CASE',
+  'require-memo -> export-if-in-doubt':
+    'splitting `export function Panel` into an unexported `function PanelUnmemoized` plus `export const Panel = memo(...)` leaves the inner component a module-scope declaration export-if-in-doubt demands be exported. Reached only once the fixture channel landed (#2224); `--fix` under the full config does NOT clear it',
 
   // --- Unlike every other entry here, this one is NOT an open question. The
   // second rule's verdict is correct and its documented remedy converges: move
@@ -725,6 +968,46 @@ export const FIX_INDUCED_BASELINE: Record<string, string> = {
   // snippet reaches prefer-block-comments-for-declarations through it.
   'prefer-usecallback-over-usememo-for-functions -> prefer-block-comments-for-declarations':
     'the rewritten call is a declaration, so a line comment above it now needs to be a block comment',
+
+  // --- The fixer injects a STATIC import of a module the consumer named in an
+  // option, and enforce-dynamic-imports rejects it. Filed as #2226: this is
+  // root cause 1 of #1474 reintroduced through an OPTION rather than through a
+  // new hardcoded specifier, which is why the allowlist guard in
+  // src/tests/enforce-dynamic-imports.test.ts cannot see it — that guard
+  // derives injected specifiers from the rule SOURCES, and a configured one is
+  // not a literal there. Both defaults (`functions/src/util/hash/stableHash`)
+  // are exempt via DEFAULT_INTERNAL_PREFIXES, so only a non-default source
+  // reaches this, and only the fixture channel carries one (#2224). Measured:
+  // `--fix` under the whole recommended config does NOT clear the report, and
+  // the import feeds a useMemo call, so the dynamic form it asks for is not
+  // available.
+  'no-array-length-in-deps -> enforce-dynamic-imports':
+    'the injected `import { makeHash } from <hashImport.source>` is an external static import under any source outside src/ or functions/, which enforce-dynamic-imports rejects and no fixer can make dynamic (#2226)',
+  'enforce-stable-hash-spread-props -> enforce-dynamic-imports':
+    'the injected `import { stableHashCustom } from <hashImport.source>` is an external static import under any source outside src/ or functions/, which enforce-dynamic-imports rejects and no fixer can make dynamic (#2226)',
+
+  // --- Reached only once the fixture channel landed (#2224), because the
+  // documented blocks produce no fix for this rule at all: it is keyed on the
+  // cloud-function path in FILENAME_CANDIDATES and its docs snippets never
+  // reach the fixer. Rewriting `change.after.ref.parent.id` to `params.userId`
+  // both drops a declarator and moves what the surrounding declarations depend
+  // on, which is what the three rules below notice.
+  'prefer-params-over-parent-id -> prefer-destructuring-no-class':
+    'substituting the params lookup leaves a destructuring pattern prefer-destructuring-no-class rejects; `--fix` under the whole config clears it in one converging pass',
+  'prefer-params-over-parent-id -> logical-top-to-bottom-grouping':
+    'the substituted binding no longer depends on the declaration above it, so logical-top-to-bottom-grouping orders the pair the other way; `--fix` under the whole config clears it in one converging pass',
+  'prefer-params-over-parent-id -> extract-global-constants':
+    "dropping the `change` declarator leaves `const tag = 'log'` alone in its statement, and a lone constant initialiser is what extract-global-constants demands be hoisted to module scope. Unlike its two siblings above, `--fix` under the whole config does NOT clear this one",
+
+  // --- Option-dependent contradictions, invisible until the fixture channel
+  // began carrying each fixture's own options (#2224). Both self-heal: `--fix`
+  // under the whole recommended config ends with zero reports from the second
+  // rule, so the only consumer who sees one is a consumer who does not run the
+  // fixer to convergence.
+  'no-explicit-return-type -> enforce-memoize-async':
+    'under `allowVoidReturnTypes: false` the stripped annotation exposes an async method to enforce-memoize-async, which demands @Memoize(); that decorator is fixable and the file ends clean under `--fix`',
+  'prefer-usecallback-over-usememo-for-functions -> use-latest-callback':
+    'under `allowFunctionFactories: false` the emitted useCallback is what use-latest-callback rewrites to useLatestCallback; that rewrite is fixable and the file ends clean under `--fix`',
 };
 
 /**
@@ -803,7 +1086,15 @@ export const SUGGESTION_INDUCED_BASELINE: Record<string, string> = {
     "the emitted `[/* __TODO_MEMOIZATION_DEPENDENCIES__ */]` is a syntactically empty dependency array until the developer fills it in, which is the suggestion's stated contract; with real dependencies the report disappears",
 };
 
-const corpus = buildCorpus();
+const docsCorpus = buildDocsCorpus();
+/**
+ * Which fixable rules the documented blocks reach at all, computed BEFORE the
+ * fixture channel runs: the fixture channel admits a rule's whole fixture set
+ * precisely when the docs reach it not at all, so the two cannot be built in
+ * the other order.
+ */
+const docsExercisedRules = new Set(docsCorpus.map((entry) => entry.rule));
+const corpus = [...docsCorpus, ...buildFixtureCorpus(docsExercisedRules)];
 const findings = findIntroduced(corpus);
 const suggestionCorpus = buildSuggestionCorpus();
 const suggestionFindings = findIntroduced(suggestionCorpus);
@@ -814,6 +1105,39 @@ const exercisedRules = new Set(corpus.map((entry) => entry.rule));
 const suggestionExercisedRules = new Set(
   suggestionCorpus.map((entry) => entry.rule),
 );
+
+/**
+ * Rules exercised under a NON-DEFAULT option, on either channel.
+ *
+ * Held apart from `exercisedRules` because the aggregate cannot see it: the
+ * corpus was 828 pairs and 85 rules while carrying NINE optioned pairs across
+ * TWO rules, and every floor in this file stayed green throughout (#2224). A
+ * count of rules is the right denominator rather than a count of pairs, since
+ * one rule with a large optioned fixture set would otherwise hold the total up
+ * on its own.
+ */
+const optionedEntries = [...corpus, ...suggestionCorpus].filter(
+  (entry) => entry.options !== null,
+);
+const optionedRules = new Set(optionedEntries.map((entry) => entry.rule));
+
+/**
+ * The transform-bearing rules that HAVE a non-default option to be probed
+ * under, which is the denominator #2224 measured at 4 of 35. A rule with no
+ * optioned fixture anywhere cannot be reached under one by any channel, so it
+ * belongs outside the ratio rather than inside it as a permanent shortfall.
+ */
+const optionedAndFixable = fixableRuleNames.filter((rule) =>
+  (fixtureCorpus.byRule.get(rule) || []).some(
+    (testCase) => testCase.options?.length,
+  ),
+);
+const optionedAndFixableReached = optionedAndFixable.filter((rule) =>
+  optionedRules.has(rule),
+);
+const suggestionFixturePairs = suggestionCorpus.filter((entry) =>
+  Boolean(entry.testCase),
+).length;
 
 describe('the recommended config is closed under its own autofixes', () => {
   it('introduces no fix-induced violation outside the documented baseline', () => {
@@ -946,13 +1270,146 @@ describe('the closure guard is load-bearing', () => {
     // Guards the denominator: if rule registration broke, a high ratio over a
     // tiny rule set would still look healthy.
     expect(fixableRuleNames.length).toBeGreaterThanOrEqual(80);
-    // 71 of 83 at the time of writing. The rules this corpus cannot reach are
-    // ones whose documented blocks never produce a fix under any candidate
-    // filename, plus `no-unpinned-dependencies` and
-    // `enforce-typescript-markdown-code-blocks`, which need the JSON and
-    // markdown parsers rather than the TypeScript one.
-    expect(exercisedRules.size).toBeGreaterThanOrEqual(65);
-    expect(corpus.length).toBeGreaterThanOrEqual(396);
+    // 83 of 83 — EVERY fixable rule, where the documented blocks alone reached
+    // 71. The three the docs channel cannot reach at all are named in their own
+    // test below, so this total cannot go back to 80 without something going
+    // red. Floors sit just under the measurement, per the floor-drift
+    // discipline: the floors that hid #1984 sat at 5,500 against 8,141.
+    expect(exercisedRules.size).toBeGreaterThanOrEqual(83);
+    expect(corpus.length).toBeGreaterThanOrEqual(590);
+    // The fixture channel is the half the documented blocks cannot supply;
+    // floored separately so a regression to a docs-only corpus cannot hide
+    // inside the total above.
+    expect(corpus.length - docsCorpus.length).toBeGreaterThanOrEqual(170);
+    expect(docsCorpus.length).toBeGreaterThanOrEqual(420);
+  });
+
+  /**
+   * The option axis, floored SEPARATELY from the aggregate above.
+   *
+   * The aggregate cannot see this and never could: at 828 pairs over 85 rules
+   * the corpus carried NINE optioned pairs across TWO rules, and every floor in
+   * this file was green (#2224). A floor on optioned pairs alone would still be
+   * satisfiable by one rule with a big fixture set, so the RULE count is floored
+   * too, and both sit just under the measurement per the floor-drift discipline
+   * — the floors that hid #1984 sat at 5,500 against an actual 8,141.
+   */
+  it('exercises the option-dependent fixers under their real options', () => {
+    console.log(
+      `[recommended-config-fix-closure] ${corpus.length} fix pairs ` +
+        `(${docsCorpus.length} documented, ${
+          corpus.length - docsCorpus.length
+        } fixture) over ${exercisedRules.size}/${
+          fixableRuleNames.length
+        } fixable rules (${
+          docsExercisedRules.size
+        } reached by documented blocks alone); ${
+          suggestionCorpus.length
+        } suggestion pairs over ${suggestionExercisedRules.size}/${
+          suggestionRuleNames.length
+        } rules; ${optionedEntries.length} optioned pairs over ${
+          optionedRules.size
+        } rules; fixtures ` +
+        `considered=${fixtureStats.considered} rewritten=${fixtureStats.rewritten} rescuedByFanOut=${fixtureStats.rescuedByFanOut} inert=${fixtureStats.inert} crashed=${fixtureStats.crashed}`,
+    );
+
+    // 156 optioned pairs over 34 rules, against NINE over TWO before #2224.
+    expect(optionedEntries.length).toBeGreaterThanOrEqual(148);
+    expect(optionedRules.size).toBeGreaterThanOrEqual(32);
+
+    // Of the rules that are BOTH optioned and transform-bearing, how many are
+    // reached under a real non-default option — the ratio #2224 measured at
+    // 4 of 35. Floored as a RATIO rather than a count so that deleting an
+    // optioned fixture cannot satisfy it by shrinking the denominator.
+    expect(optionedAndFixable.length).toBeGreaterThanOrEqual(32);
+    // 32 of 35, against the 4 of 35 #2224 measured.
+    expect(optionedAndFixableReached.length).toBeGreaterThanOrEqual(32);
+    // Named rather than floored, so a FOURTH rule dropping out goes red and so
+    // does one of these three starting to produce a pair. Each is measured, and
+    // none is a gap in this channel: the option either silences the rule
+    // outright or the fixer declines, and a rule that emits no rewrite cannot
+    // introduce a violation with one.
+    //
+    //   no-useless-usememo-primitives      27 optioned cases, 0 REPORT at all
+    //   prefer-getter-over-parameterless-method  9 of 18 report, 0 rewritten
+    //   no-usememo-for-pass-by-value        4 of 4 report, 0 rewritten
+    expect(
+      optionedAndFixable.filter((rule) => !optionedRules.has(rule)).sort(),
+    ).toEqual([
+      'no-useless-usememo-primitives',
+      'no-usememo-for-pass-by-value',
+      'prefer-getter-over-parameterless-method',
+    ]);
+
+    // Non-vacuity of the option channel itself: an entry's options must reach
+    // the linter, not merely be recorded on the entry. `hashImport` names a
+    // module that appears in NO default and in no documented block, so a pair
+    // mentioning it can only exist if the fixture's own options were honoured.
+    const optionDependentOutput = optionedEntries.filter(
+      (entry) =>
+        entry.after.includes('shared/hash') ||
+        entry.after.includes('my/custom/hash/module') ||
+        entry.after.includes('app/utils/stableHash'),
+    );
+    expect(optionDependentOutput.length).toBeGreaterThanOrEqual(4);
+  });
+
+  /**
+   * Fixture accounting. Every counter the channel keeps is read by an
+   * expectation here: a skip counter nothing asserts on discards its inputs in
+   * silence, which is how a corpus shrinks with the build staying green
+   * (#2222). `inert` is deliberately allowed to be large — a fixture the rule
+   * does not rewrite is a fact about the fixture — but `crashed` is not, and
+   * `considered` floors the whole channel.
+   */
+  it('accounts for every fixture it was handed', () => {
+    // 694 considered, of which 178 rewritten and 516 inert.
+    expect(fixtureStats.considered).toBeGreaterThanOrEqual(660);
+    expect(
+      fixtureStats.rewritten +
+        fixtureStats.rescuedByFanOut +
+        fixtureStats.inert +
+        fixtureStats.crashed,
+    ).toBe(fixtureStats.considered);
+    expect(fixtureStats.crashed).toBe(0);
+    expect(fixtureStats.rewritten).toBeGreaterThanOrEqual(170);
+    // The harvest itself must not have silently collapsed. 13,754 cases over
+    // the whole plugin is the pool this channel selects from; a floor here is
+    // what separates "the filter admitted little" from "the harvest returned
+    // nothing".
+    expect(fixtureCorpus.failures).toEqual([]);
+    expect(fixtureCorpus.totalCases).toBeGreaterThanOrEqual(13000);
+  });
+
+  /**
+   * The three fixable rules the documented blocks reach not at all, and which
+   * the fixture channel exists to recover.
+   *
+   * `prefer-params-over-parent-id` is the cloud-function-path rule the `.f.ts`
+   * entry in FILENAME_CANDIDATES was added for, and it contributed zero pairs
+   * from the docs channel for as long as this guard has existed. The other two
+   * are unreachable from a TypeScript-only harness at all. All three ship
+   * `recommended: 'error'` with a fixer.
+   */
+  it('reaches the fixable rules no documented block reaches', () => {
+    const recovered = [
+      'prefer-params-over-parent-id',
+      'no-unpinned-dependencies',
+      'enforce-typescript-markdown-code-blocks',
+    ];
+    expect(recovered.filter((rule) => docsExercisedRules.has(rule))).toEqual(
+      [],
+    );
+    expect(recovered.filter((rule) => exercisedRules.has(rule))).toEqual(
+      recovered,
+    );
+    // Both non-TypeScript languages are actually driven, not merely admitted.
+    const languages = new Set(
+      corpus
+        .map((entry) => entry.testCase?.language)
+        .filter((language): language is string => Boolean(language)),
+    );
+    expect([...languages].sort()).toEqual(['json', 'markdown', 'ts']);
   });
 
   it('reaches every library a shipped fixer statically imports', () => {
@@ -1143,6 +1600,17 @@ describe('the suggestion closure guard is load-bearing', () => {
       Object.fromEntries(suggestionRuleNames.map((rule) => [rule, true])),
     );
     expect(suggestionExercisedRules.size).toBe(suggestionRuleNames.length);
-    expect(suggestionCorpus.length).toBeGreaterThanOrEqual(349);
+    // 271, against 349 under the string-literal scrape this channel replaced.
+    // The drop is not lost coverage: the scrape's extra rows were describe
+    // TITLES, `messages` templates and single-line FRAGMENTS split out of a
+    // multi-line example, none of which is a fixture. Measured over the same
+    // five rules, the scrape yielded 1,014 snippets and the harvest yields
+    // 1,042 real cases, and every entry in SUGGESTION_INDUCED_BASELINE still
+    // reproduces — which the staleness check above enforces.
+    expect(suggestionCorpus.length).toBeGreaterThanOrEqual(258);
+    // The fixture half specifically, so a regression to docs-only blocks —
+    // which reach no suggestion for react-memoize-literals at all (#1601) —
+    // cannot hide inside the total.
+    expect(suggestionFixturePairs).toBeGreaterThanOrEqual(200);
   });
 });
