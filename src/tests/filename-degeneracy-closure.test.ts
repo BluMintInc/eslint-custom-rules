@@ -610,6 +610,20 @@ describe('filename-degeneracy fix closure', () => {
     // A baseline the harness cannot read withholds its whole fixture while
     // every other counter still reads clean (#1820).
     expect(unreadableControl).toBe(0);
+    // The two discard channels beside it, pinned at their measured ZERO rather
+    // than merely printed. A number interpolated into a diagnostic is not a
+    // gate: if it moves, the build stays green (#2225).
+    //
+    // `discardedUnparsable` is the #1984 signature specifically. A fatal parse
+    // is indistinguishable from a rule staying silent, because every consumer
+    // filters messages by `ruleId` — which is how 106 valid cases across 7
+    // rules went unnoticed. Nothing in this corpus fails to parse under its own
+    // baseline filename today, so the pin is vacuous BY DESIGN: it exists to
+    // catch the first fixture that does, not to describe a standing discard.
+    expect(discardedUnparsable).toBe(0);
+    // Likewise: a comparison the harness cannot read drops the fixture after
+    // the rewrite already happened, so it costs a verdict rather than an input.
+    expect(unreadableComparison).toBe(0);
     expect(considered).toBeGreaterThan(8000);
     expect(rewritten).toBeGreaterThan(5000);
     expect(derivationsObserved).toBeGreaterThan(1200);

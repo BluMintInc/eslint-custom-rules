@@ -1214,6 +1214,27 @@ describe('the multi-declarator probe is load-bearing', () => {
     expect(subjects.length).toBeGreaterThan(150);
     expect(corpus.totalCases).toBeGreaterThan(4000);
     expect(totals.fixturesConsidered).toBeGreaterThan(4000);
+
+    // The language skip, asserted rather than merely printed into the summary
+    // below (#2225). Pinned to the corpus property it is supposed to equal, not
+    // to a ceiling: every non-TypeScript case among the subjects is skipped and
+    // no TypeScript one is, so a filter that started dropping TS fixtures for
+    // some other reason fails here instead of shrinking the corpus in silence.
+    // Dropping the non-TS testers wholesale is what hid #1860, where two rules
+    // shipping `recommended: 'error'` with a fixer had zero fixtures while every
+    // harvest-based guard iterated over them and passed.
+    const nonTypeScriptAvailable = subjects.reduce(
+      (count, rule) =>
+        count +
+        (corpus.byRule.get(rule) || []).filter(
+          (testCase) => testCase.language !== 'ts',
+        ).length,
+      0,
+    );
+    expect(nonTypeScriptSkipped).toBe(nonTypeScriptAvailable);
+    // 108 when measured. Floored so the equality above cannot be satisfied by
+    // a corpus that stopped carrying non-TypeScript fixtures altogether.
+    expect(nonTypeScriptSkipped).toBeGreaterThanOrEqual(100);
   });
 
   it('actually perturbs, across most of the rule set', () => {
