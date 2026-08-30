@@ -1,3 +1,10 @@
+## [1.20.194](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.193...v1.20.194) (2026-08-30)
+
+
+### Bug Fixes
+
+* **enforce-typescript-markdown-code-blocks:** skip a fence opened on a list marker's line (closes [#2220](https://github.com/BluMintInc/eslint-custom-rules/issues/2220)) ([d746334](https://github.com/BluMintInc/eslint-custom-rules/commit/d746334362a08ff96be973ab5d5afe2a4e0712ca)), closes [#2213](https://github.com/BluMintInc/eslint-custom-rules/issues/2213)
+
 ## [1.20.193](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.192...v1.20.193) (2026-08-30)
 
 
