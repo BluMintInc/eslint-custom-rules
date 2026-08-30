@@ -21,7 +21,7 @@
  *   - `fixer-convergence.test.ts` asks whether ONE rule clears its own trigger.
  *     An oscillation is a property of a PAIR: each rule converges alone.
  *   - `crossrule-contradiction-closure.test.ts` (#1848) does run this exact
- *     convergence question, but only over the 137 DOCUMENTED pairs (rule A's
+ *     convergence question, but only over the 177 DOCUMENTED pairs (rule A's
  *     source names rule B) and with exactly those TWO rules enabled. The corpus
  *     holds ~1,834 reporting pairs; the other ~1,700 were dismissed as
  *     fixture-domain artifacts BY JUDGMENT, never by measurement — and a

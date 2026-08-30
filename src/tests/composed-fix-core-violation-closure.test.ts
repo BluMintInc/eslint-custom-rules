@@ -25,7 +25,7 @@
  *     message whose `ruleId` is not `@blumintinc/blumint/*` — a core violation
  *     is discarded before it is counted — and its corpus is docs fences.
  *   - `crossrule-contradiction-closure.test.ts` composes exactly TWO rules, and
- *     only the ~137 pairs one rule's source names. A three-rule interaction is
+ *     only the ~177 pairs one rule's source names. A three-rule interaction is
  *     invisible to it however the pairs are enumerated.
  *   - `exemption-composition-closure.test.ts` composes the whole config but asks
  *     whether a rule's own EXEMPTION was destroyed, i.e. it reads
