@@ -1,3 +1,10 @@
+## [1.20.192](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.191...v1.20.192) (2026-08-30)
+
+
+### Bug Fixes
+
+* **enforce-typescript-markdown-code-blocks:** never write inside a declined block (closes [#2213](https://github.com/BluMintInc/eslint-custom-rules/issues/2213)) ([700cf55](https://github.com/BluMintInc/eslint-custom-rules/commit/700cf55ddaf8540420fd2afa7a6bce96f4ca8ade))
+
 ## [1.20.191](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.190...v1.20.191) (2026-08-29)
 
 

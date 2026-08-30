@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.192",
+    "date": "2026-08-30T01:20:08.891Z",
+    "rules": [
+      {
+        "name": "enforce-typescript-markdown-code-blocks",
+        "changeType": "fix",
+        "issues": [
+          2213
+        ],
+        "summary": "never write inside a declined block (closes #2213)"
+      }
+    ]
+  },
+  {
     "version": "1.20.191",
     "date": "2026-08-29T19:38:08.123Z",
     "rules": [
