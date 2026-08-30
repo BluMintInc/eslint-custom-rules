@@ -17,6 +17,7 @@ The rule labels a fence only when CommonMark agrees it is one, because anything 
 - The opening fence may be indented at most **three columns**, a tab counting as an advance to the next multiple of four. At four or more columns the line opens an *indented code block*, and its backticks are text.
 - Only a run of **exactly three** backticks, closed by a run of exactly three at the same indent, is labeled. A longer opening run — as in this page's own examples — or a longer closing run leaves the block unlabeled and unread.
 - A `~~~` fence is skipped whole. Its interior is literal, and unlike a backtick fence its info string may itself contain backticks.
+- A fence opened on a **list marker's line** — `- ```ts` — is skipped whole. A label would have to be written past the marker, so the block is left unread instead: its closing fence is only spaces and backticks, and reading it as an opening fence would append a language to literal content.
 - A fence that already carries an info string, and an empty block, are left alone.
 - A fence with no closing run reaches the end of the file, so the rule stops there rather than reading what the block encloses.
 
@@ -83,6 +84,14 @@ const quoted = 'part of the outer block, not a fence of its own';
 const alsoQuoted = 'inside the tildes, so not a fence either';
 ```
 ~~~
+````
+
+A fence opened on a list marker's line is skipped whole, so the block's closing fence keeps its backticks rather than collecting a language:
+
+````markdown
+- ```ts
+  const inAListItem = 'labelled already, and left exactly as written';
+  ```
 ````
 
 ## When Not To Use It

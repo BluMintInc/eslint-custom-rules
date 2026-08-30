@@ -17,6 +17,10 @@ const MIN_FENCE_LENGTH = 3;
 const MAX_FENCE_INDENT_COLUMNS = 3;
 /** CommonMark advances a tab to the next multiple of four when measuring indent. */
 const TAB_STOP = 4;
+/** The three bullet characters CommonMark accepts for an unordered list item. */
+const BULLET_MARKERS = new Set(['-', '+', '*']);
+/** CommonMark caps an ordered list marker at nine digits before its delimiter. */
+const MAX_ORDERED_MARKER_DIGITS = 9;
 
 type Line = {
   /** Offset of the first character of the line in the source text. */
@@ -75,6 +79,119 @@ function readFence(line: Line): Fence | null {
   }
 
   if (indentColumns > MAX_FENCE_INDENT_COLUMNS) {
+    return null;
+  }
+
+  const marker = line.text[offset];
+  if (marker !== BACKTICK && marker !== TILDE) {
+    return null;
+  }
+
+  let runLength = 0;
+  while (line.text[offset + runLength] === marker) {
+    runLength += 1;
+  }
+
+  if (runLength < MIN_FENCE_LENGTH) {
+    return null;
+  }
+
+  return {
+    runStart: line.start + offset,
+    marker,
+    runLength,
+    indent: line.text.slice(0, offset),
+    infoString: line.text.slice(offset + runLength),
+  };
+}
+
+/**
+ * Reads the list marker at `offset`, including the whitespace that separates
+ * it from the item's content, or 0 when no marker starts there. CommonMark
+ * requires that separator, which is what keeps `*emphasis*` and the thematic
+ * break `***` from reading as list items.
+ */
+function readListMarker(text: string, offset: number): number {
+  let cursor = offset;
+  const char = text[cursor];
+
+  if (char !== undefined && BULLET_MARKERS.has(char)) {
+    cursor += 1;
+  } else {
+    let digits = 0;
+    while (
+      digits < MAX_ORDERED_MARKER_DIGITS &&
+      text[cursor + digits] >= '0' &&
+      text[cursor + digits] <= '9'
+    ) {
+      digits += 1;
+    }
+    const delimiter = text[cursor + digits];
+    if (digits === 0 || (delimiter !== '.' && delimiter !== ')')) {
+      return 0;
+    }
+    cursor += digits + 1;
+  }
+
+  if (text[cursor] !== ' ' && text[cursor] !== '\t') {
+    return 0;
+  }
+  while (text[cursor] === ' ' || text[cursor] === '\t') {
+    cursor += 1;
+  }
+
+  return cursor - offset;
+}
+
+/**
+ * Reads a fence opened on the same line as one or more list markers, as in
+ * "- ```ts". A list item's content begins after its marker, so the backticks
+ * open a block there exactly as they would at the head of a line.
+ *
+ * `readFence` cannot see one, because it stops at the first character that is
+ * neither a space nor a tab. Without this the scanner walks INTO such a block
+ * and mistakes its closing fence — which is nothing but spaces and backticks —
+ * for an opening one, appending a language to literal document content.
+ *
+ * The block is skipped whole rather than labeled: a fix would have to be
+ * written past the marker, and labeling a block this rule cannot delimit at
+ * the head of a line is the false-negative direction it deliberately keeps.
+ */
+function readListItemFence(line: Line): Fence | null {
+  let indentColumns = 0;
+  let offset = 0;
+  let sawMarker = false;
+
+  for (;;) {
+    while (offset < line.text.length) {
+      const char = line.text[offset];
+      if (char === ' ') {
+        indentColumns += 1;
+      } else if (char === '\t') {
+        indentColumns += TAB_STOP - (indentColumns % TAB_STOP);
+      } else {
+        break;
+      }
+      offset += 1;
+    }
+
+    if (indentColumns > MAX_FENCE_INDENT_COLUMNS) {
+      return null;
+    }
+
+    const markerLength = readListMarker(line.text, offset);
+    if (markerLength === 0) {
+      break;
+    }
+
+    offset += markerLength;
+    // The item's content starts a fresh indent budget, so a fence sitting at
+    // the content column is at indent zero however deep the nesting is.
+    indentColumns = 0;
+    sawMarker = true;
+  }
+
+  if (!sawMarker) {
     return null;
   }
 
@@ -179,7 +296,23 @@ export const enforceTypescriptMarkdownCodeBlocks = createRule<
           const fence = readFence(openingLine);
 
           if (fence === null) {
-            index += 1;
+            const listFence = readListItemFence(openingLine);
+            if (listFence === null) {
+              index += 1;
+              continue;
+            }
+
+            // A fence opened on a list marker's line is one this rule declines
+            // to label, and declining to label a block means declining to read
+            // it. Skipping it whole is what keeps its closing fence — spaces
+            // and backticks, indistinguishable from an opener — out of the
+            // walk.
+            const listClosing = findFenceCloser(lines, index + 1, listFence);
+            if (listClosing === null) {
+              return;
+            }
+
+            index = listClosing.line + 1;
             continue;
           }
 
