@@ -123,6 +123,73 @@ const fenceAt = (line: string) => {
   return { marker: marker as '`' | '~', runLength, info, columns };
 };
 
+const BULLETS = new Set(['-', '+', '*']);
+
+/** Length of the list marker at `offset`, with its separating run, else 0. */
+const listMarkerAt = (line: string, offset: number) => {
+  let cursor = offset;
+  if (BULLETS.has(line[cursor])) {
+    cursor += 1;
+  } else {
+    let digits = 0;
+    while (
+      digits < 9 &&
+      line[cursor + digits] >= '0' &&
+      line[cursor + digits] <= '9'
+    )
+      digits += 1;
+    const delimiter = line[cursor + digits];
+    if (digits === 0 || (delimiter !== '.' && delimiter !== ')')) return 0;
+    cursor += digits + 1;
+  }
+  if (line[cursor] !== ' ' && line[cursor] !== '\t') return 0;
+  while (line[cursor] === ' ' || line[cursor] === '\t') cursor += 1;
+  return cursor - offset;
+};
+
+/**
+ * A fence opened on a list marker's line, as in "- ```ts". A list item's
+ * content begins after its marker, so the run opens a block there.
+ *
+ * This is an OPENER-only reading: a closing fence carries no marker, so
+ * closers stay on the strict `fenceAt`. Without it the extractor walks into
+ * the item's block and takes its closing fence — spaces then backticks — for
+ * an opener, which is the same misreading the rule itself had, and it makes
+ * this oracle ratify that corruption instead of catching it.
+ */
+const listFenceAt = (line: string) => {
+  let columns = 0;
+  let offset = 0;
+  let sawMarker = false;
+
+  for (;;) {
+    const indent = indentColumnsOf(line.slice(offset));
+    columns += indent.columns;
+    offset += indent.offset;
+    if (columns > MAX_FENCE_INDENT) return null;
+
+    const markerLength = listMarkerAt(line, offset);
+    if (markerLength === 0) break;
+    offset += markerLength;
+    // The item's content starts a fresh indent budget.
+    columns = 0;
+    sawMarker = true;
+  }
+
+  if (!sawMarker) return null;
+  const marker = line[offset];
+  if (marker !== '`' && marker !== '~') return null;
+  let runLength = 0;
+  while (line[offset + runLength] === marker) runLength += 1;
+  if (runLength < 3) return null;
+  const info = line.slice(offset + runLength);
+  if (marker === '`' && info.includes('`')) return null;
+  return { marker: marker as '`' | '~', runLength, info, columns };
+};
+
+/** What may OPEN a block: a bare fence, or one behind list markers. */
+const openerAt = (line: string) => fenceAt(line) ?? listFenceAt(line);
+
 /**
  * Extracts every code block, in order. Deliberately a whole-document
  * extraction rather than the rule's incremental walk, so the two do not share
@@ -134,7 +201,7 @@ const blocksOf = (text: string): Block[] => {
   let index = 0;
 
   while (index < lines.length) {
-    const fence = fenceAt(lines[index]);
+    const fence = openerAt(lines[index]);
     if (fence) {
       const body: string[] = [];
       let cursor = index + 1;

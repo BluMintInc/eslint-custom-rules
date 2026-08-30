@@ -169,6 +169,71 @@ ruleTesterMarkdown.run('enforce-typescript-markdown-code-blocks', rule, {
     createValidTestCase(
       '````markdown\r\n```\r\na\r\n```\r\n````\r\n\r\n````markdown\r\n```\r\nb\r\n```\r\n````',
     ),
+    // A fence opened on a list marker's line. The rule declines to label it,
+    // so it must not read its interior either: the closing fence is spaces
+    // then backticks, which the scanner would otherwise take for an opener and
+    // append a language to. Two blocks are required — with one the walk finds
+    // no closer and declines anyway, which is why no single-block fixture can
+    // hold this.
+    createValidTestCase(
+      joinLines(
+        '- ```ts',
+        '  const a = 1;',
+        '  ```',
+        '',
+        'Ordinary prose that is NOT code.',
+        '',
+        '- ```ts',
+        '  const b = 2;',
+        '  ```',
+      ),
+    ),
+    createValidTestCase(
+      joinLines(
+        '* ```',
+        '  const a = 1;',
+        '  ```',
+        '',
+        '* ```',
+        '  const b = 2;',
+        '  ```',
+      ),
+    ),
+    createValidTestCase(
+      joinLines(
+        '1. ```ts',
+        '   const a = 1;',
+        '   ```',
+        '',
+        '1. ```ts',
+        '   const b = 2;',
+        '   ```',
+      ),
+    ),
+    // Nested markers reach the same content column, and a `)` delimiter opens
+    // an ordered item just as `.` does.
+    createValidTestCase(
+      joinLines(
+        '- - ```ts',
+        '    const a = 1;',
+        '    ```',
+        '',
+        '- - ```ts',
+        '    const b = 2;',
+        '    ```',
+      ),
+    ),
+    createValidTestCase(
+      joinLines(
+        '1) ```',
+        '   const a = 1;',
+        '   ```',
+        '',
+        '1) ```',
+        '   const b = 2;',
+        '   ```',
+      ),
+    ),
   ],
   invalid: [
     createInvalidTestCase(
@@ -454,6 +519,55 @@ ruleTesterMarkdown.run('enforce-typescript-markdown-code-blocks', rule, {
       '~~~\r\n```\r\na\r\n```\r\n~~~\r\n\r\n```\r\nb\r\n```',
       '~~~\r\n```\r\na\r\n```\r\n~~~\r\n\r\n```typescript\r\nb\r\n```',
       [{ messageId: 'missingLanguageSpecifier', line: 7 }],
+    ),
+    // The list-item carve-out costs no report: the scan resumes past the
+    // skipped block, so the ordinary unlabeled one after it is still labelled.
+    // Before the carve-out this document went entirely unreported, because the
+    // walk was lost inside the list item's block.
+    createInvalidTestCase(
+      joinLines(
+        '- ```ts',
+        '  const a = 1;',
+        '  ```',
+        '',
+        'Ordinary prose that is NOT code.',
+        '',
+        '```',
+        'const b = 2;',
+        '```',
+      ),
+      joinLines(
+        '- ```ts',
+        '  const a = 1;',
+        '  ```',
+        '',
+        'Ordinary prose that is NOT code.',
+        '',
+        '```typescript',
+        'const b = 2;',
+        '```',
+      ),
+      [{ messageId: 'missingLanguageSpecifier', line: 7 }],
+    ),
+    // A bullet character with no separating space is not a list marker, so
+    // emphasis and a thematic break must not absorb the block after them.
+    createInvalidTestCase(
+      joinLines('*emphasis* and ***', '', '```', 'const a = 1;', '```'),
+      joinLines(
+        '*emphasis* and ***',
+        '',
+        '```typescript',
+        'const a = 1;',
+        '```',
+      ),
+      [{ messageId: 'missingLanguageSpecifier', line: 3 }],
+    ),
+    // A list item whose content is prose, not a fence, leaves the following
+    // block exactly where it was.
+    createInvalidTestCase(
+      joinLines('- item:', '', '  ```', '  const a = 1;', '  ```'),
+      joinLines('- item:', '', '  ```typescript', '  const a = 1;', '  ```'),
+      [{ messageId: 'missingLanguageSpecifier', line: 3 }],
     ),
   ],
 });
