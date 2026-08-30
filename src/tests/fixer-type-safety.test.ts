@@ -1226,6 +1226,7 @@ const coverage = {
   illTypedInput: [] as string[],
   covered: [] as string[],
   cappedTail: [] as string[],
+  suggestionCappedTail: [] as string[],
 };
 const explanation = new Map<string, Reason>();
 const detail = new Map<string, string>();
@@ -1308,6 +1309,15 @@ for (const rule of fixableRules) {
  */
 const suggestionPairs: Pair[] = [];
 const suggestionExplanation = new Map<string, Reason>();
+/**
+ * Cases the per-rule pair cap discarded on the SUGGESTION channel.
+ *
+ * The fix channel has counted this since it grew a cap; the suggestion channel
+ * applied the same `MAX_PAIRS_PER_RULE` and counted nothing at all, so its
+ * discards were invisible even to the diagnostic — a tier below the six
+ * printed-but-unasserted counters #2225 set out to fix.
+ */
+let cappedSuggestions = 0;
 
 for (const rule of suggestionRules) {
   const { usable } = casesFor(rule);
@@ -1316,8 +1326,13 @@ for (const rule of suggestionRules) {
     continue;
   }
   let emitted = 0;
+  let suggestionSkipped = 0;
   const collect = (testCase: FixtureCase, filenames: string[]) => {
-    if (!filenames.length || emitted >= MAX_PAIRS_PER_RULE) return;
+    if (!filenames.length) return;
+    if (emitted >= MAX_PAIRS_PER_RULE) {
+      suggestionSkipped++;
+      return;
+    }
     const result = suggestWith(PREFIX + rule, testCase, filenames);
     if (!result) return;
     for (const output of result.outputs) {
@@ -1348,6 +1363,10 @@ for (const rule of suggestionRules) {
         ? REASONS.undrivable
         : REASONS.neverReports,
     );
+  }
+  if (suggestionSkipped) {
+    coverage.suggestionCappedTail.push(`${rule} ${suggestionSkipped}`);
+    cappedSuggestions += suggestionSkipped;
   }
 }
 
@@ -1689,6 +1708,9 @@ console.log(
       `harvested cases, in ${coverage.cappedTail.length} rule(s) [dropped]: ${
         coverage.cappedTail.join(', ') || 'none'
       }`,
+    `  suggestion pair cap dropped ${cappedSuggestions} case(s), in ${
+      coverage.suggestionCappedTail.length
+    } rule(s) [dropped]: ${coverage.suggestionCappedTail.join(', ') || 'none'}`,
     `  ${sharedScopeDropped} case(s) dropped for declaring into the shared scope`,
     `  ${nonTypeScriptDropped} case(s) dropped for not being TypeScript`,
     `  ${
@@ -1746,6 +1768,62 @@ describe('an autofix must not turn compiling code into non-compiling code', () =
     );
     expect(assertedPairs.length).toBeGreaterThanOrEqual(1800);
     expect(corpus.failures).toEqual([]);
+    // The cap's DENOMINATOR. Without it the ceilings below read as healthy on a
+    // corpus that collapsed to nothing. 14,004 when measured.
+    expect(harvested).toBeGreaterThanOrEqual(13000);
+  });
+
+  /**
+   * The three discard channels, asserted rather than merely printed into the
+   * diagnostic above (#2225). Each silently removes cases from the corpus this
+   * guard exists to drive, and a number interpolated into a console line is not
+   * a gate — if it moves, the build stays green.
+   *
+   * `capped` is the one that is corpus-growth-SENSITIVE, which is why it gets a
+   * named rule list and not just a ceiling. `MAX_PAIRS_PER_RULE` is a deliberate
+   * performance trade-off, so its cost is allowed — but the harvest grows, and
+   * as it does the cap eats an increasing share of every hot rule. That is the
+   * shape of a drifted floor with no floor at all: pinning the RULES that hit
+   * the cap makes a fifth one a conscious edit rather than a silent loss.
+   */
+  it('accounts for every case it discards before compiling', () => {
+    // 387 of 14,004 harvested, in exactly these four rules
+    // (enforce-assert-safe-object-key 223, no-explicit-return-type 153,
+    // enforce-memoize-async 6, parallelize-async-operations 5). The COUNTS are
+    // left out of the pin because they move with every fixture added to a
+    // capped rule; the membership is what carries the meaning.
+    expect(
+      coverage.cappedTail.map((entry) => entry.split(' ')[0]).sort(),
+    ).toEqual([
+      'enforce-assert-safe-object-key',
+      'enforce-memoize-async',
+      'no-explicit-return-type',
+      'parallelize-async-operations',
+    ]);
+    // A ceiling just above the measurement, per the floor-drift discipline in
+    // reverse: a rise is a conscious edit, not something to discover later.
+    expect(capped).toBeLessThanOrEqual(450);
+    // ...and a floor, so a cap that stopped applying at all — which would make
+    // the rule list above stale rather than green — cannot pass quietly.
+    expect(capped).toBeGreaterThan(0);
+
+    // 23 when measured: fixtures that declare into the shared scope, which the
+    // single-program harness cannot compile side by side.
+    expect(sharedScopeDropped).toBeLessThanOrEqual(40);
+
+    // Pinned to the corpus property it should equal rather than to a ceiling:
+    // every non-TypeScript case among the fixable rules is dropped and no
+    // TypeScript one is. Dropping the non-TS testers wholesale is what hid
+    // #1860 — two rules shipping `recommended: 'error'` with a fixer, with zero
+    // fixtures, while every harvest-based guard iterated over them and passed.
+    const nonTypeScriptAvailable = fixableRules.reduce(
+      (count, rule) => count + casesFor(rule).nonTypeScript,
+      0,
+    );
+    expect(nonTypeScriptDropped).toBe(nonTypeScriptAvailable);
+    // 108 when measured. Floors the equality so it cannot be satisfied by a
+    // corpus that stopped carrying non-TypeScript fixtures at all.
+    expect(nonTypeScriptDropped).toBeGreaterThanOrEqual(100);
   });
 
   /**
@@ -1815,6 +1893,16 @@ describe('a suggestion must not turn compiling code into non-compiling code', ()
       ),
     ).toEqual(Object.fromEntries(suggestionRules.map((rule) => [rule, true])));
     expect(assertedSuggestionPairs.length).toBeGreaterThanOrEqual(120);
+
+    // The suggestion channel applies the same MAX_PAIRS_PER_RULE as the fix
+    // channel, but counted its discards nowhere at all — not even in the
+    // diagnostic, which put it a tier below the printed-but-unasserted counters
+    // #2225 set out to fix. Measured at ZERO: no suggestion-emitting rule comes
+    // within reach of the cap, where the fix channel is capped in FOUR rules.
+    // So this is a regression detector, vacuous by design — it catches the
+    // first rule that does reach it, rather than describing a standing discard.
+    expect(cappedSuggestions).toBe(0);
+    expect(coverage.suggestionCappedTail).toEqual([]);
   });
 
   /**
