@@ -238,15 +238,21 @@ const arrowToDeclaration = (source: string, ast: any): Edit[] => {
 };
 
 /**
- * Why a function expression is left alone, so that a site this transform passes
- * over is a NAMED refusal rather than a rewrite that quietly failed to parse.
+ * Why a transform leaves a site alone, so that a site it passes over is a NAMED
+ * refusal rather than a rewrite that quietly failed to parse.
  *
- * The distinction is the whole point of the map: 1,202 of the 1,455 sites this
- * transform used to rewrite were class method shorthand, whose emitted text
- * (`foo() => {}`) is not a program, so the entire fixture was dropped at the
- * reparse — 89% of all attempts, invisibly (#1870).
+ * The distinction is the whole point of the map: 1,202 of the 1,455 sites
+ * `funcExpression->arrow` used to rewrite were class method shorthand, whose
+ * emitted text (`foo() => {}`) is not a program, so the entire fixture was
+ * dropped at the reparse — 89% of all attempts, invisibly (#1870).
+ *
+ * The map spans transforms rather than one, because a refusal counted by
+ * nothing is the same defect wherever it lives: `blockArrow->concise` held a
+ * neutrality gate that rejected 46 sites through a bare `return`, so no
+ * `expect` in this file could see that all 46 were false (#2223, the class of
+ * #2222).
  */
-const FUNCTION_EXPRESSION_DECLINES = {
+const TRANSFORM_DECLINES = {
   generator: 'an arrow has no generator form',
   namedFunctionExpression:
     'the name is in scope inside the body, which an arrow cannot express',
@@ -258,8 +264,10 @@ const FUNCTION_EXPRESSION_DECLINES = {
     'no parameter list was found where the signature must begin, so the emitted arrow would be a guess',
   unrecognizedSpelling:
     'the node does not begin with the `function` keyword and is not a shorthand this transform knows, so its extent is unknown',
+  blockBodyHoldsComment:
+    'the arrow body holds text the return statement does not account for — a comment, whose deletion would change which rules fire (#1859)',
 } as const;
-type FunctionExpressionDecline = keyof typeof FUNCTION_EXPRESSION_DECLINES;
+type TransformDecline = keyof typeof TRANSFORM_DECLINES;
 
 /** A `function` expression's own text always opens with the keyword. */
 const FUNCTION_KEYWORD = /^(?:async\s+)?function\b/;
@@ -274,7 +282,7 @@ const FUNCTION_KEYWORD = /^(?:async\s+)?function\b/;
  * object property: a class method's arrow-valued spelling is a class property,
  * which is a different declaration, so it is declined by name instead.
  *
- * Every site not rewritten is counted under `FUNCTION_EXPRESSION_DECLINES`,
+ * Every site not rewritten is counted under `TRANSFORM_DECLINES`,
  * because the failure this replaces was silent by construction — a broken
  * rewrite is indistinguishable from a fixture with nothing to rewrite once the
  * reparse has thrown it away.
@@ -282,7 +290,7 @@ const FUNCTION_KEYWORD = /^(?:async\s+)?function\b/;
 const functionExpressionToArrow = (
   source: string,
   ast: any,
-  decline: (reason: FunctionExpressionDecline) => void,
+  decline: (reason: TransformDecline) => void,
 ): Edit[] => {
   const candidates: Edit[] = [];
   walk(ast, (node, parent) => {
@@ -382,10 +390,28 @@ const conciseArrowToBlock = (source: string, ast: any): Edit[] => {
  * Every finding it manufactured was of that shape — a rule that declines to fix
  * rather than delete a comment (`no-useless-usememo-primitives`), or one whose
  * exemption carrier is the comment itself (`no-entire-object-hook-deps`) —
- * so the perturbation, not the rule, was the asymmetry (#1859). The same
- * neutrality discipline `isNeutral` applies to `this`/`arguments`/`super`.
+ * so the perturbation, not the rule, was the asymmetry (#1859).
+ *
+ * **This transform alone carries no `isNeutral` gate, and must not regain one
+ * by symmetry with its four neighbours.** The other transforms convert BETWEEN
+ * function forms, where `this`/`arguments`/`super` genuinely rebind. This one
+ * is arrow to arrow: the edit replaces `node.body` with a verbatim slice of
+ * that body's own `ReturnStatement` argument, entirely inside the same arrow,
+ * and an arrow resolves `this` from its enclosing NON-arrow function — which
+ * the edit never touches. Measured over the corpus, the gate rejected 46 sites,
+ * every one of them `this` and never `arguments`/`super`/`yield`, and all 46
+ * were provably safe: the edit range lay strictly inside the same arrow, the
+ * replacement was a verbatim slice, and each round-tripped cleanly back through
+ * the inverse `conciseArrow->block`. It cost 42 variants, 26 of them on
+ * `prefer-getter-over-parameterless-method` — a rule about class methods, which
+ * is exactly where `this` appears, so the gate blinded the guard hardest on the
+ * rules it most needed to drive (#2223).
  */
-const blockArrowToConcise = (source: string, ast: any): Edit[] => {
+const blockArrowToConcise = (
+  source: string,
+  ast: any,
+  decline: (reason: TransformDecline) => void,
+): Edit[] => {
   const edits: Edit[] = [];
   walk(ast, (node) => {
     if (node.type !== 'ArrowFunctionExpression') return;
@@ -397,12 +423,17 @@ const blockArrowToConcise = (source: string, ast: any): Edit[] => {
     const inner = source
       .slice(node.body.range[0] + 1, node.body.range[1] - 1)
       .trim();
-    if (inner !== source.slice(only.range[0], only.range[1]).trim()) return;
+    // The block carries text the return statement does not account for, which
+    // is a comment. Named rather than dropped: this is the ONE refusal keeping
+    // #1859's fabricated findings from coming back, so if it ever stops firing
+    // that must be a failure and not a silent slide back to the old behaviour.
+    if (inner !== source.slice(only.range[0], only.range[1]).trim()) {
+      return decline('blockBodyHoldsComment');
+    }
     const argument = source.slice(
       only.argument.range[0],
       only.argument.range[1],
     );
-    if (!isNeutral(argument)) return;
     edits.push({
       start: node.body.range[0],
       end: node.body.range[1],
@@ -433,7 +464,7 @@ const blockArrowToConcise = (source: string, ast: any): Edit[] => {
 type Build = (
   source: string,
   ast: any,
-  decline: (reason: FunctionExpressionDecline) => void,
+  decline: (reason: TransformDecline) => void,
 ) => Edit[];
 
 const TRANSFORMS: readonly { name: string; build: Build }[] = [
@@ -474,7 +505,7 @@ type Observer = {
     sites: number,
     nested: number,
   ) => void;
-  decline: (reason: FunctionExpressionDecline) => void;
+  decline: (reason: TransformDecline) => void;
   /** The text a discarded attempt emitted, so the residue can be READ. */
   discarded: (transform: string, original: string, rewritten: string) => void;
 };
@@ -570,7 +601,7 @@ const transformStats = new Map<string, TransformStats>(
   TRANSFORMS.map((transform) => [transform.name, emptyTransformStats()]),
 );
 
-const declinedSites = new Map<FunctionExpressionDecline, number>();
+const declinedSites = new Map<TransformDecline, number>();
 
 /**
  * Every discarded attempt, printed with the census.
@@ -1504,7 +1535,7 @@ const DISCARD_RESIDUE: Record<string, { cause: string; ceiling: number }> = {
  * Holding them at exactly zero makes the next such shape a failure rather than
  * a silent discard.
  */
-const DECLINE_FLOORS: Record<FunctionExpressionDecline, number> = {
+const DECLINE_FLOORS: Record<TransformDecline, number> = {
   classMemberShorthand: 1500,
   namedFunctionExpression: 100,
   accessorShorthand: 10,
@@ -1512,16 +1543,17 @@ const DECLINE_FLOORS: Record<FunctionExpressionDecline, number> = {
   generator: 5,
   noParameterList: 0,
   unrecognizedSpelling: 0,
+  blockBodyHoldsComment: 60,
 };
 
-const DEFENSIVE_DECLINES = new Set<FunctionExpressionDecline>([
+const DEFENSIVE_DECLINES = new Set<TransformDecline>([
   'noParameterList',
   'unrecognizedSpelling',
 ]);
 
 const declineReasons = Object.keys(
-  FUNCTION_EXPRESSION_DECLINES,
-) as FunctionExpressionDecline[];
+  TRANSFORM_DECLINES,
+) as TransformDecline[];
 
 /** What a transform threw away, so a breached ceiling names its own residue. */
 const discardReport = (transform: string) =>
@@ -1538,12 +1570,10 @@ const discardReport = (transform: string) =>
  * One transform applied to one planted snippet, run outside the corpus census
  * so a control cannot move the floors it asserts.
  */
-const respell = (code: string) => {
+const respell = (code: string, build: Build = functionExpressionToArrow) => {
   const ast = parseOrNull(code, false);
-  const declined: FunctionExpressionDecline[] = [];
-  const built = ast
-    ? functionExpressionToArrow(code, ast, (reason) => declined.push(reason))
-    : [];
+  const declined: TransformDecline[] = [];
+  const built = ast ? build(code, ast, (reason) => declined.push(reason)) : [];
   const { kept, nested } = outermostOnly(built);
   return { code: applyEdits(code, kept), declined, nested };
 };
@@ -1562,8 +1592,10 @@ const RESPELLING_CONTROLS: readonly {
   name: string;
   code: string;
   output: string;
-  declined: FunctionExpressionDecline[];
+  declined: TransformDecline[];
   nested?: number;
+  /** Defaults to `funcExpression->arrow`, which most controls exercise. */
+  build?: Build;
 }[] = [
   {
     name: 'a plain function expression',
@@ -1646,6 +1678,29 @@ const RESPELLING_CONTROLS: readonly {
     declined: [],
     nested: 1,
   },
+  {
+    // The refusal that keeps #1859's fabricated findings retired: a directive
+    // inside the block decides which rules fire, so dropping it would make the
+    // PERTURBATION the asymmetry.
+    name: 'nothing of an arrow body holding a comment',
+    code: 'const f = () => {\n  // eslint-disable-next-line no-console\n  return x;\n};',
+    output:
+      'const f = () => {\n  // eslint-disable-next-line no-console\n  return x;\n};',
+    declined: ['blockBodyHoldsComment'],
+    build: blockArrowToConcise,
+  },
+  {
+    // The #2223 regression detector. `this` in an arrow body is NOT a reason to
+    // decline — the expression stays inside the same arrow, which resolves
+    // `this` from an enclosing non-arrow function the edit never touches. If a
+    // neutrality gate is ever reinstated here by symmetry with the four
+    // boundary-moving transforms, this control is what fails.
+    name: 'an arrow body that reads this, which rebinds nothing',
+    code: 'class A { f = () => { return this.x; }; }',
+    output: 'class A { f = () => this.x; }',
+    declined: [],
+    build: blockArrowToConcise,
+  },
 ];
 
 const measuredFixUndriven = measuredUndriven(fixCauseOf, 'noFixer');
@@ -1710,7 +1765,7 @@ console.log(
         `unparsable=${stats.outcomes.unparsable} ` +
         `recovered=${stats.outcomes.recovered} rules=${stats.rules.size}`,
     ),
-    `  funcExpression->arrow declined: ${JSON.stringify(
+    `  declined by transform gates: ${JSON.stringify(
       Object.fromEntries([...declinedSites].sort()),
     )}`,
     `  discarded: ${discards.length}`,
@@ -1991,7 +2046,7 @@ describe('every declared respelling must actually be produced', () => {
   it('counts every function expression it passes over', () => {
     const measured = Object.fromEntries(
       declineReasons.map((reason) => [reason, declinedSites.get(reason) || 0]),
-    ) as Record<FunctionExpressionDecline, number>;
+    ) as Record<TransformDecline, number>;
     // A defensive reason is held at exactly zero, so a shape whose range this
     // transform does not understand becomes a failure rather than a discard;
     // every other reason must keep being exercised or its branch is dead.
@@ -2029,7 +2084,7 @@ describe('every declared respelling must actually be produced', () => {
   it.each(
     RESPELLING_CONTROLS.map((control) => [control.name, control] as const),
   )('respells %s', (_name, control) => {
-    const result = respell(control.code);
+    const result = respell(control.code, control.build);
     expect({
       code: result.code,
       declined: result.declined,
