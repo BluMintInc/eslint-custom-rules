@@ -1374,11 +1374,12 @@ const CROSS_SUGGESTER_FLOOR = 5; // measured 5
  * a harness regression shows up as a jump rather than a dip. A ceiling parked
  * far above its measurement is the #1984 failure verbatim.
  */
-// measured 82 — the CommonMark fence fixtures added to
-// `enforce-typescript-markdown-code-blocks` for #2213 took the non-TS
-// population from 40 to 82. These cases are judged instead by
-// `lang-fix-closure`, the core-equivalent oracle for their languages.
-const NON_TS_CEILING = 100;
+// measured 95 — the CommonMark fence fixtures added to
+// `enforce-typescript-markdown-code-blocks` for #2213, including its CRLF and
+// code-span cases, took the non-TS population from 40 to 95. These cases are
+// judged instead by `lang-fix-closure`, the core-equivalent oracle for their
+// languages.
+const NON_TS_CEILING = 130;
 const SHARED_SCOPE_CEILING = 50; // measured 32
 const INPUT_FATAL_CEILING = 5; // measured 0
 const THREW_CEILING = 5; // measured 0

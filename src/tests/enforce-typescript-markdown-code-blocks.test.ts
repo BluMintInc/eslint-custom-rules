@@ -145,6 +145,20 @@ ruleTesterMarkdown.run('enforce-typescript-markdown-code-blocks', rule, {
     createValidTestCase(
       joinLines('```', '    ```', '    const buried = 1;', '    ```'),
     ),
+    // Runs shorter than three backticks are code spans, never fences.
+    createValidTestCase(joinLines('`', 'const a = 1;', '`')),
+    createValidTestCase(joinLines('``', 'const a = 1;', '``')),
+    createValidTestCase('Inline `const a = 1;` stays a code span.'),
+    // CRLF, across each carve-out: the scanner splits on \n, so every one of
+    // these leaves a trailing \r that must not read as an info string.
+    createValidTestCase('```\r\n```'),
+    createValidTestCase('```ts\r\nconst a = 1;\r\n```'),
+    createValidTestCase('\t```\r\nconst tabbed = true;\r\n\t```'),
+    createValidTestCase('    ```\r\n    const indented = true;\r\n    ```'),
+    createValidTestCase('~~~\r\n```\r\ninner\r\n```\r\n~~~'),
+    createValidTestCase(
+      '````markdown\r\n```\r\na\r\n```\r\n````\r\n\r\n````markdown\r\n```\r\nb\r\n```\r\n````',
+    ),
   ],
   invalid: [
     createInvalidTestCase(
@@ -419,5 +433,64 @@ ruleTesterMarkdown.run('enforce-typescript-markdown-code-blocks', rule, {
       ),
       [{ messageId: 'missingLanguageSpecifier', line: 1 }],
     ),
+    createInvalidTestCase(
+      '  ```\r\n  const a = 1;\r\n  ```',
+      '  ```typescript\r\n  const a = 1;\r\n  ```',
+      [{ messageId: 'missingLanguageSpecifier', line: 1 }],
+    ),
+    // Proves the CRLF scan RESUMES past a skipped tilde block rather than
+    // bailing: the block after it is still labelled.
+    createInvalidTestCase(
+      '~~~\r\n```\r\na\r\n```\r\n~~~\r\n\r\n```\r\nb\r\n```',
+      '~~~\r\n```\r\na\r\n```\r\n~~~\r\n\r\n```typescript\r\nb\r\n```',
+      [{ messageId: 'missingLanguageSpecifier', line: 7 }],
+    ),
   ],
+});
+
+/**
+ * The filename gate, exercised directly rather than through a fixture.
+ *
+ * `markdown-eslint-parser` refuses any path it does not consider Markdown
+ * ("Make sure that markdownParser is applied only for *.md files"), and it
+ * tests the extension case-SENSITIVELY. So a `ruleTesterMarkdown` case naming
+ * `src/x.ts`, `docs/x.markdown` or `docs/X.MD` dies in the parser before the
+ * rule's own guard runs, and the guard is unreachable from the suite above —
+ * which is exactly how it would rot unnoticed. Driving `create` with a stub
+ * context is what pins it: the rule must hand back NO visitors off a `.md`
+ * path, and a `Program` visitor on one, including a shouting extension the
+ * parser itself would reject but a differently-configured Markdown processor
+ * would not.
+ */
+describe('enforce-typescript-markdown-code-blocks filename gate', () => {
+  const visitorsFor = (filename: string) =>
+    Object.keys(
+      (
+        enforceTypescriptMarkdownCodeBlocks.create as unknown as (
+          context: unknown,
+        ) => Record<string, unknown>
+      )({
+        getFilename: () => filename,
+        options: [],
+        report: () => undefined,
+        sourceCode: { getText: () => '' },
+      }),
+    );
+
+  it.each([
+    'src/example.ts',
+    'src/example.tsx',
+    'docs/example.markdown',
+    'package.json',
+    'README',
+  ])('registers no visitor for %s', (filename) => {
+    expect(visitorsFor(filename)).toEqual([]);
+  });
+
+  it.each(['docs/example.md', 'README.md', 'docs/EXAMPLE.MD', 'a/b/C.Md'])(
+    'registers the Program visitor for %s',
+    (filename) => {
+      expect(visitorsFor(filename)).toEqual(['Program']);
+    },
+  );
 });

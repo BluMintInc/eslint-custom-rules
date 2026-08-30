@@ -66,8 +66,8 @@ import {
 const PREFIX = '@blumintinc/blumint/';
 /**
  * Floors, each just under its measured value at the commit that shipped this
- * guard: considered 3409, markdown 3296, json 113, reports 201, fixed 158,
- * declared non-TS fixtures 82, planted-positive catches 1763. Kept
+ * guard: considered 3422, markdown 3309, json 113, reports 203, fixed 160,
+ * declared non-TS fixtures 95, planted-positive catches 1763. Kept
  * close so that a corpus which quietly stops reaching a fixer fails here rather
  * than passing on a smaller population.
  */
