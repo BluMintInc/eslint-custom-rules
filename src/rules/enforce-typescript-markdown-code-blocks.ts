@@ -3,50 +3,142 @@ import { createRule } from '../utils/createRule';
 type Options = [];
 type MessageIds = 'missingLanguageSpecifier';
 
-const FENCE = '```';
+const BACKTICK = '`';
+const TILDE = '~';
+/** Only a run of exactly three backticks is labelable; longer runs are declined. */
+const LABELABLE_FENCE_LENGTH = 3;
+/** CommonMark opens a fenced block on a run of three or more of either marker. */
+const MIN_FENCE_LENGTH = 3;
+/**
+ * CommonMark allows a fence to be indented at most three columns. At four or
+ * more the line opens an indented code block, so its backticks are literal
+ * document content that must never be rewritten.
+ */
+const MAX_FENCE_INDENT_COLUMNS = 3;
+/** CommonMark advances a tab to the next multiple of four when measuring indent. */
+const TAB_STOP = 4;
 
-function isFenceLine(
-  text: string,
-  fenceIndex: number,
-  indent: string,
-): boolean {
-  const lineEnd = text.indexOf('\n', fenceIndex);
-  const afterFence =
-    lineEnd === -1
-      ? text.slice(fenceIndex + FENCE.length)
-      : text.slice(fenceIndex + FENCE.length, lineEnd);
-  return (
-    afterFence.trim().length === 0 &&
-    text.slice(text.lastIndexOf('\n', fenceIndex - 1) + 1, fenceIndex) ===
-      indent
-  );
+type Line = {
+  /** Offset of the first character of the line in the source text. */
+  start: number;
+  /** Offset of the line terminator, or of the end of the text for the last line. */
+  end: number;
+  text: string;
+};
+
+type FenceMarker = typeof BACKTICK | typeof TILDE;
+
+type Fence = {
+  /** Offset of the first marker character of the run. */
+  runStart: number;
+  marker: FenceMarker;
+  runLength: number;
+  /** The literal whitespace preceding the run, used to match a closing fence. */
+  indent: string;
+  infoString: string;
+};
+
+function splitLines(text: string): Line[] {
+  const lines: Line[] = [];
+  let start = 0;
+
+  for (;;) {
+    const terminator = text.indexOf('\n', start);
+    const end = terminator === -1 ? text.length : terminator;
+    lines.push({ start, end, text: text.slice(start, end) });
+    if (terminator === -1) {
+      return lines;
+    }
+    start = terminator + 1;
+  }
 }
 
-function findClosingFence(
-  text: string,
-  startIndex: number,
-  indent: string,
-): number | null {
-  let searchIndex = startIndex;
+/**
+ * Reads the fence a line opens, or null when the line cannot open one.
+ * Indentation is measured in columns rather than characters so that a tab is
+ * treated as the four-column indent CommonMark says it is.
+ */
+function readFence(line: Line): Fence | null {
+  let indentColumns = 0;
+  let offset = 0;
 
-  while (searchIndex < text.length) {
-    const candidate = text.indexOf(FENCE, searchIndex);
-    if (candidate === -1) {
-      return null;
+  while (offset < line.text.length) {
+    const char = line.text[offset];
+    if (char === ' ') {
+      indentColumns += 1;
+    } else if (char === '\t') {
+      indentColumns += TAB_STOP - (indentColumns % TAB_STOP);
+    } else {
+      break;
     }
+    offset += 1;
+  }
 
-    if (isFenceLine(text, candidate, indent)) {
-      return candidate;
+  if (indentColumns > MAX_FENCE_INDENT_COLUMNS) {
+    return null;
+  }
+
+  const marker = line.text[offset];
+  if (marker !== BACKTICK && marker !== TILDE) {
+    return null;
+  }
+
+  let runLength = 0;
+  while (line.text[offset + runLength] === marker) {
+    runLength += 1;
+  }
+
+  if (runLength < MIN_FENCE_LENGTH) {
+    return null;
+  }
+
+  return {
+    runStart: line.start + offset,
+    marker,
+    runLength,
+    indent: line.text.slice(0, offset),
+    infoString: line.text.slice(offset + runLength),
+  };
+}
+
+/**
+ * The line a block closes on, per CommonMark: a run of at least the opening
+ * length, of the SAME marker, at a fence indent, with nothing but whitespace
+ * after it. This locates the block's END, which is a separate question from
+ * whether the rule is willing to LABEL it.
+ */
+function findFenceCloser(
+  lines: Line[],
+  fromLine: number,
+  opener: Fence,
+): { line: number; fence: Fence } | null {
+  for (let index = fromLine; index < lines.length; index++) {
+    const fence = readFence(lines[index]);
+    if (
+      fence !== null &&
+      fence.marker === opener.marker &&
+      fence.runLength >= opener.runLength &&
+      fence.infoString.trim().length === 0
+    ) {
+      return { line: index, fence };
     }
-
-    searchIndex = candidate + FENCE.length;
   }
 
   return null;
 }
 
-function isIndentOnly(value: string): boolean {
-  return /^[\t ]*$/.test(value);
+/**
+ * The rule labels only a block it can delimit exactly: three backticks closed
+ * by three backticks at the same indent. A longer closing run or a differently
+ * indented one is left unlabeled by design — but the block is still SKIPPED
+ * whole, because a block the rule declines to label is a block it must not
+ * read.
+ */
+function isExactlyDelimited(opener: Fence, closer: Fence): boolean {
+  return (
+    closer.runLength === LABELABLE_FENCE_LENGTH &&
+    closer.indent === opener.indent
+  );
 }
 
 export const enforceTypescriptMarkdownCodeBlocks = createRule<
@@ -79,59 +171,69 @@ export const enforceTypescriptMarkdownCodeBlocks = createRule<
       Program() {
         const sourceCode = context.sourceCode;
         const text = sourceCode.getText();
+        const lines = splitLines(text);
 
         let index = 0;
-        while (index < text.length) {
-          const openingFence = text.indexOf(FENCE, index);
-          if (openingFence === -1) {
-            break;
-          }
+        while (index < lines.length) {
+          const openingLine = lines[index];
+          const fence = readFence(openingLine);
 
-          const lineStart = text.lastIndexOf('\n', openingFence - 1) + 1;
-          const indent = text.slice(lineStart, openingFence);
-
-          if (!isIndentOnly(indent)) {
-            index = openingFence + FENCE.length;
+          if (fence === null) {
+            index += 1;
             continue;
           }
 
-          const lineEnd = text.indexOf('\n', openingFence + FENCE.length);
-          if (lineEnd === -1) {
-            break;
+          const closing = findFenceCloser(lines, index + 1, fence);
+
+          // An unclosed fence runs to the end of the file, so everything after
+          // it is the block's literal content and there is nothing left to
+          // scan. Resuming on the next line would read the block's interior.
+          if (closing === null) {
+            return;
           }
 
-          const infoString = text.slice(openingFence + FENCE.length, lineEnd);
-          const closingFence = findClosingFence(text, lineEnd + 1, indent);
+          // A tilde fence and a run of four or more backticks are blocks this
+          // rule declines to label, and declining to label a block means
+          // declining to read it: its interior is literal text, triple
+          // backticks included. So is the interior of a triple-backtick block
+          // this rule cannot delimit exactly. Every one of them is skipped from
+          // its opening line to past its closing line.
+          const labelable =
+            fence.marker === BACKTICK &&
+            fence.runLength === LABELABLE_FENCE_LENGTH &&
+            isExactlyDelimited(fence, closing.fence);
 
-          if (closingFence === null) {
-            index = lineEnd + 1;
-            continue;
+          if (labelable) {
+            const content = text.slice(
+              openingLine.end + 1,
+              lines[closing.line].start,
+            );
+            const hasContent = content.trim().length > 0;
+            const hasLanguage = fence.infoString.trim().length > 0;
+
+            if (!hasLanguage && hasContent) {
+              const lineEnd = openingLine.end;
+              const locStart = sourceCode.getLocFromIndex(fence.runStart);
+              const hasCarriageReturn =
+                lineEnd > 0 && text[lineEnd - 1] === '\r';
+
+              context.report({
+                loc: {
+                  start: locStart,
+                  end: sourceCode.getLocFromIndex(lineEnd),
+                },
+                messageId: 'missingLanguageSpecifier',
+                data: { line: locStart.line },
+                fix: (fixer) =>
+                  fixer.replaceTextRange(
+                    [fence.runStart + LABELABLE_FENCE_LENGTH, lineEnd],
+                    hasCarriageReturn ? 'typescript\r' : 'typescript',
+                  ),
+              });
+            }
           }
 
-          const content = text.slice(lineEnd + 1, closingFence);
-          const hasContent = content.trim().length > 0;
-          const hasLanguage = infoString.trim().length > 0;
-
-          if (!hasLanguage && hasContent) {
-            const locStart = sourceCode.getLocFromIndex(openingFence);
-            const hasCarriageReturn = lineEnd > 0 && text[lineEnd - 1] === '\r';
-
-            context.report({
-              loc: {
-                start: locStart,
-                end: sourceCode.getLocFromIndex(lineEnd),
-              },
-              messageId: 'missingLanguageSpecifier',
-              data: { line: locStart.line },
-              fix: (fixer) =>
-                fixer.replaceTextRange(
-                  [openingFence + FENCE.length, lineEnd],
-                  hasCarriageReturn ? 'typescript\r' : 'typescript',
-                ),
-            });
-          }
-
-          index = closingFence + FENCE.length;
+          index = closing.line + 1;
         }
       },
     };

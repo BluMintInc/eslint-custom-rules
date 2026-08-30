@@ -965,11 +965,15 @@ describe('the CJS emission guard is load-bearing', () => {
     /**
      * The non-TS split, pinned exactly rather than at zero: a JSON or Markdown
      * fixture whose code is not also valid TypeScript is what those languages
-     * are, not a hole. The 4 are the gap between the 14 non-TS declared
-     * outputs and the 10 whose input the detector reads — exact, so the next
-     * one is a conscious bump instead of quiet attrition.
+     * are, not a hole. The 9 are the gap between the 22 non-TS declared
+     * outputs and the 13 whose input the detector reads — exact, so the next
+     * one is a conscious bump instead of quiet attrition. The bump from 4 came
+     * with the CommonMark fence fixtures added to
+     * `enforce-typescript-markdown-code-blocks`, whose indented, tilde-fenced
+     * and multi-backtick documents are Markdown that no TypeScript parser
+     * reads.
      */
-    expect(outputStats.nonTsInputUnparseable).toBe(4);
+    expect(outputStats.nonTsInputUnparseable).toBe(9);
     /**
      * Corpus C, held to the same zero: its early returns were the one place a
      * fixture could still leave a corpus uncounted, since the aggregate floor

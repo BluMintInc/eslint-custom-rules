@@ -571,7 +571,11 @@ const CROSS_FIXER_FLOOR = 52; // measured 56
  * regression shows up as a jump. A ceiling parked far above its measurement is
  * the #1984 failure verbatim.
  */
-const NON_TS_CEILING = 60; // measured 40
+// measured 82 — the CommonMark fence fixtures added to
+// `enforce-typescript-markdown-code-blocks` for #2213 took the non-TS
+// population from 40 to 82. These cases are judged instead by
+// `lang-fix-closure`, the core-equivalent oracle for their languages.
+const NON_TS_CEILING = 100;
 const NO_SURFACE_CEILING = 2550; // measured 2401
 const UNPARSEABLE_OUTPUT_CEILING = 5; // measured 1
 
