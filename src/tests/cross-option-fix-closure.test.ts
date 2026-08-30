@@ -747,5 +747,11 @@ describe('cross-option --fix closure', () => {
     expect(totals.commentSkippedNotNeutral).toBeLessThanOrEqual(100); // 10
     expect(totals.commentSkippedUnparsable).toBeLessThanOrEqual(100); // 7
     expect(totals.commentSkippedNoAnchor).toBeLessThanOrEqual(2_000); // 977
+    // Payloads the rule's own schema refused, of 298 built. Rejection is
+    // correct where a generated payload is not valid for that rule, but the
+    // count is the only evidence it stays incidental: a schema read that
+    // started refusing wholesale would shrink the swept population to
+    // nothing while every floor above still passed on what remained.
+    expect(totals.payloadsRejected).toBeLessThanOrEqual(50); // 25
   }, 900_000);
 });

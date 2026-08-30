@@ -422,6 +422,15 @@ describe('a fixer must not leave a binding unreferenced', () => {
     expect(stats.rewritten).toBeGreaterThan(1000);
     expect(stats.owners.size).toBeGreaterThan(150);
     expect(stats.rulesFixed.size).toBeGreaterThan(50);
+    /**
+     * What the sweep DISCARDS, held at its measured zero. A fatal parse is
+     * indistinguishable from the rule staying silent, because every consumer
+     * filters messages by `ruleId` — so these two counters are the only
+     * record that the corpus is being read rather than dropped, and both
+     * were incremented and read by nothing.
+     */
+    expect(stats.inputFatal).toBe(0);
+    expect(stats.outputFatal).toBe(0);
   });
 
   it('still measures every baselined rule as orphaning', () => {

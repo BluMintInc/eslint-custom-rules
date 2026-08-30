@@ -577,6 +577,14 @@ describe('the restricted-production guard is load-bearing', () => {
     expect(stats.plantsBuilt).toBeGreaterThanOrEqual(1000);
     expect(stats.plantFixes).toBeGreaterThanOrEqual(400);
     expect(stats.rulesPerturbed.size).toBeGreaterThanOrEqual(20);
+    /**
+     * And what the plant arm THROWS AWAY, capped just above its measured 57.
+     * A rejected plant never reaches the detector, so if rejection ever
+     * approached the built total this arm would be back to the empty corpus it
+     * was created to escape — reporting exactly the green it reports now. The
+     * counter was incremented and read by nothing.
+     */
+    expect(stats.plantsRejected).toBeLessThanOrEqual(80);
   });
 
   /**

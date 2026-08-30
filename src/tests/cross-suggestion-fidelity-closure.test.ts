@@ -861,6 +861,15 @@ describe('the cross-paired suggestion fidelity guard is load-bearing', () => {
     expect(sugStats.crossComparisons).toBeGreaterThanOrEqual(
       CROSS_COMPARISON_FLOOR,
     );
+    /**
+     * And what variant construction THREW AWAY, capped just above its measured
+     * 58. A variant whose token signature moved is correctly rejected — the
+     * perturbation has to be neutral or it is testing itself — but the count
+     * is also the only evidence that rejection stays incidental. It was
+     * incremented and read by nothing, so a perturbation that started failing
+     * neutrality wholesale would empty this corpus at a steady green.
+     */
+    expect(stats.rejectedNonNeutral).toBeLessThanOrEqual(80);
   });
 
   /**
