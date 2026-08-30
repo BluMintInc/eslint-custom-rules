@@ -108,6 +108,16 @@ ruleTesterMarkdown.run('enforce-typescript-markdown-code-blocks', rule, {
     createValidTestCase(
       joinLines('```', 'const closedByLongerRun = 1;', '`````'),
     ),
+    // The closing run must sit at the OPENING indent; one at a different indent
+    // does not close the block, so the rule declines rather than guessing.
+    createValidTestCase(
+      joinLines('  ```', '  const closerOutdented = 1;', '```'),
+    ),
+    // A tilde fence's info string may contain backticks, unlike a backtick
+    // fence's. The block is still skipped whole, backticks inside and all.
+    createValidTestCase(
+      joinLines('~~~`x`', '```', 'const inTildes = 1;', '```', '~~~'),
+    ),
     createValidTestCase(
       joinLines('~~~', '```', 'const inner = 1;', '```', '~~~'),
     ),
