@@ -1,3 +1,11 @@
+## [1.20.193](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.192...v1.20.193) (2026-08-30)
+
+
+### Bug Fixes
+
+* **enforce-memoize-getters:** decline a getter whose computed key is not a string literal ([5f4b603](https://github.com/BluMintInc/eslint-custom-rules/commit/5f4b6036a193174236af01fe1d43c7e7c928bd47)), closes [#2215](https://github.com/BluMintInc/eslint-custom-rules/issues/2215)
+* **no-direct-function-state:** report an uncompilable functionPatterns entry instead of dropping it (closes [#2218](https://github.com/BluMintInc/eslint-custom-rules/issues/2218)) ([577890c](https://github.com/BluMintInc/eslint-custom-rules/commit/577890c2fe51dd3ba1e195f037ac163862b51dbd))
+
 ## [1.20.192](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.191...v1.20.192) (2026-08-30)
 
 

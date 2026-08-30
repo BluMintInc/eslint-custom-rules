@@ -1,5 +1,27 @@
 [
   {
+    "version": "1.20.193",
+    "date": "2026-08-30T05:32:04.963Z",
+    "rules": [
+      {
+        "name": "enforce-memoize-getters",
+        "changeType": "fix",
+        "issues": [
+          2215
+        ],
+        "summary": "decline a getter whose computed key is not a string literal"
+      },
+      {
+        "name": "no-direct-function-state",
+        "changeType": "fix",
+        "issues": [
+          2218
+        ],
+        "summary": "report an uncompilable functionPatterns entry instead of dropping it (closes #2218)"
+      }
+    ]
+  },
+  {
     "version": "1.20.192",
     "date": "2026-08-30T01:20:08.891Z",
     "rules": [
