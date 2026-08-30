@@ -17,11 +17,17 @@
  * copied VERBATIM from the shipped guard, so a difference in outcome is a
  * difference in PAIRING and nothing else.
  *
- * It carries the shipped guard's FIRST arm only — rename a declared binding,
- * assert the output parses. The second arm (rewrite a string literal's content
- * and diff the names the fixer invents) is a different perturbation with a
- * different oracle, so cross-pairing it is its own exercise and its helpers are
- * deliberately not dragged along here.
+ * It carries BOTH of the shipped guard's arms. The first renames a declared
+ * binding and asserts the output parses. The second rewrites a string literal's
+ * content and diffs the names the fixer invents — a different perturbation with
+ * a different oracle, and the one that reaches #1811/#1813, whose trigger is a
+ * key VALUE that normalization folds away rather than an identifier.
+ *
+ * The two arms are budgeted, reached and starved SEPARATELY. Sharing one cap
+ * would let a fixture holding no string literal spend a (fixer, owner) slot and
+ * starve the literal arm towards zero while every shared counter still read
+ * healthy — the accident that left the `throw` restricted-production arm
+ * calibrated over an empty corpus.
  *
  * ## The budget, and what it drops
  *
@@ -583,6 +589,374 @@ const probeCase = (
 };
 
 // ---------------------------------------------------------------------------
+// The SECOND perturbation: the CONTENT of a string literal.
+//
+// The rename arm can only reach a fixer that reads an IDENTIFIER. #1811/#1813's
+// trigger is a key VALUE that normalization folds away
+// (`useRouterState({ key: '---' })`) — no rename expresses that input, so the
+// gate that shipped for those issues could not fail on them. The own-corpus
+// guard carries both arms; this file carried only the first, which left the
+// literal oracle having never met a fixture outside its own author's suite.
+//
+// The helpers below are copied VERBATIM from
+// `src/tests/degenerate-identifier-closure.test.ts`, for the same reason its
+// rename helpers are: a difference in outcome must then be a difference in
+// PAIRING and nothing else. `walk` and `parseErrorCount` above are already
+// shared with it this way.
+// ---------------------------------------------------------------------------
+
+const stringLiteralRangesOf = (
+  code: string,
+  jsx: boolean,
+): [number, number][] => {
+  let ast: unknown;
+  try {
+    ast = tsParser.parse(code, {
+      range: true,
+      loc: false,
+      sourceType: 'module',
+      ecmaFeatures: { jsx },
+    });
+  } catch {
+    return [];
+  }
+  const ranges: [number, number][] = [];
+  walk(ast, (node) => {
+    if (
+      node.type === 'Literal' &&
+      typeof node.value === 'string' &&
+      Array.isArray(node.range)
+    ) {
+      ranges.push([node.range[0], node.range[1]] as [number, number]);
+    }
+  });
+  return ranges;
+};
+
+/**
+ * Every identifier in `code`, or null when it does not parse.
+ *
+ * Null rather than an empty set, and the callers must skip on it. Defaulting to
+ * empty makes an unparsable BASELINE report every identifier in the output as
+ * newly derived. `range: true` is load-bearing: without it `tsParser.parse`
+ * throws on ANY JSX input, which withheld 42% of the own guard's derivations
+ * while every counter still read clean.
+ */
+const identifierNamesOf = (code: string, jsx: boolean): Set<string> | null => {
+  const names = new Set<string>();
+  let ast: unknown;
+  try {
+    ast = tsParser.parse(code, {
+      range: true,
+      loc: false,
+      sourceType: 'module',
+      ecmaFeatures: { jsx },
+    });
+  } catch {
+    return null;
+  }
+  walk(ast, (node) => {
+    if (node.type === 'Identifier' && typeof node.name === 'string') {
+      names.add(node.name);
+    }
+  });
+  return names;
+};
+
+const spliceRange = (
+  code: string,
+  [start, end]: [number, number],
+  text: string,
+) => code.slice(0, start) + text + code.slice(end);
+
+/**
+ * The names a fix INVENTED: present in the output, absent from the input.
+ * Null when either side fails to parse, so an unreadable pair is skipped rather
+ * than counted as a derivation.
+ */
+const derivedNames = (
+  input: string,
+  output: string | null,
+  jsx: boolean,
+): Set<string> | null => {
+  if (!output) return new Set<string>();
+  const before = identifierNamesOf(input, jsx);
+  const after = identifierNamesOf(output, jsx);
+  if (!before || !after) return null;
+  return new Set([...after].filter((name) => !before.has(name)));
+};
+
+/**
+ * A value with content, against which a collapsed derivation is measured. It
+ * must survive every normalization the rules apply (upper-casing, folding
+ * non-alphanumerics to `_`, collapsing runs) with something left over.
+ */
+const CONTROL_LITERAL = 'ordinaryKey';
+
+/**
+ * Values that normalization folds to nothing: empty, whitespace-only, and
+ * separator-only. Each leaves a prefix-building fixer with no content to append.
+ */
+const DEGENERATE_LITERALS = ['', '   ', '---'] as const;
+
+/**
+ * Does `degenerate` carry nothing of the literal that `control` carried?
+ *
+ * Differential rather than a naming predicate, so it needs no per-rule affix
+ * list and stays silent for a fixer that declines. The question is whether the
+ * control's name survives DELETING the author's content from the middle of it:
+ * `degenerate` splits into `head + tail` with
+ * `control === head + <something non-empty> + tail`, which answers it for a
+ * prefix, a suffix and an infix builder alike (#1819).
+ *
+ * Names the two runs SHARE are dropped before pairing, and that is load-bearing
+ * rather than an optimization: a name identical under both literals did not come
+ * from the literal, so it belongs to neither side of the comparison.
+ */
+const collapsedAgainst = (control: Set<string>, degenerate: Set<string>) => {
+  const literalDerived = [...degenerate].filter((name) => !control.has(name));
+  const literalDerivedControl = [...control].filter(
+    (name) => !degenerate.has(name),
+  );
+  for (const derived of literalDerived) {
+    for (const reference of literalDerivedControl) {
+      if (reference.length <= derived.length) continue;
+      for (let split = 0; split <= derived.length; split++) {
+        const head = derived.slice(0, split);
+        const tail = derived.slice(split);
+        if (
+          reference.startsWith(head) &&
+          reference.endsWith(tail) &&
+          reference.length > head.length + tail.length
+        ) {
+          return { derivedDegenerate: derived, derivedControl: reference };
+        }
+      }
+    }
+  }
+  return null;
+};
+
+type LiteralFinding = {
+  kind: 'parse' | 'collapsed';
+  channel: 'fix' | 'suggestion';
+  rule: string;
+  origin: string;
+  literal: string;
+  derivedControl: string;
+  derivedDegenerate: string;
+  input: string;
+  output: string;
+};
+
+type LiteralTotals = {
+  findings: LiteralFinding[];
+  considered: number;
+  rewritten: number;
+  /**
+   * Control runs where a benign literal made the fixer invent a name. This is
+   * the floor that matters: it is the only number proving the pairing actually
+   * reaches a derive-a-name-from-text fixer, which is the thing under test.
+   */
+  derivationsObserved: number;
+  discardedUnparsable: number;
+  skippedUnparsableComparison: number;
+  /**
+   * Control runs whose BASELINE could not be read. Distinct from
+   * `skippedUnparsableComparison`, which can only count pairs that already
+   * cleared the deriving gate — so it stays at 0 no matter how much of the
+   * corpus an unreadable baseline withholds.
+   */
+  unreadableControl: number;
+  crashes: number;
+  crashDetails: string[];
+  rulesDeriving: Set<string>;
+  /** As above: reached, rewrote, derived are three different failures. */
+  rulesConsidered: Set<string>;
+  rulesRewritten: Set<string>;
+};
+
+const emptyLiteralTotals = (): LiteralTotals => ({
+  findings: [],
+  considered: 0,
+  rewritten: 0,
+  derivationsObserved: 0,
+  discardedUnparsable: 0,
+  skippedUnparsableComparison: 0,
+  unreadableControl: 0,
+  crashes: 0,
+  crashDetails: [],
+  rulesDeriving: new Set(),
+  rulesConsidered: new Set(),
+  rulesRewritten: new Set(),
+});
+
+/**
+ * The literal perturbation for ONE (fixer, fixture) pair.
+ *
+ * Written as a function over an explicit `totals` so the planted controls below
+ * drive the identical code path over foreign fixtures.
+ *
+ * On the suggestion channel a run's derivation is the UNION of the names every
+ * offered edit invents. Pairing edit-by-edit would need the two runs to offer
+ * the same slots in the same order, which a rule that reports a different number
+ * of times under a different literal does not do — and a mispaired slot invents
+ * a collapse out of nothing.
+ */
+const probeLiteralCase = (
+  rule: string,
+  /** The id the rule is registered under, which a suggestion message carries. */
+  ruleId: string,
+  origin: string,
+  code: string,
+  filename: string,
+  ranges: [number, number][],
+  config: unknown,
+  channel: 'fix' | 'suggestion',
+  totals: LiteralTotals,
+): void => {
+  const jsx = filename.endsWith('x');
+
+  const runFix = (input: string) => {
+    try {
+      const result = linter.verifyAndFix(input, config as never, filename);
+      return result.fixed && result.output !== input ? result.output : null;
+    } catch (error) {
+      totals.crashes++;
+      totals.crashDetails.push(
+        `${rule} threw on ${JSON.stringify(input)}: ${
+          (error as Error).message
+        }`,
+      );
+      return null;
+    }
+  };
+
+  type ChannelRun = { invented: Set<string>; outputs: string[] } | null;
+
+  /** Every name any suggestion invents, plus each edit's own output. */
+  const runSuggestions = (input: string, withNames: boolean): ChannelRun => {
+    let messages;
+    try {
+      messages = linter.verify(input, config as never, filename);
+    } catch (error) {
+      totals.crashes++;
+      totals.crashDetails.push(
+        `${rule} threw on ${JSON.stringify(input)}: ${
+          (error as Error).message
+        }`,
+      );
+      return null;
+    }
+    const before = withNames ? identifierNamesOf(input, jsx) : null;
+    if (withNames && !before) return null;
+    const invented = new Set<string>();
+    const outputs: string[] = [];
+    for (const edit of suggestionEditsOf(input, messages, ruleId)) {
+      outputs.push(edit.output);
+      if (!before) continue;
+      const after = identifierNamesOf(edit.output, jsx);
+      if (!after) return null;
+      for (const name of after) {
+        if (!before.has(name)) invented.add(name);
+      }
+    }
+    return { invented, outputs };
+  };
+
+  /**
+   * `withNames` is not an optimization detail: reading identifiers costs two
+   * parses per run, and the comparison is only defined when the CONTROL run
+   * invented something, so a degenerate run past a silent control is asked for
+   * outputs alone.
+   */
+  const runChannel = (input: string, withNames: boolean): ChannelRun => {
+    if (channel === 'suggestion') return runSuggestions(input, withNames);
+    const output = runFix(input);
+    if (!withNames) {
+      return { invented: new Set(), outputs: output ? [output] : [] };
+    }
+    const invented = derivedNames(input, output, jsx);
+    if (!invented) return null;
+    return { invented, outputs: output ? [output] : [] };
+  };
+
+  for (const range of ranges) {
+    const controlInput = spliceRange(code, range, `'${CONTROL_LITERAL}'`);
+    if (parseErrorCount(controlInput, filename) > 0) {
+      totals.discardedUnparsable++;
+      continue;
+    }
+    const control = runChannel(controlInput, true);
+    // An unreadable baseline is not a non-deriving one. Folding null to an
+    // empty set routes it into the `!control.invented.size` skip below, where
+    // it becomes indistinguishable from a fixer that invented nothing — and
+    // `skippedUnparsableComparison` never sees it, because that branch sits
+    // past the skip.
+    if (!control) {
+      totals.unreadableControl++;
+      continue;
+    }
+    if (control.invented.size) {
+      totals.derivationsObserved++;
+      totals.rulesDeriving.add(rule);
+    }
+
+    for (const value of DEGENERATE_LITERALS) {
+      const input = spliceRange(code, range, `'${value}'`);
+      if (input === code) continue;
+      if (parseErrorCount(input, filename) > 0) {
+        totals.discardedUnparsable++;
+        continue;
+      }
+      totals.considered++;
+      totals.rulesConsidered.add(rule);
+      const degenerate = runChannel(input, control.invented.size > 0);
+      if (!degenerate) {
+        totals.skippedUnparsableComparison++;
+        continue;
+      }
+      if (!degenerate.outputs.length) continue;
+      totals.rewritten++;
+      totals.rulesRewritten.add(rule);
+
+      const broken = degenerate.outputs.find(
+        (output) => parseErrorCount(output, filename) > 0,
+      );
+      if (broken) {
+        totals.findings.push({
+          kind: 'parse',
+          channel,
+          rule,
+          origin,
+          literal: value,
+          derivedControl: '',
+          derivedDegenerate: '',
+          input,
+          output: broken,
+        });
+        continue;
+      }
+      if (!control.invented.size) continue;
+
+      const collapse = collapsedAgainst(control.invented, degenerate.invented);
+      if (collapse) {
+        totals.findings.push({
+          kind: 'collapsed',
+          channel,
+          rule,
+          origin,
+          literal: value,
+          ...collapse,
+          input,
+          output: degenerate.outputs[0],
+        });
+      }
+    }
+  }
+};
+
+// ---------------------------------------------------------------------------
 // CROSS PAIRING — the only thing this file changes
 // ---------------------------------------------------------------------------
 
@@ -664,6 +1038,30 @@ type Pairing = {
   crossFixers: Set<string>;
   ownFixers: Set<string>;
   crossOwners: Set<string>;
+  /**
+   * The literal arm is capped, reached and starved SEPARATELY from the rename
+   * arm. Sharing one cap would let a fixture holding no string literal at all
+   * consume a (fixer, owner) slot and starve this arm back towards zero while
+   * every shared counter still read healthy — the same accident that left the
+   * `throw` restricted-production arm calibrated over an empty corpus.
+   */
+  literalPairs: number;
+  literalCrossPairs: number;
+  literalCappedPairs: number;
+  literalCrossCappedPairs: number;
+  literalCrossFixers: Set<string>;
+  literalCrossOwners: Set<string>;
+  /**
+   * Fixtures carrying no string literal for the arm to perturb. Counted rather
+   * than dropped: a silent truncation reads as "covered everything".
+   */
+  fixturesWithoutLiteral: number;
+  fixturesWithLiteral: number;
+  /**
+   * Ranges past `LITERAL_RANGE_CAP` on a single pair. Asserted below, because a
+   * cap nobody reads is indistinguishable from full coverage.
+   */
+  literalRangesDropped: number;
 };
 
 const emptyPairing = (): Pairing => ({
@@ -679,16 +1077,41 @@ const emptyPairing = (): Pairing => ({
   crossFixers: new Set(),
   ownFixers: new Set(),
   crossOwners: new Set(),
+  literalPairs: 0,
+  literalCrossPairs: 0,
+  literalCappedPairs: 0,
+  literalCrossCappedPairs: 0,
+  literalCrossFixers: new Set(),
+  literalCrossOwners: new Set(),
+  fixturesWithoutLiteral: 0,
+  fixturesWithLiteral: 0,
+  literalRangesDropped: 0,
 });
 
-type Swept = { cross: Totals; own: Totals; pairing: Pairing };
+/**
+ * String literals perturbed per (fixer, fixture). Each range costs one control
+ * run plus one run per degenerate value, and a fixture holding dozens of
+ * literals would spend the whole arm's budget re-asking one pair's question.
+ */
+const LITERAL_RANGE_CAP = 4;
+
+type Swept = {
+  cross: Totals;
+  own: Totals;
+  literalCross: LiteralTotals;
+  literalOwn: LiteralTotals;
+  pairing: Pairing;
+};
 
 const sweepCross = (channel: 'fix' | 'suggestion'): Swept => {
   const cross = emptyTotals();
   const own = emptyTotals();
+  const literalCross = emptyLiteralTotals();
+  const literalOwn = emptyLiteralTotals();
   const pairing = emptyPairing();
   const population = channel === 'fix' ? fixableSet : suggestingSet;
   const seenPairs = new Map<string, number>();
+  const seenLiteralPairs = new Map<string, number>();
 
   for (const [owner, cases] of corpus.byRule) {
     for (const testCase of cases) {
@@ -744,46 +1167,95 @@ const sweepCross = (channel: 'fix' | 'suggestion'): Swept => {
           .map((id) => id.slice(2)),
       );
 
+      /**
+       * Hoisted out of the fixer loop: which literals a fixture holds is a
+       * property of the fixture, not of the rule being driven through it.
+       */
+      const literalRanges = stringLiteralRangesOf(
+        testCase.code,
+        filename.endsWith('x'),
+      );
+      if (literalRanges.length) pairing.fixturesWithLiteral++;
+      else pairing.fixturesWithoutLiteral++;
+      if (literalRanges.length > LITERAL_RANGE_CAP) {
+        pairing.literalRangesDropped +=
+          literalRanges.length - LITERAL_RANGE_CAP;
+      }
+      const cappedRanges = literalRanges.slice(0, LITERAL_RANGE_CAP);
+
       for (const fixer of reporting) {
         if (DIVERGENT_WITHOUT_PROGRAM.has(fixer)) continue;
         if (!population.has(fixer)) continue;
         const isCross = fixer !== owner;
         const key = `${fixer}::${owner}`;
+        const config = {
+          ...parsing,
+          rules: {
+            [`b/${fixer}`]: isCross ? 'error' : severityWithOptions(testCase),
+          },
+        };
+
         const used = seenPairs.get(key) ?? 0;
         if (used >= PAIR_FIXTURE_CAP) {
           pairing.cappedPairs++;
           if (isCross) pairing.crossCappedPairs++;
-          continue;
-        }
-        seenPairs.set(key, used + 1);
-        pairing.pairs++;
-        if (isCross) {
-          pairing.crossPairs++;
-          pairing.crossFixers.add(fixer);
-          pairing.crossOwners.add(owner);
         } else {
-          pairing.ownFixers.add(fixer);
+          seenPairs.set(key, used + 1);
+          pairing.pairs++;
+          if (isCross) {
+            pairing.crossPairs++;
+            pairing.crossFixers.add(fixer);
+            pairing.crossOwners.add(owner);
+          } else {
+            pairing.ownFixers.add(fixer);
+          }
+
+          probeCase(
+            fixer,
+            `b/${fixer}`,
+            `${testCase.origin} [owner ${owner}]`,
+            testCase.code,
+            filename,
+            config,
+            channel,
+            isCross ? cross : own,
+          );
         }
 
-        probeCase(
+        /**
+         * The literal arm draws from its OWN cap, and only a fixture that
+         * actually holds a literal spends a slot — see `literalPairs`.
+         */
+        if (!cappedRanges.length) continue;
+        const literalUsed = seenLiteralPairs.get(key) ?? 0;
+        if (literalUsed >= PAIR_FIXTURE_CAP) {
+          pairing.literalCappedPairs++;
+          if (isCross) pairing.literalCrossCappedPairs++;
+          continue;
+        }
+        seenLiteralPairs.set(key, literalUsed + 1);
+        pairing.literalPairs++;
+        if (isCross) {
+          pairing.literalCrossPairs++;
+          pairing.literalCrossFixers.add(fixer);
+          pairing.literalCrossOwners.add(owner);
+        }
+
+        probeLiteralCase(
           fixer,
           `b/${fixer}`,
           `${testCase.origin} [owner ${owner}]`,
           testCase.code,
           filename,
-          {
-            ...parsing,
-            rules: {
-              [`b/${fixer}`]: isCross ? 'error' : severityWithOptions(testCase),
-            },
-          },
+          cappedRanges,
+          config,
           channel,
-          isCross ? cross : own,
+          isCross ? literalCross : literalOwn,
         );
       }
     }
   }
-  return { cross, own, pairing };
+  return { cross, own, literalCross, literalOwn, pairing };
 };
 
 const fixSweep = sweepCross('fix');
@@ -861,6 +1333,97 @@ const runPlant = (id: string): Totals => {
 
 const plantedPositive = runPlant('b/__planted_degenerate');
 const plantedNegative = runPlant('b/__planted_safe');
+
+/**
+ * The literal arm's plants: a fixer that names a key after the key's own VALUE.
+ *
+ * `prefixing` reproduces #1811/#1813 exactly — it appends normalized content to
+ * a constant prefix, so a value that normalization folds away leaves the bare
+ * prefix behind. `distinct` is the negative: it derives a name that does not
+ * vary with the literal at all, so nothing can collapse. The two differ only in
+ * the derivation, which is the one thing under test.
+ */
+const plantLiteralNamer = (
+  id: string,
+  derive: (normalized: string) => string,
+) => {
+  linter.defineRule(id, {
+    meta: {
+      type: 'problem',
+      fixable: 'code',
+      schema: [],
+      messages: {},
+    },
+    create(context: any) {
+      return {
+        Literal(node: any) {
+          if (typeof node.value !== 'string') return;
+          if (node.parent?.type !== 'Property') return;
+          const normalized = String(node.value)
+            .toUpperCase()
+            .replace(/[^A-Z0-9]/g, '_')
+            .replace(/_+/g, '_')
+            .replace(/^_|_$/g, '');
+          context.report({
+            node,
+            message: 'planted',
+            fix: (fixer: any) =>
+              fixer.replaceTextRange(node.range, derive(normalized)),
+          });
+        },
+      } as never;
+    },
+  } as never);
+};
+
+plantLiteralNamer(
+  'b/__planted_literal_collapse',
+  (normalized) => `QUERY_KEY_${normalized}`,
+);
+plantLiteralNamer('b/__planted_literal_safe', () => 'QUERY_KEY_FALLBACK');
+
+/**
+ * Same bounded slice of FOREIGN fixtures as `runPlant`, and only fixtures that
+ * actually hold a literal — a plant driven over inputs it cannot perturb would
+ * report a clean the corpus never earned.
+ */
+const runLiteralPlant = (id: string): LiteralTotals => {
+  const totals = emptyLiteralTotals();
+  let probed = 0;
+  for (const [owner, cases] of corpus.byRule) {
+    for (const testCase of cases) {
+      if (testCase.language !== 'ts') continue;
+      if (testCase.bucket !== 'invalid') continue;
+      const filename = testCase.filename ?? defaultFilenameFor(testCase);
+      const ranges = stringLiteralRangesOf(
+        testCase.code,
+        filename.endsWith('x'),
+      ).slice(0, LITERAL_RANGE_CAP);
+      if (!ranges.length) continue;
+      if (probed >= 40) return totals;
+      probed++;
+      probeLiteralCase(
+        id.slice(2),
+        id,
+        `${testCase.origin} [owner ${owner}] [PLANT]`,
+        testCase.code,
+        filename,
+        ranges,
+        {
+          parser: parserKeyFor(testCase),
+          parserOptions: parserOptionsFor(testCase),
+          rules: { [id]: 'error' },
+        },
+        'fix',
+        totals,
+      );
+    }
+  }
+  return totals;
+};
+
+const plantedLiteralPositive = runLiteralPlant('b/__planted_literal_collapse');
+const plantedLiteralNegative = runLiteralPlant('b/__planted_literal_safe');
 
 // ---------------------------------------------------------------------------
 // Reporting
@@ -1047,5 +1610,160 @@ describe('no fixer emits unparsable source under a FOREIGN degenerate input', ()
 
   it('reports every finding in the suggestion channel', () => {
     expect(describeFindings(suggestionSweep.cross)).toBe('');
+  });
+});
+
+const describeLiteralFindings = (totals: LiteralTotals) => {
+  const byRule = [...new Set(totals.findings.map((finding) => finding.rule))];
+  const header = byRule.length
+    ? `\n${totals.findings.length} finding(s) in ${
+        byRule.length
+      } rule(s): ${byRule.join(', ')}\n`
+    : '';
+  return (
+    header +
+    totals.findings
+      .slice(0, 10)
+      .map(
+        (finding) =>
+          `\n--- ${finding.rule} (${finding.origin}) [${
+            finding.kind
+          }] literal ${JSON.stringify(finding.literal)} via ${
+            finding.channel
+          }` +
+          `\n  control derived: ${finding.derivedControl}` +
+          `\n  degenerate derived: ${finding.derivedDegenerate}` +
+          `\nINPUT:\n${finding.input}\nOUTPUT:\n${finding.output}`,
+      )
+      .join('\n')
+  );
+};
+
+describe('the cross degenerate-identifier LITERAL arm is load-bearing', () => {
+  /**
+   * Floors sit just under the values measured at v1.20.192. A floor far below
+   * its measured value passes for years while the thing it guards decays — the
+   * failure that hid #1984, where `casesConsidered` was floored at 5,500
+   * against an actual 8,141.
+   */
+  it('pairs string literals with FOREIGN rules, not just their owners', () => {
+    expect(fixSweep.pairing.literalCrossPairs).toBeGreaterThanOrEqual(1900);
+    expect(fixSweep.pairing.literalCrossFixers.size).toBeGreaterThanOrEqual(55);
+    expect(fixSweep.pairing.literalCrossOwners.size).toBeGreaterThanOrEqual(
+      175,
+    );
+    // The cross arm must dominate the own arm, or this file is re-running the
+    // shipped guard's coverage under a new name.
+    expect(fixSweep.pairing.literalCrossPairs).toBeGreaterThan(
+      fixSweep.pairing.literalPairs - fixSweep.pairing.literalCrossPairs,
+    );
+  });
+
+  it('actually drove foreign fixers with degenerate literals', () => {
+    expect(fixSweep.literalCross.considered).toBeGreaterThanOrEqual(9500);
+    expect(fixSweep.literalCross.rewritten).toBeGreaterThanOrEqual(5500);
+    expect(fixSweep.literalCross.rulesConsidered.size).toBeGreaterThanOrEqual(
+      57,
+    );
+    expect(fixSweep.literalCross.rulesRewritten.size).toBeGreaterThanOrEqual(
+      50,
+    );
+  });
+
+  /**
+   * The load-bearing floor. `considered` and `rewritten` can both be large
+   * while every fixer ignores the literal entirely; `derivationsObserved`
+   * counts control runs where a BENIGN literal made a fixer invent a name,
+   * which is the only evidence the arm reaches a derive-a-name-from-text fixer
+   * at all — the thing under test.
+   */
+  it('reaches fixers that DERIVE a name from the literal', () => {
+    expect(fixSweep.literalCross.derivationsObserved).toBeGreaterThanOrEqual(
+      1150,
+    );
+    expect(fixSweep.literalCross.rulesDeriving.size).toBeGreaterThanOrEqual(26);
+  });
+
+  it('reaches the suggestion channel too, where --fix never looks', () => {
+    expect(suggestionSweep.pairing.literalCrossPairs).toBeGreaterThanOrEqual(
+      150,
+    );
+    expect(suggestionSweep.literalCross.considered).toBeGreaterThanOrEqual(800);
+    expect(suggestionSweep.literalCross.rewritten).toBeGreaterThanOrEqual(220);
+    expect(
+      suggestionSweep.literalCross.derivationsObserved,
+    ).toBeGreaterThanOrEqual(20);
+    expect(
+      suggestionSweep.literalCross.rulesDeriving.size,
+    ).toBeGreaterThanOrEqual(2);
+  });
+
+  /**
+   * The own arm is not coverage — the shipped guard already covers it
+   * exhaustively — it is the control that this harness reproduces that guard's
+   * behaviour at all. A zero here means the port is broken, not that the
+   * corpus is clean.
+   */
+  it('keeps the own-corpus literal control alive as a harness check', () => {
+    expect(fixSweep.literalOwn.considered).toBeGreaterThanOrEqual(900);
+    expect(fixSweep.literalOwn.derivationsObserved).toBeGreaterThanOrEqual(90);
+    expect(fixSweep.literalOwn.rulesDeriving.size).toBeGreaterThanOrEqual(28);
+  });
+
+  it('accounts for every literal case it does NOT judge', () => {
+    for (const totals of [
+      fixSweep.literalCross,
+      fixSweep.literalOwn,
+      suggestionSweep.literalCross,
+      suggestionSweep.literalOwn,
+    ]) {
+      expect(totals.crashDetails.slice(0, 5).join('\n')).toBe('');
+      expect(totals.crashes).toBe(0);
+      // An unreadable baseline is not a non-deriving one, and a skipped
+      // comparison is not a passing one. Both are held at zero rather than
+      // printed, so a harness regression cannot hide inside them.
+      expect(totals.unreadableControl).toBe(0);
+      expect(totals.skippedUnparsableComparison).toBe(0);
+      expect(totals.discardedUnparsable).toBe(0);
+    }
+    // What the two caps drop, carried rather than left implicit.
+    expect(fixSweep.pairing.fixturesWithLiteral).toBeGreaterThanOrEqual(11000);
+    expect(fixSweep.pairing.fixturesWithoutLiteral).toBeGreaterThan(0);
+    expect(fixSweep.pairing.literalCappedPairs).toBeGreaterThan(0);
+    expect(fixSweep.pairing.literalRangesDropped).toBeLessThanOrEqual(3000);
+  });
+
+  it('catches a planted fixer whose derived name collapses (POSITIVE)', () => {
+    expect(plantedLiteralPositive.derivationsObserved).toBeGreaterThan(0);
+    expect(plantedLiteralPositive.findings.length).toBeGreaterThan(0);
+    expect(
+      plantedLiteralPositive.findings.map((finding) => finding.kind),
+    ).toContain('collapsed');
+    expect(
+      plantedLiteralPositive.findings.map((finding) => finding.derivedControl),
+    ).toContain('QUERY_KEY_ORDINARYKEY');
+  });
+
+  /**
+   * The negative control has to DERIVE and still not collapse, or it would pass
+   * by never reaching the oracle — which is what a plant that simply declines
+   * would prove. Its `derivationsObserved` is asserted for exactly that reason.
+   */
+  it('stays silent on a plant whose name ignores the literal (NEGATIVE)', () => {
+    expect(plantedLiteralNegative.derivationsObserved).toBeGreaterThan(0);
+    expect(plantedLiteralNegative.rewritten).toBeGreaterThan(0);
+    expect(plantedLiteralNegative.findings).toEqual([]);
+  });
+});
+
+describe('no fixer collapses a derived name under a FOREIGN degenerate literal', () => {
+  it('reports every finding in the fix channel', () => {
+    expect(describeLiteralFindings(fixSweep.literalCross)).toBe('');
+    expect(fixSweep.literalCross.findings).toEqual([]);
+  });
+
+  it('reports every finding in the suggestion channel', () => {
+    expect(describeLiteralFindings(suggestionSweep.literalCross)).toBe('');
+    expect(suggestionSweep.literalCross.findings).toEqual([]);
   });
 });
