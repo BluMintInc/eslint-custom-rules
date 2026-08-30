@@ -72,6 +72,12 @@ const parse = (code: string, jsx: boolean) => {
   }
 };
 
+/**
+ * The surface member a default export contributes. Spelled as a reserved word
+ * so it cannot collide with a declared identifier in the same set.
+ */
+const DEFAULT_MEMBER = 'default';
+
 const exportedNames = (code: string, jsx: boolean): Set<string> | null => {
   const ast = parse(code, jsx);
   if (!ast) {
@@ -90,6 +96,12 @@ const exportedNames = (code: string, jsx: boolean): Set<string> | null => {
       );
     } else if (id.type === 'ArrayPattern') {
       id.elements.forEach((element: any) => element && addPattern(element));
+    } else if (id.type === 'AssignmentPattern') {
+      // `export const [a = 1] = pair` binds `a`. Without this the defaulted
+      // element contributes no name and its removal reads clean.
+      addPattern(id.left);
+    } else if (id.type === 'RestElement') {
+      addPattern(id.argument);
     }
   };
   for (const node of ast.body as any[]) {
@@ -109,6 +121,14 @@ const exportedNames = (code: string, jsx: boolean): Set<string> | null => {
     } else if (node.type === 'ExportAllDeclaration' && node.exported) {
       const exported: any = node.exported;
       names.add(exported.name || exported.value);
+    } else if (node.type === 'ExportDefaultDeclaration') {
+      /**
+       * `default` is the name an importer binds against. Carrying the
+       * DECLARATION's name instead would be wrong both ways: a default-exported
+       * `function foo` offers no named `foo`, and renaming it internally breaks
+       * nobody, so a name-keyed member would report a removal that is not one.
+       */
+      names.add(DEFAULT_MEMBER);
     }
   }
   return names;
@@ -648,6 +668,38 @@ describe('the cross-paired export-surface guard is load-bearing', () => {
     expect(stats.screenThrew).toBe(0);
     expect(stats.fixThrew).toBe(0);
     expect(parseFailures.slice(0, 5)).toEqual([]);
+  });
+
+  /**
+   * The reader's two newest members, pinned directly. Both are reachable here
+   * only through fixtures that write the shape by hand, so a corpus floor would
+   * be thin enough to rot; asserting the reader itself keeps the branches from
+   * silently going dead — a member the reader never produces cannot be removed,
+   * and reads exactly like a member nothing removes.
+   */
+  it('reads a default export as the `default` surface member', () => {
+    expect([
+      ...(exportedNames(
+        'const handler = () => {};\nexport default handler;\n',
+        false,
+      ) ?? []),
+    ]).toEqual(['default']);
+    // The declaration's own name is NOT a surface member: an importer binds
+    // `default`, and renaming `foo` internally breaks no importer.
+    expect([
+      ...(exportedNames('export default function foo() {}\n', false) ?? []),
+    ]).toEqual(['default']);
+  });
+
+  it('reads a defaulted destructuring element as an exported name', () => {
+    expect(
+      [
+        ...(exportedNames(
+          'export const [first = 1, ...rest] = pair;\n',
+          false,
+        ) ?? []),
+      ].sort(),
+    ).toEqual(['first', 'rest']);
   });
 
   it('detects a removed export name (positive control)', () => {
