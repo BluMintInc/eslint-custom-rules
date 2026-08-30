@@ -6,6 +6,24 @@ import { noExplicitReturnType } from '../rules/no-explicit-return-type';
 
 ruleTesterTs.run('enforce-memoize-getters', enforceMemoizeGetters, {
   valid: [
+    // A computed key that is not a string literal may be a SYMBOL, and
+    // `Memoize` declares its `propertyKey` parameter as `string`, so the
+    // prescribed `@Memoize()` is TS1241 — the same unwritable-remedy reason the
+    // `#private` shape is exempt for. This was an INVALID fixture asserting a
+    // report whose own `--fix` output does not compile.
+    `
+    class Example {
+      private get [Symbol.iterator]() { return {}; }
+    }
+    `,
+    // A computed key built from a variable cannot be shown to be a string
+    // without the checker, and a false negative is the cheaper error.
+    `
+    const KEY = 'fetcher';
+    class Example {
+      private get [KEY]() { return {}; }
+    }
+    `,
     // Already decorated with preferred import
     {
       code: `
@@ -934,27 +952,6 @@ ruleTesterTs.run('enforce-memoize-getters', enforceMemoizeGetters, {
         class Example {
           @Memoize()
           private get ['fetcher']() { return {}; }
-        }
-      `,
-    },
-    // Real computed property name
-    {
-      code: `
-        class Example {
-          private get [Symbol.iterator]() { return {}; }
-        }
-      `,
-      errors: [
-        {
-          messageId: 'requireMemoizeGetter',
-          data: { name: '[computed]' },
-        },
-      ],
-      output: `
-        import { Memoize } from '@blumintinc/typescript-memoize';
-        class Example {
-          @Memoize()
-          private get [Symbol.iterator]() { return {}; }
         }
       `,
     },

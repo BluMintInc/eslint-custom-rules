@@ -282,11 +282,15 @@ ${FIRESTORE_COMMON}
  * of that rule type-checks as `any`, which is the blind spot #1529 closed for
  * the others.
  *
- * `microdiff` is deliberately left to the wildcard. Its real typings export
- * `diff` as the *default* only, while `enforce-microdiff`'s fixer emits
- * `import { diff } from 'microdiff'`; stubbing it faithfully would turn that
- * into a standing failure of a rule this guard is not the place to fix, and
- * stubbing it with an invented named export would be a lie in the harness.
+ * `microdiff` is stubbed on the same grounds, from the same shipped typings as
+ * the own-corpus guard. The paragraph that held it out said
+ * `enforce-microdiff`'s fixer emits `import { diff } from 'microdiff'`; it
+ * emits `import diff from '@blumintinc/microdiff';` — a DEFAULT import — so the
+ * faithful stub was never the standing failure the exclusion predicted. While
+ * it stood, every fixed snippet of that rule and of
+ * `fast-deep-equal-over-microdiff` fell to the wildcard and type-checked as
+ * `any` (#2215). `@blumintinc/typescript-memoize` is stubbed for the three
+ * fixers that emit `import { Memoize } from ...`.
  */
 const SUBSTITUTION_PARTNER_STUBS = `
 declare module 'use-latest-callback' {
@@ -304,6 +308,80 @@ declare module '@blumintinc/fast-deep-equal' {
 declare module '@blumintinc/fast-deep-equal/react' {
   function equal<T>(actual: any, expected: T): actual is T;
   export default equal;
+}
+declare module 'microdiff' {
+  export type Difference<TData = unknown> =
+    | { type: 'CREATE'; path: (string | number)[]; value: any; oldValue: undefined }
+    | { type: 'REMOVE'; path: (string | number)[]; value: undefined; oldValue: any }
+    | { type: 'CHANGE'; path: (string | number)[]; value: any; oldValue: any };
+  export interface MicrodiffOptions {
+    cyclesFix: boolean;
+  }
+  export default function diff<
+    TData extends Record<string, unknown> | unknown[],
+  >(
+    obj: TData,
+    newObj: TData,
+    options?: Partial<MicrodiffOptions>,
+  ): Difference<TData>[];
+}
+declare module '@blumintinc/microdiff' {
+  export type Difference<TData = unknown> =
+    | { type: 'CREATE'; path: (string | number)[]; value: any; oldValue: undefined }
+    | { type: 'REMOVE'; path: (string | number)[]; value: undefined; oldValue: any }
+    | { type: 'CHANGE'; path: (string | number)[]; value: any; oldValue: any };
+  export interface MicrodiffOptions {
+    cyclesFix: boolean;
+    isAtomic: (value: object) => boolean;
+    isEqualAtomic: (a: unknown, b: unknown) => boolean;
+  }
+  export default function diff<
+    TData extends Record<string, unknown> | unknown[],
+  >(
+    obj: TData,
+    newObj: TData,
+    options?: Partial<MicrodiffOptions>,
+    _stack?: object[],
+  ): Difference<TData>[];
+}
+declare module 'typescript-memoize' {
+  interface MemoizeArgs {
+    expiring?: number;
+    hashFunction?: boolean | ((...args: any[]) => any);
+    tags?: string[];
+    useDeepEqual?: boolean;
+  }
+  export function Memoize(
+    args?: MemoizeArgs | MemoizeArgs['hashFunction'],
+  ): (
+    target: Object,
+    propertyKey: string,
+    descriptor: TypedPropertyDescriptor<any>,
+  ) => void;
+}
+declare module '@blumintinc/typescript-memoize' {
+  interface MemoizeArgs {
+    expiring?: number;
+    hashFunction?: boolean | ((...args: any[]) => any);
+    tags?: string[];
+    useDeepEqual?: boolean;
+  }
+  export function Memoize(
+    args?: MemoizeArgs | MemoizeArgs['hashFunction'],
+  ): (
+    target: Object,
+    propertyKey: string,
+    descriptor: TypedPropertyDescriptor<any>,
+  ) => void;
+  export function MemoizeExpiring(
+    expiring: number,
+    hashFunction?: MemoizeArgs['hashFunction'],
+  ): (
+    target: Object,
+    propertyKey: string,
+    descriptor: TypedPropertyDescriptor<any>,
+  ) => void;
+  export function clear(tags: string[]): number;
 }
 declare module '@blumintinc/use-deep-compare' {
   export function useDeepCompareMemo<T>(factory: () => T, dependencies: readonly any[]): T;
