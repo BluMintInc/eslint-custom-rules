@@ -75,6 +75,12 @@ const parse = (code: string, jsx: boolean) => {
   }
 };
 
+/**
+ * The surface member a default export contributes. Spelled as a reserved word
+ * so it cannot collide with a declared identifier in the same set.
+ */
+const DEFAULT_MEMBER = 'default';
+
 /** The names this module offers its importers. */
 const exportedNames = (code: string, jsx: boolean): Set<string> | null => {
   const ast = parse(code, jsx);
@@ -94,6 +100,12 @@ const exportedNames = (code: string, jsx: boolean): Set<string> | null => {
       );
     } else if (id.type === 'ArrayPattern') {
       id.elements.forEach((element: any) => element && addPattern(element));
+    } else if (id.type === 'AssignmentPattern') {
+      // `export const [a = 1] = pair` binds `a`. Without this the defaulted
+      // element contributes no name and its removal reads clean.
+      addPattern(id.left);
+    } else if (id.type === 'RestElement') {
+      addPattern(id.argument);
     }
   };
   for (const node of ast.body as any[]) {
@@ -113,6 +125,18 @@ const exportedNames = (code: string, jsx: boolean): Set<string> | null => {
     } else if (node.type === 'ExportAllDeclaration' && node.exported) {
       const exported: any = node.exported;
       names.add(exported.name || exported.value);
+    } else if (node.type === 'ExportDefaultDeclaration') {
+      /**
+       * A default export is a surface member like any other, and `default` is
+       * the name an importer actually binds against — `import X from './m'`
+       * resolves through it whatever the declaration is called internally.
+       *
+       * Carrying the DECLARATION's name instead would be wrong in both
+       * directions: `export default function foo() {}` offers no named `foo`
+       * to importers, and a fixer that renames it to `bar` breaks nobody, so a
+       * name-keyed member would report a removal that is not one.
+       */
+      names.add(DEFAULT_MEMBER);
     }
   }
   return names;
@@ -159,6 +183,65 @@ const injectExports = (code: string, jsx: boolean): string | null => {
       code,
     );
   return parse(injected, jsx) ? injected : null;
+};
+
+/**
+ * The second surface shape: a DEFAULT export.
+ *
+ * `injectExports` only ever splices `export ` before a declaration, so nothing
+ * it builds offers one, and the `default` member is otherwise reachable only
+ * through the surfaces the corpus happens to write by hand. A module may hold
+ * at most one default export, so rather than rewriting a declaration this
+ * appends a single `export default <name>;` naming a binding already declared:
+ * valid wherever the base injection is, and it leaves every existing
+ * declaration byte-identical, so a finding here is about the default export and
+ * not about a perturbed declaration.
+ */
+const DEFAULT_EXPORTABLE = new Set([
+  'VariableDeclaration',
+  'FunctionDeclaration',
+  'ClassDeclaration',
+]);
+
+const injectDefaultExport = (code: string, jsx: boolean): string | null => {
+  const ast = parse(code, jsx);
+  if (!ast) {
+    return null;
+  }
+  const body = ast.body as any[];
+  // A second default export is a syntax error, so a fixture that already has
+  // one is left to the base arm rather than corrupted here.
+  if (body.some((node) => node.type === 'ExportDefaultDeclaration')) {
+    return null;
+  }
+  let name: string | null = null;
+  for (const node of body) {
+    const declaration =
+      node.type === 'ExportNamedDeclaration' ? node.declaration : node;
+    if (!declaration || declaration.declare) {
+      continue;
+    }
+    // Only a VALUE binding can be default-exported; `export default` of a type
+    // alias or an interface does not parse.
+    if (!DEFAULT_EXPORTABLE.has(declaration.type)) {
+      continue;
+    }
+    if (declaration.type === 'VariableDeclaration') {
+      const id = declaration.declarations[0]?.id;
+      if (id?.type === 'Identifier') {
+        name = id.name;
+        break;
+      }
+    } else if (declaration.id?.name) {
+      name = declaration.id.name;
+      break;
+    }
+  }
+  if (!name) {
+    return null;
+  }
+  const augmented = `${code}\nexport default ${name};\n`;
+  return parse(augmented, jsx) ? augmented : null;
 };
 
 const linter = new Linter();
@@ -221,6 +304,65 @@ linter.defineRule(CONTROL_ID, controlExportRenamer);
  * for the same reason the fix channel's double is planted rather than borrowed
  * from a shipped rule.
  */
+/**
+ * Deletes a default export outright — the shape the `default` surface member
+ * exists to catch. Without it, a member that no fixer ever removes reads
+ * exactly like a member the corpus proves safe.
+ */
+const CONTROL_DEFAULT_ID = `${PREFIX}control-default-deleter`;
+const controlDefaultDeleter: Rule.RuleModule = {
+  meta: {
+    type: 'suggestion',
+    fixable: 'code',
+    schema: [],
+    messages: { drop: 'Drop the default export.' },
+  },
+  create(context) {
+    return {
+      ExportDefaultDeclaration(node: any) {
+        context.report({
+          node,
+          messageId: 'drop',
+          fix: (fixer) => fixer.remove(node),
+        });
+      },
+    };
+  },
+};
+
+/**
+ * The negative half: rewrites the default export's OPERAND without removing the
+ * export. The surface is unchanged, so a detector that flagged every rewrite of
+ * a default export would fail here.
+ */
+const CONTROL_DEFAULT_SAFE_ID = `${PREFIX}control-default-keeper`;
+const controlDefaultKeeper: Rule.RuleModule = {
+  meta: {
+    type: 'suggestion',
+    fixable: 'code',
+    schema: [],
+    messages: { wrap: 'Wrap the default export.' },
+  },
+  create(context) {
+    return {
+      ExportDefaultDeclaration(node: any) {
+        if (node.declaration?.type !== 'Identifier') {
+          return;
+        }
+        const id = node.declaration;
+        context.report({
+          node: id,
+          messageId: 'wrap',
+          fix: (fixer) => fixer.replaceText(id, `memo(${id.name})`),
+        });
+      },
+    };
+  },
+};
+
+linter.defineRule(CONTROL_DEFAULT_ID, controlDefaultDeleter);
+linter.defineRule(CONTROL_DEFAULT_SAFE_ID, controlDefaultKeeper);
+
 const CONTROL_SUGGESTION_ID = `${PREFIX}control-export-renamer-suggestion`;
 const CONTROL_SAFE_SUGGESTION_ID = `${PREFIX}control-initializer-suggestion`;
 
@@ -291,7 +433,7 @@ const configFor = (ruleId: string, jsx: boolean, options: unknown) =>
     },
   } as never);
 
-type Channel = 'fix' | 'suggestion';
+type Channel = 'fix' | 'suggestion' | 'default';
 type Removal = {
   rule: string;
   channel: Channel;
@@ -305,7 +447,16 @@ const removalFor = (
   jsx: boolean,
   filename: string,
   options: unknown,
-): { removed: string[]; rewritten: boolean } | null => {
+): {
+  removed: string[];
+  rewritten: boolean;
+  /**
+   * Whether the surface under test carried a default export at all. Counted so
+   * the `default` member cannot report a clean it never earned: a member that
+   * no probed surface contains reads exactly like a member nothing removes.
+   */
+  hadDefault: boolean;
+} | null => {
   let result;
   try {
     result = linter.verifyAndFix(code, configFor(ruleId, jsx, options), {
@@ -315,7 +466,7 @@ const removalFor = (
     return null;
   }
   if (result.output === code) {
-    return { removed: [], rewritten: false };
+    return { removed: [], rewritten: false, hadDefault: false };
   }
   const before = exportedNames(code, jsx);
   const after = exportedNames(result.output, jsx);
@@ -325,6 +476,7 @@ const removalFor = (
   return {
     removed: [...before].filter((name) => !after.has(name)),
     rewritten: true,
+    hadDefault: before.has(DEFAULT_MEMBER),
   };
 };
 
@@ -387,11 +539,22 @@ const suggestionRemovalsFor = (
 export const EXPORT_SURFACE_BASELINE: Record<string, string> = {
   'enforce-firestore-set-merge':
     'the transform substitutes the imported callee (updateDoc -> setDoc), so rebinding the name is intrinsic to it. Reachable only through the injected shape `export const { doc, updateDoc } = await import(...)` — exporting a destructured dynamic import is not a form real code writes, and the rule is silent on every non-exported spelling.',
+  'enforce-firestore-set-merge :: default':
+    'the SAME two cases as the fix-channel entry above, re-reached because appending `export default <name>;` leaves the destructured dynamic import untouched and the callee substitution still rebinds it. Measured: both findings remove `updateDoc`/`modifyDoc` from `export const { doc, updateDoc } = await import(...)`, never the `default` member itself, and no other rule reports on this arm across 3,871 default-bearing surfaces.',
 };
 
-/** `<rule>` for the fix channel, `<rule> :: suggestion` for the other. */
-const removalKey = (removal: Removal) =>
-  removal.channel === 'fix' ? removal.rule : `${removal.rule} :: suggestion`;
+/**
+ * `<rule>` for the fix channel, `<rule> :: suggestion` and `<rule> :: default`
+ * for the others. Each arm carries its OWN key so one arm's justification can
+ * never silently cover another's regression — a rule-global entry un-gates
+ * every arm the rule participates in at once (#1839).
+ */
+const removalKey = (removal: Removal) => {
+  if (removal.channel === 'fix') {
+    return removal.rule;
+  }
+  return `${removal.rule} :: ${removal.channel}`;
+};
 
 /**
  * Through the memoized accessor: the suggestion corpus below reads the adapted
@@ -406,6 +569,13 @@ const nonTsExcluded = new Set<string>();
 let considered = 0;
 let injected = 0;
 let rewritten = 0;
+/** Rewritten surfaces that carried a default export; see `hadDefault`. */
+let defaultBearing = 0;
+/** The default-injection arm, scored separately from the base arm. */
+let defaultInjected = 0;
+let defaultRewritten = 0;
+const defaultRemovals: Removal[] = [];
+const defaultRulesExercised = new Set<string>();
 const rulesExercised = new Set<string>();
 
 /**
@@ -490,6 +660,9 @@ for (const suite of harvested.suites) {
         continue;
       }
       rewritten++;
+      if (outcome.hadDefault) {
+        defaultBearing++;
+      }
       rulesExercised.add(ruleName);
       if (outcome.removed.length) {
         removals.push({
@@ -498,6 +671,42 @@ for (const suite of harvested.suites) {
           removed: outcome.removed,
           origin: `${suite.file}:${kind}`,
         });
+      }
+
+      /**
+       * The same question asked of a surface that offers a DEFAULT export.
+       * Driven only where the base arm already showed the rule rewrites, so
+       * the arm costs one extra lint per acting fixer rather than one per
+       * fixture.
+       */
+      const withDefault = injectDefaultExport(exported, jsx);
+      if (!withDefault) {
+        continue;
+      }
+      defaultInjected++;
+      const defaultOutcome = removalFor(
+        ruleId,
+        withDefault,
+        jsx,
+        filename,
+        testCase.options,
+      );
+      if (!defaultOutcome || !defaultOutcome.rewritten) {
+        continue;
+      }
+      defaultRewritten++;
+      defaultRulesExercised.add(ruleName);
+      if (defaultOutcome.removed.length) {
+        const defaultRemoval: Removal = {
+          rule: ruleName,
+          channel: 'default',
+          removed: defaultOutcome.removed,
+          origin: `${suite.file}:${kind} [default-injected]`,
+        };
+        defaultRemovals.push(defaultRemoval);
+        // Judged by the same assertion as every other arm; `defaultRemovals`
+        // is kept only so the arm's own reach can be floored below.
+        removals.push(defaultRemoval);
       }
     }
   }
@@ -624,6 +833,58 @@ console.log(
 );
 
 describe('the export-surface guard is load-bearing', () => {
+  /**
+   * The `default` member's own reach. `injectDefaultExport` is what makes it
+   * more than the handful of surfaces the corpus writes by hand: 27 rewritten
+   * surfaces carried a default export before this arm, against 3,871 after.
+   * Floors sit just under the measured values.
+   */
+  it('drives a DEFAULT export surface through most acting fixers', () => {
+    expect(defaultInjected).toBeGreaterThanOrEqual(3600);
+    expect(defaultRewritten).toBeGreaterThanOrEqual(3600);
+    expect(defaultRulesExercised.size).toBeGreaterThanOrEqual(74);
+    // The hand-written surfaces are counted too, so the arm cannot be credited
+    // for reach the corpus already had.
+    expect(defaultBearing).toBeGreaterThanOrEqual(20);
+  });
+
+  it('detects a DELETED default export (positive control)', () => {
+    const planted =
+      'export const handler = () => {};\nexport default handler;\n';
+    const outcome = removalFor(
+      CONTROL_DEFAULT_ID,
+      planted,
+      false,
+      'file.ts',
+      undefined,
+    );
+    expect(outcome?.rewritten).toBe(true);
+    expect(outcome?.removed).toEqual(['default']);
+  });
+
+  it('stays silent on a default export that is only rewritten (negative)', () => {
+    const planted =
+      'export const handler = () => {};\nexport default handler;\n';
+    const outcome = removalFor(
+      CONTROL_DEFAULT_SAFE_ID,
+      planted,
+      false,
+      'file.ts',
+      undefined,
+    );
+    // It must REWRITE and still remove nothing, or it would pass by declining.
+    expect(outcome?.rewritten).toBe(true);
+    expect(outcome?.removed).toEqual([]);
+  });
+
+  it('reads a defaulted destructuring element as an exported name', () => {
+    const surface = exportedNames(
+      'export const [first = 1, ...rest] = pair;\n',
+      false,
+    );
+    expect([...(surface ?? [])].sort()).toEqual(['first', 'rest']);
+  });
+
   it('harvests the suite without executing or losing it', () => {
     expect(harvested.failures.length).toBeLessThanOrEqual(3);
     expect(harvested.filesLoaded).toBeGreaterThan(200);
