@@ -505,9 +505,9 @@ describe('directive prologue and shebang survive every fixer', () => {
    */
   it('probed a non-vacuous corpus', () => {
     expect(stats.rulesProbed.size).toBeGreaterThanOrEqual(55);
-    expect(stats.considered).toBeGreaterThanOrEqual(1500);
-    expect(stats.baseFixed).toBeGreaterThanOrEqual(800);
-    expect(stats.variantFixed).toBeGreaterThanOrEqual(2000);
+    expect(stats.considered).toBeGreaterThanOrEqual(5659);
+    expect(stats.baseFixed).toBeGreaterThanOrEqual(4085);
+    expect(stats.variantFixed).toBeGreaterThanOrEqual(20407);
     expect(stats.rulesFixing.size).toBeGreaterThanOrEqual(50);
   });
 
@@ -549,8 +549,8 @@ describe('directive prologue and shebang survive every fixer', () => {
    */
   it('probed the suggestion channel', () => {
     expect(stats.rulesSuggesting.size).toBeGreaterThanOrEqual(3);
-    expect(stats.baseSuggested).toBeGreaterThanOrEqual(20);
-    expect(stats.variantSuggested).toBeGreaterThanOrEqual(100);
+    expect(stats.baseSuggested).toBeGreaterThanOrEqual(286);
+    expect(stats.variantSuggested).toBeGreaterThanOrEqual(1570);
   });
 
   /** Per rule, so one chatty suggester cannot cover for the other six. */

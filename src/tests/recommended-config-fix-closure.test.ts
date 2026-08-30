@@ -952,7 +952,7 @@ describe('the closure guard is load-bearing', () => {
     // `enforce-typescript-markdown-code-blocks`, which need the JSON and
     // markdown parsers rather than the TypeScript one.
     expect(exercisedRules.size).toBeGreaterThanOrEqual(65);
-    expect(corpus.length).toBeGreaterThanOrEqual(110);
+    expect(corpus.length).toBeGreaterThanOrEqual(396);
   });
 
   it('reaches every library a shipped fixer statically imports', () => {
@@ -1143,6 +1143,6 @@ describe('the suggestion closure guard is load-bearing', () => {
       Object.fromEntries(suggestionRuleNames.map((rule) => [rule, true])),
     );
     expect(suggestionExercisedRules.size).toBe(suggestionRuleNames.length);
-    expect(suggestionCorpus.length).toBeGreaterThanOrEqual(20);
+    expect(suggestionCorpus.length).toBeGreaterThanOrEqual(349);
   });
 });

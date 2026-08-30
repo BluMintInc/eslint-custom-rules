@@ -767,7 +767,7 @@ describe('option liveness', () => {
    * If this floor reaches zero the guard has quietly become report-only.
    */
   it('exercises the fix channel', () => {
-    expect(liveViaFixOnly.length).toBeGreaterThanOrEqual(7);
+    expect(liveViaFixOnly.length).toBeGreaterThanOrEqual(19);
   });
 
   it('classifies a planted live option as live', () => {
