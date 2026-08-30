@@ -22,16 +22,25 @@
  *              `typescript` on a triple-backtick fence. Anything else means
  *              the fixer wrote into literal document content.
  *
- * The Markdown oracle carries its OWN CommonMark fence tokenizer rather than
- * reading the rule's answer, because the rule's scanner IS the component under
- * test (#2213 was two divergences in exactly that scanner). It cannot borrow a
- * library one either: `markdown-eslint-parser`, the only declared Markdown
- * dependency, yields a bare `Program` with no block structure, and every real
- * CommonMark parser present (`mdast-util-from-markdown`, `micromark`, `marked`)
- * is both transitive and ESM-only, which this CommonJS jest cannot load. A
- * CommonMark-backed cross-check therefore lives out of band at
- * `.claude/tmp/lang-fix-oracle.mts` (`npx tsx`), and this guard's controls are
- * what keep the in-repo tokenizer honest.
+ * The Markdown arm runs TWO independent block extractions and requires both to
+ * be satisfied. `blocksOf` is a hand-rolled fence tokenizer, kept because it is
+ * fast and because it reports the fence RUN LENGTH the licence is keyed on.
+ * `markedBlocks` is `marked`'s CommonMark lexer — a real implementation, and
+ * the one that makes the independence real rather than nominal.
+ *
+ * Carrying only the hand-rolled one is what #2221 was. It was a near-verbatim
+ * copy of the rule's own `readFence`, so it shared the rule's blind spots BY
+ * CONSTRUCTION: on #2220 it both ratified the corruption (the fixer appended a
+ * language to a code block's CLOSING fence and this oracle saw nothing) and
+ * then blocked the correct fix with a false finding, because the copy has to be
+ * taught every shape in lockstep with the component it audits.
+ *
+ * The premise that stopped a library parser being used is false for exactly one
+ * of the three names, and it is the one that matters. Measured by `require()`
+ * inside jest: `mdast-util-from-markdown` and `micromark` are ESM and do fail,
+ * but `marked` LOADS and exposes a full block lexer. `markdown-eslint-parser`,
+ * the only other declared Markdown dependency, yields a bare `Program` with no
+ * block structure and remains unusable here.
  *
  * ANTI-VACUITY. The declared non-TS fixture corpus is ~40 cases across two
  * rules, which is close enough to empty to certify anything — the same shape as
@@ -260,6 +269,91 @@ const blocksOf = (text: string): Block[] => {
     index += 1;
   }
   return blocks;
+};
+
+/* ------------------------------------------------------------------ *
+ * A real CommonMark lexer, independent of the rule's scanner.          *
+ * ------------------------------------------------------------------ */
+
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { marked } = require('marked');
+
+type MarkedToken = {
+  type: string;
+  lang?: string;
+  text?: string;
+  tokens?: MarkedToken[];
+  items?: MarkedToken[];
+};
+
+/** How often `marked` refused an input, so a silent parse loss cannot hide. */
+let markedRefused = 0;
+
+/**
+ * Every fenced/indented code block `marked` finds, in document order. Blocks
+ * nest — a fence inside a list item is a `code` token under `list_item` — so
+ * this walks `tokens` and `items` rather than the top level only, which is the
+ * whole reason a list-marker fence was invisible to the hand-rolled walk.
+ */
+const markedBlocks = (
+  text: string,
+): { lang: string; value: string }[] | null => {
+  const out: { lang: string; value: string }[] = [];
+  const walk = (tokens: MarkedToken[]) => {
+    for (const token of tokens) {
+      if (token.type === 'code') {
+        out.push({ lang: token.lang ?? '', value: token.text ?? '' });
+      }
+      if (token.tokens) walk(token.tokens);
+      if (token.items) walk(token.items);
+    }
+  };
+  try {
+    walk(marked.lexer(text) as MarkedToken[]);
+  } catch {
+    markedRefused += 1;
+    return null;
+  }
+  return out;
+};
+
+/**
+ * The same licence as `markdownViolations`, adjudicated by `marked`: a code
+ * block's value must survive byte-identical, and the only permitted change is
+ * an empty info string becoming `typescript`.
+ */
+const markedViolations = (before: string, after: string): string[] => {
+  const a = markedBlocks(before);
+  const b = markedBlocks(after);
+  // A refusal is counted, not scored — it is the harness failing to read the
+  // document, which says nothing about what the fixer wrote.
+  if (a === null || b === null) return [];
+  if (a.length !== b.length) {
+    return [`marked: code block count ${a.length} -> ${b.length}`];
+  }
+  const problems: string[] = [];
+  a.forEach((block, i) => {
+    const other = b[i];
+    if (block.value !== other.value) {
+      problems.push(
+        `marked: block ${i} CONTENT ${JSON.stringify(
+          block.value.slice(0, 70),
+        )} -> ${JSON.stringify(other.value.slice(0, 70))}`,
+      );
+      return;
+    }
+    if (block.lang === other.lang) return;
+    const licensed =
+      block.lang.trim().length === 0 && other.lang.trim() === 'typescript';
+    if (!licensed) {
+      problems.push(
+        `marked: block ${i} lang ${JSON.stringify(
+          block.lang,
+        )} -> ${JSON.stringify(other.lang)}`,
+      );
+    }
+  });
+  return problems;
 };
 
 /** The only licensed Markdown delta. */
@@ -647,9 +741,17 @@ describe('the JSON and Markdown fixers write only what they own', () => {
         problems: [] as string[],
       };
     }
+    // Both Markdown extractions must be satisfied. They are scored together
+    // rather than cross-checked for agreement: the two disagree legitimately
+    // and often (the hand-rolled walk deliberately mirrors the carve-outs the
+    // rule declines, where a real lexer still sees a block), so agreement is
+    // not the invariant — surviving BOTH licences is.
     const problems =
       document.language === 'markdown'
-        ? markdownViolations(before, applied.output)
+        ? [
+            ...markdownViolations(before, applied.output),
+            ...markedViolations(before, applied.output),
+          ]
         : jsonViolations(jsoncParser, before, applied.output);
     if (!problems.length && !transform) {
       const again = linter.verifyAndFix(applied.output, config, {
@@ -743,9 +845,68 @@ describe('the JSON and Markdown fixers write only what they own', () => {
   it('is silent when nothing changed (planted negative)', () => {
     const flagged = documents.filter((document) =>
       document.language === 'markdown'
-        ? markdownViolations(document.code, document.code).length > 0
+        ? markdownViolations(document.code, document.code).length > 0 ||
+          markedViolations(document.code, document.code).length > 0
         : jsonViolations(jsoncParser, document.code, document.code).length > 0,
     );
     expect(flagged.map((document) => document.source)).toEqual([]);
+  });
+
+  /**
+   * The independent arm on #2220's own corruption: `typescript` appended to a
+   * code block's CLOSING fence. `marked` scores it with no help from the
+   * tokenizer the rule and the guard share, which is the regression evidence
+   * that it would have caught #2220 unaided.
+   *
+   * `blocksOf` now scores it too — #2220 taught it the list-marker shape — so
+   * this case alone cannot show independence. The blockquote case below is
+   * what does.
+   */
+  it('scores #2220s corruption on the independent arm', () => {
+    const before = [
+      '- ```ts',
+      '  const a = 1;',
+      '  ```',
+      '',
+      '- ```ts',
+      '  const b = 2;',
+      '  ```',
+      '',
+    ].join('\n');
+    const after = before.replace(
+      '  ```\n\n- ```ts',
+      '  ```typescript\n\n- ```ts',
+    );
+    expect(after).not.toBe(before);
+    expect(markedViolations(before, after).length).toBeGreaterThan(0);
+  });
+
+  /**
+   * Independence, demonstrated live rather than historically. Every line of a
+   * blockquote begins with `>`, so no line satisfies the hand-rolled fence
+   * reader and `blocksOf` finds NO block to compare — a rewrite of the block's
+   * interior is structurally invisible to it. `marked` reads the quote, finds
+   * the code block inside, and scores the same rewrite.
+   *
+   * This is the shape of every future #2220: a construct neither the rule nor
+   * its mirror has been taught. Keeping a real lexer in the loop is what makes
+   * the oracle able to fail before someone thinks to teach it.
+   */
+  it('scores a rewrite the hand-rolled extraction cannot see at all', () => {
+    const before = ['> ```ts', '> const a = 1;', '> ```', ''].join('\n');
+    const after = before.replace('const a = 1;', 'const a = 999;');
+    expect(markdownViolations(before, after)).toEqual([]);
+    expect(markedViolations(before, after).length).toBeGreaterThan(0);
+  });
+
+  /** `marked` must actually have read the corpus, not refused it. */
+  it('parsed the Markdown corpus rather than refusing it', () => {
+    expect(markedRefused).toBe(0);
+    const parsed = documents.filter(
+      (document) =>
+        document.language === 'markdown' &&
+        markedBlocks(document.code) !== null,
+    );
+    expect(parsed.length).toBeGreaterThan(FLOOR_MARKDOWN);
   });
 });
