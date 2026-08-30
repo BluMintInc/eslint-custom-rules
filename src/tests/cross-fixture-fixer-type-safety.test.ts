@@ -1352,7 +1352,11 @@ const FIXER_FLOOR = 78; // measured 81
  * noticed, so a fatal-parse ceiling of 200 against a measured 0 would readmit
  * that exact defect while still reading as an assertion.
  */
-const NON_TS_CEILING = 60; // measured 40
+// measured 82 — the CommonMark fence fixtures added to
+// `enforce-typescript-markdown-code-blocks` for #2213 took the non-TS
+// population from 40 to 82. These cases are judged instead by
+// `lang-fix-closure`, the core-equivalent oracle for their languages.
+const NON_TS_CEILING = 100;
 const SHARED_SCOPE_CEILING = 50; // measured 30
 const INPUT_FATAL_CEILING = 10; // measured 0
 
