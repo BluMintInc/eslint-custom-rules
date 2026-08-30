@@ -216,6 +216,15 @@ const stats = {
   rulesSuggesting: new Set<string>(),
   skippedUndrivable: 0,
   skippedInert: 0,
+  /**
+   * Fixtures that already open with a shebang or a directive of their own. The
+   * variant arm cannot use them — a second copy of the same token makes "which
+   * one moved" ambiguous — but they are the most realistic inputs this guard
+   * has, so they get their own arm below rather than a silent `return`.
+   */
+  ownPrologue: 0,
+  ownPrologueRewritten: 0,
+  rulesOwnPrologue: new Set<string>(),
 };
 
 type Drive = {
@@ -284,13 +293,167 @@ const suggestionOutputs = (
   );
 };
 
+/**
+ * Splices text at offset 0 — above whatever prologue the source carries. Shared
+ * by the prepended-variant control and the own-prologue controls so both arms
+ * are proven against the SAME defect, rather than each against its own double.
+ */
+const ROGUE_PREPENDER = {
+  meta: {
+    type: 'problem',
+    fixable: 'code',
+    schema: [],
+    messages: { x: 'x' },
+  },
+  create(context: never) {
+    const ctx = context as unknown as { report: (d: unknown) => void };
+    return {
+      Program(node: { body: unknown[] }) {
+        if (!node.body.length) return;
+        ctx.report({
+          node,
+          messageId: 'x',
+          fix: (fixer: {
+            insertTextAfterRange: (r: number[], t: string) => unknown;
+          }) => fixer.insertTextAfterRange([0, 0], "import x from 'y';\n"),
+        });
+      },
+    };
+  },
+};
+
+/** The prologue a fixture carries of its OWN, or null if it carries none. */
+type OwnPrologue = { shebang: boolean; directive: string | null };
+
+const ownPrologueOf = (tc: FixtureCase): OwnPrologue | null => {
+  const shebang = tc.code.startsWith('#!');
+  let directive: string | null = null;
+  try {
+    const body = tsParser.parse(tc.code, {
+      ...parserOptionsFor(tc),
+      loc: true,
+      range: true,
+      tokens: true,
+      comment: true,
+    }).body as {
+      type: string;
+      expression?: { type: string; value?: unknown };
+    }[];
+    const first = body[0];
+    if (
+      first?.type === 'ExpressionStatement' &&
+      first.expression?.type === 'Literal' &&
+      typeof first.expression.value === 'string' &&
+      /^use /.test(first.expression.value)
+    ) {
+      directive = first.expression.value;
+    }
+  } catch {
+    return null;
+  }
+  if (!shebang && !directive) {
+    return null;
+  }
+  return { shebang, directive };
+};
+
+/**
+ * The same two invariants asked of the prologue the fixture ALREADY carries.
+ *
+ * Nothing is prepended, so there is no second copy and no ambiguity about which
+ * one moved — the objection that made the variant arm skip this population is
+ * a property of the synthetic prefix, not of the fixtures.
+ */
+const ownPrologueBreak = (
+  output: string,
+  own: OwnPrologue,
+  tc: FixtureCase,
+): Finding['reason'] | null => {
+  if (own.shebang && !output.startsWith('#!')) {
+    return 'SHEBANG_DISPLACED';
+  }
+  if (!own.directive) {
+    return null;
+  }
+  let body: { type: string; expression?: { type: string; value?: unknown } }[];
+  try {
+    body = tsParser.parse(output, {
+      ...parserOptionsFor(tc),
+      loc: true,
+      range: true,
+      tokens: true,
+      comment: true,
+    }).body as never;
+  } catch {
+    // Unparseable output is the autofix probe's finding, not this one.
+    return null;
+  }
+  const first = body[0];
+  const isDirective =
+    first?.type === 'ExpressionStatement' &&
+    first.expression?.type === 'Literal' &&
+    first.expression.value === own.directive;
+  return isDirective ? null : 'DIRECTIVE_DEMOTED';
+};
+
+const probeOwnPrologue = (
+  name: string,
+  tc: FixtureCase,
+  own: OwnPrologue,
+  collect: Finding[],
+) => {
+  const rules = { [PREFIX + name]: severityWithOptions(tc) as never };
+  stats.ownPrologue++;
+  const record = (after: string) => {
+    const displaced = ownPrologueBreak(after, own, tc);
+    if (!displaced) return;
+    collect.push({
+      rule: name,
+      variant:
+        own.shebang && own.directive
+          ? 'shebang+directive'
+          : own.shebang
+          ? 'shebang'
+          : 'directive',
+      origin: `${tc.origin} [own prologue]`,
+      reason: displaced,
+      before: tc.code,
+      after,
+    });
+  };
+
+  const fixed = fixOf(tc.code, rules, tc);
+  if (fixed?.fixed) {
+    stats.ownPrologueRewritten++;
+    stats.rulesOwnPrologue.add(name);
+    record(fixed.output);
+  }
+  for (const output of suggestionOutputs(name, tc.code, rules, tc)) {
+    stats.ownPrologueRewritten++;
+    stats.rulesOwnPrologue.add(name);
+    record(output);
+  }
+};
+
 const probeCase = (name: string, tc: FixtureCase, collect: Finding[]) => {
   const rules = { [PREFIX + name]: severityWithOptions(tc) as never };
   const drive = driveOf(name);
 
   // A fixture that already opens with either token would make the invariant
-  // ambiguous about which copy moved.
-  if (tc.code.startsWith('#!') || /^\s*['"]use /.test(tc.code)) return;
+  // ambiguous about which copy moved — for the PREPENDED prefix. It is not a
+  // reason to drop the fixture: the prologue it already carries answers the
+  // same question with no second copy involved, so it is routed to its own arm
+  // rather than returned on in silence. That silent `return` sat above
+  // `drive.probeable++`, so the population was invisible to every counter
+  // (#2216), and it holds this guard's most realistic inputs — including the
+  // #1695 regression fixtures the guard generalises.
+  if (tc.code.startsWith('#!') || /^\s*['"]use /.test(tc.code)) {
+    const own = ownPrologueOf(tc);
+    if (own) {
+      probeOwnPrologue(name, tc, own, collect);
+    }
+    return;
+  }
   drive.probeable++;
 
   // A case the rule rewrites through NEITHER channel proves nothing about
@@ -512,6 +675,110 @@ describe('directive prologue and shebang survive every fixer', () => {
   });
 
   /**
+   * The population the variant arm cannot use, now asked about the prologue it
+   * already carries. Measured at 70 fixtures across 21 rules, every one of them
+   * rewritten — so this arm drives fixers rather than merely counting inputs.
+   * Before #2216 the same 70 were dropped above `drive.probeable++`, invisible
+   * to every counter.
+   *
+   * The planted controls below route through `probeCase` too and so add three
+   * to these counters. The floors sit far enough above three that a collapsed
+   * corpus still fails them — a control that could carry its own floor would
+   * certify nothing.
+   */
+  it('probes the fixtures that carry a prologue of their own', () => {
+    expect(stats.ownPrologue).toBeGreaterThanOrEqual(60);
+    expect(stats.ownPrologueRewritten).toBeGreaterThanOrEqual(60);
+    expect(stats.rulesOwnPrologue.size).toBeGreaterThanOrEqual(18);
+  });
+
+  it('flags a fixer that demotes the fixture OWN directive (positive)', () => {
+    linter.defineRule(PREFIX + '__rogue_own__', ROGUE_PREPENDER as never);
+    const collected: Finding[] = [];
+    probeCase(
+      '__rogue_own__',
+      {
+        code: "'use client';\nconst a = 1;\n",
+        tester: 'ruleTesterTs',
+        origin: 'planted',
+        bucket: 'invalid',
+      },
+      collected,
+    );
+    expect(collected.map((f) => f.reason)).toEqual(['DIRECTIVE_DEMOTED']);
+  });
+
+  it('flags a fixer that displaces the fixture OWN shebang (positive)', () => {
+    linter.defineRule(
+      PREFIX + '__rogue_own_shebang__',
+      ROGUE_PREPENDER as never,
+    );
+    const collected: Finding[] = [];
+    probeCase(
+      '__rogue_own_shebang__',
+      {
+        code: '#!/usr/bin/env node\nconst a = 1;\n',
+        tester: 'ruleTesterTs',
+        origin: 'planted',
+        bucket: 'invalid',
+      },
+      collected,
+    );
+    expect(collected.map((f) => f.reason)).toEqual(['SHEBANG_DISPLACED']);
+  });
+
+  /**
+   * The negative half. Without it a checker that returned a finding for every
+   * rewrite would pass both positives above and prove nothing — and the arm
+   * would condemn all 70 corpus fixtures, which are the reason it exists.
+   */
+  it('stays silent on a fixer that writes BELOW the own prologue (negative)', () => {
+    const polite = {
+      meta: {
+        type: 'problem',
+        fixable: 'code',
+        schema: [],
+        messages: { x: 'x' },
+      },
+      create(context: never) {
+        const ctx = context as unknown as { report: (d: unknown) => void };
+        return {
+          Program(node: { body: unknown[]; range: [number, number] }) {
+            if (node.body.length < 2) return;
+            const second = node.body[1] as { range: [number, number] };
+            ctx.report({
+              node,
+              messageId: 'x',
+              fix: (fixer: {
+                insertTextBeforeRange: (r: number[], t: string) => unknown;
+              }) =>
+                fixer.insertTextBeforeRange(
+                  second.range,
+                  "import x from 'y';\n",
+                ),
+            });
+          },
+        };
+      },
+    };
+    linter.defineRule(PREFIX + '__polite_own__', polite as never);
+    const collected: Finding[] = [];
+    probeCase(
+      '__polite_own__',
+      {
+        code: "'use client';\nconst a = 1;\n",
+        tester: 'ruleTesterTs',
+        origin: 'planted',
+        bucket: 'invalid',
+      },
+      collected,
+    );
+    // It must REWRITE and still report nothing, or it would pass by declining.
+    expect(stats.ownPrologueRewritten).toBeGreaterThan(0);
+    expect(collected).toEqual([]);
+  });
+
+  /**
    * Per rule, which is the unit the floors above cannot express. Both
    * directions: an unlisted rule that stops rewriting fails as an unrecorded
    * skip, and a listed rule that starts rewriting fails as a stale entry —
@@ -565,33 +832,7 @@ describe('directive prologue and shebang survive every fixer', () => {
   });
 
   it('flags a fixer that inserts above the prologue (positive control)', () => {
-    const rogue = {
-      meta: {
-        type: 'problem',
-        fixable: 'code',
-        schema: [],
-        messages: { x: 'x' },
-      },
-      create(context: never) {
-        const ctx = context as unknown as {
-          report: (d: unknown) => void;
-          getSourceCode: () => { ast: { body: unknown[] } };
-        };
-        return {
-          Program(node: { body: unknown[] }) {
-            if (!node.body.length) return;
-            ctx.report({
-              node,
-              messageId: 'x',
-              fix: (fixer: {
-                insertTextAfterRange: (r: number[], t: string) => unknown;
-              }) => fixer.insertTextAfterRange([0, 0], "import x from 'y';\n"),
-            });
-          },
-        };
-      },
-    };
-    linter.defineRule(PREFIX + '__rogue__', rogue as never);
+    linter.defineRule(PREFIX + '__rogue__', ROGUE_PREPENDER as never);
     const collected: Finding[] = [];
     probeCase(
       '__rogue__',
@@ -755,6 +996,9 @@ afterAll(() => {
       `considered=${stats.considered} baseFixed=${stats.baseFixed} ` +
       `variantFixed=${stats.variantFixed} suggested=${stats.variantSuggested} findings=${findings.length} ` +
       `skipped(undrivable)=${stats.skippedUndrivable} ` +
-      `skipped(inert)=${stats.skippedInert}\n`,
+      `skipped(inert)=${stats.skippedInert} ` +
+      `ownPrologue=${stats.ownPrologue} ` +
+      `ownPrologueRewritten=${stats.ownPrologueRewritten} ` +
+      `rulesOwnPrologue=${stats.rulesOwnPrologue.size}\n`,
   );
 });
