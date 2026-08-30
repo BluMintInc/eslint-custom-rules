@@ -37,6 +37,7 @@ class Example {
 - Applies only to private instance getters (`get` accessors with `private` accessibility).
 - Ignores static getters.
 - Ignores getters named with an ECMAScript private name (`get #fetcher()`), which admit no decorator (see below).
+- Ignores a getter whose computed key is not a string literal (`get [Symbol.iterator]()`, `get [KEY]()`). `Memoize` declares its `propertyKey` parameter as `string`, so decorating a symbol-keyed member is TS1241 and the prescribed remedy cannot be written. A computed key that *is* a string literal (`get ['fetcher']()`) is an ordinary string key and is still enforced.
 - Ignores getters declared in a class **expression** (`const Service = class { … }`), where no decorator is legal either (see below).
 - Recognizes `@Memoize`, `@Memoize()`, and namespaced forms like `@ns.Memoize()`.
 - Auto-fix adds `@Memoize()` and imports `Memoize` from `@blumintinc/typescript-memoize` if missing, without duplicating existing imports or aliases.

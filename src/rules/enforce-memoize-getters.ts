@@ -505,6 +505,24 @@ export const enforceMemoizeGetters = createRule<Options, MessageIds>({
         // breakage.
         if (node.key.type === AST_NODE_TYPES.PrivateIdentifier) return;
 
+        // The same unwritable-remedy shape, one key form over: `Memoize`
+        // declares its `propertyKey` parameter as `string`, so decorating a
+        // symbol-keyed getter — `get [Symbol.iterator]()` — is TS1241, and the
+        // `--fix` edit turns compiling code into code that does not compile.
+        // A computed key that IS a string literal (`get ['name']()`) is an
+        // ordinary string key and stays in scope; anything else cannot be shown
+        // to be a string without the checker, and a false negative is the
+        // cheaper error here.
+        if (
+          node.computed &&
+          !(
+            node.key.type === AST_NODE_TYPES.Literal &&
+            typeof node.key.value === 'string'
+          )
+        ) {
+          return;
+        }
+
         const classBody = node.parent;
 
         // The same reasoning, one level out: under `experimentalDecorators` a
