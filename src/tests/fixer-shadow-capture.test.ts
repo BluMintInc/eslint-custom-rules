@@ -1689,10 +1689,10 @@ describe('the shadow-capture detector is load-bearing', () => {
    */
   it('carries options and filenames from the fixtures themselves', () => {
     const cases = [...corpus.byRule.values()].flat();
-    expect(cases.filter((c) => c.options).length).toBeGreaterThanOrEqual(250);
-    expect(cases.filter((c) => c.filename).length).toBeGreaterThanOrEqual(1000);
+    expect(cases.filter((c) => c.options).length).toBeGreaterThanOrEqual(702);
+    expect(cases.filter((c) => c.filename).length).toBeGreaterThanOrEqual(3690);
     expect(
       (corpus.byRule.get('no-usememo-for-pass-by-value') || []).length,
-    ).toBeGreaterThanOrEqual(60);
+    ).toBeGreaterThanOrEqual(198);
   });
 });

@@ -1001,10 +1001,10 @@ describe('the CJS emission guard is load-bearing', () => {
       'markdown',
       'ts',
     ]);
-    // Measured: 7 JSON and 21 Markdown fixtures reach the filter, and none
+    // Measured: 7 JSON and 68 Markdown fixtures reach the filter, and none
     // mentions `import` or `await`, so corpus B carries TypeScript alone.
     expect(composedSeen.json).toBeGreaterThanOrEqual(7);
-    expect(composedSeen.markdown).toBeGreaterThanOrEqual(20);
+    expect(composedSeen.markdown).toBeGreaterThanOrEqual(61);
     // Nothing is lost between collection and linting.
     expect(
       Object.values(composedCarried).reduce((sum, count) => sum + count, 0),

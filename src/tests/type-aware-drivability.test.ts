@@ -136,7 +136,7 @@ const totalReports = measurements.reduce((sum, m) => sum + m.reports, 0);
  */
 const MIN_CANDIDATES = 10;
 const MIN_REPORTING = 10;
-const MIN_REPORTS = 200;
+const MIN_REPORTS = 1102;
 
 const describeMeasurement = (m: Measurement) =>
   `${m.rule}: ${m.reports} reports over ${m.cases} cases` +
