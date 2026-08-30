@@ -567,6 +567,52 @@ setValue(() => actions.refresh);
       `,
     },
 
+    // An uncompilable entry in functionPatterns is REPORTED, not swallowed.
+    // Dropping it silently leaves the consumer's allowlist inert while the rule
+    // goes on reporting the very code the pattern was written to exclude, with
+    // nothing anywhere saying why.
+    {
+      code: `
+const [value, setValue] = useState(null);
+setValue(42);
+      `,
+      options: [{ functionPatterns: ['on[A-Z'] }],
+      errors: [{ messageId: 'invalidFunctionPattern' }],
+    },
+
+    // The invalid entry does not disable the entries that DO compile: `refresh`
+    // still matches, so both reports stand. A rule that bailed on the whole
+    // option at the first bad entry would show only the pattern error here.
+    {
+      code: `
+const [value, setValue] = useState(null);
+setValue(actions.refresh);
+      `,
+      options: [{ functionPatterns: ['on[A-Z', 'refresh'] }],
+      errors: [
+        { messageId: 'invalidFunctionPattern' },
+        { messageId: 'noDirectFunctionState' },
+      ],
+      output: `
+const [value, setValue] = useState(null);
+setValue(() => actions.refresh);
+      `,
+    },
+
+    // Every uncompilable entry is named separately — a consumer with two typos
+    // has two mistakes to correct, and a single pooled report would hide one.
+    {
+      code: `
+const [value, setValue] = useState(null);
+setValue(42);
+      `,
+      options: [{ functionPatterns: ['on[A-Z', '*bad'] }],
+      errors: [
+        { messageId: 'invalidFunctionPattern' },
+        { messageId: 'invalidFunctionPattern' },
+      ],
+    },
+
     // Option-dependence baseline for the narrowed valid case above: the same
     // code with the default patterns, where `on[A-Z].*` matches onDismiss.
     {
