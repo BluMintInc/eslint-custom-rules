@@ -74,8 +74,8 @@
  *     floors and on the standoff set. A pass that examines nothing cannot go
  *     green.
  *
- * NON-VACUITY IS PER-MEMBER (#1863). Only 43 of the 72 scanned owners appear in
- * `KNOWN_DIVERGENT`; for the other 29 the whole claim rested on three global
+ * NON-VACUITY IS PER-MEMBER (#1863). Only 48 of the 80 scanned owners appear in
+ * `KNOWN_DIVERGENT`; for the other 32 the whole claim rested on three global
  * floors, so each could stop contributing evidence and nothing would say so.
  * Every documented PAIR is now either examined or named with a measured cause,
  * every scanned owner must have contributed a fixture, and `casesConsidered` is
@@ -594,7 +594,7 @@ const TYPE_ARTIFACT_SELF_REPORTERS: Record<string, string> = {
  * inside `...-cause`). Kept deliberately: six of the eight links that produces
  * are name-family siblings, which is the same contract-sharing signal a written
  * mention is, and an extra pair that never diverges costs nothing while a
- * missing one costs coverage. It links 140 directed pairs, of which 137 have an
+ * missing one costs coverage. It links 180 directed pairs, of which 177 have an
  * enabled reporter and a fixture-bearing owner.
  */
 const documentedPartners = new Map<string, Set<string>>();
@@ -819,9 +819,9 @@ const exampleFor = (pair: string) =>
 /**
  * Every directed pair the mention graph documents, examined or not.
  *
- * `pairsChecked >= 120` says the scan examined SOME pairs; it cannot say it
- * examined a particular one, and 139 pairs against a floor of 120 leaves
- * nineteen free to leave the scan silently — a rule dropping out of the
+ * `pairsChecked >= 170` says the scan examined SOME pairs; it cannot say it
+ * examined a particular one, and 180 pairs against a floor of 172 leaves
+ * eight free to leave the scan silently — a rule dropping out of the
  * recommended config takes every pair it reports on with it (#1863). Every
  * member is therefore either examined or named below with a measured cause.
  */
@@ -889,7 +889,7 @@ const UNEXAMINED_PAIRS: Record<string, UnexaminedCause> = {
  * An owner can be counted as examined — its pairs are added before a single
  * lint runs — and still contribute no evidence, because only `valid` and
  * `output` text is evidence and a corpus of nothing but `invalid` fixtures is
- * skipped case by case. SHIPS EMPTY: all 72 scanned owners contribute.
+ * skipped case by case. SHIPS EMPTY: all 80 scanned owners contribute.
  */
 const UNSCANNED_OWNER_CAUSES = {
   ownerHasOnlyInvalidFixtures:
@@ -910,7 +910,7 @@ const OWNERS_WITHOUT_CASES: Record<string, UnscannedOwnerCause> = {};
 /**
  * What `casesConsidered` must be, derived from the corpus rather than floored.
  *
- * A floor of 4,500 against 5,589 lets a fifth of the evidence disappear; this
+ * A floor of 8,100 against 8,383 lets a thirtieth of the evidence disappear; this
  * equality lets none of it, since every non-`invalid` fixture of every scanned
  * owner has to arrive. A case lost to a fatal parse would show up here as well
  * as in `stats.fatals`.
@@ -978,8 +978,8 @@ const sortedCounts = (counts: Record<string, number>) =>
  *
  * The `residualFixable` conjunct is load-bearing. `fixed: true` with a residual
  * report ALONE is not oscillation — an unrelated fix may have applied while an
- * unfixable report remains, which is ordinary and describes 139 fixtures here.
- * The loose test calls 11 of them oscillations; this one calls none.
+ * unfixable report remains, which is ordinary and describes 202 fixtures here.
+ * The loose test calls 12 of them oscillations; this one calls none.
  *
  * THE SECOND CONJUNCT IS "the loop did not settle", NOT "the text moved again".
  * That distinction was measured against #1846 itself, with its pre-fix rule
@@ -1043,7 +1043,7 @@ function classifyFixOutcome(
   const residualFixable = residualMessages.some((message) => message.fix);
 
   // Paid for only when a fix is still pending, which no corpus fixture is
-  // today: all 139 residuals carry no fix. The second `verifyAndFix` therefore
+  // today: all 202 residuals carry no fix. The second `verifyAndFix` therefore
   // costs the sweep nothing and is exercised by the controls alone.
   let refixMovesText = false;
   let refixAppliesAFix = false;
@@ -1150,7 +1150,7 @@ const standoffs = convergence.filter(
 );
 
 /**
- * The eight fixtures on which both rules of a pair are still speaking once the
+ * The eleven fixtures on which both rules of a pair are still speaking once the
  * composed `--fix` has run — the small, hand-checked set where the NEXT
  * contradiction will surface, since a pair that cannot be silenced by fixing is
  * one hand-edit away from being unsatisfiable.
@@ -1402,22 +1402,22 @@ describe('exempted pairs converge under the composed --fix', () => {
     };
     for (const row of convergence) byVerdict[row.outcome.verdict]++;
 
-    // 631 probes over 56 pairs, 503 of them rewritten by the fix, at the time
+    // 990 probes over 67 pairs, 800 of them rewritten by the fix, at the time
     // of writing. Each floor is separate because each fails differently: a
     // probe count with nothing rewritten means the fix pass never ran (the
     // options or parser plumbing lost), and a pair count without probes means
     // the divergence scan collapsed.
-    expect(convergenceStats.probes).toBeGreaterThanOrEqual(550);
-    expect(convergenceStats.rewritten).toBeGreaterThanOrEqual(400);
-    expect(convergenceStats.pairs.size).toBeGreaterThanOrEqual(50);
-    expect(byVerdict.CONVERGED).toBeGreaterThanOrEqual(400);
-    expect(byVerdict['NO-OP']).toBeGreaterThanOrEqual(100);
+    expect(convergenceStats.probes).toBeGreaterThanOrEqual(950);
+    expect(convergenceStats.rewritten).toBeGreaterThanOrEqual(760);
+    expect(convergenceStats.pairs.size).toBeGreaterThanOrEqual(64);
+    expect(byVerdict.CONVERGED).toBeGreaterThanOrEqual(750);
+    expect(byVerdict['NO-OP']).toBeGreaterThanOrEqual(190);
     // A fixer that produced unparsable text would leave a fatal carrying no
     // `ruleId`, which the residual filter drops — i.e. it would read as
     // CONVERGED. Asserted rather than counted.
     expect(convergenceStats.fatalOutputs).toEqual([]);
     // The sharpening is live on REAL fixtures, not only in the plant below: the
-    // loose "`fixed: true` and something still reports" test fires on 11 of
+    // loose "`fixed: true` and something still reports" test fires on 12 of
     // these, every one of them ordinary. If this ever reaches zero the two
     // tests have stopped differing here and the sharp one is no longer being
     // exercised against its own false-positive class.
@@ -1529,7 +1529,7 @@ describe('exempted pairs converge under the composed --fix', () => {
 
   it('calls an unfixable residual a NO-OP, not an oscillation (negative control)', () => {
     // The sharpness half. A fixture where `--fix` DID rewrite something while
-    // an unrelated, unfixable report remains is ordinary — 139 of the corpus's
+    // an unrelated, unfixable report remains is ordinary — 202 of the corpus's
     // fixtures are exactly this — and the loose test calls it an oscillation.
     const FIXES = `${PREFIX}control-fixes-once`;
     const UNFIXABLE = `${PREFIX}control-reports-unfixable`;
@@ -1605,28 +1605,28 @@ describe('exempted pairs converge under the composed --fix', () => {
 
 describe('the cross-rule contradiction guard is load-bearing', () => {
   it('reaches the documented corpus', () => {
-    // 137 pairs over 5,493 cases from 71 owners at the time of writing. Each
+    // 177 pairs over 8,383 cases from 80 owners at the time of writing. Each
     // floor is separate: a high pair count over a collapsed corpus, or a large
     // corpus that reaches few owners, would each read as health.
-    expect(stats.pairsChecked).toBeGreaterThanOrEqual(120);
-    expect(stats.ownersWithCases.size).toBeGreaterThanOrEqual(60);
-    expect(stats.casesConsidered).toBeGreaterThanOrEqual(4500);
+    expect(stats.pairsChecked).toBeGreaterThanOrEqual(170);
+    expect(stats.ownersWithCases.size).toBeGreaterThanOrEqual(76);
+    expect(stats.casesConsidered).toBeGreaterThanOrEqual(8100);
     expect(corpus.failures).toEqual([]);
-    // And enough DISTINCT sibling rules must actually have spoken (25). A
+    // And enough DISTINCT sibling rules must actually have spoken (28). A
     // corpus that reaches every owner but trips two chatty reporters would
     // clear every floor above while saying nothing about the other 23.
-    expect(stats.reportersHeardFrom.size).toBeGreaterThanOrEqual(20);
+    expect(stats.reportersHeardFrom.size).toBeGreaterThanOrEqual(26);
   });
 
   /**
-   * The drive dimension, per member. Only 43 of the 72 scanned owners appear in
-   * `KNOWN_DIVERGENT`, so for the other 29 the three floors above were the
+   * The drive dimension, per member. Only 48 of the 80 scanned owners appear in
+   * `KNOWN_DIVERGENT`, so for the other 32 the three floors above were the
    * whole of the non-vacuity claim: each could stop contributing evidence
    * entirely and nothing would say so (#1863).
    */
   it('accounts for every documented pair: examined, or named with its cause', () => {
     expect(measuredUnexamined).toEqual(UNEXAMINED_PAIRS);
-    expect(documentedPairs.length).toBeGreaterThanOrEqual(120);
+    expect(documentedPairs.length).toBeGreaterThanOrEqual(172);
     expect(
       Object.values(UNEXAMINED_PAIRS).filter(
         (cause) => !UNEXAMINED_CAUSES[cause],
@@ -1657,7 +1657,7 @@ describe('the cross-rule contradiction guard is load-bearing', () => {
    */
   it('considers every blessed fixture of every scanned owner', () => {
     expect(stats.casesConsidered).toBe(expectedCasesConsidered);
-    expect(expectedCasesConsidered).toBeGreaterThanOrEqual(4500);
+    expect(expectedCasesConsidered).toBeGreaterThanOrEqual(8100);
   });
 
   it('keeps every valid fixture silent under its own rule', () => {
