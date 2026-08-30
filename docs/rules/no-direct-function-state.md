@@ -153,6 +153,20 @@ setCb(factory?.build());
 }
 ```
 
+### Invalid patterns are reported, not ignored
+
+Each entry is compiled as a regular expression anchored at both ends. An entry
+that does not compile is reported once per file against the `Program` node:
+
+```
+"on[A-Z" in functionPatterns is not a valid regular expression, so it was dropped.
+```
+
+The entry is dropped, and the entries that do compile keep working. Reporting it
+is deliberate: a silently discarded pattern leaves the allowlist inert, so the
+rule goes on flagging the very code the pattern was written to exclude, with
+nothing to indicate why.
+
 ## When to disable
 
 Disable for a single line with an explicit comment if you have verified that the call is intentional — e.g., a custom hook that wraps a non-standard setter:

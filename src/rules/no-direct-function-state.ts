@@ -8,7 +8,10 @@ type Options = [
   },
 ];
 
-type MessageIds = 'noDirectFunctionState' | 'noDirectFunctionStateAssertion';
+type MessageIds =
+  | 'noDirectFunctionState'
+  | 'noDirectFunctionStateAssertion'
+  | 'invalidFunctionPattern';
 
 const DEFAULT_FUNCTION_PATTERNS = [
   'callback',
@@ -236,21 +239,36 @@ function isDefinitelySafeArg(argNode: TSESTree.Node): boolean {
 }
 
 /**
+ * Compiles the configured function-naming patterns once, separating the ones
+ * that do not compile from the ones that do.
+ *
+ * Swallowing an uncompilable pattern makes the consumer's allowlist silently
+ * inert: the rule then reports the very code they wrote the pattern to exclude,
+ * with nothing anywhere saying why. Returning the rejects lets `create` report
+ * them, which is what the sibling pattern-compiling rules already do.
+ */
+function compileFunctionPatterns(patterns: string[]): {
+  matchers: RegExp[];
+  invalid: string[];
+} {
+  const matchers: RegExp[] = [];
+  const invalid: string[] = [];
+  for (const pattern of patterns) {
+    try {
+      matchers.push(new RegExp(`^${pattern}$`));
+    } catch {
+      invalid.push(pattern);
+    }
+  }
+  return { matchers, invalid };
+}
+
+/**
  * Checks whether an identifier name matches any of the function-naming patterns
  * (e.g. onClose, handler, fn, callback).
  */
-function matchesFunctionPattern(name: string, patterns: string[]): boolean {
-  for (const pattern of patterns) {
-    try {
-      const regex = new RegExp(`^${pattern}$`);
-      if (regex.test(name)) {
-        return true;
-      }
-    } catch {
-      // Ignore invalid regex patterns
-    }
-  }
-  return false;
+function matchesFunctionPattern(name: string, matchers: RegExp[]): boolean {
+  return matchers.some((matcher) => matcher.test(name));
 }
 
 /**
@@ -345,6 +363,10 @@ export const noDirectFunctionState = createRule<Options, MessageIds>({
         'Why it matters: The function will be called with the previous state value and its return value stored — a silent bug with no error. ' +
         'How to fix: Give the asserted value a name, then store that name through a thunk: const value = {{argText}}; {{setterName}}(() => value). ' +
         'The assertion is hoisted out because a thunk that returned it would be an arrow returning a cast, which no-type-assertion-returns reports.',
+      invalidFunctionPattern:
+        'What\u2019s wrong: "{{pattern}}" in functionPatterns is not a valid regular expression, so it was dropped. ' +
+        'Why it matters: the rule silently stops honouring that entry, and reports the very code the pattern was written to exclude. ' +
+        'How to fix: correct the pattern in your ESLint configuration.',
     },
   },
   defaultOptions: [{ functionPatterns: DEFAULT_FUNCTION_PATTERNS }],
@@ -352,6 +374,8 @@ export const noDirectFunctionState = createRule<Options, MessageIds>({
     const options = context.options[0] ?? {};
     const functionPatterns: string[] =
       options.functionPatterns ?? DEFAULT_FUNCTION_PATTERNS;
+    const { matchers: functionPatternMatchers, invalid: invalidPatterns } =
+      compileFunctionPatterns(functionPatterns);
 
     /**
      * Maps setter-variable names to whether the corresponding useState has
@@ -361,6 +385,15 @@ export const noDirectFunctionState = createRule<Options, MessageIds>({
     const setterFunctionTyped = new Map<string, boolean>();
 
     return {
+      Program(node) {
+        for (const pattern of invalidPatterns) {
+          context.report({
+            node,
+            messageId: 'invalidFunctionPattern',
+            data: { pattern },
+          });
+        }
+      },
       VariableDeclarator(node) {
         // Look for `const [state, setter] = useState<T>(...)` or
         // `const [state, setter] = React.useState<T>(...)`.
@@ -452,7 +485,10 @@ export const noDirectFunctionState = createRule<Options, MessageIds>({
         // or scope-level binding to a function.
         const argName = getArgName(arg);
 
-        if (argName && matchesFunctionPattern(argName, functionPatterns)) {
+        if (
+          argName &&
+          matchesFunctionPattern(argName, functionPatternMatchers)
+        ) {
           reportAndFix(node, arg, setterName, context);
           return;
         }
