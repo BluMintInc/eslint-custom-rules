@@ -1,6 +1,9 @@
 import {
   CASES_ALLOWED_TO_SUPPRESS,
+  LINE_SCOPED_CASES_ALLOWED_TO_SUPPRESS,
   assertValidCasesCanFail,
+  lineScopedCoverage,
+  lineScopedDirectives,
   suppressesRuleUnderTest,
 } from '../utils/validCaseFalsifiability';
 
@@ -159,6 +162,120 @@ describe('suppressesRuleUnderTest', () => {
   });
 });
 
+describe('lineScopedDirectives', () => {
+  it('reads eslint-disable-next-line as covering the following line', () => {
+    expect(
+      lineScopedDirectives('// eslint-disable-next-line foo-bar\nx;'),
+    ).toEqual([{ kind: 'next-line', covers: 2, rules: new Set([RULE]) }]);
+  });
+
+  it('reads eslint-disable-line as covering its own line', () => {
+    expect(
+      lineScopedDirectives('x;\ny; // eslint-disable-line foo-bar'),
+    ).toEqual([{ kind: 'line', covers: 2, rules: new Set([RULE]) }]);
+  });
+
+  it('reads the block spelling, which ESLint also honours', () => {
+    expect(
+      lineScopedDirectives('/* eslint-disable-next-line foo-bar */\nx;'),
+    ).toEqual([{ kind: 'next-line', covers: 2, rules: new Set([RULE]) }]);
+  });
+
+  // The directive applies to the line after the comment ENDS, so a block form
+  // spanning lines does not cover the line following its opening delimiter.
+  it('counts from the end of a multi-line block directive', () => {
+    expect(
+      lineScopedDirectives('/* eslint-disable-next-line\n   foo-bar */\nx;'),
+    ).toEqual([{ kind: 'next-line', covers: 3, rules: new Set([RULE]) }]);
+  });
+
+  it('carries a bare directive as null, since it disables every rule', () => {
+    expect(lineScopedDirectives('// eslint-disable-next-line\nx;')).toEqual([
+      { kind: 'next-line', covers: 2, rules: null },
+    ]);
+  });
+
+  it('keeps every listed rule and drops the justification', () => {
+    expect(
+      lineScopedDirectives(
+        '// eslint-disable-next-line no-console, foo-bar -- legacy\nx;',
+      ),
+    ).toEqual([
+      { kind: 'next-line', covers: 2, rules: new Set(['no-console', RULE]) },
+    ]);
+  });
+
+  it('ignores a block disable, which is not line-scoped', () => {
+    expect(lineScopedDirectives('/* eslint-disable foo-bar */\nx;')).toEqual(
+      [],
+    );
+  });
+
+  it('finds every directive in the fixture, not just the first', () => {
+    expect(
+      lineScopedDirectives(
+        '// eslint-disable-next-line foo-bar\na;\n// eslint-disable-next-line foo-bar\nb;',
+      ).map((directive) => directive.covers),
+    ).toEqual([2, 4]);
+  });
+
+  it('does not carry regex state between calls', () => {
+    const code = '// eslint-disable-next-line foo-bar\nx;';
+    expect(lineScopedDirectives(code)).toHaveLength(1);
+    expect(lineScopedDirectives(code)).toHaveLength(1);
+    expect(lineScopedDirectives(code)).toHaveLength(1);
+  });
+});
+
+describe('lineScopedCoverage', () => {
+  it('covers the line a directive naming the rule pins', () => {
+    expect([
+      ...lineScopedCoverage('// eslint-disable-next-line foo-bar\nx;', RULE),
+    ]).toEqual([2]);
+  });
+
+  it('covers the line a BARE directive pins, which disables everything', () => {
+    expect([
+      ...lineScopedCoverage('// eslint-disable-next-line\nx;', RULE),
+    ]).toEqual([2]);
+  });
+
+  it('covers nothing when the directive names another rule', () => {
+    expect([
+      ...lineScopedCoverage('// eslint-disable-next-line no-console\nx;', RULE),
+    ]).toEqual([]);
+  });
+
+  // `RuleTester` registers the rule under its bare name, so the prefixed id
+  // suppresses nothing and the case keeps its teeth.
+  it('covers nothing for a plugin-prefixed id', () => {
+    expect([
+      ...lineScopedCoverage(
+        '// eslint-disable-next-line @blumintinc/blumint/foo-bar\nx;',
+        RULE,
+      ),
+    ]).toEqual([]);
+  });
+
+  it('covers nothing for a longer rule name starting with this one', () => {
+    expect([
+      ...lineScopedCoverage(
+        '// eslint-disable-next-line foo-bar-baz\nx;',
+        RULE,
+      ),
+    ]).toEqual([]);
+  });
+
+  it('unions the lines of several directives', () => {
+    expect([
+      ...lineScopedCoverage(
+        'a; // eslint-disable-line foo-bar\n// eslint-disable-next-line foo-bar\nb;',
+        RULE,
+      ),
+    ]).toEqual([1, 3]);
+  });
+});
+
 describe('assertValidCasesCanFail', () => {
   it('accepts cases that carry no directive', () => {
     expect(() =>
@@ -243,5 +360,38 @@ describe('CASES_ALLOWED_TO_SUPPRESS', () => {
     expect(() => assertValidCasesCanFail(name, cases)).toThrow(
       new RegExp(`${allowed + 1} valid case\\(s\\)`),
     );
+  });
+});
+
+describe('LINE_SCOPED_CASES_ALLOWED_TO_SUPPRESS', () => {
+  const allowlisted = Object.keys(LINE_SCOPED_CASES_ALLOWED_TO_SUPPRESS);
+
+  it('names only rules the plugin ships', () => {
+    const shipped = new Set(Object.keys(plugin.rules));
+    expect(allowlisted.filter((name) => !shipped.has(name))).toEqual([]);
+  });
+
+  it('holds no entry that allows nothing', () => {
+    expect(
+      allowlisted.filter(
+        (name) => LINE_SCOPED_CASES_ALLOWED_TO_SUPPRESS[name] < 1,
+      ),
+    ).toEqual([]);
+  });
+
+  // The two maps answer the same question for two spellings of the directive.
+  // A case cannot be in both — a fixture carrying a block disable is counted by
+  // the block map — so an overlapping ENTRY would mean one of them is wrong
+  // about which spelling it measures. `line-scoped-suppression-exactness`
+  // asserts the case-level partition over the real corpus.
+  it('is measured by its own suite, not by the RuleTester hot path', () => {
+    // `assertValidCasesCanFail` deliberately does not read this map: deciding
+    // inertness needs a lint of the fixture, which a per-`run()` check cannot
+    // afford. An entry here therefore constrains nothing until that suite runs.
+    expect(() =>
+      assertValidCasesCanFail(allowlisted[0], [
+        '// eslint-disable-next-line ' + allowlisted[0] + '\nconst a = 1;',
+      ]),
+    ).not.toThrow();
   });
 });
