@@ -257,6 +257,46 @@ const nameCounts = (ast: any) => {
   return m;
 };
 
+/**
+ * Bare type-position names — the namespace `nameCounts` deliberately excludes.
+ * Keyed on the nodes that reference a type by bare name rather than on ancestor
+ * positions: every measured emitter prints a lone identifier (`Record<Status,
+ * …>`), which is always the `typeName` of a `TSTypeReference`, and a qualified
+ * name (`Ns.Status`) resolves through its left-most segment only, a shape
+ * nothing here emits.
+ *
+ * Heritage clauses count as references too, because this map is read as a
+ * DIFFERENTIAL: `prefer-type-over-interface` rewrites `interface A extends B`
+ * into `type A = B & …`, which respells a reference already in a type position
+ * instead of emitting a new one. Counting only `TSTypeReference` reads that
+ * respelling as a rise and enrolls a rule that copies verbatim source text
+ * (`sourceCode.getText(clause)`) into a census meant for printed names — 38
+ * unprobeable sites, and a spurious FALL for any rewrite in the other
+ * direction, which would mask a real emission of the same name.
+ */
+const TYPE_REF_NODES = new Set(['TSInterfaceHeritage', 'TSClassImplements']);
+
+const typeNameCounts = (ast: any) => {
+  const m = new Map<string, number>();
+  const bump = (name: string) => m.set(name, (m.get(name) || 0) + 1);
+  walkAst(ast, (n) => {
+    if (
+      n.type === 'TSTypeReference' &&
+      n.typeName &&
+      n.typeName.type === 'Identifier'
+    ) {
+      bump(n.typeName.name);
+    } else if (
+      TYPE_REF_NODES.has(n.type) &&
+      n.expression &&
+      n.expression.type === 'Identifier'
+    ) {
+      bump(n.expression.name);
+    }
+  });
+  return m;
+};
+
 /** Every identifier that DECLARES a binding, at any depth. */
 const declarationIdentifiers = (sm: any) => {
   const ids = new Set<any>();
@@ -344,6 +384,17 @@ type Reach = {
   actionable: number;
   enclosed: number;
   triggers: Trigger[];
+  /**
+   * Fix-emitted bare type-position names the module scope binds. The value
+   * probe cannot see these — `isTypePosition` excludes them by design, since
+   * the namespaces are separate and a `const` shadow cannot capture
+   * `Record<X, …>` — so this census is the type arm's whole corpus, and it is
+   * how the arm stays scoped by MEASUREMENT rather than by a rule-name list.
+   * Sites are counted even where no function block encloses the report, so a
+   * flat corpus cannot hide an emitter from the census.
+   */
+  typeSites: number;
+  typeTriggers: Trigger[];
 };
 
 const triggersFor = (
@@ -355,6 +406,8 @@ const triggersFor = (
     actionable: 0,
     enclosed: 0,
     triggers: [],
+    typeSites: 0,
+    typeTriggers: [],
   };
   for (const { testCase, filename } of probes) {
     const code = testCase.code;
@@ -372,27 +425,45 @@ const triggersFor = (
     const beforeParsed = parse(code, filename);
     if (!beforeParsed) continue;
     const beforeCounts = nameCounts(beforeParsed.ast);
+    const beforeTypeCounts = typeNameCounts(beforeParsed.ast);
     for (const m of actionable) {
       const site = offsetOf(code, m.line, m.column);
       const body = enclosingFunctionBody(beforeParsed.ast, site);
-      if (!body) continue; // reported at module level: no inner scope to shadow
-      reach.enclosed++;
+      // A module-level report leaves no inner scope for either shadow, but
+      // type SITES are still censused there — see `Reach.typeSites`.
+      if (body) reach.enclosed++;
       for (const fix of fixesOf(m)) {
         const patchedParsed = parse(applyFix(code, fix), filename);
         if (!patchedParsed) continue;
         const modAfter = moduleScope(
           patchedParsed.scopeManager as any,
         ).variables.map((v: any) => v.name);
-        for (const [name, n] of nameCounts(patchedParsed.ast)) {
-          if (n <= (beforeCounts.get(name) || 0)) continue;
-          // Only a name the module scope binds can be mis-resolved by a shadow.
+        if (body) {
+          for (const [name, n] of nameCounts(patchedParsed.ast)) {
+            if (n <= (beforeCounts.get(name) || 0)) continue;
+            // Only a name the module scope binds can be mis-resolved by a
+            // shadow.
+            if (!modAfter.includes(name)) continue;
+            reach.triggers.push({
+              testCase,
+              filename,
+              name,
+              injectAt: body.range[0] + 1,
+            });
+          }
+        }
+        for (const [name, n] of typeNameCounts(patchedParsed.ast)) {
+          if (n <= (beforeTypeCounts.get(name) || 0)) continue;
           if (!modAfter.includes(name)) continue;
-          reach.triggers.push({
-            testCase,
-            filename,
-            name,
-            injectAt: body.range[0] + 1,
-          });
+          reach.typeSites++;
+          if (body) {
+            reach.typeTriggers.push({
+              testCase,
+              filename,
+              name,
+              injectAt: body.range[0] + 1,
+            });
+          }
         }
       }
     }
@@ -519,7 +590,12 @@ const wrapperBodyOf = (ast: any): any => {
   return null;
 };
 
-/** Same extraction as `triggersFor`, anchoring every shadow in the wrapper. */
+/**
+ * Same extraction as `triggersFor`, anchoring every shadow in the wrapper.
+ * Value-namespace only: the type census belongs to the flat pass, whose sites
+ * are counted with or without an enclosing block, so a wrapper cannot add an
+ * emitter the census would otherwise miss.
+ */
 const wrapperTriggersFor = (
   rule: string,
   probes: Array<{ testCase: FixtureCase; filename: string }>,
@@ -529,6 +605,8 @@ const wrapperTriggersFor = (
     actionable: 0,
     enclosed: 0,
     triggers: [],
+    typeSites: 0,
+    typeTriggers: [],
   };
   for (const { testCase, filename } of probes) {
     const code = testCase.code;
@@ -763,16 +841,15 @@ const cachedLib = (f: string, ...rest: any[]) => {
   return sf;
 };
 
-const diagnosticCache = new Map<string, Map<number, number>>();
-
-const diagnosticCodesFor = (
-  text: string,
-  filename: string,
-): Map<number, number> => {
+/**
+ * One checker-backed program over one probe text, on the shared lib-cached
+ * host. Both the wrap-neutrality diagnostic differential and the type arm's
+ * symbol resolution build through here, so the lib-parse cost is paid once for
+ * the whole file. Programs are deliberately NOT cached: each holds its checker
+ * alive, and the diagnostic pass alone builds thousands of them.
+ */
+const probeProgramFor = (text: string, filename: string) => {
   const name = filename.startsWith('/') ? filename : `/probe/${filename}`;
-  const key = `${name}\n${text}`;
-  const cached = diagnosticCache.get(key);
-  if (cached) return cached;
   const sourceFile = ts.createSourceFile(
     name,
     text,
@@ -799,6 +876,20 @@ const diagnosticCodesFor = (
   if (program.getSourceFile(name) !== sourceFile) {
     throw new Error(`program lost the probe file ${name}`);
   }
+  return { program, sourceFile };
+};
+
+const diagnosticCache = new Map<string, Map<number, number>>();
+
+const diagnosticCodesFor = (
+  text: string,
+  filename: string,
+): Map<number, number> => {
+  const name = filename.startsWith('/') ? filename : `/probe/${filename}`;
+  const key = `${name}\n${text}`;
+  const cached = diagnosticCache.get(key);
+  if (cached) return cached;
+  const { program, sourceFile } = probeProgramFor(text, filename);
   const counts = new Map<number, number>();
   for (const d of [
     ...program.getSyntacticDiagnostics(sourceFile),
@@ -830,6 +921,298 @@ const introducedDiagnostics = (
     validationErrors++;
     return null;
   }
+};
+
+/* ------------------------------------------------------------------ *
+ * The type-namespace arm.
+ *
+ * The injection above is value-only and `nameCounts` excludes type positions —
+ * both correct, since the namespaces are separate and counting type references
+ * against a `const` shadow once made `prefer-map-over-conditional-dispatch`
+ * look broken 22 times over. The consequence was that the TYPE namespace went
+ * entirely unprobed, while exactly one rule prints checker-derived type names
+ * into fixed code: `typeToString` results interpolated into an emitted
+ * `Record<K, V>` annotation. A `type` alias standing between that annotation's
+ * landing site and the declaration the checker printed captures the name
+ * SILENTLY — `type X = string` is compatible-but-wider, so nothing diagnoses
+ * the swap while the Record quietly stops gating exhaustiveness (#2229).
+ *
+ * This arm injects `type <name> = string;` at the same anchor the value arm
+ * computes and resolves every emitted type reference by CHECKER SYMBOL
+ * IDENTITY — the resolution TypeScript itself applies — rather than a
+ * hand-rolled scope walk. Declining the fix under the shadow satisfies it,
+ * which is exactly what the rule-side remedy for #2229 does (#2230).
+ * ------------------------------------------------------------------ */
+
+/**
+ * The scope-manager variable declared by the identifier at `offset`. The
+ * injected alias's own binding is the one identifier whose position is exact —
+ * nothing has been fixed yet — so this is the type-namespace mirror of the
+ * value arm's shadow-landed check.
+ */
+const variableDeclaredAt = (sm: any, name: string, offset: number) => {
+  let found: any = null;
+  const visit = (scope: any) => {
+    for (const v of scope.variables) {
+      if (v.name !== name) continue;
+      if (v.identifiers.some((id: any) => id.range[0] === offset)) found = v;
+    }
+    scope.childScopes.forEach(visit);
+  };
+  visit(sm.globalScope);
+  return found;
+};
+
+/**
+ * References resolving, by symbol identity, to the type alias declared at
+ * `aliasPos` in THIS text. Symbols are per program, so the alias is located in
+ * the same program its uses are resolved in — a fixture's own inner
+ * `type X = string;` is a different symbol and can never count.
+ *
+ * `null` is "could not resolve", never zero: the caller counts it at its own
+ * skip, so an arithmetic slip in the alias position cannot read as clean.
+ */
+const typeCapturedCount = (
+  text: string,
+  filename: string,
+  name: string,
+  aliasPos: number,
+): number | null => {
+  let sourceFile: any;
+  let checker: any;
+  try {
+    const built = probeProgramFor(text, filename);
+    sourceFile = built.sourceFile;
+    checker = built.program.getTypeChecker();
+  } catch {
+    return null;
+  }
+  let alias: any = null;
+  const findAlias = (node: any) => {
+    if (alias) return;
+    if (
+      ts.isTypeAliasDeclaration(node) &&
+      node.name.text === name &&
+      node.getStart(sourceFile) === aliasPos
+    ) {
+      alias = node;
+      return;
+    }
+    ts.forEachChild(node, findAlias);
+  };
+  findAlias(sourceFile);
+  if (!alias) return null;
+  const aliasSymbol = checker.getSymbolAtLocation(alias.name);
+  if (!aliasSymbol) return null;
+  let n = 0;
+  /**
+   * The bare identifier `node` references from a TYPE position, mirroring
+   * `typeNameCounts` so both sides of this differential count the same
+   * positions. A heritage clause is such a position for `interface A extends B`
+   * and `class A implements B`; a class's own `extends` is NOT — that reads the
+   * value namespace, and counting it would let a value binding answer a
+   * type-namespace question.
+   */
+  const typeRefIdentifier = (node: any, parent: any) => {
+    if (ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName)) {
+      return node.typeName;
+    }
+    if (
+      !ts.isExpressionWithTypeArguments(node) ||
+      !ts.isIdentifier(node.expression) ||
+      !parent ||
+      !ts.isHeritageClause(parent)
+    ) {
+      return null;
+    }
+    const onInterface =
+      parent.parent && ts.isInterfaceDeclaration(parent.parent);
+    return parent.token === ts.SyntaxKind.ImplementsKeyword || onInterface
+      ? node.expression
+      : null;
+  };
+  const visit = (node: any, parent: any) => {
+    const ref = typeRefIdentifier(node, parent);
+    if (
+      ref &&
+      ref.text === name &&
+      checker.getSymbolAtLocation(ref) === aliasSymbol
+    ) {
+      n++;
+    }
+    ts.forEachChild(node, (child: any) => visit(child, node));
+  };
+  visit(sourceFile, null);
+  return n;
+};
+
+type TypeProbe = {
+  probed: number;
+  captures: Capture[];
+  /** Every skip by reason; each is read by an expect below, never just printed. */
+  droppedUnparsable: number;
+  droppedShadowNeverLanded: number;
+  droppedReportOnInjection: number;
+  droppedNonNeutral: number;
+  droppedInvalid: number;
+  droppedUnvalidatable: number;
+  /** A fix whose range swallows the injected alias removes the shadow itself. */
+  shadowOverwritten: number;
+  /** Variants the checker could not resolve; counted, never swallowed. */
+  checkerErrors: number;
+};
+
+const typeCapturesFor = (rule: string, triggers: Trigger[]): TypeProbe => {
+  const out: TypeProbe = {
+    probed: 0,
+    captures: [],
+    droppedUnparsable: 0,
+    droppedShadowNeverLanded: 0,
+    droppedReportOnInjection: 0,
+    droppedNonNeutral: 0,
+    droppedInvalid: 0,
+    droppedUnvalidatable: 0,
+    shadowOverwritten: 0,
+    checkerErrors: 0,
+  };
+  const seen = new Set<string>();
+  for (const t of triggers) {
+    const key = `${t.name}::${t.injectAt}::${t.testCase.code}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const code = t.testCase.code;
+    const aliasText = `type ${t.name} = string;`;
+    const inserted = `\n${aliasText}\n`;
+    const injected =
+      code.slice(0, t.injectAt) + inserted + code.slice(t.injectAt);
+    const aliasPos = t.injectAt + 1;
+    const aliasEnd = aliasPos + aliasText.length;
+
+    const injParsed = parse(injected, t.filename);
+    if (!injParsed) {
+      out.droppedUnparsable++;
+      continue;
+    }
+    // The injected alias must actually shadow, not land in module scope.
+    const injectedVar = variableDeclaredAt(
+      injParsed.scopeManager as any,
+      t.name,
+      aliasPos + 'type '.length,
+    );
+    if (
+      !injectedVar ||
+      moduleScope(injParsed.scopeManager as any).variables.includes(injectedVar)
+    ) {
+      out.droppedShadowNeverLanded++;
+      continue;
+    }
+
+    const baseMsgs = verifyOf(rule, t.testCase, t.filename);
+    const injMsgs = verifyOf(
+      rule,
+      { ...t.testCase, code: injected },
+      t.filename,
+    );
+    if (!baseMsgs || !injMsgs) {
+      out.droppedNonNeutral++;
+      continue;
+    }
+    const mineInj = injMsgs.filter((m: any) => m.ruleId === PREFIX + rule);
+    // Neutrality, gated two ways. First: no report may land inside the
+    // injected span — a rule reporting on the probe's own scaffolding would be
+    // answering about a subject the fixture never contained.
+    if (
+      mineInj.some((m: any) => {
+        const off = offsetOf(injected, m.line, m.column);
+        return off >= t.injectAt && off < t.injectAt + inserted.length;
+      })
+    ) {
+      out.droppedReportOnInjection++;
+      continue;
+    }
+    // Second: the same SUBJECTS, compared by injection-adjusted offset.
+    // MessageIds are deliberately NOT compared — declining the fix under the
+    // shadow is the reaction this guard exists to demand, and the decline
+    // swaps the messageId while reporting the same node. A subject appearing
+    // or vanishing is what makes the probe unattributable.
+    const adjust = (off: number) =>
+      off >= t.injectAt ? off + inserted.length : off;
+    const baseSubjects = baseMsgs
+      .filter((m: any) => m.ruleId === PREFIX + rule)
+      .map((m: any) => adjust(offsetOf(code, m.line, m.column)))
+      .sort((a: number, b: number) => a - b)
+      .join(',');
+    const injSubjects = mineInj
+      .map((m: any) => offsetOf(injected, m.line, m.column))
+      .sort((a: number, b: number) => a - b)
+      .join(',');
+    if (baseSubjects !== injSubjects) {
+      out.droppedNonNeutral++;
+      continue;
+    }
+
+    // Validity as a DIFFERENTIAL: the injected variant may introduce no
+    // diagnostic CODE the fixture does not already carry. An alias duplicating
+    // a same-scope declaration is the case this drops.
+    const introduced = introducedDiagnostics(code, injected, t.filename);
+    if (introduced === null) {
+      out.droppedUnvalidatable++;
+      continue;
+    }
+    if (introduced.length) {
+      out.droppedInvalid++;
+      continue;
+    }
+
+    out.probed++;
+    // Lazy: under a declining rule no fix survives the shadow, and the
+    // before-count's program build would be paid for nothing.
+    let before: number | null | undefined;
+    for (const m of mineInj) {
+      for (const fix of fixesOf(m)) {
+        if (before === undefined) {
+          before = typeCapturedCount(injected, t.filename, t.name, aliasPos);
+        }
+        if (before === null) {
+          out.checkerErrors++;
+          continue;
+        }
+        const [a, b] = fix.range;
+        if (a < aliasEnd && b > aliasPos) {
+          out.shadowOverwritten++;
+          continue;
+        }
+        // The alias's position in the patched text, shifted when the fix
+        // lands entirely before it; keyed on the fix range rather than a
+        // pre-fix offset, which would be stale (see `capturedCount`).
+        const patchedAliasPos =
+          b <= aliasPos ? aliasPos + fix.text.length - (b - a) : aliasPos;
+        const patched = applyFix(injected, fix);
+        const after = typeCapturedCount(
+          patched,
+          t.filename,
+          t.name,
+          patchedAliasPos,
+        );
+        if (after === null) {
+          out.checkerErrors++;
+          continue;
+        }
+        if (after > before) {
+          out.captures.push({
+            name: t.name,
+            detail:
+              `${before} -> ${after} type references to '${t.name}' ` +
+              `resolve to the injected inner alias`,
+            origin: `src/tests/${t.testCase.origin} as ${t.filename}`,
+            patched,
+          });
+        }
+      }
+    }
+  }
+  return out;
 };
 
 type WrapCounters = {
@@ -876,8 +1259,22 @@ const runNestedVariant = (
     droppedUnvalidatable: 0,
     neutral: 0,
     importAnchored: 0,
-    reach: { reported: 0, actionable: 0, enclosed: 0, triggers: [] },
-    wrapperReach: { reported: 0, actionable: 0, enclosed: 0, triggers: [] },
+    reach: {
+      reported: 0,
+      actionable: 0,
+      enclosed: 0,
+      triggers: [],
+      typeSites: 0,
+      typeTriggers: [],
+    },
+    wrapperReach: {
+      reported: 0,
+      actionable: 0,
+      enclosed: 0,
+      triggers: [],
+      typeSites: 0,
+      typeTriggers: [],
+    },
     probed: 0,
     captures: [],
   };
@@ -1086,6 +1483,29 @@ for (const rule of transformingRules) {
     nested,
   });
 }
+
+/**
+ * The type arm runs for every rule the census MEASURES emitting a bare
+ * type-position name — no rule-name list decides membership. Sites come from
+ * the flat pass (counted with or without an enclosing block), triggers from
+ * the enclosed subset, and the qualifying set is asserted below so a second
+ * emitter joins consciously rather than silently.
+ */
+type TypeArm = TypeProbe & { sites: number; enclosed: number };
+
+const typeArmResults = new Map<string, TypeArm>();
+for (const rule of transformingRules) {
+  const { reach } = results.get(rule)!;
+  if (reach.typeSites === 0) continue;
+  typeArmResults.set(rule, {
+    sites: reach.typeSites,
+    enclosed: reach.typeTriggers.length,
+    ...typeCapturesFor(rule, reach.typeTriggers),
+  });
+}
+const typeArms = [...typeArmResults.values()];
+const typeArmSum = (pick: (a: TypeArm) => number) =>
+  typeArms.reduce((n, a) => n + pick(a), 0);
 
 const totalProbed = [...results.values()].reduce((a, r) => a + r.probed, 0);
 const totalTriggers = [...results.values()].reduce(
@@ -1392,6 +1812,19 @@ console.log(
       `${nestedTotals.droppedInvalid}, unvalidatable ` +
       `${nestedTotals.droppedUnvalidatable}), ${validationErrors} ` +
       `validation errors`,
+    `  type arm: ${typeArmResults.size} emitter(s) measured ` +
+      `(${[...typeArmResults.keys()].join(', ')}); ` +
+      `${typeArmSum((a) => a.sites)} emitted type-name sites, ` +
+      `${typeArmSum((a) => a.enclosed)} enclosed, ` +
+      `${typeArmSum((a) => a.probed)} probed; skips: unparsable ` +
+      `${typeArmSum((a) => a.droppedUnparsable)}, never-landed ` +
+      `${typeArmSum((a) => a.droppedShadowNeverLanded)}, on-injection ` +
+      `${typeArmSum((a) => a.droppedReportOnInjection)}, non-neutral ` +
+      `${typeArmSum((a) => a.droppedNonNeutral)}, invalid ` +
+      `${typeArmSum((a) => a.droppedInvalid)}, unvalidatable ` +
+      `${typeArmSum((a) => a.droppedUnvalidatable)}, overwritten ` +
+      `${typeArmSum((a) => a.shadowOverwritten)}, checker-errors ` +
+      `${typeArmSum((a) => a.checkerErrors)}`,
     `  unprobed (${
       Object.keys(observedUnprobed).length
     }), each with its reason:`,
@@ -1520,6 +1953,46 @@ describe('fixers must not emit a reference an inner shadow captures', () => {
   });
 });
 
+describe('fixers must not print a type name an inner type alias captures', () => {
+  /**
+   * Non-vacuity for an arm whose expected answer is ZERO. The rule-side remedy
+   * for #2229 declines the fix wherever a printed name no longer denotes the
+   * symbol it was printed for, so no capture is exactly what a healthy run
+   * finds — and exactly what a broken arm would report too. Three things keep
+   * the zero honest: the qualifying set is asserted (an emitter cannot fall
+   * out of the census unnoticed), the floors sit just under the measured
+   * counts, and every skip counter is read here rather than only printed.
+   */
+  it('probes the measured emitter set, every skip accounted', () => {
+    expect([...typeArmResults.keys()].sort()).toEqual([
+      'prefer-map-over-conditional-dispatch',
+    ]);
+    expect(typeArmSum((a) => a.sites)).toBeGreaterThanOrEqual(140);
+    expect(typeArmSum((a) => a.enclosed)).toBeGreaterThanOrEqual(138);
+    expect(typeArmSum((a) => a.probed)).toBeGreaterThanOrEqual(132);
+    expect(typeArmSum((a) => a.droppedUnparsable)).toBe(0);
+    expect(typeArmSum((a) => a.droppedShadowNeverLanded)).toBe(0);
+    expect(typeArmSum((a) => a.droppedReportOnInjection)).toBe(0);
+    expect(typeArmSum((a) => a.droppedNonNeutral)).toBe(0);
+    // Exactly one variant is rejected by the validity differential, and the
+    // reason is a property of the alias RHS the arm deliberately injects:
+    // `type Sized = string` is compatible-but-wider only for a string-like
+    // union, and the `Sized` fixture's module-level alias is an OBJECT type the
+    // body then reads `.size` from, so the injection introduces TS2339. Pinned
+    // exactly, not as an upper bound, so corpus drift is a conscious edit.
+    expect(typeArmSum((a) => a.droppedInvalid)).toBe(1);
+    expect(typeArmSum((a) => a.droppedUnvalidatable)).toBe(0);
+    expect(typeArmSum((a) => a.shadowOverwritten)).toBe(0);
+    expect(typeArmSum((a) => a.checkerErrors)).toBe(0);
+  });
+
+  it.each([...typeArmResults.keys()])('%s', (rule) => {
+    // A capture means the fix must decline instead — the reaction #2229's
+    // rule-side remedy implements, and the one this arm holds in place.
+    expect(reportOf(typeArmResults.get(rule)!.captures)).toBe('');
+  });
+});
+
 /**
  * Planted fixers of both polarities, run through the same `triggersFor` /
  * `capturesFor` the shipped rules go through.
@@ -1603,6 +2076,111 @@ const FLAT_CONTROL_CASE: FixtureCase = {
   bucket: 'valid',
 };
 
+/**
+ * Type-namespace controls, same polarity pair as the value ones — and load
+ * bearing for the same reason, doubly so here: with the #2229 decline shipped,
+ * every real probe of the type arm answers zero, so without a planted defect
+ * the arm would read identically whether it detects captures or nothing at
+ * all. The positive control emits a checker-style bare type name at the
+ * report site inside the function — the #2229 shape — and MUST be caught. The
+ * negative emits the SAME reference to the SAME module-bound type name, but
+ * at module level where the injected alias cannot reach it, so a detector
+ * that flagged every emitted type name would fail it.
+ */
+const typeControlRule = (emitAtModuleLevel: boolean) => ({
+  meta: {
+    type: 'problem' as const,
+    fixable: 'code' as const,
+    schema: [],
+    messages: { m: 'x' },
+  },
+  create(context: any) {
+    return {
+      CallExpression(node: any) {
+        if (node.callee.name !== 'compute') return;
+        const program = context.getSourceCode().ast;
+        context.report({
+          node,
+          messageId: 'm',
+          fix: (fixer: any) =>
+            emitAtModuleLevel
+              ? fixer.insertTextAfter(
+                  program.body[program.body.length - 1],
+                  '\nexport type ProbeAlias = Status;\n',
+                )
+              : fixer.replaceText(node, '(compute() as Status)'),
+        });
+      },
+    };
+  },
+});
+
+const TYPE_SHADOW_CONTROLS = [
+  {
+    name: 'control-type-shadow-captured',
+    expectCaptures: 1,
+    rule: typeControlRule(false),
+  },
+  {
+    name: 'control-type-shadow-uncaptured',
+    expectCaptures: 0,
+    rule: typeControlRule(true),
+  },
+];
+
+for (const control of TYPE_SHADOW_CONTROLS) {
+  linter.defineRule(PREFIX + control.name, control.rule as never);
+}
+
+const TYPE_CONTROL_CASE: FixtureCase = {
+  code: "type Status = 'idle' | 'busy';\nexport function run() {\n  return compute();\n}\n",
+  tester: 'ruleTesterTs',
+  language: 'ts',
+  origin: 'planted type control',
+  bucket: 'valid',
+};
+
+/**
+ * A fixer that RESPELLS a heritage reference as a type reference — the
+ * `interface A extends B` -> `type A = B & …` shape `prefer-type-over-interface`
+ * ships, reduced to its essentials. The name it prints was already in a type
+ * position at the same site, so no shadow can newly capture it and the census
+ * must count zero sites. Counting `TSTypeReference` alone reads the respelling
+ * as an emission and enrolls the rule; this control is what makes the heritage
+ * arm of `typeNameCounts` load-bearing rather than merely present.
+ */
+linter.defineRule(PREFIX + 'control-type-heritage-respell', {
+  meta: {
+    type: 'problem' as const,
+    fixable: 'code' as const,
+    schema: [],
+    messages: { m: 'x' },
+  },
+  create(context: any) {
+    return {
+      TSInterfaceDeclaration(node: any) {
+        context.report({
+          node,
+          messageId: 'm',
+          fix: (fixer: any) =>
+            fixer.replaceText(node, 'type A = B & { extra: number };'),
+        });
+      },
+    };
+  },
+} as never);
+
+const HERITAGE_CONTROL_CASE: FixtureCase = {
+  code:
+    'type B = { id: string };\nexport function run() {\n' +
+    '  interface A extends B { extra: number }\n' +
+    '  return null as unknown as A;\n}\n',
+  tester: 'ruleTesterTs',
+  language: 'ts',
+  origin: 'planted heritage-respell control',
+  bucket: 'valid',
+};
+
 const nestedControlOutcome = (name: string, variant: WrapVariant) => {
   const flat = triggersFor(name, [
     { testCase: FLAT_CONTROL_CASE, filename: 'file.ts' },
@@ -1682,6 +2260,60 @@ describe('the shadow-capture detector is load-bearing', () => {
       if (expectCaptures === 0) expect(nested.captures).toEqual([]);
     },
   );
+
+  it.each(TYPE_SHADOW_CONTROLS.map((c) => [c.name, c.expectCaptures] as const))(
+    'type control %s yields %s type capture(s)',
+    (name, expectCaptures) => {
+      const reach = triggersFor(name, [
+        { testCase: TYPE_CONTROL_CASE, filename: 'file.ts' },
+      ]);
+      // The emission is type-namespace only, and the census must file it there:
+      // a VALUE trigger here would mean `isTypePosition` stopped holding the
+      // boundary that keeps the `const` shadow from reading type references —
+      // the false-capture failure the namespaces were separated to prevent.
+      expect(reach.triggers.length).toBe(0);
+      expect(reach.typeSites).toBeGreaterThan(0);
+      expect(reach.typeTriggers.length).toBeGreaterThan(0);
+      const arm = typeCapturesFor(name, reach.typeTriggers);
+      // Every gate must pass, or the polarity below would mean "not asked"
+      // rather than "answered".
+      expect(arm.probed).toBeGreaterThan(0);
+      expect(
+        arm.droppedUnparsable +
+          arm.droppedShadowNeverLanded +
+          arm.droppedReportOnInjection +
+          arm.droppedNonNeutral +
+          arm.droppedInvalid +
+          arm.droppedUnvalidatable +
+          arm.shadowOverwritten +
+          arm.checkerErrors,
+      ).toBe(0);
+      expect(arm.captures.length).toBe(expectCaptures);
+    },
+  );
+
+  // The complementary direction: the VALUE control emits only value
+  // references, so the type census must stay silent on it. The two arms
+  // answer disjoint questions, and each control set proves one boundary.
+  it('the value control contributes no type sites', () => {
+    const reach = triggersFor('control-shadow-captured', [
+      { testCase: CONTROL_CASE, filename: 'file.ts' },
+    ]);
+    expect(reach.triggers.length).toBeGreaterThan(0);
+    expect(reach.typeSites).toBe(0);
+  });
+
+  // Respelling a reference that was ALREADY in a type position is not an
+  // emission, so the census must stay at zero — the boundary that keeps a rule
+  // copying verbatim source text out of an arm meant for printed names.
+  it('a heritage-to-type-reference respelling contributes no type sites', () => {
+    const reach = triggersFor('control-type-heritage-respell', [
+      { testCase: HERITAGE_CONTROL_CASE, filename: 'file.ts' },
+    ]);
+    // The rewrite must actually have happened, or zero would mean "not asked".
+    expect(reach.actionable).toBeGreaterThan(0);
+    expect(reach.typeSites).toBe(0);
+  });
 
   /**
    * The corpus must carry the configuration each case was written for; a
