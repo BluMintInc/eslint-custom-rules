@@ -57,14 +57,26 @@
  *     same differential with that channel REMOVED, because over a fragment
  *     corpus a rename or a destructuring expansion looks to a solo oracle like a
  *     newly stranded binding. So a SOLO fix that really does strand a binding is
- *     seen by nobody: measured, 76 of this sweep's 85 findings are
- *     solo-reproducible TS6133/TS6192/TS6196/TS6198, dominated by
+ *     seen by nobody, and the solo-explained partition is where it hides: being
+ *     reproducible alone explains a finding's ATTRIBUTION, it is not a verdict
+ *     that the diagnostic is acceptable.
+ *
+ *     Three of that pile have been adjudicated rather than merely filtered.
  *     `use-custom-memo` (28, splitting one all-unused import into two) and
- *     `no-class-instance-destructuring` (11, one TS6198 becoming N TS6133s).
- *     Both of those are collapse/expansion artifacts rather than defects, but
- *     `no-entire-object-hook-deps` (21) removes the last USE of a destructured
- *     prop, which is not. A solo oracle for that channel needs its own discount
- *     and its own issue.
+ *     `no-class-instance-destructuring` (11, one TS6198 becoming N TS6133s) are
+ *     collapse/expansion artifacts: the diagnostic changes shape rather than
+ *     appearing. `no-entire-object-hook-deps` (21 findings over 13 distinct
+ *     fixture shapes) was NOT — it removed the last use of a destructured prop
+ *     and stranded it — and that one was a real defect, fixed under #2236 by
+ *     declining the rewrite. Its exemption had been keyed on `noUnusedLocals`,
+ *     which does not cover a parameter; `noUnusedParameters` does, and the
+ *     consumer sets it. That took the sweep from 85 findings to 65 and left
+ *     that rule with ONE, which is the control fixture the fix planted to keep
+ *     its remaining residue — the positional parameter, still exempt — visible
+ *     here rather than merely asserted in the rule.
+ *
+ *     The rest of the pile is still unadjudicated, and a solo oracle for this
+ *     channel still needs its own discount and its own issue.
  */
 import fs from 'fs';
 import path from 'path';
