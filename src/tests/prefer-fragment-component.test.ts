@@ -1,6 +1,8 @@
 import { Linter, Rule } from 'eslint';
 import { ruleTesterJsx } from '../utils/ruleTester';
 import { preferFragmentComponent } from '../rules/prefer-fragment-component';
+import { noUselessFragment } from '../rules/no-useless-fragment';
+import { preferFragmentShorthand } from '../rules/prefer-fragment-shorthand';
 
 const preferFragmentMessage =
   'Prefer Fragment imported from react over {{type}}. Shorthand fragments block props like "key" and mixing fragment styles makes JSX harder to refactor. Import { Fragment } from "react" and wrap the children with <Fragment>...</Fragment> so fragment usage stays explicit.';
@@ -1446,4 +1448,161 @@ const render = jest.fn(() => <Fragment>{x}</Fragment>);
 `,
     },
   ],
+});
+
+// ------------------------------------------------------------------
+// Issue #2233: no rule strands a <Fragment> on its own, so RuleTester — which
+// runs one rule for one pass — cannot see this class of defect at all. The
+// culprit set is `no-useless-fragment` + `prefer-fragment-shorthand` + this
+// rule: unwrapping the file's other fragment orphans the `Fragment` import and
+// removes it, in the very pass this rule emits a fresh <Fragment> elsewhere,
+// leaving the name unbound (TS2304). These cases drive the real multi-pass
+// fixer over the composed set.
+// ------------------------------------------------------------------
+const SIBLING_RULES = {
+  '@blumintinc/blumint/no-useless-fragment': noUselessFragment,
+  '@blumintinc/blumint/prefer-fragment-shorthand': preferFragmentShorthand,
+  [RULE_ID]: preferFragmentComponent,
+} as const;
+
+const lintComposed = (code: string) => {
+  const linter = new Linter();
+  linter.defineParser(
+    '@typescript-eslint/parser',
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    require('@typescript-eslint/parser'),
+  );
+  for (const [id, rule] of Object.entries(SIBLING_RULES)) {
+    linter.defineRule(id, rule as unknown as Rule.RuleModule);
+  }
+  const config = {
+    parser: '@typescript-eslint/parser',
+    parserOptions: {
+      ecmaVersion: 2020 as const,
+      sourceType: 'module' as const,
+      ecmaFeatures: { jsx: true },
+    },
+    rules: Object.fromEntries(
+      Object.keys(SIBLING_RULES).map((id) => [id, 'error' as const]),
+    ),
+  };
+  const { output } = linter.verifyAndFix(code, config, 'react.tsx');
+  // `--fix` re-lints what it wrote, so an output still holding fixes is not the
+  // file the user ends up with. Every assertion below is made against a settled
+  // one.
+  const { output: settled } = linter.verifyAndFix(output, config, 'react.tsx');
+  expect(settled).toBe(output);
+  return output;
+};
+
+const fragmentImportCount = (source: string) =>
+  (
+    source.match(
+      /import (?:\w+, )?\{[^}]*\bFragment\b[^}]*\} from 'react';/g,
+    ) ?? []
+  ).length;
+
+describe('prefer-fragment-component: composed fixes and the import binding (issue #2233)', () => {
+  it('strands no Fragment when a sibling unwrap removes the import', () => {
+    const output = lintComposed(`import React from 'react';
+import { useEffect } from 'react';
+const Component = () => <><div>Test</div></>;
+const AnotherComponent = () => <React.Fragment><p>Multi-component</p></React.Fragment>;
+`);
+
+    expectNoUnboundFragment(output);
+    // Both fragments wrap a single child, so the composed result is the one
+    // `no-useless-fragment` argues for: no fragment, and no import kept alive
+    // for a name nothing reads.
+    expect(output).toBe(`import React from 'react';
+import { useEffect } from 'react';
+const Component = () => <div>Test</div>;
+const AnotherComponent = () => <p>Multi-component</p>;
+`);
+  });
+
+  // The case above ends with no <Fragment> at all, so it would also pass for a
+  // rule that simply stopped fixing. Multi-child fragments are the ones
+  // `no-useless-fragment` leaves standing, so here the emitted <Fragment> has
+  // to be bound for real.
+  it('binds the Fragment a sibling unwrap leaves standing', () => {
+    const output = lintComposed(`import React from 'react';
+const A = () => <><div>only</div></>;
+const B = () => <React.Fragment><p>c</p><em>d</em></React.Fragment>;
+`);
+
+    expect(output).toContain('<Fragment>');
+    expectNoUnboundFragment(output);
+    expect(fragmentImportCount(output)).toBe(1);
+  });
+
+  it('binds every Fragment in a file the sibling never unwraps', () => {
+    const output = lintComposed(`import React from 'react';
+const A = () => <><div>a</div><span>b</span></>;
+const B = () => <React.Fragment><p>c</p><em>d</em></React.Fragment>;
+`);
+
+    expect(output.match(/<Fragment>/g)).toHaveLength(2);
+    expectNoUnboundFragment(output);
+    expect(fragmentImportCount(output)).toBe(1);
+  });
+
+  it('binds the Fragment when the file imports nothing from react', () => {
+    const output =
+      lintComposed(`const A = () => <><div>a</div><span>b</span></>;
+const B = () => <><p>c</p><em>d</em></>;
+`);
+
+    expect(output.match(/<Fragment>/g)).toHaveLength(2);
+    expectNoUnboundFragment(output);
+    expect(fragmentImportCount(output)).toBe(1);
+  });
+
+  it('leaves a suppressed fragment alone while binding the rest', () => {
+    const output = lintComposed(`import React from 'react';
+// eslint-disable-next-line ${RULE_ID}
+const A = () => <React.Fragment><p>a</p><em>b</em></React.Fragment>;
+const B = () => <React.Fragment><p>c</p><em>d</em></React.Fragment>;
+`);
+
+    expect(output).toContain('<Fragment>');
+    expectNoUnboundFragment(output);
+    expect(fragmentImportCount(output)).toBe(1);
+  });
+});
+
+// `verifyAndFix` stops after 10 passes. A remedy that made each fragment's fix
+// claim the import binding site on its own would serialize the file to one
+// fragment per pass and silently leave an 11th unconverted — passing every
+// case above while regressing files this size. Solo runs are the control for
+// that: one import, no leftover shorthand, however many fragments a file holds.
+describe('prefer-fragment-component: whole-file conversion in one run (issue #2233)', () => {
+  it.each([2, 10, 12, 20])(
+    'converts all %i fragments and inserts one import',
+    (count) => {
+      const code = Array.from(
+        { length: count },
+        (_unused, index) => `const C${index} = () => <>x${index}</>;`,
+      ).join('\n');
+
+      const output = lint(code);
+
+      expect(output.match(/<Fragment>/g)).toHaveLength(count);
+      expect(output).not.toContain('<>');
+      expect(fragmentImportCount(output)).toBe(1);
+      expectNoUnboundFragment(output);
+    },
+  );
+
+  it('adds no second import when the file already imports Fragment', () => {
+    const output = lint(`import { Fragment } from 'react';
+const A = () => <>One</>;
+const B = () => <React.Fragment>Two</React.Fragment>;
+const C = () => <>Three</>;
+`);
+
+    expect(output.match(/<Fragment>/g)).toHaveLength(3);
+    expect(fragmentImportCount(output)).toBe(1);
+    expectNoUnboundFragment(output);
+  });
 });

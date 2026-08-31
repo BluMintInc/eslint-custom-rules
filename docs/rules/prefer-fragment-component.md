@@ -101,6 +101,26 @@ import is also placed *above* any `eslint-disable-next-line` comment that
 precedes the first statement, so the inserted line never becomes the line that
 directive governs.
 
+### Interaction with other fixers
+
+Every rewrite in a file travels in a single fix, together with an edit naming
+the `Fragment` import that binds them. Both halves of that are load-bearing
+under `--fix`, which runs all enabled rules in the same pass:
+
+- **Naming the import** stops another rule from editing that declaration in the
+  pass that emits the name. `no-useless-fragment` unwrapping a single-child
+  `<Fragment>` removes the import it orphans; without the claim, that removal
+  and a fresh `<Fragment>` elsewhere in the file both apply, and the result does
+  not compile (`TS2304: Cannot find name 'Fragment'`).
+- **Carrying the whole file in one fix** keeps that claim affordable. Edits
+  claiming one site cannot be spread across separate reports — ESLint drops all
+  but the first as overlapping — so a per-fragment claim would convert one
+  fragment per pass and stop at the ten-pass `--fix` budget.
+
+The fix is therefore all-or-nothing per pass: when another rule's fix wins the
+overlap, this rule rewrites nothing that pass and re-proposes the whole
+conversion against the text that did land. Fragments stay reported either way.
+
 ### Existing `Fragment` bindings
 
 The fix emits a **value named specifier** — `import { Fragment } from 'react';`,
