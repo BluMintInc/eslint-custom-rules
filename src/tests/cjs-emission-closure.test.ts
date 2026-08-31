@@ -566,6 +566,13 @@ const composedStats = {
   /** Inputs and outputs the detector itself cannot read, likewise unjudged. */
   inputUnanalyzable: 0,
   outputUnanalyzable: 0,
+  /**
+   * The composed fix pass throwing instead of returning an output. That drops
+   * the case before any oracle sees it, and a throw never reaches the message
+   * list at all — the one drop in this corpus that carried no counter while
+   * every other one beside it is pinned at exact zero.
+   */
+  fixThrew: 0,
 };
 const composedFindings: ComposedFinding[] = [];
 
@@ -629,6 +636,7 @@ for (const testCase of composedCases) {
       { filename: testCase.filename },
     );
   } catch {
+    composedStats.fixThrew++;
     continue;
   }
   if (!fixed.fixed || fixed.output === testCase.code) continue;
@@ -771,6 +779,7 @@ console.log(
       `${[...outputStats.languages].sort().join('/')}`,
     `[cjs-emission] corpus B: ${composedStats.considered} considered, ` +
       `${composedStats.rewritten} rewritten, ${composedStats.parseFatal} fatal, ` +
+      `${composedStats.fixThrew} threw, ` +
       `${composedStats.inputUnanalyzable} input(s)/` +
       `${composedStats.outputUnanalyzable} output(s) unanalyzable; ` +
       `seen ${JSON.stringify(composedSeen)}, carried ` +
@@ -962,6 +971,12 @@ describe('the CJS emission guard is load-bearing', () => {
      */
     expect(outputStats.outputUnparseable).toBe(0);
     expect(composedStats.outputUnanalyzable).toBe(0);
+    /**
+     * The composed fix pass throwing. Held to the same zero: it drops the case
+     * before `analyze` runs, so it is a fixture judged by nothing, and it is
+     * indistinguishable from a config that legitimately rewrote nothing.
+     */
+    expect(composedStats.fixThrew).toBe(0);
     /**
      * The non-TS split, pinned exactly rather than at zero: a JSON or Markdown
      * fixture whose code is not also valid TypeScript is what those languages

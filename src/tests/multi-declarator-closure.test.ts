@@ -1161,6 +1161,7 @@ console.log(
   [
     '[multi-declarator] counters',
     `  rules exercised:          ${rulesExercised.size} of ${subjects.length}`,
+    `  corpus cases harvested:   ${corpus.totalCases}`,
     `  fixtures considered:      ${totals.fixturesConsidered}`,
     `  fixtures with candidates: ${totals.fixturesWithCandidates}`,
     `  perturbations emitted:    ${totals.perturbationsEmitted}`,
@@ -1212,8 +1213,12 @@ describe('the multi-declarator probe is load-bearing', () => {
   it('harvests a corpus large enough for a zero to mean something', () => {
     expect(corpus.failures).toEqual([]);
     expect(subjects.length).toBeGreaterThan(150);
-    expect(corpus.totalCases).toBeGreaterThan(4000);
-    expect(totals.fixturesConsidered).toBeGreaterThan(4000);
+    // Cut just under the measurement (23,928 harvested, 23,824 considered), not
+    // parked far below it: at 4,000 five sixths of the corpus could vanish while
+    // this read healthy, which is more slack than the entire loss the guard
+    // exists to notice — the floors that hid #1984 were only 1.5x out.
+    expect(corpus.totalCases).toBeGreaterThan(21000);
+    expect(totals.fixturesConsidered).toBeGreaterThan(21000);
 
     // The language skip, asserted rather than merely printed into the summary
     // below (#2225). Pinned to the corpus property it is supposed to equal, not
@@ -1238,13 +1243,75 @@ describe('the multi-declarator probe is load-bearing', () => {
   });
 
   it('actually perturbs, across most of the rule set', () => {
-    expect(totals.perturbationsEmitted).toBeGreaterThan(3000);
+    // 39,806 measured; the 3,000 this replaces tolerated a 92% collapse.
+    expect(totals.perturbationsEmitted).toBeGreaterThan(35000);
     expect(totals.fixturesWithCandidates).toBeGreaterThan(1500);
     expect(rulesExercised.size).toBeGreaterThan(120);
-    // A cap that swallowed everything would read as "nothing to perturb".
     expect(skipped.variantUnparseable).toBeLessThan(
       totals.perturbationsEmitted / 10,
     );
+  });
+
+  /**
+   * Every declaration the perturbation refuses, and every rewrite the licensing
+   * gates absorb. Each of these was printed into the summary above and read by
+   * no `expect`, which is the state a number has to be in to move unnoticed
+   * (#2222, #2225): a skip that starts biting reads exactly like a corpus that
+   * has nothing to perturb.
+   *
+   * Pinned by CLASS. The probe-bug and fatal channels are exact zeros, since one
+   * occurrence is already a defect; the shape skips carry ceilings cut just above
+   * their measurement, because a filter that started swallowing declarations
+   * wholesale is what a far-off ceiling would hide.
+   */
+  it('accounts for every declaration it refuses to perturb', () => {
+    // Measured 94 / 137 / 2,489 / 835 / 0 / 302 / 831 / 0.
+    const SKIP_CEILINGS: Record<SkipReason, number> = {
+      multiDeclarator: 120,
+      noInitializer: 170,
+      destructuringSubject: 2800,
+      declareModifier: 950,
+      // No fixture declares a `using` binding; the shape is skipped because
+      // adding a declarator to one changes what gets disposed.
+      usingKind: 10,
+      notStatementLevel: 360,
+      // The residue of MAX_PER_FIXTURE, which the comment on that constant
+      // promises is counted "so the cap can never read as nothing to perturb".
+      cappedPerFixture: 950,
+      // A splice that does not parse is a probe bug, never a finding, so the
+      // only defensible value is zero.
+      variantUnparseable: 0,
+    };
+    const exceeded = (Object.keys(SKIP_CEILINGS) as SkipReason[])
+      .filter((reason) => skipped[reason] > SKIP_CEILINGS[reason])
+      .map(
+        (reason) => `${reason}: ${skipped[reason]} > ${SKIP_CEILINGS[reason]}`,
+      );
+    expect(exceeded).toEqual([]);
+  });
+
+  it('accounts for every rewrite its isolations absorb', () => {
+    // A control that cannot be linted withholds its whole fixture, and a fatal
+    // is indistinguishable from silence once messages are filtered by `ruleId`.
+    expect(totals.controlFatal).toBe(0);
+    // A rewrite the probe cannot attribute is a verdict it never reaches.
+    expect(totals.attributionRejected).toBe(0);
+    // The two licensing gates. Each is correct behaviour on a rewrite the rule
+    // makes identically without a sibling present, but each also SUPPRESSES an
+    // arm-B finding, so a gate that widened would empty the arm at a steady
+    // green. Ceilings cut just above the measured 256 and 2.
+    expect(totals.mutationLicensed).toBeLessThanOrEqual(300);
+    expect(totals.destructionLicensed).toBeLessThanOrEqual(10);
+    /**
+     * The sibling-is-subject skip, pinned by rule MEMBERSHIP rather than by
+     * count: it fires when EVERY report lands on the planted binding, which is a
+     * property of which rules have an opinion about a bare `const x = 1`, and a
+     * count moves with every fixture added to a rule already in the list. A
+     * SECOND such rule is a conscious edit here (#2225).
+     */
+    expect(siblingSubjectRules.map(([rule]) => rule)).toEqual([
+      'global-const-style',
+    ]);
   });
 
   it('reaches the rules: the unperturbed control REPORTS', () => {

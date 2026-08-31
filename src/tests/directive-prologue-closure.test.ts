@@ -217,6 +217,25 @@ const stats = {
   skippedUndrivable: 0,
   skippedInert: 0,
   /**
+   * TypeScript fixtures of a rewriting rule that are not `invalid`, split by
+   * bucket. Both are counted rather than dropped by a bare `continue`: together
+   * they are the largest population this guard sets aside — 4,143 `valid` and
+   * 4,441 `output` cases — and a `continue` with no counter reads exactly like a
+   * corpus that does not hold them (#1984).
+   *
+   * The skip is a scope choice, and it is NOT yield-free. Driving both buckets
+   * through `probeCase`'s own base step measures 171 of the 8,584 producing a
+   * rewrite this guard could then place a prologue in front of: 126 `output`
+   * cases the fixer rewrites again (a `RuleTester` `output` is ONE fix pass, not
+   * the fixpoint, so a further pass is ordinary), 37 `valid` cases that report
+   * under this harness's invented filename and stripped `project`, and 8
+   * `output` cases offering a suggestion. Those inputs are unprobed here, which
+   * is a coverage question rather than a correctness one — and one this counter
+   * makes visible instead of leaving to a bare `continue`.
+   */
+  skippedValidBucket: 0,
+  skippedOutputBucket: 0,
+  /**
    * Fixtures that already open with a shebang or a directive of their own. The
    * variant arm cannot use them — a second copy of the same token makes "which
    * one moved" ambiguous — but they are the most realistic inputs this guard
@@ -549,7 +568,11 @@ for (const [name, cases] of corpus.byRule) {
       rulesWithNonTypeScriptFixtures.add(name);
       continue;
     }
-    if (tc.bucket !== 'invalid') continue;
+    if (tc.bucket !== 'invalid') {
+      if (tc.bucket === 'valid') stats.skippedValidBucket++;
+      else stats.skippedOutputBucket++;
+      continue;
+    }
     stats.considered++;
     driveOf(name).considered++;
     probeCase(name, tc, findings);
@@ -660,6 +683,53 @@ describe('directive prologue and shebang survive every fixer', () => {
   it('harvested the suite corpus', () => {
     expect(corpus.failures).toEqual([]);
     expect(corpus.filesLoaded).toBeGreaterThanOrEqual(250);
+  });
+
+  /**
+   * The four rule- and bucket-level skips, pinned to the corpus properties they
+   * must equal rather than to ceilings. Each was a bare `continue` beside a
+   * printed-but-unread number, and a filter that started dropping probeable
+   * fixtures for an unrelated reason would shrink this sweep at a steady green
+   * (#1984, #2225).
+   *
+   * The rule-level pair is derived from the same sets the loop consults, so an
+   * exclusion list that grows without a matching rule population fails here.
+   */
+  it('accounts for every rule and every bucket it sets aside', () => {
+    const owners = [...corpus.byRule.keys()];
+    expect(stats.skippedUndrivable).toBe(
+      owners.filter((name) => silentWithoutProgramRuleNames.has(name)).length,
+    );
+    expect(stats.skippedInert).toBe(
+      owners.filter(
+        (name) =>
+          !silentWithoutProgramRuleNames.has(name) &&
+          !REWRITING_RULES.has(name),
+      ).length,
+    );
+    // `silentWithoutProgramRuleNames` ships empty, so the undrivable skip is
+    // structurally zero; the equality above is what makes an entry added to that
+    // set show up here as a population rather than as silence.
+    expect(stats.skippedInert).toBeGreaterThan(0);
+
+    const bucketCount = (bucket: string) =>
+      [...corpus.byRule.entries()]
+        .filter(
+          ([name]) =>
+            !silentWithoutProgramRuleNames.has(name) &&
+            REWRITING_RULES.has(name),
+        )
+        .reduce(
+          (count, [, cases]) =>
+            count +
+            cases.filter((tc) => tc.language === 'ts' && tc.bucket === bucket)
+              .length,
+          0,
+        );
+    expect(stats.skippedValidBucket).toBe(bucketCount('valid'));
+    expect(stats.skippedOutputBucket).toBe(bucketCount('output'));
+    expect(stats.skippedValidBucket).toBeGreaterThan(1000);
+    expect(stats.skippedOutputBucket).toBeGreaterThan(1000);
   });
 
   /**
@@ -997,6 +1067,8 @@ afterAll(() => {
       `variantFixed=${stats.variantFixed} suggested=${stats.variantSuggested} findings=${findings.length} ` +
       `skipped(undrivable)=${stats.skippedUndrivable} ` +
       `skipped(inert)=${stats.skippedInert} ` +
+      `skipped(valid)=${stats.skippedValidBucket} ` +
+      `skipped(output)=${stats.skippedOutputBucket} ` +
       `ownPrologue=${stats.ownPrologue} ` +
       `ownPrologueRewritten=${stats.ownPrologueRewritten} ` +
       `rulesOwnPrologue=${stats.rulesOwnPrologue.size}\n`,

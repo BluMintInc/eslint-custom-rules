@@ -587,6 +587,13 @@ const CROSS_REWRITE_FLOOR = 7400; // measured 7879
 const FIXER_FLOOR = 75; // measured 79
 const CROSS_FIXER_FLOOR = 52; // measured 56
 /**
+ * Owners whose fixtures reached the screen. This is the denominator of the whole
+ * cross pairing: the pair floors above are satisfiable by a corpus that collapsed
+ * onto a handful of prolific suites, and this is the only counter that says the
+ * sweep still walks the whole rule set.
+ */
+const OWNER_FLOOR = 185;
+/**
  * Ceilings, cut CLOSE: each is a case this guard does NOT judge, so a harness
  * regression shows up as a jump. A ceiling parked far above its measurement is
  * the #1984 failure verbatim.
@@ -606,6 +613,7 @@ console.log(
     `  fixtures: ${stats.fixtures} TypeScript (${stats.nonTypeScriptDropped} other), ${stats.injected} injected + ${stats.ownSurface} own surface, ${stats.noSurface} with no surface`,
     `  screen: ${stats.screenFatal} fatal, ${stats.screenThrew} threw`,
     `  pairs: ${stats.pairs} (${stats.crossPairs} cross), rewrites ${stats.rewrites} (${stats.crossRewrites} cross), ${stats.fixThrew} threw, ${stats.unparseableOutput} unparseable outputs`,
+    `  owners walked: ${stats.owners.size}`,
     `  fixers: ${stats.fixers.size} rewrote (${stats.crossFixers.size} cross-rule)`,
     `  removals: ${removals.length} (${
       removals.filter((removal) => removal.cross).length
@@ -656,6 +664,9 @@ describe('the cross-paired export-surface guard is load-bearing', () => {
     expect(stats.crossRewrites).toBeGreaterThanOrEqual(CROSS_REWRITE_FLOOR);
     expect(stats.fixers.size).toBeGreaterThanOrEqual(FIXER_FLOOR);
     expect(stats.crossFixers.size).toBeGreaterThanOrEqual(CROSS_FIXER_FLOOR);
+    // The comment on `stats` promises every counter is read by an expect; this
+    // one was written and read by nothing, not even the diagnostic above.
+    expect(stats.owners.size).toBeGreaterThanOrEqual(OWNER_FLOOR);
   });
 
   it('accounts for every case it does not judge', () => {

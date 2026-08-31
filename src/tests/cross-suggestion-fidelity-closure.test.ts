@@ -335,8 +335,16 @@ const stats = {
   /** (fixer, fixture) pairs formed, and the subset where fixer !== owner. */
   pairs: 0,
   crossPairs: 0,
-  /** Pairs where the fixer left the source alone; nothing to compare. */
+  /** Pairs whose rule offered no APPLICABLE suggestion; nothing to compare. */
   baseNoFix: 0,
+  /**
+   * Pairs where the screen saw the rule offer a suggestion and the solo lint
+   * then reported nothing at all. The screen runs every suggester at once and
+   * the solo run configures one, so a rule whose report depends on another
+   * rule's presence would leave here — silently, since the pair simply produces
+   * no comparison.
+   */
+  baseSilent: 0,
   /** Pairs whose fixer rewrote the source, so a comparison could happen. */
   rewrites: 0,
   crossRewrites: 0,
@@ -369,8 +377,6 @@ const stats = {
    * because a throw does not even reach the message list.
    */
   verifyThrew: 0,
-  baseFixThrew: 0,
-  variantFixThrew: 0,
   /**
    * The fixer's OWN output failing to parse. That is `fixer-convergence`'s
    * finding rather than this one, so the pair is dropped — but counted, because
@@ -526,7 +532,10 @@ function compareSuggestionCross(
     stats.skippedFatal++;
     return;
   }
-  if (base.length === 0) return;
+  if (base.length === 0) {
+    stats.baseSilent++;
+    return;
+  }
 
   const baseEdits = suggestionEditsOf(testCase.code, base, id);
   if (baseEdits.length === 0) {
@@ -799,6 +808,8 @@ const CROSS_REWRITE_FLOOR = 210; // measured 246
 const COMPARISON_FLOOR = 3600; // measured 4124
 const CROSS_COMPARISON_FLOOR = 1850; // measured 2142
 const OFFERED_FLOOR = 550; // measured 610
+/** Owners whose fixtures the sweep walks — the denominator of every floor above. */
+const OWNER_FLOOR = 185;
 
 /**
  * Suggestion-emitting rules that never fire on a FOREIGN fixture, so this
@@ -820,6 +831,9 @@ console.log(
     `  fixtures: ${stats.fixtures} walked, ${stats.pairs} pairs (${stats.crossPairs} cross)`,
     `  rewrites: ${stats.rewrites} (${stats.crossRewrites} cross), ${sugStats.offered} suggestions offered`,
     `  comparisons: ${sugStats.comparisons} (${sugStats.crossComparisons} cross), ${sugStats.shapeMismatch} dropped for a mismatched suggestion list`,
+    `  per language: ${JSON.stringify(stats.comparisonsByLanguage)}`,
+    `  pairs producing nothing: ${stats.baseSilent} silent, ${stats.baseNoFix} with no applicable suggestion`,
+    `  owners walked: ${stats.owners.size}; fixers rewriting: ${stats.fixersRewriting.size} (${stats.crossFixersRewriting.size} cross)`,
     `  per rule (compared / cross): ${SUGGESTERS.map(
       (rule) =>
         `${rule} ${sugStats.comparedByRule.get(rule) || 0}/${
@@ -904,6 +918,14 @@ describe('the cross-paired suggestion fidelity guard is load-bearing', () => {
       verifyThrew: stats.verifyThrew,
       baseOutputUnsignable: stats.baseOutputUnsignable,
       shapeMismatch: sugStats.shapeMismatch,
+      /**
+       * A pair the screen formed and the solo lint then produced nothing for.
+       * Both were bare returns: one had no counter at all, the other a counter
+       * no `expect` read. Each is a comparison that silently never happened, and
+       * the per-rule floors below are satisfied by whatever survives them.
+       */
+      baseSilent: stats.baseSilent,
+      baseNoFix: stats.baseNoFix,
     }).toEqual({
       screenFatal: 0,
       screenThrew: 0,
@@ -913,7 +935,51 @@ describe('the cross-paired suggestion fidelity guard is load-bearing', () => {
       verifyThrew: 0,
       baseOutputUnsignable: 0,
       shapeMismatch: 0,
+      baseSilent: 0,
+      baseNoFix: 0,
     });
+  });
+
+  /**
+   * The comparison split by LANGUAGE, which the counter's own comment says a
+   * total would hide. Written and read by nothing before, so the two zeros were
+   * indistinguishable from a corpus that carries no JSON or Markdown at all.
+   *
+   * They are asserted as zeros DELIBERATELY: the screen only reaches a pair
+   * through a rule that offers a suggestion, and none of the suggestion-emitting
+   * rules fires on a `package.json` body or a Markdown document. The non-TS arms
+   * of `MARKERS_BY_LANGUAGE` are therefore carried but unexercised here — a rule
+   * that starts suggesting on either language is a conscious bump.
+   */
+  it('splits its comparisons by language rather than reporting a total', () => {
+    expect(stats.comparisonsByLanguage.ts).toBeGreaterThanOrEqual(
+      COMPARISON_FLOOR,
+    );
+    expect(stats.comparisonsByLanguage.json).toBe(0);
+    expect(stats.comparisonsByLanguage.markdown).toBe(0);
+    // The comparison total is the TypeScript arm and nothing else.
+    expect(stats.comparisonsByLanguage.ts).toBe(sugStats.comparisons);
+  });
+
+  /**
+   * The denominators. Every floor above is a count of pairs, and a corpus that
+   * collapsed onto a handful of prolific suites — or a screen that stopped
+   * reaching all but one suggester — satisfies each of them while measuring far
+   * less. These three sets were accumulated and read by nothing.
+   */
+  it('walks the whole owner set, through every suggester', () => {
+    expect(stats.owners.size).toBeGreaterThanOrEqual(OWNER_FLOOR);
+    /**
+     * Membership, not size: the planted controls route through the same
+     * function and join `fixersRewriting`, so a size would be an accounting of
+     * the controls as much as of the corpus.
+     */
+    expect(
+      SUGGESTERS.filter((rule) => !stats.fixersRewriting.has(rule)),
+    ).toEqual([]);
+    expect(
+      SUGGESTERS.filter((rule) => !stats.crossFixersRewriting.has(rule)).sort(),
+    ).toEqual(Object.keys(NO_CROSS_REACH).sort());
   });
 
   /**

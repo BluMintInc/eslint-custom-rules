@@ -280,6 +280,14 @@ let derivationsObserved = 0;
 let discardedUnparsable = 0;
 let unreadableControl = 0;
 let unreadableComparison = 0;
+/**
+ * The fix pass throwing rather than returning an output. Indistinguishable from
+ * "the fixer declined" at the call site, which makes it the one drop here that
+ * costs a whole stem silently — and this is the only guard that varies the
+ * FILENAME, so a fixer that crashes on a particular stem (`_.ts`, `2fa.ts`) is
+ * seen by no other oracle.
+ */
+let fixThrew = 0;
 const rulesRewritten = new Set<string>();
 const rulesDeriving = new Set<string>();
 
@@ -356,6 +364,7 @@ for (const rule of fixableRuleNames) {
           ? result.output
           : null;
       } catch {
+        fixThrew++;
         return null;
       }
     };
@@ -602,7 +611,8 @@ describe('filename-degeneracy fix closure', () => {
         `${rulesRewritten.size} rule(s); derivations ${derivationsObserved} across ` +
         `${rulesDeriving.size} rule(s); discarded ${discardedUnparsable}, ` +
         `unreadable controls ${unreadableControl}, ` +
-        `unreadable comparisons ${unreadableComparison}\n` +
+        `unreadable comparisons ${unreadableComparison}, ` +
+        `fix threw ${fixThrew}\n` +
         `  never observed deriving from the path (${notDeriving.length}): ${
           notDeriving.join(', ') || '(none)'
         }`,
@@ -624,6 +634,11 @@ describe('filename-degeneracy fix closure', () => {
     // Likewise: a comparison the harness cannot read drops the fixture after
     // the rewrite already happened, so it costs a verdict rather than an input.
     expect(unreadableComparison).toBe(0);
+    // A fixer that throws returns the same `null` as one that declined, so the
+    // control arm reads as "invented no name" and the degenerate arm as "no
+    // rewrite" — two silent passes from one crash. Zero, not a ceiling: a fixer
+    // crashing on a file stem is a defect wherever it happens.
+    expect(fixThrew).toBe(0);
     expect(considered).toBeGreaterThan(8000);
     expect(rewritten).toBeGreaterThan(5000);
     expect(derivationsObserved).toBeGreaterThan(1200);
