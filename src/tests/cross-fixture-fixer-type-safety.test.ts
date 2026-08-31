@@ -16,9 +16,9 @@ import {
   MODES,
   ModeKey,
   compileCorpus,
+  intersectDiagnostics,
   introducedDiagnosticsIgnoringUnused,
   isFragmentArtifact,
-  multisetIntersect,
   withSuffix,
 } from '../utils/fixtureTypeProgram';
 
@@ -711,9 +711,9 @@ const introducedPerMode = (pair: Pair, diagnosticsFn: DiagnosticsFn) =>
 
 /** The shipped oracle: introduced in EVERY mode whose input could judge it. */
 const introducedWith = (pair: Pair, diagnosticsFn: DiagnosticsFn) =>
-  multisetIntersect(
+  intersectDiagnostics(
     introducedPerMode(pair, diagnosticsFn).map((entry) => entry.added),
-  );
+  ).common;
 
 /**
  * The unused-declaration channel belongs to `composed-fix-type-safety-closure`,
@@ -749,6 +749,33 @@ const assertedCrossPairs = assertedPairs.filter(isCross);
 const assertedFixers = [
   ...new Set(assertedPairs.map((pair) => pair.fixer)),
 ].sort();
+
+/**
+ * What the mode discount SILENCED, counted rather than discarded.
+ *
+ * The intersection produces a clean by DROPPING, so a drop no `expect` reads is
+ * a false clean nothing can see. `codeMatchedDrops` isolates the failure that
+ * actually happened (#2235): the TS code was present under every mode with the
+ * multiplicity to match and only the printed message diverged, so the
+ * diagnostic was real under both and the oracle discarded it as strict-only.
+ * A genuinely mode-specific diagnostic - the artifact class this discount
+ * exists FOR - lands in `dropped` and not in `codeMatchedDrops`, which is why
+ * the two counters are asserted in opposite directions.
+ */
+const intersectionAccounts = assertedPairs.map((pair) => ({
+  pair,
+  ...intersectDiagnostics(
+    introducedPerMode(pair, introducedDiagnosticsIgnoringUnused).map(
+      (entry) => entry.added,
+    ),
+  ),
+}));
+const discountDrops = intersectionAccounts.filter(
+  (account) => account.dropped.length > 0,
+);
+const codeMatchedDrops = intersectionAccounts.filter(
+  (account) => account.codeMatchedDrops.length > 0,
+);
 
 type Finding = { pair: Pair; added: string[] };
 
@@ -793,8 +820,26 @@ const findingKey = (finding: Finding) =>
  * one reason only: a fix belongs in its own branch, since one rule per commit
  * is a hard repo invariant and each already carries an issue.
  */
-const TYPE_UNSAFE_BASELINE: Record<string, { pairs: number; note: string }> =
-  {};
+const TYPE_UNSAFE_BASELINE: Record<string, { pairs: number; note: string }> = {
+  'enforce-microdiff TS2345': {
+    pairs: 4,
+    note:
+      '#2219, and the same 4 pairs `fixer-type-safety` baselines. The callee ' +
+      'substitution is type-NARROWING: microdiff declares ' +
+      '`TData extends Record<string, unknown> | unknown[]`, while the ' +
+      'libraries it replaces accept `object`, so `diff(a: object, b: object)` ' +
+      'is TS2345. Telling a satisfying operand from an unsatisfying one needs ' +
+      'the checker, which is unavailable without parserOptions.project, so ' +
+      'the remedy is a scope call on how much of the fix to withhold. ' +
+      'Every pair is own-corpus rather than cross-rule: the fixer needs an ' +
+      'import of a library it replaces, which only its own fixtures carry. ' +
+      'Invisible here until #2235 - the mode discount compared whole message ' +
+      'strings, and the union `Record<string, unknown> | unknown[]` printed ' +
+      'in the opposite member order under the two modes, so a diagnostic ' +
+      'present in BOTH was discarded as strict-only. Pinned at 4 so a fifth ' +
+      'instance still fails.',
+  },
+};
 
 const baselinedCounts = new Map<string, number>();
 for (const finding of findings) {
@@ -869,6 +914,15 @@ const FIXER_FLOOR = 78; // measured 81
 const NON_TS_CEILING = 130;
 const SHARED_SCOPE_CEILING = 50; // measured 30
 const INPUT_FATAL_CEILING = 10; // measured 0
+/**
+ * The mode discount's own non-vacuity. Measured 2 - the two
+ * `prefer-spread-over-reassembly` TS2698 pairs whose `never[]` receiver only
+ * exists under `strictNullChecks`, which is the artifact class the discount was
+ * adopted FOR. Floored just under, like every other floor here: a discount that
+ * had stopped discounting anything would satisfy the same-code zero beside it
+ * for free, and that zero would then be measuring nothing.
+ */
+const DISCOUNT_DROP_FLOOR = 1; // measured 2
 
 console.log(
   [
@@ -894,6 +948,7 @@ console.log(
     } cross-rule); the rejected union oracle would report ${
       assertedPairs.filter((pair) => introducedUnionFor(pair).length).length
     }`,
+    `  mode discount: ${discountDrops.length} pair(s) lost a diagnostic to the intersection, ${codeMatchedDrops.length} of them same-code (must be 0)`,
     `  timing: pairing ${pairingSeconds.toFixed(
       1,
     )}s, programs ${compileSeconds.toFixed(1)}s`,
@@ -981,6 +1036,26 @@ describe("a rule's --fix must not introduce a type error on ANY rule's fixture",
     expect(stats.sharedScopeDropped).toBeLessThanOrEqual(SHARED_SCOPE_CEILING);
     expect(stats.inputFatalDropped).toBeLessThanOrEqual(INPUT_FATAL_CEILING);
     expect(stats.threw).toBe(0);
+  });
+
+  /**
+   * The mode discount's drop channel, read rather than assumed. A drop is how
+   * this oracle manufactures a clean, so the #2235 shape - same TS code under
+   * every mode, different printed message - must FAIL here rather than quietly
+   * subtract a finding. The floor beneath it keeps the counter honest the other
+   * way: a discount that had stopped discounting anything would satisfy the
+   * zero above on its own, and then the zero would be measuring nothing.
+   */
+  it('accounts for every diagnostic the mode discount dropped', () => {
+    expect(
+      codeMatchedDrops
+        .map(
+          (account) =>
+            `${account.pair.fixer}: ${account.codeMatchedDrops.join(' | ')}`,
+        )
+        .join('\n'),
+    ).toBe('');
+    expect(discountDrops.length).toBeGreaterThanOrEqual(DISCOUNT_DROP_FLOOR);
   });
 
   /**

@@ -741,8 +741,305 @@ export const introducedDiagnosticsIgnoringUnused: DiagnosticsFn = (
 ) =>
   introducedDiagnostics(before, after).filter((d) => !isUnusedDeclaration(d));
 
+export const multisetIntersect = (lists: string[][]): string[] =>
+  intersectBy(lists, canonicalizeDiagnostic);
+
+/** The `TS####` prefix a corpus diagnostic is built with in `compileCorpus`. */
+export const codeOf = (diagnostic: string) => {
+  const colon = diagnostic.indexOf(':');
+  return colon < 0 ? diagnostic : diagnostic.slice(0, colon);
+};
+
+const OPENERS = '<([{';
+const CLOSERS = '>)]}';
+const isOpener = (char: string) => OPENERS.includes(char);
+const isCloser = (char: string) => CLOSERS.includes(char);
+
 /**
- * The multiset every list shares.
+ * Every scan below treats `=>` as ONE token. Its `>` is not a closing bracket,
+ * and letting it decrement the depth drives a function-typed member negative
+ * and splits the rest of the string in the wrong places.
+ */
+const skipsArrow = (text: string, index: number) =>
+  text[index] === '=' && text[index + 1] === '>';
+
+/** Splits on `separator` where it sits at bracket depth zero. */
+const splitTopLevel = (text: string, separator: string): string[] => {
+  const parts: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let index = 0; index < text.length; index++) {
+    const char = text[index];
+    if (skipsArrow(text, index)) {
+      index++;
+      continue;
+    }
+    if (isOpener(char)) depth++;
+    else if (isCloser(char)) depth--;
+    else if (char === separator && depth === 0) {
+      parts.push(text.slice(start, index));
+      start = index + 1;
+    }
+  }
+  parts.push(text.slice(start));
+  return parts;
+};
+
+/**
+ * A bracketed group's contents are an element LIST - tuple elements, type
+ * arguments, parameters, object members - separated by `,` or `;`. Splitting
+ * one as if it were a union is how `{ a: A | B; }` canonicalizes to
+ * `{B; | a: A}`: the `|` belongs to the member's type, not to the body.
+ */
+const splitListElements = (text: string) => {
+  const parts: string[] = [];
+  const separators: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let index = 0; index < text.length; index++) {
+    const char = text[index];
+    if (skipsArrow(text, index)) {
+      index++;
+      continue;
+    }
+    if (isOpener(char)) depth++;
+    else if (isCloser(char)) depth--;
+    else if ((char === ',' || char === ';') && depth === 0) {
+      parts.push(text.slice(start, index));
+      separators.push(char);
+      start = index + 1;
+    }
+  }
+  parts.push(text.slice(start));
+  return { parts, separators };
+};
+
+/** Splits on a depth-zero `=>`, so `(x: A) => B | C` unions only `B | C`. */
+const splitTopLevelArrow = (text: string): string[] => {
+  const parts: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let index = 0; index < text.length; index++) {
+    const char = text[index];
+    if (skipsArrow(text, index)) {
+      if (depth === 0) {
+        parts.push(text.slice(start, index));
+        start = index + 2;
+      }
+      index++;
+      continue;
+    }
+    if (isOpener(char)) depth++;
+    else if (isCloser(char)) depth--;
+  }
+  parts.push(text.slice(start));
+  return parts;
+};
+
+/** The depth-zero `:` separating a member's name from its type, or -1. */
+const labelEnd = (text: string) => {
+  let depth = 0;
+  for (let index = 0; index < text.length; index++) {
+    const char = text[index];
+    if (skipsArrow(text, index)) {
+      index++;
+      continue;
+    }
+    if (isOpener(char)) depth++;
+    else if (isCloser(char)) depth--;
+    else if (char === ':' && depth === 0) return index;
+  }
+  return -1;
+};
+
+/** The index of the bracket closing the one at `open`, or -1 if unbalanced. */
+const matchingBracket = (text: string, open: number) => {
+  let depth = 0;
+  for (let index = open; index < text.length; index++) {
+    const char = text[index];
+    if (skipsArrow(text, index)) {
+      index++;
+      continue;
+    }
+    if (isOpener(char)) depth++;
+    else if (isCloser(char)) {
+      depth--;
+      if (depth === 0) return index;
+      if (depth < 0) return -1;
+    }
+  }
+  return -1;
+};
+
+/** Rewrites the contents of every bracketed group as an element list. */
+const sortUnionsInside = (text: string): string => {
+  let out = '';
+  let index = 0;
+  while (index < text.length) {
+    const char = text[index];
+    if (isOpener(char)) {
+      const close = matchingBracket(text, index);
+      if (close < 0) {
+        out += char;
+        index++;
+        continue;
+      }
+      out += char + sortUnionsList(text.slice(index + 1, close)) + text[close];
+      index = close + 1;
+      continue;
+    }
+    out += char;
+    index++;
+  }
+  return out;
+};
+
+const sortUnionsList = (text: string): string => {
+  const { parts, separators } = splitListElements(text);
+  const sorted = parts.map((part) => sortUnionsMember(part.trim()));
+  return sorted.reduce(
+    (out, part, index) =>
+      index ? `${out}${separators[index - 1]} ${part}` : part,
+    '',
+  );
+};
+
+/** `name: T` unions only `T`; the name is not a union member. */
+const sortUnionsMember = (text: string): string => {
+  const colon = labelEnd(text);
+  if (colon < 0) return sortUnions(text);
+  return `${text.slice(0, colon)}: ${sortUnions(text.slice(colon + 1).trim())}`;
+};
+
+/**
+ * Only UNION members are reordered. Tuple elements, type arguments, parameters
+ * and object members print in DECLARATION order, which is a property of the
+ * source and stable across programs, so sorting those would erase a real
+ * difference rather than a spurious one - they are rebuilt in place.
+ */
+const sortUnions = (text: string): string => {
+  const arrowParts = splitTopLevelArrow(text);
+  if (arrowParts.length > 1) {
+    return arrowParts
+      .map((part, index) =>
+        index === arrowParts.length - 1
+          ? sortUnions(part.trim())
+          : sortUnionsInside(part.trim()),
+      )
+      .join(' => ');
+  }
+  if (splitListElements(text).separators.length) return sortUnionsList(text);
+  const members = splitTopLevel(text, '|').map((member) =>
+    sortUnionsInside(member.trim()),
+  );
+  if (members.length === 1) return members[0];
+  return [...members].sort().join(' | ');
+};
+
+/**
+ * A diagnostic message with every printed union in a canonical member order.
+ *
+ * TypeScript orders a union's members by type ID - the order the checker
+ * happened to CREATE those types in - not by anything in the source, and a
+ * type ID is per-program. Two programs over the same files can therefore print
+ * one union two ways:
+ *
+ *   TS2345: ... parameter of type 'Record<string, unknown> | unknown[]'.
+ *   TS2345: ... parameter of type 'unknown[] | Record<string, unknown>'.
+ *
+ * That matters because `intersectDiagnostics` is a SILENCING oracle: what it
+ * drops becomes a clean. Comparing raw messages discarded a diagnostic present
+ * in BOTH modes as strict-only, which is why `cross-fixture-fixer-type-safety`
+ * read 0 findings while `fixer-type-safety` - which unions instead of
+ * intersecting - baselines the same 4 `enforce-microdiff` TS2345 pairs (#2235).
+ *
+ * Rewriting is confined to single-quoted spans because that is where and only
+ * where TypeScript prints a type; a string-literal type nested in one is
+ * printed with double quotes, so the spans do not nest. This is a COMPARISON
+ * KEY - every diagnostic reported to a maintainer is the original string.
+ */
+const canonicalCache = new Map<string, string>();
+export const canonicalizeDiagnostic = (diagnostic: string) => {
+  const cached = canonicalCache.get(diagnostic);
+  if (cached !== undefined) return cached;
+  const canonical = diagnostic.replace(
+    /'([^']*)'/g,
+    (_match, inner: string) => `'${sortUnions(inner)}'`,
+  );
+  canonicalCache.set(diagnostic, canonical);
+  return canonical;
+};
+
+/** The entries of `list` that `kept` does not cover, compared by `keyOf`. */
+const subtractBy = (
+  kept: string[],
+  list: string[],
+  keyOf: (value: string) => string,
+) => {
+  const counts = new Map<string, number>();
+  for (const diagnostic of kept) {
+    const key = keyOf(diagnostic);
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  return list.filter((diagnostic) => {
+    const key = keyOf(diagnostic);
+    const remaining = counts.get(key) || 0;
+    if (remaining <= 0) return true;
+    counts.set(key, remaining - 1);
+    return false;
+  });
+};
+
+const intersectBy = (lists: string[][], keyOf: (value: string) => string) => {
+  if (!lists.length) return [];
+  let common = [...lists[0]];
+  for (const list of lists.slice(1)) {
+    const counts = new Map<string, number>();
+    for (const diagnostic of list) {
+      const key = keyOf(diagnostic);
+      counts.set(key, (counts.get(key) || 0) + 1);
+    }
+    common = common.filter((diagnostic) => {
+      const key = keyOf(diagnostic);
+      const remaining = counts.get(key) || 0;
+      if (remaining <= 0) return false;
+      counts.set(key, remaining - 1);
+      return true;
+    });
+  }
+  return common;
+};
+
+export type DiagnosticIntersection = {
+  /** The shared multiset, carrying the FIRST list's original message strings. */
+  common: string[];
+  /**
+   * Everything ANY mode saw that the intersection did not keep - what the
+   * oracle silenced. Taken over every list, not just the first: the artifact
+   * class this discount exists for is the STRICT-only diagnostic, which never
+   * appears in the default mode's list and so is invisible to a counter read
+   * off `lists[0]` alone.
+   */
+  dropped: string[];
+  /**
+   * The subset of `dropped` that a code-only intersection would have KEPT: the
+   * TS code is present in every list with the multiplicity to match, and only
+   * the message text diverged. A genuinely mode-specific diagnostic is not in
+   * here, so this counter isolates exactly the silent-divergence failure and a
+   * guard can assert it to zero.
+   *
+   * Measured zero across all three consuming guards. If one ever appears, the
+   * remedy is to extend `canonicalizeDiagnostic` when it is another print-order
+   * divergence, or to record that one shape by name in the guard's own baseline
+   * when the two modes genuinely produce different diagnostics under the same
+   * TS code. Widening the comparison back toward the code alone is not a
+   * remedy: it resumes silencing, which is the defect.
+   */
+  codeMatchedDrops: string[];
+};
+
+/**
+ * The multiset every list shares, with an account of what it discarded.
  *
  * This is the mode discount, and it is the one place the cross-corpus oracles
  * deliberately differ from `fixer-type-safety`'s. That guard UNIONS the
@@ -771,23 +1068,28 @@ export const introducedDiagnosticsIgnoringUnused: DiagnosticsFn = (
  * The intersection only bites where both modes could judge. A pair whose input
  * compiles under one mode only has a single-element intersection, so for it
  * this is identical to the union.
+ *
+ * Because dropping is how this oracle produces a clean, every drop is counted
+ * rather than discarded in silence, and `codeMatchedDrops` separates "the modes
+ * disagree" from "the modes agree and the message merely printed differently".
  */
-export const multisetIntersect = (lists: string[][]): string[] => {
-  if (!lists.length) return [];
-  let common = [...lists[0]];
-  for (const list of lists.slice(1)) {
-    const counts = new Map<string, number>();
-    for (const diagnostic of list) {
-      counts.set(diagnostic, (counts.get(diagnostic) || 0) + 1);
-    }
-    common = common.filter((diagnostic) => {
-      const remaining = counts.get(diagnostic) || 0;
-      if (remaining <= 0) return false;
-      counts.set(diagnostic, remaining - 1);
-      return true;
-    });
-  }
-  return common;
+export const intersectDiagnostics = (
+  lists: string[][],
+): DiagnosticIntersection => {
+  const common = intersectBy(lists, canonicalizeDiagnostic);
+  const byCode = intersectBy(lists, codeOf);
+  return {
+    common,
+    // Compared by the CANONICAL key, like `common` itself: subtracting by raw
+    // string would report the other mode's spelling of a KEPT diagnostic as a
+    // drop, which is the #2235 confusion inverted.
+    dropped: lists.flatMap((list) =>
+      subtractBy(common, list, canonicalizeDiagnostic),
+    ),
+    // Canonical-key equality implies code equality, so `byCode` contains
+    // `common` as a multiset and the difference is exactly the divergence.
+    codeMatchedDrops: subtractBy(common, byCode, canonicalizeDiagnostic),
+  };
 };
 
 /**
