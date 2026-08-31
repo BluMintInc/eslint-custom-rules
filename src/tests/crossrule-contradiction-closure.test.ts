@@ -467,6 +467,11 @@ const KNOWN_DIVERGENT: Record<string, Exemption> = {
       'PIPELINE: the same shape — `--fix` adds `as const` to all 4 transform literals.',
     cases: { enforceAsConst: 4 },
   },
+  'prefer-fragment-component::no-useless-fragment': {
+    reason:
+      "INCIDENTAL: the two rules constrain different properties of a fragment — this one its SPELLING (`<>`/`React.Fragment` -> `<Fragment>`), the sibling its EXISTENCE around a lone child — so no node is asked for opposite text and a satisfying spelling always exists. The 45 blessed texts wrap a single child because their subject is the import and the disable-directive plumbing rather than the payload: 57 of the 67 sibling messages name a single TEXT node, which the sibling reports without a fix, since a bare identifier cannot stand where the fragment stood. A second child settles it without touching the import spelling each fixture pins — `<Fragment>Hello <World /></Fragment>`, and for the 17 directive-carrying fixtures `<>One<Two /></>` under the same `eslint-disable`, are clean under BOTH (measured), as is naming the sibling in that directive beside this rule, which is the `enforce-dynamic-file-naming::enforce-dynamic-imports` remedy one rule over. The composed `--fix` converges 4 of the 45 — the fixtures whose lone child is itself JSX, where the sibling unwraps and takes the `Fragment` import it orphans with it — and leaves 41 NO-OP, two of them the standoffs recorded in `KNOWN_STANDOFFS`. Only this direction is examined: the rule ships `'off'` in `configs.recommended.rules` because it demands the opposite spelling from the enabled `prefer-fragment-shorthand` and only one fragment style can gate (`src/index.ts`, with the graduation criterion on its docs page), so it is never a reporter and the mirror is named in `UNEXAMINED_PAIRS`. The pair joins this list because the #2233 fix names `no-useless-fragment` in this rule's source — that unwrap removes the `Fragment` import it orphans, which is precisely what this rule's whole-file claim on the binding site keeps out of the pass that emits a fresh `<Fragment>`. The disagreement itself predates the mention: all 45 diverging texts occur verbatim in the suite on the parent commit, where neither source names the other (measured).",
+    cases: { noUselessFragment: 45 },
+  },
   'prefer-getter-over-parameterless-method::no-explicit-return-type': {
     reason:
       "PIPELINE: the fixtures annotate an inferable return (`(): string`, `(): number`, `(): Promise<string>`) only to display the member shape under test — abstract declarations, heritage-bound implementations, `#`-named members, getters — and `--fix` strips all 52, leaving zero messages from either rule (measured). 32 -> 52 with the #2154 promise fixtures, which are the same shape one contract deeper: their annotation is the very thing the promise exemption reads, so stripping it is exactly the composition that could destroy the exemption. It does not, because the exemption also reads the body, and the body of an annotated sibling when no annotation survives the strip — all 20 stay exempt through it (measured), which is the property `exemption-composition-closure` pins on this pair. The disagreement predates the mention that enrols the pair: the other 32 diverge on the parent commit, where nothing in this rule's source names `no-explicit-return-type` (measured).",
@@ -881,6 +886,15 @@ const UNEXAMINED_PAIRS: Record<string, UnexaminedCause> = {
   'enforce-dynamic-imports::enforce-dynamic-file-naming': 'reporterNotEnabled',
   'require-dynamic-firebase-imports::enforce-dynamic-file-naming':
     'reporterNotEnabled',
+  // `prefer-fragment-component` is registered and declares
+  // `meta.docs.recommended: false` — that field's spelling of `'off'` — and
+  // ships `'off'` in `configs.recommended.rules`, deliberately: it demands the
+  // opposite fragment spelling from the enabled `prefer-fragment-shorthand`,
+  // and only one fragment style can be the enforced one. It is therefore never
+  // a reporter here. The mirror, where it is the OWNER, is examined normally
+  // and carries the pair's `KNOWN_DIVERGENT` entry, so the contract it shares
+  // with `no-useless-fragment` is still checked one way round.
+  'no-useless-fragment::prefer-fragment-component': 'reporterNotEnabled',
 };
 
 /**
@@ -1150,10 +1164,12 @@ const standoffs = convergence.filter(
 );
 
 /**
- * The eleven fixtures on which both rules of a pair are still speaking once the
+ * The fixtures on which both rules of a pair are still speaking once the
  * composed `--fix` has run — the small, hand-checked set where the NEXT
  * contradiction will surface, since a pair that cannot be silenced by fixing is
- * one hand-edit away from being unsatisfiable.
+ * one hand-edit away from being unsatisfiable. The total is derived where it is
+ * reported rather than spelled here, because a written-out count goes stale the
+ * first time a pair joins and this docstring is what a reader trusts.
  *
  * Keyed `owner::reporter` and then by the RESIDUAL SIGNATURE (both rules'
  * messageIds, sorted), not by a per-pair total. The #1840 lesson applies here
@@ -1192,6 +1208,13 @@ const KNOWN_STANDOFFS: Record<
       "Degenerate `useRouterState` keys the query-key parser is written to pin — a raw literal shadowed by a local `QUERY_KEY_*` const, an empty string, and a parameterized `'prefix-' + id`. Both rules want the SAME thing (the key must come from the global module) and neither offers a fix, so they speak together until it is done by hand: `` `${QUERY_KEY_PLAYBACK_ID}-${id}` `` from an imported constant is clean under both (measured).",
     residuals: {
       'enforce-querykey-ts:enforceQueryKeyImport + prefer-global-router-state-key:preferGlobalRouterStateKey': 3,
+    },
+  },
+  'prefer-fragment-component::no-useless-fragment': {
+    reason:
+      "Two INDEPENDENT complaints about different expressions, neither fixable, on the two outputs that pin where this rule DECLINES its rewrite. In `const A = ({ Fragment }) => <>{Fragment}</>; const B = () => <Fragment>Two</Fragment>;` the shorthand in `A` keeps its report because a destructured `Fragment` would capture the element the fix emits, while the sibling objects to `B`'s fragment around a lone text node. Renaming the shadow and giving `B` a second child — `const A = ({ node }) => <Fragment>{node}</Fragment>; const B = () => <Fragment>Two<Sibling /></Fragment>;` — is clean under BOTH (measured), and each half alone leaves exactly one of the two reports standing (measured both ways), which is what makes these independent complaints rather than one contradiction. The mock-factory output is the same shape: a hoisted `jest.mock` factory cannot reach the injected import, so the `<>{children}</>` inside it keeps its report while the sibling objects to the module-scope `<Fragment>Hello World</Fragment>`. Having the factory bind the name itself — `const { Fragment } = require('react');` inside the factory, which a hoisted factory may do where it may not reach an out-of-scope import — plus a second child on the outer fragment is clean under BOTH (measured), and again neither half suffices alone.",
+    residuals: {
+      'no-useless-fragment:noUselessFragment + prefer-fragment-component:preferFragment': 2,
     },
   },
   'prefer-global-router-state-key::enforce-querykey-ts': {
@@ -1361,11 +1384,19 @@ describe('exempted pairs converge under the composed --fix', () => {
           JSON.stringify(entry.signedOff) !== JSON.stringify(entry.observed),
       );
 
+    // Derived, never spelled: a hardcoded total goes stale the first time a
+    // pair joins, and this message is what the next reader trusts.
+    const signedOffFixtures = Object.values(KNOWN_STANDOFFS).reduce(
+      (n, entry) =>
+        n + Object.values(entry.residuals || {}).reduce((a, b) => a + b, 0),
+      0,
+    );
+
     if (drifted.length) {
       throw new Error(
         [
           `${drifted.length} pair(s) leave both rules reporting on a different set`,
-          'of fixtures than the eight that were hand-checked.',
+          `of fixtures than the ${signedOffFixtures} that were hand-checked.`,
           '',
           'A standoff is a fixture the composed `--fix` cannot silence: both rules',
           'still speak and the developer must hand-edit. That is legitimate ONLY',

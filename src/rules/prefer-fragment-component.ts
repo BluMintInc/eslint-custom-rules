@@ -47,15 +47,22 @@ function isFragmentSpecifier(
 }
 
 /**
- * Import state is read off `Program.body` at fix time rather than from a
+ * The specifier that already binds react's Fragment, or `undefined` when the
+ * file has none. Read off `Program.body` at fix time rather than from a
  * traversal flag: a fragment that precedes the import declaration in source
  * order is fixed before the `ImportDeclaration` visitor has run, so a flag
  * would call the import missing and insert a duplicate.
  */
-function importsFragment(program: TSESTree.Program): boolean {
-  return reactValueImports(program).some((declaration) =>
-    declaration.specifiers.some(isFragmentSpecifier),
-  );
+function fragmentImportSpecifier(
+  program: TSESTree.Program,
+): TSESTree.ImportSpecifier | undefined {
+  for (const declaration of reactValueImports(program)) {
+    const specifier = declaration.specifiers.find(isFragmentSpecifier);
+    if (specifier) {
+      return specifier;
+    }
+  }
+  return undefined;
 }
 
 /**
@@ -135,6 +142,22 @@ function isInsideMockFactory(node: TSESTree.Node): boolean {
   return false;
 }
 
+/** One tag of a fragment and the text that replaces it. */
+type TagRewrite = { node: TSESTree.Node; text: string };
+
+/**
+ * A reported fragment and the rewrite it contributes to the file's fix.
+ * `rewrites` is `null` for the spellings the rule reports but never rewrites,
+ * and `isFixable` is deferred because suppression and scope are read at fix
+ * time rather than at traversal time.
+ */
+type Violation = {
+  node: TSESTree.Node;
+  type: string;
+  rewrites: TagRewrite[] | null;
+  isFixable: () => boolean;
+};
+
 export const preferFragmentComponent = createRule<[], MessageIds>({
   name: 'prefer-fragment-component',
   meta: {
@@ -158,21 +181,28 @@ export const preferFragmentComponent = createRule<[], MessageIds>({
   defaultOptions: [],
   create(context) {
     const sourceCode = context.sourceCode;
-    // The `import { Fragment } from 'react'` edit rides on one violation's fix,
-    // making that violation the file's import carrier. ESLint builds fixes
-    // eagerly and drops inline-disabled reports afterwards, so a suppressed
-    // carrier would take the import down with it while the surviving
-    // violations still emit <Fragment>. Resolving suppression before the latch
-    // is read hands the carrier slot to the first violation that survives.
+    // ESLint builds fixes eagerly and drops inline-disabled reports afterwards,
+    // so a rewrite riding on a suppressed report is discarded with it.
+    // Resolving suppression before the fix is assembled keeps a report that
+    // cannot survive from carrying the rewrites the surviving reports need.
     const isReportSuppressed = createSuppressionChecker(context);
-    // One pass rewrites several fragments but must insert the import once. The
-    // AST does not change mid-pass, so the latch records only what an earlier
-    // fix in this same pass already scheduled; existing imports are read from
-    // the AST instead.
-    let importScheduled = false;
 
-    // Track nodes we've already reported to avoid duplicates
+    // Track nodes already accounted for, so a fragment reachable from both
+    // visitors is not counted twice
     const reportedNodes = new Set<TSESTree.Node>();
+
+    /**
+     * Violations held until the whole file is known.
+     *
+     * Every emitted <Fragment> depends on one import binding site, and edits
+     * claiming that site cannot be spread across separate reports: ESLint drops
+     * all but the first as overlapping, so a file would convert one fragment
+     * per `--fix` pass and stall at the pass budget. Carrying the claim and
+     * every rewrite in a single fix keeps a file a one-pass conversion while
+     * still denying any other rule the chance to unbind the import in the pass
+     * that emits the name.
+     */
+    const violations: Violation[] = [];
 
     /**
      * Whether a bare <Fragment> emitted at `node` would resolve to react's
@@ -193,11 +223,26 @@ export const preferFragmentComponent = createRule<[], MessageIds>({
     }
 
     /**
-     * True once the file binds react's Fragment, counting an insertion an
-     * earlier fix in this pass already scheduled.
+     * The edit that binds the <Fragment> this fix emits: the react import when
+     * the file has none, and otherwise the specifier that already binds it,
+     * restated over its own range.
+     *
+     * Restating an existing specifier writes nothing, but it makes the fix
+     * *own* the binding site, which is the whole guarantee. ESLint merges a
+     * report's edits into one span and drops any span overlapping an
+     * already-applied one, so an edit naming the import declaration cannot land
+     * in the same pass as another rule's edit to that declaration.
+     * `no-useless-fragment` unwrapping the file's other <Fragment> removes the
+     * import it orphans; without the claim, that removal and a fresh <Fragment>
+     * emission elsewhere both apply and leave the name unbound (TS2304).
+     * Reading "the import is present" and emitting nothing for it is precisely
+     * what lets the two edits pass each other.
      */
-    function fragmentImportPresent(): boolean {
-      return importScheduled || importsFragment(sourceCode.ast);
+    function bindFragmentImport(fixer: TSESLint.RuleFixer) {
+      const specifier = fragmentImportSpecifier(sourceCode.ast);
+      return specifier
+        ? fixer.replaceText(specifier, sourceCode.getText(specifier))
+        : addFragmentImport(fixer);
     }
 
     /**
@@ -320,6 +365,71 @@ export const preferFragmentComponent = createRule<[], MessageIds>({
       );
     }
 
+    /** The `React.Fragment` tags of `element` rewritten to the bare name. */
+    function reactFragmentTagRewrites(
+      element: TSESTree.JSXElement,
+    ): TagRewrite[] {
+      const rewrites: TagRewrite[] = [
+        {
+          node: element.openingElement,
+          text: sourceCode
+            .getText(element.openingElement)
+            .replace('React.Fragment', 'Fragment'),
+        },
+      ];
+
+      if (element.closingElement) {
+        rewrites.push({
+          node: element.closingElement,
+          text: sourceCode
+            .getText(element.closingElement)
+            .replace('React.Fragment', 'Fragment'),
+        });
+      }
+
+      return rewrites;
+    }
+
+    /** The `<>` tags of `fragment` rewritten to the bare name. */
+    function shorthandTagRewrites(
+      fragment: TSESTree.JSXFragment,
+    ): TagRewrite[] {
+      return [
+        {
+          node: fragment.openingFragment,
+          text: sourceCode
+            .getText(fragment.openingFragment)
+            .replace('<>', '<Fragment>'),
+        },
+        {
+          node: fragment.closingFragment,
+          text: sourceCode
+            .getText(fragment.closingFragment)
+            .replace('</>', '</Fragment>'),
+        },
+      ];
+    }
+
+    /**
+     * Whether the rewrite for a fragment reported at `reportNode` may be
+     * emitted.
+     *
+     * A suppressed report is discarded together with its fix, a hoisted jest
+     * factory cannot reach the injected import, and a `Fragment` bound to
+     * anything but react's captures the emitted element. Each withholds the
+     * rewrite while the report stands.
+     */
+    function canRewrite(
+      reportNode: TSESTree.Node,
+      scopeNode: TSESTree.Node,
+    ): boolean {
+      return (
+        !isReportSuppressed(reportNode) &&
+        !isInsideMockFactory(scopeNode) &&
+        resolvesToReactFragment(scopeNode)
+      );
+    }
+
     return {
       // Find JSX Fragment shorthand (<></>)
       JSXFragment(node) {
@@ -350,99 +460,27 @@ export const preferFragmentComponent = createRule<[], MessageIds>({
 
         // For nested fragments, we have multiple test cases with different expected behaviors
         if (reactFragmentParent) {
-          // This is a fragment inside a React.Fragment
-          // Report on this JSX fragment
-          context.report({
+          // A fragment inside a React.Fragment rewrites both spellings at once:
+          // resolving at the inner fragment — the deeper of the two scopes —
+          // covers the outer one, and a parent of a node inside a hoisted mock
+          // factory is inside that factory too.
+          violations.push({
             node,
-            messageId: 'preferFragment',
-            data: { type: 'shorthand fragment (<>)' },
-            fix(fixer) {
-              // A suppressed report is discarded together with its fix, so it
-              // must not claim the import carrier slot.
-              if (isReportSuppressed(node)) {
-                return null;
-              }
-
-              // A hoisted jest factory cannot reach the injected import, so
-              // the rewrite is withheld inside one. Checking the inner
-              // fragment covers the outer React.Fragment as well, since a
-              // parent of a node in the factory is in the factory too.
-              if (isInsideMockFactory(node)) {
-                return null;
-              }
-
-              // Both tags are rewritten to the same bare name, so resolving at
-              // the inner fragment — the deeper of the two scopes — covers the
-              // outer one too. Every bail precedes the latch so a withheld edit
-              // cannot make a later fix believe the import is handled.
-              if (!resolvesToReactFragment(node)) {
-                return null;
-              }
-
-              const fixes: ReturnType<typeof fixer.replaceText>[] = [];
-
-              // Add Fragment import if needed
-              if (!fragmentImportPresent()) {
-                fixes.push(addFragmentImport(fixer));
-                importScheduled = true;
-              }
-
-              // Fix the outer React.Fragment
-              const outerOpeningElement = reactFragmentParent.openingElement;
-              const outerOpeningText = sourceCode.getText(outerOpeningElement);
-              const newOuterOpeningText = outerOpeningText.replace(
-                'React.Fragment',
-                'Fragment',
-              );
-              fixes.push(
-                fixer.replaceText(outerOpeningElement, newOuterOpeningText),
-              );
-
-              if (reactFragmentParent.closingElement) {
-                const outerClosingText = sourceCode.getText(
-                  reactFragmentParent.closingElement,
-                );
-                const newOuterClosingText = outerClosingText.replace(
-                  'React.Fragment',
-                  'Fragment',
-                );
-                fixes.push(
-                  fixer.replaceText(
-                    reactFragmentParent.closingElement,
-                    newOuterClosingText,
-                  ),
-                );
-              }
-
-              // Fix the inner shorthand fragment
-              const innerOpeningText = sourceCode.getText(node.openingFragment);
-              const innerClosingText = sourceCode.getText(node.closingFragment);
-
-              const newInnerOpeningText = innerOpeningText.replace(
-                '<>',
-                '<Fragment>',
-              );
-              const newInnerClosingText = innerClosingText.replace(
-                '</>',
-                '</Fragment>',
-              );
-
-              fixes.push(
-                fixer.replaceText(node.openingFragment, newInnerOpeningText),
-              );
-              fixes.push(
-                fixer.replaceText(node.closingFragment, newInnerClosingText),
-              );
-
-              return fixes;
-            },
+            type: 'shorthand fragment (<>)',
+            rewrites: [
+              ...reactFragmentTagRewrites(reactFragmentParent),
+              ...shorthandTagRewrites(node),
+            ],
+            isFixable: () => canRewrite(node, node),
           });
 
-          // Also report on the parent React.Fragment
-          context.report({
+          // The parent React.Fragment is reported in its own right, but its
+          // tags belong to the rewrite above.
+          violations.push({
             node: reactFragmentParent.openingElement.name,
-            messageId: 'preferFragment',
-            data: { type: 'React.Fragment' },
+            type: 'React.Fragment',
+            rewrites: null,
+            isFixable: () => false,
           });
 
           // Mark the parent as already handled
@@ -454,61 +492,24 @@ export const preferFragmentComponent = createRule<[], MessageIds>({
         }
         // Special case: JSX Fragment with React.Fragment child (don't convert outer fragment)
         else if (hasReactFragmentChild) {
-          // Just report the error but don't fix the outer fragment
-          context.report({
+          // The inner React.Fragment's own violation carries the rewrite, so
+          // the outer fragment reports without one.
+          violations.push({
             node,
-            messageId: 'preferFragment',
-            data: { type: 'shorthand fragment (<>)' },
-            // No fix here - we'll let the inner React.Fragment visitor handle it
+            type: 'shorthand fragment (<>)',
+            rewrites: null,
+            isFixable: () => false,
           });
 
           return;
         }
 
         // Standard handling for standalone JSX fragments
-        context.report({
+        violations.push({
           node,
-          messageId: 'preferFragment',
-          data: { type: 'shorthand fragment (<>)' },
-          fix(fixer) {
-            // A suppressed report is discarded together with its fix, so it
-            // must not claim the import carrier slot.
-            if (isReportSuppressed(node)) {
-              return null;
-            }
-
-            // A hoisted jest factory cannot reach the injected import, so the
-            // rewrite is withheld inside one.
-            if (isInsideMockFactory(node)) {
-              return null;
-            }
-
-            // Every bail precedes the latch so a withheld edit cannot make a
-            // later fix believe the import is already handled.
-            if (!resolvesToReactFragment(node)) {
-              return null;
-            }
-
-            const fixes: ReturnType<typeof fixer.replaceText>[] = [];
-
-            // Add Fragment import if needed
-            if (!fragmentImportPresent()) {
-              fixes.push(addFragmentImport(fixer));
-              importScheduled = true;
-            }
-
-            // Replace fragment tags
-            const openingText = sourceCode.getText(node.openingFragment);
-            const closingText = sourceCode.getText(node.closingFragment);
-
-            const newOpeningText = openingText.replace('<>', '<Fragment>');
-            const newClosingText = closingText.replace('</>', '</Fragment>');
-
-            fixes.push(fixer.replaceText(node.openingFragment, newOpeningText));
-            fixes.push(fixer.replaceText(node.closingFragment, newClosingText));
-
-            return fixes;
-          },
+          type: 'shorthand fragment (<>)',
+          rewrites: shorthandTagRewrites(node),
+          isFixable: () => canRewrite(node, node),
         });
       },
 
@@ -543,62 +544,11 @@ export const preferFragmentComponent = createRule<[], MessageIds>({
 
         // Special case: React.Fragment inside a JSX Fragment
         if (fragmentParent) {
-          // Have to report on it even if we don't fix it here
-          context.report({
+          violations.push({
             node: node.name,
-            messageId: 'preferFragment',
-            data: { type: 'React.Fragment' },
-            fix(fixer) {
-              // A suppressed report is discarded together with its fix, so it
-              // must not claim the import carrier slot.
-              if (isReportSuppressed(node.name)) {
-                return null;
-              }
-
-              // A hoisted jest factory cannot reach the injected import, so
-              // the rewrite is withheld inside one.
-              if (isInsideMockFactory(node)) {
-                return null;
-              }
-
-              // Every bail precedes the latch so a withheld edit cannot make a
-              // later fix believe the import is already handled.
-              if (!resolvesToReactFragment(node)) {
-                return null;
-              }
-
-              const fixes: ReturnType<typeof fixer.replaceText>[] = [];
-
-              // Add Fragment import if needed
-              if (!fragmentImportPresent()) {
-                fixes.push(addFragmentImport(fixer));
-                importScheduled = true;
-              }
-
-              // Replace opening tag
-              const openingText = sourceCode.getText(node);
-              const newOpeningText = openingText.replace(
-                'React.Fragment',
-                'Fragment',
-              );
-              fixes.push(fixer.replaceText(node, newOpeningText));
-
-              // Replace closing tag if it exists
-              if (jsxElement.closingElement) {
-                const closingText = sourceCode.getText(
-                  jsxElement.closingElement,
-                );
-                const newClosingText = closingText.replace(
-                  'React.Fragment',
-                  'Fragment',
-                );
-                fixes.push(
-                  fixer.replaceText(jsxElement.closingElement, newClosingText),
-                );
-              }
-
-              return fixes;
-            },
+            type: 'React.Fragment',
+            rewrites: reactFragmentTagRewrites(jsxElement),
+            isFixable: () => canRewrite(node.name, node),
           });
           return;
         }
@@ -609,60 +559,50 @@ export const preferFragmentComponent = createRule<[], MessageIds>({
           return;
         }
 
-        context.report({
+        violations.push({
           node: node.name,
-          messageId: 'preferFragment',
-          data: { type: 'React.Fragment' },
-          fix(fixer) {
-            // A suppressed report is discarded together with its fix, so it
-            // must not claim the import carrier slot.
-            if (isReportSuppressed(node.name)) {
-              return null;
-            }
-
-            // A hoisted jest factory cannot reach the injected import, so the
-            // rewrite is withheld inside one.
-            if (isInsideMockFactory(node)) {
-              return null;
-            }
-
-            // Every bail precedes the latch so a withheld edit cannot make a
-            // later fix believe the import is already handled.
-            if (!resolvesToReactFragment(node)) {
-              return null;
-            }
-
-            const fixes: ReturnType<typeof fixer.replaceText>[] = [];
-
-            // Add Fragment import if needed
-            if (!fragmentImportPresent()) {
-              fixes.push(addFragmentImport(fixer));
-              importScheduled = true;
-            }
-
-            // Replace opening tag
-            const openingText = sourceCode.getText(node);
-            const newOpeningText = openingText.replace(
-              'React.Fragment',
-              'Fragment',
-            );
-            fixes.push(fixer.replaceText(node, newOpeningText));
-
-            // Replace closing tag if it exists
-            if (jsxElement.closingElement) {
-              const closingText = sourceCode.getText(jsxElement.closingElement);
-              const newClosingText = closingText.replace(
-                'React.Fragment',
-                'Fragment',
-              );
-              fixes.push(
-                fixer.replaceText(jsxElement.closingElement, newClosingText),
-              );
-            }
-
-            return fixes;
-          },
+          type: 'React.Fragment',
+          rewrites: reactFragmentTagRewrites(jsxElement),
+          isFixable: () => canRewrite(node.name, node),
         });
+      },
+
+      'Program:exit'() {
+        const fixable = violations.filter(
+          (violation): violation is Violation & { rewrites: TagRewrite[] } =>
+            violation.rewrites !== null && violation.isFixable(),
+        );
+        // The file's rewrites ride on the first fixable report. A carrier that
+        // loses a range competition withdraws every <Fragment> it would have
+        // emitted rather than some of them, so a lost pass leaves the file as
+        // it found it and the whole conversion is re-proposed against the text
+        // that did land.
+        const [carrier] = fixable;
+
+        for (const violation of violations) {
+          const descriptor = {
+            node: violation.node,
+            messageId: 'preferFragment' as const,
+            data: { type: violation.type },
+          };
+
+          if (violation !== carrier) {
+            context.report(descriptor);
+            continue;
+          }
+
+          context.report({
+            ...descriptor,
+            fix: (fixer) => [
+              bindFragmentImport(fixer),
+              ...fixable.flatMap((entry) =>
+                entry.rewrites.map((rewrite) =>
+                  fixer.replaceText(rewrite.node, rewrite.text),
+                ),
+              ),
+            ],
+          });
+        }
       },
     };
   },
