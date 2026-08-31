@@ -2380,7 +2380,16 @@ describe('no-redundant-annotation-assertion --fix emits code the compiler accept
     };
     const program = ts.createProgram(
       [FILENAME],
-      { noResolve: true, noLib: true },
+      {
+        noResolve: true,
+        noLib: true,
+        // `tsconfig.json` and the consumer's build set both, and a fix that STRANDS
+        // a binding is invisible without them (#2234). Safe here only because the
+        // oracle below is a DIFFERENTIAL: an input's own unused local appears on
+        // both sides and cancels.
+        noUnusedLocals: true,
+        noUnusedParameters: true,
+      },
       host,
     );
 

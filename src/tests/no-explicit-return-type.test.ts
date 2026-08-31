@@ -5679,6 +5679,15 @@ function compileSnippets(
     moduleResolution: ts.ModuleResolutionKind.NodeJs,
     skipLibCheck: true,
     types: [],
+    /**
+     * `noUnusedLocals` matches `tsconfig.json` and makes a strip that STRANDS a
+     * binding visible (#2234). `noUnusedParameters` is deliberately OFF: the
+     * shapes here are overload IMPLEMENTATIONS, whose parameter is unused by
+     * construction (`function get(param?: string): void | string {}`), and the
+     * assertions read an ABSOLUTE diagnostic list to prove the exempt forms
+     * compile — so it would report the fixture rather than the fix.
+     */
+    noUnusedLocals: true,
     ...extraOptions,
   };
 

@@ -2644,6 +2644,18 @@ describe('consistent-callback-naming --fix output type-checks (Bug #1946)', () =
     moduleResolution: ts.ModuleResolutionKind.NodeJs,
     noEmit: true,
     skipLibCheck: true,
+    /**
+     * `noUnusedLocals`/`noUnusedParameters` are deliberately ABSENT, unlike
+     * every other `ts.Program` in this repo (#2234).
+     *
+     * The differential below would tolerate them, but the assertion under it
+     * does not: `compiles every input clean` reads an ABSOLUTE diagnostic list
+     * off each input, and 8 of the shapes declare a class the shape never
+     * instantiates — TS6196 on the input side, measured. Giving those shapes a
+     * use would change what they probe, because whether the class is EXPORTED
+     * is one of the axes they vary. Turn these on only together with a shape
+     * set that does not depend on that.
+     */
   };
 
   /**

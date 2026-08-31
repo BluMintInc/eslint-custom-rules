@@ -1303,7 +1303,17 @@ describe('enforce-early-destructuring: the hoist stays in scope wherever the hoo
     };
     const program = ts.createProgram(
       [name],
-      { noEmit: true, noLib: true, strict: false },
+      {
+        noEmit: true,
+        noLib: true,
+        strict: false,
+        // `tsconfig.json` and the consumer's build set both, and a fix that STRANDS
+        // a binding is invisible without them (#2234). Safe here only because the
+        // oracle below is a DIFFERENTIAL: an input's own unused local appears on
+        // both sides and cancels.
+        noUnusedLocals: true,
+        noUnusedParameters: true,
+      },
       host,
     );
     return [

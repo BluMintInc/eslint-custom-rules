@@ -2926,6 +2926,12 @@ describe('enforce-memoize-getters: `--fix` leaves every class shape compiling (i
     noEmit: true,
     noLib: true,
     types: [],
+    // `tsconfig.json` and the consumer's build set both, and a fix that STRANDS
+    // a binding is invisible without them (#2234). Safe here only because the
+    // oracle below is a DIFFERENTIAL: an input's own unused local appears on
+    // both sides and cancels.
+    noUnusedLocals: true,
+    noUnusedParameters: true,
   };
 
   const diagnosticsOf = (source: string): string[] => {
@@ -3111,7 +3117,13 @@ export const Service = class {
 };
 `;
 
-    expect(introducedBy(before, after)).toEqual(['TS1206']);
+    /**
+     * TS6133 rides along with TS1206 under the `noUnusedLocals` the programs
+     * here run with (#2234): a decorator TypeScript rejects is not a USE, so
+     * the import the pre-fix edit injects is stranded as well as misplaced.
+     * Sorted, because the two arrive in either order.
+     */
+    expect(introducedBy(before, after).sort()).toEqual(['TS1206', 'TS6133']);
   });
 });
 
