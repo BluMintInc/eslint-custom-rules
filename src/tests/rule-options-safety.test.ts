@@ -1,6 +1,15 @@
 import fs from 'fs';
 import path from 'path';
 import { Linter } from 'eslint';
+import {
+  harvestFixtureCorpus,
+  defaultFilenameFor,
+  defineCorpusParsers,
+  parserKeyFor,
+  parserOptionsFor,
+  severityWithOptions,
+  FixtureCase,
+} from '../utils/fixtureCorpus';
 
 // Using require to avoid test build-time ESM interop issues; the test runner
 // only needs the plugin object shape (rules), not types.
@@ -10,6 +19,12 @@ const plugin = require('..') as {
 };
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const tsParser = require('@typescript-eslint/parser');
+
+// The crash probe drives every harvested fixture of an optioned rule against
+// every option object its schema permits: 72k lints, and the heaviest single
+// rule measures 2.3s against a 5s default. The budget sits far enough above
+// that for a loaded CI runner, and far enough below a hang to still fail.
+jest.setTimeout(120_000);
 
 const PREFIX = '@blumintinc/blumint/';
 const RULES_DIR = path.join(__dirname, '../rules');
@@ -312,97 +327,61 @@ const optionCandidates = (
   return out;
 };
 
-const MAX_SNIPPETS = 8;
-const FILENAMES = [
-  '/repo/src/components/Widget.tsx',
-  '/repo/functions/src/util/helper.ts',
-];
-
-/** Byte ranges of the `invalid:` arrays declared in a RuleTester suite. */
-const invalidArrayRanges = (ast: AstNode): Array<[number, number]> => {
-  const ranges: Array<[number, number]> = [];
-  walk(ast, (node) => {
-    if (node.type !== 'Property' || !node.key) return;
-    const key = (node.key.name ?? node.key.value) as unknown;
-    if (key !== 'invalid') return;
-    const value = node.value as AstNode | undefined;
-    if (value?.type !== 'ArrayExpression' || !value.range) return;
-    ranges.push(value.range);
-  });
-  return ranges;
-};
-
 /**
- * A rule's own test file is the one corpus guaranteed to trigger it, which is
- * what keeps this from passing vacuously on code the rule ignores.
+ * A rule's own fixtures are the one corpus guaranteed to trigger it, which is
+ * what keeps the crash probe from passing vacuously on code the rule ignores.
  *
- * The ordering is load-bearing. Taking literals in AST order yields the
- * `valid:` array, which precedes `invalid:` in every suite — i.e. precisely the
- * code the rule stays SILENT on. An option read on the report or fix path never
- * runs there, so the crash probe below would drive it over code that returns
- * before reaching the option at all. Measured at v1.20.145: AST order drew 417
- * of 477 snippets from `valid:` and left 39 of 60 optioned rules reporting
- * nothing whatsoever. Taking `invalid:` first inverts that.
+ * They are taken from `harvestFixtureCorpus`, which loads each suite with `run`
+ * shadowed and captures the real case objects. Text-scraping the suite source
+ * for its string literals — the method this replaces — silently loses three
+ * things at once, and each loss reads as a clean sweep: a case assembled by
+ * interpolation is invisible entirely, a case that does survive arrives
+ * stripped of the `filename` and `options` it was written for, and a snippet
+ * cap decides which of the survivors are probed at all. Measured against the
+ * scrape it replaces: 10,624 cases and 71 of 71 optioned rules reporting, up
+ * from 565 capped snippets under two hard-coded paths.
  */
-const harvestSnippets = (ruleName: string): string[] => {
-  const testFile = path.join(__dirname, `${ruleName}.test.ts`);
-  if (!fs.existsSync(testFile)) return [];
-  const ast = parseSource(fs.readFileSync(testFile, 'utf8'));
-  if (!ast) return [];
-  const ranges = invalidArrayRanges(ast);
-  const reporting: string[] = [];
-  const rest: string[] = [];
-  const seen = new Set<string>();
-  const push = (value: unknown, range?: [number, number]) => {
-    if (
-      typeof value !== 'string' ||
-      value.length < 25 ||
-      !/[;{(=<]/.test(value)
-    )
-      return;
-    if (seen.has(value)) return;
-    seen.add(value);
-    const fromInvalid =
-      !!range && ranges.some(([lo, hi]) => range[0] >= lo && range[1] <= hi);
-    (fromInvalid ? reporting : rest).push(value);
-  };
-  walk(ast, (node) => {
-    if (node.type === 'Literal') push(node.value, node.range);
-    if (
-      node.type === 'TemplateLiteral' &&
-      (node.expressions as unknown[])?.length === 0
-    ) {
-      push(
-        (node.quasis as Array<{ value: { cooked: string } }>)
-          .map((q) => q.value.cooked)
-          .join(''),
-        node.range,
-      );
-    }
-  });
-  return [...reporting, ...rest].slice(0, MAX_SNIPPETS);
-};
+const corpus = harvestFixtureCorpus();
+
+const fixturesFor = (ruleName: string): readonly FixtureCase[] =>
+  corpus.byRule.get(ruleName) || [];
 
 const linter = new Linter();
-linter.defineParser('@typescript-eslint/parser', tsParser);
+defineCorpusParsers(linter);
 for (const [name, rule] of Object.entries(plugin.rules)) {
   linter.defineRule(PREFIX + name, rule as never);
 }
 
-const configFor = (ruleId: string, options: unknown[]) => ({
-  parser: '@typescript-eslint/parser',
-  parserOptions: PARSER_OPTIONS,
+/**
+ * A case is linted under the parser its own tester declared and the filename
+ * its own code implies. Handing a JSON fixture to `@typescript-eslint/parser`,
+ * or JSX to a `.ts` path, is a FATAL parse — and since a crash probe only asks
+ * whether the rule threw, a fatal parse is indistinguishable from a rule that
+ * survived every option it was handed.
+ */
+const configFor = (
+  ruleId: string,
+  options: unknown[],
+  testCase: FixtureCase,
+) => ({
+  parser: parserKeyFor(testCase),
+  parserOptions: parserOptionsFor(testCase),
   rules: { [ruleId]: ['error', ...options] as unknown as Linter.RuleLevel },
 });
 
 const throwsWith = (
   ruleId: string,
   options: unknown[],
-  code: string,
-  filename: string,
+  testCase: FixtureCase,
 ): string | null => {
   try {
-    linter.verify(code, configFor(ruleId, options) as never, { filename });
+    linter.verify(
+      testCase.code,
+      configFor(ruleId, options, testCase) as never,
+      {
+        filename: defaultFilenameFor(testCase),
+      },
+    );
     return null;
   } catch (error) {
     return String((error as Error).message).split('\n')[0];
@@ -429,38 +408,57 @@ describe('rules survive every schema-valid option object', () => {
       },
     } as never);
 
-    expect(
-      throwsWith(controlId, [], 'const a = 1;', '/repo/src/x.ts'),
-    ).not.toBeNull();
-    expect(
-      throwsWith(controlId, [{ list: [] }], 'const a = 1;', '/repo/src/x.ts'),
-    ).toBeNull();
+    const controlCase: FixtureCase = {
+      code: 'const a = 1;',
+      filename: '/repo/src/x.ts',
+      tester: 'ruleTesterTs',
+      language: 'ts',
+      origin: 'rule-options-safety.test.ts',
+      bucket: 'valid',
+    };
+    expect(throwsWith(controlId, [], controlCase)).not.toBeNull();
+    expect(throwsWith(controlId, [{ list: [] }], controlCase)).toBeNull();
   });
 
   /**
-   * The crash probe only exercises option-reading code that the snippet
-   * actually reaches. A corpus the rules stay silent on would keep every
-   * assertion below green while driving nothing, so hold a floor on how many
-   * rules the corpus genuinely triggers.
+   * The crash probe only exercises option-reading code the fixture actually
+   * reaches. A corpus the rules stay silent on would keep every assertion below
+   * green while driving nothing, so hold floors on how much of the corpus is
+   * considered and on how many rules it genuinely triggers.
+   *
+   * Each fixture is driven under its OWN declared options, which is what the
+   * text scrape could not do: an option read only on the report path never runs
+   * for a rule whose author gated the report behind a setting.
    */
   it('drives a corpus the rules actually report on (non-vacuity)', () => {
+    let cases = 0;
     const triggered = rulesWithOptions.filter(({ name }) => {
       const ruleId = PREFIX + name;
-      return harvestSnippets(name).some((code) =>
-        FILENAMES.some((filename) => {
-          try {
-            return linter
-              .verify(code, configFor(ruleId, []) as never, { filename })
-              .some((m) => m.ruleId === ruleId && !m.fatal);
-          } catch {
-            return false;
-          }
-        }),
-      );
+      const fixtures = fixturesFor(name);
+      cases += fixtures.length;
+      return fixtures.some((testCase) => {
+        try {
+          return linter
+            .verify(
+              testCase.code,
+              configFor(
+                ruleId,
+                (testCase.options as unknown[]) || [],
+                testCase,
+              ) as never,
+              { filename: defaultFilenameFor(testCase) },
+            )
+            .some((m) => m.ruleId === ruleId && !m.fatal);
+        } catch {
+          return false;
+        }
+      });
     });
 
-    // AST order (valid-first) triggered 21 of 60; invalid-first triggers 50+.
-    expect(triggered.length).toBeGreaterThan(45);
+    // Measured: 10,624 cases, 71 of 71 optioned rules reporting. The scrape this
+    // replaces reached 565 capped snippets and 50-odd rules.
+    expect(cases).toBeGreaterThanOrEqual(10000);
+    expect(triggered.length).toBeGreaterThanOrEqual(68);
   });
 
   it.each(
@@ -468,25 +466,40 @@ describe('rules survive every schema-valid option object', () => {
       .map(({ name }) => ({
         name,
         candidates: optionCandidates(plugin.rules[name].meta?.schema),
-        snippets: harvestSnippets(name),
+        fixtures: fixturesFor(name),
       }))
       .filter(
-        ({ candidates, snippets }) =>
-          candidates.length > 0 && snippets.length > 0,
+        ({ candidates, fixtures }) =>
+          candidates.length > 0 && fixtures.length > 0,
       )
       .map((entry) => [entry.name, entry] as const),
   )('%s accepts any option object its schema permits', (_name, entry) => {
     const ruleId = PREFIX + entry.name;
     const failures: string[] = [];
 
-    for (const code of entry.snippets) {
-      for (const filename of FILENAMES) {
-        // A rule that already throws unconfigured (e.g. one needing type
-        // information) is not an options-shaped defect; only the delta counts.
-        if (throwsWith(ruleId, [], code, filename) !== null) continue;
-        for (const candidate of entry.candidates) {
-          const message = throwsWith(ruleId, candidate.options, code, filename);
-          if (message) failures.push(`options ${candidate.label}: ${message}`);
+    for (const testCase of entry.fixtures) {
+      // A rule that already throws unconfigured (e.g. one needing type
+      // information) is not an options-shaped defect; only the delta counts.
+      if (throwsWith(ruleId, [], testCase) !== null) continue;
+      /**
+       * The fixture's own options are probed alongside the schema-derived ones.
+       * A schema sample is a shape the schema permits; the declared options are
+       * the shape the rule's author actually wrote, and the two coincide only by
+       * accident.
+       */
+      const declared = severityWithOptions(testCase);
+      const candidates = Array.isArray(declared)
+        ? [
+            { label: 'declared', options: declared.slice(1) },
+            ...entry.candidates,
+          ]
+        : entry.candidates;
+      for (const candidate of candidates) {
+        const message = throwsWith(ruleId, candidate.options, testCase);
+        if (message) {
+          failures.push(
+            `${testCase.origin} options ${candidate.label}: ${message}`,
+          );
         }
       }
     }

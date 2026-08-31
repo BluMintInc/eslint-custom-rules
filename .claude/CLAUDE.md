@@ -144,8 +144,22 @@ const nameByRule = new Map(
 and `LANGUAGE_BY_TESTER` precisely so a guard cannot reintroduce the two silent
 losses below. Four guards hand-rolled it anyway and each inherited both — every
 one of them importing `fixtureCorpus` for its *other* helpers, so "does it import
-the helper?" certified all four clean (#1984). `fixture-corpus-accounting.test.ts`
-fails the build on the banned spellings, so a fifth cannot happen quietly.
+the helper?" certified all four clean (#1984). A fifth,
+`rule-options-safety.test.ts`, then hand-rolled a corpus by text-scraping suite
+sources and was invisible to `fixture-corpus-accounting.test.ts` for a different
+reason: that guard only scanned files NAMING a harvest helper, so a corpus built
+without one was exempt by construction, and its scans were non-recursive, its
+patterns keyed on single spellings, and its positive control planted the very
+literals its own regexes were written from (#2245). It converts to
+`harvestFixtureCorpus` at 10,624 cases against 565 scraped snippets.
+
+The guard is keyed on BEHAVIOUR rather than spelling as a result: it admits any
+file that lints text scraped from suite sources, scans `src/tests/` recursively,
+matches the SHAPE of a tester-keyed extension choice rather than one basename
+pair, and separately REQUIRES every corpus consumer that lints to route through
+`defaultFilenameFor`/`parserKeyFor`/`LANGUAGE_BY_TESTER` or hold an allowlist
+entry carrying a measured reason. Write a new guard's corpus with the helper —
+an evasion is a defect in the guard, not a licence.
 
 `src/tests/exemption-composition-closure.test.ts` is the reference consumer.
 `src/tests/comment-fix-fidelity.test.ts` and

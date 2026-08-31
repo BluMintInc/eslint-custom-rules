@@ -153,6 +153,293 @@ const MIN_CASES = 15000;
 const MIN_SUITES = 300;
 const MIN_RULES = 150;
 
+const TESTS_ROOT = __dirname;
+
+/**
+ * Every suite file under the tests root, as a path relative to it.
+ *
+ * Recursive, and shared by every static scan below, because `src/tests/rules/`
+ * exists: a `readdirSync` of the top directory alone certifies a tree it cannot
+ * see, and the file it cannot see is precisely where a guard would be parked to
+ * escape the certification. Paths stay relative rather than collapsing to a
+ * basename so that two suites of the same name at different depths
+ * (`no-circular-references.test.ts` is one) stay distinguishable.
+ */
+const suiteFilesUnder = (root: string): string[] => {
+  const walk = (dir: string): string[] =>
+    fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) return walk(full);
+      return entry.name.endsWith('.test.ts') ? [path.relative(root, full)] : [];
+    });
+  return walk(root).sort();
+};
+
+const SUITE_FILES = suiteFilesUnder(TESTS_ROOT);
+
+const sourceOf = (file: string) =>
+  fs.readFileSync(path.join(TESTS_ROOT, file), 'utf8');
+
+/**
+ * Scanned against CODE, not prose: a guard that documents the spelling it
+ * replaced would otherwise report itself forever. Block comments go, and line
+ * comments only when they own the whole line — a `//` inside a string literal
+ * must not truncate the code after it, which would hide a real violation on
+ * that line.
+ */
+const stripComments = (source: string) =>
+  source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+
+const CODE_BY_FILE = new Map(
+  SUITE_FILES.map((file) => [file, stripComments(sourceOf(file))]),
+);
+
+/** The sanctioned route into the fixture corpus. */
+const NAMES_HARVEST = /harvestFixtureCorpus|harvestOnce|harvestRuleTesterCases/;
+
+/** A `Linter` driven over text the guard supplies. */
+const LINTS_TEXT = /\.verify(?:AndFix)?\s*\(/;
+
+/**
+ * Reads suite SOURCES off disk, which is the pre-harvest way to build a corpus:
+ * parse `src/tests/<rule>.test.ts` and keep its string literals.
+ */
+const SCRAPES_SUITE_SOURCES =
+  /(?:readdirSync|readFileSync|globSync)[\s\S]{0,400}?\.test\.ts|\.test\.ts[\s\S]{0,400}?(?:readdirSync|readFileSync|globSync)/;
+
+/**
+ * Does this file build a fixture corpus at all?
+ *
+ * Keying admission on the harvest IDENTIFIERS alone — the check this replaces —
+ * exempts by construction the one guard that most needs checking: a corpus
+ * assembled WITHOUT the helper matches none of those names, so it was never
+ * read. The question is therefore asked about the BEHAVIOUR, in both of its
+ * spellings: a file that names the harvest, or one that lints text it scraped
+ * out of the suite sources itself.
+ *
+ * The scrape arm selects nobody on a clean tree, which is the point — it is the
+ * arm that would have caught `rule-options-safety` before it swapped onto the
+ * corpus. `PLANTED_HAND_ROLLED_HARVEST` keeps it non-vacuous, so an arm that
+ * stopped matching cannot look identical to one that has nothing to match.
+ */
+const isCorpusConsumer = (code: string) =>
+  NAMES_HARVEST.test(code) ||
+  (LINTS_TEXT.test(code) && SCRAPES_SUITE_SOURCES.test(code));
+
+const CORPUS_CONSUMERS = SUITE_FILES.filter(
+  // This guard names every banned spelling, so it necessarily contains them.
+  (file) =>
+    file !== path.basename(__filename) &&
+    isCorpusConsumer(CODE_BY_FILE.get(file) || ''),
+);
+
+const NESTED_SUITE_FILES = SUITE_FILES.filter((file) =>
+  file.includes(path.sep),
+);
+
+/**
+ * An extension pair — `.tsx` on one arm, `.ts` on the other — under any
+ * basename and either quote style.
+ *
+ * The pair by itself is legitimate and common: four guards name a scratch
+ * `ts.Program` file from `filename.endsWith('.tsx')`, which is a property of the
+ * CODE and is exactly right. What condemns it is the expression that DECIDES,
+ * so the pair is only an offence when a tester is what reaches it.
+ */
+const EXTENSION_PAIR =
+  /(['"])[\w./-]*\.tsx\1\s*:\s*(['"])[\w./-]*\.ts\2|(['"])[\w./-]*\.ts\3\s*:\s*(['"])[\w./-]*\.tsx\4/;
+
+/** `suite.tester`, `LANGUAGE_BY_TESTER`, `isJsxTester` — any of them. */
+const TESTER_TOKEN = /tester/i;
+
+/**
+ * How far back a tester may sit and still be what selected the extension.
+ *
+ * Chosen from both margins rather than guessed. Defect side: a flag computed
+ * from the tester and read by a ternary several statements later measures 312
+ * characters apart, so a shorter window misses the shape entirely. Clean side:
+ * the nearest correct pair in the tree sits 1,235 characters into its file, and
+ * no tester is named before ANY of them — so this stays out of reach even of a
+ * file that adds `LANGUAGE_BY_TESTER` to its import block, which the
+ * routes-through-fixtureCorpus closure below actively encourages.
+ */
+const TESTER_LOOKBACK = 600;
+
+const derivesExtensionFromTester = (code: string) => {
+  const pattern = new RegExp(EXTENSION_PAIR.source, 'g');
+  let match = pattern.exec(code);
+  while (match !== null) {
+    const governing = code.slice(
+      Math.max(0, match.index - TESTER_LOOKBACK),
+      match.index,
+    );
+    if (TESTER_TOKEN.test(governing)) return true;
+    match = pattern.exec(code);
+  }
+  return false;
+};
+
+type BannedSpelling = {
+  id: string;
+  detect: (code: string) => boolean;
+  why: string;
+};
+
+/**
+ * Each entry is a CONCERN, matched by shape.
+ *
+ * A detector written from one spelling proves only that the spelling exists.
+ * `'file.tsx':'file.ts'`, `!=` instead of `!==`, `=== 'ruleTesterJsx'` and an
+ * imported `TS_TESTERS` all reproduce #1984 and #1860 verbatim while matching a
+ * string-literal detector nowhere, so each concern is asked as a question about
+ * the code's shape and every planted control below must be caught by these and
+ * MISSED by the single spellings they were written from.
+ */
+const BANNED: BannedSpelling[] = [
+  {
+    id: 'ts-testers',
+    detect: (code) => /\bTS_TESTERS\b/.test(code),
+    why: 'partitions suites by TESTER — declared locally or imported from fixtureCorpus, and either spelling drops every JSON and Markdown suite; read the language fixtureCorpus already carries on the case',
+  },
+  {
+    id: 'tester-name-comparison',
+    detect: (code) =>
+      /[!=]==?\s*(['"])ruleTester\w*\1/.test(code) ||
+      /(['"])ruleTester\w*\1\s*[!=]==?/.test(code),
+    why: 'branches on which TESTER declared a fixture; a `.ts` path forces ScriptKind.TS and `ecmaFeatures.jsx` does not override it, so every JSX fixture under ruleTesterTs is a fatal parse. Ask defaultFilenameFor and parserKeyFor, which read the CODE and the language',
+  },
+  {
+    id: 'tester-name-membership',
+    detect: (code) =>
+      /new Set\(\s*\[[^\]]*(['"])ruleTester\w*\1/.test(code) ||
+      /\[[^\]]*(['"])ruleTester\w*\1[^\]]*\]\s*\)?\s*\.\s*(?:has|includes)\b/.test(
+        code,
+      ),
+    why: 'collects tester names to filter suites by, which is how two error-severity fixable rules lost their whole corpus (#1860); LANGUAGE_BY_TESTER maps every tester, the JSON and Markdown ones included',
+  },
+  {
+    id: 'tester-derived-extension',
+    detect: derivesExtensionFromTester,
+    why: "picks a fixture's extension from its TESTER rather than from its CODE; use defaultFilenameFor, which overrides the preferred extension only when that extension cannot parse the snippet at all",
+  },
+  {
+    /**
+     * The owner's entry skipped whenever the recommended set already holds the
+     * rule, which is every enabled rule: the fixture is then screened at
+     * DEFAULTS and its author's options never reach the rule. Four guards
+     * carried this one conditional, and the comment above it claimed the
+     * opposite (#2244, #2224, #1732). `composedRulesFor` sets the entry
+     * unconditionally, gated only on the guard's own exclusion set.
+     */
+    id: 'owner-options-dropped',
+    detect: (code) =>
+      /\w+\[\s*\w*[Oo]wner\w*\s*\][\s\S]{0,160}?\?\s*\{\s*\}/.test(code),
+    why: "drops the owner fixture's options whenever the rule is in the recommended set; call composedRulesFor, which carries them unconditionally",
+  },
+];
+
+const bannedIdsIn = (code: string) =>
+  BANNED.filter(({ detect }) => detect(code)).map(({ id }) => id);
+
+/**
+ * The single spellings this scan was written from, kept as the class controls'
+ * BASELINE rather than as a check.
+ *
+ * A positive control that plants the exact string a regex was written from
+ * proves the regex matches itself, not the class. Every planted evasion below
+ * must be caught by `BANNED` and missed by these, which is the only way to
+ * assert the widening bought a class rather than a second string.
+ */
+const SINGLE_SPELLINGS: Array<(code: string) => boolean> = [
+  (code) => /const\s+TS_TESTERS\s*=\s*new Set/.test(code),
+  (code) => /'x\.tsx'\s*:\s*'x\.ts'|"x\.tsx"\s*:\s*"x\.ts"/.test(code),
+  (code) => /\btester\s*!==\s*'ruleTesterTs'/.test(code),
+];
+
+/**
+ * Whole planted files, one per CLASS of evasion, each written in a spelling the
+ * single-string detectors above cannot see.
+ */
+const PLANTED_EVASIONS = [
+  {
+    id: 'ts-testers',
+    source: [
+      "import { harvestOnce, TS_TESTERS } from '../utils/fixtureCorpus';",
+      'for (const suite of harvestOnce().suites) {',
+      '  if (!TS_TESTERS.has(suite.tester)) continue;',
+      '  linter.verify(suite.valid[0], config, filename);',
+      '}',
+    ].join('\n'),
+  },
+  {
+    id: 'tester-name-comparison',
+    source: [
+      "import { harvestFixtureCorpus } from '../utils/fixtureCorpus';",
+      'for (const testCase of harvestFixtureCorpus().byRule.get(rule)) {',
+      "  const jsx = testCase.tester != 'ruleTesterTs';",
+      "  linter.verify(testCase.code, config, jsx ? 'probe.tsx' : 'probe.ts');",
+      '}',
+    ].join('\n'),
+  },
+  {
+    id: 'tester-name-membership',
+    source: [
+      "import { harvestOnce } from '../utils/fixtureCorpus';",
+      'for (const suite of harvestOnce().suites) {',
+      "  if (!['ruleTesterTs', 'ruleTesterJsx'].includes(suite.tester)) continue;",
+      '  linter.verify(suite.valid[0], config, filename);',
+      '}',
+    ].join('\n'),
+  },
+  {
+    id: 'tester-derived-extension',
+    source: [
+      "import { harvestOnce, LANGUAGE_BY_TESTER } from '../utils/fixtureCorpus';",
+      'for (const suite of harvestOnce().suites) {',
+      "  const jsx = LANGUAGE_BY_TESTER[suite.tester] !== 'ts';",
+      "  const filename = jsx ? 'corpus.tsx' : 'corpus.ts';",
+      '  linter.verify(suite.valid[0], config, filename);',
+      '}',
+    ].join('\n'),
+  },
+];
+
+/**
+ * The gate class, which no spelling can express: a corpus assembled by scraping
+ * the suite SOURCES names no harvest helper, so a scan admitted by those
+ * identifiers never reads the file at all. The banned spelling it carries is
+ * incidental — the point is that the pre-hardening gate would not have looked.
+ */
+const PLANTED_HAND_ROLLED_HARVEST = [
+  'const testFile = path.join(__dirname, ruleName + `.test.ts`);',
+  "const ast = parseSource(fs.readFileSync(testFile, 'utf8'));",
+  'for (const code of stringLiteralsOf(ast).slice(0, MAX_SNIPPETS)) {',
+  "  const jsx = suite.tester != 'ruleTesterTs';",
+  "  linter.verify(code, config, jsx ? 'probe.tsx' : 'probe.ts');",
+  '}',
+].join('\n');
+
+/**
+ * Corpus consumers that lint fixture text without routing through
+ * `fixtureCorpus`'s filename and parser helpers, each with the MEASUREMENT of
+ * what that costs. An entry without a measurement is an unreasoned skip.
+ */
+const CONSUMERS_WITHOUT_CORPUS_HELPERS = new Map<string, string>([
+  [
+    'message-negative-example.test.ts',
+    'lints harvested `invalid` fixtures only as a REACHABILITY oracle for a ' +
+      'remedy span, under the same CANDIDATES paths the span probe itself ' +
+      'uses: the filename is the question being asked, so defaultFilenameFor ' +
+      'would answer a different one. Measured cost: of its 9 negative-example ' +
+      'spans, ZERO belong to any of the 3 rules that declare non-TypeScript ' +
+      'fixtures (enforce-typescript-markdown-code-blocks, ' +
+      'no-unpinned-dependencies, prefer-nullish-coalescing-boolean-props), so ' +
+      'no fixture reaches the oracle under a parser that cannot read it. It ' +
+      'fails CLOSED if that changes: an unreachable rule fails the suite by ' +
+      'name rather than banking an unearned silent verdict.',
+  ],
+]);
+
 describe('fixture corpus accounting', () => {
   it('harvests a corpus big enough for the closures to mean anything', () => {
     expect(corpus.failures).toEqual([]);
@@ -178,31 +465,19 @@ describe('fixture corpus accounting', () => {
    * deliberately skipped, and the skip must be the documented one.
    */
   it('enumerates every suite file under the tests root, at any depth', () => {
-    const testsRoot = path.join(__dirname);
-    const walk = (dir: string): string[] =>
-      fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-        const full = path.join(dir, entry.name);
-        if (entry.isDirectory()) return walk(full);
-        return entry.name.endsWith('.test.ts') ? [full] : [];
-      });
-    const onDisk = walk(testsRoot);
     const raw = harvestOnce();
 
-    expect(raw.filesLoaded + raw.filesSkipped).toBe(onDisk.length);
+    expect(raw.filesLoaded + raw.filesSkipped).toBe(SUITE_FILES.length);
     expect(raw.filesLoaded).toBe(
-      onDisk.filter((file) =>
-        IMPORTS_SHARED_TESTER.test(fs.readFileSync(file, 'utf8')),
-      ).length,
+      SUITE_FILES.filter((file) => IMPORTS_SHARED_TESTER.test(sourceOf(file)))
+        .length,
     );
 
     // Non-vacuity: the equality above is satisfied trivially by a flat tree, so
     // the recursion is only actually asserted while a nested suite exists. If
     // the tree is ever legitimately flattened, replace this with a fixture
     // rather than deleting it — otherwise the walk can silently stop recursing.
-    const nested = onDisk.filter((file) =>
-      path.relative(testsRoot, file).includes(path.sep),
-    );
-    expect(nested.length).toBeGreaterThan(0);
+    expect(NESTED_SUITE_FILES.length).toBeGreaterThan(0);
   });
 
   it('accounts for every registered rule: it has a corpus, or it is a named exemption', () => {
@@ -262,6 +537,7 @@ describe('fixture corpus accounting', () => {
     const unexplained = [
       ...rulesWithoutCorpus.entries(),
       ...suitesWithoutRegisteredRule.entries(),
+      ...CONSUMERS_WITHOUT_CORPUS_HELPERS.entries(),
     ]
       .filter(([, reason]) => reason.trim().length < 20)
       .map(([key]) => key);
@@ -287,24 +563,26 @@ describe('fixture corpus accounting', () => {
    * about the file, checked without running anything.
    */
   it('has no guard that both harvests and is harvested', () => {
-    const testsDir = path.join(__dirname);
-    const offenders = fs
-      .readdirSync(testsDir)
-      .filter((file) => file.endsWith('.test.ts'))
-      .filter((file) => {
-        const source = fs.readFileSync(path.join(testsDir, file), 'utf8');
-        return (
-          IMPORTS_SHARED_TESTER.test(source) &&
-          /harvestFixtureCorpus|harvestOnce|harvestRuleTesterCases/.test(source)
-        );
-      })
-      .map(
-        (file) =>
-          `${file} imports the shared tester AND harvests; reach the tester ` +
-          `by require() instead, or the harvest loads this file and its nested ` +
-          `harvest returns a partial corpus`,
-      );
+    const offenders = SUITE_FILES.filter(
+      (file) =>
+        IMPORTS_SHARED_TESTER.test(sourceOf(file)) &&
+        NAMES_HARVEST.test(CODE_BY_FILE.get(file) || ''),
+    ).map(
+      (file) =>
+        `${file} imports the shared tester AND harvests; reach the tester ` +
+        `by require() instead, or the harvest loads this file and its nested ` +
+        `harvest returns a partial corpus`,
+    );
     expect(offenders).toEqual([]);
+
+    // Non-vacuity for the walk: a flat scan reads a strict subset of the tree,
+    // and the file it cannot reach is where a guard would be parked to escape
+    // this check. If the tree is ever legitimately flattened, replace this with
+    // a fixture rather than deleting it.
+    expect(SUITE_FILES.length).toBeGreaterThan(
+      fs.readdirSync(TESTS_ROOT).filter((file) => file.endsWith('.test.ts'))
+        .length,
+    );
   });
 
   /**
@@ -317,121 +595,183 @@ describe('fixture corpus accounting', () => {
    * — so "does it import the helper?" certified them all clean. The check has to
    * be per CONCERN, and static, because the damage is invisible at runtime.
    */
-  it('lets no harvesting guard hand-roll what fixtureCorpus owns', () => {
-    const testsDir = path.join(__dirname);
-    /**
-     * Scanned against CODE, not prose: a guard that documents the spelling it
-     * replaced would otherwise report itself forever. Block comments go, and
-     * line comments only when they own the whole line — a `//` inside a string
-     * literal must not truncate the code after it, which would hide a real
-     * violation on that line.
-     */
-    const stripComments = (source: string) =>
-      source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
-    const BANNED = [
-      {
-        pattern: /const\s+TS_TESTERS\s*=\s*new Set/,
-        why: 'declares a local TS_TESTERS instead of reading LANGUAGE_BY_TESTER, which silently drops every non-TypeScript suite',
-      },
-      {
-        pattern: /'x\.tsx'\s*:\s*'x\.ts'|"x\.tsx"\s*:\s*"x\.ts"/,
-        why: "derives a fixture's extension from its TESTER; use defaultFilenameFor, which derives it from the CODE",
-      },
-      {
-        pattern: /\btester\s*!==\s*'ruleTesterTs'/,
-        why: 'decides JSX-ness from the TESTER; a `.ts` path forces ScriptKind.TS and `ecmaFeatures.jsx` does not override it, so every JSX fixture under ruleTesterTs is a fatal parse',
-      },
-      {
-        /**
-         * The owner's entry skipped whenever the recommended set already holds
-         * the rule, which is every enabled rule: the fixture is then screened at
-         * DEFAULTS and its author's options never reach the rule. Four guards
-         * carried this one conditional, and the comment above it claimed the
-         * opposite (#2244, #2224, #1732). `composedRulesFor` sets the entry
-         * unconditionally, gated only on the guard's own exclusion set.
-         */
-        pattern: /\w+\[\s*\w*[Oo]wner\w*\s*\][\s\S]{0,160}?\?\s*\{\s*\}/,
-        why: "drops the owner fixture's options whenever the rule is in the recommended set; call composedRulesFor, which carries them unconditionally",
-      },
-    ];
-    const scanned: string[] = [];
-    const offenders = fs
-      .readdirSync(testsDir)
-      .filter((file) => file.endsWith('.test.ts'))
-      // This guard names the banned spellings, so it necessarily contains them.
-      .filter((file) => file !== path.basename(__filename))
-      .flatMap((file) => {
-        const source = fs.readFileSync(path.join(testsDir, file), 'utf8');
-        if (
-          !/harvestFixtureCorpus|harvestOnce|harvestRuleTesterCases/.test(
-            source,
-          )
-        ) {
-          return [];
-        }
-        scanned.push(file);
-        return BANNED.filter(({ pattern }) =>
-          pattern.test(stripComments(source)),
-        ).map(({ why }) => `${file} ${why}`);
-      });
+  it('lets no corpus consumer hand-roll what fixtureCorpus owns', () => {
+    const offenders = CORPUS_CONSUMERS.flatMap((file) =>
+      BANNED.filter(({ detect }) => detect(CODE_BY_FILE.get(file) || '')).map(
+        ({ why }) => `${file} ${why}`,
+      ),
+    );
     expect(offenders).toEqual([]);
 
     /**
-     * The harvest-identifier filter selects what gets scanned, so it is itself a
-     * silent-loss surface: rename the harvest helper and it matches nothing,
-     * leaving this closure asserting `[] === []` over an empty set forever. 25
-     * guards match at the time of writing; the floor holds well under that so
-     * ordinary churn does not trip it, but a collapsed filter does. The four
-     * that carried #1984 must each be covered by name — they are the reason
-     * this exists, and a filter that stopped reaching them is the one failure
-     * this test cannot be allowed to survive.
+     * The admission filter selects what gets scanned, so it is itself a
+     * silent-loss surface: narrow it and this closure asserts `[] === []` over
+     * an empty set forever. 42 files qualify at the time of writing; the floor
+     * holds just under that so ordinary churn does not trip it, but a collapsed
+     * filter does. The four that carried #1984 must each be covered by name —
+     * they are the reason this exists, and a filter that stopped reaching them
+     * is the one failure this test cannot be allowed to survive.
      */
-    expect(scanned.length).toBeGreaterThanOrEqual(20);
+    expect(CORPUS_CONSUMERS.length).toBeGreaterThanOrEqual(40);
     expect(
       [
         'exemption-composition-closure.test.ts',
         'comment-fix-fidelity.test.ts',
         'cjs-emission-closure.test.ts',
         'export-surface-integrity.test.ts',
-      ].filter((file) => !scanned.includes(file)),
+      ].filter((file) => !CORPUS_CONSUMERS.includes(file)),
     ).toEqual([]);
+  });
+
+  /**
+   * Positive controls, one per CLASS rather than one per string.
+   *
+   * The control this replaces planted the three literals its own regexes were
+   * written from, so it certified that each regex matches itself — which every
+   * regex does, including one that matches nothing else. Each planted file here
+   * is written in a spelling those literals cannot see, and the differential is
+   * asserted in both directions: caught by the shape detectors, missed by the
+   * single spellings.
+   */
+  it('catches each CLASS of evasion, not just the spelling it was written from', () => {
+    expect(
+      PLANTED_EVASIONS.map(({ id, source }) => [
+        id,
+        bannedIdsIn(source).includes(id),
+        SINGLE_SPELLINGS.some((detect) => detect(source)),
+      ]),
+    ).toEqual(PLANTED_EVASIONS.map(({ id }) => [id, true, false]));
 
     /**
-     * Positive control: the detector must fire on the exact source it forbids.
-     * Without it a typo'd regex reports zero offenders forever, which is the
-     * same false clean this test exists to end.
+     * The #2244 spelling, across the lines it was written on. It is asserted as
+     * a plain positive control rather than a differential: its detector is
+     * unchanged, so the pre-hardening scan catches it too.
      */
-    const planted = [
-      "const TS_TESTERS = new Set(['ruleTesterTs']);",
-      "filename: f || (suite.tester === 'ruleTesterJsx' ? 'x.tsx' : 'x.ts'),",
-      "const jsx = suite.tester !== 'ruleTesterTs';",
-      // The #2244 spelling, across the lines it was written on.
-      [
-        '...(RECOMMENDED[ownerId] || DIVERGENT_WITHOUT_PROGRAM.has(owner)',
-        '  ? {}',
-        '  : { [ownerId]: severityWithOptions(testCase) }),',
-      ].join('\n'),
+    expect(
+      bannedIdsIn(
+        [
+          '...(RECOMMENDED[ownerId] || DIVERGENT_WITHOUT_PROGRAM.has(owner)',
+          '  ? {}',
+          '  : { [ownerId]: severityWithOptions(testCase) }),',
+        ].join('\n'),
+      ),
+    ).toEqual(['owner-options-dropped']);
+
+    // The gate class: scraping the suite sources names no harvest helper, so
+    // the pre-hardening admission filter never read such a file at all.
+    expect(isCorpusConsumer(PLANTED_HAND_ROLLED_HARVEST)).toBe(true);
+    expect(NAMES_HARVEST.test(PLANTED_HAND_ROLLED_HARVEST)).toBe(false);
+    expect(bannedIdsIn(PLANTED_HAND_ROLLED_HARVEST)).toContain(
+      'tester-name-comparison',
+    );
+  });
+
+  /**
+   * Negative controls, anchored to real files rather than to snippets alone.
+   *
+   * A shape detector earns its width only if it still clears correct code. The
+   * four guards named here choose a scratch `ts.Program` filename from
+   * `filename.endsWith('.tsx')` — a property of the CODE, which is the right
+   * answer — and each is scanned, so a `.tsx`/`.ts` pair condemned on its shape
+   * alone would take all four down with it.
+   */
+  it('clears correct usage', () => {
+    const CORRECT_PAIR_USERS = [
+      'composed-fix-type-safety-closure.test.ts',
+      'cross-fixture-fixer-type-safety.test.ts',
+      'cross-suggestion-type-safety.test.ts',
+      'fix-spelling-asymmetry.test.ts',
     ];
     expect(
-      planted.map(
-        (source) => BANNED.filter(({ pattern }) => pattern.test(source)).length,
-      ),
-    ).toEqual([1, 1, 1, 1]);
-    // Negative controls: correct usage must not trip any of them.
+      CORRECT_PAIR_USERS.filter((file) => !CORPUS_CONSUMERS.includes(file)),
+    ).toEqual([]);
     expect(
-      BANNED.filter(({ pattern }) =>
-        pattern.test(
-          'const filename = testCase.filename || defaultFilenameFor(testCase);',
-        ),
+      CORRECT_PAIR_USERS.flatMap((file) =>
+        bannedIdsIn(CODE_BY_FILE.get(file) || '').map((id) => `${file} ${id}`),
+      ),
+    ).toEqual([]);
+    // Non-vacuity: the four clear the detector because they use the CODE, not
+    // because the pair shape goes unmatched.
+    expect(
+      CORRECT_PAIR_USERS.filter((file) =>
+        EXTENSION_PAIR.test(CODE_BY_FILE.get(file) || ''),
+      ),
+    ).toEqual(CORRECT_PAIR_USERS);
+
+    /**
+     * The lookback's own negative control: a tester named further away than
+     * `TESTER_LOOKBACK` is not what chose the extension. Without this, widening
+     * the window until it reached the whole file would still pass every
+     * assertion above while condemning any guard that imports
+     * `LANGUAGE_BY_TESTER` and picks a scratch filename later on.
+     */
+    const distantTester = [
+      "import { LANGUAGE_BY_TESTER } from '../utils/fixtureCorpus';",
+      'const unrelated = '.padEnd(TESTER_LOOKBACK, 'x') + ';',
+      "const name = filename.endsWith('.tsx') ? 'corpus.tsx' : 'corpus.ts';",
+    ].join('\n');
+    expect(bannedIdsIn(distantTester)).toEqual([]);
+    expect(EXTENSION_PAIR.test(distantTester)).toBe(true);
+
+    expect(
+      bannedIdsIn(
+        'const filename = testCase.filename || defaultFilenameFor(testCase);',
       ),
     ).toEqual([]);
     expect(
-      BANNED.filter(({ pattern }) =>
-        pattern.test(
-          'rules: composedRulesFor(RECOMMENDED, EXCLUDED, owner, testCase),',
-        ),
+      bannedIdsIn(
+        'rules: composedRulesFor(RECOMMENDED, EXCLUDED, owner, testCase),',
       ),
     ).toEqual([]);
+  });
+
+  /**
+   * The inverse of the banned spellings: what a corpus consumer must DO.
+   *
+   * A spelling scan can only forbid the shapes someone thought to write down,
+   * and the hand-rolled corpus that prompted this carries none of them — it
+   * scrapes string literals out of the suite sources and lints them under two
+   * hard-coded paths, losing every fixture's declared `options` and `filename`
+   * and every interpolated case, without ever spelling anything banned. So the
+   * requirement runs the other way: a guard that lints fixture text must ask
+   * `fixtureCorpus` for the filename and the parser, or be named here with the
+   * measurement of what it costs instead.
+   */
+  it('routes every corpus consumer that lints through fixtureCorpus', () => {
+    const USES_CORPUS_HELPERS =
+      /defaultFilenameFor|parserKeyFor|LANGUAGE_BY_TESTER/;
+    const linting = CORPUS_CONSUMERS.filter((file) =>
+      LINTS_TEXT.test(CODE_BY_FILE.get(file) || ''),
+    );
+    const offenders = linting
+      .filter((file) => !USES_CORPUS_HELPERS.test(CODE_BY_FILE.get(file) || ''))
+      .filter((file) => !CONSUMERS_WITHOUT_CORPUS_HELPERS.has(file))
+      .map(
+        (file) =>
+          `${file} lints fixture text without defaultFilenameFor, ` +
+          `parserKeyFor or LANGUAGE_BY_TESTER, so its fixtures reach the rule ` +
+          `under a path and a parser their author never wrote — a fatal parse ` +
+          `there is indistinguishable from the rule staying silent`,
+      );
+    expect(offenders).toEqual([]);
+
+    // Both directions: an entry that starts using the helpers, or stops linting
+    // at all, is an exemption nothing can retire.
+    const stale = [...CONSUMERS_WITHOUT_CORPUS_HELPERS.keys()].filter(
+      (file) => {
+        const code = CODE_BY_FILE.get(file);
+        return (
+          code === undefined ||
+          !LINTS_TEXT.test(code) ||
+          USES_CORPUS_HELPERS.test(code)
+        );
+      },
+    );
+    expect(stale).toEqual([]);
+
+    // Non-vacuity: 41 of the 42 consumers lint at the time of writing, and a
+    // requirement measured over none of them is satisfied by every guard.
+    expect(linting.length).toBeGreaterThanOrEqual(38);
   });
 });
 
