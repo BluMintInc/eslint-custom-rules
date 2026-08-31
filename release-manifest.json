@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.197",
+    "date": "2026-08-31T08:50:13.198Z",
+    "rules": [
+      {
+        "name": "no-entire-object-hook-deps",
+        "changeType": "fix",
+        "issues": [
+          2236
+        ],
+        "summary": "decline a removal that strands a destructured prop (closes #2236)"
+      }
+    ]
+  },
+  {
     "version": "1.20.196",
     "date": "2026-08-31T07:14:16.368Z",
     "rules": [

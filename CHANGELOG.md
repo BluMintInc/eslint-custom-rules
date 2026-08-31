@@ -1,3 +1,10 @@
+## [1.20.197](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.196...v1.20.197) (2026-08-31)
+
+
+### Bug Fixes
+
+* **no-entire-object-hook-deps:** decline a removal that strands a destructured prop (closes [#2236](https://github.com/BluMintInc/eslint-custom-rules/issues/2236)) ([b5b0939](https://github.com/BluMintInc/eslint-custom-rules/commit/b5b09394bbd71d0e1c03688a5a345d26a60d22f7)), closes [#1621](https://github.com/BluMintInc/eslint-custom-rules/issues/1621) [#2208](https://github.com/BluMintInc/eslint-custom-rules/issues/2208)
+
 ## [1.20.196](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.195...v1.20.196) (2026-08-31)
 
 
