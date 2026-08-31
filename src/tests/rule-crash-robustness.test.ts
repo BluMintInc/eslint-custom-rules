@@ -2,6 +2,12 @@ import { Linter } from 'eslint';
 import * as tsParser from '@typescript-eslint/parser';
 import * as jsoncParser from 'jsonc-eslint-parser';
 import { rules } from '../index';
+import {
+  buildOptionPayloads,
+  hashOffset,
+  optionSchemaOf,
+  screenPayloads,
+} from '../utils/syntheticRuleOptions';
 
 // markdown-eslint-parser ships no type declarations, so it cannot be imported
 // without failing the build.
@@ -539,6 +545,128 @@ const allRulesConfig = Object.fromEntries(
 ) as Record<string, 'error'>;
 
 /**
+ * The options dimension.
+ *
+ * `allRulesConfig` is a bare `'error'` for every rule, so the whole snippet
+ * matrix above measures the DEFAULT configuration and nothing else. An option
+ * consumed at `create` time — the pattern lists five rules compile before any
+ * visitor object exists, each defaulting to an empty list — is entered by no
+ * probe in it, and the only non-default payload the sweep ever drove belonged
+ * to a single rule's `SPECIAL_CASES` entry.
+ *
+ * Driven one rule at a time so a throw needs no replay to attribute.
+ *
+ * Snippets are SHARDED across a rule's payloads rather than sampled: every
+ * shape still meets some non-default payload, and every payload still drives
+ * `create` over a slice of the corpus, at a cost of one lint per
+ * (rule, snippet, path) instead of one per (rule, payload, snippet, path). The
+ * shard's owner is offset by a hash of the rule name so the same payload does
+ * not own the head of the corpus for every rule.
+ */
+const OPTIONED_RULES = RULE_NAMES.filter(
+  (name) => optionSchemaOf((rules as Record<string, unknown>)[name]).length > 0,
+);
+
+const shardFor = (
+  ruleName: string,
+  payloadIndex: number,
+  payloadCount: number,
+): Snippet[] => {
+  const offset = hashOffset(ruleName, payloadCount);
+  return SNIPPETS.filter(
+    (_, index) => (index + offset) % payloadCount === payloadIndex,
+  );
+};
+
+type OptionSweepTotals = {
+  payloads: number;
+  lints: number;
+  snippetsDriven: Set<string>;
+  rulesDriven: Set<string>;
+};
+
+const sweepOptions = (
+  linter: Linter,
+  ruleMap: Record<string, unknown>,
+  names: readonly string[],
+): { crashes: Crash[]; totals: OptionSweepTotals } => {
+  const crashes: Crash[] = [];
+  const totals: OptionSweepTotals = {
+    payloads: 0,
+    lints: 0,
+    snippetsDriven: new Set<string>(),
+    rulesDriven: new Set<string>(),
+  };
+  for (const name of names) {
+    const rule = ruleMap[name];
+    // Screened by ESLint's own validator: a payload the schema rejects is one
+    // no consumer can write, so a crash under it would be a fabrication.
+    const { valid } = screenPayloads(rule, buildOptionPayloads(rule));
+    valid.forEach((payload, payloadIndex) => {
+      totals.payloads++;
+      totals.rulesDriven.add(name);
+      for (const snippet of shardFor(name, payloadIndex, valid.length)) {
+        totals.snippetsDriven.add(snippet.id);
+        for (const { file, jsx } of targetsFor(snippet)) {
+          totals.lints++;
+          try {
+            linter.verify(
+              snippet.code,
+              {
+                parser: 'ts',
+                parserOptions: parserOptionsFor(jsx),
+                rules: {
+                  [`${PLUGIN}/${name}`]: ['error', ...payload.options],
+                },
+              } as any,
+              file,
+            );
+          } catch (error) {
+            crashes.push({
+              rule: name,
+              snippet: `${snippet.id} under ${payload.source} ${payload.key}`,
+              file,
+              message: describeThrow(error),
+            });
+          }
+        }
+      }
+    });
+  }
+  return { crashes, totals };
+};
+
+const CONTROL_SCHEMA = [
+  {
+    type: 'object',
+    properties: { list: { type: 'array', items: { type: 'string' } } },
+    additionalProperties: false,
+  },
+];
+
+/** Crashes only once a payload is supplied — the option arm's positive control. */
+const OPTION_CRASH_CONTROL = {
+  meta: { type: 'suggestion', schema: CONTROL_SCHEMA, messages: { m: 'x' } },
+  create(context: { options: unknown[] }) {
+    if (context.options.length) throw new Error('planted option crash');
+    return {};
+  },
+};
+
+/** The same option surface, tolerated — the option arm's negative control. */
+const OPTION_SAFE_CONTROL = {
+  meta: { type: 'suggestion', schema: CONTROL_SCHEMA, messages: { m: 'x' } },
+  create() {
+    return {};
+  },
+};
+
+/** Floors sit just under the values measured at 1.20.198. */
+const OPTIONED_RULE_FLOOR = 68; // measured 71
+const OPTION_PAYLOAD_FLOOR = 390; // measured 406
+const OPTION_LINT_FLOOR = 57_000; // measured 58,504
+
+/**
  * Rules the path sweep above cannot reach, because they gate on file *content*
  * or require options rather than keying off the path. Without these the sweep
  * silently reports "no crashes" for rules it never actually ran.
@@ -694,6 +822,12 @@ describe('rule crash robustness', () => {
   const linter = buildLinter(visitorCounts);
   const crashes: Crash[] = [];
   const parserFatals: { snippet: string; file: string; message: string }[] = [];
+  let optionTotals: OptionSweepTotals = {
+    payloads: 0,
+    lints: 0,
+    snippetsDriven: new Set<string>(),
+    rulesDriven: new Set<string>(),
+  };
 
   beforeAll(() => {
     for (const snippet of SNIPPETS) {
@@ -786,6 +920,14 @@ describe('rule crash robustness', () => {
         });
       }
     }
+
+    const optionPass = sweepOptions(
+      linter,
+      rules as unknown as Record<string, unknown>,
+      OPTIONED_RULES,
+    );
+    crashes.push(...optionPass.crashes);
+    optionTotals = optionPass.totals;
   });
 
   it('no rule throws on unusual-but-valid TypeScript or TSX', () => {
@@ -847,6 +989,56 @@ describe('rule crash robustness', () => {
       .filter(Boolean)
       .join('\n');
     expect(detail).toBe('');
+  });
+
+  it('drives every optioned rule under a schema-valid non-default payload', () => {
+    // Named rather than floored: a rule that falls out of the option pass has
+    // to say which one it is, or the gap hides inside a margin.
+    const undriven = OPTIONED_RULES.filter(
+      (name) => !optionTotals.rulesDriven.has(name),
+    );
+    expect(undriven).toEqual([]);
+    expect(OPTIONED_RULES.length).toBeGreaterThanOrEqual(OPTIONED_RULE_FLOOR);
+    expect(optionTotals.payloads).toBeGreaterThanOrEqual(OPTION_PAYLOAD_FLOOR);
+    // The shard covers the whole snippet corpus, so a shape that stops being
+    // driven under options is a gap rather than a smaller number. Asserted
+    // before the lint floor, which a collapsed shard would also trip but only
+    // as a count that says nothing about which shapes went missing.
+    expect(optionTotals.snippetsDriven.size).toBe(SNIPPETS.length);
+    expect(optionTotals.lints).toBeGreaterThanOrEqual(OPTION_LINT_FLOOR);
+  });
+
+  it('detects a crash only a payload reaches (option-arm positive control)', () => {
+    // The default arm of this control returns an empty visitor, so a sweep that
+    // never supplies options reads it as clean — which is exactly the blindness
+    // the pass above exists to close.
+    const control = new Linter();
+    control.defineParser('ts', tsParser);
+    control.defineRule(
+      `${PLUGIN}/__control_option_crash`,
+      OPTION_CRASH_CONTROL,
+    );
+    control.defineRule(`${PLUGIN}/__control_option_safe`, OPTION_SAFE_CONTROL);
+    // The same payloads over a rule that tolerates them stay silent, so the
+    // pass is reading the rule rather than reacting to being handed options.
+    const safe = sweepOptions(
+      control,
+      { __control_option_safe: OPTION_SAFE_CONTROL },
+      ['__control_option_safe'],
+    );
+    expect(safe.totals.lints).toBeGreaterThan(0);
+    expect(safe.crashes).toEqual([]);
+    const planted = sweepOptions(
+      control,
+      { __control_option_crash: OPTION_CRASH_CONTROL },
+      ['__control_option_crash'],
+    );
+    expect(planted.totals.payloads).toBeGreaterThan(0);
+    expect(planted.totals.lints).toBeGreaterThan(0);
+    expect(planted.crashes.length).toBeGreaterThan(0);
+    expect(
+      planted.crashes.every((c) => /planted option crash/.test(c.message)),
+    ).toBe(true);
   });
 
   it('detects a rule that throws (positive control)', () => {

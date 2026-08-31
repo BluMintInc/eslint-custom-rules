@@ -7,24 +7,21 @@ import {
   defaultFilenameFor,
   FixtureCase,
 } from '../utils/fixtureCorpus';
+import {
+  OptionPayload,
+  buildOptionPayloads,
+  fixedWindow,
+  optionSchemaOf,
+  payloadScreenFor,
+  rotatedWindow,
+  screenPayloads,
+  unexpressedProperties,
+} from '../utils/syntheticRuleOptions';
 
 /* eslint-disable @typescript-eslint/no-var-requires */
 const plugin = require('../index') as {
   rules: Record<string, any>;
 };
-
-/**
- * A bare `Linter` does NOT validate rule options against `meta.schema` — it
- * hands whatever it is given straight to the rule. Probing a payload real
- * ESLint would REJECT therefore manufactures a crash no consumer can reach:
- * measured, `['error', {}]` against `no-restricted-properties-fix`'s
- * array-typed schema produced 77 such "findings". The screen below is ESLint's
- * own validator, so only payloads a consumer could actually write survive.
- */
-const eslintLib = require('path').dirname(require.resolve('eslint'));
-const { getRuleOptionsSchema } = require(eslintLib +
-  '/config/flat-config-helpers.js');
-const ajvFactory = require(eslintLib + '/shared/ajv.js');
 /* eslint-enable @typescript-eslint/no-var-requires */
 
 /**
@@ -34,9 +31,9 @@ const ajvFactory = require(eslintLib + '/shared/ajv.js');
  * `option-liveness-closure` varies every declared option, but only across the
  * rule's OWN fixture corpus — code its author wrote knowing the option existed.
  * `rule-crash-robustness` does sweep unusual code, but over a hand-written
- * snippet corpus of a few hundred shapes, and predominantly at default options.
- * Neither drives `{ignoreX: true}` across the other 300 suites' 20k fixtures,
- * which is exactly where a consumer's configuration meets a consumer's code.
+ * snippet corpus of a few hundred shapes. Neither drives `{ignoreX: true}`
+ * across the other suites' 23k fixtures, which is exactly where a consumer's
+ * configuration meets a consumer's code.
  *
  * The oracle is a THROW, not a report. That choice is what makes the sweep
  * meaningful on foreign fixtures: a rule that stays silent on another rule's
@@ -49,17 +46,19 @@ const ajvFactory = require(eslintLib + '/shared/ajv.js');
  * which deep-merges the consumer's payload over `defaultOptions`, so for a rule
  * whose every schema property carries a default the payload `{}` arrives at
  * `create` already filled in — an unguarded read of it cannot throw, because no
- * consumer can make the value undefined. Measured at 1.20.161: 28 optioned
- * rules are neutralized that way and 31 have at least one schema property
- * absent from `defaultOptions`, which is the set where an unguarded read is
- * genuinely reachable. That set is asserted below, because a sweep of 218k
- * pairs whose reachable set had collapsed to zero would still read clean.
+ * consumer can make the value undefined. Measured at 1.20.198 over 71 optioned
+ * rules: 41 have at least one schema property absent from `defaultOptions`,
+ * which is the set where an unguarded read is genuinely reachable; 29 are
+ * neutralized that way; and 1 declares a non-object head schema, to which the
+ * question does not apply. The reachable set is asserted below, because a sweep
+ * of 245k pairs whose reachable set had collapsed to zero would still read
+ * clean.
  *
  * Verified by mutation against a shipped rule rather than by planted controls
  * alone: restoring `enforce-dynamic-imports`'s `buildLibraryMatcher(libraries)`
  * to its pre-guard spelling (dropping `?? []`) fails this suite naming the rule,
  * the payload and the fixture. The same mutation applied to a rule in the
- * neutralized 28 does NOT fail it — correctly, since `applyDefault` makes that
+ * neutralized 29 does NOT fail it — correctly, since `applyDefault` makes that
  * spelling unreachable there.
  *
  * No rule is excluded. `silentWithoutProgramRuleNames` exists for guards whose
@@ -71,96 +70,26 @@ const ajvFactory = require(eslintLib + '/shared/ajv.js');
  * `if (!services?.program) return;` guard does not fire.
  */
 
-const ajv = ajvFactory({ strictDefaults: true });
-
-const validatorFor = (rule: any): ((options: unknown[]) => boolean) | null => {
-  const schema = getRuleOptionsSchema(rule);
-  if (!schema) return null;
-  return ajv.compile(schema);
-};
-
 const PREFIX = '@blumintinc/blumint/';
 
 /**
- * Fixtures probed per (payload, owning suite). Uncapped, one huge corpus would
+ * Fixtures probed per (payload, owner). Uncapped, one huge corpus would
  * dominate the sweep without adding shape diversity; at 2 every suite still
  * contributes and the run stays inside a normal test budget.
+ *
+ * The cap discards far more than it keeps — 14.86M of 15.11M (rule, payload,
+ * fixture) triples — so WHICH two it keeps is the whole of the sweep's reach.
+ * Taken in fixed corpus order, every payload of every rule spends its budget on
+ * the same first two fixtures of each owner: 245k pairs landing on 388 distinct
+ * fixtures, 1.6% of the corpus. The window is therefore offset by a hash of the
+ * (rule, payload, owner) key, which leaves the pair count untouched and lifts
+ * the distinct-fixture union to 23,487, 98% of the corpus. `capSkipped` and both
+ * unions are counted and asserted below: a discard no `expect` reads is how a
+ * sweep comes to measure 1.6% of what its header claims.
  */
 const CAP = 2;
 
-type Payload = { key: string; options: readonly unknown[]; source: string };
-
-const schemaOf = (rule: any): any[] => {
-  const schema = rule?.meta?.schema;
-  if (!schema) return [];
-  return Array.isArray(schema) ? schema : [schema];
-};
-
-/** Non-default values a property of this shape can legally take. */
-const valuesFor = (prop: any): unknown[] => {
-  if (!prop || typeof prop !== 'object') return [];
-  if (Array.isArray(prop.enum)) return prop.enum.slice(0, 3);
-  const type = Array.isArray(prop.type) ? prop.type[0] : prop.type;
-  if (type === 'boolean') return [true, false];
-  if (type === 'number' || type === 'integer') return [0, 1];
-  if (type === 'string') return ['x'];
-  if (type === 'array') {
-    const itemType = Array.isArray(prop.items?.type)
-      ? prop.items.type[0]
-      : prop.items?.type;
-    if (itemType === 'string') return [[], ['x']];
-    if (itemType === 'number' || itemType === 'integer') return [[], [1]];
-    if (itemType === 'object') return [[], [{}]];
-    return [[]];
-  }
-  if (type === 'object') return [{}];
-  return [];
-};
-
-/** Payloads to probe rule R under: fixture-declared ones plus synthesized. */
-const payloadsFor = (rule: any, cases: FixtureCase[]): Payload[] => {
-  const out: Payload[] = [];
-  const seen = new Set<string>();
-  const add = (options: readonly unknown[], source: string) => {
-    const key = JSON.stringify(options);
-    if (key === '[]' || seen.has(key)) return;
-    seen.add(key);
-    out.push({ key, options, source });
-  };
-
-  // 1. Every payload the rule's own author actually wrote.
-  for (const testCase of cases) {
-    if (testCase.options && testCase.options.length) {
-      add(testCase.options, 'fixture');
-    }
-  }
-
-  // 2. The empty object — legal against nearly every schema here, and the
-  //    shape an unguarded destructuring read (`const [{ list }] = options`)
-  //    crashes on.
-  add([{}], 'empty-object');
-
-  // 3. One payload per (property, legal value), plus an all-properties one.
-  const schema = schemaOf(rule);
-  const head = schema[0];
-  const properties = head?.properties;
-  if (properties && typeof properties === 'object') {
-    const all: Record<string, unknown> = {};
-    for (const [prop, propSchema] of Object.entries<any>(properties)) {
-      for (const value of valuesFor(propSchema)) {
-        add([{ [prop]: value }], 'prop:' + prop);
-      }
-      const first = valuesFor(propSchema)[0];
-      if (first !== undefined) all[prop] = first;
-    }
-    if (Object.keys(all).length > 1) add([all], 'all-props');
-  }
-  // A non-object head schema (enum/string) takes its own values.
-  if (head && !properties) {
-    for (const value of valuesFor(head)) add([value], 'head');
-  }
-  return out;
-};
+type Payload = OptionPayload;
 
 type Finding = {
   rule: string;
@@ -186,6 +115,16 @@ type Totals = {
   ownPairsSkipped: number;
   defaultArmCrashes: number;
   defaultOnlyCrashes: number;
+  /** (rule, payload, fixture) triples the cap drops, the sweep's big discard. */
+  capSkipped: number;
+  /** Its denominator, so `crossPairs + capSkipped` is a closed account. */
+  crossTriplesPossible: number;
+  /** Distinct fixtures the rotated window actually lints. */
+  distinctFixturesLinted: number;
+  /** What the same cap would have reached in fixed corpus order. */
+  distinctFixturesFixedOrder: number;
+  /** Baseline lints run, the population `defaultOnlyCrashes` is drawn from. */
+  defaultArmLints: number;
 };
 
 const emptyTotals = (): Totals => ({
@@ -200,6 +139,11 @@ const emptyTotals = (): Totals => ({
   ownPairsSkipped: 0,
   defaultArmCrashes: 0,
   defaultOnlyCrashes: 0,
+  capSkipped: 0,
+  crossTriplesPossible: 0,
+  distinctFixturesLinted: 0,
+  distinctFixturesFixedOrder: 0,
+  defaultArmLints: 0,
 });
 
 const linterFor = (extraRules: Record<string, any> = {}) => {
@@ -236,6 +180,21 @@ const signature = (messages: Linter.LintMessage[]) =>
 type OwnedCase = { owner: string; testCase: FixtureCase };
 
 /**
+ * The default-options result for one (rule, fixture), computed once.
+ *
+ * Rotation makes a fixture reachable by many payloads of the same rule, so
+ * without this cache the baseline arm would be re-linted per payload — the
+ * comparison is against DEFAULT options, which cannot depend on the payload.
+ */
+type DefaultArm = {
+  threw: boolean;
+  message: string;
+  signature: string;
+  /** Whether this rule's default crash on this fixture is already reported. */
+  crashRecorded: boolean;
+};
+
+/**
  * One sweep pass. Factored out so the planted controls run through the SAME
  * machinery the real sweep does — a control validated against a bespoke inline
  * `Linter` proves only that ESLint throws, not that THIS harness's catch site,
@@ -250,138 +209,169 @@ const sweep = (
   const findings: Finding[] = [];
   const linter = linterFor(rules === plugin.rules ? {} : rules);
 
+  /**
+   * Owner groups in corpus order. The cap is per (payload, owner), so what it
+   * selects is a slice of ONE owner's fixtures; grouping makes that slice
+   * addressable instead of leaving it implicit in a flat walk that can only
+   * ever hand out the head of each group.
+   */
+  const byOwner = new Map<string, FixtureCase[]>();
+  for (const { owner, testCase } of allCases) {
+    const group = byOwner.get(owner);
+    if (group) group.push(testCase);
+    else byOwner.set(owner, [testCase]);
+  }
+
+  const linted = new Set<FixtureCase>();
+  const lintedFixedOrder = new Set<FixtureCase>();
+
   for (const [name, rule] of Object.entries(rules)) {
-    if (!schemaOf(rule).length) continue;
+    if (!optionSchemaOf(rule).length) continue;
     const ruleId = PREFIX + name;
-    const payloads = payloadsFor(rule, ownCasesOf(name));
+    const declared = ownCasesOf(name)
+      .map((testCase) => testCase.options)
+      .filter((options): options is readonly unknown[] =>
+        Boolean(options && options.length),
+      );
+    const payloads = buildOptionPayloads(rule, declared);
     totals.payloadsBuilt += payloads.length;
 
     // Screen each payload with ESLint's OWN option validator: a payload the
     // schema rejects is one no consumer can write, so a crash under it is a
     // fabrication rather than a defect.
-    const validate = validatorFor(rule);
-    const valid: Payload[] = [];
-    for (const payload of payloads) {
-      if (validate && !validate(payload.options as unknown[])) {
-        totals.payloadsRejected++;
-        continue;
-      }
-      valid.push(payload);
-    }
+    const screened = screenPayloads(rule, payloads);
+    totals.payloadsRejected += screened.rejected.length;
+    const valid: Payload[] = screened.valid;
     totals.payloadsSchemaValid += valid.length;
     if (!valid.length) continue;
     totals.rulesProbed++;
 
-    // Cap per (payload, owner) so one huge corpus cannot dominate.
-    const used = new Map<string, number>();
+    const defaultArm = new Map<FixtureCase, DefaultArm>();
+    const armFor = (testCase: FixtureCase, filename: string): DefaultArm => {
+      const cached = defaultArm.get(testCase);
+      if (cached) return cached;
+      totals.defaultArmLints++;
+      let arm: DefaultArm;
+      try {
+        const messages = linter.verify(
+          testCase.code,
+          configFor(testCase, ruleId, null) as any,
+          filename,
+        );
+        arm = {
+          threw: false,
+          message: '',
+          signature: signature(messages),
+          crashRecorded: false,
+        };
+      } catch (error) {
+        arm = {
+          threw: true,
+          message: String((error as Error).message).split('\n')[0],
+          signature: '',
+          crashRecorded: false,
+        };
+      }
+      defaultArm.set(testCase, arm);
+      return arm;
+    };
 
-    for (const { owner, testCase } of allCases) {
+    for (const [owner, ownerCases] of byOwner) {
       if (owner === name) {
-        totals.ownPairsSkipped++;
+        totals.ownPairsSkipped += ownerCases.length;
         continue;
       }
-      const filename = defaultFilenameFor(testCase);
-
-      let defaultMessages: Linter.LintMessage[] | null = null;
-      let defaultThrew = false;
-      let defaultRan = false;
-      let defaultCrashRecorded = false;
-      let defaultCrashMessage = '';
-      const runDefault = () => {
-        if (defaultRan) return;
-        defaultRan = true;
-        try {
-          defaultMessages = linter.verify(
-            testCase.code,
-            configFor(testCase, ruleId, null) as any,
-            filename,
-          );
-        } catch (error) {
-          defaultThrew = true;
-          defaultCrashMessage = String((error as Error).message).split('\n')[0];
-          defaultMessages = [];
-        }
-      };
+      for (const fixed of fixedWindow(ownerCases, CAP)) {
+        lintedFixedOrder.add(fixed);
+      }
 
       for (const payload of valid) {
-        const capKey = payload.key + ' ' + owner;
-        const count = used.get(capKey) || 0;
-        if (count >= CAP) continue;
-        used.set(capKey, count + 1);
-        totals.crossPairs++;
+        totals.crossTriplesPossible += ownerCases.length;
+        const window = rotatedWindow(
+          `${name} ${payload.key} ${owner}`,
+          ownerCases,
+          CAP,
+        );
+        totals.capSkipped += ownerCases.length - window.length;
 
-        let messages: Linter.LintMessage[];
-        try {
-          messages = linter.verify(
-            testCase.code,
-            configFor(testCase, ruleId, payload.options) as any,
-            filename,
-          );
-        } catch (error) {
-          runDefault();
-          if (defaultThrew) {
-            totals.defaultArmCrashes++;
-            // Already carried by this finding's `alsoCrashesAtDefault`.
-            defaultCrashRecorded = true;
+        for (const testCase of window) {
+          const filename = defaultFilenameFor(testCase);
+          totals.crossPairs++;
+          linted.add(testCase);
+
+          let messages: Linter.LintMessage[];
+          try {
+            messages = linter.verify(
+              testCase.code,
+              configFor(testCase, ruleId, payload.options) as any,
+              filename,
+            );
+          } catch (error) {
+            const arm = armFor(testCase, filename);
+            if (arm.threw) {
+              totals.defaultArmCrashes++;
+              // Already carried by this finding's `alsoCrashesAtDefault`.
+              arm.crashRecorded = true;
+            }
+            findings.push({
+              rule: name,
+              payload: payload.key,
+              payloadSource: payload.source,
+              owner,
+              origin: testCase.origin,
+              bucket: testCase.bucket,
+              filename,
+              message: String((error as Error).message).split('\n')[0],
+              alsoCrashesAtDefault: arm.threw,
+            });
+            continue;
           }
-          findings.push({
-            rule: name,
-            payload: payload.key,
-            payloadSource: payload.source,
-            owner,
-            origin: testCase.origin,
-            bucket: testCase.bucket,
-            filename,
-            message: String((error as Error).message).split('\n')[0],
-            alsoCrashesAtDefault: defaultThrew,
-          });
-          continue;
-        }
 
-        /**
-         * A fatal parse means the PARSER rejected the fixture, so the rule
-         * never ran and the pair measured nothing. Counted rather than
-         * dropped: a silent fatal-parse bucket is how 106 cases across 7
-         * rules went unmeasured while the guard read clean (#1984), so the
-         * count carries an assertion of its own below.
-         */
-        if (messages.some((m) => m.fatal)) {
-          totals.fatalParses++;
-          continue;
-        }
-        if (messages.length) totals.crossPairsReporting++;
+          /**
+           * A fatal parse means the PARSER rejected the fixture, so the rule
+           * never ran and the pair measured nothing. Counted rather than
+           * dropped: a silent fatal-parse bucket is how 106 cases across 7
+           * rules went unmeasured while the guard read clean (#1984), so the
+           * count carries an assertion of its own below.
+           */
+          if (messages.some((m) => m.fatal)) {
+            totals.fatalParses++;
+            continue;
+          }
+          if (messages.length) totals.crossPairsReporting++;
 
-        runDefault();
-        /**
-         * A crash under DEFAULT options on a foreign fixture is a finding in
-         * its own right, and this sweep is where it surfaces: recorded once
-         * per (rule, fixture) rather than once per payload, so one crash is
-         * not counted N times.
-         */
-        if (defaultThrew && !defaultCrashRecorded) {
-          defaultCrashRecorded = true;
-          totals.defaultOnlyCrashes++;
-          findings.push({
-            rule: name,
-            payload: 'DEFAULT',
-            payloadSource: 'default-options',
-            owner,
-            origin: testCase.origin,
-            bucket: testCase.bucket,
-            filename,
-            message: defaultCrashMessage,
-            alsoCrashesAtDefault: true,
-          });
-        }
-        if (
-          !defaultThrew &&
-          signature(messages) !== signature(defaultMessages || [])
-        ) {
-          totals.crossPairsPayloadChangedOutput++;
+          const arm = armFor(testCase, filename);
+          /**
+           * A crash under DEFAULT options on a foreign fixture is a finding in
+           * its own right, and this sweep is where it surfaces: recorded once
+           * per (rule, fixture) rather than once per payload, so one crash is
+           * not counted N times.
+           */
+          if (arm.threw && !arm.crashRecorded) {
+            arm.crashRecorded = true;
+            totals.defaultOnlyCrashes++;
+            findings.push({
+              rule: name,
+              payload: 'DEFAULT',
+              payloadSource: 'default-options',
+              owner,
+              origin: testCase.origin,
+              bucket: testCase.bucket,
+              filename,
+              message: arm.message,
+              alsoCrashesAtDefault: true,
+            });
+          }
+          if (!arm.threw && signature(messages) !== arm.signature) {
+            totals.crossPairsPayloadChangedOutput++;
+          }
         }
       }
     }
   }
+
+  totals.distinctFixturesLinted = linted.size;
+  totals.distinctFixturesFixedOrder = lintedFixedOrder.size;
   return { totals, findings };
 };
 
@@ -420,6 +410,31 @@ const CRASHING_CONTROL = {
   },
 };
 
+/**
+ * Indexes into `options[0]`, which any payload supplies and the DEFAULT arm
+ * does not — so it crashes on the baseline lint alone while every payload arm
+ * succeeds. It is the only shape that drives `defaultOnlyCrashes` off zero, and
+ * without it that counter's assertion could only ever confirm a value it had no
+ * way to leave.
+ */
+const DEFAULT_ONLY_CRASHING_CONTROL = {
+  meta: {
+    type: 'suggestion',
+    schema: CONTROL_SCHEMA,
+    messages: { m: 'x' },
+  },
+  create(context: any) {
+    const list: string[] = (context.options as any[])[0].list ?? [];
+    return {
+      Identifier(node: any) {
+        if (list.includes(node.name)) {
+          context.report({ node, messageId: 'm' });
+        }
+      },
+    };
+  },
+};
+
 /** The same option, read defensively — the negative control. */
 const SAFE_CONTROL = {
   meta: {
@@ -446,7 +461,7 @@ for (const [owner, cases] of corpus.byRule) {
 }
 
 const optionedRuleNames = Object.keys(plugin.rules).filter(
-  (name) => schemaOf(plugin.rules[name]).length > 0,
+  (name) => optionSchemaOf(plugin.rules[name]).length > 0,
 );
 
 const result = sweep(
@@ -457,18 +472,34 @@ const result = sweep(
 const { totals, findings } = result;
 
 /**
- * Floors sit just under the values measured at 1.20.161, not at a round number
+ * Floors sit just under the values measured at 1.20.198, not at a round number
  * far below them: the floors that let #1984 through sat at 5,500 against an
  * actual 8,141, which is slack wide enough to hide a corpus that has silently
  * stopped being swept.
  */
-const RULES_PROBED_FLOOR = 58; // measured 60
-const PAYLOAD_FLOOR = 550; // measured 565
-const CROSS_PAIR_FLOOR = 210_000; // measured 218,090
-const REPORTING_FLOOR = 16_000; // measured 16,494
-const PAYLOAD_CHANGED_FLOOR = 2_800; // measured 2,964
-const OWN_SKIPPED_FLOOR = 6_500; // measured 6,878
-const CASE_FLOOR = 20_000; // measured 20,446
+const OPTIONED_RULE_FLOOR = 68; // measured 71
+const PAYLOAD_FLOOR = 620; // measured 635
+const PAYLOADS_BUILT_FLOOR = 650; // measured 670
+const CROSS_PAIR_FLOOR = 240_000; // measured 245,110
+const CAP_SKIPPED_FLOOR = 14_500_000; // measured 14,859,977
+const DEFAULT_ARM_FLOOR = 200_000; // measured 204,105
+const DISTINCT_FIXTURE_FLOOR = 23_000; // measured 23,487
+const REPORTING_FLOOR = 19_000; // measured 19,474
+const PAYLOAD_CHANGED_FLOOR = 4_000; // measured 4,124
+const OWN_SKIPPED_FLOOR = 10_400; // measured 10,624
+const CASE_FLOOR = 23_500; // measured 23,932
+const REACHABLE_FLOOR = 40; // measured 41
+
+/**
+ * The rotation must buy an order of magnitude, or it is not worth the baseline
+ * lints it costs. Cut as a RATIO against the fixed-order union the same cap
+ * would have taken, so reverting the rotation (which makes the two equal) fails
+ * here rather than passing with a smaller corpus.
+ */
+const ROTATION_GAIN = 10;
+
+/** The share of the corpus the sweep must actually lint. */
+const CORPUS_COVERAGE = 0.95;
 
 describe('option payloads x foreign fixtures (crash oracle)', () => {
   it('no rule crashes on foreign code under a schema-valid payload', () => {
@@ -494,10 +525,77 @@ describe('option payloads x foreign fixtures (crash oracle)', () => {
     expect(corpus.failures).toEqual([]);
     expect(corpus.totalCases).toBeGreaterThanOrEqual(CASE_FLOOR);
     expect(allCases.length).toBeGreaterThanOrEqual(CASE_FLOOR);
-    expect(totals.rulesProbed).toBeGreaterThanOrEqual(RULES_PROBED_FLOOR);
+    expect(optionedRuleNames.length).toBeGreaterThanOrEqual(
+      OPTIONED_RULE_FLOOR,
+    );
     expect(totals.payloadsSchemaValid).toBeGreaterThanOrEqual(PAYLOAD_FLOOR);
     expect(totals.crossPairs).toBeGreaterThanOrEqual(CROSS_PAIR_FLOOR);
     expect(totals.ownPairsSkipped).toBeGreaterThanOrEqual(OWN_SKIPPED_FLOOR);
+  });
+
+  it('accounts for every triple the cap discards', () => {
+    // The cap drops ~98% of the possible triples. Left uncounted, that discard
+    // is indistinguishable from a sweep that covered them — which is precisely
+    // how a 245k-pair sweep came to touch 388 fixtures while its header claimed
+    // the whole corpus.
+    expect(totals.crossPairs + totals.capSkipped).toBe(
+      totals.crossTriplesPossible,
+    );
+    expect(totals.capSkipped).toBeGreaterThanOrEqual(CAP_SKIPPED_FLOOR);
+  });
+
+  it('spreads the cap over the corpus rather than re-linting its head', () => {
+    expect(totals.distinctFixturesLinted).toBeGreaterThanOrEqual(
+      DISTINCT_FIXTURE_FLOOR,
+    );
+    expect(
+      totals.distinctFixturesLinted / allCases.length,
+    ).toBeGreaterThanOrEqual(CORPUS_COVERAGE);
+    // A fixed-order cap hands every payload the same head of each owner group,
+    // so this is what the sweep would reach without the rotation.
+    expect(totals.distinctFixturesFixedOrder).toBeGreaterThan(0);
+    expect(
+      totals.distinctFixturesLinted /
+        Math.max(1, totals.distinctFixturesFixedOrder),
+    ).toBeGreaterThanOrEqual(ROTATION_GAIN);
+  });
+
+  it('accounts for every payload it builds', () => {
+    expect(totals.payloadsBuilt).toBe(
+      totals.payloadsSchemaValid + totals.payloadsRejected,
+    );
+    expect(totals.payloadsBuilt).toBeGreaterThanOrEqual(PAYLOADS_BUILT_FLOOR);
+  });
+
+  it('gives every option property a value some payload carries', () => {
+    /**
+     * A property the synthesizer can only produce as an empty container is
+     * probed at a value the rule cannot tell from its default, so the branch
+     * behind it is entered and never fed — a discard that reads exactly like a
+     * rule with no option to drive. Named rather than counted: `sideEffectPatterns`
+     * (`anyOf: [string, RegExp]`) collapsed to the empty list on every payload,
+     * and a count would have said 1 without saying which.
+     */
+    const unexpressed = optionedRuleNames.flatMap((name) =>
+      unexpressedProperties(plugin.rules[name]).map(
+        (prop) => `${name}.${prop}`,
+      ),
+    );
+    expect(unexpressed).toEqual([]);
+  });
+
+  it('accounts for the default arm it compares against', () => {
+    // Every default-options crash and every "payload crashed and so does the
+    // default" pair is carried by a finding, so the counters and the findings
+    // are one account. A counter no `expect` reads cannot fail when it drifts.
+    expect(totals.defaultArmLints).toBeGreaterThanOrEqual(DEFAULT_ARM_FLOOR);
+    expect(totals.defaultOnlyCrashes).toBe(
+      findings.filter((f) => f.payload === 'DEFAULT').length,
+    );
+    expect(totals.defaultArmCrashes).toBe(
+      findings.filter((f) => f.payload !== 'DEFAULT' && f.alsoCrashesAtDefault)
+        .length,
+    );
   });
 
   it('the payloads actually reach the rules (a silent sweep proves nothing)', () => {
@@ -517,7 +615,7 @@ describe('option payloads x foreign fixtures (crash oracle)', () => {
   });
 
   it('the schema screen is LIVE (rejects what ESLint rejects)', () => {
-    const arrayHead = validatorFor({
+    const arrayHead = payloadScreenFor({
       meta: { schema: [{ type: 'array', items: { type: 'object' } }] },
     });
     expect(arrayHead).not.toBeNull();
@@ -525,7 +623,7 @@ describe('option payloads x foreign fixtures (crash oracle)', () => {
     expect(arrayHead!([{}])).toBe(false);
     expect(arrayHead!([[]])).toBe(true);
 
-    const objectHead = validatorFor({
+    const objectHead = payloadScreenFor({
       meta: {
         schema: [{ type: 'object', properties: { list: { type: 'array' } } }],
       },
@@ -540,23 +638,23 @@ describe('option payloads x foreign fixtures (crash oracle)', () => {
      * A schema property absent from `defaultOptions` is one `applyDefault`
      * cannot fill in, so it reaches `create` undefined whenever the payload
      * omits it — the only shape in which an unguarded read throws. Floored so
-     * the sweep cannot quietly become 218k pairs over a population where every
+     * the sweep cannot quietly become 245k pairs over a population where every
      * option is pre-filled and no crash is possible.
      */
     const reachable = optionedRuleNames.filter((name) => {
-      const head = schemaOf(plugin.rules[name])[0];
+      const head = optionSchemaOf(plugin.rules[name])[0];
       if (!head?.properties) return false;
       const defaults = plugin.rules[name].defaultOptions?.[0] ?? {};
       return Object.keys(head.properties).some((prop) => !(prop in defaults));
     });
-    expect(reachable.length).toBeGreaterThanOrEqual(28); // measured 31
+    expect(reachable.length).toBeGreaterThanOrEqual(REACHABLE_FLOOR);
   });
 
   it('every optioned rule reached the sweep', () => {
     // A rule whose payloads are ALL schema-rejected drops out of `rulesProbed`
-    // silently; naming the residue keeps that from reading as coverage.
-    const unprobed = optionedRuleNames.length - totals.rulesProbed;
-    expect(unprobed).toBe(0);
+    // silently; the population itself carries the floor above, so this is an
+    // equality rather than a second floor that could never fail beneath it.
+    expect(totals.rulesProbed).toBe(optionedRuleNames.length);
   });
 
   describe('planted controls run through the same machinery', () => {
@@ -580,6 +678,37 @@ describe('option payloads x foreign fixtures (crash oracle)', () => {
       expect(
         control.findings.some((f) => f.payloadSource === 'empty-object'),
       ).toBe(true);
+      // This control throws on the default arm too, so it is what drives
+      // `defaultArmCrashes` off zero and keeps its assertion honest.
+      expect(control.totals.defaultArmCrashes).toBeGreaterThan(0);
+      expect(control.totals.defaultArmCrashes).toBe(
+        control.findings.filter(
+          (f) => f.payload !== 'DEFAULT' && f.alsoCrashesAtDefault,
+        ).length,
+      );
+      // The cap discards, and the discard is counted rather than dropped.
+      expect(control.totals.capSkipped).toBeGreaterThan(0);
+      expect(control.totals.crossPairs + control.totals.capSkipped).toBe(
+        control.totals.crossTriplesPossible,
+      );
+    });
+
+    it('catches a crash the payload arm hides (default-arm control)', () => {
+      const control = sweep(
+        { __control_default_only__: DEFAULT_ONLY_CRASHING_CONTROL },
+        slice,
+        () => [],
+      );
+      expect(control.totals.defaultArmLints).toBeGreaterThan(0);
+      expect(control.totals.defaultOnlyCrashes).toBeGreaterThan(0);
+      expect(control.findings.length).toBeGreaterThan(0);
+      expect(control.findings.every((f) => f.payload === 'DEFAULT')).toBe(true);
+      expect(control.totals.defaultOnlyCrashes).toBe(
+        control.findings.filter((f) => f.payload === 'DEFAULT').length,
+      );
+      // The payload arm itself is clean, which is what makes this a crash the
+      // payload sweep alone cannot see.
+      expect(control.totals.defaultArmCrashes).toBe(0);
     });
 
     it('leaves a defensively-read option alone (negative control)', () => {
@@ -591,6 +720,21 @@ describe('option payloads x foreign fixtures (crash oracle)', () => {
       expect(control.totals.crossPairs).toBeGreaterThan(0);
       expect(control.totals.payloadsSchemaValid).toBeGreaterThan(0);
       expect(control.findings).toEqual([]);
+    });
+
+    it('rotates deterministically (the same commit selects the same pairs)', () => {
+      // A guard is a build gate, so the selection must not vary between runs.
+      const first = sweep({ __control_safe__: SAFE_CONTROL }, slice, () => []);
+      const second = sweep({ __control_safe__: SAFE_CONTROL }, slice, () => []);
+      expect(second.totals.distinctFixturesLinted).toBe(
+        first.totals.distinctFixturesLinted,
+      );
+      expect(second.totals.crossPairs).toBe(first.totals.crossPairs);
+      // And it is a rotation, not the identity: the fixed-order window over the
+      // same slice reaches strictly fewer fixtures.
+      expect(first.totals.distinctFixturesLinted).toBeGreaterThan(
+        first.totals.distinctFixturesFixedOrder,
+      );
     });
   });
 });
