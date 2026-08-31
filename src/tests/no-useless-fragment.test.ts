@@ -41,6 +41,80 @@ ruleTesterJsx.run('no-useless-fragment', noUselessFragment, {
       <ChildComponent />
       <AnotherChild />
     </>`,
+    // --- long-form fragment spellings (issue #2227) ---
+    // Two meaningful children: the fragment groups, whichever spelling it uses.
+    `import { Fragment } from 'react';
+const A = () => <Fragment><ChildComponent /><AnotherChild /></Fragment>;`,
+    `import { Fragment } from 'react';
+const A = () => (
+  <Fragment>
+    <ChildComponent />
+    <AnotherChild />
+  </Fragment>
+);`,
+    '<React.Fragment><ChildComponent /><AnotherChild /></React.Fragment>',
+    // An attribute is content the unwrap would have to drop or move onto the
+    // promoted child: `key` positions the fragment among its siblings, so an
+    // attributed fragment is meaningful even around a single child.
+    `import { Fragment } from 'react';
+const A = ({ k }) => <Fragment key={k}><ChildComponent /></Fragment>;`,
+    '<React.Fragment key={k}><ChildComponent /></React.Fragment>',
+    // A self-closing fragment has no children at all: nothing to unwrap.
+    `import { Fragment } from 'react';
+const A = () => <Fragment />;`,
+    '<React.Fragment />',
+    // The #1195 expression-container carve-out is about the child, not the
+    // fragment's spelling.
+    `import { Fragment } from 'react';
+const A = ({ portal }) => <Fragment>{portal}</Fragment>;`,
+    '<React.Fragment>{portal}</React.Fragment>',
+    // A locally declared `Fragment` is a different element: unwrapping it
+    // would delete a component that renders real markup.
+    `const Fragment = ({ children }) => <section>{children}</section>;
+const A = () => <Fragment><ChildComponent /></Fragment>;`,
+    `function Fragment({ children }) {
+  return <section>{children}</section>;
+}
+const A = () => <Fragment><ChildComponent /></Fragment>;`,
+    // A `Fragment` imported from another module renders that module's
+    // component, not react's.
+    `import { Fragment } from 'preact';
+const A = () => <Fragment><ChildComponent /></Fragment>;`,
+    // An alias leaves the name `Fragment` free, so the element named `F` is
+    // not recognized as react's fragment.
+    `import { Fragment as F } from 'react';
+const A = () => <F><ChildComponent /></F>;`,
+    // The aliased import binds nothing called `Fragment`, so a `<Fragment>`
+    // element beside it resolves to something the file never declares.
+    `import { Fragment as F } from 'react';
+const A = () => <Fragment><ChildComponent /></Fragment>;`,
+    // An unresolved name states nothing about what it renders; counting it as
+    // react's fragment would trade a false negative for a false positive.
+    'const A = () => <Fragment><ChildComponent /></Fragment>;',
+    // A default or namespace import named `Fragment` is the react module
+    // object, not the fragment component.
+    `import Fragment from 'react';
+const A = () => <Fragment><ChildComponent /></Fragment>;`,
+    `import * as Fragment from 'react';
+const A = () => <Fragment><ChildComponent /></Fragment>;`,
+    // A type-only import binds nothing at runtime.
+    `import type { Fragment } from 'react';
+const A = () => <Fragment><ChildComponent /></Fragment>;`,
+    // The binding is resolved from the element's own scope, so a narrower
+    // shadow wins over the module-level react import.
+    `import { Fragment } from 'react';
+const A = () => {
+  const Fragment = ({ children }) => <section>{children}</section>;
+  return <Fragment><ChildComponent /></Fragment>;
+};`,
+    // Member expressions that are not `React.Fragment` are ordinary elements.
+    '<Other.Fragment><ChildComponent /></Other.Fragment>',
+    '<React.Suspense><ChildComponent /></React.Suspense>',
+    // An ordinary element wrapping a single child is not a fragment: the
+    // JSXElement visitor must not fire on every wrapper in the file.
+    '<div><ChildComponent /></div>',
+    `import { Fragment } from 'react';
+const A = () => <div><ChildComponent /></div>;`,
   ],
   invalid: [
     {
@@ -331,6 +405,345 @@ text at col zero
       output: `<Pre>
 text at col zero
 </Pre>`,
+    },
+    // --- long-form fragment spellings (issue #2227) ---
+    // A hand-written <Fragment> denotes the same node as `<>`, so it is
+    // reported and unwrapped identically.
+    {
+      code: `import { Fragment } from 'react';
+const A = () => <Fragment><ChildComponent /></Fragment>;`,
+      errors: [
+        {
+          messageId: 'noUselessFragment',
+          data: { childKind: 'JSX element' },
+        },
+      ],
+      output: 'const A = () => <ChildComponent />;',
+    },
+    // <React.Fragment> is recognized without any import bookkeeping: the
+    // member access is the spelling itself.
+    {
+      code: '<React.Fragment><ChildComponent /></React.Fragment>',
+      errors: [
+        {
+          messageId: 'noUselessFragment',
+          data: { childKind: 'JSX element' },
+        },
+      ],
+      output: '<ChildComponent />',
+    },
+    {
+      code: `import React from 'react';
+const A = () => <React.Fragment><ChildComponent /></React.Fragment>;`,
+      errors: [
+        {
+          messageId: 'noUselessFragment',
+          data: { childKind: 'JSX element' },
+        },
+      ],
+      output: `import React from 'react';
+const A = () => <ChildComponent />;`,
+    },
+    // The promoted child keeps its own subtree, exactly as under `<>`.
+    {
+      code: `import { Fragment } from 'react';
+const A = () => <Fragment><NestedComponent><ChildComponent /></NestedComponent></Fragment>;`,
+      errors: [
+        {
+          messageId: 'noUselessFragment',
+          data: { childKind: 'JSX element' },
+        },
+      ],
+      output:
+        'const A = () => <NestedComponent><ChildComponent /></NestedComponent>;',
+    },
+    // Newline-only padding around a single child is formatting in the long
+    // forms too.
+    {
+      code: `import { Fragment } from 'react';
+const A = () => (
+  <Fragment>
+    <ChildComponent />
+  </Fragment>
+);`,
+      errors: [
+        {
+          messageId: 'noUselessFragment',
+          data: { childKind: 'JSX element' },
+        },
+      ],
+      output: `const A = () => (
+  <ChildComponent />
+);`,
+    },
+    // Issue #2131's re-indent applies to the element spellings: the promoted
+    // subtree is shifted by the removed indentation step so prettier does not
+    // immediately rewrite the fixer's output.
+    {
+      code: `import { Fragment } from 'react';
+const A = () => (
+  <Fragment>
+    <Wrapper>
+      <Leaf />
+    </Wrapper>
+  </Fragment>
+);`,
+      errors: [
+        {
+          messageId: 'noUselessFragment',
+          data: { childKind: 'JSX element' },
+        },
+      ],
+      output: `const A = () => (
+  <Wrapper>
+    <Leaf />
+  </Wrapper>
+);`,
+    },
+    {
+      code: `const A = () => (
+  <React.Fragment>
+    <Wrapper>
+      <Leaf />
+    </Wrapper>
+  </React.Fragment>
+);`,
+      errors: [
+        {
+          messageId: 'noUselessFragment',
+          data: { childKind: 'JSX element' },
+        },
+      ],
+      output: `const A = () => (
+  <Wrapper>
+    <Leaf />
+  </Wrapper>
+);`,
+    },
+    // A text child is report-only whatever the fragment's spelling: unwrapping
+    // would turn the JSX text into a bare identifier reference.
+    {
+      code: `import { Fragment } from 'react';
+const A = () => <Fragment>hello</Fragment>;`,
+      errors: [
+        { messageId: 'noUselessFragment', data: { childKind: 'text node' } },
+      ],
+      output: null,
+    },
+    {
+      code: '<React.Fragment>hello</React.Fragment>',
+      errors: [
+        { messageId: 'noUselessFragment', data: { childKind: 'text node' } },
+      ],
+      output: null,
+    },
+    // A spread child is not a valid standalone expression, so it stays
+    // report-only too.
+    {
+      code: `import { Fragment } from 'react';
+const A = () => <Fragment>{...items}</Fragment>;`,
+      errors: [
+        {
+          messageId: 'noUselessFragment',
+          data: { childKind: 'spread child' },
+        },
+      ],
+      output: null,
+    },
+    {
+      code: '<React.Fragment>{...items}</React.Fragment>',
+      errors: [
+        {
+          messageId: 'noUselessFragment',
+          data: { childKind: 'spread child' },
+        },
+      ],
+      output: null,
+    },
+    // Nested long-form fragments: each layer is reported once, and the child
+    // is described as a fragment rather than as a plain JSX element. A single
+    // pass removes the outermost layer; the inner fix overlaps it and is
+    // deferred to the next pass.
+    {
+      code: `import { Fragment } from 'react';
+const A = () => (
+  <Fragment>
+    <Fragment>
+      <Leaf />
+    </Fragment>
+  </Fragment>
+);`,
+      errors: [
+        { messageId: 'noUselessFragment', data: { childKind: 'fragment' } },
+        {
+          messageId: 'noUselessFragment',
+          data: { childKind: 'JSX element' },
+        },
+      ],
+      output: `import { Fragment } from 'react';
+const A = () => (
+  <Fragment>
+    <Leaf />
+  </Fragment>
+);`,
+    },
+    // Mixed spellings nest the same way, in either direction.
+    {
+      code: `import { Fragment } from 'react';
+const A = () => <Fragment><>Foo</></Fragment>;`,
+      errors: [
+        { messageId: 'noUselessFragment', data: { childKind: 'fragment' } },
+        { messageId: 'noUselessFragment', data: { childKind: 'text node' } },
+      ],
+      output: 'const A = () => <>Foo</>;',
+    },
+    {
+      code: `import { Fragment } from 'react';
+const A = () => <><Fragment>Foo</Fragment></>;`,
+      errors: [
+        { messageId: 'noUselessFragment', data: { childKind: 'fragment' } },
+        { messageId: 'noUselessFragment', data: { childKind: 'text node' } },
+      ],
+      output: `import { Fragment } from 'react';
+const A = () => <Fragment>Foo</Fragment>;`,
+    },
+    // An attributed fragment stays put, but a useless one nested inside it is
+    // still reported: the attribute exempts only the element that carries it.
+    {
+      code: `import { Fragment } from 'react';
+const A = ({ k }) => (
+  <Fragment key={k}>
+    <Fragment>
+      <Leaf />
+    </Fragment>
+  </Fragment>
+);`,
+      errors: [
+        {
+          messageId: 'noUselessFragment',
+          data: { childKind: 'JSX element' },
+        },
+      ],
+      output: `import { Fragment } from 'react';
+const A = ({ k }) => (
+  <Fragment key={k}>
+    <Leaf />
+  </Fragment>
+);`,
+    },
+    // Two different long-form spellings nest the same way as two of a kind,
+    // but here the INNER fix is the one that lands. Unwrapping the outer
+    // <Fragment> would orphan its import, and the orphan planner's coarse
+    // second opinion sees the identifier `Fragment` still occurring outside the
+    // deleted span — as the property of `React.Fragment` — so it declines
+    // rather than guess. Declining costs a pass, never correctness: the report
+    // stands, the inner fix lands, and the next pass unwraps what is by then a
+    // lone <Fragment> and takes the import with it.
+    {
+      code: `import { Fragment } from 'react';
+const A = () => <Fragment><React.Fragment><Leaf /></React.Fragment></Fragment>;`,
+      errors: [
+        { messageId: 'noUselessFragment', data: { childKind: 'fragment' } },
+        {
+          messageId: 'noUselessFragment',
+          data: { childKind: 'JSX element' },
+        },
+      ],
+      output: `import { Fragment } from 'react';
+const A = () => <Fragment><Leaf /></Fragment>;`,
+    },
+    // A long-form fragment wrapping a single child inside a real element is
+    // reported without disturbing the element around it.
+    {
+      code: `import { Fragment } from 'react';
+const A = () => (
+  <div>
+    <Fragment>
+      <Leaf />
+    </Fragment>
+  </div>
+);`,
+      errors: [
+        {
+          messageId: 'noUselessFragment',
+          data: { childKind: 'JSX element' },
+        },
+      ],
+      output: `const A = () => (
+  <div>
+    <Leaf />
+  </div>
+);`,
+    },
+    // --- the import the unwrap leaves bound to nothing (issue #2227) ---
+    // Two fragments jointly hold the import alive, so neither unwrap may drop
+    // it alone. One fix performs BOTH unwraps and the removal together: a fix
+    // that counted on its sibling landing would strand the import whenever
+    // ESLint discarded that sibling.
+    {
+      code: `import { Fragment } from 'react';
+const A = () => <Fragment><X /></Fragment>;
+const B = () => <Fragment><Y /></Fragment>;`,
+      errors: [
+        {
+          messageId: 'noUselessFragment',
+          data: { childKind: 'JSX element' },
+        },
+        {
+          messageId: 'noUselessFragment',
+          data: { childKind: 'JSX element' },
+        },
+      ],
+      output: `const A = () => <X />;
+const B = () => <Y />;`,
+    },
+    // Only the orphaned specifier goes; the siblings sharing its declaration
+    // are still used and keep their import.
+    {
+      code: `import { Fragment, useState } from 'react';
+const A = () => {
+  useState();
+  return <Fragment><X /></Fragment>;
+};`,
+      errors: [
+        {
+          messageId: 'noUselessFragment',
+          data: { childKind: 'JSX element' },
+        },
+      ],
+      output: `import { useState } from 'react';
+const A = () => {
+  useState();
+  return <X />;
+};`,
+    },
+    {
+      code: `import React, { Fragment } from 'react';
+const A = () => <Fragment><X /></Fragment>;`,
+      errors: [
+        {
+          messageId: 'noUselessFragment',
+          data: { childKind: 'JSX element' },
+        },
+      ],
+      output: `import React from 'react';
+const A = () => <X />;`,
+    },
+    // A use the fix does not delete keeps the import: the attributed fragment
+    // is exempt, so it still names `Fragment` after the unwrap lands.
+    {
+      code: `import { Fragment } from 'react';
+const A = ({ k }) => <Fragment key={k}><X /></Fragment>;
+const B = () => <Fragment><Y /></Fragment>;`,
+      errors: [
+        {
+          messageId: 'noUselessFragment',
+          data: { childKind: 'JSX element' },
+        },
+      ],
+      output: `import { Fragment } from 'react';
+const A = ({ k }) => <Fragment key={k}><X /></Fragment>;
+const B = () => <Y />;`,
     },
   ],
 });
