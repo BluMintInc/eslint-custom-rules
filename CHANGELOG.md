@@ -1,3 +1,10 @@
+## [1.20.198](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.197...v1.20.198) (2026-08-31)
+
+
+### Bug Fixes
+
+* **no-entire-object-hook-deps:** treat a literal type as the primitive it is (closes [#2238](https://github.com/BluMintInc/eslint-custom-rules/issues/2238)) ([f52922f](https://github.com/BluMintInc/eslint-custom-rules/commit/f52922f105dde92a2393a3b39edd4dd5cbf654eb)), closes [#1562](https://github.com/BluMintInc/eslint-custom-rules/issues/1562) [#2237](https://github.com/BluMintInc/eslint-custom-rules/issues/2237)
+
 ## [1.20.197](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.196...v1.20.197) (2026-08-31)
 
 

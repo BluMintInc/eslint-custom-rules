@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.198",
+    "date": "2026-08-31T11:06:34.784Z",
+    "rules": [
+      {
+        "name": "no-entire-object-hook-deps",
+        "changeType": "fix",
+        "issues": [
+          2238
+        ],
+        "summary": "treat a literal type as the primitive it is (closes #2238)"
+      }
+    ]
+  },
+  {
     "version": "1.20.197",
     "date": "2026-08-31T08:50:13.198Z",
     "rules": [
