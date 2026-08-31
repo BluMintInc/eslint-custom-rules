@@ -86,6 +86,15 @@ const unusedNames = (messages: Linter.LintMessage[]) => {
  * risen. The count gate is what makes this rename-immune: a suggestion that
  * renames an already-unused binding changes the name in the message without
  * stranding anything new.
+ *
+ * The gate's known blind spot is the net-zero EXCHANGE — one binding stranded
+ * while another is cleaned up — which #2231 answered on the `--fix` path with a
+ * reference-transition arm in `fix-orphan-binding-closure`, and which
+ * `composed-fix-core-violation-closure` carries for the composed path. No such
+ * arm is carried here because the population is MEASURED EMPTY: across the 688
+ * suggestion edits this file's own sweep applies, the unused count rises 0
+ * times and the unused multiset moves 0 times. There is nothing for a
+ * transition arm to filter. Re-measure before adding one.
  */
 export const newlyOrphaned = (before: string[], after: string[]) => {
   if (after.length <= before.length) return [];
