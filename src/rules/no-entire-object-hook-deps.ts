@@ -11,7 +11,7 @@ import {
   isArrayTypeNode,
   isTupleTypeNode,
 } from 'typescript';
-import type { TypeChecker, Node } from 'typescript';
+import type { TypeChecker, Node, Type, UnionType } from 'typescript';
 
 type MessageIds = 'avoidEntireObject' | 'removeUnusedDependency';
 
@@ -141,6 +141,52 @@ function readExhaustiveDepsDisable(
   return comment.type === AST_TOKEN_TYPES.Block ? 'file' : null;
 }
 
+/**
+ * Whether a dependency's type is a primitive, so that narrowing it into member
+ * paths is meaningless and an unread entry is a deliberate recompute trigger
+ * rather than a stale object.
+ *
+ * why the `*Like` flags, never the bare ones: each `*Like` is the union of a
+ * primitive and its LITERAL form, and a literal type is what this repo's own
+ * fixers produce. `global-const-style` appends `as const`, which turns `0` into
+ * the numeric literal type `0`. The list used to name `StringLiteral`
+ * explicitly but `Number` and `Boolean` bare, so a string literal was primitive
+ * while `0 as const` and `true as const` were not — the same value lost its
+ * exemption the moment a sibling fixer froze it, which made this an exemption
+ * destroyed by COMPOSITION rather than a latent gap (#2238).
+ *
+ * why unions are walked: a union carries `TypeFlags.Union` and none of the
+ * flags above, so a bitmask test on the union ITSELF answers no for
+ * `'compact' | 'full'` — a string at runtime, and the shape
+ * `prefer-union-from-const-array` leaves behind. A union is primitive exactly
+ * when every constituent is, which also keeps `string | { a: number }` an
+ * object.
+ */
+function isPrimitiveType(type: Type): boolean {
+  // why the mask is built HERE and not hoisted to module scope: this module is
+  // imported by `src/index.ts`, so a module-scope `TypeFlags.X` is read the
+  // moment the plugin loads. Against a compiler that does not root-export the
+  // API, `TypeFlags` is `undefined` and the read throws — taking down every
+  // rule in the plugin, not just this one. `plugin-load-without-compiler-api`
+  // is the guard that says so.
+  const primitiveFlags =
+    TypeFlags.StringLike |
+    TypeFlags.NumberLike |
+    TypeFlags.BooleanLike |
+    TypeFlags.BigIntLike |
+    TypeFlags.ESSymbolLike |
+    TypeFlags.Null |
+    TypeFlags.Undefined |
+    TypeFlags.Void |
+    TypeFlags.Never;
+  if (type.flags & primitiveFlags) return true;
+  if (type.flags & TypeFlags.Union) {
+    const constituents = (type as UnionType).types;
+    return constituents.length > 0 && constituents.every(isPrimitiveType);
+  }
+  return false;
+}
+
 /** `channelGroupActive` -> `setChannelGroupActive`, `a` -> `setA`. */
 function toSetterName(dependencyName: string): string {
   return `set${dependencyName.charAt(0).toUpperCase()}${dependencyName.slice(
@@ -159,21 +205,16 @@ function isArrayOrPrimitive(
 
     const type = checker.getTypeAtLocation(tsNode);
 
-    // Check if it's a primitive type
-    if (
-      type.flags &
-      (TypeFlags.String |
-        TypeFlags.StringLike |
-        TypeFlags.StringLiteral |
-        TypeFlags.Number |
-        TypeFlags.Boolean |
-        TypeFlags.Null |
-        TypeFlags.Undefined |
-        TypeFlags.Void |
-        TypeFlags.Never |
-        TypeFlags.BigInt |
-        TypeFlags.ESSymbol)
-    ) {
+    // why: the `*Like` flags, never the bare ones. Each `*Like` is the union of
+    // a primitive and its LITERAL form, and a literal type is what this repo's
+    // own `global-const-style` produces — it appends `as const`, which turns
+    // `0` into the numeric literal type `0`. The list used to name
+    // `StringLiteral` explicitly but `Number` and `Boolean` bare, so a string
+    // literal was primitive while `0 as const` and `true as const` were not:
+    // the same value lost the exemption the moment a sibling fixer froze it
+    // (#2238). Enum members come in through `NumberLike`/`StringLike` for the
+    // same reason — an enum member is a primitive at runtime.
+    if (isPrimitiveType(type)) {
       return true;
     }
 

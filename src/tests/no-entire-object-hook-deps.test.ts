@@ -1389,14 +1389,15 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
      * reading the symptom as a pattern-walk that mishandled `AssignmentPattern`
      * and why an identifier default (typing as `any` here) still reports.
      *
-     * The defaulted spelling is pinned by the two ANNOTATED cases above rather
-     * than by a fixture of its own, and that is a measurement, not a
-     * preference: `({ label, revision = 0 })` is silent alone, but the
-     * recommended config's own `--fix` hoists the literal to a module-scope
-     * `DEFAULT_REVISION = 0 as const` and the rule then REPORTS — an exemption
-     * destroyed by composition, the #1562 shape, which
-     * `exemption-composition-closure` fails on. It needs its own issue and its
-     * own baseline entry rather than being smuggled in beside this one.
+     * The LITERAL spellings below are the #2238 regression. `as const` turns
+     * `0` into the numeric literal type `0`, and the screen used to name
+     * `StringLiteral` explicitly while naming `Number` and `Boolean` bare — so
+     * a string literal kept the exemption and `0 as const` lost it. That made
+     * it an exemption destroyed by COMPOSITION rather than a latent gap: this
+     * repo's own `global-const-style` appends `as const` and hoists the
+     * default to module scope, so the config's own `--fix` turned silent code
+     * into a report in one pass. Each spelling is fixtured both as the author
+     * writes it and as the sibling rewrites it.
      */
     {
       code: `
@@ -1410,6 +1411,61 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
       code: `
         const Card = ({ label, hydrated }: { label: string; hydrated: boolean }) => {
           const text = useMemo(() => label.toUpperCase(), [label, hydrated]);
+          return <span>{text}</span>;
+        };
+      `,
+    },
+    {
+      code: `
+        const Card = ({ label, revision = 0 }) => {
+          const text = useMemo(() => label.toUpperCase(), [label, revision]);
+          return <span>{text}</span>;
+        };
+      `,
+    },
+    {
+      code: `
+        const Card = ({ label, mode = 'compact' }) => {
+          const text = useMemo(() => label.toUpperCase(), [label, mode]);
+          return <span>{text}</span>;
+        };
+      `,
+    },
+    // The rewritten spellings. `global-const-style` hoists the default to a
+    // module-scope `as const`, which is where the literal type comes from.
+    {
+      code: `
+        const DEFAULT_REVISION = 0 as const;
+        const Card = ({ label, revision = DEFAULT_REVISION }) => {
+          const text = useMemo(() => label.toUpperCase(), [label, revision]);
+          return <span>{text}</span>;
+        };
+      `,
+    },
+    {
+      code: `
+        const DEFAULT_MODE = 'compact' as const;
+        const Card = ({ label, mode = DEFAULT_MODE }) => {
+          const text = useMemo(() => label.toUpperCase(), [label, mode]);
+          return <span>{text}</span>;
+        };
+      `,
+    },
+    {
+      code: `
+        const DEFAULT_HYDRATED = true as const;
+        const Card = ({ label, hydrated = DEFAULT_HYDRATED }) => {
+          const text = useMemo(() => label.toUpperCase(), [label, hydrated]);
+          return <span>{text}</span>;
+        };
+      `,
+    },
+    // An annotated literal UNION is primitive too, and is the shape
+    // `prefer-union-from-const-array` leaves behind.
+    {
+      code: `
+        const Card = ({ label, mode }: { label: string; mode: 'compact' | 'full' }) => {
+          const text = useMemo(() => label.toUpperCase(), [label, mode]);
           return <span>{text}</span>;
         };
       `,
