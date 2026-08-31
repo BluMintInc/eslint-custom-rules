@@ -245,6 +245,25 @@ function useScrollReset({
 }
 ```
 
+### Primitive dependencies are not reported at all
+
+An unread dependency whose type is **primitive** — a `number`, `boolean` or
+`string` — draws no report, not even the unused-dependency one: the type screen
+sits ahead of both messages. That is what preserves the deliberate
+recompute-trigger idiom in practice, since a trigger (a hydration flag, a
+revision counter, a change hash) is virtually always a primitive.
+
+An **array** is reported, and so is an object.
+
+Be aware of the consequence for this repo's own tests. The screen is
+type-driven and `RuleTester` runs without `parserOptions.project`, so an
+unannotated fixture types as `any` — not primitive — and is reported. The
+fixtures that exercise unread `trigger` and `hydrated` dependencies are
+unannotated for exactly that reason; annotate either `boolean` and the rule
+goes silent. The test corpus therefore covers a **wider** report surface than
+your code sees, and a behaviour reachable only through a primitive-typed
+dependency cannot be reproduced in a fixture at all.
+
 ## Auto-fix
 
 - Rewrites your dependency arrays to list the specific fields your hook reads.
