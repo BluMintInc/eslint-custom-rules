@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.195",
+    "date": "2026-08-31T00:29:37.037Z",
+    "rules": [
+      {
+        "name": "no-useless-fragment",
+        "changeType": "fix",
+        "issues": [
+          2227
+        ],
+        "summary": "visit JSXElement so long-form fragments are reported (closes #2227)"
+      }
+    ]
+  },
+  {
     "version": "1.20.194",
     "date": "2026-08-30T09:11:52.116Z",
     "rules": [

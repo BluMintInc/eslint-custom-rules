@@ -1,3 +1,10 @@
+## [1.20.195](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.194...v1.20.195) (2026-08-31)
+
+
+### Bug Fixes
+
+* **no-useless-fragment:** visit JSXElement so long-form fragments are reported (closes [#2227](https://github.com/BluMintInc/eslint-custom-rules/issues/2227)) ([c5294f5](https://github.com/BluMintInc/eslint-custom-rules/commit/c5294f5e72e95b4040b4c814a46c359e7f8f7af2))
+
 ## [1.20.194](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.193...v1.20.194) (2026-08-30)
 
 
