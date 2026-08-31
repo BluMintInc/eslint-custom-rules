@@ -1362,6 +1362,58 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
     },
+    /**
+     * An unread dependency whose type is PRIMITIVE draws no report at all. The
+     * `isArrayOrPrimitive` screen sits ahead of both messages, so it withholds
+     * `removeUnusedDependency` as well as the narrowing one, and these four
+     * pin that.
+     *
+     * This is the production protection for the recompute-trigger idiom. A
+     * deliberate trigger — a hydration flag, a revision counter, a change hash
+     * — is virtually always a primitive, and the valid fixtures above document
+     * the idiom as intentional. Reporting it would fight a shape this rule
+     * goes out of its way to preserve elsewhere.
+     *
+     * It also explains a DIVERGENCE worth knowing before reading the invalid
+     * cases below. The screen is type-driven, and `RuleTester` runs without
+     * `parserOptions.project`, so an unannotated fixture types as `any` — not
+     * primitive — and IS reported. The invalid cases that remove `trigger` and
+     * `hydrated` are unannotated for that reason; annotate either one
+     * `boolean` and the rule goes silent (measured). So the corpus exercises a
+     * strictly WIDER report surface than the consumer sees, and a defect
+     * reachable only through a primitive-typed dependency cannot be reproduced
+     * here at all (#2237).
+     *
+     * A default VALUE is not itself the reason — it only lets the checker infer
+     * a primitive where no annotation says so, which is why #2237 was filed
+     * reading the symptom as a pattern-walk that mishandled `AssignmentPattern`
+     * and why an identifier default (typing as `any` here) still reports.
+     *
+     * The defaulted spelling is pinned by the two ANNOTATED cases above rather
+     * than by a fixture of its own, and that is a measurement, not a
+     * preference: `({ label, revision = 0 })` is silent alone, but the
+     * recommended config's own `--fix` hoists the literal to a module-scope
+     * `DEFAULT_REVISION = 0 as const` and the rule then REPORTS — an exemption
+     * destroyed by composition, the #1562 shape, which
+     * `exemption-composition-closure` fails on. It needs its own issue and its
+     * own baseline entry rather than being smuggled in beside this one.
+     */
+    {
+      code: `
+        const Card = ({ label, revision }: { label: string; revision: number }) => {
+          const text = useMemo(() => label.toUpperCase(), [label, revision]);
+          return <span>{text}</span>;
+        };
+      `,
+    },
+    {
+      code: `
+        const Card = ({ label, hydrated }: { label: string; hydrated: boolean }) => {
+          const text = useMemo(() => label.toUpperCase(), [label, hydrated]);
+          return <span>{text}</span>;
+        };
+      `,
+    },
   ],
   invalid: [
     ...optionalComputedFixCases,
@@ -3325,6 +3377,33 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
       errors: [removeUnused('revision')],
+      output: null,
+    },
+    // The controls for the primitive screen pinned in `valid` above. Without
+    // these, a screen that had widened to reject everything would satisfy all
+    // four of those fixtures and the rule would simply have stopped reporting.
+    {
+      code: `
+        const Card = ({ label, meta }: { label: string; meta: { a: number } }) => {
+          const text = useMemo(() => label.toUpperCase(), [label, meta]);
+          return <span>{text}</span>;
+        };
+      `,
+      errors: [removeUnused('meta')],
+      output: null,
+    },
+    // An ARRAY is reported, despite the screen being spelled
+    // `isArrayOrPrimitive`: a type with properties that is not a primitive
+    // falls through to the object arm. Pinned because the name reads like a
+    // promise this fixture measures it not to make.
+    {
+      code: `
+        const Card = ({ label, tags }: { label: string; tags: string[] }) => {
+          const text = useMemo(() => label.toUpperCase(), [label, tags]);
+          return <span>{text}</span>;
+        };
+      `,
+      errors: [removeUnused('tags')],
       output: null,
     },
     // The POSITIONAL parameter stays exempt, deliberately. tsc reports one too,
