@@ -1,5 +1,35 @@
 [
   {
+    "version": "1.20.196",
+    "date": "2026-08-31T07:14:16.368Z",
+    "rules": [
+      {
+        "name": "no-unused-usestate",
+        "changeType": "fix",
+        "issues": [
+          2228
+        ],
+        "summary": "unbind the useState import in the same fix (closes #2228)"
+      },
+      {
+        "name": "prefer-fragment-component",
+        "changeType": "fix",
+        "issues": [
+          2233
+        ],
+        "summary": "bind every emitted Fragment in one batched fix (closes #2233)"
+      },
+      {
+        "name": "prefer-map-over-conditional-dispatch",
+        "changeType": "fix",
+        "issues": [
+          2229
+        ],
+        "summary": "decline the fix when a local type shadow captures the emitted Record annotation (closes #2229)"
+      }
+    ]
+  },
+  {
     "version": "1.20.195",
     "date": "2026-08-31T00:29:37.037Z",
     "rules": [

@@ -1,3 +1,12 @@
+## [1.20.196](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.195...v1.20.196) (2026-08-31)
+
+
+### Bug Fixes
+
+* **no-unused-usestate:** unbind the useState import in the same fix (closes [#2228](https://github.com/BluMintInc/eslint-custom-rules/issues/2228)) ([4cce8e7](https://github.com/BluMintInc/eslint-custom-rules/commit/4cce8e7204074c776c20fc6bb59411a67b80e012))
+* **prefer-fragment-component:** bind every emitted Fragment in one batched fix (closes [#2233](https://github.com/BluMintInc/eslint-custom-rules/issues/2233)) ([d99bc14](https://github.com/BluMintInc/eslint-custom-rules/commit/d99bc147d49f15a443f053de66b64dc677b8c6be))
+* **prefer-map-over-conditional-dispatch:** decline the fix when a local type shadow captures the emitted Record annotation (closes [#2229](https://github.com/BluMintInc/eslint-custom-rules/issues/2229)) ([c902ab5](https://github.com/BluMintInc/eslint-custom-rules/commit/c902ab52b528d222dfa77ad54281abffe0ea79c4))
+
 ## [1.20.195](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.194...v1.20.195) (2026-08-31)
 
 
