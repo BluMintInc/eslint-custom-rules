@@ -1005,9 +1005,18 @@ function convertCallsFixes(
   //
   // A conversion that re-renders its whole call still deletes exactly the same
   // callee, so the removal plan reads the callee ranges either way.
+  //
+  // The insertions are declared because this same fix writes the replacement
+  // import back at the shared anchor — the position of the react import being
+  // removed. A planner told nothing about that write reads the file as opening
+  // on the statement below the removal and takes the separator blank line with
+  // it. Prettier preserves such a blank line but never reinstates one, so the
+  // loss is silent and survives every later format (see
+  // `RemovalContext.insertions` in `importRemoval.ts`).
   const importRemoval = planOrphanedImportRemoval(
     sourceCode,
     calls.map((call) => call.node.callee.range),
+    { insertions: deepCompareImportInsertions(context) },
   );
   // No plan means a binding is orphaned yet cannot be unbound safely, so the
   // rewrite stays too: the report without a fixer is the lesser damage.
@@ -1028,6 +1037,22 @@ function convertCallsFixes(
     ...ensureDeepCompareImportFixes(context, fixer),
     ...importRemoval.map((range) => fixer.removeRange([range[0], range[1]])),
   ];
+}
+
+/**
+ * The offsets `ensureDeepCompareImportFixes` writes at, declared so the removal
+ * planner can account for them. An empty list is itself a claim: when the hook
+ * is already imported nothing is written, and the planner may treat the
+ * removal's surroundings as its own.
+ */
+function deepCompareImportInsertions(context: Context): number[] {
+  const sourceCode = context.sourceCode;
+  if (findDeepCompareMemoImport(sourceCode.ast)) return [];
+  const anchor = importAnchorLineStartIfOwned(
+    sourceCode,
+    importInsertionAnchor(sourceCode),
+  );
+  return [anchor.kind === 'before' ? anchor.target.range[0] : anchor.index];
 }
 
 function ensureDeepCompareImportFixes(
