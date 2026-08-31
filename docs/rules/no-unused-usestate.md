@@ -63,6 +63,10 @@ const [_, setCount] = useState(0);
 useEffect(() => subscribe(setCount), []);
 ```
 
+When the deleted declaration held the last call to `useState`, the same fix unbinds the import: `import React, { useState } from 'react'` becomes `import React from 'react'`, and an import whose only specifier was `useState` is dropped whole. The deletion and the unbinding ship as one fix, so neither lands without the other, and a file with several dead pairs unbinds the import only once every call is gone.
+
+The fix is withheld entirely when the specifier cannot be removed safely — a comment sits among the specifiers, or the discarded initializer holds the last read of another binding. An unfixed report costs less than a fix that trades a discarded state value for an unused-variable error nothing re-reports.
+
 ## When Not To Use It
 
 If you need to temporarily ignore a state variable for debugging purposes, you can disable this rule for a specific line:

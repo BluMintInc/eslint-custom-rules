@@ -79,6 +79,18 @@ ruleTesterJsx.run('no-unused-usestate', noUnusedUseState, {
         }
       `,
     },
+    // The rule matches the bare `useState` callee name, so an aliased import is
+    // outside what it reports — and therefore outside what its fixer unbinds.
+    {
+      code: `
+        import React, { useState as useLocalState } from 'react';
+
+        function Component() {
+          const [_] = useLocalState(0);
+          return <div>Static</div>;
+        }
+      `,
+    },
   ]),
   invalid: withParserOptions(parserOptions, [
     {
@@ -245,7 +257,8 @@ export function C() {
       ],
       output: null,
     },
-    // Genuinely dead pair: both the value and the setter are unreferenced
+    // Genuinely dead pair: both the value and the setter are unreferenced. The
+    // call was the import's last use, so the specifier goes with it.
     {
       code: `
         import React, { useState } from 'react';
@@ -262,7 +275,7 @@ export function C() {
         },
       ],
       output: `
-        import React, { useState } from 'react';
+        import React from 'react';
 
         function Component() {
           return <div>Static</div>;
@@ -286,7 +299,7 @@ export function C() {
         },
       ],
       output: `
-        import React, { useState } from 'react';
+        import React from 'react';
 
         function Component() {
           return <div>Static</div>;
@@ -315,7 +328,7 @@ export function C() {
         },
       ],
       output: `
-        import React, { useState } from 'react';
+        import React from 'react';
 
         function Component() {
           function inner() {
@@ -344,7 +357,7 @@ export function C() {
         },
       ],
       output: `
-        import React, { useState } from 'react';
+        import React from 'react';
 
         function Component() {
           return <div>Static</div>;
@@ -419,13 +432,208 @@ export function C() {
         },
       ],
       output: `
-        import React, { useState } from 'react';
+        import React from 'react';
 
         function Component() {
           // keep this comment
           return <div>Static</div>;
         }
       `,
+    },
+    // The reported shape of #2228: removing the last useState call unbinds the
+    // specifier in the same fix, so the fixed file has no unreferenced import.
+    {
+      code: `
+import React, { useState } from 'react';
+
+function Component() {
+  const [_] = useState(0);
+  return <div>Static</div>;
+}
+`,
+      errors: [
+        {
+          messageId: 'unusedUseState',
+          data: { stateName: '_' },
+        },
+      ],
+      output: `
+import React from 'react';
+
+function Component() {
+  return <div>Static</div>;
+}
+`,
+    },
+    // A surviving call keeps the import: only the dead component's declaration
+    // goes, and `useState` is still referenced from the live one.
+    {
+      code: `
+import React, { useState } from 'react';
+
+function Dead() {
+  const [_] = useState(0);
+  return <div>Static</div>;
+}
+
+function Live() {
+  const [count, setCount] = useState(0);
+  return <button onClick={() => setCount(count + 1)}>{count}</button>;
+}
+`,
+      errors: [
+        {
+          messageId: 'unusedUseState',
+          data: { stateName: '_' },
+        },
+      ],
+      output: `
+import React, { useState } from 'react';
+
+function Dead() {
+  return <div>Static</div>;
+}
+
+function Live() {
+  const [count, setCount] = useState(0);
+  return <button onClick={() => setCount(count + 1)}>{count}</button>;
+}
+`,
+    },
+    // Losing its sole specifier collapses the whole import statement rather than
+    // leaving `import {} from 'react';` behind.
+    {
+      code: `
+import { useState } from 'react';
+
+function Component() {
+  const [_] = useState(0);
+  return <div>Static</div>;
+}
+`,
+      errors: [
+        {
+          messageId: 'unusedUseState',
+          data: { stateName: '_' },
+        },
+      ],
+      output: `
+function Component() {
+  return <div>Static</div>;
+}
+`,
+    },
+    // Two dead pairs in one file. Neither declaration alone is the import's last
+    // use, so both removals and the unbinding ship as ONE fix — the pass that
+    // deletes them resolves every report, and no later pass revisits the import.
+    {
+      code: `
+import React, { useState } from 'react';
+
+function First() {
+  const [_] = useState(0);
+  return <div>First</div>;
+}
+
+function Second() {
+  const [_unused] = useState(1);
+  return <div>Second</div>;
+}
+`,
+      errors: [
+        {
+          messageId: 'unusedUseState',
+          data: { stateName: '_' },
+        },
+        {
+          messageId: 'unusedUseState',
+          data: { stateName: '_unused' },
+        },
+      ],
+      output: `
+import React from 'react';
+
+function First() {
+  return <div>First</div>;
+}
+
+function Second() {
+  return <div>Second</div>;
+}
+`,
+    },
+    // Two dead declarators of one statement overlap on the separator between
+    // them, so only the first is deleted in a pass — ESLint rejects a fix whose
+    // own edits collide. The import survives this pass because the second
+    // declarator still calls `useState`; the next pass deletes both, which is
+    // what `verifyAndFix` converges to.
+    {
+      code: `
+import React, { useState } from 'react';
+
+function Component() {
+  const [_a] = useState(0), [_b] = useState(1);
+  return <div>Static</div>;
+}
+`,
+      errors: [
+        {
+          messageId: 'unusedUseState',
+          data: { stateName: '_a' },
+        },
+        {
+          messageId: 'unusedUseState',
+          data: { stateName: '_b' },
+        },
+      ],
+      output: `
+import React, { useState } from 'react';
+
+function Component() {
+  const [_b] = useState(1);
+  return <div>Static</div>;
+}
+`,
+    },
+    // A comment among the specifiers makes the unbinding unsafe, so the whole
+    // fix is withheld: an unfixed report costs less than a stranded import.
+    {
+      code: `
+import React, { /* keep */ useState } from 'react';
+
+function Component() {
+  const [_] = useState(0);
+  return <div>Static</div>;
+}
+`,
+      errors: [
+        {
+          messageId: 'unusedUseState',
+          data: { stateName: '_' },
+        },
+      ],
+      output: null,
+    },
+    // The discarded initializer holds the only read of a local, which the
+    // deletion would strand just as surely as the import. Nothing this rule can
+    // unbind safely, so the report ships without a fix.
+    {
+      code: `
+import React, { useState } from 'react';
+
+function Component() {
+  const initial = 0;
+  const [_] = useState(initial);
+  return <div>Static</div>;
+}
+`,
+      errors: [
+        {
+          messageId: 'unusedUseState',
+          data: { stateName: '_' },
+        },
+      ],
+      output: null,
     },
   ]),
 });
