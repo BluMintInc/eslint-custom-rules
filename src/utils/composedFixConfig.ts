@@ -73,6 +73,59 @@ export const composedRulesFor = (
   return rules;
 };
 
+export type OptionCarriage = {
+  /** Screens whose composed config carried author-declared options. */
+  carried: number;
+  /**
+   * The first fixture MEASURED to be judged differently at defaults: the owner
+   * reports under its declared options and not without them, or the reverse.
+   */
+  witness: {
+    owner: string;
+    origin: string;
+    bucket: string;
+    /** The entry the linter was actually handed for the owner. */
+    ownerEntry: unknown;
+    options: readonly unknown[];
+  } | null;
+};
+
+/**
+ * Records that a composed config carried a fixture's options, and keeps the
+ * first fixture whose ANSWER depends on them.
+ *
+ * Option carrying is otherwise unfalsifiable: a config that silently reverted to
+ * defaults sweeps the same corpus and reports the same clean result, because an
+ * option-gated report simply never arrives and reads as a silent rule. A guard
+ * that holds both numbers fails instead — the population when the carrying stops
+ * happening at all, and the witness when the options stop making a difference
+ * (#1732, #2244).
+ *
+ * `reportsAtDefaults` is a callback rather than a value so the extra lint is
+ * paid only until a witness is found.
+ */
+export const noteOptionCarriage = (
+  carriage: OptionCarriage,
+  composed: Record<string, unknown>,
+  owner: string,
+  testCase: FixtureCase,
+  reportsUnderComposed: boolean,
+  reportsAtDefaults: () => boolean,
+): void => {
+  const entry = composed[`${PLUGIN_PREFIX}${owner}`];
+  if (!Array.isArray(entry)) return;
+  carriage.carried++;
+  if (carriage.witness) return;
+  if (reportsUnderComposed === reportsAtDefaults()) return;
+  carriage.witness = {
+    owner,
+    origin: testCase.origin,
+    bucket: testCase.bucket,
+    ownerEntry: entry,
+    options: testCase.options || [],
+  };
+};
+
 /**
  * A subset of a composed config, in the config's OWN key order.
  *

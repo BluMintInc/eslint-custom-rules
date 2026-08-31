@@ -97,6 +97,11 @@ import {
   silentWithoutProgramRuleNames,
   FixtureBucket,
 } from '../utils/fixtureCorpus';
+import {
+  OptionCarriage,
+  composedRulesFor,
+  noteOptionCarriage,
+} from '../utils/composedFixConfig';
 
 /* eslint-disable @typescript-eslint/no-var-requires */
 const plugin = require('../index') as {
@@ -132,6 +137,11 @@ const PREFIX = '@blumintinc/blumint/';
  * rule-global scope, which un-gates every other arm at once (#1839).
  */
 const DIVERGENT_WITHOUT_PROGRAM = new Set([]);
+
+const EXCLUDED = new Set<string>([
+  ...silentWithoutProgramRuleNames,
+  ...DIVERGENT_WITHOUT_PROGRAM,
+]);
 
 /**
  * Rules MEASURED to orphan a binding today, each with the issue that tracks it.
@@ -517,6 +527,8 @@ const stats = {
 const findings: Finding[] = [];
 const strandFindings: Finding[] = [];
 
+const carriage: OptionCarriage = { carried: 0, witness: null };
+
 for (const [owner, cases] of corpus.byRule) {
   for (const testCase of cases) {
     if (!BUCKETS.has(testCase.bucket)) continue;
@@ -549,24 +561,47 @@ for (const [owner, cases] of corpus.byRule) {
       // are confined to those. Sweeping every fixable rule against every
       // fixture is ~1.4M fix passes and buys nothing.
       const ownerId = `${PREFIX}${owner}`;
+      /**
+       * The owner's own entry carries the OPTIONS its author declared,
+       * overriding the recommended severity that carries none. A screen run at
+       * defaults answers a question about a configuration nobody wrote: an
+       * option-gated report is unreachable, so the owner reads as silent on its
+       * own fixture and its fixer is never retried (#1732, #2244).
+       */
+      const screenConfig = {
+        parser: parserKeyFor(testCase),
+        parserOptions: parserOptionsFor(testCase),
+        rules: composedRulesFor(RECOMMENDED, EXCLUDED, owner, testCase),
+      } as unknown as Linter.Config;
+      const screened = linter.verify(source, screenConfig, filename);
       const reporting = new Set(
-        linter
-          .verify(
-            source,
-            {
-              parser: parserKeyFor(testCase),
-              parserOptions: parserOptionsFor(testCase),
-              rules: {
-                ...RECOMMENDED,
-                ...(RECOMMENDED[ownerId] || DIVERGENT_WITHOUT_PROGRAM.has(owner)
-                  ? {}
-                  : { [ownerId]: severityWithOptions(testCase) }),
-              },
-            } as unknown as Linter.Config,
-            filename,
-          )
+        screened
           .map((message) => message.ruleId)
           .filter((id): id is string => Boolean(id) && id.startsWith(PREFIX)),
+      );
+      /**
+       * Read back out of the config that was LINTED, not out of a second call to
+       * the builder: a screen rewritten to drop the owner's options would
+       * otherwise leave this counter reading a configuration nobody ran.
+       */
+      noteOptionCarriage(
+        carriage,
+        screenConfig.rules as Record<string, unknown>,
+        owner,
+        testCase,
+        reporting.has(ownerId),
+        () =>
+          linter
+            .verify(
+              source,
+              {
+                parser: parserKeyFor(testCase),
+                parserOptions: parserOptionsFor(testCase),
+                rules: { [ownerId]: 'error' },
+              } as unknown as Linter.Config,
+              filename,
+            )
+            .some((message) => message.ruleId === ownerId),
       );
 
       for (const id of reporting) {
@@ -712,12 +747,12 @@ describe('a fixer must not leave a binding unreferenced', () => {
    * to load, a filename that stops matching, or a harvest that returns a
    * partial registry all show up here rather than as a clean run.
    *
-   * Measured 2026-08-31 (printed above, so a recalibration reads the numbers
-   * rather than guessing them): probed 23,818, soloFixes 70,462, rewritten
-   * 15,269, owners 192, rulesFixed 82. A floor left far below its measurement
-   * is the failure mode these guard against — the previous soloFixes floor sat
-   * at 8,000 against 70,462 and the rewritten floor at 1,000 against 15,269,
-   * so either could have lost 85% of the sweep and still reported a clean run.
+   * Measured (printed above, so a recalibration reads the numbers rather than
+   * guessing them): probed 23,824, soloFixes 70,588, rewritten 15,320, owners
+   * 192, rulesFixed 82, optionCarrying 783. A floor left far below its
+   * measurement is the failure mode these guard against — the previous soloFixes
+   * floor sat at 8,000 and the rewritten floor at 1,000, so either could have
+   * lost 85% of the sweep and still reported a clean run.
    */
   it('actually swept the corpus it claims to', () => {
     // eslint-disable-next-line no-console
@@ -725,7 +760,7 @@ describe('a fixer must not leave a binding unreferenced', () => {
       `[fix-orphan-binding-closure] probed=${stats.probed} ` +
         `soloFixes=${stats.soloFixes} rewritten=${stats.rewritten} ` +
         `owners=${stats.owners.size} rulesFixed=${stats.rulesFixed.size} ` +
-        `exchanges=${stats.exchanges}`,
+        `exchanges=${stats.exchanges} optionCarrying=${carriage.carried}`,
     );
     expect(stats.probed).toBeGreaterThan(23500);
     expect(stats.soloFixes).toBeGreaterThan(69000);
@@ -748,6 +783,22 @@ describe('a fixer must not leave a binding unreferenced', () => {
      * than merely printed.
      */
     expect(stats.scopesMissing).toBe(0);
+  });
+
+  /**
+   * The screen runs each fixture under the configuration its AUTHOR declared.
+   *
+   * Both halves are needed. The population says the composed config keeps
+   * carrying options at all; the witness says those options still decide an
+   * answer. A screen that reverted to defaults would sweep the same corpus and
+   * report the same clean result, because an option-gated report never arrives
+   * and reads as a silent rule (#1732, #2244).
+   */
+  it('screens every fixture under the options its author declared', () => {
+    expect(carriage.carried).toBeGreaterThan(750); // measured 783
+    const witness = carriage.witness;
+    expect(witness).not.toBeNull();
+    expect(witness?.ownerEntry).toEqual(['error', ...(witness?.options || [])]);
   });
 
   /**

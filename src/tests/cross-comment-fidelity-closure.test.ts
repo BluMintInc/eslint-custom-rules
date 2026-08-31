@@ -76,6 +76,11 @@ import type {
   FixtureCase,
   FixtureLanguage,
 } from '../utils/fixtureCorpus';
+import {
+  OptionCarriage,
+  composedRulesFor,
+  noteOptionCarriage,
+} from '../utils/composedFixConfig';
 import { COMMENT_FIDELITY_BASELINE } from './commentFidelityBaseline';
 
 /* eslint-disable @typescript-eslint/no-var-requires */
@@ -131,6 +136,11 @@ const FIXABLE_RULES = new Set(
  * rule-global scope, which un-gates every other arm at once (#1839).
  */
 const DIVERGENT_WITHOUT_PROGRAM = new Set([]);
+
+const EXCLUDED = new Set<string>([
+  ...silentWithoutProgramRuleNames,
+  ...DIVERGENT_WITHOUT_PROGRAM,
+]);
 
 const linter = new Linter();
 defineCorpusParsers(linter);
@@ -658,6 +668,8 @@ function compareCross(
 const corpus = harvestFixtureCorpus();
 const findings: Finding[] = [];
 
+const carriage: OptionCarriage = { carried: 0, witness: null };
+
 for (const [owner, cases] of corpus.byRule) {
   stats.owners.add(owner);
   for (const fixture of cases) {
@@ -672,25 +684,20 @@ for (const [owner, cases] of corpus.byRule) {
      */
     const crossCase: ProbeCase = { ...ownerCase, options: undefined };
 
-    const ownerId = `${PREFIX}${owner}`;
+    /**
+     * The owner's own entry carries the OPTIONS its author declared, overriding
+     * the recommended severity that carries none. A screen run at defaults
+     * answers a question about a configuration nobody wrote: an option-gated
+     * report is unreachable, so the owner reads as silent on its own fixture
+     * and never pairs as a fixer (#1732, #2244).
+     */
+    const screenConfig = configFor(
+      composedRulesFor(RECOMMENDED, EXCLUDED, owner, fixture),
+      ownerCase,
+    );
     let screened: Linter.LintMessage[];
     try {
-      screened = linter.verify(
-        source,
-        configFor(
-          {
-            ...RECOMMENDED,
-            // The owner's rule may ship disabled, or be discounted above; when
-            // it is enabled the recommended severity already carries it, and
-            // overriding would drop the options its author wrote.
-            ...(RECOMMENDED[ownerId] || DIVERGENT_WITHOUT_PROGRAM.has(owner)
-              ? {}
-              : { [ownerId]: severityWithOptions(fixture) }),
-          },
-          ownerCase,
-        ),
-        { filename },
-      );
+      screened = linter.verify(source, screenConfig, { filename });
     } catch {
       stats.screenThrew++;
       continue;
@@ -699,6 +706,23 @@ for (const [owner, cases] of corpus.byRule) {
       stats.screenFatal++;
       continue;
     }
+    const ownerId = `${PREFIX}${owner}`;
+    /**
+     * Read back out of the config that was LINTED, not out of a second call to
+     * the builder: a screen rewritten to drop the owner's options would
+     * otherwise leave this counter reading a configuration nobody ran.
+     */
+    noteOptionCarriage(
+      carriage,
+      screenConfig.rules as Record<string, unknown>,
+      owner,
+      fixture,
+      screened.some((message) => message.ruleId === ownerId),
+      () =>
+        (verify(source, { [ownerId]: 'error' }, ownerCase) || []).some(
+          (message) => message.ruleId === ownerId,
+        ),
+    );
 
     const reporting = new Set(
       screened
@@ -747,7 +771,8 @@ console.log(
   [
     `[cross-comment-fidelity] corpus: ${SWEEP.fixtures} fixture(s) over ` +
       `${SWEEP.owners} owner(s); ${SWEEP.pairs} pair(s) formed ` +
-      `(${SWEEP.crossPairs} cross)`,
+      `(${SWEEP.crossPairs} cross); ${carriage.carried} fixture(s) screened ` +
+      `under their author's options`,
     `[cross-comment-fidelity] rewrites: ${SWEEP.rewrites} ` +
       `(${SWEEP.crossRewrites} cross) by ${SWEEP.fixersRewriting} fixer(s) ` +
       `(${SWEEP.crossFixersRewriting} cross); ${SWEEP.baseNoFix} pair(s) left ` +
@@ -883,6 +908,22 @@ describe('a fixer does not write text it does not own, on any rule’s fixtures'
     // has no transform to compare. Counted so the skip is visible rather than
     // absorbed into the runtime.
     expect(SWEEP.baseNoFix).toBeGreaterThanOrEqual(22000);
+  });
+
+  /**
+   * The screen runs each fixture under the configuration its AUTHOR declared.
+   *
+   * Both halves are needed. The population says the composed config keeps
+   * carrying options at all; the witness says those options still decide an
+   * answer. A screen that reverted to defaults would pair the same corpus and
+   * report the same clean result, because an option-gated report never arrives
+   * and reads as a silent rule (#1732, #2244).
+   */
+  it('screens every fixture under the options its author declared', () => {
+    expect(carriage.carried).toBeGreaterThanOrEqual(750); // measured 783
+    const witness = carriage.witness;
+    expect(witness).not.toBeNull();
+    expect(witness?.ownerEntry).toEqual(['error', ...(witness?.options || [])]);
   });
 
   /**
