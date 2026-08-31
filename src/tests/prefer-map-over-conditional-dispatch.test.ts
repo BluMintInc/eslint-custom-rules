@@ -5826,6 +5826,248 @@ function pick() {
 `,
       errors: [{ messageId: 'preferMap' }],
     },
+    // #2229: a local type alias shadows the name the checker printed for the
+    // discriminant's union. The name is in scope at the fix site — it just
+    // denotes something else there — so `Record<Mode, string>` would be keyed
+    // on `string`, and the capture is SILENT: the emitted code still compiles,
+    // having traded the union for the shadow, and growing the real union stops
+    // failing the build. That is exactly the compile-time guarantee this rule's
+    // message promises, so the fix is withheld and the report stands.
+    {
+      code: `
+type Mode = 'a' | 'b';
+declare const mode: Mode;
+export function pick() {
+  type Mode = string;
+  const label = mode === 'a' ? 'Alpha' : 'Beta';
+  return label;
+}
+`,
+      output: null,
+      errors: [{ messageId: 'preferMapManual' }],
+    },
+    // #2229 control: the same dispatch with no shadow. The printed name still
+    // denotes the symbol it was printed for, so the fix ships unchanged — the
+    // shadow check must cost this case nothing.
+    {
+      code: `
+type Mode = 'a' | 'b';
+declare const mode: Mode;
+export function pick() {
+  const label = mode === 'a' ? 'Alpha' : 'Beta';
+  return label;
+}
+`,
+      output: `
+type Mode = 'a' | 'b';
+declare const mode: Mode;
+export function pick() {
+  const RESULT_BY_MODE: Record<Mode, string> = {
+    a: 'Alpha',
+    b: 'Beta',
+  };
+  const label = RESULT_BY_MODE[mode];
+  return label;
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2229: a shadow that does not ENCLOSE the emission site captures nothing.
+    // Resolution is lexical, so the same name declared in a sibling function
+    // leaves the annotation binding to the outer alias, and the fix applies.
+    {
+      code: `
+type Mode = 'a' | 'b';
+declare const mode: Mode;
+function elsewhere() {
+  type Mode = string;
+  return null as unknown as Mode;
+}
+export function pick() {
+  const label = mode === 'a' ? 'Alpha' : 'Beta';
+  return label;
+}
+`,
+      output: `
+type Mode = 'a' | 'b';
+declare const mode: Mode;
+function elsewhere() {
+  type Mode = string;
+  return null as unknown as Mode;
+}
+export function pick() {
+  const RESULT_BY_MODE: Record<Mode, string> = {
+    a: 'Alpha',
+    b: 'Beta',
+  };
+  const label = RESULT_BY_MODE[mode];
+  return label;
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2229: a nested function declared BELOW the dispatch is a scope the
+    // annotation is not written in, so its shadow is not the one the name
+    // reaches either — the fix applies.
+    {
+      code: `
+type Mode = 'a' | 'b';
+declare const mode: Mode;
+export function pick() {
+  const label = mode === 'a' ? 'Alpha' : 'Beta';
+  function inner() {
+    type Mode = string;
+    return null as unknown as Mode;
+  }
+  return [label, inner];
+}
+`,
+      output: `
+type Mode = 'a' | 'b';
+declare const mode: Mode;
+export function pick() {
+  const RESULT_BY_MODE: Record<Mode, string> = {
+    a: 'Alpha',
+    b: 'Beta',
+  };
+  const label = RESULT_BY_MODE[mode];
+  function inner() {
+    type Mode = string;
+    return null as unknown as Mode;
+  }
+  return [label, inner];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2229: an INCOMPATIBLE shadow is the loud half of the same defect — the
+    // captured key type is not a valid Record key at all (TS2344). Loud or
+    // silent is a property of the shadow, not of the capture, so both are
+    // declined by the one check.
+    {
+      code: `
+type Mode = 'a' | 'b';
+declare const mode: Mode;
+export function pick() {
+  type Mode = { probe: true };
+  switch (mode) {
+    case 'a':
+      return 'Alpha';
+    case 'b':
+      return 'Beta';
+  }
+}
+`,
+      output: null,
+      errors: [{ messageId: 'preferMapManual' }],
+    },
+    // #2229: the VALUE side of the Record is printed from symbols the same way
+    // and is captured the same way. Here the key type is clean and only the
+    // value type name is shadowed.
+    {
+      code: `
+type Mode = 'a' | 'b';
+type Label = { text: string };
+declare const mode: Mode;
+declare const alpha: Label;
+declare const beta: Label;
+export function pick() {
+  type Label = number;
+  switch (mode) {
+    case 'a':
+      return alpha;
+    case 'b':
+      return beta;
+  }
+}
+`,
+      output: null,
+      errors: [{ messageId: 'preferMapManual' }],
+    },
+    // #2229 control for the value side: without the shadow the same dispatch
+    // keeps its fix, so the value-side check is not a blanket decline of every
+    // named value type.
+    {
+      code: `
+type Mode = 'a' | 'b';
+type Label = { text: string };
+declare const mode: Mode;
+declare const alpha: Label;
+declare const beta: Label;
+export function pick() {
+  switch (mode) {
+    case 'a':
+      return alpha;
+    case 'b':
+      return beta;
+  }
+}
+`,
+      output: `
+type Mode = 'a' | 'b';
+type Label = { text: string };
+declare const mode: Mode;
+declare const alpha: Label;
+declare const beta: Label;
+export function pick() {
+  const RESULT_BY_MODE: Record<Mode, Label> = {
+    a: alpha,
+    b: beta,
+  };
+  return RESULT_BY_MODE[mode];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+    },
+    // #2229: an INTERFACE shadows the same way a type alias does — the check is
+    // on the symbol a name reaches, not on the syntax that declared it.
+    {
+      code: `
+type Mode = 'a' | 'b';
+interface Shape {
+  size: number;
+}
+declare const mode: Mode;
+declare const wide: Shape;
+declare const tall: Shape;
+export function pick() {
+  interface Shape {
+    other: string;
+  }
+  switch (mode) {
+    case 'a':
+      return wide;
+    case 'b':
+      return tall;
+  }
+}
+`,
+      output: null,
+      errors: [{ messageId: 'preferMapManual' }],
+    },
+    // #2229: the shadow need not sit in the same block as the dispatch. A
+    // deeper emission site still resolves outward through the shadowing scope,
+    // so the capture holds and the fix is withheld.
+    {
+      code: `
+type Mode = 'a' | 'b';
+declare const mode: Mode;
+export function pick(flag: boolean) {
+  type Mode = string;
+  if (flag) {
+    switch (mode) {
+      case 'a':
+        return 'Alpha';
+      case 'b':
+        return 'Beta';
+    }
+  }
+  return 'none';
+}
+`,
+      output: null,
+      errors: [{ messageId: 'preferMapManual' }],
+    },
   ],
 };
 

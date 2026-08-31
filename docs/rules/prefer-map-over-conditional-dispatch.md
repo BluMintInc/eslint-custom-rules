@@ -313,6 +313,21 @@ report-only message (`preferMapManual`) explaining why and suggesting the shape:
   checker prints a symbol's bare name with no regard for imports — an
   unimported helper type prints the same as an imported one), the fix is
   skipped — import the type or write the `Record` manually.
+- **An annotation whose names still mean what was printed.** Being in scope is
+  not enough: a printed bare name must still **denote** the symbol it was
+  printed for at the place the `Record` lands. A nearer declaration of the same
+  name — a local `type`, `interface`, `class` or `enum` between the type's
+  declaration and the dispatch — is in scope and binds the annotation to
+  itself, on either side of the `Record`. A shadow that is incompatible breaks
+  the build (`Record<Mode, V>` where the local `Mode` is an object type is
+  TS2344); a compatible one is worse, because it compiles: the map is keyed on
+  the shadow instead of the union, so growing the union no longer fails the
+  build and the promise this rule is made on is silently gone. The correct
+  spelling is not derivable — the outer type has no reachable name there at all
+  — so the fix is skipped and only the report stands. Rename the shadowing type
+  (or write the `Record` manually) and the fix applies. A same-named type
+  declared somewhere that does not enclose the dispatch shadows nothing and
+  costs the fix nothing.
 - **An annotation that fits the print width.** The head the fixer authors is
   laid out the way Prettier lays it out (see [Line width](#line-width)). When
   no such layout exists — a single printed type too long for its own line that
