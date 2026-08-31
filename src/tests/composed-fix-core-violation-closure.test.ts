@@ -923,6 +923,7 @@ describe('the composed --fix must not introduce a core violation', () => {
         `rewritten=${stats.rewritten} owners=${stats.owners.size} ` +
         `fatalInput=${stats.skippedFatalInput} fatalOutput=${stats.skippedFatalOutput} ` +
         `breachAbstained=${stats.breachAbstained} nonTs=${stats.nonTsSkipped} ` +
+        `exchange=${stats.exchange} scopesMissing=${stats.scopesMissing} ` +
         `findings=${findings.length} composition=${composition.length} ` +
         `soloExplained=${soloExplained.length} attributionFixes=${stats.attributionFixes}`,
     );
@@ -1006,7 +1007,13 @@ describe('the composed --fix must not introduce a core violation', () => {
   const controlCore = {
     parser: 'ts',
     parserOptions: { ecmaVersion: 2022, sourceType: 'module' },
-    rules: CORE_RULES,
+    // The probe rides along here for the same reason `coreConfigFor` carries
+    // it: without it `capturedScopes` stays `null`, every reference count reads
+    // zero, and `classifyComposed` can only return `stranded: []` — so no
+    // control could distinguish a working transition arm from a dead one. It
+    // cannot become a counted oracle, because `countByRule` keys on membership
+    // of `CORE_RULES` and the probe reports nothing in any case.
+    rules: { ...CORE_RULES, [SCOPE_PROBE]: 'error' },
   };
   const controlFix = (ids: string[]) => ({
     ...controlCore,
@@ -1048,9 +1055,18 @@ describe('the composed --fix must not introduce a core violation', () => {
       controlCore,
       controlFix(['control/rename-aa', 'control/rename-ab']),
     );
-    expect({ rewritten: composed.rewritten, risen: composed.risen }).toEqual({
+    // Every control in this block carries `scopesMissing`, because each of them
+    // rewrites its input and so reads the ACTUAL capture rather than the value
+    // the early returns hard-code. A probe that stopped firing then fails a
+    // control here instead of emptying the transition arm's census in silence.
+    expect({
+      rewritten: composed.rewritten,
+      risen: composed.risen,
+      scopesMissing: composed.scopesMissing,
+    }).toEqual({
       rewritten: true,
       risen: ['no-dupe-keys'],
+      scopesMissing: false,
     });
 
     // And the SOLO arms stay silent, which is what makes it composition-only
@@ -1062,10 +1078,16 @@ describe('the composed --fix must not introduce a core violation', () => {
         controlCore,
         controlFix([id]),
       );
-      expect({ id, rewritten: solo.rewritten, risen: solo.risen }).toEqual({
+      expect({
+        id,
+        rewritten: solo.rewritten,
+        risen: solo.risen,
+        scopesMissing: solo.scopesMissing,
+      }).toEqual({
         id,
         rewritten: true,
         risen: [],
+        scopesMissing: false,
       });
     }
   });
@@ -1132,10 +1154,12 @@ describe('the composed --fix must not introduce a core violation', () => {
     expect({
       rewritten: composed.rewritten,
       risen: composed.risen,
+      scopesMissing: composed.scopesMissing,
       output: composed.output,
     }).toEqual({
       rewritten: true,
       risen: [RESTRICTED],
+      scopesMissing: false,
       output: expect.stringContaining('/* m'),
     });
 
@@ -1149,10 +1173,16 @@ describe('the composed --fix must not introduce a core violation', () => {
         controlCore,
         controlFix([id]),
       );
-      expect({ id, rewritten: solo.rewritten, risen: solo.risen }).toEqual({
+      expect({
+        id,
+        rewritten: solo.rewritten,
+        risen: solo.risen,
+        scopesMissing: solo.scopesMissing,
+      }).toEqual({
         id,
         rewritten: true,
         risen: [],
+        scopesMissing: false,
       });
     }
   });
@@ -1167,9 +1197,14 @@ describe('the composed --fix must not introduce a core violation', () => {
       controlCore,
       controlFix(['control/rename-aa', 'control/rename-ab-safe']),
     );
-    expect({ rewritten: outcome.rewritten, risen: outcome.risen }).toEqual({
+    expect({
+      rewritten: outcome.rewritten,
+      risen: outcome.risen,
+      scopesMissing: outcome.scopesMissing,
+    }).toEqual({
       rewritten: true,
       risen: [],
+      scopesMissing: false,
     });
   });
 
@@ -1193,9 +1228,14 @@ describe('the composed --fix must not introduce a core violation', () => {
       controlCore,
       controlFix(['control/rename-aa']),
     );
-    expect({ rewritten: outcome.rewritten, risen: outcome.risen }).toEqual({
+    expect({
+      rewritten: outcome.rewritten,
+      risen: outcome.risen,
+      scopesMissing: outcome.scopesMissing,
+    }).toEqual({
       rewritten: true,
       risen: [],
+      scopesMissing: false,
     });
   });
 
@@ -1242,6 +1282,13 @@ describe('the composed --fix must not introduce a core violation', () => {
     expect(risenOracles([], [], 0, null)).toEqual([]);
     // ...and lets an input that already breaches carry its breach.
     expect(risenOracles([], [], 1, 1)).toEqual([]);
+
+    // The scope probe rides in every core config this file builds, so pin the
+    // property that makes that safe: the count keys on CORE_RULES membership,
+    // and the probe is not a member — a message bearing its id cannot enter the
+    // count even if the probe were ever made to report.
+    expect(SCOPE_PROBE in CORE_RULES).toBe(false);
+    expect(risenOracles([], [message(SCOPE_PROBE)], 0, 0)).toEqual([]);
   });
 
   it('names the rules that must BOTH be present (attribution control)', () => {
@@ -1254,19 +1301,27 @@ describe('the composed --fix must not introduce a core violation', () => {
       'control/rename-ab',
       'control/rename-ab-safe',
     ];
-    const reproduces = (subset: string[]) =>
-      classifyComposed(
+    /** One entry per ablation trial, so none of them can skip the assertion. */
+    const scopesMissingPerTrial: boolean[] = [];
+    const reproduces = (subset: string[]) => {
+      const outcome = classifyComposed(
         source,
         'control.ts',
         controlCore,
         controlFix(subset),
-      ).risen.includes('no-dupe-keys');
+      );
+      scopesMissingPerTrial.push(outcome.scopesMissing);
+      return outcome.risen.includes('no-dupe-keys');
+    };
 
     expect(ids.filter((id) => reproduces([id]))).toEqual([]);
     expect(reproduces(['control/rename-aa', 'control/rename-ab'])).toBe(true);
     expect(reproduces(['control/rename-aa', 'control/rename-ab-safe'])).toBe(
       false,
     );
+    // Spelled out per trial rather than filtered: a list that came back empty
+    // because no trial ran would satisfy "none of them missed its scopes".
+    expect(scopesMissingPerTrial).toEqual([false, false, false, false, false]);
 
     // And every subset the ablation builds keeps the config's own order, which
     // is what a consumer runs. Sorting instead measured a config nobody has.
@@ -1365,6 +1420,161 @@ describe('the composed --fix must not introduce a core violation', () => {
     expect(
       strandedByTransition(['idle'], ['idle'], new Map([['idle', 3]])),
     ).toEqual([]);
+  });
+
+  /**
+   * The same shapes, driven END TO END through `classifyComposed`.
+   *
+   * The predicate controls above hand `strandedByTransition` maps they built
+   * themselves, so they cannot reach the wiring that supplies those maps in the
+   * sweep: the scope probe, the capture off the core verify,
+   * `readReferenceCounts`, and the count gate that decides whether the arm is
+   * consulted at all. Break any of them and every predicate control stays green
+   * while the census empties for the wrong reason — which is exactly what a
+   * clean sweep looks like. `fix-orphan-binding-closure` drives its own
+   * exchanger through `classifyOrphans` for this reason; the composed arm needs
+   * the same, because the census it asserts is empty.
+   */
+  it('drives the exchange shape through the real wiring (end-to-end positive control)', () => {
+    /**
+     * One pass that strands a REFERENCED import while tidying an unrelated
+     * unused one, so the unused COUNT comes out flat and the count arm is blind
+     * to it by construction — the #2228 shape.
+     */
+    const exchanger: Rule.RuleModule = {
+      meta: { fixable: 'code', schema: [], type: 'problem', messages: {} },
+      create(context) {
+        return {
+          CallExpression(node: never) {
+            const call = node as unknown as { callee: { name?: string } };
+            if (call.callee.name !== 'diff') return;
+            context.report({
+              node: node as never,
+              message: 'drop the call, keep the import',
+              fix: (fixer) => fixer.replaceText(node as never, '0'),
+            });
+          },
+          ImportDeclaration(node: never) {
+            const declaration = node as unknown as {
+              source: { value?: unknown };
+            };
+            if (declaration.source.value !== 'stale') return;
+            context.report({
+              node: node as never,
+              message: 'tidy an unrelated unused import',
+              fix: (fixer) => fixer.remove(node as never),
+            });
+          },
+        };
+      },
+    };
+    linter.defineRule('control/exchanger', exchanger);
+
+    const outcome = classifyComposed(
+      [
+        "import diff from 'microdiff';",
+        "import stale from 'stale';",
+        'export const n = diff(1, 2);',
+        '',
+      ].join('\n'),
+      'control.ts',
+      controlCore,
+      controlFix(['control/exchanger']),
+    );
+    expect({
+      rewritten: outcome.rewritten,
+      scopesMissing: outcome.scopesMissing,
+      exchange: outcome.exchange,
+      risen: outcome.risen,
+      stranded: outcome.stranded,
+    }).toEqual({
+      rewritten: true,
+      // The reference counts reached the predicate; a stranded name cannot be
+      // read off an absent scope manager.
+      scopesMissing: false,
+      exchange: true,
+      // One unused binding in, one out: the count arm sees nothing, which is
+      // the entire reason the transition arm exists.
+      risen: [],
+      stranded: ['diff'],
+    });
+  });
+
+  it('examines a rename of an already-unused binding and stays silent (end-to-end negative control)', () => {
+    /**
+     * The rename artefact, planted where the positive control's wiring runs. It
+     * is the arm's other side: a row inside the population the arm examines
+     * (`exchange` is true) that must still yield nothing.
+     */
+    const renamer: Rule.RuleModule = {
+      meta: { fixable: 'code', schema: [], type: 'problem', messages: {} },
+      create(context) {
+        return {
+          VariableDeclarator(node: never) {
+            const declarator = node as unknown as {
+              id: { name?: string; range: [number, number] };
+            };
+            if (declarator.id.name !== 'unusedAlready') return;
+            context.report({
+              node: node as never,
+              message: 'rename',
+              fix: (fixer) =>
+                fixer.replaceTextRange(declarator.id.range, 'UNUSED_ALREADY'),
+            });
+          },
+        };
+      },
+    };
+    linter.defineRule('control/renamer', renamer);
+
+    const outcome = classifyComposed(
+      'const unusedAlready = 1;\nexport const n = 2;\n',
+      'control.ts',
+      controlCore,
+      controlFix(['control/renamer']),
+    );
+    expect({
+      rewritten: outcome.rewritten,
+      scopesMissing: outcome.scopesMissing,
+      exchange: outcome.exchange,
+      risen: outcome.risen,
+      stranded: outcome.stranded,
+    }).toEqual({
+      rewritten: true,
+      scopesMissing: false,
+      // The name diff DID move, so this row reached the predicate rather than
+      // being dropped before it — a silent negative control proves nothing.
+      exchange: true,
+      risen: [],
+      stranded: [],
+    });
+  });
+
+  /**
+   * `readReferenceCounts` against a real parse, mirroring the solo sibling.
+   *
+   * The predicate arm consumes hand-built maps and the sweep consumes this
+   * function's output, so without a direct reading the two never meet: a probe
+   * that captured nothing, or a reference walk that counted writes as reads,
+   * produces an empty map and a silently empty census.
+   */
+  it("counts read references per name from the probe's own scope analysis", () => {
+    const source = [
+      "import diff from 'microdiff';",
+      "import stale from 'stale';",
+      'export const n = diff(diff(1, 2), 3);',
+      '',
+    ].join('\n');
+    capturedScopes = null;
+    const messages = linter.verify(source, controlCore as never, 'control.ts');
+    const scopes = capturedScopes;
+    capturedScopes = null;
+
+    expect(scopes).not.toBeNull();
+    const counts = readReferenceCounts(scopes || []);
+    expect(counts.get('diff')).toBe(2);
+    expect(counts.get('stale')).toBe(0);
+    expect(unusedNames(messages)).toEqual(['stale']);
   });
 
   it('swept the buckets it claims to and no others', () => {
