@@ -86,9 +86,9 @@ import {
   MODES,
   ModeKey,
   compileCorpus,
+  intersectDiagnostics,
   introducedDiagnostics,
   isFragmentArtifact,
-  multisetIntersect,
   withSuffix,
 } from '../utils/fixtureTypeProgram';
 import {
@@ -700,11 +700,11 @@ const introducedWith = (
   afterName: string,
   diagnosticsFn: DiagnosticsFn,
 ) =>
-  multisetIntersect(
+  intersectDiagnostics(
     introducedPerMode(beforeName, afterName, diagnosticsFn).map(
       (entry) => entry.added,
     ),
-  );
+  ).common;
 
 const introducedFor = (beforeName: string, afterName: string) =>
   introducedWith(beforeName, afterName, introducedDiagnostics);
@@ -948,6 +948,35 @@ compilePending();
 
 const assertedPairs = corpusPairs.filter(
   (pair) => cleanModesFor(pair.beforeName).length > 0,
+);
+
+/**
+ * What the mode discount SILENCED, counted rather than discarded.
+ *
+ * The intersection produces a clean by DROPPING, so a drop no `expect` reads is
+ * a false clean nothing can see. `codeMatchedDrops` isolates the failure that
+ * actually happened (#2235): the TS code was present under every mode with the
+ * multiplicity to match and only the printed message diverged, so the
+ * diagnostic was real under both and the oracle discarded it as strict-only.
+ * A genuinely mode-specific diagnostic - the artifact class this discount
+ * exists FOR - lands in `dropped` and not in `codeMatchedDrops`, which is why
+ * the two counters are asserted in opposite directions.
+ */
+const intersectionAccounts = assertedPairs.map((pair) => ({
+  pair,
+  ...intersectDiagnostics(
+    introducedPerMode(
+      pair.beforeName,
+      pair.afterName,
+      introducedDiagnostics,
+    ).map((entry) => entry.added),
+  ),
+}));
+const discountDrops = intersectionAccounts.filter(
+  (account) => account.dropped.length > 0,
+);
+const codeMatchedDrops = intersectionAccounts.filter(
+  (account) => account.codeMatchedDrops.length > 0,
 );
 
 type Finding = {
@@ -1239,6 +1268,13 @@ const OWNER_FLOOR = 188; // measured 192 (the 2 rules with only JSON/Markdown)
  * ceiling far above its measurement is the #1984 failure verbatim.
  */
 const SHARED_SCOPE_CEILING = 45; // measured 33
+/**
+ * The mode discount's own non-vacuity: without it the same-code zero beside it
+ * would be satisfied for free by a discount that had stopped discounting, and
+ * that zero would then be measuring nothing. Floored just under the
+ * measurement, like every other floor here.
+ */
+const DISCOUNT_DROP_FLOOR = 1; // measured 2
 
 // eslint-disable-next-line no-console
 console.log(
@@ -1262,6 +1298,7 @@ console.log(
         (pair) => introducedUnionFor(pair.beforeName, pair.afterName).length,
       ).length
     }`,
+    `  mode discount: ${discountDrops.length} pair(s) lost a diagnostic to the intersection, ${codeMatchedDrops.length} of them same-code (must be 0)`,
     `  signatures: ${[...bySignature.keys()].sort().join(' ; ') || '(none)'}`,
     `  attribution: ${stats.attributionFixes} fix passes over ${attributed.length} finding(s)`,
     `  timing: composing ${composeSeconds.toFixed(
@@ -1412,6 +1449,28 @@ describe('the composed --fix must not introduce a type error', () => {
   it('never let a probe throw instead of producing a verdict', () => {
     expect(stats.threw).toEqual([]);
     expect(corpus.failures).toEqual([]);
+  });
+
+  /**
+   * The mode discount's drop channel, read rather than assumed. A drop is how
+   * this oracle manufactures a clean, so the #2235 shape - same TS code under
+   * every mode, different printed message - must FAIL here rather than quietly
+   * subtract a finding. The floor beneath it keeps the counter honest the other
+   * way: a discount that had stopped discounting anything would satisfy the
+   * zero above on its own, and then the zero would be measuring nothing.
+   */
+  it('accounts for every diagnostic the mode discount dropped', () => {
+    expect(
+      codeMatchedDrops
+        .map(
+          (account) =>
+            `${account.pair.witnessOwner}: ${account.codeMatchedDrops.join(
+              ' | ',
+            )}`,
+        )
+        .join('\n'),
+    ).toBe('');
+    expect(discountDrops.length).toBeGreaterThanOrEqual(DISCOUNT_DROP_FLOOR);
   });
 
   /**

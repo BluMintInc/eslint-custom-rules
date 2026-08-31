@@ -33,6 +33,7 @@
 import path from 'path';
 import { Linter } from 'eslint';
 import * as ts from 'typescript';
+import { intersectDiagnostics } from '../utils/fixtureTypeProgram';
 import {
   FixtureBucket,
   defaultFilenameFor,
@@ -516,51 +517,17 @@ const introducedDiagnostics = (before: string[], after: string[]) => {
 type DiagnosticsFn = (before: string[], after: string[]) => string[];
 
 /**
- * The multiset every list shares.
+ * The mode discount is IMPORTED, alone among the machinery in this region -
+ * everything else here is a verbatim copy of `fixer-type-safety.test.ts`'s.
  *
- * This is the mode discount, and it is the one place this guard's oracle
- * deliberately differs from `fixer-type-safety`'s. That guard UNIONS the
- * diagnostics introduced under each mode whose input compiles; here a
- * diagnostic counts only if EVERY mode that could judge the pair saw it.
- *
- * Measured, both directions, before it was adopted:
- *
- *   - it preserves all 77 pairs of the three real bugs this guard exists for
- *     (#2013, #2014, #2015), per signature 14/14, 2/2, 58/58, 2/2 and 1/1; and
- *   - it discounts exactly the known artifact class - the two
- *     `prefer-spread-over-reassembly` TS2698 pairs whose input is
- *     `let units = []`, an evolving `never[]` under `strictNullChecks` only.
- *     Annotating the declaration `let units: Unit[] = []` makes the diagnostic
- *     vanish on the AFTER side, which is what proves it an artifact of the
- *     degraded input rather than of the fix. `fixer-type-safety` already
- *     baselines the same two as #1986 with the same explanation.
- *
- * The other discount on offer - "drop a pair whose input carries a TS2304" - is
- * DISQUALIFIED and must not be reintroduced: measured, it hides all 60
- * `global-const-style` rows, the largest of the three bugs above. The corpus is
- * fragments, so nearly every input carries an unresolved name.
- *
- * The intersection only bites where both modes could judge. A pair whose input
- * compiles under one mode only has a single-element intersection, so for it
- * this is identical to the union.
+ * It is a SILENCING oracle: what it drops becomes a clean. A comparison key
+ * that drifted between two copies would therefore silence findings in one guard
+ * and not the other, with nothing in either to say which was right. #2235 is
+ * that failure in a single copy - the key was the raw message string, and
+ * TypeScript's union member print order is per-program - so two copies of it is
+ * strictly worse than one shared definition. `intersectDiagnostics` carries the
+ * measurements behind the discount, and the drop accounting this guard asserts.
  */
-const multisetIntersect = (lists: string[][]): string[] => {
-  if (!lists.length) return [];
-  let common = [...lists[0]];
-  for (const list of lists.slice(1)) {
-    const counts = new Map<string, number>();
-    for (const diagnostic of list) {
-      counts.set(diagnostic, (counts.get(diagnostic) || 0) + 1);
-    }
-    common = common.filter((diagnostic) => {
-      const remaining = counts.get(diagnostic) || 0;
-      if (remaining <= 0) return false;
-      counts.set(diagnostic, remaining - 1);
-      return true;
-    });
-  }
-  return common;
-};
 
 /**
  * `ts.createProgram` SILENTLY drops a root file whose name it does not
@@ -1299,9 +1266,9 @@ const introducedPerMode = (pair: Pair, diagnosticsFn: DiagnosticsFn) =>
 
 /** The shipped oracle: introduced in EVERY mode whose input could judge it. */
 const introducedWith = (pair: Pair, diagnosticsFn: DiagnosticsFn) =>
-  multisetIntersect(
+  intersectDiagnostics(
     introducedPerMode(pair, diagnosticsFn).map((entry) => entry.added),
-  );
+  ).common;
 
 const introducedFor = (pair: Pair) =>
   introducedWith(pair, introducedDiagnostics);
@@ -1329,6 +1296,31 @@ const findingsWith = (diagnosticsFn: DiagnosticsFn): Finding[] =>
   assertedPairs
     .map((pair) => ({ pair, added: introducedWith(pair, diagnosticsFn) }))
     .filter((finding) => finding.added.length > 0);
+
+/**
+ * What the mode discount SILENCED, counted rather than discarded.
+ *
+ * The intersection produces a clean by DROPPING, so a drop no `expect` reads is
+ * a false clean nothing can see. `codeMatchedDrops` isolates the failure that
+ * actually happened (#2235): the TS code was present under every mode with the
+ * multiplicity to match and only the printed message diverged, so the
+ * diagnostic was real under both and the oracle discarded it as strict-only.
+ * A genuinely mode-specific diagnostic - the artifact class this discount
+ * exists FOR - lands in `dropped` and not in `codeMatchedDrops`, which is why
+ * the two counters are asserted in opposite directions.
+ */
+const intersectionAccounts = assertedPairs.map((pair) => ({
+  pair,
+  ...intersectDiagnostics(
+    introducedPerMode(pair, introducedDiagnostics).map((entry) => entry.added),
+  ),
+}));
+const discountDrops = intersectionAccounts.filter(
+  (account) => account.dropped.length > 0,
+);
+const codeMatchedDrops = intersectionAccounts.filter(
+  (account) => account.codeMatchedDrops.length > 0,
+);
 
 const findings = findingsWith(introducedDiagnostics);
 
@@ -1405,6 +1397,7 @@ console.log(
     `  findings: ${findings.length}; the rejected union oracle would report ${
       assertedPairs.filter((pair) => introducedUnionFor(pair).length).length
     }`,
+    `  mode discount: ${discountDrops.length} pair(s) lost a diagnostic to the intersection, ${codeMatchedDrops.length} of them same-code (must be 0)`,
     `  timing: pairing ${pairingSeconds.toFixed(
       1,
     )}s, programs ${compileSeconds.toFixed(1)}s`,
@@ -1423,6 +1416,32 @@ describe('the cross-paired suggestion type guard is load-bearing', () => {
    * Without this the guard degenerates into a second copy of
    * `fixer-type-safety`'s own-corpus suggestion arm and asserts nothing new.
    */
+  /**
+   * The mode discount's drop channel, read rather than assumed. A drop is how
+   * this oracle manufactures a clean, so the #2235 shape - same TS code under
+   * every mode, different printed message - must FAIL here rather than quietly
+   * subtract a finding. The floor beneath it keeps the counter honest the other
+   * way: a discount that had stopped discounting anything would satisfy the
+   * zero above on its own, and then the zero would be measuring nothing.
+   */
+  it('accounts for every diagnostic the mode discount dropped', () => {
+    expect(
+      codeMatchedDrops
+        .map(
+          (account) =>
+            `${account.pair.fixer}: ${account.codeMatchedDrops.join(' | ')}`,
+        )
+        .join('\n'),
+    ).toBe('');
+    // The discount is INERT on this corpus: no suggestion introduces a
+    // diagnostic under one mode only, so the intersection and the union oracle
+    // agree at zero and there is no floor to hold here. Pinned rather than
+    // floored, because `>= 0` reads as an assertion and is not one - the day a
+    // suggestion does diverge by mode, someone looks at it instead of it
+    // landing silently inside the discount.
+    expect(discountDrops.length).toBe(0);
+  });
+
   it('reaches suggestions through OTHER rules’ fixtures', () => {
     expect(stats.fixturesConsidered).toBeGreaterThanOrEqual(
       FIXTURES_CONSIDERED_FLOOR,
