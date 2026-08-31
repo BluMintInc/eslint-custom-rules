@@ -111,6 +111,58 @@ const Comp = ({ userConfig }) => {
 };
 `,
       },
+      // The separator blank line after the import block is the author's, not
+      // the removal's to take: the fix writes the replacement import at the
+      // removed import's own anchor, and the planner is told about that write
+      // via `RemovalContext.insertions`. Undeclared, the planner reads the file
+      // as opening on the code below and takes the blank line. Prettier keeps
+      // such a line but never reinstates one, so the loss is silent (#2240).
+      {
+        name: 'keeps the blank line after a sole rewritten import (#2240)',
+        code: `
+import { useMemo } from 'react';
+
+const Comp = ({ o }) => {
+  const v = useMemo(() => ({ a: o.a }), [o]);
+  return <div>{v.a}</div>;
+};
+`,
+        errors: [error],
+        output: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+
+const Comp = ({ o }) => {
+  const v = useDeepCompareMemo(() => ({ a: o.a }), [o]);
+  return <div>{v.a}</div>;
+};
+`,
+      },
+      // Same contract with a comment opening the code below: the blank line
+      // sits between the import block and the comment, and neither is the
+      // removal's to take. The comment binds to the component, so a planner
+      // that climbs to it still must not absorb the separator (#2240).
+      {
+        name: 'keeps the blank line ahead of a leading comment (#2240)',
+        code: `
+import { useMemo } from 'react';
+
+// renders the option row
+const Comp = ({ o }) => {
+  const v = useMemo(() => ({ a: o.a }), [o]);
+  return <div>{v.a}</div>;
+};
+`,
+        errors: [error],
+        output: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+
+// renders the option row
+const Comp = ({ o }) => {
+  const v = useDeepCompareMemo(() => ({ a: o.a }), [o]);
+  return <div>{v.a}</div>;
+};
+`,
+      },
       // Issue #1979 anti-vacuity control: the same shape as the string prop
       // above, with an object prop. The primitive carve-out must not reach it.
       {
