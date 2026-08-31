@@ -54,6 +54,11 @@ const PREFIX = '@blumintinc/blumint/';
  *     messageId and the span.
  *   REMEDY_LEAD broken to match nothing RED four ways: both floors and both
  *     extractor controls. A guard whose corpus collapses cannot go green.
+ *   The four SPAN_POLICY filename pins below removed RED naming exactly the 6
+ *     silent verdicts that then decide at `src/util/helper.ts`, with the EARNED
+ *     count dropping 14 → 8 and its floor failing alongside. The same mutation
+ *     leaves the candidate-LIST question green for all 14, which is the gap
+ *     `earnsSilence` closes.
  *
  * That first mutation is also why the negative/remedy overlap is keyed on a
  * span's POSITION and never its text: with a text key, "Replace `X` with `X`"
@@ -237,6 +242,32 @@ const SPAN_POLICY: Record<string, Policy> = {
       `);`,
   },
 
+  // Reachable only at a `.tsx` candidate. Every one of this rule's 48 invalid
+  // fixtures holds JSX, and a `.ts` path forces `ScriptKind.TS`, which
+  // `ecmaFeatures.jsx: true` does not override — so at `src/util/helper.ts` all
+  // 48 are a fatal parse and the rule's silence on the remedy is the parser's,
+  // not the rule's. Measured: 48/48 fatal at `src/util/helper.ts`, 48/48
+  // reporting here.
+  'prevent-children-clobber|childrenClobbered': {
+    filename: 'src/components/Widget.tsx',
+  },
+
+  // Gated on `targetPaths` (`src/hooks/**`, `src/contexts/**`, `src/pages/**`,
+  // `src/components/**`): off-path its `create` returns an empty visitor set, so
+  // a remedy probed at `src/util/helper.ts` banks silence from a rule that never
+  // ran. Measured on the 13 JSX-free fixtures, which parse at both paths and so
+  // separate the path gate from the extension: silent at `src/util/helper.ts`,
+  // reporting at a target path. All three messageIds share the gate.
+  'prefer-use-base62-id|preferUseBase62IdHook': {
+    filename: 'src/components/Widget.tsx',
+  },
+  'prefer-use-base62-id|preferUseBase62IdUseMemo': {
+    filename: 'src/components/Widget.tsx',
+  },
+  'prefer-use-base62-id|preferUseBase62IdTopLevel': {
+    filename: 'src/components/Widget.tsx',
+  },
+
   // `require-migration-script-metadata` is the third path-gated remedy owner and
   // deliberately has no entry: its 8 spans are JSDoc tag names (`@migration`,
   // `@migrationPhase`, …), which stay `unparseable` at its own
@@ -346,11 +377,28 @@ export function verdictFor(
  */
 const MIN_ASSERTED_SPANS = 5;
 
+/**
+ * The exact `(filename, variant)` a verdict was decided at.
+ *
+ * A `silent` verdict is worth no more than the site that produced it: silence
+ * from a filename whose path gate excluded the rule, or whose extension made the
+ * rule's own fixtures a fatal parse, is not evidence about the remedy. Carrying
+ * the site lets the reachability arm ask about THAT filename instead of
+ * re-deriving the candidate list, which asks the weaker question of whether the
+ * rule is reachable anywhere (#2246).
+ *
+ * The variant is carried too, because a span reaches different verdicts in
+ * different framings — a site naming only the file cannot say which framing
+ * banked the pass.
+ */
+export type ProbeSite = { filename: string; variant: string };
+
 export type RemedyVerdict = {
   key: string;
   status: 'silent' | 'reported' | 'unparseable' | 'templated';
   reportedAs?: string;
   detail?: string;
+  decidedAt?: ProbeSite;
 };
 
 /**
@@ -367,6 +415,12 @@ export type RemedyVerdict = {
  * not others, and a remedy that clears the rule anywhere proves a spelling
  * exists that satisfies it; requiring silence in EVERY framing would fail on
  * the framing rather than on the advice.
+ *
+ * The framing that decides is recorded in `decidedAt`. Since the first silent
+ * `(filename, variant)` wins, the deciding filename skews towards the one the
+ * rule is LEAST likely to run at — a path gate excludes the rule there, and
+ * silence is the passing verdict — so the site has to travel with the verdict
+ * for the reachability arm to be able to check it (#2246).
  */
 export function remedyVerdictFor(
   { rule, messageId, span }: Span,
@@ -392,6 +446,7 @@ export function remedyVerdictFor(
   const filenames = policy?.filename ? [policy.filename] : CANDIDATES;
   let sawParse = false;
   let reportedAs: string | undefined;
+  let reportedAt: ProbeSite | undefined;
   for (const filename of filenames) {
     for (const code of variants) {
       const config = {
@@ -412,13 +467,30 @@ export function remedyVerdictFor(
       if (messages.some((m) => m.fatal)) continue;
       sawParse = true;
       const hit = messages.find((m) => m.ruleId === PREFIX + rule);
-      if (!hit) return { key, status: 'silent' };
+      if (!hit) {
+        return {
+          key,
+          status: 'silent',
+          decidedAt: { filename, variant: code },
+        };
+      }
       reportedAs = String(hit.messageId);
+      reportedAt = reportedAt ?? { filename, variant: code };
     }
   }
   if (reportedAs) {
-    return { key, status: 'reported', reportedAs, detail: span };
+    return {
+      key,
+      status: 'reported',
+      reportedAs,
+      detail: span,
+      decidedAt: reportedAt,
+    };
   }
+  // Deliberately siteless. Reaching a `silent` here would mean a variant parsed
+  // yet neither reported nor returned above, so there is no site to name — and
+  // `earnsSilence` counts a siteless silence as unearned rather than waving it
+  // through, since an absent site is not evidence.
   return { key, status: sawParse ? 'silent' : 'unparseable', detail: span };
 }
 
@@ -431,16 +503,18 @@ export function remedyVerdictFor(
 const MIN_ASSERTED_REMEDIES = 12;
 
 /**
- * The same floor over spans whose rule was MEASURED reachable at the probe's
- * filename. Kept just under the measured value so a regression that unhooks a
- * rule from the probe fails here rather than sliding by on unearned silence.
+ * The same floor over spans whose rule was MEASURED reachable at the filename
+ * that DECIDED their verdict. Kept just under the measured value so a regression
+ * that unhooks a rule from the probe fails here rather than sliding by on
+ * unearned silence.
  */
 const MIN_EARNED_REMEDIES = 13;
 
-/** The filenames `remedyVerdictFor` will actually lint this span under. */
-function probeFilenamesFor({ rule, messageId }: Span): string[] {
-  const policy = SPAN_POLICY[`${rule}|${messageId}`];
-  return policy?.filename ? [policy.filename] : CANDIDATES;
+/** Human-readable form of the site a verdict was decided at. */
+function describeSite(site: ProbeSite | undefined): string {
+  return site
+    ? `${site.filename} framed as \`${site.variant}\``
+    : 'no recorded site';
 }
 
 /**
@@ -500,6 +574,28 @@ function ruleReportsAt(rule: string, filenames: string[]): boolean {
   }
   reachabilityCache.set(cacheKey, reaches);
   return reaches;
+}
+
+/**
+ * Is this `silent` verdict evidence about the remedy, or an artefact of where it
+ * was taken?
+ *
+ * Asked of the ONE filename that decided the verdict, never of the candidate
+ * list. Those are different questions, and the difference is not academic: 6 of
+ * 14 silent verdicts were decided at `src/util/helper.ts` by rules that cannot
+ * run there — one excluded by its `targetPaths` gate, one whose every fixture is
+ * a fatal parse under a `.ts` extension — while both report at another candidate
+ * and so satisfied the list-wide question (#2246).
+ *
+ * A verdict with no site is unearned by construction: an absent site is not
+ * evidence, and defaulting it to "reachable" would restore the hole in the shape
+ * hardest to notice.
+ */
+function earnsSilence(span: Span, verdict: RemedyVerdict): boolean {
+  return (
+    verdict.decidedAt !== undefined &&
+    ruleReportsAt(span.rule, [verdict.decidedAt.filename])
+  );
 }
 
 describe('message negative examples are reportable', () => {
@@ -584,19 +680,20 @@ describe('message remedies are silent under their own rule', () => {
   // how enforce-identifiable-firestore-type shipped a message prescribing two
   // spellings it reported on (#2035). Reachability is therefore asserted from
   // the rule's OWN invalid fixtures — inputs measured to report — replayed at
-  // the very filename the probe used.
+  // the very filename that decided this verdict, which is the only filename the
+  // verdict is a statement about.
   it('earns every silent verdict: the rule can report at that filename', () => {
     const unreachable = verdicts
       .filter(({ verdict }) => verdict.status === 'silent')
-      .filter(({ span }) => !ruleReportsAt(span.rule, probeFilenamesFor(span)))
+      .filter(({ span, verdict }) => !earnsSilence(span, verdict))
       .map(
-        ({ span }) =>
-          `${span.rule} [${span.messageId}] records the PASSING verdict for \`${span.span}\`, but ` +
-          `the rule reports on none of its own invalid fixtures at ${probeFilenamesFor(
-            span,
-          ).join(
-            ', ',
-          )} — so nothing about this remedy was actually checked. Give it a ` +
+        ({ span, verdict }) =>
+          `${span.rule} [${span.messageId}] records the PASSING verdict for \`${span.span}\`, ` +
+          `decided at ${describeSite(
+            verdict.decidedAt,
+          )} — but the rule reports on none of its ` +
+          `own invalid fixtures THERE, so nothing about this remedy was actually checked. ` +
+          `Reaching the rule at some other candidate does not earn this verdict. Give it a ` +
           `filename/wrap in SPAN_POLICY that reaches the rule.`,
       );
     expect(unreachable).toEqual([]);
@@ -606,8 +703,8 @@ describe('message remedies are silent under their own rule', () => {
     const silent = verdicts.filter(
       ({ verdict }) => verdict.status === 'silent',
     );
-    const earned = silent.filter(({ span }) =>
-      ruleReportsAt(span.rule, probeFilenamesFor(span)),
+    const earned = silent.filter(({ span, verdict }) =>
+      earnsSilence(span, verdict),
     );
     const tally = verdicts.reduce<Record<string, number>>(
       (acc, { verdict }) => {
@@ -633,7 +730,7 @@ describe('message remedies are silent under their own rule', () => {
     // `silent` count: the raw count is satisfiable by unreachable rules alone.
     const earned = verdicts
       .filter(({ verdict }) => verdict.status === 'silent')
-      .filter(({ span }) => ruleReportsAt(span.rule, probeFilenamesFor(span)));
+      .filter(({ span, verdict }) => earnsSilence(span, verdict));
     expect(earned.length).toBeGreaterThanOrEqual(MIN_EARNED_REMEDIES);
   });
 
@@ -713,6 +810,75 @@ describe('the harness itself (controls)', () => {
         'functions/src/callable/doThing.f.ts',
       ]),
     ).toBe(true);
+  });
+
+  // The tightened arm reads the verdict's OWN deciding site, so it needs a
+  // control on exactly that, both ways: silence taken at a filename the rule is
+  // gated out of must read UNEARNED, and the same span must read EARNED once a
+  // policy moves the probe onto a path the rule runs at.
+  //
+  // `prefer-use-base62-id` is the natural probe because its `targetPaths` gate
+  // turns the answer purely on the filename, leaving the span untouched — and
+  // because the list-wide question this replaces answers YES for it, so the two
+  // questions demonstrably differ on a real input rather than only in principle.
+  it('deciding site: silence taken off-path earns nothing', () => {
+    const planted: Span = {
+      rule: 'prefer-use-base62-id',
+      messageId: 'preferUseBase62IdHook',
+      span: 'useBase62Id()',
+    };
+    const verdict = remedyVerdictFor(planted, {});
+    expect(verdict.status).toBe('silent');
+    expect(verdict.decidedAt).toEqual({
+      filename: CANDIDATES[0],
+      variant: 'useBase62Id()',
+    });
+    expect(earnsSilence(planted, verdict)).toBe(false);
+    // The list-wide question passes this very span: the rule reaches
+    // `src/components/Widget.tsx`, which is not where the verdict was decided.
+    expect(ruleReportsAt('prefer-use-base62-id', CANDIDATES)).toBe(true);
+  });
+
+  it('deciding site: a policy filename moves the probe onto a live path', () => {
+    const planted: Span = {
+      rule: 'prefer-use-base62-id',
+      messageId: 'preferUseBase62IdHook',
+      span: 'useBase62Id()',
+    };
+    const verdict = remedyVerdictFor(planted, {
+      'prefer-use-base62-id|preferUseBase62IdHook': {
+        filename: 'src/components/Widget.tsx',
+      },
+    });
+    expect(verdict.status).toBe('silent');
+    expect(verdict.decidedAt?.filename).toBe('src/components/Widget.tsx');
+    expect(earnsSilence(planted, verdict)).toBe(true);
+  });
+
+  it('deciding site names the framing, not just the file', () => {
+    // Two framings of one span reach different verdicts, so a site that records
+    // only the filename cannot say which framing banked the pass. A `wrap`
+    // replaces all three default framings with one, and the site must follow it.
+    const planted: Span = {
+      rule: 'prefer-type-over-interface',
+      messageId: 'preferType',
+      span: 'type Foo = { a: string }',
+    };
+    expect(remedyVerdictFor(planted, {}).decidedAt).toEqual({
+      filename: CANDIDATES[0],
+      variant: 'type Foo = { a: string }',
+    });
+    expect(
+      remedyVerdictFor(planted, {
+        'prefer-type-over-interface|preferType': {
+          filename: 'src/components/Widget.tsx',
+          wrap: (span) => `export ${span};`,
+        },
+      }).decidedAt,
+    ).toEqual({
+      filename: 'src/components/Widget.tsx',
+      variant: 'export type Foo = { a: string };',
+    });
   });
 
   it('reachability oracle reads a real fixture corpus', () => {
