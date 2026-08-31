@@ -147,6 +147,74 @@ const THIS_REBINDING_TYPES = new Set<string>([
 const BARE_TYPE_NAME = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
 
 /**
+ * The symbol each bare type name in a synthesized annotation was printed FOR.
+ *
+ * A printed bare name is only the right spelling where it still DENOTES the
+ * symbol the checker printed it for, and the annotation is inserted somewhere
+ * the printer never looked. A `null` entry marks a name printed for two
+ * different symbols in one annotation, where no single binding can be right.
+ */
+type IntendedSymbols = Map<string, ts.Symbol | null>;
+
+/**
+ * Record one attribution, marking a name claimed by two different symbols
+ * ambiguous. Both sides of the emitted `Record` contribute names, and the two
+ * must agree: whichever declaration one spelling reaches, the other is
+ * captured. Ambiguity is sticky, so a later agreeing attribution cannot clear
+ * a conflict already seen.
+ */
+function recordAttribution(
+  intended: IntendedSymbols,
+  name: string,
+  symbol: ts.Symbol | null,
+): void {
+  if (intended.has(name) && intended.get(name) !== symbol) {
+    intended.set(name, null);
+    return;
+  }
+  intended.set(name, symbol);
+}
+
+/** Fold one set of attributions into another under the same conflict rule. */
+function mergeIntendedSymbols(
+  target: IntendedSymbols,
+  source: IntendedSymbols,
+): void {
+  for (const [name, symbol] of source) {
+    recordAttribution(target, name, symbol);
+  }
+}
+
+/**
+ * Attribute a printed bare name to the symbol it stands for — the alias the
+ * checker resolved through, or the declaration the type belongs to, whichever
+ * supplied the name.
+ *
+ * Anything the symbols do not account for (a printed literal union, a generic
+ * instantiation, a printer-synthesized spelling) gets no attribution and so
+ * keeps the weaker name-presence check: an unattributable name has no intended
+ * symbol to compare against, and inventing one would withhold fixes that
+ * compile.
+ */
+function attributePrintedName(
+  intended: IntendedSymbols,
+  printed: string,
+  type: ts.Type,
+): void {
+  if (!BARE_TYPE_NAME.test(printed)) {
+    return;
+  }
+  const symbol =
+    [type.aliasSymbol, type.symbol].find(
+      (candidate) => candidate?.name === printed,
+    ) ?? null;
+  if (!symbol) {
+    return;
+  }
+  recordAttribution(intended, printed, symbol);
+}
+
+/**
  * Function/constructor/conditional type notation must be parenthesized to
  * appear as a `|` union member, or the emitted annotation does not parse
  * ("Function type notation must be parenthesized when used in a union type").
@@ -576,6 +644,20 @@ const DECLINE_REASONS = {
 } as const;
 
 /**
+ * Why the synthesized `Record<D, V>` annotation could not ship, spelled for the
+ * manual message. Each arm names the property of the annotation that failed, so
+ * the reader is sent to the spelling that actually blocks the fix.
+ */
+const ANNOTATION_DECLINE_REASONS = {
+  unparseable:
+    'the branch value type does not print as a parseable annotation — write the Record with an explicit type manually',
+  unresolvable:
+    'the annotation would name types that are not in scope at the fix site — import them or write the Record manually',
+  shadowed:
+    'a nearer declaration shadows a type the annotation names, so the Record would be keyed on that declaration instead and stop gating exhaustiveness — rename the shadowing type, or write the Record manually',
+} as const;
+
+/**
  * How position-sensitive a comment is when the fix relocates it onto the
  * generated Record:
  *
@@ -794,9 +876,10 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
      */
     function computeValueTypeMembers(
       exprs: TSESTree.Expression[],
-    ): string[] | null {
+    ): { members: string[]; intended: IntendedSymbols } | null {
       const seen = new Set<string>();
       const parts: string[] = [];
+      const intended: IntendedSymbols = new Map();
       for (const expr of exprs) {
         const type = tsTypeOf(expr);
         if (!type) {
@@ -824,6 +907,9 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
         if (!text || text === 'error') {
           return null;
         }
+        // The value side is printed from the same symbol names as the key side
+        // and is captured by a shadow the same way (#2229).
+        attributePrintedName(intended, text, widened);
         if (!seen.has(text)) {
           seen.add(text);
           parts.push(text);
@@ -835,9 +921,9 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
       // A sole member sits in a plain type-argument position, where function
       // type notation needs no parentheses.
       if (parts.length === 1) {
-        return parts;
+        return { members: parts, intended };
       }
-      return parts.map(parenthesizeForUnion);
+      return { members: parts.map(parenthesizeForUnion), intended };
     }
 
     /** Whether two classified discriminant types admit exactly the same keys. */
@@ -959,7 +1045,7 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
     function discriminantTypeText(
       type: ts.Type,
       discriminant: TSESTree.Node,
-    ): string | null {
+    ): { text: string; intended: IntendedSymbols } | null {
       let printed: string | null;
       try {
         // Pass the discriminant's TS node as the enclosing declaration so the
@@ -971,11 +1057,71 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
       } catch {
         printed = null;
       }
+      const intended: IntendedSymbols = new Map();
       if (printed && BARE_TYPE_NAME.test(printed)) {
-        return printed;
+        // The bare name is the capturable spelling — it ships verbatim into an
+        // annotation the printer never saw the position of, where a nearer
+        // declaration of the same name binds it instead (#2229). Carrying the
+        // symbol it was printed for is what lets the gate tell the two apart.
+        attributePrintedName(intended, printed, type);
+        return { text: printed, intended };
       }
+      // The indexed-access spelling's own root name is left unattributed: it
+      // already ships only when the name resolves, at the fix site, to exactly
+      // the object's declared type, and identity of the TYPE accepts a nearer
+      // alias that denotes the same type — which compiles, and reads the same.
       const text = indexedAccessTypeText(discriminant, type) ?? printed;
-      return text === null ? null : normalizeTypeQuotes(text, singleQuote);
+      return text === null
+        ? null
+        : { text: normalizeTypeQuotes(text, singleQuote), intended };
+    }
+
+    /**
+     * Whether the binding a type name reaches at the fix site is the symbol the
+     * checker printed that name for.
+     *
+     * A name with no attribution keeps the weaker presence answer: the printer
+     * did not derive it from one symbol, so there is nothing to compare it
+     * against, and manufacturing an answer there would withhold fixes that
+     * compile. Import aliases are followed on both sides — a name imported at
+     * the fix site is a different SYMBOL from the declaration the checker
+     * printed while denoting exactly it.
+     */
+    function denotesIntendedSymbol(
+      root: string,
+      found: ts.Symbol,
+      intendedSymbols: IntendedSymbols,
+    ): boolean {
+      if (!intendedSymbols.has(root)) {
+        return true;
+      }
+      const intended = intendedSymbols.get(root);
+      if (!intended) {
+        // One name printed for two different symbols: whichever declaration
+        // the fix site reaches, the other spelling is captured.
+        return false;
+      }
+      if (found === intended) {
+        return true;
+      }
+      const resolveAlias = (symbol: ts.Symbol): ts.Symbol => {
+        if (!(symbol.flags & ts.SymbolFlags.Alias)) {
+          return symbol;
+        }
+        try {
+          return checker.getAliasedSymbol(symbol);
+        } catch {
+          return symbol;
+        }
+      };
+      const target = resolveAlias(found);
+      // A binding carrying no type meaning captures nothing: a type reference
+      // resolves past it to a declaration this lookup does not surface, so the
+      // presence answer stands rather than a guess about which one.
+      if (!(target.flags & ts.SymbolFlags.Type)) {
+        return true;
+      }
+      return target === resolveAlias(intended);
     }
 
     /**
@@ -984,14 +1130,25 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
      * prints the same as an imported one), and exotic printer output can be
      * invalid in an annotation position. Shipping such an annotation breaks
      * the build, so the fix is gated on the synthesized text (a) parsing
-     * standalone and (b) referencing only names in scope where the Record is
-     * inserted. Failing the gate downgrades to the report-only path — the
-     * plugin prefers a skipped fix over one that does not compile.
+     * standalone, (b) referencing only names in scope where the Record is
+     * inserted, and (c) having each of those names still DENOTE the symbol it
+     * was printed for. Failing the gate downgrades to the report-only path —
+     * the plugin prefers a skipped fix over one that does not compile.
+     *
+     * (c) is not implied by (b). A nearer declaration of the same name
+     * satisfies mere presence while binding the annotation to something else,
+     * and the capture is silent when the shadow is compatible: the emitted
+     * `Record` keeps compiling, having quietly traded the union it was keyed on
+     * for the shadow's own type. That drops exactly the exhaustiveness the
+     * rule's message promises — growing the real union stops failing the build
+     * (#2229). The correct spelling is not derivable syntactically (the outer
+     * symbol has no reachable name there at all), so the fix is withheld.
      */
     function validateAnnotation(
       annotationText: string,
       fixSite: TSESTree.Node,
-    ): 'ok' | 'unparseable' | 'unresolvable' {
+      intendedSymbols: IntendedSymbols,
+    ): 'ok' | 'unparseable' | 'unresolvable' | 'shadowed' {
       const sourceFile = ts.createSourceFile(
         '__annotation__.ts',
         `type __T = ${annotationText};`,
@@ -1050,27 +1207,38 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
         return 'unresolvable';
       }
       try {
-        const namesInScope = (meaning: ts.SymbolFlags): Set<string> =>
-          new Set(
-            checker
-              .getSymbolsInScope(tsFixSite, meaning)
-              .map((symbol) => symbol.name),
-          );
+        const symbolsInScope = (meaning: ts.SymbolFlags): ts.Symbol[] =>
+          checker.getSymbolsInScope(tsFixSite, meaning);
         if (typeReferenceRoots.size > 0) {
-          const typeNames = namesInScope(
+          const typeSymbols = symbolsInScope(
             ts.SymbolFlags.Type |
               ts.SymbolFlags.Namespace |
               ts.SymbolFlags.Alias,
           );
+          // `getSymbolsInScope` walks outward from the location, so the FIRST
+          // symbol under a name is the one a reference written at the fix site
+          // would bind to — a nearer declaration is the one that wins.
+          const typeNames = new Map<string, ts.Symbol>();
+          for (const symbol of typeSymbols) {
+            if (!typeNames.has(symbol.name)) {
+              typeNames.set(symbol.name, symbol);
+            }
+          }
           for (const root of typeReferenceRoots) {
-            if (!typeNames.has(root)) {
+            const found = typeNames.get(root);
+            if (!found) {
               return 'unresolvable';
+            }
+            if (!denotesIntendedSymbol(root, found, intendedSymbols)) {
+              return 'shadowed';
             }
           }
         }
         if (typeQueryRoots.size > 0) {
-          const valueNames = namesInScope(
-            ts.SymbolFlags.Value | ts.SymbolFlags.Alias,
+          const valueNames = new Set(
+            symbolsInScope(ts.SymbolFlags.Value | ts.SymbolFlags.Alias).map(
+              (symbol) => symbol.name,
+            ),
           );
           for (const root of typeQueryRoots) {
             if (!valueNames.has(root)) {
@@ -2595,6 +2763,10 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
       // Expressions that will materialize as Record values (for eager check).
       contributingValues: TSESTree.Expression[];
       dText: string;
+      // The symbols the bare names in `dText` were printed for, so the
+      // annotation gate can tell a name that still denotes them from one a
+      // nearer declaration captures.
+      dIntended: IntendedSymbols;
       // 'return' | 'assign' for switch/if forms; 'expr' for ternary.
       form: 'return' | 'assign' | 'expr';
       assignTargetText?: string;
@@ -2727,6 +2899,7 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
         entries,
         contributingValues,
         dText,
+        dIntended,
         form,
         assignTargetText,
         fullCoverage,
@@ -2794,8 +2967,8 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
       }
 
       const lookupName = derivation.name;
-      const vMembers = computeValueTypeMembers(contributingValues);
-      if (!vMembers) {
+      const valueTypes = computeValueTypeMembers(contributingValues);
+      if (!valueTypes) {
         context.report({
           node,
           messageId: 'preferMapManual',
@@ -2806,22 +2979,26 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
         });
         return;
       }
+      const vMembers = valueTypes.members;
+
+      // Both sides of the `Record` are printed from symbols, so both carry
+      // their attributions into the gate together.
+      const intendedSymbols: IntendedSymbols = new Map(dIntended);
+      mergeIntendedSymbols(intendedSymbols, valueTypes.intended);
 
       // The gate parses `type __T = ...;` standalone, so it reads the flat
       // annotation whatever layout the emitter settles on for it.
       const verdict = validateAnnotation(
         `Record<${dText}, ${vMembers.join(' | ')}>`,
         discriminantOf(node),
+        intendedSymbols,
       );
       if (verdict !== 'ok') {
         context.report({
           node,
           messageId: 'preferMapManual',
           data: {
-            reason:
-              verdict === 'unparseable'
-                ? 'the branch value type does not print as a parseable annotation — write the Record with an explicit type manually'
-                : 'the annotation would name types that are not in scope at the fix site — import them or write the Record manually',
+            reason: ANNOTATION_DECLINE_REASONS[verdict],
           },
         });
         return;
@@ -2920,9 +3097,12 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
      * a string/number literal. Returns the union keys + nullish flag, or null to
      * skip entirely (boolean/open string/number/object/function discriminants).
      */
-    function typeGate(
-      discriminant: TSESTree.Node,
-    ): { unionKeys: LiteralKey[]; hasNullish: boolean; dText: string } | null {
+    function typeGate(discriminant: TSESTree.Node): {
+      unionKeys: LiteralKey[];
+      hasNullish: boolean;
+      dText: string;
+      dIntended: IntendedSymbols;
+    } | null {
       const type = tsTypeOf(discriminant);
       if (!type) {
         return null;
@@ -2931,11 +3111,16 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
       if (literalKeys.length === 0 || hasOther) {
         return null;
       }
-      const dText = discriminantTypeText(type, discriminant);
-      if (!dText) {
+      const printed = discriminantTypeText(type, discriminant);
+      if (!printed || !printed.text) {
         return null;
       }
-      return { unionKeys: literalKeys, hasNullish, dText };
+      return {
+        unionKeys: literalKeys,
+        hasNullish,
+        dText: printed.text,
+        dIntended: printed.intended,
+      };
     }
 
     /**
@@ -3087,7 +3272,7 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
       if (!gated) {
         return;
       }
-      const { unionKeys, hasNullish, dText } = gated;
+      const { unionKeys, hasNullish, dText, dIntended } = gated;
 
       // Compute coverage.
       const explicitForCoverage = explicit.map((b) => ({
@@ -3178,6 +3363,7 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
         entries: coverage.entries,
         contributingValues,
         dText,
+        dIntended,
         form: kind,
         assignTargetText,
         fullCoverage: coverage.fullCoverage,
@@ -3266,7 +3452,7 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
       if (!gated) {
         return;
       }
-      const { unionKeys, hasNullish, dText } = gated;
+      const { unionKeys, hasNullish, dText, dIntended } = gated;
 
       const explicitForCoverage = links.map((l, i) => ({
         keys: explicitKeys[i],
@@ -3349,6 +3535,7 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
         entries: coverage.entries,
         contributingValues,
         dText,
+        dIntended,
         form: 'expr',
         fullCoverage: coverage.fullCoverage,
         hasNullish,
@@ -3458,7 +3645,7 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
       if (!gated) {
         return;
       }
-      const { unionKeys, hasNullish, dText } = gated;
+      const { unionKeys, hasNullish, dText, dIntended } = gated;
 
       const explicitForCoverage = links.map((l, i) => ({
         keys: explicitKeys[i],
@@ -3532,6 +3719,7 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
         entries: coverage.entries,
         contributingValues,
         dText,
+        dIntended,
         form: kind,
         assignTargetText,
         fullCoverage: coverage.fullCoverage,
