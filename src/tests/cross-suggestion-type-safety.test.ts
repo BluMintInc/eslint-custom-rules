@@ -381,6 +381,16 @@ const compileCorpus = (
     noEmit: true,
     strict,
     noImplicitAny: false,
+    /**
+     * `noUnusedLocals`/`noUnusedParameters` are deliberately ABSENT here, and
+     * the reason is measured (#2234). A fragment corpus makes an unused local
+     * the common case, so with them on this guard's asserted pairs fell from
+     * 599 to 299 — the baseline-compiles gate holds out every input that
+     * declares something it never reads. `composed-fix-type-safety-closure`
+     * carries the unused-declaration channel instead: it is the only one of
+     * these guards with a SOLO filter, which is what absorbs the rename and
+     * destructuring-expansion artifacts a fragment corpus produces.
+     */
     target: ts.ScriptTarget.ES2022,
     module: ts.ModuleKind.ESNext,
     moduleResolution: ts.ModuleResolutionKind.NodeJs,

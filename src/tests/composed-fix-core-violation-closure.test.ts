@@ -112,22 +112,18 @@ import {
   defineCorpusParsers,
   parserKeyFor,
   parserOptionsFor,
-  severityWithOptions,
   ruleNameByIdentity,
   silentWithoutProgramRuleNames,
   FixtureBucket,
   FixtureCase,
 } from '../utils/fixtureCorpus';
 import { restrictedProductionBreaches } from '../utils/restrictedProductions';
-
-/* eslint-disable @typescript-eslint/no-var-requires */
-const plugin = require('../index') as {
-  rules: Record<string, unknown>;
-  configs: { recommended: { rules: Record<string, unknown> } };
-};
-/* eslint-enable @typescript-eslint/no-var-requires */
-
-const PREFIX = '@blumintinc/blumint/';
+import {
+  PLUGIN_PREFIX as PREFIX,
+  composedRulesFor as composedRulesWith,
+  recommendedRulesExcluding,
+  subsetInConfigOrder,
+} from '../utils/composedFixConfig';
 
 /**
  * EMPTY, and kept as the place an exclusion must be written.
@@ -193,15 +189,7 @@ const RESTRICTED = 'restricted-production';
  * The config a consumer actually runs, minus anything shipped `off`: a rule the
  * consumer never runs cannot participate in a composition on their machine.
  */
-const RECOMMENDED: Record<string, unknown> = {};
-for (const [id, severity] of Object.entries(plugin.configs.recommended.rules)) {
-  if (!id.startsWith(PREFIX)) continue;
-  if (severity === 'off' || severity === 0) continue;
-  const name = id.slice(PREFIX.length);
-  if (!plugin.rules[name]) continue;
-  if (EXCLUDED.has(name)) continue;
-  RECOMMENDED[id] = severity;
-}
+const RECOMMENDED = recommendedRulesExcluding(EXCLUDED);
 
 const BUCKETS = new Set<FixtureBucket>(['valid', 'output', 'invalid']);
 
@@ -388,13 +376,8 @@ const coreConfigFor = (testCase: FixtureCase) =>
  * OPTIONS its author wrote. Without those options the fixture is fixed under a
  * configuration nobody declared (#1732).
  */
-const composedRulesFor = (owner: string, testCase: FixtureCase) => {
-  const rules: Record<string, unknown> = { ...RECOMMENDED };
-  if (!EXCLUDED.has(owner)) {
-    rules[`${PREFIX}${owner}`] = severityWithOptions(testCase);
-  }
-  return rules;
-};
+const composedRulesFor = (owner: string, testCase: FixtureCase) =>
+  composedRulesWith(RECOMMENDED, EXCLUDED, owner, testCase);
 
 for (const [owner, cases] of corpus.byRule) {
   for (const testCase of cases) {
@@ -479,21 +462,6 @@ for (const [owner, cases] of corpus.byRule) {
  * below is asserted for every finding precisely so that failure mode cannot
  * return silently.
  */
-/**
- * A subset of the composed config, in the config's OWN key order.
- *
- * Not a formatting nicety: two rules whose fixes compete for the same range are
- * resolved by the order their messages arrive, so a re-ordered subset is a
- * different configuration and can produce different text.
- */
-export const subsetInConfigOrder = (
-  order: readonly string[],
-  ids: Iterable<string>,
-) => {
-  const wanted = new Set(ids);
-  return order.filter((id) => wanted.has(id));
-};
-
 function attribute(finding: Finding): void {
   const { testCase } = finding;
   const coreConfig = coreConfigFor(testCase);

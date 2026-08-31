@@ -824,6 +824,14 @@ const TS_OPTIONS = {
   skipLibCheck: true,
   noEmit: true,
   allowJs: true,
+  /**
+   * `noUnusedLocals`/`noUnusedParameters` are deliberately ABSENT, unlike the
+   * other `ts.Program` options in this repo (#2234). This guard PERTURBS the
+   * fixture — wrapping a region in a function is exactly what makes a binding
+   * the enclosing scope used stop being read — so the flags reject the wrapped
+   * variant as invalid rather than judging the rule. Measured: the invalid
+   * count rose to 930 of 1330 dropped variants and the type arm probed 0 sites.
+   */
 };
 const baseHost = ts.createCompilerHost(TS_OPTIONS, true);
 /**
