@@ -253,7 +253,13 @@ sits ahead of both messages. That is what preserves the deliberate
 recompute-trigger idiom in practice, since a trigger (a hydration flag, a
 revision counter, a change hash) is virtually always a primitive.
 
-An **array** is reported, and so is an object.
+A **literal** type counts as its primitive — `0 as const`, `true as const` and
+a literal union like `'compact' | 'full'` are all primitives — so freezing a
+value with `as const`, which `global-const-style` does automatically, does not
+cost the dependency its exemption.
+
+An **array** is reported, and so is an object; a union is primitive only when
+every member of it is, so `string | { a: number }` is still an object.
 
 Be aware of the consequence for this repo's own tests. The screen is
 type-driven and `RuleTester` runs without `parserOptions.project`, so an
