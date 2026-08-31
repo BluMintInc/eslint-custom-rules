@@ -197,6 +197,22 @@ type Exemption = {
  * then update the entry and say what changed.
  */
 const KNOWN_DIVERGENT: Record<string, Exemption> = {
+  'no-unused-props::no-entire-object-hook-deps': {
+    reason:
+      "HANDOFF, and the sibling says so in its own source. The owner's " +
+      '`Pick<ChannelGroupProps, ...>` fixture destructures `channels` and ' +
+      'lists it in `[channels, sortChannels]`, but the memo body never reads ' +
+      'it, so the sibling reports `removeUnusedDependency` on that one entry. ' +
+      'There is no spelling of the dependency array that satisfies both: the ' +
+      "array is `channels`'s ONLY read, so removing it strands the prop and " +
+      "the owner then reports it — which is precisely why the sibling's fixer " +
+      'declines here (#2236). `no-unused-props` cannot resolve it either, ' +
+      'being report-only. The report therefore stands unfixed and the choice ' +
+      'is left to a person: drop the prop, or give it a real read. Deleting ' +
+      'it from the fixture is not that spelling — the prop is what carries ' +
+      "the `Pick` resolution the owner's case exists to pin.",
+    cases: { removeUnusedDependency: 1 },
+  },
   'enforce-assert-safe-object-key::prefer-union-from-const-array': {
     reason:
       "PIPELINE: the #1875 fixtures declare in-file `type Kind = 'live' | 'simulated'` aliases to pin the compiler-bounded Record carve-out — 12 valid fixtures plus the fixed outputs of 9 invalid ones — and the sibling wants every such alias derived from an `as const` values array. The composed `--fix` rewrites the alias on all 21 and the carve-out reads the derived `(typeof KINDS)[number]` spelling — via name identity or the array's own literal elements — so the valid fixtures end silent under BOTH rules with zero `assertSafe` wraps, and the outputs keep their already-wrapped keys exempt (measured, every one). Was 20 for a corpus-identity reason rather than a reach one: the carve-out's `String()` and template-interpolation fixtures used to fix to the BYTE-IDENTICAL `m[assertSafe(kind)]`, which the corpus deduped to a single case. #2144 stopped the fixer replacing a coercion with its operand, so those outputs are now `m[assertSafe(String(kind))]` and ``m[assertSafe(`${kind}`)]`` — two distinct texts, both entering the corpus on the same alias the entry was already signed off for. The disagreement reached no new shape.",

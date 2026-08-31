@@ -1480,31 +1480,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
       errors: [removeUnused('channelGroupActive')],
-      output: `
-        const MyComponent = ({ channelGroupActive, channelGroupIdRouter, findByChannelGroupId }) => {
-          useEffect(() => {
-            const syncChannelGroup = async () => {
-              if (!channelGroupIdRouter) {
-                return setChannelGroupActive(undefined);
-              }
-
-              const foundChannelGroup = await findByChannelGroupId(
-                channelGroupIdRouter,
-              );
-
-              if (!foundChannelGroup) {
-                openChannelGroupNotFoundDialog();
-                return closeChannelGroup();
-              }
-
-              setChannelGroupActive(toActiveChannelGroup(foundChannelGroup));
-            };
-
-            syncChannelGroup();
-          }, [channelGroupIdRouter, findByChannelGroupId]);
-          return null;
-        };
-      `,
+      output: null,
     },
     // Object used in nullish coalescing but only specific property needed
     {
@@ -1617,14 +1593,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
       errors: [removeUnused('unusedObject')],
-      output: `
-        const MyComponent = ({ unusedObject, usedValue }) => {
-          const result = useMemo(() => {
-            return usedValue * 2;
-          }, [usedValue]);
-          return <div>{result}</div>;
-        };
-      `,
+      output: null,
     },
     // Multiple unused objects
     {
@@ -1645,7 +1614,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         const MyComponent = ({ unused1, unused2, used }) => {
           const result = useMemo(() => {
             return used.value;
-          }, [unused2, used.value]);
+          }, [unused1, unused2, used.value]);
           return <div>{result}</div>;
         };
       `,
@@ -2352,20 +2321,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
       errors: [removeUnused('count')],
-      output: `
-        const MyComponent = ({ count, threshold }) => {
-          useEffect(() => {
-            const sync = async () => {
-              const next = await fetchNext(threshold);
-              if (next) {
-                setCount(0);
-              }
-            };
-            sync();
-          }, [threshold]);
-          return null;
-        };
-      `,
+      output: null,
     },
     // Circular dependency whose setter sits inside a startTransition callback.
     {
@@ -2380,16 +2336,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
       errors: [removeUnused('pageSize')],
-      output: `
-        const MyComponent = ({ pageSize, status }) => {
-          useEffect(() => {
-            startTransition(() => {
-              setPageSize(10);
-            });
-          }, [status]);
-          return null;
-        };
-      `,
+      output: null,
     },
     // Single-character dependency: dep `a` corresponds to setter `setA`.
     {
@@ -2402,14 +2349,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
       errors: [removeUnused('a')],
-      output: `
-        const MyComponent = ({ a }) => {
-          useEffect(() => {
-            setA(undefined);
-          }, []);
-          return null;
-        };
-      `,
+      output: null,
     },
     // Value-producing hooks are unaffected: an unread dependency in a
     // useCallback is dead weight regardless of any setter call.
@@ -2423,14 +2363,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
       errors: [removeUnused('status')],
-      output: `
-        const MyComponent = ({ status, onDone }) => {
-          const handleClick = useCallback(() => {
-            onDone();
-          }, [onDone]);
-          return <button onClick={handleClick}>Go</button>;
-        };
-      `,
+      output: null,
     },
     // Issue #1547: the agora shape WITHOUT a disable comment still REPORTS —
     // the exemption is not a blanket off-switch. The autofix is withheld
@@ -2480,12 +2413,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
       errors: [removeUnused('hydrated')],
-      output: `
-        const EventEndedText = ({ endDate, hydrated }) => {
-          const label = useMemo(() => formatRelative({ date: toValidDate(endDate) }), [endDate]);
-          return <span>{label}</span>;
-        };
-      `,
+      output: null,
     },
     // An IMPORT read only by the array is stranded the same way a local is, and
     // the import cannot be deleted alongside it either.
@@ -2592,13 +2520,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
       errors: [removeUnused('hydrated'), removeUnused('hydrated')],
-      output: `
-        const EventEndedText = ({ endDate, hydrated }) => {
-          const label = useMemo(() => formatRelative({ date: toValidDate(endDate) }), [endDate]);
-          const tone = useCallback(() => toneFor(endDate), [endDate]);
-          return <span className={tone()}>{label}</span>;
-        };
-      `,
+      output: null,
     },
     // Shadowing under the two-hook shape: both entries resolve to the INNER
     // `hydrated`, whose only reads are those entries. The OUTER binding of the
@@ -2651,16 +2573,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
       errors: [removeUnused('trigger')],
-      output: `
-        const MyComponent = ({ value, trigger }) => {
-          // eslint-disable-next-line no-console
-          const result = useMemo(() => {
-            console.log(value.total);
-            return value.total * 2;
-          }, [value.total]);
-          return <div>{result}</div>;
-        };
-      `,
+      output: null,
     },
     // The exemption is scoped to the hook the directive covers: a neighbouring
     // hook with its own array is still pruned.
@@ -2678,18 +2591,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
       errors: [removeUnused('status')],
-      output: `
-        const MyComponent = ({ endDate, hydrated, onDone, status }) => {
-          // eslint-disable-next-line react-hooks/exhaustive-deps -- hydrated is a recompute trigger
-          const label = useMemo(() => {
-            return format(endDate);
-          }, [endDate, hydrated]);
-          const handleClick = useCallback(() => {
-            onDone();
-          }, [onDone]);
-          return <button onClick={handleClick}>{label}</button>;
-        };
-      `,
+      output: null,
     },
     // Prose that merely mentions the rule name is not a directive.
     {
@@ -2703,15 +2605,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
       errors: [removeUnused('trigger')],
-      output: `
-        const MyComponent = ({ value, trigger }) => {
-          // we removed the exhaustive-deps disable that used to live here
-          const result = useMemo(() => {
-            return value * 2;
-          }, [value]);
-          return <div>{result}</div>;
-        };
-      `,
+      output: null,
     },
     // A manually managed array is still narrowed: taking control of which
     // dependencies are listed says nothing about depending on an entire object.
@@ -3359,6 +3253,98 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
     },
+    // #2236. A DESTRUCTURED prop read only by a dependency array is stranded by
+    // the removal, and `noUnusedParameters` reports a stranded destructured
+    // prop — so the fixer withholds the rewrite while the report stands. The
+    // consumer sets `noUnusedParameters: true` (and `noUnusedLocals: false`)
+    // and gates on `tsc --noEmit`, so applying it turns a green file red there;
+    // `no-unused-props` cannot clean up after it, being report-only.
+    {
+      code: `
+        const Card = ({ label, revision }) => {
+          const text = useMemo(() => label.toUpperCase(), [label, revision]);
+          return <span>{text}</span>;
+        };
+      `,
+      errors: [removeUnused('revision')],
+      output: null,
+    },
+    // The rest sibling takes the same verdict: tsc reports `...rest` unused
+    // exactly as it reports a named property, so an exemption keyed on the
+    // spread would readmit the strand.
+    {
+      code: `
+        const Card = ({ label, ...rest }) => {
+          const text = useMemo(() => label.toUpperCase(), [label, rest]);
+          return <span>{text}</span>;
+        };
+      `,
+      errors: [removeUnused('rest')],
+      output: null,
+    },
+    // `_`-prefixing is NOT an opt-out inside a pattern. tsc honours the
+    // underscore for a positional parameter only, so reading it as an exemption
+    // here would strand a binding whose name merely looks deliberate.
+    {
+      code: `
+        const Card = ({ label, _revision }) => {
+          const text = useMemo(() => label.toUpperCase(), [label, _revision]);
+          return <span>{text}</span>;
+        };
+      `,
+      errors: [removeUnused('_revision')],
+      output: null,
+    },
+    // The negative control for all three. A destructured prop with an ordinary
+    // read elsewhere is not stranded by the removal, so the fix still applies —
+    // without this, declining unconditionally would satisfy every assertion
+    // above and the rule would simply have stopped fixing.
+    {
+      code: `
+        const Card = ({ label, revision }) => {
+          const text = useMemo(() => label.toUpperCase(), [label, revision]);
+          return <span title={String(revision)}>{text}</span>;
+        };
+      `,
+      errors: [removeUnused('revision')],
+      output: `
+        const Card = ({ label, revision }) => {
+          const text = useMemo(() => label.toUpperCase(), [label]);
+          return <span title={String(revision)}>{text}</span>;
+        };
+      `,
+    },
+    // A NESTED destructured prop takes the same verdict: the pattern is two
+    // levels deep, and
+    // the walk has to climb both to reach the ObjectPattern.
+    {
+      code: `
+        const Card = ({ label, meta: { revision } }) => {
+          const text = useMemo(() => label.toUpperCase(), [label, revision]);
+          return <span>{text}</span>;
+        };
+      `,
+      errors: [removeUnused('revision')],
+      output: null,
+    },
+    // The POSITIONAL parameter stays exempt, deliberately. tsc reports one too,
+    // but the composed sweep reached zero of them and declining here would
+    // settle the reporting question #1621 defers on unmeasured ground. Pinned
+    // so that widening the decline to every parameter is a visible decision
+    // rather than a silent drift.
+    {
+      code: `
+        const useLabel = (label, revision) => {
+          return useMemo(() => label.toUpperCase(), [label, revision]);
+        };
+      `,
+      errors: [removeUnused('revision')],
+      output: `
+        const useLabel = (label, revision) => {
+          return useMemo(() => label.toUpperCase(), [label]);
+        };
+      `,
+    },
   ],
 });
 
@@ -3588,17 +3574,7 @@ const Component = ({ ids, user }: { ids: Set<string>; user: { id: string; name: 
         };
       `,
       errors: [removeUnused('trigger')],
-      output: `
-        const MyComponent = ({ value, trigger }) => {
-          const result = useMemo(() => {
-            return value * 2;
-          }, [
-            // value drives the memo and must stay listed
-            value,
-          ]);
-          return <div>{result}</div>;
-        };
-      `,
+      output: null,
     },
     // The comment sits before the LAST dependency, so the removed span runs
     // backwards from the previous element instead of forwards.
@@ -3616,18 +3592,7 @@ const Component = ({ ids, user }: { ids: Set<string>; user: { id: string; name: 
         };
       `,
       errors: [removeUnused('trigger')],
-      output: `
-        const MyComponent = ({ value, trigger }) => {
-          const result = useMemo(() => {
-            return value * 2;
-          }, [
-            value
-            // kept for the migration window
-            ,
-          ]);
-          return <div>{result}</div>;
-        };
-      `,
+      output: null,
     },
     // A block comment carries the same way a line comment does.
     {
@@ -3644,17 +3609,7 @@ const Component = ({ ids, user }: { ids: Set<string>; user: { id: string; name: 
         };
       `,
       errors: [removeUnused('trigger')],
-      output: `
-        const MyComponent = ({ value, trigger }) => {
-          const result = useMemo(() => {
-            return value * 2;
-          }, [
-            /* value drives the memo */
-            value,
-          ]);
-          return <div>{result}</div>;
-        };
-      `,
+      output: null,
     },
     // Several comments in one margin each keep a line of their own: a `//`
     // comment swallows the rest of its line, so folding them together would
@@ -3674,18 +3629,7 @@ const Component = ({ ids, user }: { ids: Set<string>; user: { id: string; name: 
         };
       `,
       errors: [removeUnused('trigger')],
-      output: `
-        const MyComponent = ({ value, trigger }) => {
-          const result = useMemo(() => {
-            return value * 2;
-          }, [
-            // first note
-            // second note
-            value,
-          ]);
-          return <div>{result}</div>;
-        };
-      `,
+      output: null,
     },
     // A comment trailing the removed dependency on its own line is in the
     // margin too, so it is carried rather than dropped.
@@ -3702,17 +3646,7 @@ const Component = ({ ids, user }: { ids: Set<string>; user: { id: string; name: 
         };
       `,
       errors: [removeUnused('trigger')],
-      output: `
-        const MyComponent = ({ value, trigger }) => {
-          const result = useMemo(() => {
-            return value * 2;
-          }, [
-            // trigger is inert here
-            value,
-          ]);
-          return <div>{result}</div>;
-        };
-      `,
+      output: null,
     },
   ]),
 });

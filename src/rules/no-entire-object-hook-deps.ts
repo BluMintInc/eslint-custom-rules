@@ -1595,6 +1595,52 @@ export const noEntireObjectHookDeps = createRule<[], MessageIds>({
     }
 
     /**
+     * Whether a parameter's binding comes out of a DESTRUCTURING pattern - a
+     * destructured prop rather than a positional parameter.
+     *
+     * why: this is the line `noUnusedParameters` draws, measured against the
+     * consumer's own compiler. It reports a destructured property wherever it
+     * sits, including a rest sibling and including an `_`-prefixed one; a
+     * positional parameter it reports only when the name does not start with
+     * `_`. Keying on the pattern rather than on the name is therefore the
+     * accurate test for the destructured case, and `_`-prefixing must NOT be
+     * read as an opt-out there - tsc ignores the name inside a pattern, so
+     * honouring it would readmit the strand on a binding that merely looks
+     * deliberate.
+     *
+     * The AssignmentPattern step is carried but not reachable from the report
+     * path: measured, the rule emits nothing at all for a DEFAULTED
+     * destructured prop (`({ label, revision = 0 })`), so the fixer never gets
+     * to judge one. It stays because dropping it would classify such a prop as
+     * positional the moment that reporting gap is closed, which is the strand
+     * this function exists to prevent - not because a fixture exercises it.
+     */
+    function isDestructuredParameter(name: TSESTree.Node): boolean {
+      if (name.type !== AST_NODE_TYPES.Identifier) return false;
+      let node: TSESTree.Node | undefined = name.parent as
+        | TSESTree.Node
+        | undefined;
+      while (node) {
+        if (
+          node.type === AST_NODE_TYPES.ObjectPattern ||
+          node.type === AST_NODE_TYPES.ArrayPattern
+        ) {
+          return true;
+        }
+        if (
+          node.type === AST_NODE_TYPES.Property ||
+          node.type === AST_NODE_TYPES.RestElement ||
+          node.type === AST_NODE_TYPES.AssignmentPattern
+        ) {
+          node = node.parent as TSESTree.Node | undefined;
+          continue;
+        }
+        return false;
+      }
+      return false;
+    }
+
+    /**
      * Whether removing `element`'s binding from every dependency array that
      * lists it would leave the binding with no reader in the file.
      *
@@ -1620,11 +1666,35 @@ export const noEntireObjectHookDeps = createRule<[], MessageIds>({
      * inference is safe in the conservative direction — if a sibling report is
      * suppressed the cost is a withheld fix, never a dangling reference.
      *
-     * Parameters are deliberately exempt. An unread parameter is not an unused
-     * BINDING to either instrument — `no-unused-vars` runs with `args: 'none'`
-     * and `noUnusedLocals` does not cover parameters — so declining there would
-     * withhold a fix without preventing any breakage, and it would silently
-     * settle the reporting question #1621 defers.
+     * A DESTRUCTURED parameter is not exempt; a positional one still is.
+     *
+     * why: the instrument that covers a parameter is `noUnusedParameters`, not
+     * `noUnusedLocals`, and the consumer sets `noUnusedParameters: true` while
+     * setting `noUnusedLocals: false` — so a blanket parameter exemption reads
+     * the one flag the consumer has turned OFF and misses the one it has turned
+     * ON. It also cites `no-unused-vars` with `args: 'none'`, which is not the
+     * consumer's setting either. Stranding a destructured prop is therefore a
+     * red build there, from a `tsc --noEmit` gate, and `no-unused-props` cannot
+     * clean up after this fixer because that rule is report-only.
+     *
+     * Nearly every dependency entry in a React component is a destructured
+     * prop, so this is the common case rather than an edge: 21 composed
+     * findings over 13 distinct fixture shapes, every one of them a
+     * destructured prop this fixer stranded (#2236).
+     *
+     * The POSITIONAL parameter stays exempt, and deliberately so. tsc reports
+     * one too, so this IS a residue — but the composed sweep over 23,785
+     * fixtures reached zero of them on its own, and declining there would
+     * settle the reporting question #1621 defers on unmeasured ground while
+     * withholding fixes the corpus shows to be safe, including the #2208
+     * margin-comment arm whose subject is a positional parameter. The residue
+     * is carried deliberately and it is WITNESSED: the control fixture added
+     * with this fix is now the sweep's only surviving stranded parameter, so
+     * the cost of the exemption is visible in that guard's dump rather than
+     * asserted here and forgotten.
+     *
+     * The report stands either way. Only the rewrite is withheld, which is the
+     * conservative direction the rest of this function already takes.
      */
     function wouldStrandBinding(element: TSESTree.Node): boolean {
       const identifier = unwrapExpression(element);
@@ -1632,9 +1702,13 @@ export const noEntireObjectHookDeps = createRule<[], MessageIds>({
 
       const variable = resolveBinding(identifier);
       if (!variable || variable.defs.length === 0) return false;
+      const parameterDefs = variable.defs.filter(
+        (def) => def.type === ('Parameter' as typeof def.type),
+      );
       if (
-        variable.defs.some(
-          (def) => def.type === ('Parameter' as typeof def.type),
+        parameterDefs.length === variable.defs.length &&
+        !parameterDefs.some((def) =>
+          isDestructuredParameter(def.name as TSESTree.Node),
         )
       ) {
         return false;
