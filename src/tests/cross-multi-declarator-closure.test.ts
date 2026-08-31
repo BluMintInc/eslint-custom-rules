@@ -259,12 +259,23 @@ const soloRules = (rule: string, testCase: FixtureCase, owner: string) => ({
   [PREFIX + rule]: rule === owner ? severityWithOptions(testCase) : 'error',
 });
 
+/**
+ * Why a lint produced no verdict, which the null return alone cannot say.
+ *
+ * A fatal and a throw are different failures — one comes back through the
+ * message list, the other never reaches it — and a caller that folds both into
+ * `continue` drops the case in silence. The perturbation loop reads this to
+ * count what it skipped (#1984).
+ */
+type LintDrop = { fatal: boolean; threw: boolean };
+
 const verify = (
   rule: string,
   code: string,
   testCase: FixtureCase,
   filename: string,
   owner: string,
+  drop?: LintDrop,
 ): Linter.LintMessage[] | null => {
   try {
     const messages = linter.verify(
@@ -272,9 +283,13 @@ const verify = (
       configFor(testCase, soloRules(rule, testCase, owner)),
       { filename },
     );
-    if (messages.some((message) => message.fatal)) return null;
+    if (messages.some((message) => message.fatal)) {
+      if (drop) drop.fatal = true;
+      return null;
+    }
     return messages.filter((message) => message.ruleId === PREFIX + rule);
   } catch {
+    if (drop) drop.threw = true;
     return null;
   }
 };
@@ -398,6 +413,16 @@ type Counters = {
   mutationLicensed: number;
   destructionLicensed: number;
   oraclesEvaluated: number;
+  /**
+   * Perturbed variants that produced no verdict at all, so ARM A and ARM B were
+   * both skipped for them. A fatal is indistinguishable from a rule staying
+   * silent once messages are filtered by `ruleId`, and a throw never reaches the
+   * message list, so both are counted rather than folded into `continue`.
+   */
+  variantLintFatal: number;
+  variantLintThrew: number;
+  /** The fixer itself throwing, which skips ARM B with no oracle evaluated. */
+  variantFixThrew: number;
 };
 
 const blankCounters = (): Counters => ({
@@ -414,6 +439,9 @@ const blankCounters = (): Counters => ({
   mutationLicensed: 0,
   destructionLicensed: 0,
   oraclesEvaluated: 0,
+  variantLintFatal: 0,
+  variantLintThrew: 0,
+  variantFixThrew: 0,
 });
 
 const add = (into: Counters, from: Counters) => {
@@ -465,8 +493,20 @@ const probeFixture = (
   const controlIds = countOf(idsOf(control));
 
   for (const perturbation of perturbations) {
-    const messages = verify(rule, perturbation.code, testCase, filename, owner);
-    if (!messages) continue;
+    const drop: LintDrop = { fatal: false, threw: false };
+    const messages = verify(
+      rule,
+      perturbation.code,
+      testCase,
+      filename,
+      owner,
+      drop,
+    );
+    if (!messages) {
+      if (drop.threw) counters.variantLintThrew++;
+      else counters.variantLintFatal++;
+      continue;
+    }
 
     // ---------------- ARM A: detection ----------------
     if (control.length > 0) {
@@ -504,7 +544,10 @@ const probeFixture = (
     // ---------------- ARM B: fix corruption ----------------
     if (!fixable || messages.length === 0) continue;
     const fixed = fix(rule, perturbation.code, testCase, filename, owner);
-    if (fixed === null) continue;
+    if (fixed === null) {
+      counters.variantFixThrew++;
+      continue;
+    }
     if (fixed === perturbation.code) {
       counters.declines++;
       continue;
@@ -968,6 +1011,8 @@ console.log(
     `  attribution rejected:      ${totals.attributionRejected} (${crossTotals.attributionRejected} cross)`,
     `  mutation LICENSED:         ${totals.mutationLicensed} (${crossTotals.mutationLicensed} cross)`,
     `  destruction LICENSED:      ${totals.destructionLicensed} (${crossTotals.destructionLicensed} cross)`,
+    `  variant fatal / threw:     ${totals.variantLintFatal} / ${totals.variantLintThrew}`,
+    `  variant FIX threw:         ${totals.variantFixThrew}`,
     `  distinct fixers measured:  ${stats.fixers.size} (${stats.crossFixers.size} cross)`,
     '  declarations skipped, by reason:',
     ...Object.entries(skipped).map(
@@ -1011,6 +1056,35 @@ const SCREEN_THREW_CEILING = 0;
 const CONTROL_FATAL_CEILING = 0;
 const ATTRIBUTION_REJECTED_CEILING = 0;
 const UNPARSEABLE_VARIANT_CEILING = 0;
+/**
+ * A perturbed variant that goes fatal, or throws, skips ARM A *and* ARM B for
+ * that variant. The splice adds one initialized declarator to a statement the
+ * unperturbed control already linted cleanly, so any of these is a probe defect
+ * rather than a property of the corpus — hence zero rather than a ceiling.
+ */
+const VARIANT_LINT_FATAL_CEILING = 0;
+const VARIANT_LINT_THREW_CEILING = 0;
+const VARIANT_FIX_THREW_CEILING = 0;
+
+/**
+ * Declarations the perturbation refuses, by reason, each cut just above its
+ * measurement. Six of these eight were printed and read by nothing, which is the
+ * state a number has to be in to move unnoticed (#2222, #2225): a filter that
+ * started swallowing declarations wholesale would empty the sweep while every
+ * floor above still passed on what remained.
+ */
+const SKIP_CEILINGS: Record<SkipReason, number> = {
+  multiDeclarator: 120,
+  noInitializer: 170,
+  destructuringSubject: 2800,
+  declareModifier: 950,
+  // No fixture declares a `using` binding; adding a declarator to one would
+  // change what gets disposed, so the shape is refused rather than perturbed.
+  usingKind: 10,
+  notStatementLevel: 360,
+  cappedPerFixture: 950,
+  variantUnparseable: UNPARSEABLE_VARIANT_CEILING,
+};
 
 /**
  * Open defects this CROSS pairing found, keyed at the full finding granularity
@@ -1085,6 +1159,46 @@ describe('the cross multi-declarator sweep is load-bearing', () => {
     expect(skipped.variantUnparseable).toBeLessThanOrEqual(
       UNPARSEABLE_VARIANT_CEILING,
     );
+    // The two drops the perturbation loop used to fold into a bare `continue`:
+    // a variant that produces no verdict is skipped by BOTH arms, and a fixer
+    // that throws leaves ARM B with nothing to measure.
+    expect(totals.variantLintFatal).toBeLessThanOrEqual(
+      VARIANT_LINT_FATAL_CEILING,
+    );
+    expect(totals.variantLintThrew).toBeLessThanOrEqual(
+      VARIANT_LINT_THREW_CEILING,
+    );
+    expect(totals.variantFixThrew).toBeLessThanOrEqual(
+      VARIANT_FIX_THREW_CEILING,
+    );
+    const exceeded = (Object.keys(SKIP_CEILINGS) as SkipReason[])
+      .filter((reason) => skipped[reason] > SKIP_CEILINGS[reason])
+      .map(
+        (reason) => `${reason}: ${skipped[reason]} > ${SKIP_CEILINGS[reason]}`,
+      );
+    expect(exceeded).toEqual([]);
+  });
+
+  /**
+   * The language skip, pinned to the corpus property it must equal rather than
+   * to a ceiling: every non-TypeScript case is skipped (a `package.json` body
+   * has no declaration to give a sibling) and no TypeScript one is, so a filter
+   * that started dropping TS fixtures for an unrelated reason fails here instead
+   * of shrinking the sweep in silence. Dropping the non-TS testers wholesale is
+   * what hid #1860.
+   */
+  it('skips exactly the non-TypeScript fixtures, and no others', () => {
+    const nonTsAvailable = [...corpus.byRule.values()].reduce(
+      (count, cases) =>
+        count + cases.filter((testCase) => testCase.language !== 'ts').length,
+      0,
+    );
+    expect(stats.nonTs).toBe(nonTsAvailable);
+    // Floored so the equality cannot be satisfied by a corpus that stopped
+    // carrying non-TypeScript fixtures at all.
+    expect(stats.nonTs).toBeGreaterThanOrEqual(100);
+    // Nothing is lost between the walk and the two buckets.
+    expect(stats.fixtures + stats.nonTs).toBe(corpus.totalCases);
   });
 
   it('detects a fixer that destroys a sibling (planted POSITIVE control)', () => {

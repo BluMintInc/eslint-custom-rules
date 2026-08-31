@@ -97,6 +97,21 @@ type CaseOutcome = {
 
 const SILENT: CaseOutcome = { reported: false, checked: false, finding: null };
 
+/**
+ * What produced no verdict, and why.
+ *
+ * Both channels here fold a throw and a fatal parse into the same shape as a
+ * rule that simply offered no fix, so an input the harness cannot lint is
+ * indistinguishable from one that converges — the #1984 signature. The counts
+ * are the only record that the drop stays incidental, and are asserted below.
+ */
+const skips = {
+  verifyThrew: 0,
+  inputFatal: 0,
+  suggestionVerifyThrew: 0,
+  suggestionInputFatal: 0,
+};
+
 const checkCase = (
   rule: string,
   testCase: FixtureCase,
@@ -108,8 +123,10 @@ const checkCase = (
   try {
     before = linter.verify(testCase.code, config, { filename });
   } catch {
+    skips.verifyThrew++;
     return SILENT;
   }
+  if (before.some((m) => m.fatal)) skips.inputFatal++;
   const mine = before.filter((m) => m.ruleId === id);
   // Nothing to converge unless this configuration actually offers a fix. This
   // also skips input that does not parse, which reports fatally and nothing else.
@@ -207,10 +224,14 @@ const checkSuggestions = (
   try {
     before = linter.verify(testCase.code, config, { filename });
   } catch {
+    skips.suggestionVerifyThrew++;
     return { applied: 0, findings: [] };
   }
   // Input that does not parse reports fatally and nothing else.
-  if (before.some((m) => m.fatal)) return { applied: 0, findings: [] };
+  if (before.some((m) => m.fatal)) {
+    skips.suggestionInputFatal++;
+    return { applied: 0, findings: [] };
+  }
 
   const mine = before.filter((m) => m.ruleId === id);
   const beforeCounts = new Map<string, number>();
@@ -385,6 +406,19 @@ const reasonFor = (rule: string): Reason => {
  */
 const UNREACHED_FIXERS: Record<string, Reason> = {};
 
+/**
+ * Fatal-parse probes, pinned EXACTLY rather than at a ceiling. Measured zero on
+ * both channels: every case parses under the filename `defaultFilenameFor`
+ * derives from its own code, and no rule currently needs the fallback fan-out,
+ * which is the one path that could produce a fatal — it re-probes a rule nothing
+ * else exercised under invented `.ts`/`.tsx` paths, and a fixture holding JSX
+ * under `/repo/src/util/helper.ts` forces `ScriptKind.TS` and cannot parse
+ * there. A fatal here is indistinguishable from a fixer that converged, so the
+ * first one must be a conscious bump rather than a rounding error.
+ */
+const FALLBACK_FATAL = 0;
+const SUGGESTION_FALLBACK_FATAL = 0;
+
 const observedUnreached = Object.fromEntries(
   fixableRules
     .filter((rule) => results.get(rule)!.checked === 0)
@@ -459,6 +493,7 @@ console.log(
     ),
     `  suggestion channel: ${totalSuggestionsApplied} suggestion(s) applied ` +
       `across ${suggestionRules.length} rule(s)`,
+    `  produced no verdict: ${JSON.stringify(skips)}`,
   ].join('\n'),
 );
 
@@ -481,6 +516,24 @@ describe('fixers must converge under the multi-pass fix loop', () => {
 
   it('accounts for every fixable rule, unreached ones by reason', () => {
     expect(observedUnreached).toEqual(UNREACHED_FIXERS);
+  });
+
+  /**
+   * The probes that produced no verdict. This guard had no skip ledger at all:
+   * a throw returned `SILENT` and a fatal input fell through the "offered no
+   * fix" branch, both indistinguishable from a fixer that correctly converged.
+   * A counter no `expect` reads is how such a drop moves unnoticed (#1984,
+   * #2222), so each is pinned by class here.
+   */
+  it('accounts for every probe that produced no verdict', () => {
+    // A throw is a harness failure in either channel; neither is a property of
+    // any fixture, so the only defensible value is zero.
+    expect(skips.verifyThrew).toBe(0);
+    expect(skips.suggestionVerifyThrew).toBe(0);
+    // A fatal input reports fatally and nothing else, so it falls through the
+    // "offered no fix" branch and reads as a rule with no fixable trigger.
+    expect(skips.inputFatal).toBe(FALLBACK_FATAL);
+    expect(skips.suggestionInputFatal).toBe(SUGGESTION_FALLBACK_FATAL);
   });
 
   it.each(fixableRules)('%s', (rule) => {

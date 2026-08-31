@@ -1106,6 +1106,12 @@ const sweepLiterals = (
           literalTotals.considered++;
           literalTotals.rulesConsidered.add(rule);
           const degenerate = runChannel(input, control.invented.size > 0);
+          // This skip sits AHEAD of the parse oracle below, and on the fix
+          // channel the only way a run becomes unreadable is that the fixer's
+          // own output does not parse — the very `kind: 'parse'` finding the
+          // oracle reports. The counter is therefore pinned at zero rather than
+          // at a ceiling ("discards nothing silently"), so the first case that
+          // would be swallowed here fails the suite instead.
           if (!degenerate) {
             literalTotals.skippedUnparsableComparison++;
             continue;
@@ -1561,6 +1567,24 @@ describe('degenerate-identifier fix closure', () => {
       '',
     );
     expect(literalSuggestionTotals.crashes).toBe(0);
+    /**
+     * The literal arm's two discard channels, on both of its channels. Each was
+     * printed into the diagnostic below and read by no `expect`, which is the
+     * state a number has to be in to move unnoticed (#2222, #2225).
+     *
+     * `skippedUnparsableComparison` is the load-bearing one, and it is pinned at
+     * ZERO rather than at a ceiling for a structural reason: it fires when a
+     * degenerate run's names cannot be read, which for the fix channel means the
+     * FIXER'S OWN OUTPUT does not parse — exactly the `kind: 'parse'` finding
+     * this arm exists to report. The skip sits ahead of that report, so a
+     * non-zero value here is a finding the arm discarded rather than a case it
+     * declined to judge. The cross-paired twin holds the same counters at zero
+     * over a superset of these pairs.
+     */
+    expect(literalTotals.discardedUnparsable).toBe(0);
+    expect(literalTotals.skippedUnparsableComparison).toBe(0);
+    expect(literalSuggestionTotals.discardedUnparsable).toBe(0);
+    expect(literalSuggestionTotals.skippedUnparsableComparison).toBe(0);
   });
 
   it('no fixer emits source that fails to parse', () => {
@@ -1998,6 +2022,8 @@ describe('degenerate-identifier fix closure', () => {
         `rewritten ${literalSuggestionTotals.rewritten}, ` +
         `derivations ${literalSuggestionTotals.derivationsObserved} across ` +
         `${literalSuggestionTotals.rulesDeriving.size} rule(s); ` +
+        `discarded unparsable ${literalSuggestionTotals.discardedUnparsable}, ` +
+        `skipped unreadable comparisons ${literalSuggestionTotals.skippedUnparsableComparison}, ` +
         `unreadable controls ${literalSuggestionTotals.unreadableControl}\n` +
         `  deriving rules: ${
           [...literalSuggestionTotals.rulesDeriving].join(', ') || '(none)'

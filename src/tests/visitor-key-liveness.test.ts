@@ -328,6 +328,10 @@ describe('visitor key liveness', () => {
       (sum, l) => sum + l.fired.size,
       0,
     );
+    const totalSkipped = [...liveness.values()].reduce(
+      (sum, l) => sum + l.skipped,
+      0,
+    );
 
     // Scaled to the population rather than fixed, so growth cannot outrun these
     // and shrinkage cannot hide beneath them.
@@ -342,6 +346,15 @@ describe('visitor key liveness', () => {
       .filter(([, l]) => l.casesLinted === 0)
       .map(([rule]) => rule);
     expect(unprobed).toEqual([]);
+
+    /**
+     * The skip ledger the type calls "a hole, not a pass", read by an `expect`
+     * rather than only declared. A fixture the harness cannot lint drives no
+     * visitor, so its keys look dead exactly as a genuinely unregistered key
+     * does — and every key of that rule is then judged on a smaller corpus with
+     * nothing saying so. Zero, not a ceiling: one throw is already a hole.
+     */
+    expect(totalSkipped).toBe(0);
   });
 
   it('registers no visitor key that never fires', () => {

@@ -154,6 +154,22 @@ const validatorFor = (rule: any): ((o: unknown[]) => boolean) | null => {
  */
 const MARKER = 'optFixProbe';
 
+/**
+ * Pairs whose payload arm output is unparseable while the default arm's is too.
+ * Pinned EXACTLY rather than at a ceiling: the default arm is the differential's
+ * reference, so one of these is a fixer emitting broken output at its shipped
+ * options — `fixer-convergence`'s finding, and a hole in this sweep either way.
+ */
+const BOTH_FATAL = 0;
+
+/**
+ * Comment probes whose marker BOTH arms destroy, which contribute no COMMENT
+ * finding by construction. A ceiling, because the probe degenerating into this
+ * state is how the COMMENT oracle would go permanently silent while
+ * `commentProbesNeutral` stayed green. Measured 6 of 6,004 probes.
+ */
+const COMMENT_BOTH_LOST = 20;
+
 type Finding = {
   rule: string;
   payload: string;
@@ -179,6 +195,14 @@ type Totals = {
   pairsOutputDiffered: number;
   ownPairsOutputDiffered: number;
   pairsOriginalFatal: number;
+  /**
+   * Pairs whose payload arm output no longer parses AND whose default arm does
+   * not either. The differential has nothing to say about them — the breakage is
+   * not option-induced — but each one also removes every oracle below from that
+   * pair, so a default fixer that regressed to unparsable output on some class
+   * of input would silently empty this sweep on that class.
+   */
+  pairsBothFatal: number;
   pairsThrew: number;
   commentProbesBuilt: number;
   commentProbesNeutral: number;
@@ -202,6 +226,7 @@ const emptyTotals = (): Totals => ({
   pairsOutputDiffered: 0,
   ownPairsOutputDiffered: 0,
   pairsOriginalFatal: 0,
+  pairsBothFatal: 0,
   pairsThrew: 0,
   commentProbesBuilt: 0,
   commentProbesNeutral: 0,
@@ -582,7 +607,10 @@ const sweep = (
           push('FATAL', 'payload arm output no longer parses');
           continue;
         }
-        if (payloadFatal) continue;
+        if (payloadFatal) {
+          totals.pairsBothFatal++;
+          continue;
+        }
 
         const baseCore = coreCounts(testCase.code, testCase, filename);
         const payloadRise = risen(
@@ -718,6 +746,10 @@ describe('cross-option --fix closure', () => {
 
   it('lets no option payload make a fixer write broken output', () => {
     const { totals, findings } = sweep(plugin.rules, allCases, ownCasesOf);
+    // Printed as well as asserted: the floors and ceilings below are cut from
+    // these numbers, and re-cutting one starts by reading it.
+    // eslint-disable-next-line no-console
+    console.log(`[cross-option-fix] ${JSON.stringify(totals)}`);
 
     expect(
       findings.map(
@@ -744,9 +776,42 @@ describe('cross-option --fix closure', () => {
     // reads is how a population leaves silently.
     expect(totals.pairsThrew).toBeLessThanOrEqual(10); // 0
     expect(totals.pairsOriginalFatal).toBeLessThanOrEqual(50); // 0
+    // Both arms unparseable: the differential is blind to it, and every oracle
+    // below the check is skipped for that pair. It had no counter at all.
+    expect(totals.pairsBothFatal).toBe(BOTH_FATAL);
     expect(totals.commentSkippedNotNeutral).toBeLessThanOrEqual(100); // 10
     expect(totals.commentSkippedUnparsable).toBeLessThanOrEqual(100); // 7
     expect(totals.commentSkippedNoAnchor).toBeLessThanOrEqual(2_000); // 977
+    /**
+     * The populations every floor above is drawn FROM, each written and read by
+     * nothing before. `payloadsBuilt` is the denominator of `payloadsRejected`
+     * (a ceiling on rejections says nothing if the builder stopped building) and
+     * `pairsDefaultFixed` is the evidence the DEFAULT arm of the differential is
+     * live rather than a constant.
+     */
+    expect(totals.payloadsBuilt).toBeGreaterThanOrEqual(280); // 298
+    expect(totals.pairsDefaultFixed).toBeGreaterThanOrEqual(15_000); // 17,074
+    /**
+     * `pairsBothSilent` is read as an ACCOUNTING IDENTITY rather than a floor:
+     * a pair moving between "both arms silent" and "linted" is ordinary (an
+     * option payload that makes a rule report more moves it), while a pair
+     * leaving by neither is a `continue` with no counter — the defect class this
+     * assertion exists for. Measured 118,565 + 41,841 = 160,406 considered.
+     */
+    expect(
+      totals.pairsBothSilent + totals.pairsLinted + totals.pairsThrew,
+    ).toBeGreaterThanOrEqual(totals.pairsConsidered);
+    /**
+     * The comment probe's own accounting. `commentProbesNeutral` above is
+     * satisfied by probes whose marker BOTH arms destroy: those contribute no
+     * COMMENT finding by construction, so a probe degenerating into that state
+     * would zero this oracle forever while the neutrality floor stayed green.
+     * The two outcomes are pinned in opposite directions for that reason — a
+     * floor on the marker surviving, a ceiling on it being lost by both.
+     */
+    expect(totals.commentProbesBuilt).toBeGreaterThanOrEqual(5_400); // 6,004
+    expect(totals.commentBothKept).toBeGreaterThanOrEqual(5_400); // 5,988
+    expect(totals.commentBothLost).toBeLessThanOrEqual(COMMENT_BOTH_LOST);
     // Payloads the rule's own schema refused, of 298 built. Rejection is
     // correct where a generated payload is not valid for that rule, but the
     // count is the only evidence it stays incidental: a schema read that

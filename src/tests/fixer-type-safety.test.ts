@@ -525,20 +525,17 @@ for (const control of CONTROLS) {
 const MAX_PAIRS_PER_RULE = 150;
 
 /**
- * A snippet that declares into the *shared* scope — `declare global`, or an
- * ambient/augmenting `declare module 'x'` — retypes every other file in the
- * corpus, because one program compiles them all. `export {}` makes each file a
- * module and so contains ordinary declarations; it cannot contain these.
+ * `DECLARES_INTO_SHARED_SCOPE` is imported from `fixtureTypeProgram` rather than
+ * respelled here: a local copy shadows the shared one, and a widening of the
+ * shared pattern would then never reach this guard while reading as if it had.
  *
- * The damage is not hypothetical: one `prefer-map-over-conditional-dispatch`
- * fixture declares `namespace JSX { interface Element { readonly _brand: unique
- * symbol } }` globally, which brands `JSX.Element` for the whole corpus and
- * makes every component whose return type is concrete a TS2786 — in whichever
- * of the two corpora happens to have the concrete type. Such snippets are
- * dropped, and counted below.
+ * The damage the exclusion prevents is not hypothetical: one
+ * `prefer-map-over-conditional-dispatch` fixture declares `namespace JSX {
+ * interface Element { readonly _brand: unique symbol } }` globally, which brands
+ * `JSX.Element` for the whole corpus and makes every component whose return type
+ * is concrete a TS2786 — in whichever of the two corpora happens to have the
+ * concrete type. Such snippets are dropped, and counted below.
  */
-const DECLARES_INTO_SHARED_SCOPE = /\bdeclare\s+(?:global\b|module\s+['"])/;
-
 const fixableRules = Object.entries(plugin.rules)
   .filter(([, rule]) => rule && rule.meta && rule.meta.fixable)
   .map(([name]) => name)

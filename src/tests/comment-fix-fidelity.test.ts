@@ -412,6 +412,25 @@ const stats = {
   skippedNoSignature: 0,
   skippedFatalSuggestion: 0,
   /**
+   * The linter THROWING instead of returning messages or an output. Counted
+   * apart from the fatals because a throw never reaches the message list at all,
+   * and every one of these is a case that produced no verdict. The fix channel's
+   * twin (`cross-comment-fidelity-closure`) pins the same three at zero over a
+   * superset of these pairs; the suggestion channel has no twin, so its drops are
+   * counted here or nowhere.
+   */
+  verifyThrew: 0,
+  suggestionVerifyThrew: 0,
+  baseFixThrew: 0,
+  variantFixThrew: 0,
+  /**
+   * The fixer's or the suggestion's OWN baseline output failing to parse. That
+   * is `fixer-convergence`'s finding rather than this one, so the case is
+   * dropped — but a dropped case is a comparison that silently never happened.
+   */
+  baseOutputUnsignable: 0,
+  suggestionBaseOutputUnsignable: 0,
+  /**
    * Reported lines discarded by {@link SITE_CAP} and so never perturbed.
    * Asserted ZERO below for the same reason as the skips above: an unprobed
    * site reads exactly like a faithful one, so a cap that silently starts
@@ -435,12 +454,14 @@ const verify = (
   code: string,
   rules: Record<string, unknown>,
   tc: InvalidCase,
+  onThrow: () => void,
 ) => {
   try {
     return linter.verify(code, configFor(rules, tc), {
       filename: tc.filename,
     });
   } catch {
+    onThrow();
     return null;
   }
 };
@@ -449,12 +470,14 @@ const fixOf = (
   code: string,
   rules: Record<string, unknown>,
   tc: InvalidCase,
+  onThrow: () => void,
 ) => {
   try {
     return linter.verifyAndFix(code, configFor(rules, tc), {
       filename: tc.filename,
     });
   } catch {
+    onThrow();
     return null;
   }
 };
@@ -530,7 +553,7 @@ function compareCase(rule: string, tc: InvalidCase, into: Finding[]): void {
     return;
   }
 
-  const base = verify(tc.code, solo, tc);
+  const base = verify(tc.code, solo, tc, () => stats.verifyThrew++);
   if (!base) return;
   if (base.some((message) => message.fatal)) {
     stats.skippedFatal++;
@@ -555,7 +578,7 @@ function compareCase(rule: string, tc: InvalidCase, into: Finding[]): void {
   if (reports.length === 0) return;
   stats.reported++;
 
-  const baseFix = fixOf(tc.code, solo, tc);
+  const baseFix = fixOf(tc.code, solo, tc, () => stats.baseFixThrew++);
   if (!baseFix) return;
   const baseSignature = tokenSignature(
     baseFix.output,
@@ -563,13 +586,21 @@ function compareCase(rule: string, tc: InvalidCase, into: Finding[]): void {
     tc.filename,
   );
   // An unparseable baseline output is a different axis (`fixer-convergence`).
-  if (baseSignature === null) return;
+  if (baseSignature === null) {
+    stats.baseOutputUnsignable++;
+    return;
+  }
   if (baseFix.fixed) stats.baselineFixed++;
 
   const variants = buildVariants(tc, signature, reports);
 
   for (const variant of variants) {
-    const variantFix = fixOf(variant.text, solo, tc);
+    const variantFix = fixOf(
+      variant.text,
+      solo,
+      tc,
+      () => stats.variantFixThrew++,
+    );
     if (!variantFix) continue;
     stats.comparisons++;
     stats.comparisonsByLanguage[tc.language]++;
@@ -645,7 +676,7 @@ function compareSuggestions(
     return;
   }
 
-  const base = verify(tc.code, solo, tc);
+  const base = verify(tc.code, solo, tc, () => stats.suggestionVerifyThrew++);
   if (!base) return;
   if (base.some((message) => message.fatal)) {
     stats.skippedFatalSuggestion++;
@@ -658,7 +689,12 @@ function compareSuggestions(
   if (baseEdits.length === 0) return;
 
   for (const variant of buildVariants(tc, signature, reports)) {
-    const variantMessages = verify(variant.text, solo, tc);
+    const variantMessages = verify(
+      variant.text,
+      solo,
+      tc,
+      () => stats.suggestionVerifyThrew++,
+    );
     if (!variantMessages) continue;
     const variantEdits = suggestionEditsOf(variant.text, variantMessages, id);
     if (variantEdits.length !== baseEdits.length) {
@@ -693,7 +729,10 @@ function compareSuggestions(
         tc.filename,
       );
       // An unparseable baseline output is `fixer-convergence`'s axis.
-      if (baseSignature === null) return;
+      if (baseSignature === null) {
+        stats.suggestionBaseOutputUnsignable++;
+        return;
+      }
       const variantSignature = tokenSignature(
         variantEdit.output,
         tc.language,
@@ -791,6 +830,11 @@ console.log(
       `${stats.skippedNoSignature} unsignable, ` +
       `${stats.skippedFatalSuggestion} fatal on the suggestion corpus, ` +
       `${stats.droppedSites} site(s) past the cap of ${SITE_CAP}`,
+    `[comment-fix-fidelity] threw: ${stats.verifyThrew} verify, ` +
+      `${stats.suggestionVerifyThrew} verify on the suggestion corpus, ` +
+      `${stats.baseFixThrew} baseline fix, ${stats.variantFixThrew} variant fix; ` +
+      `unsignable baseline output: ${stats.baseOutputUnsignable} fix, ` +
+      `${stats.suggestionBaseOutputUnsignable} suggestion`,
   ].join('\n'),
 );
 
@@ -1066,6 +1110,35 @@ describe('the comment fidelity guard is load-bearing', () => {
      * silent loss of coverage (#1996).
      */
     expect(stats.droppedSites).toBe(0);
+  });
+
+  /**
+   * The drops that produced no verdict at all, held to the same ZERO as the
+   * fatals above. Each of these sat behind a bare `return`/`continue` with no
+   * counter, so a linter that started throwing — or a fixer whose own baseline
+   * output stopped parsing — would remove cases from the comparison while the
+   * floors above still passed on what remained (#1984, #2222).
+   *
+   * The fix channel's three are pinned at zero over a superset of these pairs by
+   * `cross-comment-fidelity-closure`; the SUGGESTION channel has no cross twin
+   * running this corpus, so its two are counted here or nowhere.
+   */
+  it('never lets a probe throw, or judge an unreadable baseline', () => {
+    expect({
+      verifyThrew: stats.verifyThrew,
+      suggestionVerifyThrew: stats.suggestionVerifyThrew,
+      baseFixThrew: stats.baseFixThrew,
+      variantFixThrew: stats.variantFixThrew,
+      baseOutputUnsignable: stats.baseOutputUnsignable,
+      suggestionBaseOutputUnsignable: stats.suggestionBaseOutputUnsignable,
+    }).toEqual({
+      verifyThrew: 0,
+      suggestionVerifyThrew: 0,
+      baseFixThrew: 0,
+      variantFixThrew: 0,
+      baseOutputUnsignable: 0,
+      suggestionBaseOutputUnsignable: 0,
+    });
   });
 
   /**
