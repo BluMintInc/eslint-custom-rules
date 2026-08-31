@@ -21,6 +21,11 @@ import {
   isFragmentArtifact,
   withSuffix,
 } from '../utils/fixtureTypeProgram';
+import {
+  OptionCarriage,
+  composedRulesFor,
+  noteOptionCarriage,
+} from '../utils/composedFixConfig';
 
 // Using require to avoid test build-time ESM interop issues; the test runner
 // only needs the plugin object shape (rules, recommended config), not types.
@@ -383,6 +388,11 @@ for (const control of CONTROLS) {
  */
 const DIVERGENT_WITHOUT_PROGRAM = new Set([]);
 
+const EXCLUDED = new Set<string>([
+  ...silentWithoutProgramRuleNames,
+  ...DIVERGENT_WITHOUT_PROGRAM,
+]);
+
 /**
  * The screening config: the shipped recommended set. Screening with it, rather
  * than enumerating every fixable rule against every fixture, is what makes the
@@ -473,6 +483,8 @@ const stats = {
   crossRewrites: 0,
 };
 
+const carriage: OptionCarriage = { carried: 0, witness: null };
+
 const pairsByKey = new Map<string, Pair>();
 const pairingStarted = Date.now();
 
@@ -501,25 +513,17 @@ for (const [owner, cases] of corpus.byRule) {
     };
 
     try {
-      const ownerId = `${PREFIX}${owner}`;
       /**
-       * The owner's own entry carries the OPTIONS its author declared. Without
-       * them an option-gated fixer is unreachable, and an option-gated report
-       * arrives under a configuration nobody wrote.
+       * The owner's own entry carries the OPTIONS its author declared,
+       * overriding the recommended severity that carries none. Without them an
+       * option-gated fixer is unreachable and an option-gated report arrives
+       * under a configuration nobody wrote (#1732, #2244).
        */
-      const screened = linter.verify(
-        source,
-        {
-          ...parsing,
-          rules: {
-            ...RECOMMENDED,
-            ...(RECOMMENDED[ownerId] || DIVERGENT_WITHOUT_PROGRAM.has(owner)
-              ? {}
-              : { [ownerId]: severityWithOptions(testCase) }),
-          },
-        } as unknown as Linter.Config,
-        filename,
-      );
+      const screenConfig = {
+        ...parsing,
+        rules: composedRulesFor(RECOMMENDED, EXCLUDED, owner, testCase),
+      } as unknown as Linter.Config;
+      const screened = linter.verify(source, screenConfig, filename);
       /**
        * A fatal parse produces no `ruleId`, so it is indistinguishable from
        * every rule staying silent - counted, then asserted, never dropped.
@@ -528,6 +532,30 @@ for (const [owner, cases] of corpus.byRule) {
         stats.inputFatalDropped++;
         continue;
       }
+      const ownerId = `${PREFIX}${owner}`;
+      /**
+       * Read back out of the config that was LINTED, not out of a second call to
+       * the builder: a screen rewritten to drop the owner's options would
+       * otherwise leave this counter reading a configuration nobody ran.
+       */
+      noteOptionCarriage(
+        carriage,
+        screenConfig.rules as Record<string, unknown>,
+        owner,
+        testCase,
+        screened.some((message) => message.ruleId === ownerId),
+        () =>
+          linter
+            .verify(
+              source,
+              {
+                ...parsing,
+                rules: { [ownerId]: 'error' },
+              } as unknown as Linter.Config,
+              filename,
+            )
+            .some((message) => message.ruleId === ownerId),
+      );
 
       const reporting = new Set(
         screened
@@ -887,16 +915,22 @@ const report = (finding: Finding) =>
  * re-deriving the whole run. Re-measure from the console block below after any
  * change to the pairing, and move a floor only WITH its measurement.
  */
-const CORPUS_FILES_FLOOR = 270; // measured 274
-const CORPUS_CASES_FLOOR = 19500; // measured 20267
-const FIXTURES_CONSIDERED_FLOOR = 19500; // measured 20197
-const SOLO_ATTEMPT_FLOOR = 33000; // measured 35259
-const REWRITE_FLOOR = 12000; // measured 12517
-const ASSERTED_FLOOR = 11000; // measured 11349
-const CROSS_GENERATED_FLOOR = 8600; // measured 8950
-const CROSS_FLOOR = 8000; // measured 8190
+const CORPUS_FILES_FLOOR = 274; // measured 282
+const CORPUS_CASES_FLOOR = 23000; // measured 23932
+const FIXTURES_CONSIDERED_FLOOR = 23000; // measured 23791
+const SOLO_ATTEMPT_FLOOR = 41000; // measured 42193
+const REWRITE_FLOOR = 15000; // measured 15307
+const ASSERTED_FLOOR = 13300; // measured 13770
+const CROSS_GENERATED_FLOOR = 10200; // measured 10512
+const CROSS_FLOOR = 9200; // measured 9524
 const CROSS_FIXER_FLOOR = 52; // measured 58
-const FIXER_FLOOR = 78; // measured 81
+const FIXER_FLOOR = 80; // measured 82
+/**
+ * Fixtures screened under an entry carrying their author's OPTIONS. One
+ * recommended entry ships options, so at defaults this population is 1 rather
+ * than the whole optioned corpus — the shape #2244 corrected.
+ */
+const OPTION_CARRIAGE_FLOOR = 750; // measured 783
 /**
  * Ceilings, not floors: each is a case this guard does NOT judge, so a harness
  * regression shows up as a jump rather than a dip.
@@ -928,7 +962,7 @@ console.log(
   [
     "cross-fixture fixer type safety: each rule's --fix over EVERY rule's fixtures",
     `  corpus: ${corpus.totalCases} cases across ${corpus.byRule.size} rules from ${corpus.filesLoaded} suite files`,
-    `  fixtures: ${stats.fixturesConsidered} considered, ${stats.nonTypeScriptDropped} non-TypeScript, ${stats.sharedScopeDropped} shared-scope declarers, ${stats.inputFatalDropped} fatal parses, ${stats.threw} threw`,
+    `  fixtures: ${stats.fixturesConsidered} considered, ${stats.nonTypeScriptDropped} non-TypeScript, ${stats.sharedScopeDropped} shared-scope declarers, ${stats.inputFatalDropped} fatal parses, ${stats.threw} threw, ${carriage.carried} screened with their author's options`,
     `  fixes: ${stats.soloFixAttempts} solo attempts, ${stats.rewrites} rewrote (${stats.crossRewrites} of them cross-rule)`,
     `  pairs: ${corpusPairs.length} unique, ${
       corpusPairs.filter(isCross).length
@@ -1036,6 +1070,22 @@ describe("a rule's --fix must not introduce a type error on ANY rule's fixture",
     expect(stats.sharedScopeDropped).toBeLessThanOrEqual(SHARED_SCOPE_CEILING);
     expect(stats.inputFatalDropped).toBeLessThanOrEqual(INPUT_FATAL_CEILING);
     expect(stats.threw).toBe(0);
+  });
+
+  /**
+   * The screen runs each fixture under the configuration its AUTHOR declared.
+   *
+   * Both halves are needed. The population says the composed config keeps
+   * carrying options at all; the witness says those options still decide an
+   * answer. A screen that reverted to defaults would pair the same corpus and
+   * report the same clean result, because an option-gated report never arrives
+   * and reads as a silent rule (#1732, #2244).
+   */
+  it('screens every fixture under the options its author declared', () => {
+    expect(carriage.carried).toBeGreaterThanOrEqual(OPTION_CARRIAGE_FLOOR);
+    const witness = carriage.witness;
+    expect(witness).not.toBeNull();
+    expect(witness?.ownerEntry).toEqual(['error', ...(witness?.options || [])]);
   });
 
   /**

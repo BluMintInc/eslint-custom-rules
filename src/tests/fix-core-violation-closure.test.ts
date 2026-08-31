@@ -58,6 +58,11 @@ import {
   silentWithoutProgramRuleNames,
   FixtureBucket,
 } from '../utils/fixtureCorpus';
+import {
+  OptionCarriage,
+  composedRulesFor,
+  noteOptionCarriage,
+} from '../utils/composedFixConfig';
 
 /* eslint-disable @typescript-eslint/no-var-requires */
 const plugin = require('../index') as {
@@ -93,6 +98,11 @@ const PREFIX = '@blumintinc/blumint/';
  * rule-global scope, which un-gates every other arm at once (#1839).
  */
 const DIVERGENT_WITHOUT_PROGRAM = new Set([]);
+
+const EXCLUDED = new Set<string>([
+  ...silentWithoutProgramRuleNames,
+  ...DIVERGENT_WITHOUT_PROGRAM,
+]);
 
 const linter = new Linter();
 defineCorpusParsers(linter);
@@ -245,6 +255,8 @@ const stats = {
 
 const findings: Finding[] = [];
 
+const carriage: OptionCarriage = { carried: 0, witness: null };
+
 for (const [owner, cases] of corpus.byRule) {
   for (const testCase of cases) {
     if (!BUCKETS.has(testCase.bucket)) continue;
@@ -276,24 +288,47 @@ for (const [owner, cases] of corpus.byRule) {
       // are confined to those. Sweeping every fixable rule against every
       // fixture buys nothing and costs orders of magnitude more.
       const ownerId = `${PREFIX}${owner}`;
+      /**
+       * The owner's own entry carries the OPTIONS its author declared,
+       * overriding the recommended severity that carries none. A screen run at
+       * defaults answers a question about a configuration nobody wrote: an
+       * option-gated report is unreachable, so the owner reads as silent on its
+       * own fixture and its fixer is never retried (#1732, #2244).
+       */
+      const screenConfig = {
+        parser: parserKeyFor(testCase),
+        parserOptions: parserOptionsFor(testCase),
+        rules: composedRulesFor(RECOMMENDED, EXCLUDED, owner, testCase),
+      } as unknown as Linter.Config;
+      const screened = linter.verify(source, screenConfig, filename);
       const reporting = new Set(
-        linter
-          .verify(
-            source,
-            {
-              parser: parserKeyFor(testCase),
-              parserOptions: parserOptionsFor(testCase),
-              rules: {
-                ...RECOMMENDED,
-                ...(RECOMMENDED[ownerId] || DIVERGENT_WITHOUT_PROGRAM.has(owner)
-                  ? {}
-                  : { [ownerId]: severityWithOptions(testCase) }),
-              },
-            } as unknown as Linter.Config,
-            filename,
-          )
+        screened
           .map((message) => message.ruleId)
           .filter((id): id is string => Boolean(id) && id.startsWith(PREFIX)),
+      );
+      /**
+       * Read back out of the config that was LINTED, not out of a second call to
+       * the builder: a screen rewritten to drop the owner's options would
+       * otherwise leave this counter reading a configuration nobody ran.
+       */
+      noteOptionCarriage(
+        carriage,
+        screenConfig.rules as Record<string, unknown>,
+        owner,
+        testCase,
+        reporting.has(ownerId),
+        () =>
+          linter
+            .verify(
+              source,
+              {
+                parser: parserKeyFor(testCase),
+                parserOptions: parserOptionsFor(testCase),
+                rules: { [ownerId]: 'error' },
+              } as unknown as Linter.Config,
+              filename,
+            )
+            .some((message) => message.ruleId === ownerId),
       );
 
       for (const id of reporting) {
@@ -389,17 +424,32 @@ describe('a fixer must not introduce a core eslint violation', () => {
   });
 
   /**
-   * Non-vacuity. Every number is a floor under a MEASURED value, so the sweep
-   * cannot quietly stop doing work and keep passing: a corpus that fails to
-   * load, a filename that stops matching, or a harvest that returns a partial
-   * registry all show up here rather than as a clean run.
+   * Non-vacuity. Every number is a floor JUST UNDER a MEASURED value, so the
+   * sweep cannot quietly stop doing work and keep passing: a corpus that fails
+   * to load, a filename that stops matching, or a harvest that returns a partial
+   * registry all show up here rather than as a clean run. A floor parked far
+   * below its measurement is the failure mode itself: a probed floor of 19,000
+   * against a measured 23,824 admits the silent loss of a fifth of the sweep.
+   *
+   * Measured (printed above, so a recalibration reads the numbers rather than
+   * guessing them): probed 23,824, soloFixes 70,588, rewritten 15,320, owners
+   * 192, rulesFixed 82, optionCarrying 783.
    */
   it('actually swept the corpus it claims to', () => {
-    expect(stats.probed).toBeGreaterThan(19000);
-    expect(stats.soloFixes).toBeGreaterThan(55000);
-    expect(stats.rewritten).toBeGreaterThan(12000);
-    expect(stats.owners.size).toBeGreaterThan(150);
-    expect(stats.rulesFixed.size).toBeGreaterThan(75);
+    // Printed so a recalibration reads the measurement rather than guessing at
+    // it, exactly as `fix-orphan-binding-closure` prints its own.
+    // eslint-disable-next-line no-console
+    console.log(
+      `[fix-core-violation-closure] probed=${stats.probed} ` +
+        `soloFixes=${stats.soloFixes} rewritten=${stats.rewritten} ` +
+        `owners=${stats.owners.size} rulesFixed=${stats.rulesFixed.size} ` +
+        `optionCarrying=${carriage.carried}`,
+    );
+    expect(stats.probed).toBeGreaterThan(23500);
+    expect(stats.soloFixes).toBeGreaterThan(69000);
+    expect(stats.rewritten).toBeGreaterThan(15000);
+    expect(stats.owners.size).toBeGreaterThan(185);
+    expect(stats.rulesFixed.size).toBeGreaterThan(78);
     /**
      * What the sweep DISCARDS, held at its measured zero. A fatal parse is
      * indistinguishable from the rule staying silent, because every consumer
@@ -409,6 +459,22 @@ describe('a fixer must not introduce a core eslint violation', () => {
      */
     expect(stats.inputFatal).toBe(0);
     expect(stats.outputFatal).toBe(0);
+  });
+
+  /**
+   * The screen runs each fixture under the configuration its AUTHOR declared.
+   *
+   * Both halves are needed. The population says the composed config keeps
+   * carrying options at all; the witness says those options still decide an
+   * answer. A screen that reverted to defaults would sweep the same corpus and
+   * report the same clean result, because an option-gated report never arrives
+   * and reads as a silent rule (#1732, #2244).
+   */
+  it('screens every fixture under the options its author declared', () => {
+    expect(carriage.carried).toBeGreaterThan(750); // measured 783
+    const witness = carriage.witness;
+    expect(witness).not.toBeNull();
+    expect(witness?.ownerEntry).toEqual(['error', ...(witness?.options || [])]);
   });
 
   /**

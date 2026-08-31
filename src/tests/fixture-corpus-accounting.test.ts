@@ -341,6 +341,18 @@ describe('fixture corpus accounting', () => {
         pattern: /\btester\s*!==\s*'ruleTesterTs'/,
         why: 'decides JSX-ness from the TESTER; a `.ts` path forces ScriptKind.TS and `ecmaFeatures.jsx` does not override it, so every JSX fixture under ruleTesterTs is a fatal parse',
       },
+      {
+        /**
+         * The owner's entry skipped whenever the recommended set already holds
+         * the rule, which is every enabled rule: the fixture is then screened at
+         * DEFAULTS and its author's options never reach the rule. Four guards
+         * carried this one conditional, and the comment above it claimed the
+         * opposite (#2244, #2224, #1732). `composedRulesFor` sets the entry
+         * unconditionally, gated only on the guard's own exclusion set.
+         */
+        pattern: /\w+\[\s*\w*[Oo]wner\w*\s*\][\s\S]{0,160}?\?\s*\{\s*\}/,
+        why: "drops the owner fixture's options whenever the rule is in the recommended set; call composedRulesFor, which carries them unconditionally",
+      },
     ];
     const scanned: string[] = [];
     const offenders = fs
@@ -393,17 +405,30 @@ describe('fixture corpus accounting', () => {
       "const TS_TESTERS = new Set(['ruleTesterTs']);",
       "filename: f || (suite.tester === 'ruleTesterJsx' ? 'x.tsx' : 'x.ts'),",
       "const jsx = suite.tester !== 'ruleTesterTs';",
+      // The #2244 spelling, across the lines it was written on.
+      [
+        '...(RECOMMENDED[ownerId] || DIVERGENT_WITHOUT_PROGRAM.has(owner)',
+        '  ? {}',
+        '  : { [ownerId]: severityWithOptions(testCase) }),',
+      ].join('\n'),
     ];
     expect(
       planted.map(
         (source) => BANNED.filter(({ pattern }) => pattern.test(source)).length,
       ),
-    ).toEqual([1, 1, 1]);
-    // Negative control: correct usage must not trip any of them.
+    ).toEqual([1, 1, 1, 1]);
+    // Negative controls: correct usage must not trip any of them.
     expect(
       BANNED.filter(({ pattern }) =>
         pattern.test(
           'const filename = testCase.filename || defaultFilenameFor(testCase);',
+        ),
+      ),
+    ).toEqual([]);
+    expect(
+      BANNED.filter(({ pattern }) =>
+        pattern.test(
+          'rules: composedRulesFor(RECOMMENDED, EXCLUDED, owner, testCase),',
         ),
       ),
     ).toEqual([]);
