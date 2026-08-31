@@ -80,10 +80,19 @@
  *     ambient global reads as undefined, an artefact), the rest simply because
  *     nobody has measured them. Adding one is a one-line change and a re-run.
  *   - A count gate cannot see a NET-ZERO exchange: a composed fix that
- *     introduces one violation while removing another is silent here. That is
- *     the deliberate direction to err (a pass that leaves the count flat has not
- *     made a consumer's build worse), and it is the same trade
- *     `fix-orphan-binding-closure` documents.
+ *     introduces one violation while removing another is silent to it. For the
+ *     four non-`no-unused-vars` oracles that remains the deliberate direction to
+ *     err — a pass that leaves the count flat has not made a consumer's build
+ *     worse. For `no-unused-vars` it no longer is: #2231 gave
+ *     `fix-orphan-binding-closure` a second arm keyed on a per-binding reference
+ *     TRANSITION, because the count gate is structurally unable to reach the
+ *     exchange shape, and that guard defers composed orphans HERE as fixer
+ *     interaction it cannot attribute solo. So this file carries the transition
+ *     arm too. Measured over the whole corpus: 11,781 rewrites, 2,171 rows where
+ *     the unused multiset moved without the count rising — the population the
+ *     count arm drops — and ZERO of them strand a previously-referenced binding.
+ *     The arm is a regression detector driven by 2,147 candidate rows, not a
+ *     vacuous one: the shape it watches for ships (#2228).
  *   - JSON and Markdown fixtures are excluded: these instruments are
  *     JavaScript/TypeScript ones and measure nothing through the other parsers.
  *     `no-unpinned-dependencies` and `enforce-typescript-markdown-code-blocks`
@@ -105,7 +114,7 @@
  */
 import fs from 'fs';
 import path from 'path';
-import { Linter, Rule } from 'eslint';
+import { Linter, Rule, Scope } from 'eslint';
 import {
   harvestFixtureCorpus,
   defaultFilenameFor,
@@ -161,6 +170,34 @@ defineCorpusParsers(linter);
 for (const [rule, name] of ruleNameByIdentity) {
   linter.defineRule(`${PREFIX}${name}`, rule as never);
 }
+
+/**
+ * The scope manager of the most recent core verify, or `null` when
+ * `Program:exit` never fired — which for this harness means the source did not
+ * parse.
+ *
+ * The transition arm below needs the reference count of every binding, and
+ * `no-unused-vars` cannot supply it: the rule reports the bindings that have NO
+ * reference and says nothing about the rest, so a name absent from its output
+ * could have one reference or fifty. Scope analysis is the only source.
+ *
+ * Captured off the core verify this file already performs rather than bought
+ * with a second one, exactly as `fix-orphan-binding-closure` does.
+ */
+let capturedScopes: Scope.Scope[] | null = null;
+
+const SCOPE_PROBE = 'probe/capture-scopes';
+
+linter.defineRule(SCOPE_PROBE, {
+  meta: { schema: [], type: 'problem', messages: {} },
+  create(context) {
+    return {
+      'Program:exit'() {
+        capturedScopes = context.getSourceCode().scopeManager?.scopes ?? [];
+      },
+    };
+  },
+} as Rule.RuleModule);
 
 /**
  * `no-undef` is deliberately absent: with no `env` every ambient global reads as
@@ -258,6 +295,85 @@ export const risenOracles = (
   return risen.sort();
 };
 
+/**
+ * The NAME each `no-unused-vars` message quotes.
+ *
+ * Read off the message rather than off the AST because the rule already decides
+ * what counts as unused under this file's options, and it reports the LOCAL
+ * binding — for `import { a as b }` it names `b`, where a text scan for `a`
+ * would read every aliased import as orphaned.
+ */
+const unusedNames = (messages: Linter.LintMessage[]) => {
+  const names: string[] = [];
+  for (const message of messages) {
+    if (message.ruleId !== 'no-unused-vars') continue;
+    const match = /^'([^']+)'/.exec(message.message);
+    if (match) names.push(match[1]);
+  }
+  return names;
+};
+
+/**
+ * Read references per binding NAME, summed over every scope.
+ *
+ * Summed by name rather than tracked per declaration because the unused-name
+ * diff is itself keyed on names: `no-unused-vars` hands back an identifier, not
+ * a declaration. Summing errs conservative — a name declared twice, once used
+ * and once not, reports a positive count and so is cancelled by the multiset
+ * subtraction before the transition test sees it.
+ */
+const readReferenceCounts = (scopes: Scope.Scope[]) => {
+  const counts = new Map<string, number>();
+  for (const scope of scopes) {
+    for (const variable of scope.variables) {
+      let reads = 0;
+      for (const reference of variable.references) {
+        if (reference.isRead()) reads++;
+      }
+      counts.set(variable.name, (counts.get(variable.name) ?? 0) + reads);
+    }
+  }
+  return counts;
+};
+
+/**
+ * Names unused AFTER that were not unused BEFORE, as a MULTISET difference and
+ * with no gate at all. The multiset is what keeps a fixture already carrying two
+ * orphans from absorbing a third, and what cancels a name unused on both sides
+ * because it is declared twice in different scopes.
+ */
+export const appearedUnused = (before: string[], after: string[]) => {
+  const pool = [...before];
+  const appeared: string[] = [];
+  for (const name of after) {
+    const at = pool.indexOf(name);
+    if (at === -1) appeared.push(name);
+    else pool.splice(at, 1);
+  }
+  return appeared;
+};
+
+/**
+ * Names that went from REFERENCED to unreferenced across the composed fix.
+ *
+ * This is the count gate's blind spot, addressed with the property that actually
+ * separates the two cases. A renaming fixer moves an already-unused `const foo`
+ * to an already-unused `const FOO`: `FOO` appears in the multiset diff, but no
+ * declaration named `FOO` existed before the fix, so its before-count is zero
+ * and it is dropped. That is what makes this safe to run UNGATED over a
+ * population the count arm discards — measured at 2,171 rows here, no single
+ * fixture owner supplying more than ~7% of them, so the shape is a broad
+ * property of the composed pass rather than a few renaming rules' artefact.
+ */
+export const strandedByTransition = (
+  before: string[],
+  after: string[],
+  refCountsBefore: Map<string, number>,
+) =>
+  appearedUnused(before, after).filter(
+    (name) => (refCountsBefore.get(name) ?? 0) > 0,
+  );
+
 type Outcome = {
   rewritten: boolean;
   /** Either side failed to parse; never folded into a clean verdict. */
@@ -265,6 +381,16 @@ type Outcome = {
   risen: string[];
   detail: string[];
   output: string;
+  /**
+   * The unused-binding multiset changed while the COUNT did not rise — the
+   * population the count arm is structurally blind to, counted so the
+   * transition arm's silence reads as a verdict rather than an empty sweep.
+   */
+  exchange: boolean;
+  /** Bindings that lost their last reference across the composed fix. */
+  stranded: string[];
+  /** A source that parsed but yielded no scope manager: a silent loss. */
+  scopesMissing: boolean;
 };
 
 /**
@@ -277,8 +403,17 @@ function classifyComposed(
   coreConfig: unknown,
   fixConfig: unknown,
 ): Outcome {
-  const quiet = { risen: [] as string[], detail: [] as string[] };
+  const quiet = {
+    risen: [] as string[],
+    detail: [] as string[],
+    exchange: false,
+    stranded: [] as string[],
+    scopesMissing: false,
+  };
+  capturedScopes = null;
   const before = linter.verify(source, coreConfig as never, filename);
+  const scopesBefore = capturedScopes;
+  capturedScopes = null;
   if (before.some((message) => message.fatal)) {
     return { rewritten: false, fatal: true, ...quiet, output: source };
   }
@@ -304,10 +439,28 @@ function classifyComposed(
     breachesBefore && breachesBefore.length,
     breachesAfter && breachesAfter.length,
   );
+  /**
+   * The transition arm covers exactly what the count gate discards, so it is
+   * evaluated only where `no-unused-vars` did NOT rise. A row the count arm
+   * already reports needs no second channel; a row it drops is this arm's whole
+   * subject.
+   */
+  const unusedBefore = unusedNames(before);
+  const unusedAfter = unusedNames(after);
+  const countRose = risen.includes('no-unused-vars');
+  const appeared = appearedUnused(unusedBefore, unusedAfter);
+  const refCountsBefore = scopesBefore
+    ? readReferenceCounts(scopesBefore)
+    : new Map<string, number>();
   return {
     rewritten: true,
     fatal: false,
     risen,
+    exchange: appeared.length > 0 && !countRose,
+    stranded: countRose
+      ? []
+      : strandedByTransition(unusedBefore, unusedAfter, refCountsBefore),
+    scopesMissing: scopesBefore === null,
     detail: [
       ...after
         .filter((message) => message.ruleId && risen.includes(message.ruleId))
@@ -356,6 +509,14 @@ const stats = {
   /** The structural checker abstained because a side did not parse. */
   breachAbstained: 0,
   nonTsSkipped: 0,
+  /**
+   * The count arm's blind population: the unused-binding multiset moved while
+   * the count did not rise. Floored below so the transition arm cannot fall
+   * silent by sweeping nothing.
+   */
+  exchange: 0,
+  /** A fixture that parsed but handed back no scope manager. */
+  scopesMissing: 0,
   owners: new Set<string>(),
   attributionFixes: 0,
   threw: [] as string[],
@@ -363,11 +524,31 @@ const stats = {
 
 const findings: Finding[] = [];
 
+/**
+ * A binding the COMPOSED fix left unreferenced without raising the unused
+ * count — the exchange shape, which `fix-orphan-binding-closure` measured the
+ * count gate cannot reach and which it explicitly defers here as fixer
+ * INTERACTION (`fix-orphan-binding-closure.test.ts:45-47`).
+ */
+type Stranded = {
+  fixtureRule: string;
+  origin: string;
+  bucket: FixtureBucket;
+  filename: string;
+  stranded: string[];
+  source: string;
+  output: string;
+};
+
+const stranded: Stranded[] = [];
+
 const coreConfigFor = (testCase: FixtureCase) =>
   ({
     parser: parserKeyFor(testCase),
     parserOptions: parserOptionsFor(testCase),
-    rules: CORE_RULES,
+    // The probe is spread in here rather than added to CORE_RULES so it cannot
+    // become a counted oracle: `countByRule` keys on membership of CORE_RULES.
+    rules: { ...CORE_RULES, [SCOPE_PROBE]: 'error' },
   } as unknown as Linter.Config);
 
 /**
@@ -409,6 +590,19 @@ for (const [owner, cases] of corpus.byRule) {
       stats.probed++;
       stats.owners.add(owner);
       if (outcome.rewritten) stats.rewritten++;
+      if (outcome.exchange) stats.exchange++;
+      if (outcome.scopesMissing) stats.scopesMissing++;
+      if (outcome.stranded.length) {
+        stranded.push({
+          fixtureRule: owner,
+          origin: testCase.origin,
+          bucket: testCase.bucket,
+          filename,
+          stranded: outcome.stranded,
+          source,
+          output: outcome.output,
+        });
+      }
       if (!outcome.risen.length) continue;
 
       for (const oracle of outcome.risen) {
@@ -1082,6 +1276,95 @@ describe('the composed --fix must not introduce a core violation', () => {
     expect(subsetInConfigOrder(ids, ['control/rename-ab-safe'])).toEqual([
       'control/rename-ab-safe',
     ]);
+  });
+
+  /**
+   * THE TRANSITION ARM, asserted as an EXACT empty census.
+   *
+   * A row here is a composed `--fix` that left a binding unreferenced while the
+   * unused COUNT stayed flat, so the arm above never looks at it. The census is
+   * empty today and pinned rather than floored: a row appearing is a
+   * regression, and if one is ever legitimately baselined the entry must be
+   * added deliberately.
+   *
+   * Attribution is deliberately NOT run for this arm. The ablation harness
+   * minimises against `risenOracles`, which by construction does not reproduce a
+   * finding the count gate cannot see; a row here therefore reports its fixture
+   * and its stranded names and is attributed by hand.
+   */
+  it('strands no referenced binding while the count stays flat', () => {
+    if (stranded.length) {
+      // eslint-disable-next-line no-console
+      console.error(
+        stranded
+          .slice(0, 3)
+          .map((row) =>
+            [
+              `${row.fixtureRule} ${row.origin} (${row.bucket})`,
+              `  stranded: ${row.stranded.join(', ')}`,
+              `  --- source ---\n${row.source}`,
+              `  --- composed output ---\n${row.output}`,
+            ].join('\n'),
+          )
+          .join('\n\n'),
+      );
+    }
+    expect(stranded).toEqual([]);
+  });
+
+  /**
+   * NON-VACUITY for the arm above, which is the only thing separating a verdict
+   * from a sweep that considered nothing (#1984).
+   *
+   * The floor sits just under the MEASURED 2,171 rather than at a round number
+   * with room to spare — a floor with slack keeps passing while the sweep
+   * quietly stops doing most of its work, which is how the #1984 floors sat at
+   * 5,500 against an actual 8,141.
+   */
+  it('drives the transition arm over the population the count gate drops', () => {
+    expect(stats.exchange).toBeGreaterThan(2100);
+    // Every fixture that parsed must have yielded a scope manager; without one
+    // every reference count reads zero and the arm silently returns nothing.
+    expect(stats.scopesMissing).toBe(0);
+  });
+
+  /**
+   * ORACLE CONTROLS for the transition arm, exercising the REAL exported
+   * predicate rather than a copy of it.
+   *
+   * An arm whose census is empty is indistinguishable from an arm that never
+   * fires at all, so the discriminating cases are planted here directly: the
+   * exchange it must catch, and the two artefacts it must not.
+   */
+  it('keys the transition on before-references, not on the count (oracle controls)', () => {
+    // POSITIVE — the exchange. `handler` held a reference before and holds none
+    // after, while a separate already-unused binding goes away in the same pass.
+    // The unused COUNT is flat at one, so the arm above is the only instrument
+    // in this file that can see it.
+    expect(
+      strandedByTransition(
+        ['stale'],
+        ['handler'],
+        new Map([
+          ['handler', 1],
+          ['stale', 0],
+        ]),
+      ),
+    ).toEqual(['handler']);
+
+    // NEGATIVE — the rename artefact the count gate existed to absorb, and the
+    // reason this arm keys on before-references. An already-unused `foo` becomes
+    // an already-unused `FOO`; no declaration named `FOO` had a reference
+    // before, so nothing was stranded. This is the 1,593-artefact shape.
+    expect(
+      strandedByTransition(['foo'], ['FOO'], new Map([['foo', 0]])),
+    ).toEqual([]);
+
+    // NEGATIVE — a name unused on BOTH sides is cancelled by the multiset
+    // subtraction before the reference test is ever consulted.
+    expect(
+      strandedByTransition(['idle'], ['idle'], new Map([['idle', 3]])),
+    ).toEqual([]);
   });
 
   it('swept the buckets it claims to and no others', () => {
