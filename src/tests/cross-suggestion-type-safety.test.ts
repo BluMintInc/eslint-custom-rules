@@ -560,10 +560,19 @@ for (const [rule, name] of ruleNameByIdentity) {
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 /**
- * Planted defects, driven through the exact pipeline the corpus goes through:
- * the same `verifyAndFix`, the same two programs, the same diff, the same
- * discount. A green sweep over the real rules means nothing unless known-broken
- * transforms still come out red here.
+ * Planted defects, driven through the same two programs, the same multiset
+ * differential and the same discount as every corpus pair. A green sweep over
+ * the real rules means nothing unless known-broken transforms still come out
+ * red here.
+ *
+ * These emit a FIX and reach their `after` through `verifyAndFix`, where the
+ * corpus reaches its own through a suggestion applied alone. What they pin -
+ * the stubs, the two programs, the differential and the mode discount - is the
+ * half of the pipeline both channels share, and `SUGGESTION_CONTROLS` below
+ * pins the suggestion extraction that is this guard's own. Splitting them that
+ * way is also what lets the ARRAY below stay byte-identical to
+ * `cross-fixture-fixer-type-safety.test.ts`'s, so the two copies of the
+ * machinery they guard stay diffable against each other.
  *
  * Registered on the linter under a `control/` id, which is neither the plugin
  * PREFIX nor in the recommended config, so no corpus fixture can reach one and
@@ -574,9 +583,10 @@ for (const [rule, name] of ruleNameByIdentity) {
  *
  *   - `control-strict-only-break` introduces its diagnostic under `strict`
  *     ALONE while its input compiles under both, so the union oracle flags it
- *     and the intersection must not. Widen the discount back to a union and
- *     this control fails, instead of the corpus quietly regaining two artifact
- *     findings.
+ *     and the intersection must not. The discount is INERT on this corpus, so
+ *     this control is the only live evidence in either direction that the
+ *     intersection discounts a strict-only artifact: widen it back to a union
+ *     and this control fails.
  *   - `control-both-modes-break` is its mirror: a fix broken under both modes
  *     must survive, so the discount cannot be "satisfied" by rejecting
  *     everything.
@@ -964,7 +974,10 @@ const suggestionRuleNames = [...ruleNameByIdentity.values()]
 const SUGGESTION_CONTROLS: Array<{
   name: string;
   code: string;
+  /** Under the intersection oracle this guard ships. */
   expectFlagged: boolean;
+  /** Which baseline-clean modes see an introduced diagnostic at all. */
+  expectModesFlagged: ModeKey[];
   rule: Record<string, any>;
 }> = [
   {
@@ -972,6 +985,7 @@ const SUGGESTION_CONTROLS: Array<{
     name: 'control-suggestion-type-break',
     code: 'export const v: string = "hello";\n',
     expectFlagged: true,
+    expectModesFlagged: ['default', 'strict'],
     rule: {
       meta: {
         type: 'suggestion',
@@ -1004,6 +1018,7 @@ const SUGGESTION_CONTROLS: Array<{
     name: 'control-suggestion-type-safe',
     code: 'export const w: string = "hello";\n',
     expectFlagged: false,
+    expectModesFlagged: [],
     rule: {
       meta: {
         type: 'suggestion',
@@ -1035,6 +1050,26 @@ for (const control of SUGGESTION_CONTROLS) {
   linter.defineRule(`control/${control.name}`, control.rule as never);
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
+
+/**
+ * What a control DECLARES, separated from the rule that plants it: both
+ * families answer the same two questions, and the assertions below read only
+ * these fields.
+ */
+type ControlSpec = {
+  name: string;
+  code: string;
+  expectFlagged: boolean;
+  expectModesFlagged: ModeKey[];
+};
+
+/**
+ * Both control families in declaration order, so a control cannot be defined
+ * and registered without also being driven and read. Registering one is what
+ * LOOKS like wiring; only membership here makes it assertable, and the
+ * membership itself is asserted below.
+ */
+const ALL_CONTROLS: ControlSpec[] = [...CONTROLS, ...SUGGESTION_CONTROLS];
 
 const corpus = harvestFixtureCorpus();
 
@@ -1141,7 +1176,58 @@ for (const [owner, cases] of corpus.byRule) {
 
 const pairingSeconds = (Date.now() - pairingStarted) / 1000;
 
-const controlPairs: Pair[] = [];
+const CONTROL_PARSING = {
+  parser: 'ts',
+  parserOptions: {
+    ecmaVersion: 2022,
+    sourceType: 'module',
+    ecmaFeatures: { jsx: true },
+  },
+} as const;
+
+/**
+ * A control's pair carries its SPEC rather than a name to look the spec up by.
+ * A lookup that misses has to fall back on something, and every fallback here
+ * reads as a pass - which is the failure this wiring exists to close.
+ */
+const controlRuns: Array<{ spec: ControlSpec; pair: Pair }> = [];
+const addControlRun = (spec: ControlSpec, after: string) => {
+  controlRuns.push({
+    spec,
+    pair: {
+      fixer: spec.name,
+      owners: new Set([spec.name]),
+      before: spec.code,
+      after,
+      isTsx: false,
+      origin: 'planted control',
+      bucket: 'control',
+      filename: 'control.ts',
+      beforeName: '',
+      afterName: '',
+    },
+  });
+};
+
+for (const control of CONTROLS) {
+  const id = `control/${control.name}`;
+  let output = control.code;
+  try {
+    const fixed = linter.verifyAndFix(
+      control.code,
+      {
+        ...CONTROL_PARSING,
+        rules: { [id]: 'error' },
+      } as unknown as Linter.Config,
+      'control.ts',
+    );
+    if (fixed && typeof fixed.output === 'string') output = fixed.output;
+  } catch {
+    // Stays an identity pair and fails its own `fired` check below.
+  }
+  addControlRun(control, output);
+}
+
 for (const control of SUGGESTION_CONTROLS) {
   const id = `control/${control.name}`;
   let output = control.code;
@@ -1149,12 +1235,7 @@ for (const control of SUGGESTION_CONTROLS) {
     const messages = linter.verify(
       control.code,
       {
-        parser: 'ts',
-        parserOptions: {
-          ecmaVersion: 2022,
-          sourceType: 'module',
-          ecmaFeatures: { jsx: true },
-        },
+        ...CONTROL_PARSING,
         rules: { [id]: 'error' },
       } as unknown as Linter.Config,
       'control.ts',
@@ -1169,22 +1250,11 @@ for (const control of SUGGESTION_CONTROLS) {
   } catch {
     // Stays an identity pair and fails its own `fired` check below.
   }
-  controlPairs.push({
-    fixer: control.name,
-    owners: new Set([control.name]),
-    before: control.code,
-    after: output,
-    isTsx: false,
-    origin: 'planted control',
-    bucket: 'control',
-    filename: 'control.ts',
-    beforeName: '',
-    afterName: '',
-  });
+  addControlRun(control, output);
 }
 
 const corpusPairs = [...pairsByKey.values()];
-const allPairs = [...corpusPairs, ...controlPairs];
+const allPairs = [...corpusPairs, ...controlRuns.map((run) => run.pair)];
 
 /**
  * One program entry per distinct TEXT, not per pair side.
@@ -1282,6 +1352,17 @@ const introducedUnionFor = (pair: Pair) => [
   ),
 ];
 
+/**
+ * The per-mode breakdown the intersection collapses. `flagged` alone cannot
+ * tell "no mode saw a diagnostic" from "one mode saw one and the discount ate
+ * it", and those are opposite verdicts on a SILENCING oracle - so a control
+ * declares both, and the one that differs between them is the discount's pin.
+ */
+const modesFlaggingFor = (pair: Pair) =>
+  introducedPerMode(pair, introducedDiagnostics)
+    .filter((entry) => entry.added.length)
+    .map((entry) => entry.mode);
+
 const assertedPairs = corpusPairs.filter(
   (pair) => cleanModesFor(pair).length > 0,
 );
@@ -1332,16 +1413,27 @@ const findings = findingsWith(introducedDiagnostics);
  */
 const mutantFindings = findingsWith(() => []);
 
-const controlOutcomes = controlPairs.map((pair) => {
-  const spec = SUGGESTION_CONTROLS.find((c) => c.name === pair.fixer);
-  return {
-    name: pair.fixer,
-    fired: pair.after !== pair.before,
-    cleanModes: cleanModesFor(pair).map((mode) => mode.key),
-    flagged: introducedFor(pair).length > 0,
-    expectFlagged: spec ? spec.expectFlagged : null,
-  };
-});
+const controlOutcomes = controlRuns.map(({ spec, pair }) => ({
+  name: spec.name,
+  fired: pair.after !== pair.before,
+  cleanModes: cleanModesFor(pair).map((mode) => mode.key),
+  flagged: introducedFor(pair).length > 0,
+  unionFlagged: introducedUnionFor(pair).length > 0,
+  modesFlagged: modesFlaggingFor(pair),
+  expectFlagged: spec.expectFlagged,
+  expectModesFlagged: spec.expectModesFlagged,
+}));
+
+/**
+ * Throws rather than returning `undefined`: a control named here that is not
+ * driven must break the run, since every softer handling of a miss - a skip, an
+ * optional chain, a `null` expectation - reads as a pass.
+ */
+const outcomeFor = (name: string) => {
+  const outcome = controlOutcomes.find((entry) => entry.name === name);
+  if (!outcome) throw new Error(`planted control ${name} is not driven`);
+  return outcome;
+};
 
 const report = (finding: Finding) =>
   [
@@ -1398,6 +1490,17 @@ console.log(
       assertedPairs.filter((pair) => introducedUnionFor(pair).length).length
     }`,
     `  mode discount: ${discountDrops.length} pair(s) lost a diagnostic to the intersection, ${codeMatchedDrops.length} of them same-code (must be 0)`,
+    `  controls: ${controlOutcomes.length} driven`,
+    ...controlOutcomes.map(
+      (outcome) =>
+        `    ${outcome.name}: fired ${
+          outcome.fired
+        }, clean modes [${outcome.cleanModes.join(
+          ', ',
+        )}], modes flagging [${outcome.modesFlagged.join(', ')}], union ${
+          outcome.unionFlagged
+        }, intersection ${outcome.flagged}`,
+    ),
     `  timing: pairing ${pairingSeconds.toFixed(
       1,
     )}s, programs ${compileSeconds.toFixed(1)}s`,
@@ -1438,7 +1541,9 @@ describe('the cross-paired suggestion type guard is load-bearing', () => {
     // agree at zero and there is no floor to hold here. Pinned rather than
     // floored, because `>= 0` reads as an assertion and is not one - the day a
     // suggestion does diverge by mode, someone looks at it instead of it
-    // landing silently inside the discount.
+    // landing silently inside the discount. Non-vacuity for the discount
+    // itself therefore comes from the planted controls, not from here: an inert
+    // discount and an absent one are indistinguishable on this corpus.
     expect(discountDrops.length).toBe(0);
   });
 
@@ -1482,19 +1587,60 @@ describe('the cross-paired suggestion type guard is load-bearing', () => {
   });
 
   /**
-   * Both polarities. The positive proves the pipeline can flag a broken
-   * suggestion at all; the negative pins the artifact filter, without which
-   * every pair would flag and the zero above would mean nothing.
+   * Every planted control is DRIVEN, not merely registered. A control defined
+   * and handed to `linter.defineRule` looks wired from the outside while no
+   * `expect` ever reads it, and a polarity pin nothing reads pins nothing
+   * (#2242). Membership is asserted against the declarations rather than
+   * counted, so an added control cannot be left out of the run.
+   */
+  it('drives every planted control', () => {
+    expect(controlOutcomes.map((outcome) => outcome.name).sort()).toEqual(
+      ALL_CONTROLS.map((control) => control.name).sort(),
+    );
+  });
+
+  /**
+   * Both polarities, per control. The positives prove the pipeline can flag a
+   * broken rewrite at all; the negatives pin the artifact filter and the mode
+   * discount, without which either every pair would flag or none could, and the
+   * corpus zero above would mean nothing in either case.
    *
-   * The positive control's source is deliberately shaped so its rewrite is NOT
-   * byte-identical to the input: a rebuild-shaped control that reproduces its
-   * own source has its edit dropped by `suggestionEditsOf`, never reaches the
-   * comparison, and certifies a vacuous clean.
+   * `modesFlagged` is asserted beside `flagged` because the discount reaches a
+   * clean by DROPPING: the two differ on exactly the artifact class it exists
+   * for, and a control that only declared the collapsed verdict would pass
+   * whether the discount discounted the right thing, the wrong thing, or
+   * nothing.
+   *
+   * The positive controls' sources are deliberately shaped so the rewrite is
+   * NOT byte-identical to the input: a rebuild-shaped control that reproduces
+   * its own source has its edit dropped before the comparison and certifies a
+   * vacuous clean.
    */
   it.each(controlOutcomes)('control $name', (outcome) => {
     expect(outcome.fired).toBe(true);
-    expect(outcome.cleanModes.length).toBeGreaterThan(0);
+    // Held out by the baseline gate, a control proves nothing about the gate's
+    // other side.
+    expect(outcome.cleanModes).toEqual(MODES.map((mode) => mode.key));
+    expect(outcome.modesFlagged).toEqual(outcome.expectModesFlagged);
     expect(outcome.flagged).toBe(outcome.expectFlagged);
+  });
+
+  /**
+   * The discount's polarity as a DIFFERENCE rather than as two unrelated
+   * outcomes: the union oracle and the shipped one must DISAGREE on the
+   * strict-only control and AGREE on the both-modes one. Widening the discount
+   * back to a union, or narrowing it until it rejects everything, breaks
+   * exactly one of these - which is the whole live statement this guard makes
+   * about the intersection, since the discount drops nothing on the corpus.
+   */
+  it('discounts a strict-only diagnostic and keeps a both-mode one', () => {
+    const strictOnly = outcomeFor('control-strict-only-break');
+    expect([strictOnly.unionFlagged, strictOnly.flagged]).toEqual([
+      true,
+      false,
+    ]);
+    const bothModes = outcomeFor('control-both-modes-break');
+    expect([bothModes.unionFlagged, bothModes.flagged]).toEqual([true, true]);
   });
 
   /**
