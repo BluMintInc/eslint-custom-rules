@@ -478,59 +478,262 @@ type Capture = {
   patched: string;
 };
 
-const capturesFor = (rule: string, triggers: Trigger[]) => {
-  const captures: Capture[] = [];
-  let probed = 0;
+/**
+ * Where every deduped trigger ends up. The buckets are exhaustive and disjoint,
+ * and an identity below asserts as much, because a drop channel no counter names
+ * is a probe that vanishes indistinguishably from a fixer that declined — the
+ * shape a bare `probed` total certifies away (#1861).
+ */
+type ValueProbe = {
+  /** Deduped triggers entering the loop; the denominator of the identity. */
+  considered: number;
+  /** Triggers a dedup key collapses onto an earlier, identical probe. */
+  duplicates: number;
+  unparsableInjection: number;
+  shadowNeverLanded: number;
+  verifyErrors: number;
+  /**
+   * The rule reports nothing at all once the shadow stands in front of it. The
+   * probe is unattributable rather than clean: a fixer that never ran cannot
+   * demonstrate that what it emits resolves anywhere.
+   */
+  silentUnderShadow: number;
+  droppedReportOnInjection: number;
+  droppedNonNeutral: number;
+  droppedInvalid: number;
+  droppedUnvalidatable: number;
+  /** Probes the first shadow spelling could not carry; see `SHADOW_TYPES`. */
+  rescuedByAlternateShadow: number;
+  /** Injections standing in front of a rule that survived every control. */
+  probed: number;
+  /** Of those, the ones where the rule reports but offers no fix at all. */
+  declinedUnderShadow: number;
+  /** Of those, the ones where at least one fix survives the shadow. */
+  fixingUnderShadow: number;
+  /** A patched text that does not parse abandons the capture check. */
+  unparsablePatch: number;
+  /** Fixer outputs actually compared against the pre-fix capture count. */
+  examinedFixes: number;
+  captures: Capture[];
+};
+
+const newValueProbe = (): ValueProbe => ({
+  considered: 0,
+  duplicates: 0,
+  unparsableInjection: 0,
+  shadowNeverLanded: 0,
+  verifyErrors: 0,
+  silentUnderShadow: 0,
+  droppedReportOnInjection: 0,
+  droppedNonNeutral: 0,
+  droppedInvalid: 0,
+  droppedUnvalidatable: 0,
+  rescuedByAlternateShadow: 0,
+  probed: 0,
+  declinedUnderShadow: 0,
+  fixingUnderShadow: 0,
+  unparsablePatch: 0,
+  examinedFixes: 0,
+  captures: [],
+});
+
+const VALUE_PROBE_COUNTERS = Object.keys(newValueProbe()).filter(
+  (k) => k !== 'captures',
+) as Array<Exclude<keyof ValueProbe, 'captures'>>;
+
+const mergeValueProbes = (parts: ValueProbe[]): ValueProbe => {
+  const out = newValueProbe();
+  for (const part of parts) {
+    for (const k of VALUE_PROBE_COUNTERS) out[k] += part[k];
+    out.captures.push(...part.captures);
+  }
+  return out;
+};
+
+/** The channels a trigger can leave by without ever facing a fixer. */
+type ValueDrop =
+  | 'unparsableInjection'
+  | 'shadowNeverLanded'
+  | 'verifyErrors'
+  | 'silentUnderShadow'
+  | 'droppedReportOnInjection'
+  | 'droppedNonNeutral'
+  | 'droppedInvalid'
+  | 'droppedUnvalidatable';
+
+type ShadowAttempt =
+  | {
+      ok: true;
+      injected: string;
+      inserted: string;
+      parsed: Parsed;
+      reports: any[];
+    }
+  | { ok: false; reason: ValueDrop };
+
+/**
+ * The shadow's own type is a rule input, and one fixed spelling is not valid
+ * for every fixture — the value-namespace counterpart of the wrapper's `async`
+ * modifier, chosen per fixture by the same differential that judges it.
+ *
+ * `never` is assignable to every expected type, so it cannot widen what any
+ * surrounding annotation sees, but it carries no call and no construct
+ * signature. Measured: the differential rejects it on 84 injections, 39 for
+ * TS2349 (the region CALLS the shadowed name) and 45 for TS2604 (the region
+ * uses it as a JSX component), and the permissive spelling carries all 84.
+ *
+ * The order is conservative-first rather than either-way. Measured with the
+ * permissive spelling leading, it carries all 1,455 and rescues nothing, so
+ * over THIS corpus the fallback runs one way — but a wildcard stub is not
+ * measured safe on shapes the corpus does not contain, and preferring the
+ * narrowest spelling that validates keeps a rule reading the shadow through
+ * the checker from being handed a type that answers every question.
+ */
+const SHADOW_TYPES = ['never', 'any'];
+
+const capturesFor = (rule: string, triggers: Trigger[]): ValueProbe => {
+  const out = newValueProbe();
   const seen = new Set<string>();
+  /** Base subjects are re-read once per fixture, not once per trigger. */
+  const baseSubjectCache = new Map<string, string | null>();
+
+  const baseSubjectsOf = (t: Trigger): string | null => {
+    const key = `${t.filename}::${t.testCase.code}`;
+    if (baseSubjectCache.has(key)) return baseSubjectCache.get(key)!;
+    const msgs = verifyOf(rule, t.testCase, t.filename);
+    const subjects = msgs
+      ? msgs
+          .filter((m: any) => m.ruleId === PREFIX + rule)
+          .map((m: any) => offsetOf(t.testCase.code, m.line, m.column))
+          .sort((a: number, b: number) => a - b)
+      : null;
+    const value = subjects ? subjects.join(',') : null;
+    baseSubjectCache.set(key, value);
+    return value;
+  };
+
+  const tryShadow = (t: Trigger, shadowType: string): ShadowAttempt => {
+    const code = t.testCase.code;
+    const inserted = `\nconst ${t.name} = undefined as unknown as ${shadowType};\n`;
+    const injected =
+      code.slice(0, t.injectAt) + inserted + code.slice(t.injectAt);
+
+    const parsed = parse(injected, t.filename);
+    if (!parsed) return { ok: false, reason: 'unparsableInjection' };
+    // The injected declaration must actually shadow, not land in module scope.
+    const injectedVar = resolveAt(
+      parsed.scopeManager as any,
+      t.name,
+      t.injectAt + 2,
+    );
+    if (
+      !injectedVar ||
+      moduleScope(parsed.scopeManager as any).variables.includes(injectedVar)
+    ) {
+      return { ok: false, reason: 'shadowNeverLanded' };
+    }
+
+    const baseSubjects = baseSubjectsOf(t);
+    const injMsgs = verifyOf(
+      rule,
+      { ...t.testCase, code: injected },
+      t.filename,
+    );
+    if (baseSubjects === null || !injMsgs) {
+      return { ok: false, reason: 'verifyErrors' };
+    }
+    const reports = injMsgs.filter((m: any) => m.ruleId === PREFIX + rule);
+    if (!reports.length) return { ok: false, reason: 'silentUnderShadow' };
+
+    // Neutrality, gated two ways. First: no report may land inside the
+    // injected span — a rule reporting on the probe's own scaffolding would be
+    // answering about a subject the fixture never contained.
+    const injOffsets = reports.map((m: any) =>
+      offsetOf(injected, m.line, m.column),
+    );
+    if (
+      injOffsets.some(
+        (off) => off >= t.injectAt && off < t.injectAt + inserted.length,
+      )
+    ) {
+      return { ok: false, reason: 'droppedReportOnInjection' };
+    }
+    // Second: the same SUBJECTS, compared by injection-adjusted offset.
+    // MessageIds are deliberately NOT compared — declining the fix under the
+    // shadow is the reaction this guard exists to demand, and the decline
+    // swaps the messageId while reporting the same node. A subject appearing
+    // or vanishing is what makes the probe unattributable.
+    const adjusted = baseSubjects
+      .split(',')
+      .filter((s) => s.length)
+      .map((s) => Number(s))
+      .map((off) => (off >= t.injectAt ? off + inserted.length : off))
+      .sort((a, b) => a - b)
+      .join(',');
+    if (adjusted !== [...injOffsets].sort((a, b) => a - b).join(',')) {
+      return { ok: false, reason: 'droppedNonNeutral' };
+    }
+
+    // Validity as a DIFFERENTIAL: the injected variant may introduce no
+    // diagnostic CODE the fixture does not already carry. A declaration
+    // colliding with a same-block binding is the case this drops.
+    const introduced = introducedDiagnostics(code, injected, t.filename);
+    if (introduced === null) {
+      return { ok: false, reason: 'droppedUnvalidatable' };
+    }
+    if (introduced.length) return { ok: false, reason: 'droppedInvalid' };
+
+    return { ok: true, injected, inserted, parsed, reports };
+  };
+
   for (const t of triggers) {
     // The whole fixture, not a prefix of it: under the nesting perturbation
     // below every wrapped variant opens with the same import block and wrapper
     // head, so a truncated key collapses distinct fixtures into one probe.
     const key = `${t.name}::${t.injectAt}::${t.testCase.code}`;
-    if (seen.has(key)) continue;
+    if (seen.has(key)) {
+      out.duplicates++;
+      continue;
+    }
     seen.add(key);
+    out.considered++;
 
-    const code = t.testCase.code;
-    const decl = `const ${t.name} = undefined as unknown as never;\n`;
-    const injected =
-      code.slice(0, t.injectAt) + '\n' + decl + code.slice(t.injectAt);
-
-    const beforeParsed = parse(injected, t.filename);
-    if (!beforeParsed) continue;
-    // The injected declaration must actually shadow, not land in module scope.
-    const injectedVar = resolveAt(
-      beforeParsed.scopeManager as any,
-      t.name,
-      t.injectAt + 2,
-    );
-    if (!injectedVar) continue;
-    if (
-      moduleScope(beforeParsed.scopeManager as any).variables.includes(
-        injectedVar,
-      )
-    ) {
+    let landed: Extract<ShadowAttempt, { ok: true }> | null = null;
+    let firstReason: ValueDrop | null = null;
+    let rejected = 0;
+    for (const shadowType of SHADOW_TYPES) {
+      const attempt = tryShadow(t, shadowType);
+      if (attempt.ok) {
+        landed = attempt;
+        break;
+      }
+      if (!firstReason) firstReason = attempt.reason;
+      rejected++;
+    }
+    if (!landed) {
+      // The conservative spelling's reason describes the fixture; the
+      // permissive one only ever adds reach.
+      out[firstReason!]++;
       continue;
     }
+    if (rejected) out.rescuedByAlternateShadow++;
 
-    probed++;
-    const before = capturedCount(beforeParsed, t.name);
-
-    let msgs;
-    try {
-      msgs = linter.verify(injected, cfgFor(rule, t.testCase), {
-        filename: t.filename,
-      });
-    } catch {
-      continue;
-    }
-    for (const m of msgs.filter((x: any) => x.ruleId === PREFIX + rule)) {
+    out.probed++;
+    const before = capturedCount(landed.parsed, t.name);
+    let fixes = 0;
+    for (const m of landed.reports) {
       for (const fix of fixesOf(m)) {
-        const patched = applyFix(injected, fix);
+        fixes++;
+        const patched = applyFix(landed.injected, fix);
         const afterParsed = parse(patched, t.filename);
-        if (!afterParsed) continue;
+        if (!afterParsed) {
+          out.unparsablePatch++;
+          continue;
+        }
+        out.examinedFixes++;
         const after = capturedCount(afterParsed, t.name);
         if (after > before) {
-          captures.push({
+          out.captures.push({
             name: t.name,
             detail: `${before} -> ${after} uses of '${t.name}' resolve to the inner shadow`,
             origin: `src/tests/${t.testCase.origin} as ${t.filename}`,
@@ -539,8 +742,10 @@ const capturesFor = (rule: string, triggers: Trigger[]) => {
         }
       }
     }
+    if (fixes) out.fixingUnderShadow++;
+    else out.declinedUnderShadow++;
   }
-  return { captures, probed };
+  return out;
 };
 
 /* ------------------------------------------------------------------ *
@@ -1240,8 +1445,7 @@ type WrapCounters = {
 type NestedVariant = WrapCounters & {
   reach: Reach;
   wrapperReach: Reach;
-  probed: number;
-  captures: Capture[];
+  value: ValueProbe;
 };
 
 const importRangesOf = (ast: any) => {
@@ -1283,8 +1487,7 @@ const runNestedVariant = (
       typeSites: 0,
       typeTriggers: [],
     },
-    probed: 0,
-    captures: [],
+    value: newValueProbe(),
   };
   const probes: Array<{ testCase: FixtureCase; filename: string }> = [];
 
@@ -1360,10 +1563,10 @@ const runNestedVariant = (
 
   out.reach = triggersFor(rule, probes);
   out.wrapperReach = wrapperTriggersFor(rule, probes);
-  const anchored = capturesFor(rule, out.reach.triggers);
-  const wrapped = capturesFor(rule, out.wrapperReach.triggers);
-  out.probed = anchored.probed + wrapped.probed;
-  out.captures = [...anchored.captures, ...wrapped.captures];
+  out.value = mergeValueProbes([
+    capturesFor(rule, out.reach.triggers),
+    capturesFor(rule, out.wrapperReach.triggers),
+  ]);
   return out;
 };
 
@@ -1377,8 +1580,7 @@ type Nested = {
   enclosed: number;
   importAnchored: number;
   triggers: number;
-  probed: number;
-  captures: Capture[];
+  value: ValueProbe;
 };
 
 const runNested = (rule: string, cases: FixtureCase[]): Nested => {
@@ -1406,8 +1608,7 @@ const runNested = (rule: string, cases: FixtureCase[]): Nested => {
     triggers: sum(
       (v) => v.reach.triggers.length + v.wrapperReach.triggers.length,
     ),
-    probed: sum((v) => v.probed),
-    captures: all.flatMap((v) => v.captures),
+    value: mergeValueProbes(all.map((v) => v.value)),
   };
 };
 
@@ -1425,6 +1626,8 @@ type RuleResult = {
   /** Fixtures excluded for not being TypeScript, so the reason can say so. */
   nonTypeScript: number;
   reach: Reach;
+  /** The flat pass and the nesting perturbation, merged bucket by bucket. */
+  value: ValueProbe;
   probed: number;
   captures: Capture[];
   /** Only for a rule the flat pass parks with no enclosure; see `runNested`. */
@@ -1470,7 +1673,7 @@ for (const rule of transformingRules) {
       ),
     );
   }
-  const { captures, probed } = capturesFor(rule, reach.triggers);
+  const flat = capturesFor(rule, reach.triggers);
   /**
    * The nesting perturbation runs for exactly the class it settles: a rule that
    * transforms something but whose every report sits outside any function
@@ -1482,12 +1685,14 @@ for (const rule of transformingRules) {
     reach.actionable > 0 && reach.enclosed === 0
       ? runNested(rule, cases)
       : null;
+  const value = mergeValueProbes(nested ? [flat, nested.value] : [flat]);
   results.set(rule, {
     cases: cases.length,
     nonTypeScript: declared.length - cases.length,
     reach,
-    probed: probed + (nested ? nested.probed : 0),
-    captures: [...captures, ...(nested ? nested.captures : [])],
+    value,
+    probed: value.probed,
+    captures: value.captures,
     nested,
   });
 }
@@ -1515,12 +1720,33 @@ const typeArms = [...typeArmResults.values()];
 const typeArmSum = (pick: (a: TypeArm) => number) =>
   typeArms.reduce((n, a) => n + pick(a), 0);
 
-const totalProbed = [...results.values()].reduce((a, r) => a + r.probed, 0);
+const valueTotals = mergeValueProbes([...results.values()].map((r) => r.value));
+const totalProbed = valueTotals.probed;
 const totalTriggers = [...results.values()].reduce(
   (a, r) => a + r.reach.triggers.length + (r.nested ? r.nested.triggers : 0),
   0,
 );
 const rulesProbed = [...results.values()].filter((r) => r.probed > 0).length;
+/**
+ * Rules whose green row rests on a fixer output actually compared, rather than
+ * on an injection that merely landed in front of one. The two counts are
+ * asserted EQUAL below: a rule the shadow silences everywhere would otherwise
+ * pass this file while nothing of its fixer had been read (#1861).
+ */
+const rulesExamining = [...results.values()].filter(
+  (r) => r.value.examinedFixes > 0,
+).length;
+
+/** Every deduped trigger leaves through exactly one of these. */
+const valueDropTotal =
+  valueTotals.unparsableInjection +
+  valueTotals.shadowNeverLanded +
+  valueTotals.verifyErrors +
+  valueTotals.silentUnderShadow +
+  valueTotals.droppedReportOnInjection +
+  valueTotals.droppedNonNeutral +
+  valueTotals.droppedInvalid +
+  valueTotals.droppedUnvalidatable;
 
 const nestedResults = [...results.values()]
   .map((r) => r.nested)
@@ -1534,7 +1760,7 @@ const nestedTotals = {
   dropped: nestSum((n) => n.dropped),
   /** Rules the wrap gives a function block at the report site. */
   enclosureGained: nestedResults.filter((n) => n.enclosed > 0).length,
-  probedRules: nestedResults.filter((n) => n.probed > 0).length,
+  probedRules: nestedResults.filter((n) => n.value.probed > 0).length,
   droppedByExportStrip: nestedVariants.reduce(
     (a, v) => a + v.droppedByExportStrip,
     0,
@@ -1592,15 +1818,62 @@ const REASONS = {
     'reports outside every function block even once its fixture is nested, so no shadow can stand',
   noModuleBoundReference:
     'emits no new reference to a module-scope-bound name, so no shadow can capture one',
+  /**
+   * The four below are the injection's own rejections, split apart for the same
+   * reason `noEnclosingBlock` was: they are four different measured facts, and
+   * `shadowNeverLanded` — the one reason that existed — is FALSE for three of
+   * them. The shadow does land; a control rejects what happens next.
+   */
   shadowNeverLanded:
     'emits such a reference, but the injected declaration never shadowed it',
+  silencedByShadow:
+    'stops reporting entirely once a shadow stands in front of it, so no fixer output of its can be read there',
+  reportsOnInjection:
+    'reports on the injected declaration itself, so every probe of it would be about the scaffolding rather than the fixture',
+  /**
+   * The remaining injection controls, as one reason because each of their
+   * counters is pinned at zero below — a rule reaching here means one of those
+   * pins has already failed, and this exists so the reason stays total rather
+   * than falling back on a claim the run contradicts.
+   */
+  shadowControlRejected:
+    'emits such a reference, but a neutrality or validity control rejects every injection in front of it',
 } as const;
 
 type Reason = typeof REASONS[keyof typeof REASONS];
 
+/**
+ * The drop channel accounting for most of a rule's rejected injections, which
+ * is the one describing it. Ties resolve to the earliest entry; the order runs
+ * from the injection outward, so the earliest obstruction wins a tie rather
+ * than a downstream consequence of it.
+ */
+const INJECTION_DROP_REASONS: Array<[ValueDrop, Reason]> = [
+  ['unparsableInjection', REASONS.shadowControlRejected],
+  ['shadowNeverLanded', REASONS.shadowNeverLanded],
+  ['verifyErrors', REASONS.shadowControlRejected],
+  ['silentUnderShadow', REASONS.silencedByShadow],
+  ['droppedReportOnInjection', REASONS.reportsOnInjection],
+  ['droppedNonNeutral', REASONS.shadowControlRejected],
+  ['droppedInvalid', REASONS.shadowControlRejected],
+  ['droppedUnvalidatable', REASONS.shadowControlRejected],
+];
+
+const injectionDropReasonFor = (value: ValueProbe): Reason => {
+  let best = REASONS.shadowControlRejected as Reason;
+  let most = -1;
+  for (const [channel, reason] of INJECTION_DROP_REASONS) {
+    if (value[channel] > most) {
+      most = value[channel];
+      best = reason;
+    }
+  }
+  return best;
+};
+
 /** Only meaningful for a rule with no probe; the branches narrow toward one. */
 const unprobedReasonFor = (rule: string): Reason => {
-  const { cases, nonTypeScript, reach, nested } = results.get(rule)!;
+  const { cases, nonTypeScript, reach, nested, value } = results.get(rule)!;
   if (cases === 0) {
     return nonTypeScript > 0 ? REASONS.nonTypeScript : REASONS.noFixtures;
   }
@@ -1622,12 +1895,13 @@ const unprobedReasonFor = (rule: string): Reason => {
         : REASONS.noEnclosingBlock;
     }
     if (nested.triggers === 0) return REASONS.noModuleBoundReference;
-    return REASONS.shadowNeverLanded;
+    return injectionDropReasonFor(nested.value);
   }
   if (reach.triggers.length === 0) return REASONS.noModuleBoundReference;
   // Triggers existed, so the injection step is the only thing left that can
-  // have dropped them.
-  return REASONS.shadowNeverLanded;
+  // have dropped them — and WHICH of its controls did is the answer, not the
+  // one channel that happens to run first.
+  return injectionDropReasonFor(value);
 };
 
 const observedUnprobed = Object.fromEntries(
@@ -1718,6 +1992,29 @@ const UNPROBED_RULES: Record<string, Reason> = {
   // original reason survives the perturbation unchanged.
   'enforce-unique-cursor-headers': REASONS.noEnclosingBlock,
 
+  /**
+   * The two the injection's own controls reject. Each has a landing shadow and
+   * nothing else, which is the row a `probed` total on its own scores green —
+   * the injection lands, and no fixer output is read behind it (#2247).
+   *
+   * `enforce-centralized-mock-firestore` reports on the shadow. Its one trigger
+   * names `mockFirestore`, and standing
+   * `const mockFirestore = …` inside `async function setupTests()` moves its
+   * single report off the fixture's `const { mockFirestore: … } = await
+   * import(…)` at offset 55 and onto the injected declaration at offset 45 —
+   * one report in, one out, the same subject swap the class wrapper produces on
+   * `global-const-style`.
+   *
+   * `enforce-timestamp-now` is silenced by it. All 9 of its triggers name
+   * `Timestamp`, and the rule keys on `Timestamp` resolving to the
+   * `firebase-admin/firestore` import; a local `const Timestamp` makes it report
+   * nothing at all, so its fixer never runs and there is no emitted reference to
+   * resolve. A fixer that does not run cannot demonstrate anything about where
+   * what it emits resolves.
+   */
+  'enforce-centralized-mock-firestore': REASONS.reportsOnInjection,
+  'enforce-timestamp-now': REASONS.silencedByShadow,
+
   // Nested, their reports DO land in a function block, and the fix still emits
   // no reference for a shadow to capture — the same healthy answer as the
   // majority below, now measured rather than masked by a flat fixture.
@@ -1744,8 +2041,8 @@ const UNPROBED_RULES: Record<string, Reason> = {
   // `enforce-centralized-mock-firestore` left this class for the same reason
   // (#1967): its fixer injects a module-scope `mockFirestore` import and then
   // renames the call sites to it, so once a fixture destructured the mock under
-  // a new name INSIDE a function, the reason stopped holding and the probe
-  // below drives it for real.
+  // a new name INSIDE a function, the reason stopped holding. It carries the
+  // `reportsOnInjection` reason above rather than this one.
   'enforce-early-destructuring': REASONS.noModuleBoundReference,
   'enforce-empty-object-check': REASONS.noModuleBoundReference,
   'enforce-exported-function-types': REASONS.noModuleBoundReference,
@@ -1796,6 +2093,33 @@ const UNPROBED_RULES: Record<string, Reason> = {
   'vertically-group-related-functions': REASONS.noModuleBoundReference,
 };
 
+/**
+ * Probed rules the shadow never puts a fixer output in front of, because every
+ * report of theirs arrives fix-less once it stands there. Derived from the run
+ * and pinned, so a rule joining or leaving is a conscious edit.
+ */
+const DECLINE_ONLY_RULES = [
+  'consistent-callback-naming',
+  'enforce-assert-safe-object-key',
+  'enforce-memoize-async',
+  'enforce-memoize-getters',
+  'enforce-microdiff',
+  'enforce-safe-stringify',
+  'enforce-snapshot-state-narrowing',
+  'prefer-clone-deep',
+  'prefer-fragment-component',
+  'prefer-next-dynamic',
+  'prefer-use-deep-compare-memo',
+  'prefer-usecallback-over-usememo-for-functions',
+  'require-image-optimized',
+  'require-memoize-jsx-returners',
+];
+
+const declineOnlyRules = transformingRules.filter((rule) => {
+  const { value } = results.get(rule)!;
+  return value.probed > 0 && value.examinedFixes === 0;
+});
+
 const reportOf = (captures: Capture[]) =>
   captures
     .map(
@@ -1808,6 +2132,24 @@ console.log(
     `[fixer-shadow-capture] ${rulesProbed} of ${transformingRules.length} ` +
       `transforming rules probed; ${totalProbed} shadow injections from ` +
       `${totalTriggers} emitted references`,
+    `  value arm: ${totalTriggers} triggers = ${valueTotals.duplicates} ` +
+      `duplicate + ${valueTotals.considered} considered; considered = ` +
+      `${valueTotals.probed} probed + ${valueDropTotal} dropped ` +
+      `(unparsable-injection ${valueTotals.unparsableInjection}, ` +
+      `never-landed ${valueTotals.shadowNeverLanded}, verify-errors ` +
+      `${valueTotals.verifyErrors}, silent-under-shadow ` +
+      `${valueTotals.silentUnderShadow}, on-injection ` +
+      `${valueTotals.droppedReportOnInjection}, non-neutral ` +
+      `${valueTotals.droppedNonNeutral}, invalid ` +
+      `${valueTotals.droppedInvalid}, unvalidatable ` +
+      `${valueTotals.droppedUnvalidatable}); probed = ` +
+      `${valueTotals.fixingUnderShadow} fixing + ` +
+      `${valueTotals.declinedUnderShadow} declining; ` +
+      `${valueTotals.examinedFixes} fixes examined, ` +
+      `${valueTotals.unparsablePatch} unparsable patches, ` +
+      `${valueTotals.rescuedByAlternateShadow} rescued by the alternate ` +
+      `shadow type; ${rulesExamining} of ${rulesProbed} probed rules examine ` +
+      `a fix`,
     `  corpus: ${corpus.totalCases} cases from ${corpus.suitesUsed} suites, ` +
       `${corpus.filesLoaded} files loaded, ${corpus.failures.length} failed`,
     `  nesting perturbation: ${nestedTotals.rules} rules wrapped, ` +
@@ -1863,6 +2205,75 @@ describe('fixers must not emit a reference an inner shadow captures', () => {
   });
 
   /**
+   * What the injections actually did, as an accounting rather than a total.
+   *
+   * `totalProbed` counts SHADOWS STOOD, which is not work done: 1,302 of the
+   * 1,455 end with the rule declining every fix, so a floor on it certifies
+   * mostly that injections landed. `examinedFixes` is the count of fixer
+   * outputs read back and resolved, and it is an order of magnitude smaller.
+   * Both matter and neither substitutes for the other — a decline IS the
+   * reaction this guard demands, so a corpus of declines is a real answer, but
+   * it is not evidence that the resolver was ever exercised.
+   *
+   * The three identities are what make every counter load-bearing. A drop
+   * channel nobody sums is a probe that vanishes indistinguishably from a
+   * fixer that declined, which is the reading a bare total permits (#1861).
+   */
+  it('accounts for every emitted reference the value arm was handed', () => {
+    // Dedup versus drops: the two ways a trigger can fail to become a probe,
+    // and the pair a single "triggers minus probed" gap conflates.
+    expect(valueTotals.duplicates + valueTotals.considered).toBe(totalTriggers);
+    expect(valueTotals.probed + valueDropTotal).toBe(valueTotals.considered);
+    expect(
+      valueTotals.fixingUnderShadow + valueTotals.declinedUnderShadow,
+    ).toBe(valueTotals.probed);
+
+    expect(totalTriggers).toBeGreaterThanOrEqual(1520);
+    expect(valueTotals.considered).toBeGreaterThanOrEqual(1470);
+    expect(valueTotals.duplicates).toBeGreaterThanOrEqual(40);
+
+    // The floor that measures fixer outputs examined rather than injections
+    // landed. It is the number the per-rule assertions below actually rest on.
+    expect(valueTotals.examinedFixes).toBeGreaterThanOrEqual(160);
+    expect(valueTotals.fixingUnderShadow).toBeGreaterThanOrEqual(146);
+
+    // Channels measured at zero, pinned there. A patch that stops parsing or an
+    // injection that stops verifying abandons the capture check silently, and
+    // every consumer here filters by `ruleId`, so the abandonment reads exactly
+    // like a fixer that emitted nothing (#1984).
+    expect(valueTotals.unparsableInjection).toBe(0);
+    expect(valueTotals.verifyErrors).toBe(0);
+    expect(valueTotals.unparsablePatch).toBe(0);
+    expect(valueTotals.droppedUnvalidatable).toBe(0);
+    // Zero only BECAUSE the shadow spelling is chosen per fixture: the
+    // conservative spelling is rejected 84 times and the permissive one carries
+    // every one of them. The rescue floor beside it is what keeps this zero
+    // from reading as "the differential never fires".
+    expect(valueTotals.droppedInvalid).toBe(0);
+    expect(valueTotals.rescuedByAlternateShadow).toBeGreaterThanOrEqual(80);
+
+    // Channels measured firing. A control that never drops anything is
+    // indistinguishable from an absent one.
+    expect(valueTotals.shadowNeverLanded).toBeGreaterThanOrEqual(66);
+    expect(valueTotals.silentUnderShadow).toBeGreaterThanOrEqual(1);
+    expect(valueTotals.droppedReportOnInjection).toBeGreaterThanOrEqual(1);
+  });
+
+  /**
+   * The probed rules whose every answer is a DECLINE, named rather than
+   * counted. Declining under a shadow satisfies this guard, so these rows are
+   * real answers — but no fixer output of theirs is ever read back, so a rule
+   * sliding into this set is a rule whose row stops resting on a resolution.
+   * Named apart from `UNPROBED_RULES` because the two facts are different:
+   * those rules are never asked, these answer without emitting.
+   */
+  it('names the probed rules that answer only by declining', () => {
+    expect(declineOnlyRules).toEqual(DECLINE_ONLY_RULES);
+    expect(rulesExamining).toBe(rulesProbed - DECLINE_ONLY_RULES.length);
+    expect(rulesExamining).toBeGreaterThanOrEqual(13);
+  });
+
+  /**
    * The nesting perturbation's own non-vacuity. Its whole contribution is
    * REACH — it finds no defect today — so nothing downstream would notice it
    * degrading to zero wrapped fixtures, and the guard would go on passing while
@@ -1872,8 +2283,17 @@ describe('fixers must not emit a reference an inner shadow captures', () => {
    * inside a function block, because the flat probe then reaches the shadow
    * on its own: `prefer-clone-deep` moved across when its `return {...} as
    * const` fixture gained a fix (#2032). Its 121 wrapped variants left with it
-   * (1023 -> 902 neutral, 5 -> 4 rules reaching a shadow), which is why every
-   * floor here sits just under the value measured after that move.
+   * (1023 -> 902 neutral, 5 -> 4 rules reaching a shadow), which is why the
+   * floors here track the population rather than pin a rule into it.
+   *
+   * Tracking it DOWN is the only direction that needs saying twice, because the
+   * corpus otherwise only grows and a floor written under one measurement
+   * drifts under every later one. These sat 20-33% below their own values —
+   * `neutral` 900 against 1,118, `droppedByWrap` 190 against 273,
+   * `droppedReportOnWrapper` 70 against 103, `droppedByExportStrip` 16 against
+   * 24 — far enough that none of them can detect the collapse it exists to
+   * detect. Each is re-cut just under the value measured, the spacing the type
+   * arm's floors already carry (#2247).
    *
    * `enforce-firestore-rules-get-access` moved across the same way (#2052): its
    * wrap-at-print-width fixtures pin the indentation the fix emits, so several
@@ -1897,16 +2317,16 @@ describe('fixers must not emit a reference an inner shadow captures', () => {
     expect(nestedTotals.rules).toBeGreaterThanOrEqual(18);
     expect(nestedTotals.enclosureGained).toBeGreaterThanOrEqual(10);
     expect(nestedTotals.probedRules).toBeGreaterThanOrEqual(3);
-    expect(nestedTotals.neutral).toBeGreaterThanOrEqual(900);
+    expect(nestedTotals.neutral).toBeGreaterThanOrEqual(1070);
     // An unvalidatable variant is not a valid one. Both zeros are trustworthy
     // only because the counter sits at its own skip rather than downstream.
     expect(validationErrors).toBe(0);
     expect(nestedTotals.droppedUnvalidatable).toBe(0);
     // Every gate must be observed removing something: a control that never
     // drops anything is indistinguishable from an absent one.
-    expect(nestedTotals.droppedByExportStrip).toBeGreaterThanOrEqual(16);
-    expect(nestedTotals.droppedByWrap).toBeGreaterThanOrEqual(190);
-    expect(nestedTotals.droppedReportOnWrapper).toBeGreaterThanOrEqual(70);
+    expect(nestedTotals.droppedByExportStrip).toBeGreaterThanOrEqual(23);
+    expect(nestedTotals.droppedByWrap).toBeGreaterThanOrEqual(262);
+    expect(nestedTotals.droppedReportOnWrapper).toBeGreaterThanOrEqual(98);
     expect(nestedTotals.droppedInvalid).toBeGreaterThanOrEqual(6);
   });
 
@@ -2070,6 +2490,83 @@ const CONTROL_CASE: FixtureCase = {
 };
 
 /**
+ * A fixer whose report SET changes when the shadow lands, with no report on the
+ * injected span itself: it reports on `render(…)` as the positive control does,
+ * and gains a second, fix-less report on the enclosing function's own name once
+ * that function's body holds more than one statement.
+ *
+ * This is the half of neutrality the corpus does not exercise. The
+ * on-the-injection gate fires on `enforce-centralized-mock-firestore`, and the
+ * subject gate fires 9 times on `enforce-timestamp-now` — but always in its
+ * degenerate form, every subject vanishing at once. A partial change is the
+ * shape a rule can hide a swap in (one report in, one out, matching counts), so
+ * the gate is planted rather than left present and never firing.
+ */
+linter.defineRule(PREFIX + 'control-shadow-subject-shift', {
+  meta: {
+    type: 'problem' as const,
+    fixable: 'code' as const,
+    schema: [],
+    messages: { m: 'x' },
+  },
+  create(context: any) {
+    return {
+      CallExpression(node: any) {
+        if (node.callee.name !== 'render') return;
+        const program = context.getSourceCode().ast;
+        context.report({
+          node,
+          messageId: 'm',
+          fix: (fixer: any) => [
+            fixer.insertTextBefore(program.body[0], IMPORT_HELPER),
+            fixer.replaceText(node.callee, 'helper'),
+          ],
+        });
+      },
+      FunctionDeclaration(node: any) {
+        if (node.body.body.length < 2 || !node.id) return;
+        context.report({ node: node.id, messageId: 'm' });
+      },
+    };
+  },
+} as never);
+
+/**
+ * The other half: a fixer that reports ON the injected declaration. The corpus
+ * fires this gate once — `enforce-centralized-mock-firestore` reports on any
+ * `mockFirestore` binding, including the probe's — and a gate whose only
+ * evidence is one corpus entry stops being evidence the day that entry moves.
+ */
+linter.defineRule(PREFIX + 'control-shadow-reports-on-injection', {
+  meta: {
+    type: 'problem' as const,
+    fixable: 'code' as const,
+    schema: [],
+    messages: { m: 'x' },
+  },
+  create(context: any) {
+    return {
+      CallExpression(node: any) {
+        if (node.callee.name !== 'render') return;
+        const program = context.getSourceCode().ast;
+        context.report({
+          node,
+          messageId: 'm',
+          fix: (fixer: any) => [
+            fixer.insertTextBefore(program.body[0], IMPORT_HELPER),
+            fixer.replaceText(node.callee, 'helper'),
+          ],
+        });
+      },
+      FunctionDeclaration(node: any) {
+        if (node.body.body.length < 2) return;
+        context.report({ node: node.body.body[0], messageId: 'm' });
+      },
+    };
+  },
+} as never);
+
+/**
  * The same two controls again, but written FLAT — deliberately with no function
  * anywhere, so the report site has nothing enclosing it and the report-anchored
  * arm cannot reach it at all. Running them through `wrapFixture` is what proves
@@ -2214,11 +2711,46 @@ describe('the shadow-capture detector is load-bearing', () => {
       // A control whose fix never emitted a module-bound reference would never
       // reach the injection step, and its zero would prove nothing.
       expect(reach.triggers.length).toBeGreaterThan(0);
-      const { captures, probed } = capturesFor(name, reach.triggers);
-      expect(probed).toBeGreaterThan(0);
-      expect(captures.length).toBe(expectCaptures);
+      const probe = capturesFor(name, reach.triggers);
+      expect(probe.probed).toBeGreaterThan(0);
+      // A probe that stood a shadow but read no fixer output back would return
+      // zero captures for the positive control too, so the polarity below is
+      // only a verdict once an output has been resolved.
+      expect(probe.examinedFixes).toBeGreaterThan(0);
+      expect(probe.captures.length).toBe(expectCaptures);
     },
   );
+
+  /**
+   * Both neutrality gates, each on a planted fixer that trips it and not the
+   * other. A gate the corpus never fires is indistinguishable from an absent
+   * one, and the subject gate's only corpus firings are degenerate — every
+   * subject vanishing at once — so the partial change it exists for is planted.
+   */
+  it.each([
+    ['control-shadow-subject-shift', 'droppedNonNeutral'],
+    ['control-shadow-reports-on-injection', 'droppedReportOnInjection'],
+  ] as const)('control %s is dropped as %s', (name, channel) => {
+    const reach = triggersFor(name, [
+      { testCase: CONTROL_CASE, filename: 'file.ts' },
+    ]);
+    // Same emitted reference as the positive control, so a zero below is the
+    // gate speaking rather than a fixer that never reached the injection.
+    expect(reach.triggers.length).toBeGreaterThan(0);
+    const probe = capturesFor(name, reach.triggers);
+    expect(probe.considered).toBe(reach.triggers.length);
+    expect(probe[channel]).toBe(probe.considered);
+    expect(probe.probed).toBe(0);
+    expect(probe.examinedFixes).toBe(0);
+    // Each gate must be the one that fired: the report set changing and a
+    // report landing on the scaffolding are different findings, and a probe
+    // that answered both would attribute neither.
+    const other =
+      channel === 'droppedNonNeutral'
+        ? 'droppedReportOnInjection'
+        : 'droppedNonNeutral';
+    expect(probe[other]).toBe(0);
+  });
 
   it.each(
     SHADOW_CONTROLS.flatMap((c) =>
@@ -2263,9 +2795,12 @@ describe('the shadow-capture detector is load-bearing', () => {
       expect(nested.neutral).toBe(2);
       expect(nested.dropped).toBe(0);
       expect(nested.enclosed).toBeGreaterThan(0);
-      expect(nested.probed).toBeGreaterThan(0);
-      expect(nested.captures.length).toBeGreaterThanOrEqual(expectCaptures);
-      if (expectCaptures === 0) expect(nested.captures).toEqual([]);
+      expect(nested.value.probed).toBeGreaterThan(0);
+      expect(nested.value.examinedFixes).toBeGreaterThan(0);
+      expect(nested.value.captures.length).toBeGreaterThanOrEqual(
+        expectCaptures,
+      );
+      if (expectCaptures === 0) expect(nested.value.captures).toEqual([]);
     },
   );
 
