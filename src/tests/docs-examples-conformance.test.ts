@@ -1,7 +1,6 @@
 import fs from 'fs';
 import path from 'path';
 import {
-  PREFIX,
   DOCS_DIR,
   LINTABLE_LANGS,
   TS_CANDIDATES,
@@ -58,9 +57,11 @@ export type { Block };
  * fence must produce at least one report from its own rule. A documented
  * violation the rule never flags is a promise the plugin does not keep — a
  * consumer who writes exactly that code is never warned — and #1625 and #1637
- * both shipped through that hole. Rules declaring `meta.docs.requiresTypeChecking`
- * are exempt because no `Linter` without `parserOptions.project` can exercise
- * them at all; the rest of the residue is named in SILENT_INCORRECT_BLOCKS.
+ * both shipped through that hole. Declaring `meta.docs.requiresTypeChecking`
+ * exempts nothing: measured, 7 of the 8 incorrect fences those rules document
+ * report here, because the parser hands back an isolated single-file program
+ * even with no `parserOptions.project`. The residue is named per FENCE in
+ * SILENT_INCORRECT_BLOCKS.
  *
  * Out of scope, by design: rules whose examples are not TypeScript (e.g.
  * `avoid-utils-directory` illustrates directory layout in ```text fences) and
@@ -72,9 +73,6 @@ export type { Block };
  * blocks are now recorded and audited against `UNCHECKABLE_BLOCKS`, so a newly
  * unlintable example fails this suite by name instead of disappearing.
  */
-
-
-
 
 /**
  * Pick the filename this rule's own bad examples fire under, so its good
@@ -719,13 +717,22 @@ describe('claim-carrying segments of "incorrect" fences must report (#1622)', ()
  */
 
 /**
- * A rule declaring it needs type information cannot be exercised here: the
- * isolated program the parser builds without `parserOptions.project` resolves
- * imported and cross-declaration types to `any`, so such rules either return an
- * empty visitor or see nothing to report. Reading the declaration off the rule
- * object keeps the exemption self-maintaining — a rule that stops needing types
- * is asserted again with no edit here, and one that starts needing them does not
- * accumulate allowlist entries.
+ * Whether a rule declares it needs type information. Read for ACCOUNTING only —
+ * no arm skips a rule for declaring it.
+ *
+ * A skip here would rest on "no `Linter` without `parserOptions.project` can
+ * exercise such a rule at all", and that premise is measured false (#2243):
+ * `@typescript-eslint/parser` returns an isolated single-file program even with
+ * no `project`, so the checker answers and 7 of the 8 fences the 5 declaring
+ * rules document report. Skipping them un-gates three arms (#1641 fence, #1742
+ * statement, #1748 nested claim) across all five rules to excuse the single
+ * fence that cannot report — the #1839 shape, where a rule-global entry buys one
+ * acquittal and pays for it with every other arm the rule takes part in. That
+ * fence is named in SILENT_INCORRECT_BLOCKS instead.
+ *
+ * The correct-example arm consults this nowhere and needs to nowhere, which is
+ * the internal proof: those same rules lint fine here, and `UNCHECKABLE_BLOCKS`
+ * is asserted empty.
  */
 export function requiresTypeChecking(ruleName: string): boolean {
   const rule = plugin.rules[ruleName] as
@@ -750,6 +757,8 @@ export const SILENT_INCORRECT_BLOCKS: Record<string, string> = {
     'the JSX-prop half resolves the prop type through getTypeChecker (consistent-callback-naming.ts:53-57), so `<Dialog submit={onSubmit} />` needs parserOptions.project; the rule is not dead — its Implementations fences fire here',
   'consistent-callback-naming:48':
     'same type-aware JSX-prop half as :44 — `<Form changeHandler={onChange} />` cannot be typed from an isolated program; the implementation half of the rule still fires',
+  'no-usememo-for-pass-by-value:217':
+    'the isolated program carries no lib.d.ts, which degenerates the classifier this rule reports through: `checker.isArrayLikeType` (no-usememo-for-pass-by-value.ts:244) answers true for EVERY type once the global array types are missing, and then yields no type argument, so every classification comes back indeterminate. Measured on this harness, even `useMemo(() => "x", [])` reports nothing, so no context hint can revive the fence; the rule itself is live — its own fixtures pass parserOptions.project and it reports over them (type-aware-drivability)',
 };
 
 /**
@@ -798,7 +807,10 @@ export function auditSilentIncorrect(
 describe('documented "incorrect" fences must report (#1641)', () => {
   const silents: SilentIncorrectBlock[] = [];
   let assertedFences = 0;
+  /** Incorrect fences belonging to a rule that declares requiresTypeChecking. */
   let typeAwareFences = 0;
+  /** …and how many of them report, which is the number that settles it. */
+  let typeAwareFencesFiring = 0;
   let unlintableFences = 0;
 
   it('requires every lintable "incorrect" fence to fire its own rule', () => {
@@ -808,10 +820,7 @@ describe('documented "incorrect" fences must report (#1641)', () => {
         (b) => b.polarity === 'incorrect' && LINTABLE_LANGS.has(b.lang),
       );
       if (incorrect.length === 0) continue;
-      if (requiresTypeChecking(ruleName)) {
-        typeAwareFences += incorrect.length;
-        continue;
-      }
+      const typeAware = requiresTypeChecking(ruleName);
 
       for (const block of incorrect) {
         const hinted = filenameHint(block.code);
@@ -839,6 +848,11 @@ describe('documented "incorrect" fences must report (#1641)', () => {
           }
         }
 
+        if (typeAware) {
+          typeAwareFences += 1;
+          if (fired) typeAwareFencesFiring += 1;
+        }
+
         // A fence no candidate can lint (it does not parse, or the rule threw)
         // asserts nothing here; the fence-level machinery above owns that class.
         if (!lintable) {
@@ -857,16 +871,13 @@ describe('documented "incorrect" fences must report (#1641)', () => {
 
     // Coverage floor. If extraction or heading classification breaks, every
     // fence disappears and this suite passes while asserting nothing — the
-    // vacuous green that makes a guard worse than none. The corpus holds ~330
+    // vacuous green that makes a guard worse than none. The corpus holds 403
     // asserted fences; raise this as coverage grows, never lower it to make a
     // run pass.
     expect(assertedFences).toBeGreaterThan(300);
-    // Ceilings on the two exempt classes, so neither absorbs the corpus. Type-
-    // aware rules legitimately appear (~9 fences across 6 rules), but declaring
-    // requiresTypeChecking must not become the way to retire an example, and
-    // unlintable fences (1: the syntax error `no-curly-brackets-around-commented
-    // -properties` documents on purpose) are packaging defects everywhere else.
-    expect(typeAwareFences).toBeLessThan(30);
+    // A ceiling on the one class that really does assert nothing. Unlintable
+    // fences (1: the syntax error `no-curly-brackets-around-commented-properties`
+    // documents on purpose) are packaging defects everywhere else.
     expect(unlintableFences).toBeLessThan(5);
 
     const problems = auditSilentIncorrect(silents, SILENT_INCORRECT_BLOCKS);
@@ -878,6 +889,18 @@ describe('documented "incorrect" fences must report (#1641)', () => {
         ].join('\n\n'),
       );
     }
+
+    // Type-aware accounting: a FLOOR, not a ceiling on an exempt class, because
+    // there is no exempt class. The 5 rules declaring requiresTypeChecking
+    // contribute 8 incorrect fences and 7 of them report here.
+    //
+    // Placed after the audit deliberately. A type-aware fence going quiet trips
+    // both, and the audit names the fence; what this catches that the audit
+    // cannot is a fence retired THROUGH SILENT_INCORRECT_BLOCKS, which leaves
+    // the audit clean and this floor red. Declaring requiresTypeChecking must
+    // not become the way to retire an example.
+    expect(typeAwareFences).toBeGreaterThanOrEqual(8);
+    expect(typeAwareFencesFiring).toBeGreaterThanOrEqual(7);
   });
 
   it('catches an option-gated fence that never fires (control)', () => {
@@ -961,24 +984,36 @@ describe('documented "incorrect" fences must report (#1641)', () => {
     expect(onPath.reports[0]).toContain('@migrationDependencies');
   });
 
-  // Pins the residue to the two fences verified as harness artifacts. An
+  // Pins the residue to the three fences verified as harness artifacts. An
   // exemption is meant to be a conscious, reviewable opt-out, so growing this
   // set means editing this expectation on purpose.
-  it('ships with only the two verified type-aware JSX-prop exemptions', () => {
+  it('ships with only the three verified harness-artifact exemptions', () => {
     expect(Object.keys(SILENT_INCORRECT_BLOCKS).sort()).toEqual([
       'consistent-callback-naming:44',
       'consistent-callback-naming:48',
+      'no-usememo-for-pass-by-value:217',
     ]);
   });
 
-  it('skips exactly the rules that declare requiresTypeChecking', () => {
+  it('exempts no rule for declaring requiresTypeChecking', () => {
     const declared = ruleNames.filter(requiresTypeChecking);
-    // Non-vacuity: if the metadata read ever breaks, every rule looks
-    // type-aware (or none does) and the skip silently swallows the corpus.
+    // Non-vacuity: if the metadata read ever breaks, the type-aware accounting
+    // above measures an empty set and its floors read as coverage that is not
+    // there.
     expect(declared.length).toBeGreaterThan(0);
     expect(declared.length).toBeLessThan(ruleNames.length / 10);
     expect(declared).toContain('no-usememo-for-pass-by-value');
     expect(requiresTypeChecking('no-jsx-whitespace-literal')).toBe(false);
+
+    // The residue is per FENCE, never per rule. Four of the five declaring
+    // rules are named nowhere in the allowlist because all their fences report;
+    // the fifth is named for the one fence measured silent, not for the rule.
+    const exempted = new Set(
+      Object.keys(SILENT_INCORRECT_BLOCKS).map((key) => key.split(':')[0]),
+    );
+    expect(declared.filter((rule) => exempted.has(rule))).toEqual([
+      'no-usememo-for-pass-by-value',
+    ]);
   });
 });
 
@@ -987,8 +1022,8 @@ describe('documented "incorrect" fences must report (#1641)', () => {
  *
  * The #1641 guard asks whether a fence reports AT ALL and stops at the first
  * hit, so a fence documenting several violations is satisfied by any one of
- * them still working. Pages routinely document several per fence: of the 341
- * incorrect fences that fire, 192 top-level non-declaration statements sit
+ * them still working. Pages routinely document several per fence: of the 399
+ * incorrect fences that fire, 207 top-level non-declaration statements sit
  * inside them, so the coarser question leaves most documented violations
  * unasserted. Reverting the #1625 fix leaves its documented example silent and
  * the fence guard green, because a sibling in the same fence reports.
@@ -1005,8 +1040,8 @@ describe('documented "incorrect" fences must report (#1641)', () => {
  *
  * A fence's declarations are overwhelmingly setup for the violation that
  * follows — the `const docRef = ...` that a bad `docRef.update()` needs.
- * Measured across the corpus, 645 top-level declarations sit in firing fences
- * and 216 of them carry no report, against 17 silent non-declaration
+ * Measured across the corpus, 808 top-level declarations sit in firing fences
+ * and 283 of them carry no report, against 13 silent non-declaration
  * statements; asserting declarations would trade one real finding for a dozen
  * exemptions of mixed validity.
  *
@@ -1016,11 +1051,11 @@ describe('documented "incorrect" fences must report (#1641)', () => {
  * own comment claims it violates — which is the shape a declaration-level
  * documented violation takes. The two guards partition the fence between them.
  *
- * Know what this reaches before trusting it (#1747). Of 343 firing fences, 246
+ * Know what this reaches before trusting it (#1747). Of 399 firing fences, 300
  * hold NO assertable statement at all: their whole body is one
  * `const Component = () => {...}`, so they contribute a single top-level
  * declaration and their interior is never examined. Statement granularity
- * therefore covers 97 fences, and for the other 246 the coarseness #1742
+ * therefore covers 99 fences, and for the other 300 the coarseness #1742
  * describes is intact — several violations in one component body, satisfied by
  * any one of them firing. `assertedStatements` counts statements, not fences,
  * so a floor on it cannot detect that; `fencesWithStatements` below is the
@@ -1218,7 +1253,6 @@ describe('claimed statements inside firing "incorrect" fences must report (#1742
 
   it('attributes reports per statement, not per fence', () => {
     for (const ruleName of ruleNames) {
-      if (requiresTypeChecking(ruleName)) continue;
       const md = fs.readFileSync(path.join(DOCS_DIR, `${ruleName}.md`), 'utf8');
       const incorrect = extractBlocks(md).filter(
         (b) => b.polarity === 'incorrect' && LINTABLE_LANGS.has(b.lang),
@@ -1294,13 +1328,13 @@ describe('claimed statements inside firing "incorrect" fences must report (#1742
 
     // Coverage floors. If extraction, parsing, or attribution breaks, the
     // corpus empties and this suite passes while asserting nothing. The corpus
-    // holds ~341 firing fences and ~192 assertable statements; raise these as
+    // holds 399 firing fences and 207 assertable statements; raise these as
     // coverage grows, never lower one to make a run pass.
     expect(firingFences).toBeGreaterThan(300);
     expect(assertedStatements).toBeGreaterThan(150);
     // The guard's REACH, which a statement count hides: statements cluster, so
     // `assertedStatements` can hold while the set of fences contributing them
-    // shrinks. 97 of 343 firing fences reach statement granularity (#1747);
+    // shrinks. 99 of 399 firing fences reach statement granularity (#1747);
     // this floor fails if that set erodes, and should rise as #1747 descends
     // into declaration bodies.
     expect(fencesWithStatements).toBeGreaterThan(90);
@@ -1531,8 +1565,8 @@ export function silentNestedClaimsOf(
 /**
  * Nested statements that declare themselves a violation yet report nothing.
  *
- * Empty on purpose: the corpus holds 10 claim-carrying nested statements across
- * 8 fences, and all 10 report. An entry here is a documented violation nobody
+ * Empty on purpose: the corpus holds 17 claim-carrying nested statements across
+ * 13 fences, and all 17 report. An entry here is a documented violation nobody
  * enforces, so it must name the issue that retires it rather than reading as an
  * acquittal.
  */
@@ -1590,7 +1624,6 @@ describe('claim-carrying statements inside declaration bodies must report (#1748
 
   it('descends into declaration bodies the top-level guard cannot see', () => {
     for (const ruleName of ruleNames) {
-      if (requiresTypeChecking(ruleName)) continue;
       const md = fs.readFileSync(path.join(DOCS_DIR, `${ruleName}.md`), 'utf8');
       const incorrect = extractBlocks(md).filter(
         (b) => b.polarity === 'incorrect' && LINTABLE_LANGS.has(b.lang),
@@ -1675,14 +1708,14 @@ describe('claim-carrying statements inside declaration bodies must report (#1748
     expect(fencesExamined).toBeGreaterThan(140);
     expect(nestedTotal).toBeGreaterThan(250);
     // ASSERTED is what this guard actually bites on, and it is the smaller,
-    // load-bearing number: 10 claim-carrying statements across 8 fences. They
+    // load-bearing number: 17 claim-carrying statements across 13 fences. They
     // diverge because claims cluster (one fence can hold three), so a floor on
     // statements alone would hold while the set of fences producing them shrank.
     expect(claimCarrying).toBeGreaterThan(5);
     expect(fencesAsserted).toBeGreaterThan(5);
-    // The claim filter is what makes this assertable at all — 193 of 311 nested
-    // statements are silent setup, so a blanket assertion would need an
-    // allowlist larger than the corpus it guards.
+    // The claim filter is what makes this assertable at all — 273 of 429 nested
+    // statements are unclaimed setup that reports nothing, so a blanket
+    // assertion would need an allowlist larger than the corpus it guards.
     expect(claimCarrying).toBeLessThan(nestedTotal / 10);
 
     const problems = auditNestedClaims(silents, SILENT_NESTED_CLAIMS);
@@ -1698,7 +1731,7 @@ describe('claim-carrying statements inside declaration bodies must report (#1748
 
   it('opens interior the top-level guard is structurally blind to (#1747)', () => {
     // What descending actually bought, stated honestly. It is NOT "reach rises
-    // 91 -> 149": the #1742 suite's 91 is fences it ASSERTS on, while 149 is
+    // 99 -> 193": the #1742 suite's 99 is fences it ASSERTS on, while 193 is
     // merely fences this one OPENS. Comparing them flatters this guard.
     //
     // The true gain is the blind region #1747 named — fences whose entire top
@@ -1706,17 +1739,17 @@ describe('claim-carrying statements inside declaration bodies must report (#1748
     // the only statement-level assertion that reaches inside those.
     expect(fencesBlindToTopLevel).toBeGreaterThan(100);
     expect(assertedBlindToTopLevel).toBeGreaterThan(0);
-    // Assertion reach is small by construction — 10 statements over 8 fences,
-    // the same order as the #1622 claim-segment guard's 7. This is a narrow,
-    // high-precision regression gate, not a broad sweep, and the floors above
-    // are what keep it from quietly becoming a no-op.
+    // Assertion reach is small by construction — 17 statements over 13 of the
+    // 193 fences opened. This is a narrow, high-precision regression gate, not a
+    // broad sweep, and the floors above are what keep it from quietly becoming a
+    // no-op.
     expect(fencesAsserted).toBeLessThan(fencesExamined / 5);
   });
 
   it('credits a claim inside a callback to the statement containing it', () => {
     // Depth-1 is justified empirically, not by taste: collecting EVERY function
-    // body at any depth yields the same 10 claim-carrying statements over the
-    // same 8 fences, because no documented fence writes a claim inside a nested
+    // body at any depth yields the same 17 claim-carrying statements over the
+    // same 13 fences, because no documented fence writes a claim inside a nested
     // callback. Depth-1 is the simpler walker with identical corpus behaviour.
     //
     // The coarseness it accepts, recorded so nobody mistakes it for precision: a

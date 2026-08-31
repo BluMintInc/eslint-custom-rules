@@ -4235,13 +4235,17 @@ describe('enforce-firestore-doc-ref-generic after no-explicit-return-type --fix'
 });
 
 /**
- * `meta.docs.requiresTypeChecking` is load-bearing beyond documentation: the
- * #1641 half of `docs-examples-conformance` skips every "incorrect" fence of a
- * rule that declares it, because a `Linter` without `parserOptions.project`
- * cannot exercise a type-aware rule at all. A rule that declares the flag
- * without consuming type services therefore exempts its own documented
- * violations from the guard that proves they are enforced, and tells consumers
- * to configure a project they do not need (#1730).
+ * `meta.docs.requiresTypeChecking` is load-bearing beyond documentation: it
+ * tells consumers to configure a `parserOptions.project`, and repo guards
+ * account for their own coverage along that axis — `docs-examples-conformance`
+ * counts the "incorrect" fences the declaring rules contribute and floors how
+ * many of them report. A rule that declares the flag without consuming type
+ * services misstates its contract in both places (#1730).
+ *
+ * The flag grants no exemption anywhere. A skip would rest on the premise that a
+ * `Linter` without a project cannot exercise a type-aware rule at all, and that
+ * premise is measured false (#2243) — the parser hands back an isolated
+ * single-file program, so the checker answers.
  *
  * The invariant asserted here is agreement, in both directions, between the
  * declaration and the implementation.
