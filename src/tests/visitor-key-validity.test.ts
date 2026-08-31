@@ -2,6 +2,11 @@ import { Linter } from 'eslint';
 import * as tsParser from '@typescript-eslint/parser';
 import { AST_NODE_TYPES, TSESLint } from '@typescript-eslint/utils';
 import { rules } from '../index';
+import {
+  buildOptionPayloads,
+  optionSchemaOf,
+  screenPayloads,
+} from '../utils/syntheticRuleOptions';
 
 /**
  * ESLint never validates the keys of the object a rule's `create()` returns.
@@ -151,11 +156,47 @@ const PROBES: Probe[] = [
  * Rules whose visitor surface is unlocked by configuration rather than by file
  * shape. Options are supplied through the lint config so the rule's own default
  * merging runs; each value satisfies that rule's schema.
+ *
+ * Hand-written entries are for payloads richer than the synthesizer can invent
+ * from a schema — they do not carry the options dimension on their own. A probe
+ * surface driving every rule at bare `'error'` measures the DEFAULT
+ * configuration only, and an option read at `create` time (a pattern list
+ * compiled before any visitor exists) is then entered by nothing.
  */
 const RULE_OPTIONS: Record<string, readonly unknown[]> = {
   // Reports nothing until a caller lists restricted properties, so the default
   // (empty list) makes every visitor unreachable.
   'no-restricted-properties-fix': [[{ object: 'foo', property: 'bar' }]],
+};
+
+/** An option configuration a rule is driven under, named for reporting. */
+type OptionArm = { label: string; options: readonly unknown[] };
+
+/**
+ * Every configuration a rule is probed under: its default, its hand-written
+ * entry above, and one arm per schema-valid payload synthesized from its own
+ * `meta.schema`. Screened by ESLint's own validator, so an arm no consumer
+ * could write can never manufacture a failure here.
+ */
+const optionArmsFor = (name: string, rule: unknown): OptionArm[] => {
+  const arms: OptionArm[] = [{ label: 'default', options: [] }];
+  const declared = RULE_OPTIONS[name];
+  if (declared) arms.push({ label: 'declared', options: declared });
+  if (!optionSchemaOf(rule).length) return arms;
+  const { valid } = screenPayloads(rule, buildOptionPayloads(rule));
+  for (const payload of valid) {
+    arms.push({
+      label: `${payload.source} ${payload.key}`,
+      options: payload.options,
+    });
+  }
+  return arms;
+};
+
+/** Non-vacuity accounting for the options dimension the arms above add. */
+const optionSweep = {
+  armsDriven: 0,
+  rulesDrivenWithOptions: new Set<string>(),
 };
 
 /**
@@ -285,46 +326,53 @@ function captureVisitorKeys(
       },
     } as Linter.RuleModule);
 
-    for (const probe of PROBES) {
-      events.length = 0;
-      let messages: Linter.LintMessage[] = [];
-      let thrown: string | undefined;
-      try {
-        messages = linter.verify(
-          probe.code,
-          {
-            parser: 'ts',
-            parserOptions: {
-              ecmaVersion: 2022,
-              sourceType: 'module',
-              ecmaFeatures: { jsx: true },
-            },
-            rules: {
-              [`probe/${name}`]: [
-                'error',
-                ...(RULE_OPTIONS[name] ?? []),
-              ] as Linter.RuleLevelAndOptions,
-            },
-          },
-          probe.filename,
-        );
-      } catch (err) {
-        thrown = `lint threw: ${(err as Error).message}`;
+    const arms = optionArmsFor(name, rule);
+    for (const arm of arms) {
+      if (arm.options.length) {
+        optionSweep.armsDriven++;
+        optionSweep.rulesDrivenWithOptions.add(name);
       }
+      for (const probe of PROBES) {
+        events.length = 0;
+        let messages: Linter.LintMessage[] = [];
+        let thrown: string | undefined;
+        try {
+          messages = linter.verify(
+            probe.code,
+            {
+              parser: 'ts',
+              parserOptions: {
+                ecmaVersion: 2022,
+                sourceType: 'module',
+                ecmaFeatures: { jsx: true },
+              },
+              rules: {
+                [`probe/${name}`]: [
+                  'error',
+                  ...arm.options,
+                ] as Linter.RuleLevelAndOptions,
+              },
+            },
+            probe.filename,
+          );
+        } catch (err) {
+          thrown = `lint threw: ${(err as Error).message}`;
+        }
 
-      const fatal = messages.find((message) => message.fatal);
-      const observed = events.find((event) => event.kind === 'keys');
-      if (observed && observed.kind === 'keys') {
-        observed.keys.forEach((key) => union.add(key));
-        continue;
+        const fatal = messages.find((message) => message.fatal);
+        const observed = events.find((event) => event.kind === 'keys');
+        if (observed && observed.kind === 'keys') {
+          observed.keys.forEach((key) => union.add(key));
+          continue;
+        }
+        const failure = events.find((event) => event.kind === 'failure');
+        const reason = fatal
+          ? `probe source failed to parse — ${fatal.message}`
+          : failure && failure.kind === 'failure'
+          ? failure.message
+          : thrown ?? 'create() was never invoked';
+        holes.push(`${name} @ ${probe.filename} [${arm.label}]: ${reason}`);
       }
-      const failure = events.find((event) => event.kind === 'failure');
-      const reason = fatal
-        ? `probe source failed to parse — ${fatal.message}`
-        : failure && failure.kind === 'failure'
-        ? failure.message
-        : thrown ?? 'create() was never invoked';
-      holes.push(`${name} @ ${probe.filename}: ${reason}`);
     }
     keys.set(name, union);
   }
@@ -365,6 +413,25 @@ function staleExemptions(
 const corpus = captureVisitorKeys(
   rules as unknown as Record<string, TSESLint.AnyRuleModule>,
 );
+
+/**
+ * Snapshotted the moment the real population is captured, because the planted
+ * controls below travel the same function and would otherwise fold their own
+ * (schema-less) counts into the accounting for this one.
+ */
+const optionSweepTotals = {
+  armsDriven: optionSweep.armsDriven,
+  rulesDrivenWithOptions: new Set(optionSweep.rulesDrivenWithOptions),
+};
+
+const optionedRuleNames = Object.keys(rules).filter(
+  (name) => optionSchemaOf((rules as Record<string, unknown>)[name]).length > 0,
+);
+
+/** Floors sit just under the values measured at 1.20.198. */
+const OPTIONED_RULE_FLOOR = 68; // measured 71
+const OPTION_ARM_FLOOR = 390; // measured 407
+
 const findings = invalidKeys(corpus.keys);
 const allowed = new Set(ALLOWED.map((a) => allowKey(a.rule, a.key)));
 const exemptZeroKey = new Set(EXEMPT_ZERO_KEY.map((e) => e.rule));
@@ -434,6 +501,26 @@ describe('visitor key validity', () => {
     // in coverage rather than a pass.
     expect(corpus.holes).toEqual([]);
     expect(corpus.keys.size).toBe(Object.keys(rules).length);
+  });
+
+  it('drives every optioned rule under a schema-valid non-default payload', () => {
+    /**
+     * A probe surface that configures every rule at bare `'error'` measures the
+     * DEFAULT configuration and nothing else, so an option consumed at `create`
+     * time — a pattern list compiled before any visitor object exists — is
+     * entered by no probe in it. Named rather than floored: a rule that drops
+     * out of the option sweep must say which one it is.
+     */
+    const undriven = optionedRuleNames.filter(
+      (name) => !optionSweepTotals.rulesDrivenWithOptions.has(name),
+    );
+    expect(undriven).toEqual([]);
+    expect(optionedRuleNames.length).toBeGreaterThanOrEqual(
+      OPTIONED_RULE_FLOOR,
+    );
+    expect(optionSweepTotals.armsDriven).toBeGreaterThanOrEqual(
+      OPTION_ARM_FLOOR,
+    );
   });
 
   it('validates at least one visitor key for every rule', () => {
