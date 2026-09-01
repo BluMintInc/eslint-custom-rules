@@ -80,3 +80,20 @@ await Promise.all([
 const seen = new Map();
 items.forEach((item) => seen.set(item.id, true)); // Map.set() is allowed
 ```
+
+The receiver has to be a `DocSetter` the file itself declares, and that name is
+resolved lexically — from the call outward through each enclosing statement
+container, nearest declaration first. A binding that takes the name without
+declaring a setter ends the search rather than being stepped over, so a
+parameter shadowing an outer `DocSetter` leaves the receiver unproven and the
+loop alone:
+
+```ts
+const setter = new DocSetter(collectionRef);
+
+async function writeAll(setter) {
+  for (const doc of documents) {
+    await setter.set(doc); // `setter` is the parameter, of unknown type
+  }
+}
+```
