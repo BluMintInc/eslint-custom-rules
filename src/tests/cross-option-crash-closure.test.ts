@@ -8,14 +8,16 @@ import {
   FixtureCase,
 } from '../utils/fixtureCorpus';
 import {
-  OptionPayload,
+  ScreenedPayload,
   buildOptionPayloads,
   fixedWindow,
   optionSchemaOf,
+  payloadLabel,
   payloadScreenFor,
   rotatedWindow,
   screenPayloads,
   unexpressedProperties,
+  wasDefaulted,
 } from '../utils/syntheticRuleOptions';
 
 /* eslint-disable @typescript-eslint/no-var-requires */
@@ -54,6 +56,17 @@ const plugin = require('../index') as {
  * of 245k pairs whose reachable set had collapsed to zero would still read
  * clean.
  *
+ * ESLint's ajv screen narrows the same question a second time, and the two
+ * mechanisms are separate: `applyDefault` merges `defaultOptions` inside the
+ * rule, while the screen fills the SCHEMA's own `default`s into the payload in
+ * place before the lint. Measured at 1.20.198, the screen rewrites 150 of the
+ * 635 valid payloads across 29 rules, so those lints receive an object the
+ * declared key does not describe. The screen is left exactly as it is —
+ * a consumer's config is defaulted the same way, so bypassing it would
+ * manufacture findings on shapes nothing can deliver — and the discrepancy is
+ * carried as ACCOUNTING instead: every finding names both the declared payload
+ * and the screened one it was actually linted with (#2254).
+ *
  * Verified by mutation against a shipped rule rather than by planted controls
  * alone: restoring `enforce-dynamic-imports`'s `buildLibraryMatcher(libraries)`
  * to its pre-guard spelling (dropping `?? []`) fails this suite naming the rule,
@@ -89,11 +102,17 @@ const PREFIX = '@blumintinc/blumint/';
  */
 const CAP = 2;
 
-type Payload = OptionPayload;
+type Payload = ScreenedPayload;
 
 type Finding = {
   rule: string;
   payload: string;
+  /**
+   * What the lint that crashed actually received. The screen fills schema
+   * defaults in place, so for a defaulted rule this is not `payload`, and a
+   * reproduction taken from `payload` alone does not reproduce (#2254).
+   */
+  lintedPayload: string;
   payloadSource: string;
   owner: string;
   origin: string;
@@ -108,6 +127,15 @@ type Totals = {
   payloadsBuilt: number;
   payloadsSchemaValid: number;
   payloadsRejected: number;
+  /**
+   * Valid payloads the screen REWROTE on the way through, filling in schema
+   * defaults. Counted because it is the population whose reported key and
+   * linted key differ, so an accounting that silently stopped tracking the
+   * difference would look exactly like a corpus with no defaulted rules left.
+   */
+  payloadsDefaulted: number;
+  /** Distinct rules contributing to `payloadsDefaulted`. */
+  rulesWithDefaultedPayloads: Set<string>;
   crossPairs: number;
   crossPairsReporting: number;
   crossPairsPayloadChangedOutput: number;
@@ -132,6 +160,8 @@ const emptyTotals = (): Totals => ({
   payloadsBuilt: 0,
   payloadsSchemaValid: 0,
   payloadsRejected: 0,
+  payloadsDefaulted: 0,
+  rulesWithDefaultedPayloads: new Set<string>(),
   crossPairs: 0,
   crossPairsReporting: 0,
   crossPairsPayloadChangedOutput: 0,
@@ -243,6 +273,11 @@ const sweep = (
     totals.payloadsRejected += screened.rejected.length;
     const valid: Payload[] = screened.valid;
     totals.payloadsSchemaValid += valid.length;
+    for (const payload of valid) {
+      if (!wasDefaulted(payload)) continue;
+      totals.payloadsDefaulted++;
+      totals.rulesWithDefaultedPayloads.add(name);
+    }
     if (!valid.length) continue;
     totals.rulesProbed++;
 
@@ -316,6 +351,7 @@ const sweep = (
             findings.push({
               rule: name,
               payload: payload.key,
+              lintedPayload: payload.effectiveKey,
               payloadSource: payload.source,
               owner,
               origin: testCase.origin,
@@ -353,6 +389,9 @@ const sweep = (
             findings.push({
               rule: name,
               payload: 'DEFAULT',
+              // The default arm passes no options at all, so nothing screens
+              // and the two spellings cannot diverge.
+              lintedPayload: 'DEFAULT',
               payloadSource: 'default-options',
               owner,
               origin: testCase.origin,
@@ -480,6 +519,8 @@ const { totals, findings } = result;
 const OPTIONED_RULE_FLOOR = 68; // measured 71
 const PAYLOAD_FLOOR = 620; // measured 635
 const PAYLOADS_BUILT_FLOOR = 650; // measured 670
+const DEFAULTED_FLOOR = 140; // measured 150
+const DEFAULTED_RULE_FLOOR = 28; // measured 29
 const CROSS_PAIR_FLOOR = 240_000; // measured 245,110
 const CAP_SKIPPED_FLOOR = 14_500_000; // measured 14,859,977
 const DEFAULT_ARM_FLOOR = 200_000; // measured 204,105
@@ -507,7 +548,11 @@ describe('option payloads x foreign fixtures (crash oracle)', () => {
     expect(
       unaccepted.map(
         (f) =>
-          `${f.rule} ${f.payload} (${f.payloadSource}) on ${f.owner}/${f.bucket} ` +
+          `${f.rule} ${f.payload}${
+            f.lintedPayload === f.payload
+              ? ''
+              : ` (screened to ${f.lintedPayload})`
+          } (${f.payloadSource}) on ${f.owner}/${f.bucket} ` +
           `[${f.origin}] -> ${f.message}`,
       ),
     ).toEqual([]);
@@ -532,7 +577,8 @@ describe('option payloads x foreign fixtures (crash oracle)', () => {
         `defaultArm=${totals.defaultArmLints} distinct=${totals.distinctFixturesLinted} ` +
         `fixedOrder=${totals.distinctFixturesFixedOrder} ` +
         `reporting=${totals.crossPairsReporting} ` +
-        `payloadChanged=${totals.crossPairsPayloadChangedOutput}`,
+        `payloadChanged=${totals.crossPairsPayloadChangedOutput} ` +
+        `defaulted=${totals.payloadsDefaulted}/${totals.rulesWithDefaultedPayloads.size}`,
     );
     expect(corpus.failures).toEqual([]);
     expect(corpus.totalCases).toBeGreaterThanOrEqual(CASE_FLOOR);
@@ -577,6 +623,74 @@ describe('option payloads x foreign fixtures (crash oracle)', () => {
       totals.payloadsSchemaValid + totals.payloadsRejected,
     );
     expect(totals.payloadsBuilt).toBeGreaterThanOrEqual(PAYLOADS_BUILT_FLOOR);
+  });
+
+  /**
+   * The reported payload must BE the linted one.
+   *
+   * ESLint's validator carries `useDefaults`, so screening a payload fills the
+   * schema's defaults into it in place. A finding recording the pre-screen key
+   * therefore named an input that does not reproduce it: triage started from
+   * `[{}]` while `create` had received the fully populated object (#2254).
+   *
+   * Floored rather than merely printed, because the whole discrepancy vanishes
+   * from view the moment nothing counts it — and a corpus where no rule
+   * declares a schema default is indistinguishable from an accounting that
+   * stopped working.
+   */
+  it('names the payload that was linted, not the one that was declared', () => {
+    expect(totals.payloadsDefaulted).toBeGreaterThanOrEqual(DEFAULTED_FLOOR);
+    expect(totals.rulesWithDefaultedPayloads.size).toBeGreaterThanOrEqual(
+      DEFAULTED_RULE_FLOOR,
+    );
+    // Every finding carries both spellings, so a reproduction can be taken
+    // from the report without re-deriving what the screen did.
+    expect(findings.filter((f) => !f.lintedPayload)).toEqual([]);
+  });
+
+  it('distinguishes a defaulted payload from an untouched one (controls)', () => {
+    const withDefault = {
+      meta: {
+        schema: [
+          {
+            type: 'object',
+            properties: { list: { type: 'array', default: ['seed'] } },
+            additionalProperties: false,
+          },
+        ],
+      },
+    };
+    const withoutDefault = {
+      meta: {
+        schema: [
+          {
+            type: 'object',
+            properties: { list: { type: 'array' } },
+            additionalProperties: false,
+          },
+        ],
+      },
+    };
+    const screenOf = (rule: unknown) =>
+      screenPayloads(rule, [
+        { key: '[{}]', options: [{}], source: 'control' },
+      ]).valid[0];
+
+    // Positive: the screen rewrites it, and the label says so.
+    const defaulted = screenOf(withDefault);
+    expect(defaulted.key).toBe('[{}]');
+    expect(defaulted.effectiveKey).toBe('[{"list":["seed"]}]');
+    expect(wasDefaulted(defaulted)).toBe(true);
+    expect(payloadLabel(defaulted)).toBe(
+      '[{}] (screened to [{"list":["seed"]}])',
+    );
+
+    // Negative: without a default the two spellings must not drift apart, or
+    // the label would decorate every payload and say nothing.
+    const untouched = screenOf(withoutDefault);
+    expect(untouched.effectiveKey).toBe(untouched.key);
+    expect(wasDefaulted(untouched)).toBe(false);
+    expect(payloadLabel(untouched)).toBe('[{}]');
   });
 
   it('gives every option property a value some payload carries', () => {
