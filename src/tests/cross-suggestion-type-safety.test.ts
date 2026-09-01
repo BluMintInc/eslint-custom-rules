@@ -1453,13 +1453,13 @@ const report = (finding: Finding) =>
  * measurement each is cut from is recorded beside it; move a floor only WITH
  * its measurement.
  */
-const FIXTURES_CONSIDERED_FLOOR = 19500; // measured 20115
-const OFFERED_FLOOR = 550; // measured 610
-const REWRITE_FLOOR = 550; // measured 610
-const CROSS_REWRITE_FLOOR = 260; // measured 302
-const PAIR_FLOOR = 520; // measured 587
-const ASSERTED_FLOOR = 450; // measured 507
-const ASSERTED_CROSS_FLOOR = 250; // measured 287
+const FIXTURES_CONSIDERED_FLOOR = 22500; // measured 23832
+const OFFERED_FLOOR = 620; // measured 688
+const REWRITE_FLOOR = 620; // measured 688
+const CROSS_REWRITE_FLOOR = 285; // measured 320
+const PAIR_FLOOR = 600; // measured 665
+const ASSERTED_FLOOR = 525; // measured 584
+const ASSERTED_CROSS_FLOOR = 275; // measured 305
 const SUGGESTER_FLOOR = 7; // measured 7
 const CROSS_SUGGESTER_FLOOR = 5; // measured 5
 

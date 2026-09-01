@@ -231,9 +231,9 @@ const sites = [...dedup.values()];
 const annotated = sites.filter((site) => site.measured !== null);
 const unannotated = sites.filter((site) => site.measured === null);
 
-const ANNOTATED_FLOOR = 148; // measured 154
+const ANNOTATED_FLOOR = 160; // measured 171
 const FILE_FLOOR = 345; // measured 355
-const SITE_FLOOR = 520; // measured 545
+const SITE_FLOOR = 530; // measured 560
 
 describe('a guard floor must not drift below its own measurement', () => {
   it('scans every suite, and a file it cannot parse is not silence', () => {

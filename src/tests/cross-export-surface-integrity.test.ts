@@ -792,14 +792,14 @@ const runControl = (ruleId: string, code: string) => {
  * does not move them while a harness that lost most of the corpus does. Move a
  * floor only WITH the measurement it is cut from.
  */
-const FIXTURE_FLOOR = 19500; // measured 20363
-const SURFACE_FLOOR = 17500; // measured 18098 (14949 injected + 3149 own)
-const PAIR_FLOOR = 31000; // measured 32841
-const CROSS_PAIR_FLOOR = 27000; // measured 28491
-const REWRITE_FLOOR = 10300; // measured 10938
-const CROSS_REWRITE_FLOOR = 7400; // measured 7879
-const FIXER_FLOOR = 75; // measured 79
-const CROSS_FIXER_FLOOR = 52; // measured 56
+const FIXTURE_FLOOR = 22500; // measured 23865
+const SURFACE_FLOOR = 20000; // measured 21513 (17572 injected + 3941 own)
+const PAIR_FLOOR = 37000; // measured 39345
+const CROSS_PAIR_FLOOR = 31500; // measured 33747
+const REWRITE_FLOOR = 12400; // measured 13299
+const CROSS_REWRITE_FLOOR = 8500; // measured 9166
+const FIXER_FLOOR = 76; // measured 80
+const CROSS_FIXER_FLOOR = 53; // measured 57
 /**
  * Owners whose fixtures reached the screen. This is the denominator of the whole
  * cross pairing: the pair floors above are satisfiable by a corpus that collapsed
@@ -812,13 +812,13 @@ const OWNER_FLOOR = 185;
  * regression shows up as a jump. A ceiling parked far above its measurement is
  * the #1984 failure verbatim.
  */
-// measured 95 — the CommonMark fence fixtures added to
-// `enforce-typescript-markdown-code-blocks` for #2213, including its CRLF and
-// code-span cases, took the non-TS population from 40 to 95. These cases are
-// judged instead by `lang-fix-closure`, the core-equivalent oracle for their
+// measured 108 — the CommonMark fence fixtures on
+// `enforce-typescript-markdown-code-blocks` from #2213, including its CRLF and
+// code-span cases, dominate the non-TS population. These cases are judged
+// instead by `lang-fix-closure`, the core-equivalent oracle for their
 // languages.
 const NON_TS_CEILING = 130;
-const NO_SURFACE_CEILING = 2550; // measured 2401
+const NO_SURFACE_CEILING = 2550; // measured 2352
 const UNPARSEABLE_OUTPUT_CEILING = 5; // measured 1
 
 console.log(
