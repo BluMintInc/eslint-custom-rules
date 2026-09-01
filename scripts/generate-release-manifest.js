@@ -129,13 +129,24 @@ function parseArgs(argv) {
   };
 }
 
+/**
+ * Node's default `maxBuffer` is 1 MiB, which the all-history range below
+ * already exceeds (~2 MiB), so the empty-`prevTag` fallback this function
+ * documents used to die with an opaque `spawnSync git ENOBUFS` naming neither
+ * the range nor the manifest. A per-release range is ~4% of the default cap,
+ * so only the fallback was ever at risk — but the fallback is the recovery
+ * path, reached exactly when something else has already gone wrong (a first
+ * release, or a `--prev-tag` that failed to reach `parseArgs`).
+ */
+const GIT_LOG_MAX_BUFFER = 256 * 1024 * 1024;
+
 /** Read the commits in `prevTag..HEAD` (or all history when prevTag is empty). */
 function gitCommits(prevTag, exec = execFileSync) {
   const range = prevTag ? `${prevTag}..HEAD` : 'HEAD';
   const out = exec(
     'git',
     ['log', range, '--no-merges', '--format=%H%x1f%s%x1f%b%x1e'],
-    { encoding: 'utf8' },
+    { encoding: 'utf8', maxBuffer: GIT_LOG_MAX_BUFFER },
   );
   return out
     .split('\x1e')

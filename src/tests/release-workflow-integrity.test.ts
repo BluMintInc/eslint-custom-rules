@@ -1,4 +1,4 @@
-import { readFileSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { load } from 'js-yaml';
 
@@ -179,5 +179,209 @@ describe('release workflow cannot strand a publish', () => {
 
   it('does not flag the shipped workflow (negative control)', () => {
     expect(unpinnedCheckouts(workflow).length).toBe(0);
+  });
+});
+
+/**
+ * `release-manifest.json` is the contract agora reads to re-enable rules
+ * (`sync-eslint-rules.ts` consumes each entry's `rules[].name` verbatim), and
+ * the whole pipeline that produces it lives in `.releaserc.json` — a JSON file
+ * no compiler, linter or type checker looks at. The prepareCmd names three
+ * flags by string; `parseArgs` reads three keys by string; nothing connects
+ * them. Rename either side and `parseArgs` silently yields `prevTag: ''`,
+ * which selects the all-history range and names most of the plugin's rules in
+ * a single release entry (measured: 3,505 commits / 181 of 194 rules).
+ */
+const RELEASERC = join(__dirname, '../../.releaserc.json');
+const MANIFEST_SCRIPT = 'scripts/generate-release-manifest.js';
+const DISPATCH_SCRIPT = 'scripts/dispatch-agora-release.js';
+const MANIFEST_ASSET = 'release-manifest.json';
+
+type ReleaseConfig = {
+  plugins?: (string | [string, Record<string, unknown>])[];
+};
+
+const releaseConfig: ReleaseConfig = JSON.parse(
+  readFileSync(RELEASERC, 'utf8'),
+);
+
+function pluginConfig(
+  config: ReleaseConfig,
+  id: string,
+): Record<string, unknown> | undefined {
+  for (const plugin of config.plugins ?? []) {
+    if (Array.isArray(plugin) && plugin[0] === id) {
+      return (plugin[1] ?? {}) as Record<string, unknown>;
+    }
+  }
+  return undefined;
+}
+
+/** The `&&`-joined segment of a shell command that invokes `script`. */
+function segmentFor(command: string, script: string): string {
+  return (
+    command
+      .split('&&')
+      .map((part) => part.trim())
+      .find((part) => part.includes(script)) ?? ''
+  );
+}
+
+/** The `--flag` names a command segment passes. */
+function flagsPassed(segment: string): string[] {
+  return [...segment.matchAll(/--([\w-]+)=/g)].map((match) => match[1]).sort();
+}
+
+/**
+ * The `args[...]` keys a script's `parseArgs` reads. Extracted from source
+ * rather than by calling it: the defect is a NAME mismatch, and a call would
+ * happily return the same three-field shape whatever names it read.
+ */
+function argKeysRead(source: string): string[] {
+  const start = source.indexOf('function parseArgs(');
+  const end = source.indexOf('\n}', start);
+  const body = source.slice(start, end);
+  const keys = new Set<string>();
+  for (const match of body.matchAll(/args\.([A-Za-z_$][\w$]*)/g)) {
+    keys.add(match[1]);
+  }
+  for (const match of body.matchAll(/args\[['"]([^'"]+)['"]\]/g)) {
+    keys.add(match[1]);
+  }
+  return [...keys].sort();
+}
+
+/** Kebab-case is the flag spelling; `parseArgs` may store either form. */
+function normalizeKey(key: string): string {
+  return key.replace(/[A-Z]/g, (upper) => `-${upper.toLowerCase()}`);
+}
+
+const execPlugin = pluginConfig(releaseConfig, '@semantic-release/exec') ?? {};
+const gitPlugin = pluginConfig(releaseConfig, '@semantic-release/git') ?? {};
+const prepareCmd = String(execPlugin.prepareCmd ?? '');
+const successCmd = String(execPlugin.successCmd ?? '');
+const gitAssets = (gitPlugin.assets ?? []) as string[];
+const manifestSource = readFileSync(
+  join(__dirname, '../..', MANIFEST_SCRIPT),
+  'utf8',
+);
+
+describe('release manifest wiring cannot silently drift', () => {
+  it('parses a config that declares the manifest pipeline (non-vacuity)', () => {
+    expect(releaseConfig.plugins?.length).toBeGreaterThan(5); // measured 7
+    expect(prepareCmd).toContain(MANIFEST_SCRIPT);
+    expect(successCmd).toContain(DISPATCH_SCRIPT);
+    expect(gitAssets.length).toBeGreaterThan(3); // measured 5
+  });
+
+  it('binds every prepareCmd flag to a key parseArgs reads, and back', () => {
+    const passed = flagsPassed(segmentFor(prepareCmd, MANIFEST_SCRIPT));
+    const read = argKeysRead(manifestSource).map(normalizeKey).sort();
+
+    expect(passed.length).toBeGreaterThan(2); // measured 3
+    expect(passed).toEqual(read);
+  });
+
+  it('commits the generated manifest via the git assets list', () => {
+    expect(gitAssets).toContain(MANIFEST_ASSET);
+  });
+
+  it('points prepareCmd and successCmd at scripts that exist', () => {
+    for (const script of [MANIFEST_SCRIPT, DISPATCH_SCRIPT]) {
+      expect(existsSync(join(__dirname, '../..', script))).toBe(true);
+    }
+  });
+
+  it('passes the dispatcher the version flag it reads', () => {
+    const passed = flagsPassed(segmentFor(successCmd, DISPATCH_SCRIPT));
+    expect(passed).toContain('version');
+  });
+
+  it('rejects a renamed flag on either side (positive control)', () => {
+    const renamedCommand = prepareCmd.replace('--prev-tag=', '--previous-tag=');
+    expect(renamedCommand).not.toEqual(prepareCmd);
+    expect(
+      flagsPassed(segmentFor(renamedCommand, MANIFEST_SCRIPT)),
+    ).not.toEqual(argKeysRead(manifestSource).map(normalizeKey).sort());
+
+    const renamedSource = manifestSource.replace(
+      "args['prev-tag']",
+      "args['previousTag']",
+    );
+    expect(renamedSource).not.toEqual(manifestSource);
+    expect(argKeysRead(renamedSource).map(normalizeKey).sort()).not.toEqual(
+      flagsPassed(segmentFor(prepareCmd, MANIFEST_SCRIPT)),
+    );
+  });
+
+  it('rejects an assets list missing the manifest (positive control)', () => {
+    const stripped = gitAssets.filter((asset) => asset !== MANIFEST_ASSET);
+    expect(stripped).not.toContain(MANIFEST_ASSET);
+    expect(stripped.length).toBe(gitAssets.length - 1);
+  });
+});
+
+/**
+ * Node caps `execFileSync` output at 1 MiB by default, and the all-history
+ * range this script documents as its fallback measured 1,998,359 bytes — so
+ * the fallback died with an opaque `spawnSync git ENOBUFS` naming neither the
+ * range nor the manifest.
+ *
+ * The cap is emulated rather than exercised against real history on purpose:
+ * `test-report.yml` checks out at the default `fetch-depth: 1`, so in CI this
+ * repository is a one-commit shallow clone. A history-derived assertion would
+ * measure the clone rather than the repository and pass vacuously.
+ */
+const NODE_DEFAULT_MAX_BUFFER = 1024 * 1024;
+const ALL_HISTORY_BYTES = 1_998_359;
+const PER_RELEASE_BYTES = 38_949;
+
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { gitCommits } = require('../../scripts/generate-release-manifest');
+
+function cappingExec(payloadBytes: number) {
+  return (
+    _command: string,
+    _args: string[],
+    options?: { maxBuffer?: number },
+  ): string => {
+    if (payloadBytes > Number(options?.maxBuffer ?? NODE_DEFAULT_MAX_BUFFER)) {
+      const error: NodeJS.ErrnoException = new Error('spawnSync git ENOBUFS');
+      error.code = 'ENOBUFS';
+      throw error;
+    }
+    return '';
+  };
+}
+
+describe('the all-history manifest fallback survives its own payload', () => {
+  it('reads the all-history range without ENOBUFS', () => {
+    expect(() => gitCommits('', cappingExec(ALL_HISTORY_BYTES))).not.toThrow();
+  });
+
+  it('raises the cap above node default rather than relying on it', () => {
+    let seen: { maxBuffer?: number } | undefined;
+    gitCommits(
+      '',
+      (_c: string, _a: string[], options: { maxBuffer?: number }) => {
+        seen = options;
+        return '';
+      },
+    );
+    expect(Number(seen?.maxBuffer) > NODE_DEFAULT_MAX_BUFFER).toBe(true);
+  });
+
+  it('detects the uncapped shape it replaces (positive control)', () => {
+    expect(() =>
+      cappingExec(ALL_HISTORY_BYTES)('git', [], { encoding: 'utf8' } as never),
+    ).toThrow(/ENOBUFS/);
+    expect(Number(undefined) > NODE_DEFAULT_MAX_BUFFER).toBe(false);
+  });
+
+  it('leaves a per-release range unaffected either way (negative control)', () => {
+    expect(PER_RELEASE_BYTES).toBeLessThan(NODE_DEFAULT_MAX_BUFFER);
+    expect(() =>
+      cappingExec(PER_RELEASE_BYTES)('git', [], { encoding: 'utf8' } as never),
+    ).not.toThrow();
   });
 });
