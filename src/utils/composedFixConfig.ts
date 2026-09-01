@@ -1,9 +1,22 @@
-import { FixtureCase, severityWithOptions } from './fixtureCorpus';
+import { minimatch } from 'minimatch';
+import {
+  defaultFilenameFor,
+  FixtureCase,
+  severityWithOptions,
+} from './fixtureCorpus';
 
 /* eslint-disable @typescript-eslint/no-var-requires */
 const plugin = require('../index') as {
   rules: Record<string, unknown>;
-  configs: { recommended: { rules: Record<string, unknown> } };
+  configs: {
+    recommended: {
+      rules: Record<string, unknown>;
+      overrides?: readonly {
+        files?: readonly string[];
+        rules?: Record<string, unknown>;
+      }[];
+    };
+  };
 };
 /* eslint-enable @typescript-eslint/no-var-requires */
 
@@ -57,16 +70,59 @@ export const recommendedRulesExcluding = (
 };
 
 /**
- * The composed set for one fixture: the shipped severities, plus the owner's own
- * entry carrying the options its author wrote.
+ * The severities an OVERRIDE contributes for one filename.
+ *
+ * `configs.recommended` is not the flat `rules` map alone — it also carries an
+ * `overrides` array, and a rule reachable only through one is still enabled in
+ * recommended. Reading `rules` by itself leaves such a rule outside every guard
+ * that composes the config, both on its own fixtures and, more importantly, as
+ * a SIBLING while some other rule's fixtures are linted. `enforce-date-ttime`
+ * is enabled exactly that way, for `src/**` (#1734 fixed the same blind read in
+ * `recommended-severity-consistency`; the model stayed flat everywhere else).
+ *
+ * Resolved per FILENAME rather than merged unconditionally, because the glob is
+ * what decides whether a consumer gets the rule on a given file. Merging it
+ * everywhere would enable it on paths no consumer runs it on, which is a
+ * different configuration and not the one being modelled.
+ */
+export const overrideRulesFor = (
+  filename: string,
+  excluded: ReadonlySet<string>,
+): Record<string, unknown> => {
+  const rules: Record<string, unknown> = {};
+  for (const override of plugin.configs.recommended.overrides || []) {
+    const globs = override.files || [];
+    if (!globs.some((glob) => minimatch(filename, glob, { dot: true }))) {
+      continue;
+    }
+    for (const [id, severity] of Object.entries(override.rules || {})) {
+      if (!id.startsWith(PLUGIN_PREFIX)) continue;
+      if (severity === 'off' || severity === 0) continue;
+      const name = id.slice(PLUGIN_PREFIX.length);
+      if (!plugin.rules[name]) continue;
+      if (excluded.has(name)) continue;
+      rules[id] = severity;
+    }
+  }
+  return rules;
+};
+
+/**
+ * The composed set for one fixture: the shipped severities, the severities any
+ * matching override adds for this fixture's path, plus the owner's own entry
+ * carrying the options its author wrote.
  */
 export const composedRulesFor = (
   recommended: Record<string, unknown>,
   excluded: ReadonlySet<string>,
   owner: string,
   testCase: FixtureCase,
+  filename: string = defaultFilenameFor(testCase),
 ): Record<string, unknown> => {
-  const rules: Record<string, unknown> = { ...recommended };
+  const rules: Record<string, unknown> = {
+    ...recommended,
+    ...overrideRulesFor(filename, excluded),
+  };
   if (!excluded.has(owner)) {
     rules[`${PLUGIN_PREFIX}${owner}`] = severityWithOptions(testCase);
   }
