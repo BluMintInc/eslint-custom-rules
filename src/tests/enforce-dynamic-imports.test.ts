@@ -476,6 +476,7 @@ const collectEmitted = (
   node: TSESTree.Node,
   constants: Map<string, string>,
   found: string[],
+  pattern: RegExp,
 ): void => {
   if (node.type === 'Property') {
     const key =
@@ -491,11 +492,11 @@ const collectEmitted = (
 
   const text = literalTextOf(node, constants);
   if (text !== null) {
-    EMITTED_IMPORT.lastIndex = 0;
-    let match = EMITTED_IMPORT.exec(text);
+    pattern.lastIndex = 0;
+    let match = pattern.exec(text);
     while (match !== null) {
-      found.push(match[1]);
-      match = EMITTED_IMPORT.exec(text);
+      found.push(match[1] ?? match[0]);
+      match = pattern.exec(text);
     }
   }
 
@@ -512,24 +513,50 @@ const collectEmitted = (
         typeof child === 'object' &&
         typeof (child as TSESTree.Node).type === 'string'
       ) {
-        collectEmitted(child as TSESTree.Node, constants, found);
+        collectEmitted(child as TSESTree.Node, constants, found, pattern);
       }
     }
   }
 };
 
-const emittedImports: EmittedImport[] = SOURCE_DIRS.flatMap(tsFilesIn).flatMap(
-  (file) => {
-    const ast = parse(fs.readFileSync(file, 'utf8'), {
-      loc: true,
-      range: true,
-    });
-    const constants = moduleScopeStrings(ast);
+const parsedSources = SOURCE_DIRS.flatMap(tsFilesIn).map((file) => {
+  const ast = parse(fs.readFileSync(file, 'utf8'), { loc: true, range: true });
+  return { file: path.basename(file), ast, constants: moduleScopeStrings(ast) };
+});
+
+/** Walks the already-parsed sources, so adding a pattern costs no reparse. */
+const collectWith = (pattern: RegExp): EmittedImport[] =>
+  parsedSources.flatMap(({ file, ast, constants }) => {
     const found: string[] = [];
-    collectEmitted(ast, constants, found);
-    return found.map((specifier) => ({ file: path.basename(file), specifier }));
-  },
+    collectEmitted(ast, constants, found, pattern);
+    return found.map((specifier) => ({ file, specifier }));
+  });
+
+const emittedImports: EmittedImport[] = collectWith(EMITTED_IMPORT);
+
+/**
+ * A constant can carry the quotes the fixer emits inside its own VALUE, as
+ * `use-custom-memo.ts:11` does with ``const MEMO_MODULE = `'src/util/memo'` ``.
+ * The emitted template then reads ``... from ${MEMO_MODULE};`` — no quotes in
+ * its static text, so no quote-keyed pattern can see the specifier, and the
+ * file contributes no row at all rather than an UNRESOLVED one. Unwrapping the
+ * value recovers the specifier instead of leaving that emitter invisible.
+ */
+const QUOTE_WRAPPED = /^(['"])(.*)\1$/;
+
+const quoteWrappedSpecifiers: EmittedImport[] = parsedSources.flatMap(
+  ({ file, constants }) =>
+    [...constants.values()]
+      .map((value) => QUOTE_WRAPPED.exec(value))
+      .filter((match): match is RegExpExecArray => match !== null)
+      .map((match) => ({ file, specifier: match[2] })),
 );
+
+/** Every specifier the guard can see, however the emitter spells its quotes. */
+const harvestedImports: EmittedImport[] = [
+  ...emittedImports,
+  ...quoteWrappedSpecifiers,
+];
 
 // Mirrors the rule's own notion of "external": anything it would report at the
 // shipped defaults unless ignoredLibraries covers it.
@@ -550,7 +577,7 @@ const isIgnoredByDefault = buildLibraryMatcher(DEFAULT_IGNORED_LIBRARIES, {
 
 const externalInjected = [
   ...new Set(
-    emittedImports
+    harvestedImports
       .filter(({ specifier }) => isExternal(specifier))
       .map(({ specifier }) => specifier),
   ),
@@ -558,11 +585,24 @@ const externalInjected = [
 
 const emittersOf = (specifier: string): string[] => [
   ...new Set(
-    emittedImports
+    harvestedImports
       .filter((emitted) => emitted.specifier === specifier)
       .map(({ file }) => file),
   ),
 ];
+
+/**
+ * Specifiers built through indirection the harvest cannot follow. They are
+ * excluded from `externalInjected` by the sentinel clause in `isExternal`, and
+ * every one measured resolves to an internal path or copies the linted file's
+ * own specifier — so the list needs to cover none of them today. The size is
+ * asserted anyway: it is what moves if a fixer begins building an EXTERNAL
+ * specifier that way, and an uncounted drop cannot be told apart from the rule
+ * having nothing to report.
+ */
+const unresolvedEmitted = emittedImports.filter(({ specifier }) =>
+  specifier.includes(UNRESOLVED),
+);
 
 describe(`${RULE_NAME} default ignored libraries`, () => {
   it('derives injected modules from the rule sources', () => {
@@ -577,6 +617,43 @@ describe(`${RULE_NAME} default ignored libraries`, () => {
     );
     expect(emittersOf('react')).toContain('prefer-fragment-component.ts');
     expect(externalInjected.length).toBeGreaterThanOrEqual(7);
+  });
+
+  it('accounts for every specifier the sentinel drops', () => {
+    // Bounded rather than pinned: the drop is legitimate, but its SIZE is the
+    // only signal that a fixer has begun building a specifier through
+    // indirection, so it must not be free to move in silence.
+    expect(unresolvedEmitted.length).toBeGreaterThanOrEqual(10); // measured 14
+    expect(unresolvedEmitted.length).toBeLessThanOrEqual(20);
+    expect(emittedImports.length).toBeGreaterThanOrEqual(24); // measured 31
+  });
+
+  it('recovers a specifier whose quotes live in the constant', () => {
+    // The blind spot this arm exists for: a file that demonstrably emits an
+    // import contributes NO row to the quote-keyed harvest, not even an
+    // UNRESOLVED one, so its silence is indistinguishable from absence.
+    expect(
+      emittedImports.filter(({ file }) => file === 'use-custom-memo.ts'),
+    ).toEqual([]);
+
+    expect(quoteWrappedSpecifiers).toContainEqual({
+      file: 'use-custom-memo.ts',
+      specifier: 'src/util/memo',
+    });
+    expect(quoteWrappedSpecifiers.length).toBeGreaterThanOrEqual(1); // measured 1
+  });
+
+  it('would flag a recovered specifier that is external (positive control)', () => {
+    const recovered = QUOTE_WRAPPED.exec(`'some-unlisted-package'`);
+    const specifier = recovered?.[2] ?? '';
+    expect(specifier).toBe('some-unlisted-package');
+    expect(isExternal(specifier)).toBe(true);
+    expect(isIgnoredByDefault(specifier)).toBe(false);
+  });
+
+  it('adds nothing today because the recovered module is internal (negative control)', () => {
+    expect(isExternal('src/util/memo')).toBe(false);
+    expect(externalInjected).not.toContain('src/util/memo');
   });
 
   it('lists every external module the fixers inject', () => {
