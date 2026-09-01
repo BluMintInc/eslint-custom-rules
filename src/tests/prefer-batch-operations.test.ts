@@ -363,6 +363,22 @@ ruleTesterTs.run('prefer-batch-operations', preferBatchOperations, {
       const docs = await Promise.all(promises);
       await setter.setAll(docs);
     `,
+    /**
+     * A parameter sharing the outer setter's name is an opaque value, never
+     * proven to hold a `DocSetter`, so repeated `set()` calls on it are not a
+     * batchable write (#2264). Resolution stops at the binder that introduces
+     * the name, and a function parameter carries no statement — a walk over
+     * statement containers alone reaches past it to the module-scope
+     * `new DocSetter(...)` and reports a call the rule cannot vouch for.
+     */
+    `
+      const setter = new DocSetter(collectionRef);
+      async function writeAll(setter) {
+        for (const doc of documents) {
+          await setter.set(doc);
+        }
+      }
+    `,
   ],
   invalid: [
     /**
@@ -723,6 +739,41 @@ ruleTesterTs.run('prefer-batch-operations', preferBatchOperations, {
         }
       `,
       errors: [expectOverwriteAll('for...of loop')],
+    },
+    /**
+     * The over-decline control for the shadowed fixture in `valid` (#2264): the
+     * same loop in the same nested function with the parameter dropped. The
+     * setter still resolves outward across the function boundary, so stopping
+     * at a shadowing binder must not amount to abandoning the outward walk.
+     */
+    {
+      code: `
+        const setter = new DocSetter(collectionRef);
+        async function writeAll() {
+          for (const doc of documents) {
+            await setter.set(doc);
+          }
+        }
+      `,
+      errors: [expectSetAll('for...of loop')],
+    },
+    /**
+     * The namespace control for #2264: a shadow is specific to one declaration
+     * space. A type parameter takes `setter` in TYPE space only, while the
+     * call resolves it as a VALUE, so the module-scope `DocSetter` still
+     * answers and the batchable write is still reported. Treating any
+     * same-named binder as a shadow would silence this.
+     */
+    {
+      code: `
+        const setter = new DocSetter(collectionRef);
+        async function writeAll<setter>() {
+          for (const doc of documents) {
+            await setter.set(doc);
+          }
+        }
+      `,
+      errors: [expectSetAll('for...of loop')],
     },
   ],
 });

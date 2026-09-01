@@ -1,6 +1,9 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
-import { declarationOf, resolveInEnclosingScopes } from '../utils/lexicalScope';
+import {
+  declarationOf,
+  resolveNameInEnclosingScopes,
+} from '../utils/lexicalScope';
 
 type MessageIds = 'preferBatch';
 
@@ -321,8 +324,10 @@ function findVariableDeclaration(
   node: TSESTree.Node,
   varName: string,
 ): TSESTree.VariableDeclarator | undefined {
-  return resolveInEnclosingScopes<TSESTree.VariableDeclarator>(
+  return resolveNameInEnclosingScopes<TSESTree.VariableDeclarator>(
     node,
+    varName,
+    'value',
     (statements) => {
       for (const statement of statements) {
         const declaration = declarationOf(statement);
