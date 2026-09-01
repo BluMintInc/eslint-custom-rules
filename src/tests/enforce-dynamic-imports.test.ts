@@ -419,8 +419,32 @@ const tsFilesIn = (dir: string): string[] =>
     return entry.isFile() && entry.name.endsWith('.ts') ? [full] : [];
   });
 
-const moduleScopeStrings = (ast: TSESTree.Program): Map<string, string> => {
+/**
+ * A constant whose initializer interpolates ANOTHER module-scope constant is
+ * resolvable too, and leaving it out makes every later template that reads it
+ * collapse to the sentinel — bounded by `unresolvedEmitted`'s size, but never
+ * reduced.
+ *
+ * One pass in DECLARATION order suffices, and no fixpoint is needed: a
+ * module-scope `const` initializer runs at its own declaration, so interpolating
+ * a name declared further down is a temporal-dead-zone error rather than valid
+ * source. Declaration order is therefore already dependency order, even at depth
+ * (`fixtureTypeProgram.ts`'s `STUBS` reads two constants that are themselves
+ * chained, and both precede it). A chain that does NOT resolve in one pass is
+ * cyclic, so extra passes would not settle it either — it falls through to the
+ * sentinel, which is what covers it today.
+ */
+type ModuleScope = {
+  constants: Map<string, string>;
+  /** Names folded from an interpolating initializer, for the non-vacuity arms. */
+  chainedResolved: string[];
+  /** Chained names left to the sentinel: cyclic, or built from a non-constant. */
+  chainedUnresolved: string[];
+};
+
+const moduleScopeStrings = (ast: TSESTree.Program): ModuleScope => {
   const constants = new Map<string, string>();
+  const chained: { name: string; init: TSESTree.TemplateLiteral }[] = [];
   for (const statement of ast.body) {
     const declaration =
       statement.type === 'VariableDeclaration'
@@ -436,15 +460,34 @@ const moduleScopeStrings = (ast: TSESTree.Program): Map<string, string> => {
       const { init } = declarator;
       if (init.type === 'Literal' && typeof init.value === 'string') {
         constants.set(declarator.id.name, init.value);
-      } else if (
-        init.type === 'TemplateLiteral' &&
-        init.expressions.length === 0
-      ) {
-        constants.set(declarator.id.name, init.quasis[0].value.cooked);
+      } else if (init.type === 'TemplateLiteral') {
+        if (init.expressions.length === 0) {
+          constants.set(declarator.id.name, init.quasis[0].value.cooked);
+        } else {
+          chained.push({ name: declarator.id.name, init });
+        }
       }
     }
   }
-  return constants;
+
+  // Reuses the same folding the use sites get, so the two cannot drift on what
+  // an interpolation resolves to.
+  const chainedResolved: string[] = [];
+  for (const { name, init } of chained) {
+    const text = literalTextOf(init, constants);
+    if (text === null || text.includes(UNRESOLVED)) {
+      continue;
+    }
+    constants.set(name, text);
+    chainedResolved.push(name);
+  }
+  return {
+    constants,
+    chainedResolved,
+    chainedUnresolved: chained
+      .map(({ name }) => name)
+      .filter((name) => !constants.has(name)),
+  };
 };
 
 const literalTextOf = (
@@ -521,8 +564,20 @@ const collectEmitted = (
 
 const parsedSources = SOURCE_DIRS.flatMap(tsFilesIn).map((file) => {
   const ast = parse(fs.readFileSync(file, 'utf8'), { loc: true, range: true });
-  return { file: path.basename(file), ast, constants: moduleScopeStrings(ast) };
+  const { constants, chainedResolved, chainedUnresolved } =
+    moduleScopeStrings(ast);
+  return {
+    file: path.basename(file),
+    ast,
+    constants,
+    chainedResolved,
+    chainedUnresolved,
+  };
 });
+
+const chainedConstants = parsedSources.flatMap(({ file, chainedResolved }) =>
+  chainedResolved.map((name) => ({ file, name })),
+);
 
 /** Walks the already-parsed sources, so adding a pattern costs no reparse. */
 const collectWith = (pattern: RegExp): EmittedImport[] =>
@@ -592,13 +647,19 @@ const emittersOf = (specifier: string): string[] => [
 ];
 
 /**
- * Specifiers built through indirection the harvest cannot follow. They are
+ * Specifiers built through indirection the harvest cannot follow — what is left
+ * after `moduleScopeStrings` folds the chained constants, so every remaining one
+ * interpolates a parameter, a call or an option rather than a constant. They are
  * excluded from `externalInjected` by the sentinel clause in `isExternal`, and
  * every one measured resolves to an internal path or copies the linted file's
  * own specifier — so the list needs to cover none of them today. The size is
  * asserted anyway: it is what moves if a fixer begins building an EXTERNAL
  * specifier that way, and an uncounted drop cannot be told apart from the rule
  * having nothing to report.
+ *
+ * Note the size bound alone is blind to a SUBSTITUTION — swapping one of these
+ * from an internal path to an external package holds the count still. Folding
+ * the chained constants is what converts that subset from bounded to checked.
  */
 const unresolvedEmitted = emittedImports.filter(({ specifier }) =>
   specifier.includes(UNRESOLVED),
@@ -616,16 +677,16 @@ describe(`${RULE_NAME} default ignored libraries`, () => {
       'enforce-memoize-async.ts',
     );
     expect(emittersOf('react')).toContain('prefer-fragment-component.ts');
-    expect(externalInjected.length).toBeGreaterThanOrEqual(7);
+    expect(externalInjected.length).toBeGreaterThanOrEqual(7); // measured 9
   });
 
   it('accounts for every specifier the sentinel drops', () => {
     // Bounded rather than pinned: the drop is legitimate, but its SIZE is the
     // only signal that a fixer has begun building a specifier through
     // indirection, so it must not be free to move in silence.
-    expect(unresolvedEmitted.length).toBeGreaterThanOrEqual(10); // measured 14
+    expect(unresolvedEmitted.length).toBeGreaterThanOrEqual(10); // measured 13
     expect(unresolvedEmitted.length).toBeLessThanOrEqual(20);
-    expect(emittedImports.length).toBeGreaterThanOrEqual(24); // measured 31
+    expect(emittedImports.length).toBeGreaterThanOrEqual(24); // measured 32
   });
 
   it('recovers a specifier whose quotes live in the constant', () => {
@@ -643,6 +704,59 @@ describe(`${RULE_NAME} default ignored libraries`, () => {
     expect(quoteWrappedSpecifiers.length).toBeGreaterThanOrEqual(1); // measured 1
   });
 
+  it('folds chained constants and recovers the specifier they hide', () => {
+    expect(chainedConstants.length).toBeGreaterThanOrEqual(8); // measured 11
+    expect(chainedConstants).toContainEqual({
+      file: 'enforce-centralized-mock-firestore.ts',
+      name: 'MOCK_FIRESTORE_PATH',
+    });
+    // Depth 2: `STUBS` reads two constants that are themselves chained, so it
+    // pins that folding composes rather than only handling a single hop.
+    expect(chainedConstants).toContainEqual({
+      file: 'fixtureTypeProgram.ts',
+      name: 'STUBS',
+    });
+    expect(harvestedImports).toContainEqual({
+      file: 'enforce-centralized-mock-firestore.ts',
+      specifier: '../../../../../__test-utils__/mockFirestore',
+    });
+  });
+
+  it('folds a chain that resolves to an EXTERNAL module (positive control)', () => {
+    // Without this the arm above only ever sees internal paths, so a fold that
+    // stopped working would look identical to one that had nothing to find.
+    const probe = parse(
+      [
+        "const PKG = 'some-unlisted-package';",
+        'const SPEC = `${PKG}/subpath`;',
+        "const EMITTED = `import x from '${SPEC}';`;",
+      ].join('\n'),
+      { loc: true, range: true },
+    );
+    const { constants, chainedResolved } = moduleScopeStrings(probe);
+    expect(chainedResolved).toEqual(['SPEC', 'EMITTED']);
+
+    const found: string[] = [];
+    collectEmitted(probe, constants, found, new RegExp(EMITTED_IMPORT, 'g'));
+    expect(found).toContain('some-unlisted-package/subpath');
+    expect(isExternal('some-unlisted-package/subpath')).toBe(true);
+    expect(isIgnoredByDefault('some-unlisted-package/subpath')).toBe(false);
+  });
+
+  it('leaves a cyclic chain to the sentinel', () => {
+    // A cycle is the one shape declaration order cannot settle, so it must fall
+    // through to the sentinel rather than fold to a half-resolved specifier.
+    const probe = parse(
+      ['const A = `${A}/x`;', 'const B = `${C}`;', 'const C = `${B}`;'].join(
+        '\n',
+      ),
+      { loc: true, range: true },
+    );
+    const { chainedResolved, chainedUnresolved } = moduleScopeStrings(probe);
+    expect(chainedResolved).toEqual([]);
+    expect([...chainedUnresolved].sort()).toEqual(['A', 'B', 'C']);
+  });
+
   it('would flag a recovered specifier that is external (positive control)', () => {
     const recovered = QUOTE_WRAPPED.exec(`'some-unlisted-package'`);
     const specifier = recovered?.[2] ?? '';
@@ -651,9 +765,13 @@ describe(`${RULE_NAME} default ignored libraries`, () => {
     expect(isIgnoredByDefault(specifier)).toBe(false);
   });
 
-  it('adds nothing today because the recovered module is internal (negative control)', () => {
+  it('adds nothing today because the recovered modules are internal (negative control)', () => {
     expect(isExternal('src/util/memo')).toBe(false);
     expect(externalInjected).not.toContain('src/util/memo');
+
+    const chainedPath = '../../../../../__test-utils__/mockFirestore';
+    expect(isExternal(chainedPath)).toBe(false);
+    expect(externalInjected).not.toContain(chainedPath);
   });
 
   it('lists every external module the fixers inject', () => {
