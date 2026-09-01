@@ -3,8 +3,10 @@
  * Single source of truth for the plugin's rule-name set.
  *
  * Parses the hand-maintained `rules:` map in src/index.ts — the canonical
- * registry (167 rules). `src/rules/` filenames over-count by an unregistered
- * orphan, so filenames are NOT used. Build-free (plain regex over source) so the
+ * registry, because that map is what the plugin exports. `src/rules/` filenames
+ * are NOT used: a rule file can exist without being registered, and such a file
+ * must never reach the release manifest, whose consumer re-enables rules by
+ * exact registered name. Build-free (plain regex over source) so the
  * commitlint commit-msg hook, the CI scope validator, and the release-manifest
  * generator all share ONE loader without first running `tsc`. CommonJS so plain
  * `node` (commitlint's commit-msg hook, semantic-release exec) can require it.
