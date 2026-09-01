@@ -173,7 +173,7 @@ The fix is withheld (the violation is still reported) whenever the rename cannot
   }
   ```
 
-- **Constructor parameter properties whose name is used elsewhere** — `constructor(private readonly settings: WidgetProps)` declares both a constructor-local binding and a `this.settings` field. Scope analysis only models the binding, so a rename would leave `this.settings` (or a plain `settings` use, or a `widget.settings` read on an instance) dangling:
+- **Constructor parameter properties whose name is used elsewhere** — `constructor(private readonly settings: WidgetProps)` declares both a constructor-local binding and a `this.settings` field. Scope analysis only models the binding, so a rename would leave the field read dangling — every static spelling of it, whether `this.settings`, `this['settings']`, a no-substitution template `` this[`settings`] ``, a plain `settings` use, or a `widget.settings` read on an instance:
 
   ```ts
   // Reported, not fixed
