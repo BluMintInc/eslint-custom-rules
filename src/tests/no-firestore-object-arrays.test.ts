@@ -389,6 +389,20 @@ function build() {
 `,
       filename: 'functions/src/types/firestore/shadow-const.ts',
     },
+    // Test: A type parameter holds no statement, so it shadows a same-named
+    // outer alias only through the scope chain, not through the enclosing
+    // statement containers. `Friend` inside the interface is its own opaque
+    // parameter, and the policy for an unknown reference is to not assume
+    // object (#2261)
+    {
+      code: `
+type Friend = { id: string; name: string };
+export interface UserProfile<Friend> {
+  friends: Friend[];
+}
+`,
+      filename: 'functions/src/types/firestore/user.ts',
+    },
   ],
   invalid: [
     // Test: Basic object array
@@ -1045,6 +1059,28 @@ function buildDefaults() {
         {
           messageId: 'noObjectArrays',
           data: { fieldName: 'entries' },
+        },
+      ],
+    },
+    // Test: Over-decline control for #2261. A parameter binds `Friend` in
+    // VALUE space only, so the outer alias still answers in TYPE space and the
+    // object array stays visible. Dropping the alias silences this case, which
+    // is what makes the report evidence of resolution rather than a default
+    {
+      code: `
+type Friend = { id: string; name: string };
+export function makeProfile(Friend: string) {
+  type UserProfile = {
+    friends: Friend[];
+  };
+  return null as unknown as UserProfile;
+}
+`,
+      filename: 'functions/src/types/firestore/value-binder-shadow.ts',
+      errors: [
+        {
+          messageId: 'noObjectArrays',
+          data: { fieldName: 'friends' },
         },
       ],
     },
