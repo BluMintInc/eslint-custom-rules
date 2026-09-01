@@ -49,6 +49,7 @@ Everything else stays **unresolved**, and an unresolved generic is never reporte
 - an alias **to** a union, an intersection, a mapped type, or another named or imported type (`type User = UserData`) — an intersection written at the reference (`DocumentReference<User & Timestamps>`) is still read, one side at a time;
 - a wrapper that can drop fields, such as `Omit<...>` or `Pick<...>`, whose members are not the document's members;
 - a name declared in a scope the reference is not inside, which is not the name the reference means;
+- a name bound by an enclosing **type parameter** (`function getUserRef<User>(...)`), which is an opaque generic rather than the outer declaration of the same name — the search stops at the type parameter instead of reaching past it. Only type-space binders shadow this way: a value named `User`, such as a parameter or a `catch` binding, leaves the declaration resolvable;
 - a type declared in another file, which this rule does not open — the search widens through enclosing scopes, never across an `import`;
 - a named empty declaration (`type Empty = {}`, `interface Empty {}`), because the empty-object check targets the `{}` written at the reference.
 
