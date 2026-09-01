@@ -1,3 +1,11 @@
+## [1.20.199](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.198...v1.20.199) (2026-09-01)
+
+
+### Bug Fixes
+
+* **enforce-empty-object-check:** decline the guard when an import did not resolve (closes [#2252](https://github.com/BluMintInc/eslint-custom-rules/issues/2252)) ([34ae881](https://github.com/BluMintInc/eslint-custom-rules/commit/34ae881428f9b3c37ced56a30c03258d0dd42167))
+* **prefer-use-deep-compare-memo:** declare the import write to the removal planner (closes [#2240](https://github.com/BluMintInc/eslint-custom-rules/issues/2240)) ([a607bd5](https://github.com/BluMintInc/eslint-custom-rules/commit/a607bd5a55644692312c15afbc3f4a710ca68c35))
+
 ## [1.20.198](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.197...v1.20.198) (2026-08-31)
 
 

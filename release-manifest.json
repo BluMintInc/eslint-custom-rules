@@ -1,5 +1,27 @@
 [
   {
+    "version": "1.20.199",
+    "date": "2026-09-01T09:29:27.682Z",
+    "rules": [
+      {
+        "name": "enforce-empty-object-check",
+        "changeType": "fix",
+        "issues": [
+          2252
+        ],
+        "summary": "decline the guard when an import did not resolve (closes #2252)"
+      },
+      {
+        "name": "prefer-use-deep-compare-memo",
+        "changeType": "fix",
+        "issues": [
+          2240
+        ],
+        "summary": "declare the import write to the removal planner (closes #2240)"
+      }
+    ]
+  },
+  {
     "version": "1.20.198",
     "date": "2026-08-31T11:06:34.784Z",
     "rules": [
