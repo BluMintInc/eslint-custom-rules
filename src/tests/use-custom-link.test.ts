@@ -143,5 +143,106 @@ ruleTesterJsx.run('use-custom-link', useCustomLink, {
         },
       ],
     },
+
+    // ─── Imports carrying a specifier the fix cannot rebuild ────────────────
+    // The report stands, but rewriting would delete the extra specifier and
+    // leave its references dangling, so no fix is offered (#2272). The shape is
+    // real: agora's own NextLinkComposed.tsx writes `import NextLink,
+    // { LinkProps as NextLinkProps } from 'next/link'`.
+    {
+      // A re-exported type keeps the exported NAME while losing its binding,
+      // which is why an export-surface comparison cannot see the damage.
+      code: [
+        `import Link, { LinkProps } from 'next/link';`,
+        `export type { LinkProps };`,
+      ].join('\n'),
+      output: null,
+      filename: 'src/components/Foo.tsx',
+      errors: [
+        {
+          messageId: 'useCustomLink',
+          data: { localName: 'Link' },
+        },
+      ],
+    },
+    {
+      // A value specifier still called by an exported function
+      code: [
+        `import Link, { useLinkStatus } from 'next/link';`,
+        `export const B = () => useLinkStatus();`,
+      ].join('\n'),
+      output: null,
+      filename: 'src/components/Foo.tsx',
+      errors: [
+        {
+          messageId: 'useCustomLink',
+          data: { localName: 'Link' },
+        },
+      ],
+    },
+    {
+      // Aliased named specifier
+      code: [
+        `import Link, { LinkProps as LP } from 'next/link';`,
+        `export type X = LP;`,
+      ].join('\n'),
+      output: null,
+      filename: 'src/components/Foo.tsx',
+      errors: [
+        {
+          messageId: 'useCustomLink',
+          data: { localName: 'Link' },
+        },
+      ],
+    },
+    {
+      // `default as` alongside a named specifier reaches the same branch
+      code: `import { default as NextLink, LinkProps } from 'next/link';`,
+      output: null,
+      filename: 'src/components/Foo.tsx',
+      errors: [
+        {
+          messageId: 'useCustomLink',
+          data: { localName: 'NextLink' },
+        },
+      ],
+    },
+    {
+      // A namespace specifier is dropped by the same reconstruction
+      code: `import Link, * as NextLinkAll from 'next/link';`,
+      output: null,
+      filename: 'src/components/Foo.tsx',
+      errors: [
+        {
+          messageId: 'useCustomLink',
+          data: { localName: 'Link' },
+        },
+      ],
+    },
+    {
+      // Control: nothing to drop, so the fix must still be offered. Pairs with
+      // the cases above so a blanket decline fails here rather than passing.
+      code: `import Link from 'next/link';`,
+      output: `import Link from 'src/components/Link';`,
+      filename: 'src/components/Foo.tsx',
+      errors: [
+        {
+          messageId: 'useCustomLink',
+          data: { localName: 'Link' },
+        },
+      ],
+    },
+    {
+      // Control: the sole specifier is `default as`, so it is rebuilt, not lost
+      code: `import { default as NextLink } from 'next/link';`,
+      output: `import NextLink from 'src/components/Link';`,
+      filename: 'src/components/Foo.tsx',
+      errors: [
+        {
+          messageId: 'useCustomLink',
+          data: { localName: 'NextLink' },
+        },
+      ],
+    },
   ],
 });

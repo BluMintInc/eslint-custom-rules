@@ -15,6 +15,27 @@ Use the shared `src/components/Link` wrapper instead of importing `next/link` di
 - Any default import (including `default as`) sourced from `next/link`.
 - The rule provides an autofix that rewrites the import to `src/components/Link` while preserving the local name.
 
+### The autofix is declined when it would drop a binding
+
+The fix rebuilds the declaration from the default binding alone, so an import
+that also carries named or namespace specifiers has no fix offered — rewriting
+it would delete those specifiers and leave every reference to them dangling:
+
+```tsx
+// Reported, but NOT auto-fixed: rewriting would delete `LinkProps`, while
+// `export type { LinkProps }` keeps the exported name that no longer resolves.
+import Link, { LinkProps } from 'next/link';
+
+export type { LinkProps };
+```
+
+Relocating the extra specifiers to the wrapper is not a safe substitute, because
+whether the wrapper re-exports any given one is not knowable from the import
+site — carrying them over would trade a silent dangling binding for a
+possibly-unresolvable import. Migrate these by hand: move the specifiers you
+still need to whichever module actually exports them, then update the default
+import.
+
 ## Examples
 
 ### Examples of **incorrect** code for this rule:

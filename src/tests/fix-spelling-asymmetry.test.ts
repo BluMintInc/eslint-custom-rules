@@ -1079,7 +1079,10 @@ const FIX_UNDRIVEN: Record<string, UndrivenCause> = {
   'prefer-fragment-shorthand': 'noRespelling',
   'prefer-params-over-parent-id': 'noFixInComparedPair',
   'sync-onwrite-name-func': 'noRespelling',
-  'use-custom-link': 'noRespelling',
+  // Moved off `noRespelling` by #2272: its fixtures now carry a respellable
+  // function, but the pair those fixtures form carries no fix, because #2272 is
+  // precisely the change that declines one when a specifier would be dropped.
+  'use-custom-link': 'noFixInComparedPair',
 };
 
 /**
@@ -1124,7 +1127,8 @@ const DETECTION_UNDRIVEN: Record<string, UndrivenCause> = {
   'require-https-error-cause': 'silentOnComparedPairs',
   'sync-onwrite-name-func': 'noRespelling',
   'test-file-location-enforcement': 'noRespelling',
-  'use-custom-link': 'noRespelling',
+  // `use-custom-link` left this list with #2272: its fixtures now carry a
+  // respellable function, so the detection census drives it, and it is clean.
 };
 
 /**
@@ -1551,9 +1555,7 @@ const DEFENSIVE_DECLINES = new Set<TransformDecline>([
   'unrecognizedSpelling',
 ]);
 
-const declineReasons = Object.keys(
-  TRANSFORM_DECLINES,
-) as TransformDecline[];
+const declineReasons = Object.keys(TRANSFORM_DECLINES) as TransformDecline[];
 
 /** What a transform threw away, so a breached ceiling names its own residue. */
 const discardReport = (transform: string) =>

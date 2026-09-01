@@ -348,7 +348,9 @@ const UNDRIVEN: Record<string, UndrivenCause> = {
   'sync-onwrite-name-func::call': 'noSite',
   'sync-onwrite-name-func::member': 'noSite',
   'test-file-location-enforcement::member': 'noSite',
-  'use-custom-link::call': 'noSite',
+  // The `::call` arm left this list with #2272, whose fixtures gave the rule a
+  // call site (`useLinkStatus()`) for the sweep to drive. It is driven and
+  // clean; only the `::member` arm still has no site.
   'use-custom-link::member': 'noSite',
   'use-custom-router::member': 'noSite',
   'warn-https-error-message-user-friendly::member': 'silentBothSides',
