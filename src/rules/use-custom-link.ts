@@ -86,27 +86,38 @@ export const useCustomLink = createRule<Options, MessageIds>({
           );
 
           if (defaultSpecifier || defaultAsSpecifier) {
+            // The fix rebuilds the whole declaration from the default binding
+            // alone, so any other specifier would be deleted outright and
+            // whatever still references it left dangling — including an
+            // `export { LinkProps }` that keeps the exported NAME while losing
+            // what it resolves to. Relocating them instead is not available:
+            // whether the wrapper re-exports a given specifier is unknowable
+            // from here, so carrying them over would trade a silent dangling
+            // binding for a possibly unresolvable import. Decline the fix and
+            // keep the report, so the migration stays a deliberate edit.
+            const droppedSpecifiers = importSpecifiers.filter(
+              (specifier) =>
+                specifier !== defaultSpecifier &&
+                specifier !== defaultAsSpecifier,
+            );
+
+            const localName =
+              defaultSpecifier?.local?.name ||
+              defaultAsSpecifier?.local?.name ||
+              'Link';
+
             context.report({
               node,
               messageId: 'useCustomLink',
-              data: {
-                localName:
-                  defaultSpecifier?.local?.name ||
-                  defaultAsSpecifier?.local?.name ||
-                  'Link',
-              },
-              fix(fixer) {
-                // Get the local name of the imported Link component
-                const localName =
-                  defaultSpecifier?.local?.name ||
-                  defaultAsSpecifier?.local?.name ||
-                  'Link';
-
-                // Create the new import statement
-                const newImport = `import ${localName} from '${LINK_MODULE_PATH}';`;
-
-                return fixer.replaceText(node, newImport);
-              },
+              data: { localName },
+              fix:
+                droppedSpecifiers.length > 0
+                  ? undefined
+                  : (fixer) =>
+                      fixer.replaceText(
+                        node,
+                        `import ${localName} from '${LINK_MODULE_PATH}';`,
+                      ),
             });
           }
         }

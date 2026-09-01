@@ -1975,10 +1975,11 @@ const UNPROBED_RULES: Record<string, Reason> = {
   'use-custom-memo': REASONS.importAnchoredReport,
   'use-custom-router': REASONS.importAnchoredReport,
 
-  // All 7 fixtures it reports on are nothing but an import list, so there is no
-  // region to move. Same conclusion as the three above: its fix preserves the
-  // local name, so a fixture with a body would add reach but not a question.
-  'use-custom-link': REASONS.noWrappableBody,
+  // Reached this reason from `noWrappableBody` once #2272 gave it fixtures that
+  // carry a body, which is the addition the block above predicted would "add
+  // reach but not a question" — and does: the report still anchors on the
+  // ImportDeclaration, so nesting cannot enclose it.
+  'use-custom-link': REASONS.importAnchoredReport,
 
   // Keyed on module scope by design, so the wrap is not neutral for it at all:
   // every one of its wrapped variants is dropped by a neutrality gate, and a
