@@ -724,6 +724,26 @@ ruleTesterJsx.run('prevent-children-clobber', preventChildrenClobber, {
       `,
       filename: 'component.tsx',
     },
+    // #2263 over-decline control: a type parameter binds `KEYS` in TYPE space
+    // only, so `typeof KEYS` still reads the outer const in VALUE space. The
+    // keep-list stays decidable and excludes children, so declining to trust a
+    // shadowed keep-list must not spread to this one. Adding 'children' to the
+    // const flips this case to a report, which is what keeps it load-bearing
+    {
+      code: `
+        const KEYS = ['sx'] as const;
+        function makeWrapper<KEYS>() {
+          type Props = Pick<DialogProps, (typeof KEYS)[number]>;
+          const Wrapper = (props: Props) => (
+            <Dialog {...props}>
+              <Content />
+            </Dialog>
+          );
+          return Wrapper;
+        }
+      `,
+      filename: 'component.tsx',
+    },
   ],
   invalid: [
     {
@@ -1378,6 +1398,27 @@ ruleTesterJsx.run('prevent-children-clobber', preventChildrenClobber, {
             <AlertStandard message={title} />
           </Dialog>
         );
+      `,
+      filename: 'component.tsx',
+      errors: [{ messageId: 'childrenClobbered' }],
+    },
+    // #2263 subject: a parameter holds no statement, so a resolver that walks
+    // enclosing statement containers steps past it to the outer const. Inside
+    // useProcessor `KEYS` denotes the `string` parameter, which leaves the Pick
+    // keep-list undecidable — undecidable is not proof that children is
+    // excluded, so the spread still clobbers the passed children
+    {
+      code: `
+        const KEYS = ['sx'] as const;
+        function useProcessor(KEYS: string) {
+          type Props = Pick<DialogProps, (typeof KEYS)[number]>;
+          const Wrapper = (props: Props) => (
+            <Dialog {...props}>
+              <Content />
+            </Dialog>
+          );
+          return Wrapper;
+        }
       `,
       filename: 'component.tsx',
       errors: [{ messageId: 'childrenClobbered' }],

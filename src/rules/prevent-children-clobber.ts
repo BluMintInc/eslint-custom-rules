@@ -2,7 +2,13 @@ import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import * as ts from 'typescript';
 import { ASTHelpers } from '../utils/ASTHelpers';
 import { createRule } from '../utils/createRule';
-import { declarationOf, enclosingStatementLists } from '../utils/lexicalScope';
+import {
+  BindingNamespace,
+  bindsNameOutsideStatements,
+  declarationOf,
+  enclosingScopeFrames,
+  ScopeFrame,
+} from '../utils/lexicalScope';
 
 type MessageIds = 'childrenClobbered';
 type Options = [];
@@ -215,38 +221,69 @@ function constArrayMembersNamed(
  * resolve it.
  */
 function aliasResolverFrom(
-  lists: readonly (readonly TSESTree.Node[])[],
+  frames: readonly ScopeFrame[],
   startIndex = 0,
+  barrierFrom = 0,
 ): AliasResolver {
+  /**
+   * Walks the frames outward, stopping at the first binder that takes the name.
+   *
+   * A frame's `barriers` gate entry into it from the frame inside it, so a
+   * resumed resolver skips the barriers of the frame it resumes at: the alias
+   * body it is reading already sits there and never crosses them.
+   */
+  const search = <T>(
+    name: string,
+    namespace: BindingNamespace,
+    found: (frame: ScopeFrame, index: number) => T | undefined,
+  ): T | undefined => {
+    for (let index = startIndex; index < frames.length; index += 1) {
+      const frame = frames[index];
+      if (
+        index >= barrierFrom &&
+        frame.barriers.some((barrier) =>
+          bindsNameOutsideStatements(barrier, name, namespace),
+        )
+      ) {
+        return undefined;
+      }
+      const match = found(frame, index);
+      if (match !== undefined) {
+        return match;
+      }
+    }
+    return undefined;
+  };
+
   return {
     typeAlias(name) {
-      for (let index = startIndex; index < lists.length; index += 1) {
-        for (const statement of lists[index]) {
+      return search(name, 'type', (frame, index) => {
+        for (const statement of frame.statements) {
           const declaration = aliasDeclarationNamed(statement, name);
           if (declaration) {
             return {
               typeNode: declaration.typeAnnotation,
-              resolve: aliasResolverFrom(lists, index),
+              resolve: aliasResolverFrom(frames, index, index + 1),
             };
           }
         }
-      }
-      return undefined;
+        return undefined;
+      });
     },
     constArrayKeys(name) {
-      for (let index = startIndex; index < lists.length; index += 1) {
-        for (const statement of lists[index]) {
+      return search(name, 'value', (frame) => {
+        for (const statement of frame.statements) {
           const members = constArrayMembersNamed(statement, name);
           if (members) return members;
         }
-      }
-      return undefined;
+        return undefined;
+      });
     },
   };
 }
 
 function aliasResolverAt(from: TSESTree.Node): AliasResolver {
-  return aliasResolverFrom(enclosingStatementLists(from));
+  return aliasResolverFrom(enclosingScopeFrames(from));
 }
 
 /**

@@ -100,7 +100,11 @@ The props alias is resolved lexically, so exporting it or declaring it inside a
 function, arrow, `namespace`, `static` block or `switch` case makes no
 difference. An alias declared in an inner scope shadows a same-named outer one,
 and because type aliases hoist, a component written above its own alias still
-resolves it.
+resolves it. A binder that holds no statement shadows as well, each in its own
+space: an enclosing type parameter hides a same-named alias, and a parameter or
+other value binding hides a same-named `as const` array, so a `Pick` keep-list
+built from `(typeof KEYS)[number]` is undecidable wherever `KEYS` denotes
+something other than that array.
 
 ```tsx
 export type DialogAccordionProps = Readonly<

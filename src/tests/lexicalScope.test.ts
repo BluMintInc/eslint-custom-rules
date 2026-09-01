@@ -5,6 +5,7 @@ import {
   bindsNameOutsideStatements,
   BOUND_UNPROVABLE,
   declarationOf,
+  enclosingScopeFrames,
   enclosingStatementLists,
   resolveInEnclosingScopes,
   resolveNameInEnclosingScopes,
@@ -306,6 +307,85 @@ describe('enclosingStatementLists', () => {
   });
 });
 
+describe('enclosingScopeFrames', () => {
+  it('yields the same lists as enclosingStatementLists', () => {
+    const program = parse(`
+      namespace Space {
+        function host() {
+          const marker = 1;
+        }
+      }
+    `);
+    const marker = findNode(program, AST_NODE_TYPES.VariableDeclarator);
+
+    expect(
+      enclosingScopeFrames(marker).map((frame) => frame.statements),
+    ).toEqual(enclosingStatementLists(marker));
+  });
+
+  /**
+   * The binder sits on the function, not on the block that is its body, so it
+   * falls between two frames — which is exactly what the plain list form loses.
+   */
+  it('carries the binder crossed to reach the frame outside a function', () => {
+    const program = parse(`
+      type Target = 1;
+      function host<Target>() {
+        const marker = 1;
+      }
+    `);
+    const marker = findNode(program, AST_NODE_TYPES.VariableDeclarator);
+    const frames = enclosingScopeFrames(marker);
+    const host = findNode(program, AST_NODE_TYPES.FunctionDeclaration);
+
+    // Frame 0 is the function body; frame 1 is the module, reached by crossing
+    // the function that binds `Target`.
+    expect(frames).toHaveLength(2);
+    expect(frames[0].barriers).not.toContain(host);
+    expect(frames[1].barriers).toContain(host);
+    expect(
+      frames[1].barriers.some((barrier) =>
+        bindsNameOutsideStatements(barrier, 'Target', 'type'),
+      ),
+    ).toBe(true);
+  });
+
+  /**
+   * A barrier is any node crossed between two frames, most of which bind
+   * nothing — the declarator and its declaration are barriers here. What must
+   * hold is that none of them TAKES the name, so nesting alone never blocks a
+   * lookup.
+   */
+  it('crosses no name-taking barrier where only blocks nest', () => {
+    const program = parse(`
+      type Target = 1;
+      {
+        {
+          const marker = 1;
+        }
+      }
+    `);
+    const marker = findNode(program, AST_NODE_TYPES.VariableDeclarator);
+
+    expect(
+      enclosingScopeFrames(marker).every(
+        (frame) =>
+          !frame.barriers.some((barrier) =>
+            bindsNameOutsideStatements(barrier, 'Target', 'type'),
+          ),
+      ),
+    ).toBe(true);
+    expect(
+      resolveNameInEnclosingScopes(
+        marker,
+        'Target',
+        'type',
+        aliasNamed('Target'),
+      ),
+    ).toBeDefined();
+  });
+});
+
 describe('bindsNameOutsideStatements', () => {
   /**
    * Every binder listed here is one `statementsOf` cannot report, so each row is
@@ -438,7 +518,11 @@ describe('bindsNameOutsideStatements', () => {
    */
   it.each([
     ['call', 'useState<Taken>(null);', AST_NODE_TYPES.CallExpression],
-    ['type reference', 'type B = Wrapper<Taken>;', AST_NODE_TYPES.TSTypeReference],
+    [
+      'type reference',
+      'type B = Wrapper<Taken>;',
+      AST_NODE_TYPES.TSTypeReference,
+    ],
     ['new', 'new Map<Taken, Taken>();', AST_NODE_TYPES.NewExpression],
     [
       'instantiation expression',
@@ -477,7 +561,12 @@ describe('resolveNameInEnclosingScopes', () => {
       declarationOf(program.body[0]),
     );
     expect(
-      resolveNameInEnclosingScopes(marker, 'Target', 'type', aliasNamed('Target')),
+      resolveNameInEnclosingScopes(
+        marker,
+        'Target',
+        'type',
+        aliasNamed('Target'),
+      ),
     ).toBeUndefined();
   });
 
@@ -519,7 +608,12 @@ describe('resolveNameInEnclosingScopes', () => {
     );
 
     expect(
-      resolveNameInEnclosingScopes(marker, 'Target', 'type', aliasNamed('Target')),
+      resolveNameInEnclosingScopes(
+        marker,
+        'Target',
+        'type',
+        aliasNamed('Target'),
+      ),
     ).toBe(inner);
   });
 
@@ -533,7 +627,12 @@ describe('resolveNameInEnclosingScopes', () => {
     const marker = findNode(program, AST_NODE_TYPES.VariableDeclarator);
 
     expect(
-      resolveNameInEnclosingScopes(marker, 'Target', 'type', aliasNamed('Target')),
+      resolveNameInEnclosingScopes(
+        marker,
+        'Target',
+        'type',
+        aliasNamed('Target'),
+      ),
     ).toBe(declarationOf(program.body[0]));
   });
 
@@ -547,7 +646,12 @@ describe('resolveNameInEnclosingScopes', () => {
     const marker = findNode(program, AST_NODE_TYPES.VariableDeclarator);
 
     expect(
-      resolveNameInEnclosingScopes(marker, 'Target', 'type', aliasNamed('Target')),
+      resolveNameInEnclosingScopes(
+        marker,
+        'Target',
+        'type',
+        aliasNamed('Target'),
+      ),
     ).toBe(declarationOf(program.body[0]));
   });
 });
