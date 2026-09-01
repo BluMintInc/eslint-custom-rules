@@ -6,6 +6,7 @@ import {
 } from '@typescript-eslint/utils';
 import * as ts from 'typescript';
 import { createRule } from '../utils/createRule';
+import { ASTHelpers } from '../utils/ASTHelpers';
 
 type Options = [
   {
@@ -1843,6 +1844,85 @@ export const enforceEmptyObjectCheck: TSESLint.RuleModule<MessageIds, Options> =
       const processedExpressions = new WeakSet<TSESTree.Expression>();
       const processedNegations = new WeakSet<TSESTree.UnaryExpression>();
 
+      /** The binding a value expression ultimately reads from. */
+      function rootIdentifierOf(
+        node: TSESTree.Node,
+      ): TSESTree.Identifier | null {
+        switch (node.type) {
+          case AST_NODE_TYPES.Identifier:
+            return node;
+          case AST_NODE_TYPES.CallExpression:
+          case AST_NODE_TYPES.NewExpression:
+            return rootIdentifierOf(node.callee);
+          case AST_NODE_TYPES.MemberExpression:
+            return rootIdentifierOf(node.object);
+          case AST_NODE_TYPES.AwaitExpression:
+            return rootIdentifierOf(node.argument);
+          case AST_NODE_TYPES.ChainExpression:
+            return rootIdentifierOf(node.expression);
+          case AST_NODE_TYPES.TSNonNullExpression:
+          case AST_NODE_TYPES.TSAsExpression:
+            return rootIdentifierOf(node.expression);
+          default:
+            return null;
+        }
+      }
+
+      function variableFor(
+        identifier: TSESTree.Identifier,
+      ): TSESLint.Scope.Variable | null {
+        let scope: TSESLint.Scope.Scope | null = ASTHelpers.getScope(
+          context,
+          identifier,
+        );
+        while (scope) {
+          const found = scope.variables.find(
+            (candidate) => candidate.name === identifier.name,
+          );
+          if (found) {
+            return found;
+          }
+          scope = scope.upper;
+        }
+        return null;
+      }
+
+      /**
+       * Whether this value originates in an IMPORTED binding.
+       *
+       * Consulted ONLY once the checker has returned `unknown`, which is what
+       * makes it safe: in a file whose imports resolve, an imported callee
+       * yields a real type and this is never reached. Reaching it means the
+       * symbol came back `any` because the module did not resolve — a
+       * program-completeness failure rather than evidence the value can be
+       * `{}` (#2252).
+       */
+      function tracesToImport(
+        identifier: TSESTree.Identifier,
+        seen = new Set<TSESLint.Scope.Variable>(),
+      ): boolean {
+        const variable = variableFor(identifier);
+        if (!variable || seen.has(variable)) {
+          return false;
+        }
+        seen.add(variable);
+        for (const def of variable.defs) {
+          if (def.type === 'ImportBinding') {
+            return true;
+          }
+          if (
+            def.node.type === AST_NODE_TYPES.VariableDeclarator &&
+            def.node.init
+          ) {
+            const root = rootIdentifierOf(def.node.init);
+            if (root && tracesToImport(root, seen)) {
+              return true;
+            }
+          }
+        }
+        return false;
+      }
+
       function isLikelyObject(identifier: TSESTree.Identifier): boolean {
         if (checker && parserServices?.esTreeNodeToTSNodeMap) {
           try {
@@ -1853,6 +1933,21 @@ export const enforceEmptyObjectCheck: TSESLint.RuleModule<MessageIds, Options> =
               return true;
             }
             if (analysis === 'non-object') {
+              return false;
+            }
+            /**
+             * The checker looked and could not tell. Falling straight through
+             * to the naming heuristic is what made a file EXCLUDED from the
+             * `parserOptions.project` program report on byte-identical code its
+             * in-program twin is exempt from: the suffix says `config`, so
+             * absence of evidence became evidence the value can be `{}`.
+             *
+             * The heuristic is still the right answer for a value with no
+             * declaration to resolve — removing it outright silences 52 of this
+             * rule's own 92 fixtures — so only the unresolved-IMPORT case is
+             * carved out (#2252).
+             */
+            if (tracesToImport(identifier)) {
               return false;
             }
           } catch {

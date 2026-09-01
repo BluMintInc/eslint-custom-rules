@@ -14,6 +14,24 @@ Optional-chained spellings of those same checks count too — `Object?.keys?.(ob
 
 When TypeScript types are available, values that are not data objects are exempt: primitives, arrays and tuples, types with required properties, and **callable or constructable types**. A function type, a class reference, a `new (...) => T` (or `abstract new (...) => T`) signature, and React's `ComponentType` are behaviour, not data — their own enumerable keys are statics, so `Object.keys()` returns `[]` for a plain arrow-function component or a class with no static members even when a perfectly valid value was supplied. Adding the prescribed emptiness check to such a guard would invert it. A union is exempt only when no member is a data object, so a union that mixes a constructor with a payload type is still reported.
 
+### When the type cannot be resolved
+
+The type check and the naming heuristic answer different questions, and the rule
+keeps them apart. If the checker can type the value, its answer is final. If the
+value has no declaration to resolve — an undeclared callee, a plain-JavaScript
+parse — the naming suffix decides, which is the rule's documented syntactic mode.
+
+Between those sits a third case the rule deliberately declines: a value whose
+type came back `any` because the module it came from did not resolve. That
+happens to every file outside `parserOptions.project` — most commonly test files,
+which a `tsconfig.json` typically excludes. Before, the suffix decided there too,
+so a guard on an imported `config` reported in a test file while the
+byte-identical guard in its in-program production twin was exempt, with nothing
+in the message to say which regime produced the result. The rule now stays silent
+when the value traces back to an import it could not resolve: a resolution
+failure is not evidence the value can be `{}`. A value that does resolve is
+unaffected, because the checker answers before this is ever consulted.
+
 ## Rule Details
 
 ### ❌ Incorrect
