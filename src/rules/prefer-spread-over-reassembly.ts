@@ -8,7 +8,10 @@ import {
 } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 import { ASTHelpers } from '../utils/ASTHelpers';
-import { declarationOf, resolveInEnclosingScopes } from '../utils/lexicalScope';
+import {
+  declarationOf,
+  resolveNameInEnclosingScopes,
+} from '../utils/lexicalScope';
 
 type MessageIds = 'preferSpread';
 
@@ -341,8 +344,10 @@ function findLocalTypeDeclaration(
   name: string,
 ): TypeDeclaration | null {
   return (
-    resolveInEnclosingScopes<TypeDeclaration>(
+    resolveNameInEnclosingScopes<TypeDeclaration>(
       from,
+      name,
+      'type',
       (statements) => typeDeclarationIn(statements, name) ?? undefined,
       () => typeDeclarationIn(program.body, name) ?? undefined,
     ) ?? null

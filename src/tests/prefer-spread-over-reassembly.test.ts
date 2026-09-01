@@ -1083,6 +1083,25 @@ function Wrapper(props) {
   return <Child {...props} />;
 }
 `,
+
+    // Over-decline control for #2259: a shadow is namespace-specific. `Wide` is
+    // bound here as a VALUE — an enclosing parameter — which leaves the outer
+    // `type Wide` in scope for every type position inside, so `{ a, b }` still
+    // reads against three known members and stays a deliberate narrowing pick.
+    // Treating any same-named binder as a shadow would make the members opaque
+    // and report this, trading the missed report for a false positive. The
+    // return carries `as const` (read through by unwrapTransparent) so this
+    // blessed text stays out of the enforce-object-literal-as-const
+    // disagreement the contradiction guard baselines at 5.
+    `
+type Wide = { a: string; b: string; c: string };
+
+function wrap(Wide: string) {
+  return function pick({ a, b }: Wide) {
+    return { a, b } as const;
+  };
+}
+`,
   ],
 
   invalid: [
@@ -3373,6 +3392,30 @@ function outer() {
     return { ...props };
   }
   return pick;
+}
+`,
+    },
+
+    // Regression (#2259): `Wide` inside `pick` is the function's OWN type
+    // parameter, so its members are unknown and no narrowing-pick proof is
+    // possible. Resolving the annotation by statement containers alone steps
+    // straight past the type parameter, letting the outer three-member `Wide`
+    // answer — and `{ a, b }` reads as a deliberate narrowing pick, which is
+    // the rule's carve-out, so the report is suppressed entirely.
+    {
+      code: `
+type Wide = { a: string; b: string; c: string };
+
+function pick<Wide>({ a, b }: Wide) {
+  return { a, b };
+}
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+type Wide = { a: string; b: string; c: string };
+
+function pick<Wide>(props: Wide) {
+  return { ...props };
 }
 `,
     },
