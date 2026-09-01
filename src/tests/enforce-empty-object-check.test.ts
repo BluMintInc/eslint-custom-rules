@@ -350,8 +350,88 @@ ruleTesterTs.run('enforce-empty-object-check', enforceEmptyObjectCheck, {
         config = getConfig();
       }
       `,
+    /**
+     * #2252. A file OUTSIDE the `parserOptions.project` program resolves none
+     * of its imports, so the checker types the callee's return as `any` and
+     * returns `unknown`. Falling through to the naming heuristic there made a
+     * test file report on byte-identical code its in-program production twin is
+     * exempt from — and the prescribed `Object.keys` fix is banned by the
+     * consumer's own `no-restricted-properties`, so `--fix` traded one error for
+     * another and reinstated it on every run.
+     */
+    {
+      name: 'a value from an unresolved import is not evidence it can be {}',
+      code: `
+import { resolveChatCommandConfig } from './resolveChatCommandConfig';
+import { hasRequiredChatUserLevel } from './hasRequiredChatUserLevel';
+declare const text: string;
+declare const viewer: unknown;
+function run() {
+  const config = resolveChatCommandConfig(text);
+  if (!config || !hasRequiredChatUserLevel(viewer, config)) {
+    return;
+  }
+}
+`,
+    },
+    {
+      name: 'the in-program twin of that guard, whose type resolves, stays silent',
+      code: `
+type ChatCommandConfig = { command: string; level: number };
+declare function resolveChatCommandConfig(text: string): ChatCommandConfig | undefined;
+declare const text: string;
+function run() {
+  const config = resolveChatCommandConfig(text);
+  if (!config) {
+    return;
+  }
+}
+`,
+    },
+    {
+      name: 'an imported binding read directly, not through a call',
+      code: `
+import { config } from './config';
+function run() {
+  if (!config) {
+    return;
+  }
+}
+`,
+    },
   ],
   invalid: [
+    /**
+     * The #2252 carve-out is keyed on the IDENTIFIER's own origin, not on the
+     * file holding imports: `getConfig` has no declaration to trace, so the
+     * naming heuristic still answers and the rule still reports. Without this
+     * control the carve-out could widen to "any file that imports anything"
+     * and silence the rule almost everywhere while every other test passed.
+     */
+    {
+      name: 'an undeclared callee still reports in a file with unresolved imports',
+      code: `
+import { unrelated } from './unrelated';
+function run() {
+  const config = getConfig();
+  if (!config) {
+    unrelated(config);
+  }
+}
+`,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `
+import { unrelated } from './unrelated';
+function run() {
+  const config = getConfig();
+  if (!config || Object.keys(config).length === 0) {
+    unrelated(config);
+  }
+}
+`,
+    },
     {
       code: `
         function processUserData(userData) {
