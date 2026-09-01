@@ -531,6 +531,35 @@ const CROSS_EXPORT_SURFACE_BASELINE: Record<string, string> = {
     'the transform substitutes the imported callee (updateDoc -> setDoc), so rebinding the name is intrinsic to it. Reachable only through the injected shape `export const { doc, updateDoc } = await import(...)` — exporting a destructured dynamic import is not a form real code writes, and the rule is silent on every non-exported spelling. Reproduces only on its OWN fixtures.',
 };
 
+/**
+ * Fixable rules that contribute NO rewrite to this sweep, each with the reason
+ * measured. Audited both ways exactly like `CROSS_EXPORT_SURFACE_BASELINE`: an
+ * unlisted non-contributor fails, and a listed rule that starts contributing
+ * fails too, so an entry cannot rot into a shield.
+ *
+ * Without it the only gate on participation is `stats.fixers.size` against a
+ * floor, which leaves several rules of headroom before a dropout registers at
+ * all and names none of them when it finally does. A rule that regressed into
+ * silence would then be indistinguishable from one that was never reachable.
+ *
+ * Measured: none of the four is excluded by `silentWithoutProgramRuleNames` or
+ * `DIVERGENT_WITHOUT_PROGRAM`, so each silence is a property of the fixtures or
+ * of the rule's own fixer, not of the screen.
+ */
+const NON_CONTRIBUTING_FIXERS: Record<string, string> = {
+  'enforce-typescript-markdown-code-blocks':
+    'Markdown-only: every fixture is a .md file, and this sweep keeps only `language === "ts"` because a Markdown fixture has no declaration to receive an injected export.',
+  'no-unpinned-dependencies':
+    'JSON-only (package.json), dropped by the same TS-only filter, for the same reason.',
+  'use-custom-link':
+    'every invalid fixture is a bare `import Link from "next/link";` with no exportable top-level declaration, so `surfaceOf` drops all of them into `noSurface`; `next/link` occurs in no other suite, so no foreign fixture reaches it either. Its fixer only ever replaces an ImportDeclaration\'s source text and never touches an exportable declaration, so it cannot violate the invariant under test.',
+  'enforce-exported-function-types':
+    'reported 282 times with 0 fixes. Two of its three message ids can never carry one (a declaration, hence a fix, is computed only for missingExportedPropsType), and that third precondition — a bare, not-yet-exported top-level type — is removed by this guard\'s own `injectExports`, which exports exactly that node first. Its only fixer action anywhere is `insertTextBefore(declaration, "export ")`, which is purely additive.',
+};
+
+/** Every fixable rule the plugin ships, by the guard's own fixability test. */
+const fixableRuleNames = Object.keys(plugin.rules).filter(isFixable);
+
 const removalsByFixer = new Map<string, Removal[]>();
 for (const removal of removals) {
   const list = removalsByFixer.get(removal.fixer) || [];
@@ -652,6 +681,40 @@ describe("no fixer removes an export name from ANY rule's fixture", () => {
   });
 });
 
+describe('every fixable rule either rewrites or is named', () => {
+  const silentFixers = fixableRuleNames.filter(
+    (name) => !stats.fixers.has(name),
+  );
+
+  it('names every fixable rule that contributes no rewrite', () => {
+    expect(
+      silentFixers.filter((name) => !(name in NON_CONTRIBUTING_FIXERS)),
+    ).toEqual([]);
+  });
+
+  it('carries no stale non-contribution entry', () => {
+    expect(
+      Object.keys(NON_CONTRIBUTING_FIXERS).filter((name) =>
+        stats.fixers.has(name),
+      ),
+    ).toEqual([]);
+  });
+
+  /**
+   * Non-vacuity: the ledger is only meaningful while the population it
+   * partitions is the whole fixable set and most of it is on the rewriting
+   * side. A collapse to a handful of contributors would satisfy both arms
+   * above while measuring nothing.
+   */
+  it('partitions the whole fixable set (non-vacuity)', () => {
+    expect(fixableRuleNames.length).toBeGreaterThanOrEqual(78); // measured 84
+    expect(silentFixers.length + stats.fixers.size).toBe(
+      fixableRuleNames.length,
+    );
+    expect(silentFixers.length).toBeLessThanOrEqual(8);
+  });
+});
+
 describe('the cross-paired export-surface guard is load-bearing', () => {
   it('reaches fixers through OTHER rules’ fixtures', () => {
     expect(stats.fixtures).toBeGreaterThanOrEqual(FIXTURE_FLOOR);
@@ -664,8 +727,8 @@ describe('the cross-paired export-surface guard is load-bearing', () => {
     expect(stats.crossRewrites).toBeGreaterThanOrEqual(CROSS_REWRITE_FLOOR);
     expect(stats.fixers.size).toBeGreaterThanOrEqual(FIXER_FLOOR);
     expect(stats.crossFixers.size).toBeGreaterThanOrEqual(CROSS_FIXER_FLOOR);
-    // The comment on `stats` promises every counter is read by an expect; this
-    // one was written and read by nothing, not even the diagnostic above.
+    // Added by #2249, which found this counter written and read by nothing.
+    // The diagnostic above and this assertion are what closed that gap.
     expect(stats.owners.size).toBeGreaterThanOrEqual(OWNER_FLOOR);
   });
 
