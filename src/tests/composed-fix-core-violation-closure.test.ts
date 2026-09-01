@@ -88,11 +88,13 @@
  *     TRANSITION, because the count gate is structurally unable to reach the
  *     exchange shape, and that guard defers composed orphans HERE as fixer
  *     interaction it cannot attribute solo. So this file carries the transition
- *     arm too. Measured over the whole corpus: 11,781 rewrites, 2,171 rows where
- *     the unused multiset moved without the count rising — the population the
- *     count arm drops — and ZERO of them strand a previously-referenced binding.
- *     The arm is a regression detector driven by 2,147 candidate rows, not a
- *     vacuous one: the shape it watches for ships (#2228).
+ *     arm too. Measured at 1.20.198 over the whole corpus: 11,785 rewrites and
+ *     2,171 rows where the unused multiset moved without the count rising — the
+ *     population the count arm drops — and ZERO of them strand a binding that
+ *     was referenced before the fix. Both quantities are ones the stats line
+ *     prints (`rewritten`, `exchange`) and the floors below are cut just under
+ *     them, so the empty census reads as a verdict rather than an empty sweep;
+ *     the shape the arm watches for does ship (#2228).
  *   - JSON and Markdown fixtures are excluded: these instruments are
  *     JavaScript/TypeScript ones and measure nothing through the other parsers.
  *     `no-unpinned-dependencies` and `enforce-typescript-markdown-code-blocks`
@@ -361,9 +363,10 @@ export const appearedUnused = (before: string[], after: string[]) => {
  * to an already-unused `const FOO`: `FOO` appears in the multiset diff, but no
  * declaration named `FOO` existed before the fix, so its before-count is zero
  * and it is dropped. That is what makes this safe to run UNGATED over a
- * population the count arm discards — measured at 2,171 rows here, no single
- * fixture owner supplying more than ~7% of them, so the shape is a broad
- * property of the composed pass rather than a few renaming rules' artefact.
+ * population the count arm discards — 2,171 rows at 1.20.198, spread over 103
+ * fixture owners with the largest supplying 7.3% of them, so the shape is a
+ * broad property of the composed pass rather than a few renaming rules'
+ * artefact.
  */
 export const strandedByTransition = (
   before: string[],
@@ -927,12 +930,12 @@ describe('the composed --fix must not introduce a core violation', () => {
         `findings=${findings.length} composition=${composition.length} ` +
         `soloExplained=${soloExplained.length} attributionFixes=${stats.attributionFixes}`,
     );
-    // Measured 23,824 considered / 23,824 probed / 11,785 rewritten / 192
-    // owners. Each floor sits just under its own measurement, and each fails
-    // differently: a probe count with nothing rewritten means the fix pass never
-    // ran (the parser, filename or options plumbing lost), and a corpus that
-    // reaches few owners says nothing about the rest of the config however many
-    // snippets it holds.
+    // Measured at 1.20.198: 23,824 considered / 23,824 probed / 11,785
+    // rewritten / 192 owners. Each floor sits just under its own measurement,
+    // and each fails differently: a probe count with nothing rewritten means the
+    // fix pass never ran (the parser, filename or options plumbing lost), and a
+    // corpus that reaches few owners says nothing about the rest of the config
+    // however many snippets it holds.
     expect(stats.considered).toBeGreaterThan(23500);
     expect(stats.probed).toBeGreaterThan(23500);
     expect(stats.rewritten).toBeGreaterThan(11500);
