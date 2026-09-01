@@ -1,6 +1,9 @@
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
-import { declarationOf, resolveInEnclosingScopes } from '../utils/lexicalScope';
+import {
+  declarationOf,
+  resolveNameInEnclosingScopes,
+} from '../utils/lexicalScope';
 
 type Options = [
   {
@@ -57,8 +60,10 @@ function resolveTypeAlias(
   from: TSESTree.Node,
   name: string,
 ): TSESTree.TSTypeAliasDeclaration | undefined {
-  return resolveInEnclosingScopes<TSESTree.TSTypeAliasDeclaration>(
+  return resolveNameInEnclosingScopes<TSESTree.TSTypeAliasDeclaration>(
     from,
+    name,
+    'type',
     (statements) => {
       for (const statement of statements) {
         const alias = typeAliasNamed(statement, name);
