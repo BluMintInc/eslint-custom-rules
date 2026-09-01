@@ -16,7 +16,7 @@ import {
 import {
   BOUND_UNPROVABLE,
   declarationOf,
-  resolveInEnclosingScopes,
+  resolveNameInEnclosingScopes,
   statementsOf,
 } from '../utils/lexicalScope';
 import { declaresResourceHandleResult } from '../utils/resourceHandleType';
@@ -710,8 +710,10 @@ function createReturnCycleResolver(visitorKeys: VisitorKeys) {
     from: TSESTree.Node,
     name: string,
   ): FunctionWithBody | undefined =>
-    resolveInEnclosingScopes<FunctionWithBody>(
+    resolveNameInEnclosingScopes<FunctionWithBody>(
       from,
+      name,
+      'value',
       (statements, container) => {
         const scope = bindingsOf(container, statements);
         if (!scope.has(name)) return undefined;
