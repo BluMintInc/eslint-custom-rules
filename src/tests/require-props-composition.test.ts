@@ -2086,6 +2086,21 @@ type ParentProps = { slots: { Slot: React.ComponentType } };
 const Parent = ({ slots: { Slot } }: ParentProps) => <Slot />;
 `,
     },
+    // 132. Issue #2260: `Data` annotating the props is `MyButton`'s OWN type
+    // parameter, so the component's props are caller-supplied and opaque —
+    // there is no local alias to rewrite into a composition. Resolving the
+    // annotation by statement containers alone steps past the type parameter,
+    // so the unrelated outer `type Data` answers and the rule demands a
+    // composition on a type the component never names.
+    {
+      filename: 'src/components/Foo.tsx',
+      code: `
+type Data = { label: string; disabled?: boolean; };
+function MyButton<Data>({ label, disabled }: Data) {
+  return <LoadingButton disabled={disabled}>{label}</LoadingButton>;
+}
+`,
+    },
   ],
 
   invalid: [
@@ -3831,6 +3846,38 @@ const Parent = ({ slots }: ParentProps) => {
             dependencyList: "'Child'",
             missingList: "'ChildProps'",
             primaryDep: 'ChildProps',
+          },
+        },
+      ],
+    },
+    // 102. Issue #2260 over-decline control: a shadow is namespace-specific.
+    // `MyButtonProps` is bound here as a VALUE — an enclosing parameter — which
+    // takes the name in value space only and leaves the outer `type` of that
+    // name in scope for every type position inside. Treating any same-named
+    // binder as a shadow would stop the walk at the parameter and silence a
+    // report the rule owes, trading the false positive above for a false
+    // negative. Pinned on `propsTypeName` so the assertion proves the walk
+    // reached the outer alias rather than merely that something reported.
+    {
+      filename: DEFAULT_FILENAME,
+      code: `
+type MyButtonProps = { label: string; disabled?: boolean; };
+const renderButton = (MyButtonProps: string) => {
+  const MyButton = ({ label, disabled }: MyButtonProps) => {
+    return <LoadingButton disabled={disabled}>{label}</LoadingButton>;
+  };
+  return MyButton;
+};
+`,
+      errors: [
+        {
+          messageId: 'missingPropsComposition',
+          data: {
+            componentName: 'MyButton',
+            propsTypeName: 'MyButtonProps',
+            dependencyList: "'LoadingButton'",
+            missingList: "'LoadingButtonProps'",
+            primaryDep: 'LoadingButtonProps',
           },
         },
       ],
