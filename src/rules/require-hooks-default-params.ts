@@ -5,7 +5,10 @@ import {
   TSESTree,
 } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
-import { declarationOf, resolveInEnclosingScopes } from '../utils/lexicalScope';
+import {
+  declarationOf,
+  resolveNameInEnclosingScopes,
+} from '../utils/lexicalScope';
 
 type MessageIds = 'requireDefaultParams';
 
@@ -373,9 +376,9 @@ export const requireHooksDefaultParams = createRule<[], MessageIds>({
       | TSESTree.TSTypeAliasDeclaration
       | TSESTree.TSInterfaceDeclaration
       | undefined {
-      return resolveInEnclosingScopes<
+      return resolveNameInEnclosingScopes<
         TSESTree.TSTypeAliasDeclaration | TSESTree.TSInterfaceDeclaration
-      >(from, (statements) => {
+      >(from, name, 'type', (statements) => {
         for (const statement of statements) {
           const found = typeDeclarationNamed(statement, name);
           if (found) {

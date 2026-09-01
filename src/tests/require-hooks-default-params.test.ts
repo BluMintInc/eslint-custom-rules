@@ -255,6 +255,21 @@ class Holder {
         };
       `,
     },
+    /**
+     * A type parameter binds no statement, so a resolver that walks enclosing
+     * statement containers steps straight past it to the outer alias. `Options`
+     * on the hook is its own opaque parameter whose shape is unknowable, and an
+     * unresolved name must not be read as "all optional" — the fix it invites
+     * appends ` = {}` and changes the signature (#2262)
+     */
+    {
+      code: `
+type Options = { a?: string };
+function useHook<Options>({ a }: Options) {
+  return a;
+}
+      `,
+    },
   ],
   invalid: [
     /**
@@ -1026,6 +1041,30 @@ export const useXX = ({
   options ? url : 'fallback-value-used-when-the-caller-passes-only-options';
       `,
       errors: [errorFor('useXX')],
+    },
+    /**
+     * Over-decline control for #2262. A parameter binds `Options` in VALUE
+     * space only, so the alias still answers the annotation in TYPE space and
+     * the all-optional shape is still read. Making `a` required silences this
+     * case, which is what makes the report evidence of resolution rather than
+     * a default.
+     */
+    {
+      code: `
+type Options = { a?: string };
+function makeHook(Options: string) {
+  const useHook = ({ a }: Options) => a;
+  return useHook;
+}
+      `,
+      output: `
+type Options = { a?: string };
+function makeHook(Options: string) {
+  const useHook = ({ a }: Options = {}) => a;
+  return useHook;
+}
+      `,
+      errors: [errorFor('useHook')],
     },
   ],
 });
