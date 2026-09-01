@@ -57,6 +57,7 @@ Two consequences follow from resolving names rather than matching them:
 
 - Two same-named functions in **sibling** scopes cannot see each other, so they are not a mutually recursive pair and both annotations are still reported.
 - A cycle that **crosses** a scope boundary — an inner function returning a call to the enclosing one, which returns a call to the inner — is a cycle, and both annotations are kept.
+- A **parameter** that takes the name breaks the cycle, because the call denotes the parameter rather than the outer function. In `function isEven(n: number, isOdd: (n: number) => boolean)` the body's `isOdd(...)` is the argument it was handed, so nothing is mutually recursive and both annotations are reported.
 
 ```ts
 // Reported: `isEven` and `isOdd` are declared in scopes that cannot see each

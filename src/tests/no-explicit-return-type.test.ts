@@ -5103,6 +5103,31 @@ export function outer() {
   return fact;
 }
 `,
+    // The over-decline control for the shadowed pair in `invalid` (#2265): the
+    // same two declarations without the extra parameter do close a cycle, and
+    // `tsc` raises TS7023 on both once the annotations go, so the pair stays
+    // exempt. Stopping resolution at a shadowing binder must cost nothing here.
+    `
+export function isOdd(n: number): boolean {
+  return isEven(n - 1);
+}
+export function isEven(n: number): boolean {
+  return n === 0 ? true : isOdd(n - 1);
+}
+`,
+    // The namespace control for #2265: a shadow is specific to one declaration
+    // space. A type parameter takes `isOdd` in TYPE space only, while the call
+    // resolves it as a VALUE, so the outer declaration still answers and the
+    // pair still closes the TS7023 cycle that keeps both annotations exempt.
+    // Treating any same-named binder as a shadow would report both.
+    `
+export function isOdd(n: number): boolean {
+  return isEven(n - 1);
+}
+export function isEven<isOdd>(n: number): boolean {
+  return n === 0 ? true : isOdd(n - 1);
+}
+`,
   ],
   invalid: [
     // The isolating control for the whole carve-out: a nested annotation whose
@@ -5266,6 +5291,33 @@ export function factory() {
 `,
       errors: [
         { messageId: 'noExplicitReturnTypeInferable' },
+        { messageId: 'noExplicitReturnTypeInferable' },
+        { messageId: 'noExplicitReturnTypeInferable' },
+      ],
+    },
+    // A parameter typed as a function shadows the module-scope declaration it
+    // is named after, so the call in `isEven` denotes that parameter and closes
+    // no cycle with `isOdd` (#2265). Both annotations are inferable. Reading the
+    // candidate pair off statement containers alone credits `isEven` with a
+    // recursion the code does not have and exempts two removable annotations.
+    {
+      code: `
+export function isOdd(n: number): boolean {
+  return isEven(n - 1);
+}
+export function isEven(n: number, isOdd: (n: number) => boolean): boolean {
+  return n === 0 ? true : isOdd(n - 1);
+}
+`,
+      output: `
+export function isOdd(n: number) {
+  return isEven(n - 1);
+}
+export function isEven(n: number, isOdd: (n: number) => boolean) {
+  return n === 0 ? true : isOdd(n - 1);
+}
+`,
+      errors: [
         { messageId: 'noExplicitReturnTypeInferable' },
         { messageId: 'noExplicitReturnTypeInferable' },
       ],
