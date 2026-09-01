@@ -24,11 +24,32 @@ const ajvFactory = require(eslintLib + '/shared/ajv.js');
 const ajv = ajvFactory({ strictDefaults: true });
 
 export type OptionPayload = {
-  /** `JSON.stringify` of the options array as DECLARED, before any screen. */
+  /**
+   * `JSON.stringify` of the options array as DECLARED, before any screen.
+   *
+   * Deliberately the PRE-screen form: guards seed deterministic fixture
+   * windows off this string (`rotatedWindow`), so re-pointing it at the
+   * screened shape would re-select every window and move floors that have
+   * nothing to do with the payload. To name the payload in a finding, read
+   * `effectiveKey` or `payloadLabel` instead.
+   */
   key: string;
   options: readonly unknown[];
   /** Where the payload came from, so a finding names a reproducible origin. */
   source: string;
+};
+
+/** A payload that survived the screen, carrying what the screen left behind. */
+export type ScreenedPayload = OptionPayload & {
+  /**
+   * `JSON.stringify` of the options array AFTER the screen — the payload a
+   * lint driven with this entry actually receives, which for a schema carrying
+   * `default`s is not `key`. Measured at 1.20.198: 112 of 406 synthesized
+   * payloads, across 29 of the 71 optioned rules, are rewritten on their way
+   * through, so a finding quoting `key` alone named an input that does not
+   * reproduce it (#2254).
+   */
+  effectiveKey: string;
 };
 
 /** A rule's option schema, normalized to the array form. */
@@ -49,9 +70,12 @@ export const optionSchemaOf = (rule: unknown): any[] => {
  *
  * The returned validator carries ESLint's `useDefaults`, so screening a payload
  * FILLS IN any `default` its schema declares, in place. That mirrors what a
- * consumer's config goes through, but it means the payload a rule receives can
- * differ from the `key` recorded for it — 29 of the 71 optioned rules declare
- * schema defaults, and for those `[{}]` reaches `create` already populated.
+ * consumer's config goes through and is deliberately left alone: a payload that
+ * stayed empty past the screen is a shape no consumer can deliver, so driving
+ * one would manufacture exactly the unreachable finding this screen exists to
+ * prevent. What it costs is ACCOUNTING — the payload a rule receives differs
+ * from the `key` recorded for it — and that is carried by `effectiveKey` rather
+ * than by weakening the screen (#2254).
  */
 export const payloadScreenFor = (
   rule: unknown,
@@ -169,8 +193,19 @@ export const buildOptionPayloads = (
     if (options && options.length) add(options, 'fixture');
   }
 
-  // The empty object — legal against nearly every schema here, and the shape
-  // an unguarded destructuring read (`const [{ list }] = options`) crashes on.
+  /**
+   * The empty object — legal against nearly every schema here, and the shape an
+   * unguarded destructuring read (`const [{ list }] = options`) crashes on.
+   *
+   * It reaches `create` empty only for a rule whose schema declares no
+   * `default`: for the other 29 of the 71 optioned rules the screen fills it
+   * first, so this payload arrives populated and the unguarded read it is aimed
+   * at cannot be reached through it. That is not a hole to plug — a consumer's
+   * config is defaulted the same way, so an empty payload past the screen is a
+   * shape nothing can deliver — but the payload it becomes is recorded on
+   * `effectiveKey` so a finding names the object that was actually linted
+   * (#2254).
+   */
   add([{}], 'empty-object');
 
   const head = optionSchemaOf(rule)[0];
@@ -192,24 +227,46 @@ export const buildOptionPayloads = (
 };
 
 export type ScreenedPayloads = {
-  valid: OptionPayload[];
+  valid: ScreenedPayload[];
   /** Payloads ESLint's validator rejects, which no consumer could write. */
   rejected: OptionPayload[];
 };
+
+/** True when the screen rewrote the payload on its way through. */
+export const wasDefaulted = (payload: ScreenedPayload): boolean =>
+  payload.effectiveKey !== payload.key;
+
+/**
+ * How a finding names a payload: the declared shape, plus what the screen
+ * turned it into when the two differ.
+ *
+ * Shared rather than spelled per guard so the three that report a payload
+ * cannot drift into quoting different things — the same reason this whole file
+ * exists.
+ */
+export const payloadLabel = (payload: ScreenedPayload): string =>
+  wasDefaulted(payload)
+    ? `${payload.key} (screened to ${payload.effectiveKey})`
+    : payload.key;
 
 export const screenPayloads = (
   rule: unknown,
   payloads: readonly OptionPayload[],
 ): ScreenedPayloads => {
   const validate = payloadScreenFor(rule);
-  const valid: OptionPayload[] = [];
+  const valid: ScreenedPayload[] = [];
   const rejected: OptionPayload[] = [];
   for (const payload of payloads) {
     if (validate && !validate(payload.options as unknown[])) {
       rejected.push(payload);
       continue;
     }
-    valid.push(payload);
+    /**
+     * Read AFTER the call, never before: `validate` fills in the schema's
+     * defaults IN PLACE, so `payload.options` is the screened shape from here
+     * on and is what every consumer of `valid` goes on to lint with.
+     */
+    valid.push({ ...payload, effectiveKey: JSON.stringify(payload.options) });
   }
   return { valid, rejected };
 };

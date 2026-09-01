@@ -6,6 +6,7 @@ import {
   buildOptionPayloads,
   hashOffset,
   optionSchemaOf,
+  payloadLabel,
   screenPayloads,
 } from '../utils/syntheticRuleOptions';
 
@@ -624,7 +625,9 @@ const sweepOptions = (
           } catch (error) {
             crashes.push({
               rule: name,
-              snippet: `${snippet.id} under ${payload.source} ${payload.key}`,
+              snippet: `${snippet.id} under ${payload.source} ${payloadLabel(
+                payload,
+              )}`,
               file,
               message: describeThrow(error),
             });

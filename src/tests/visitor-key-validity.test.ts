@@ -5,6 +5,7 @@ import { rules } from '../index';
 import {
   buildOptionPayloads,
   optionSchemaOf,
+  payloadLabel,
   screenPayloads,
 } from '../utils/syntheticRuleOptions';
 
@@ -186,7 +187,7 @@ const optionArmsFor = (name: string, rule: unknown): OptionArm[] => {
   const { valid } = screenPayloads(rule, buildOptionPayloads(rule));
   for (const payload of valid) {
     arms.push({
-      label: `${payload.source} ${payload.key}`,
+      label: `${payload.source} ${payloadLabel(payload)}`,
       options: payload.options,
     });
   }
