@@ -1,10 +1,13 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import * as parser from '@typescript-eslint/parser';
 import {
+  BindingNamespace,
+  bindsNameOutsideStatements,
   BOUND_UNPROVABLE,
   declarationOf,
   enclosingStatementLists,
   resolveInEnclosingScopes,
+  resolveNameInEnclosingScopes,
   ScopeMatch,
   statementsOf,
 } from '../utils/lexicalScope';
@@ -300,5 +303,251 @@ describe('enclosingStatementLists', () => {
     ).body;
 
     expect(lists).toEqual([blockBody, moduleBody, program.body]);
+  });
+});
+
+describe('bindsNameOutsideStatements', () => {
+  /**
+   * Every binder listed here is one `statementsOf` cannot report, so each row is
+   * a scope the plain walk steps straight past (#2257).
+   */
+  it.each([
+    [
+      'function type parameter',
+      'function f<Taken>() {}',
+      AST_NODE_TYPES.FunctionDeclaration,
+      'type',
+    ],
+    [
+      'class type parameter',
+      'class C<Taken> {}',
+      AST_NODE_TYPES.ClassDeclaration,
+      'type',
+    ],
+    [
+      'type alias type parameter',
+      'type A<Taken> = Taken;',
+      AST_NODE_TYPES.TSTypeAliasDeclaration,
+      'type',
+    ],
+    [
+      'interface type parameter',
+      'interface I<Taken> { x: Taken }',
+      AST_NODE_TYPES.TSInterfaceDeclaration,
+      'type',
+    ],
+    [
+      'class expression name',
+      'const C = class Taken {};',
+      AST_NODE_TYPES.ClassExpression,
+      'type',
+    ],
+    [
+      'function parameter',
+      'function f(Taken) {}',
+      AST_NODE_TYPES.FunctionDeclaration,
+      'value',
+    ],
+    [
+      'destructured parameter',
+      'function f({ a: { Taken } }) {}',
+      AST_NODE_TYPES.FunctionDeclaration,
+      'value',
+    ],
+    [
+      'rest parameter',
+      'function f(...Taken) {}',
+      AST_NODE_TYPES.FunctionDeclaration,
+      'value',
+    ],
+    [
+      'defaulted parameter',
+      'function f(Taken = 1) {}',
+      AST_NODE_TYPES.FunctionDeclaration,
+      'value',
+    ],
+    [
+      'arrow parameter',
+      'const f = (Taken) => Taken;',
+      AST_NODE_TYPES.ArrowFunctionExpression,
+      'value',
+    ],
+    [
+      'function expression name',
+      'const f = function Taken() {};',
+      AST_NODE_TYPES.FunctionExpression,
+      'value',
+    ],
+    [
+      'catch parameter',
+      'try {} catch (Taken) {}',
+      AST_NODE_TYPES.CatchClause,
+      'value',
+    ],
+    [
+      'for-of head',
+      'for (const Taken of xs) {}',
+      AST_NODE_TYPES.ForOfStatement,
+      'value',
+    ],
+    [
+      'for-in head',
+      'for (const Taken in xs) {}',
+      AST_NODE_TYPES.ForInStatement,
+      'value',
+    ],
+    [
+      'classic for head',
+      'for (let Taken = 0; ; ) {}',
+      AST_NODE_TYPES.ForStatement,
+      'value',
+    ],
+  ])(
+    'reports a %s as binding the name',
+    (_label, code, containerType, namespace) => {
+      const container = findNode(parse(code), containerType as AST_NODE_TYPES);
+      expect(
+        bindsNameOutsideStatements(
+          container,
+          'Taken',
+          namespace as BindingNamespace,
+        ),
+      ).toBe(true);
+    },
+  );
+
+  /**
+   * The two declaration spaces are tested separately because conflating them
+   * converts a resolution hole into an over-decline: `function f(Props) {}`
+   * leaves `type Props` perfectly resolvable inside `f`.
+   */
+  it('keeps the type and value spaces separate', () => {
+    const typeParam = parse('function f<Props>() {}').body[0];
+    expect(bindsNameOutsideStatements(typeParam, 'Props', 'type')).toBe(true);
+    expect(bindsNameOutsideStatements(typeParam, 'Props', 'value')).toBe(false);
+
+    const valueParam = parse('function f(Props) {}').body[0];
+    expect(bindsNameOutsideStatements(valueParam, 'Props', 'value')).toBe(true);
+    expect(bindsNameOutsideStatements(valueParam, 'Props', 'type')).toBe(false);
+  });
+
+  /**
+   * `typeParameters` is the declaration that binds `<T>` on one node kind and
+   * the arguments supplied at a call site on another. The second holds type
+   * nodes with no `name`, so conflating them throws rather than answering.
+   */
+  it.each([
+    ['call', 'useState<Taken>(null);', AST_NODE_TYPES.CallExpression],
+    ['type reference', 'type B = Wrapper<Taken>;', AST_NODE_TYPES.TSTypeReference],
+    ['new', 'new Map<Taken, Taken>();', AST_NODE_TYPES.NewExpression],
+    [
+      'instantiation expression',
+      'const d = fn<Taken>;',
+      AST_NODE_TYPES.TSInstantiationExpression,
+    ],
+  ])('treats a %s type ARGUMENT as binding nothing', (_label, code, type) => {
+    const container = findNode(parse(code), type as AST_NODE_TYPES);
+    expect(bindsNameOutsideStatements(container, 'Taken', 'type')).toBe(false);
+    expect(bindsNameOutsideStatements(container, 'Taken', 'value')).toBe(false);
+  });
+
+  it('reports nothing for a container binding a different name', () => {
+    const program = parse('function f<Other>(other) {}');
+    expect(bindsNameOutsideStatements(program.body[0], 'Taken', 'type')).toBe(
+      false,
+    );
+    expect(bindsNameOutsideStatements(program.body[0], 'Taken', 'value')).toBe(
+      false,
+    );
+  });
+});
+
+describe('resolveNameInEnclosingScopes', () => {
+  it('stops at a type parameter shadowing the outer declaration', () => {
+    const program = parse(`
+      type Target = 1;
+      function host<Target>() {
+        const marker = 1;
+      }
+    `);
+    const marker = findNode(program, AST_NODE_TYPES.VariableDeclarator);
+
+    // The plain walk cannot see the type parameter, so the outer alias answers.
+    expect(resolveInEnclosingScopes(marker, aliasNamed('Target'))).toBe(
+      declarationOf(program.body[0]),
+    );
+    expect(
+      resolveNameInEnclosingScopes(marker, 'Target', 'type', aliasNamed('Target')),
+    ).toBeUndefined();
+  });
+
+  it('suppresses the fallback behind a shadow', () => {
+    const program = parse(`
+      function host<Target>() {
+        const marker = 1;
+      }
+    `);
+    const marker = findNode(program, AST_NODE_TYPES.VariableDeclarator);
+    const fallback = jest.fn(() => ({ from: 'fallback' } as never));
+
+    // The fallback describes the file's top level, which the reference cannot
+    // reach past the shadow — the same reasoning BOUND_UNPROVABLE encodes.
+    expect(
+      resolveNameInEnclosingScopes(
+        marker,
+        'Target',
+        'type',
+        aliasNamed('Target'),
+        fallback,
+      ),
+    ).toBeUndefined();
+    expect(fallback).not.toHaveBeenCalled();
+  });
+
+  it('prefers a declaration the shadowing container itself holds', () => {
+    const program = parse(`
+      type Target = 1;
+      function host<Target>() {
+        type Target = 2;
+        const marker = 1;
+      }
+    `);
+    const marker = findNode(program, AST_NODE_TYPES.VariableDeclarator);
+    const inner = findNode<TSESTree.TSTypeAliasDeclaration>(
+      findNode(program, AST_NODE_TYPES.BlockStatement),
+      AST_NODE_TYPES.TSTypeAliasDeclaration,
+    );
+
+    expect(
+      resolveNameInEnclosingScopes(marker, 'Target', 'type', aliasNamed('Target')),
+    ).toBe(inner);
+  });
+
+  it('resolves normally when no binder shadows the name', () => {
+    const program = parse(`
+      type Target = 1;
+      function host<Other>() {
+        const marker = 1;
+      }
+    `);
+    const marker = findNode(program, AST_NODE_TYPES.VariableDeclarator);
+
+    expect(
+      resolveNameInEnclosingScopes(marker, 'Target', 'type', aliasNamed('Target')),
+    ).toBe(declarationOf(program.body[0]));
+  });
+
+  it('ignores a value binder when resolving a type name', () => {
+    const program = parse(`
+      type Target = 1;
+      function host(Target) {
+        const marker = 1;
+      }
+    `);
+    const marker = findNode(program, AST_NODE_TYPES.VariableDeclarator);
+
+    expect(
+      resolveNameInEnclosingScopes(marker, 'Target', 'type', aliasNamed('Target')),
+    ).toBe(declarationOf(program.body[0]));
   });
 });

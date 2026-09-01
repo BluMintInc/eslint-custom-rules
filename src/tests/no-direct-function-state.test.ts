@@ -304,6 +304,55 @@ setX(props.onClose);
       `,
       output: null,
     },
+
+    // A type parameter shadows a same-named alias for every type position
+    // inside it, so the outer `() => void` says nothing about this state and
+    // cannot justify a report — let alone the thunk rewrite it used to
+    // produce (#2257).
+    {
+      code: `
+type ToClose = () => void;
+function useThing<ToClose>(initial: ToClose) {
+  const [state, setState] = useState<ToClose | undefined>(undefined);
+  const next = initial;
+  setState(next);
+  return state;
+}
+      `,
+      output: null,
+    },
+
+    // The same shadowing through a class type parameter, where the reference
+    // sits two containers below the binder.
+    {
+      code: `
+type Handler = () => void;
+class Store<Handler> {
+  run(initial: Handler) {
+    const [state, setState] = useState<Handler | null>(null);
+    setState(initial);
+    return state;
+  }
+}
+      `,
+      output: null,
+    },
+
+    // A VALUE binder must not shadow a type name: the parameter named `ToClose`
+    // leaves the alias resolvable, so this still resolves and stays valid only
+    // because the setter argument is a thunk.
+    {
+      code: `
+type ToClose = () => void;
+function useThing(ToClose: number) {
+  const [state, setState] = useState<ToClose | undefined>(undefined);
+  const next = () => {};
+  setState(() => next);
+  return state;
+}
+      `,
+      output: null,
+    },
   ],
 
   invalid: [
@@ -321,6 +370,31 @@ type ToClose = () => void;
 const [onCloseState, setOnCloseState] = useState<ToClose | undefined>(undefined);
 const newOnClose = () => {};
 setOnCloseState(() => newOnClose);
+      `,
+    },
+
+    // Over-decline control for the shadow test: a PARAMETER named `ToClose`
+    // binds only in value space, so the alias still answers here and the report
+    // must survive. Declining on any same-named binder would silence this.
+    {
+      code: `
+type ToClose = () => void;
+function useThing(ToClose: number) {
+  const [state, setState] = useState<ToClose | undefined>(undefined);
+  const next = () => {};
+  setState(next);
+  return state;
+}
+      `,
+      errors: [{ messageId: 'noDirectFunctionState' }],
+      output: `
+type ToClose = () => void;
+function useThing(ToClose: number) {
+  const [state, setState] = useState<ToClose | undefined>(undefined);
+  const next = () => {};
+  setState(() => next);
+  return state;
+}
       `,
     },
 

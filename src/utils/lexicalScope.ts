@@ -148,3 +148,188 @@ export function enclosingStatementLists(
   }
   return lists;
 }
+
+/**
+ * Which of TypeScript's two declaration spaces a name is being resolved in.
+ *
+ * The distinction is load-bearing rather than pedantic: `function f<Props>()`
+ * shadows a `type Props` for every type position inside `f` while leaving a
+ * `const Props` untouched, and a parameter `(batch) => …` does the reverse.
+ * Testing both spaces at once would decline on a collision that TypeScript does
+ * not consider one, turning a resolution hole into an over-decline.
+ */
+export type BindingNamespace = 'type' | 'value';
+
+/**
+ * Whether a pattern binds `name`, looking through destructuring and defaults.
+ */
+function patternBindsName(
+  node: TSESTree.Node | null | undefined,
+  name: string,
+): boolean {
+  if (!node) {
+    return false;
+  }
+  switch (node.type) {
+    case AST_NODE_TYPES.Identifier:
+      return node.name === name;
+    case AST_NODE_TYPES.ArrayPattern:
+      return node.elements.some((element) => patternBindsName(element, name));
+    case AST_NODE_TYPES.ObjectPattern:
+      return node.properties.some((property) =>
+        patternBindsName(
+          property.type === AST_NODE_TYPES.RestElement
+            ? property.argument
+            : property.value,
+          name,
+        ),
+      );
+    case AST_NODE_TYPES.AssignmentPattern:
+      return patternBindsName(node.left, name);
+    case AST_NODE_TYPES.RestElement:
+      return patternBindsName(node.argument, name);
+    default:
+      return false;
+  }
+}
+
+/**
+ * Whether a `for` head declares `name`, for any of the three loop spellings.
+ */
+function forHeadBindsName(node: TSESTree.Node, name: string): boolean {
+  const head =
+    node.type === AST_NODE_TYPES.ForStatement
+      ? node.init
+      : node.type === AST_NODE_TYPES.ForOfStatement ||
+          node.type === AST_NODE_TYPES.ForInStatement
+        ? node.left
+        : undefined;
+  return head?.type === AST_NODE_TYPES.VariableDeclaration
+    ? head.declarations.some((declarator) =>
+        patternBindsName(declarator.id, name),
+      )
+    : false;
+}
+
+/**
+ * Whether a container binds `name` somewhere OTHER than its statement list.
+ *
+ * {@link statementsOf} recognises five containers, so every binder that is not a
+ * statement — a type parameter, a function parameter, a `catch` parameter, a
+ * `for` head, a function or class expression's own name — introduces a scope the
+ * walk cannot see. That makes the walk step straight past a shadow and let an
+ * outer declaration answer for a name the reference does not denote, which is
+ * precisely the failure move 3 of this module's contract forbids: an unrelated
+ * `type ToClose = () => void` answered for the type parameter of
+ * `function useThing<ToClose>(…)`, and `no-direct-function-state` reported —
+ * and rewrote — code whose state type it had never seen (#2257).
+ *
+ * A shadow is deliberately not a resolution. The binder proves only that the
+ * name is taken here, never what it denotes, so a caller must treat it exactly
+ * as {@link BOUND_UNPROVABLE} — stop, and answer nothing.
+ */
+export function bindsNameOutsideStatements(
+  container: TSESTree.Node,
+  name: string,
+  namespace: BindingNamespace,
+): boolean {
+  const node = container as TSESTree.Node & {
+    typeParameters?:
+      | TSESTree.TSTypeParameterDeclaration
+      | TSESTree.TSTypeParameterInstantiation;
+    params?: readonly TSESTree.Node[];
+    id?: TSESTree.Identifier | null;
+  };
+
+  if (namespace === 'type') {
+    // `typeParameters` names two unrelated things: the DECLARATION that binds
+    // `<T>` on a function or class, and the INSTANTIATION that supplies `<Foo>`
+    // at a call, `new`, or type reference. Only the first binds anything, and
+    // the second holds type nodes carrying no `name` at all, so reading one as
+    // the other throws on any ancestor that passes type arguments.
+    const declared =
+      node.typeParameters?.type === AST_NODE_TYPES.TSTypeParameterDeclaration
+        ? node.typeParameters.params
+        : undefined;
+    return (
+      declared?.some((parameter) => parameter.name.name === name) === true ||
+      (container.type === AST_NODE_TYPES.ClassExpression &&
+        node.id?.name === name)
+    );
+  }
+
+  if (
+    (container.type === AST_NODE_TYPES.FunctionExpression ||
+      container.type === AST_NODE_TYPES.ClassExpression) &&
+    node.id?.name === name
+  ) {
+    return true;
+  }
+  if (
+    container.type === AST_NODE_TYPES.CatchClause &&
+    patternBindsName(container.param, name)
+  ) {
+    return true;
+  }
+  if (forHeadBindsName(container, name)) {
+    return true;
+  }
+  // `TSTypeParameterDeclaration` also carries `params`, of a node kind no
+  // pattern arm matches, so a type parameter cannot leak into this space.
+  return (
+    isFunctionLike(container) &&
+    node.params?.some((parameter) => patternBindsName(parameter, name)) === true
+  );
+}
+
+function isFunctionLike(node: TSESTree.Node): boolean {
+  return (
+    node.type === AST_NODE_TYPES.FunctionDeclaration ||
+    node.type === AST_NODE_TYPES.FunctionExpression ||
+    node.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+    node.type === AST_NODE_TYPES.TSDeclareFunction ||
+    node.type === AST_NODE_TYPES.TSEmptyBodyFunctionExpression
+  );
+}
+
+/**
+ * {@link resolveInEnclosingScopes}, stopped by the binders it cannot see.
+ *
+ * The name and the space it is resolved in have to be stated by the caller
+ * because the shadow test needs them and `matchIn` only closes over them. That
+ * is the point of the separate entry rather than an optional argument: a caller
+ * resolving a name gets the shadow test by writing the name down, instead of by
+ * remembering that a hazard exists.
+ */
+export function resolveNameInEnclosingScopes<T>(
+  from: TSESTree.Node,
+  name: string,
+  namespace: BindingNamespace,
+  matchIn: (
+    statements: readonly TSESTree.Node[],
+    container: TSESTree.Node,
+  ) => ScopeMatch<T>,
+  fallback?: () => T | undefined,
+): T | undefined {
+  let current: TSESTree.Node | undefined = from;
+  while (current) {
+    const statements = statementsOf(current);
+    if (statements) {
+      const match = matchIn(statements, current);
+      if (match === BOUND_UNPROVABLE) {
+        return undefined;
+      }
+      if (match !== undefined) {
+        return match as T;
+      }
+    }
+    // Tested after the statement list, so a container that both declares the
+    // name and binds it — `function f<T>() { type T = …; }` — resolves to the
+    // declaration the reference actually denotes.
+    if (bindsNameOutsideStatements(current, name, namespace)) {
+      return undefined;
+    }
+    current = current.parent as TSESTree.Node | undefined;
+  }
+  return fallback?.();
+}

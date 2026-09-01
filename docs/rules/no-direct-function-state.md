@@ -41,6 +41,18 @@ The rule uses purely syntactic detection (no type-checker required):
 > ```
 >
 > Because the innermost declaration wins, an inner alias shadows a same-named outer one, and an alias declared in a sibling scope is not in scope and does not resolve. TypeScript hoists type declarations, so an alias written *after* the `useState` call that references it still resolves.
+>
+> A **type parameter** shadows an alias of the same name just as an inner alias does, and the lookup stops there rather than reaching past it:
+>
+> ```ts
+> type ToClose = () => void;
+> function useThing<ToClose>(initial: ToClose) {
+>   const [state, setState] = useState<ToClose | undefined>(undefined);
+>   setState(initial); // NOT flagged — `ToClose` here is the type parameter
+> }
+> ```
+>
+> Only type-space binders shadow a type name. A value named `ToClose` — a parameter, a `catch` binding, a `for` head — leaves the alias resolvable, so state typed with it is still checked.
 
 > **Optional chaining and type assertions are transparent.** All three signals read through `?.`, `as T`, `<T>x`, `x satisfies T`, `x!` and `fn<T>`, because none of them changes the value that reaches the setter. `setX(props?.onClose)` is flagged exactly like `setX(props.onClose)` — when `props` is present and `onClose` is a function, React still invokes it as an updater — and the fix keeps the original expression verbatim inside the thunk (`setX(() => props?.onClose)`), so it cannot throw where the original did not. The same transparency preserves the carve-outs in the other direction: `setState(getHandler?.())` is a call, so it stays exempt just like `setState(getHandler())`.
 
