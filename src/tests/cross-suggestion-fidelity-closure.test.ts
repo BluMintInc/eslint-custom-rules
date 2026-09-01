@@ -800,16 +800,16 @@ for (const [name, code] of [
  * does not move them while a harness that lost most of the corpus does. Move a
  * floor only WITH the measurement it is cut from.
  */
-const FIXTURE_FLOOR = 19500; // measured 20187
-const PAIR_FLOOR = 460; // measured 523
-const CROSS_PAIR_FLOOR = 210; // measured 246
-const REWRITE_FLOOR = 460; // measured 523
-const CROSS_REWRITE_FLOOR = 210; // measured 246
-const COMPARISON_FLOOR = 3600; // measured 4124
-const CROSS_COMPARISON_FLOOR = 1850; // measured 2142
-const OFFERED_FLOOR = 550; // measured 610
+const FIXTURE_FLOOR = 22500; // measured 23973
+const PAIR_FLOOR = 540; // measured 598
+const CROSS_PAIR_FLOOR = 235; // measured 261
+const REWRITE_FLOOR = 540; // measured 600
+const CROSS_REWRITE_FLOOR = 235; // measured 261
+const COMPARISON_FLOOR = 4200; // measured 4624
+const CROSS_COMPARISON_FLOOR = 2050; // measured 2270
+const OFFERED_FLOOR = 620; // measured 690
 /** Owners whose fixtures the sweep walks — the denominator of every floor above. */
-const OWNER_FLOOR = 185;
+const OWNER_FLOOR = 185; // measured 194
 
 /**
  * Suggestion-emitting rules that never fire on a FOREIGN fixture, so this
