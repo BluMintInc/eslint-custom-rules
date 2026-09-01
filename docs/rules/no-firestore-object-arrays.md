@@ -17,6 +17,8 @@ An element type spelled by name (`Comment[]`, `Array<Comment>`, `ReadonlyArray<C
 
 The nearest declaration wins, so an inner declaration shadows a same-named outer one. A declaration in a scope the reference cannot see — a sibling function body, or another module — is not consulted, and an unresolvable name keeps the conservative non-object classification rather than being assumed to be an object.
 
+A **type parameter** shadows the same way. In `interface UserProfile<Friend> { friends: Friend[] }` the element type is the interface's own opaque parameter, not an outer `Friend` declaration, so it stays unresolved and keeps the non-object classification. Only type-space binders shadow a type name: a value named `Friend` — a parameter, a `catch` binding, a `for` head — leaves the declaration resolvable.
+
 ```ts
 // File: functions/src/types/firestore/Post.ts
 export function buildDefaults() {

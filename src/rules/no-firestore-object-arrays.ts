@@ -3,7 +3,7 @@ import { createRule } from '../utils/createRule';
 import {
   BOUND_UNPROVABLE,
   declarationOf,
-  resolveInEnclosingScopes,
+  resolveNameInEnclosingScopes,
   ScopeMatch,
 } from '../utils/lexicalScope';
 
@@ -444,8 +444,10 @@ export const noFirestoreObjectArrays = createRule<[], MessageIds>({
       from: TSESTree.Node,
       name: string,
     ): ResolvedTypeName | undefined =>
-      resolveInEnclosingScopes<ResolvedTypeName>(
+      resolveNameInEnclosingScopes<ResolvedTypeName>(
         from,
+        name,
+        'type',
         (statements) => typeDeclarationIn(statements, name),
         () => {
           if (interfaceNames.has(name)) return { kind: 'interface' };
@@ -461,8 +463,10 @@ export const noFirestoreObjectArrays = createRule<[], MessageIds>({
       from: TSESTree.Node,
       name: string,
     ): TSESTree.ArrayExpression | undefined =>
-      resolveInEnclosingScopes<TSESTree.ArrayExpression>(
+      resolveNameInEnclosingScopes<TSESTree.ArrayExpression>(
         from,
+        name,
+        'value',
         (statements) => constArrayIn(statements, name),
         () => constArrayNameToLiteral.get(name),
       );
