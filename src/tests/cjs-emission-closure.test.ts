@@ -62,11 +62,20 @@ import {
   suggestionRuleNames,
   typeAwareRuleNames,
 } from '../utils/fixtureCorpus';
+import { overrideRulesFor } from '../utils/composedFixConfig';
 
 /* eslint-disable @typescript-eslint/no-var-requires */
 const plugin = require('../index') as {
   rules: Record<string, unknown>;
-  configs: { recommended: { rules: Record<string, unknown> } };
+  configs: {
+    recommended: {
+      rules: Record<string, unknown>;
+      overrides?: readonly {
+        files?: readonly string[];
+        rules?: Record<string, unknown>;
+      }[];
+    };
+  };
 };
 /* eslint-enable @typescript-eslint/no-var-requires */
 
@@ -632,7 +641,13 @@ for (const testCase of composedCases) {
   try {
     fixed = linter.verifyAndFix(
       testCase.code,
-      configFor(FIX_CONFIG, testCase),
+      configFor(
+        {
+          ...FIX_CONFIG,
+          ...overrideRulesFor(testCase.filename, silentWithoutProgramRuleNames),
+        },
+        testCase,
+      ),
       { filename: testCase.filename },
     );
   } catch {
@@ -894,15 +909,27 @@ describe('the CJS emission guard is load-bearing', () => {
     expect(Object.keys(FIX_CONFIG).length).toBeGreaterThanOrEqual(187);
     // The type-aware rules this guard once dropped for no stated reason must
     // now compose like any other, or the coverage the lift bought is silently
-    // handed back. 15 of the 16 ship in recommended (`enforce-date-ttime` is
-    // deliberately absent from it); a floor of 5 would readmit the drop for
-    // 10 of them.
-    const typeAwareInConfig = [...typeAwareRuleNames].filter(
-      (name) => PREFIX + name in plugin.configs.recommended.rules,
+    // handed back. All 16 ship in recommended: `enforce-date-ttime` through an
+    // `overrides` entry for `src/**` rather than the flat `rules` map, which is
+    // what a flat read once recorded as it being "deliberately absent".
+    const overrideIds = new Set(
+      (plugin.configs.recommended.overrides || []).flatMap((override) =>
+        Object.keys(override.rules || {}),
+      ),
     );
-    expect(typeAwareInConfig.length).toBeGreaterThanOrEqual(15);
+    const typeAwareInConfig = [...typeAwareRuleNames].filter(
+      (name) =>
+        PREFIX + name in plugin.configs.recommended.rules ||
+        overrideIds.has(PREFIX + name),
+    );
+    expect(typeAwareInConfig.length).toBeGreaterThanOrEqual(16); // measured 16
+    // An override-carried rule composes on the paths its glob names rather than
+    // globally, so it is satisfied by the override rather than by `FIX_CONFIG`.
     expect(
-      typeAwareInConfig.filter((name) => !(PREFIX + name in FIX_CONFIG)),
+      typeAwareInConfig.filter(
+        (name) =>
+          !(PREFIX + name in FIX_CONFIG) && !overrideIds.has(PREFIX + name),
+      ),
     ).toEqual([]);
   });
 

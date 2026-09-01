@@ -7,7 +7,15 @@ import { ESLint } from 'eslint';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const plugin = require('..') as {
   rules: Record<string, { meta?: { schema?: unknown } }>;
-  configs: { recommended: { rules: Record<string, unknown> } };
+  configs: {
+    recommended: {
+      rules: Record<string, unknown>;
+      overrides?: readonly {
+        files?: readonly string[];
+        rules?: Record<string, unknown>;
+      }[];
+    };
+  };
 };
 
 const PREFIX = '@blumintinc/blumint/';
@@ -268,12 +276,28 @@ export function severityOf(entry: unknown): string | null {
  * enables. A rule set to 'off' or absent from the config gates nothing, so its
  * documented severity is not asserted — the same scope
  * `recommended-severity-consistency.test.ts` uses.
+ *
+ * That scope is BOTH the base `rules` map and every `overrides[]` block: a rule
+ * reachable only through an override — `enforce-date-ttime`, for `src/**` — is
+ * still enabled in recommended, just for a narrower file set. Reading `rules`
+ * alone is exactly the drift #1734 fixed in the guard this claims parity with,
+ * and the claim outlived the parity. That guard separately asserts no rule is
+ * enabled at two different severities, so the first enabling entry is the only
+ * one there is.
  */
 export function shippedSeverity(ruleName: string): string | null {
-  const severity = severityOf(
-    plugin.configs.recommended.rules[`${PREFIX}${ruleName}`],
-  );
-  return severity === 'error' || severity === 'warn' ? severity : null;
+  const id = `${PREFIX}${ruleName}`;
+  const configured = [
+    plugin.configs.recommended.rules[id],
+    ...(plugin.configs.recommended.overrides || []).map(
+      (override) => override.rules?.[id],
+    ),
+  ];
+  for (const entry of configured) {
+    const severity = severityOf(entry);
+    if (severity === 'error' || severity === 'warn') return severity;
+  }
+  return null;
 }
 
 /**
