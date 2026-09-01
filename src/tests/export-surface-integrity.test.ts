@@ -568,6 +568,22 @@ const removals: Removal[] = [];
 const nonTsExcluded = new Set<string>();
 let considered = 0;
 let injected = 0;
+/**
+ * Perturbation accounting. `injectExports` rewrites the fixture before the
+ * fixer is asked anything, so a fixer that declines the EXPORTED text may
+ * simply be declining the injection — several rules withhold a rename on an
+ * exported binding, because renaming one breaks every importer. Asking the
+ * same fixer the same question about the fixture AS WRITTEN separates "this
+ * fixer has nothing to say here" from "the perturbation is what silenced it",
+ * and counts the coverage this guard's own scaffolding costs it.
+ *
+ * The companion arm — whether a report lands INSIDE an injected `export `
+ * token — is gated in `cross-export-surface-integrity.test.ts`, which screens
+ * these same injected texts with every rule the plugin ships. The reports this
+ * file sees are a subset of that population, so the gate there covers both.
+ */
+let perturbationFixLost = 0;
+const perturbationFixLostByRule = new Map<string, number>();
 let rewritten = 0;
 /** Rewritten surfaces that carried a default export; see `hadDefault`. */
 let defaultBearing = 0;
@@ -657,6 +673,24 @@ for (const suite of harvested.suites) {
         testCase.options,
       );
       if (!outcome || !outcome.rewritten) {
+        // Only meaningful where the injection actually changed the text: an
+        // already-exporting fixture IS its own bare form.
+        if (exported !== testCase.code) {
+          const bare = removalFor(
+            ruleId,
+            testCase.code,
+            jsx,
+            filename,
+            testCase.options,
+          );
+          if (bare && bare.rewritten) {
+            perturbationFixLost++;
+            perturbationFixLostByRule.set(
+              ruleName,
+              (perturbationFixLostByRule.get(ruleName) || 0) + 1,
+            );
+          }
+        }
         continue;
       }
       rewritten++;
@@ -831,6 +865,76 @@ console.log(
     `${injected} carrying an export surface / ${rewritten} rewritten across ` +
     `${rulesExercised.size} rules`,
 );
+console.log(
+  `[export-surface-integrity] perturbation: ${perturbationFixLost} fix(es) lost ` +
+    `to the injection across ${perturbationFixLostByRule.size} rule(s) ` +
+    `${JSON.stringify([...perturbationFixLostByRule].sort((a, b) => b[1] - a[1]))}`,
+);
+
+/**
+ * The rules whose fixer rewrites a fixture AS WRITTEN but declines it once
+ * `injectExports` has exported every declaration. Each consults exportedness
+ * in its own source, and the injection flips that input.
+ *
+ * Demonstrated on `global-const-style`: the rename is withheld on an exported
+ * binding, because renaming one breaks every importer.
+ *
+ *   const myConfigValue = { a: 1 };        -> const MY_CONFIG_VALUE = { a: 1 } as const;
+ *   export const myConfigValue = { a: 1 }; -> export const myConfigValue = { a: 1 } as const;
+ *
+ * That is the sharpest edge of the perturbation: a rename is the likeliest way
+ * for a fixer to drop a name from the export surface, which is the defect this
+ * file exists to catch, and the injection withholds it. The guard needs a
+ * surface to break and so cannot stop perturbing — the answer is to MEASURE
+ * the cost and gate it, rather than leave it behind a `rewritten` total that
+ * only ever registers a rule contributing NOWHERE.
+ *
+ * Two-way audited: a rule that starts losing fixes fails, and a listed rule
+ * that stops losing them fails too.
+ */
+const PERTURBATION_FIX_LOST = new Set([
+  'global-const-style',
+  'no-unnecessary-verb-suffix',
+  'enforce-centralized-mock-firestore',
+  'consistent-callback-naming',
+  'enforce-exported-function-types',
+  'enforce-react-type-naming',
+  'no-unnecessary-destructuring-rename',
+  'enforce-timestamp-now',
+  'vertically-group-related-functions',
+  'prefer-type-over-interface',
+  'enforce-firestore-set-merge',
+]);
+
+describe('injectExports is gated as a perturbation, not trusted as a read', () => {
+  it('names every rule whose fixer the injection silences', () => {
+    expect(
+      [...perturbationFixLostByRule.keys()].filter(
+        (name) => !PERTURBATION_FIX_LOST.has(name),
+      ),
+    ).toEqual([]);
+  });
+
+  it('carries no stale fix-loss entry', () => {
+    expect(
+      [...PERTURBATION_FIX_LOST].filter(
+        (name) => !perturbationFixLostByRule.has(name),
+      ),
+    ).toEqual([]);
+  });
+
+  /**
+   * The ceiling sits just above the measured cost so a change that widens the
+   * blind spot registers; the floor sits just under it so a harness that
+   * stopped perturbing — and therefore stopped measuring anything — fails
+   * rather than reading clean.
+   */
+  it('holds the perturbation cost to its measured size', () => {
+    expect(perturbationFixLost).toBeLessThanOrEqual(350); // measured 287
+    expect(perturbationFixLost).toBeGreaterThanOrEqual(220); // measured 287
+    expect(perturbationFixLostByRule.size).toBeGreaterThanOrEqual(8); // measured 11
+  });
+});
 
 describe('the export-surface guard is load-bearing', () => {
   /**
