@@ -97,6 +97,7 @@
 import { Linter, Rule } from 'eslint';
 import {
   harvestFixtureCorpus,
+  harvestOnce,
   defaultFilenameFor,
   defineCorpusParsers,
   parserKeyFor,
@@ -279,6 +280,26 @@ type Finding = {
 };
 
 const corpus = harvestFixtureCorpus();
+
+/**
+ * Sizes of the populations this file sweeps, each cut just under its
+ * measurement.
+ *
+ * They carry the whole of the "is the corpus still here" claim, because every
+ * other check on the sweep compares two numbers the corpus itself produced and
+ * so shrinks with it.
+ */
+const SWEPT_FLOOR = 23_500; // measured 23,932
+const VALID_BUCKET_FLOOR = 9_100; // measured 9,353
+const INVALID_BUCKET_FLOOR = 10_000; // measured 10,113
+const OUTPUT_BUCKET_FLOOR = 4_350; // measured 4,466
+const RAW_DECLARED_FLOOR = 19_400; // measured 19,605
+/**
+ * The builder's one discard: a case repeated within a rule under all of its
+ * configuration. Capped just above its measurement so a builder that started
+ * dropping distinct cases fails rather than widening this gap in silence.
+ */
+const DEDUP_CEILING = 200; // measured 139
 
 const stats = {
   considered: 0,
@@ -616,23 +637,22 @@ describe("the recommended config's --fix reaches a fixpoint", () => {
         `(${stats.looseOscillations} would fail the loose test)`,
     );
 
-    // Measured 17,297 probed / 8,194 rewritten at 1.20.132. Each floor is
-    // separate because each fails differently: a probe count with nothing
-    // rewritten means the fix pass never ran (the parser, filename or options
-    // plumbing lost), and a corpus that reaches few owners says nothing about
-    // the rest of the config however many snippets it holds.
-    expect(stats.probed).toBeGreaterThan(12000);
-    expect(stats.rewritten).toBeGreaterThan(6000);
-    expect(stats.owners.size).toBeGreaterThan(150);
+    // Each floor is separate because each fails differently: a probe count with
+    // nothing rewritten means the fix pass never ran (the parser, filename or
+    // options plumbing lost), and a corpus that reaches few owners says nothing
+    // about the rest of the config however many snippets it holds.
+    expect(stats.probed).toBeGreaterThan(SWEPT_FLOOR);
+    expect(stats.rewritten).toBeGreaterThan(11500); // measured 11,812
+    expect(stats.owners.size).toBeGreaterThan(190); // measured 194
     expect(corpus.failures).toEqual([]);
     // The skipped-re-lint fast path must not have swallowed the slow path: the
     // full two-lint treatment has to still run on thousands of real fixtures.
-    expect(stats.relinted).toBeGreaterThan(1000);
+    expect(stats.relinted).toBeGreaterThan(11500); // measured 11,812
     // The sharpening is live on REAL fixtures, not only in the controls: the
-    // loose "`fixed: true` and something still reports" test fires on 3,768 of
+    // loose "`fixed: true` and something still reports" test fires on 11,776 of
     // these, every one ordinary. If this reaches zero the two tests have stopped
     // differing here and the sharp one is unexercised.
-    expect(stats.looseOscillations).toBeGreaterThan(1000);
+    expect(stats.looseOscillations).toBeGreaterThan(11500); // measured 11,776
   });
 
   it('catches two fixers that never reach a fixpoint (positive control)', () => {
@@ -874,6 +894,43 @@ describe("the recommended config's --fix reaches a fixpoint", () => {
     });
   });
 
+  /**
+   * The sweep's size, measured against a population the corpus builder does not
+   * produce.
+   *
+   * `stats.considered === swept` below compares two traversals of the SAME
+   * `corpus.byRule`, so it answers "did the loop skip anything the bucket set
+   * does not exclude" and nothing about size: a corpus that halved satisfies it
+   * exactly. The raw harvest is one step upstream — the case arrays the suites
+   * declared, before dedup and before the `output` fan-out — so the difference
+   * between the two is the corpus builder's own discard, and a builder that
+   * started dropping cases moves it while every corpus-derived identity holds.
+   */
+  it('builds its corpus from every case the suites declare', () => {
+    const rawDeclared = harvestOnce()
+      .suites.filter((suite) => ruleNameByIdentity.has(suite.rule))
+      .reduce(
+        (total, suite) => total + suite.valid.length + suite.invalid.length,
+        0,
+      );
+    const built = [...corpus.byRule.values()]
+      .flat()
+      .filter((testCase) => testCase.bucket !== 'output').length;
+
+    // eslint-disable-next-line no-console
+    console.log(
+      `[fixpoint] suites declare ${rawDeclared} valid/invalid case(s); the ` +
+        `corpus carries ${built} of them (${rawDeclared - built} deduped)`,
+    );
+
+    // Deduping is the ONE discard the builder makes here, and it is bounded:
+    // a case is dropped only when its code, options, filename, parserOptions
+    // and language all repeat inside the same rule.
+    expect(rawDeclared - built).toBeGreaterThanOrEqual(0);
+    expect(rawDeclared - built).toBeLessThanOrEqual(DEDUP_CEILING);
+    expect(rawDeclared).toBeGreaterThan(RAW_DECLARED_FLOOR);
+  });
+
   it('swept the buckets it claims to and no others', () => {
     // Nothing is outside `BUCKETS`, but anything that ever falls outside is
     // named here with its size, so nobody has to read the loop to learn what is
@@ -895,23 +952,30 @@ describe("the recommended config's --fix reaches a fixpoint", () => {
     // eslint-disable-next-line no-console
     console.log(
       `[fixpoint] swept ${swept} fixture(s) of bucket(s) ` +
-        `${[...BUCKETS].sort().join(', ')}; NOT swept: ${
-          skipped.join(', ') || '(nothing)'
-        }`,
+        `${[...BUCKETS].sort().join(', ')} (${[...byBucket]
+          .map(([bucket, count]) => `${bucket}:${count}`)
+          .sort()
+          .join(' ')}); NOT swept: ${skipped.join(', ') || '(nothing)'}`,
     );
 
     // Every fixture inside the boundary is probed, or a "complete sweep" is a
-    // partial one wearing its name.
+    // partial one wearing its name. Both sides come off `corpus.byRule`, so
+    // this states that the loop's skips are exactly the bucket set and NOT
+    // that the corpus is intact — a halved corpus satisfies it. The size claim
+    // is the floors below and the raw-harvest comparison above.
     expect(stats.considered).toBe(swept);
     expect(stats.probed).toBe(swept);
     expect(skipped).toEqual([]);
 
     // An empty `skipped` is also what a bucket VANISHING from the harvest looks
     // like, so name each one and floor it. Without this the strongest assertion
-    // in the file is the one most easily satisfied by a broken corpus.
+    // in the file is the one most easily satisfied by a broken corpus. Each
+    // floor sits just under its measurement, since the gap between a floor and
+    // what it measures is the size of the loss it cannot see.
     expect([...byBucket.keys()].sort()).toEqual(['invalid', 'output', 'valid']);
-    expect(byBucket.get('valid')).toBeGreaterThan(5000);
-    expect(byBucket.get('invalid')).toBeGreaterThan(5000);
-    expect(byBucket.get('output')).toBeGreaterThan(1000);
+    expect(swept).toBeGreaterThan(SWEPT_FLOOR);
+    expect(byBucket.get('valid')).toBeGreaterThan(VALID_BUCKET_FLOOR);
+    expect(byBucket.get('invalid')).toBeGreaterThan(INVALID_BUCKET_FLOOR);
+    expect(byBucket.get('output')).toBeGreaterThan(OUTPUT_BUCKET_FLOOR);
   });
 });

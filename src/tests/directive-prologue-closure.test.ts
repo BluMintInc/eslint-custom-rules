@@ -30,11 +30,11 @@
  * `meta.fixable` alone leaves them to nobody — the #1733 decay. Three of those
  * six emit a top-of-file import, which is the exact edit policed here.
  *
- * NON-VACUITY IS PER-RULE (#1863). `variantFixed > 2000` against 13,895 is a
- * global sum: the 26 lowest-yield rules can go silent inside it without moving
- * it. Every member of `REWRITING_RULES` therefore has to have rewritten a
- * prologue-bearing source, or be named below with a measured cause that fails
- * when it goes stale.
+ * NON-VACUITY IS PER-RULE (#1863). A floor on `variantFixed`, measured at
+ * 22,745, is a global sum: the 26 lowest-yield rules can go silent inside it
+ * without moving it. Every member of `REWRITING_RULES` therefore has to have
+ * rewritten a prologue-bearing source, or be named below with a measured cause
+ * that fails when it goes stale.
  */
 import fs from 'fs';
 import path from 'path';
@@ -624,7 +624,7 @@ const measuredUndriven: Record<string, UndrivenCause> = Object.fromEntries(
  * Rewriting rules this probe never drove with a prologue present, each with the
  * measured cause.
  *
- * The floors below say the sweep produced ~13,900 variant rewrites across ~81
+ * The floors below say the sweep produced 22,745 variant rewrites across 82
  * rules; they cannot say that any PARTICULAR rule contributed one, and a rule
  * whose fixer went silent drops to zero inside a five-figure sum without moving
  * it (#1863). This map is the other direction: every member of
@@ -639,7 +639,7 @@ const UNDRIVEN_RULES: Record<string, UndrivenCause> = {
 
 /**
  * The suggestion channel, accounted separately for the reason its floor is
- * separate: `--fix` never applies a suggestion, and the fix channel's ~13,900
+ * separate: `--fix` never applies a suggestion, and the fix channel's 22,745
  * rewrites would cover for every suggestion-capable rule going silent at once.
  */
 const suggestionRules = Object.entries(plugin.rules)
@@ -677,12 +677,14 @@ describe('directive prologue and shebang survive every fixer', () => {
     expect([...rulesWithNonTypeScriptFixtures].sort()).toEqual(
       Object.keys(NON_TYPESCRIPT_FIXTURES).sort(),
     );
-    expect(nonTypeScriptSkipped).toBeGreaterThan(0);
+    // A bare `> 0` lets the whole non-TypeScript population fall to one case
+    // while the set equality above still holds, since two rules own all of it.
+    expect(nonTypeScriptSkipped).toBeGreaterThanOrEqual(100); // measured 108
   });
 
   it('harvested the suite corpus', () => {
     expect(corpus.failures).toEqual([]);
-    expect(corpus.filesLoaded).toBeGreaterThanOrEqual(250);
+    expect(corpus.filesLoaded).toBeGreaterThanOrEqual(275); // measured 282
   });
 
   /**
@@ -728,8 +730,8 @@ describe('directive prologue and shebang survive every fixer', () => {
         );
     expect(stats.skippedValidBucket).toBe(bucketCount('valid'));
     expect(stats.skippedOutputBucket).toBe(bucketCount('output'));
-    expect(stats.skippedValidBucket).toBeGreaterThan(1000);
-    expect(stats.skippedOutputBucket).toBeGreaterThan(1000);
+    expect(stats.skippedValidBucket).toBeGreaterThan(4000); // measured 4,143
+    expect(stats.skippedOutputBucket).toBeGreaterThan(4300); // measured 4,441
   });
 
   /**
@@ -737,11 +739,24 @@ describe('directive prologue and shebang survive every fixer', () => {
    * to nothing reports zero findings and reads identically to a clean sweep.
    */
   it('probed a non-vacuous corpus', () => {
-    expect(stats.rulesProbed.size).toBeGreaterThanOrEqual(55);
-    expect(stats.considered).toBeGreaterThanOrEqual(5659);
-    expect(stats.baseFixed).toBeGreaterThanOrEqual(4085);
-    expect(stats.variantFixed).toBeGreaterThanOrEqual(20407);
-    expect(stats.rulesFixing.size).toBeGreaterThanOrEqual(50);
+    // eslint-disable-next-line no-console
+    console.log(
+      `[directive-prologue] files=${corpus.filesLoaded} ` +
+        `rulesProbed=${stats.rulesProbed.size} considered=${stats.considered} ` +
+        `baseFixed=${stats.baseFixed} variantFixed=${stats.variantFixed} ` +
+        `rulesFixing=${stats.rulesFixing.size} ` +
+        `ownPrologue=${stats.ownPrologue}/${stats.ownPrologueRewritten}/${stats.rulesOwnPrologue.size} ` +
+        `baseSuggested=${stats.baseSuggested} variantSuggested=${stats.variantSuggested} ` +
+        `rulesSuggesting=${stats.rulesSuggesting.size} ` +
+        `skippedValid=${stats.skippedValidBucket} skippedOutput=${stats.skippedOutputBucket} ` +
+        `skippedInert=${stats.skippedInert} nonTsSkipped=${nonTypeScriptSkipped} ` +
+        `rewritingRules=${REWRITING_RULES.size}`,
+    );
+    expect(stats.rulesProbed.size).toBeGreaterThanOrEqual(85); // measured 90
+    expect(stats.considered).toBeGreaterThanOrEqual(6200); // measured 6,337
+    expect(stats.baseFixed).toBeGreaterThanOrEqual(4450); // measured 4,553
+    expect(stats.variantFixed).toBeGreaterThanOrEqual(22000); // measured 22,745
+    expect(stats.rulesFixing.size).toBeGreaterThanOrEqual(80); // measured 82
   });
 
   /**
@@ -757,9 +772,9 @@ describe('directive prologue and shebang survive every fixer', () => {
    * certify nothing.
    */
   it('probes the fixtures that carry a prologue of their own', () => {
-    expect(stats.ownPrologue).toBeGreaterThanOrEqual(60);
-    expect(stats.ownPrologueRewritten).toBeGreaterThanOrEqual(60);
-    expect(stats.rulesOwnPrologue.size).toBeGreaterThanOrEqual(18);
+    expect(stats.ownPrologue).toBeGreaterThanOrEqual(68); // measured 70
+    expect(stats.ownPrologueRewritten).toBeGreaterThanOrEqual(68); // measured 70
+    expect(stats.rulesOwnPrologue.size).toBeGreaterThanOrEqual(20); // measured 21
   });
 
   it('flags a fixer that demotes the fixture OWN directive (positive)', () => {
@@ -864,7 +879,7 @@ describe('directive prologue and shebang survive every fixer', () => {
     expect(
       Object.keys(UNDRIVEN_RULES).filter((name) => !REWRITING_RULES.has(name)),
     ).toEqual([]);
-    expect(REWRITING_RULES.size).toBeGreaterThanOrEqual(80);
+    expect(REWRITING_RULES.size).toBeGreaterThanOrEqual(88); // measured 90
   });
 
   /**
@@ -881,13 +896,13 @@ describe('directive prologue and shebang survive every fixer', () => {
 
   /**
    * The suggestion channel gets its OWN floor. Rolled into the aggregate above,
-   * the ~2,000 fix-channel rewrites would cover for it going to zero — which is
+   * the 22,745 fix-channel rewrites would cover for it going to zero — which is
    * exactly how it stayed unmeasured in four other guards until #1733.
    */
   it('probed the suggestion channel', () => {
-    expect(stats.rulesSuggesting.size).toBeGreaterThanOrEqual(3);
-    expect(stats.baseSuggested).toBeGreaterThanOrEqual(286);
-    expect(stats.variantSuggested).toBeGreaterThanOrEqual(1570);
+    expect(stats.rulesSuggesting.size).toBeGreaterThanOrEqual(6); // measured 7
+    expect(stats.baseSuggested).toBeGreaterThanOrEqual(310); // measured 318
+    expect(stats.variantSuggested).toBeGreaterThanOrEqual(1700); // measured 1,745
   });
 
   /** Per rule, so one chatty suggester cannot cover for the other six. */

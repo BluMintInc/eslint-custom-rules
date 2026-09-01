@@ -522,6 +522,18 @@ describe('option payloads x foreign fixtures (crash oracle)', () => {
   });
 
   it('sweeps the corpus it claims to (non-vacuity)', () => {
+    // eslint-disable-next-line no-console
+    console.log(
+      `[cross-option-crash] cases=${corpus.totalCases}/${allCases.length} ` +
+        `optionedRules=${optionedRuleNames.length} ` +
+        `payloadsBuilt=${totals.payloadsBuilt} valid=${totals.payloadsSchemaValid} ` +
+        `rejected=${totals.payloadsRejected} crossPairs=${totals.crossPairs} ` +
+        `capSkipped=${totals.capSkipped} ownSkipped=${totals.ownPairsSkipped} ` +
+        `defaultArm=${totals.defaultArmLints} distinct=${totals.distinctFixturesLinted} ` +
+        `fixedOrder=${totals.distinctFixturesFixedOrder} ` +
+        `reporting=${totals.crossPairsReporting} ` +
+        `payloadChanged=${totals.crossPairsPayloadChangedOutput}`,
+    );
     expect(corpus.failures).toEqual([]);
     expect(corpus.totalCases).toBeGreaterThanOrEqual(CASE_FLOOR);
     expect(allCases.length).toBeGreaterThanOrEqual(CASE_FLOOR);

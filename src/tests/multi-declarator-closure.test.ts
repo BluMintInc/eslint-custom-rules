@@ -1212,7 +1212,7 @@ console.log(
 describe('the multi-declarator probe is load-bearing', () => {
   it('harvests a corpus large enough for a zero to mean something', () => {
     expect(corpus.failures).toEqual([]);
-    expect(subjects.length).toBeGreaterThan(150);
+    expect(subjects.length).toBeGreaterThan(190); // measured 194
     // Cut just under the measurement (23,928 harvested, 23,824 considered), not
     // parked far below it: at 4,000 five sixths of the corpus could vanish while
     // this read healthy, which is more slack than the entire loss the guard
@@ -1243,10 +1243,12 @@ describe('the multi-declarator probe is load-bearing', () => {
   });
 
   it('actually perturbs, across most of the rule set', () => {
-    // 39,806 measured; the 3,000 this replaces tolerated a 92% collapse.
+    // 39,806 measured; the 3,000 this replaces tolerated a 92% collapse. The
+    // other two sat in that same state: 1,500 against 14,044 fixtures with a
+    // candidate, and 120 against 184 rules reached.
     expect(totals.perturbationsEmitted).toBeGreaterThan(35000);
-    expect(totals.fixturesWithCandidates).toBeGreaterThan(1500);
-    expect(rulesExercised.size).toBeGreaterThan(120);
+    expect(totals.fixturesWithCandidates).toBeGreaterThan(13800); // measured 14,044
+    expect(rulesExercised.size).toBeGreaterThan(180); // measured 184
     expect(skipped.variantUnparseable).toBeLessThan(
       totals.perturbationsEmitted / 10,
     );
@@ -1316,21 +1318,22 @@ describe('the multi-declarator probe is load-bearing', () => {
 
   it('reaches the rules: the unperturbed control REPORTS', () => {
     // If this collapses toward zero the corpus is not reaching the rules at
-    // all, and every clean arm below is vacuous.
-    expect(totals.controlReporting).toBeGreaterThan(800);
+    // all, and every clean arm below is vacuous. A floor of 800 against 10,228
+    // is a twelvefold collapse that never fails.
+    expect(totals.controlReporting).toBeGreaterThan(10000); // measured 10,228
   });
 
   it('reaches live FIXERS: they rewrite the perturbed input', () => {
     // Only a rewrite can produce an arm-B finding.
-    expect(totals.fixersRewrote).toBeGreaterThan(200);
+    expect(totals.fixersRewrote).toBeGreaterThan(8200); // measured 8,368
     // …and the rewrites must survive both isolations to be MEASURED. A filter
     // that swallowed them all would leave arm B silent while looking busy.
-    expect(totals.oraclesEvaluated).toBeGreaterThan(200);
+    expect(totals.oraclesEvaluated).toBeGreaterThan(7900); // measured 8,048
     // Spread across rules, not piled onto one fixer.
-    expect(fixersMeasured.length).toBeGreaterThan(20);
+    expect(fixersMeasured.length).toBeGreaterThan(76); // measured 78
     // A decline is correct behaviour, and its presence is what proves the
     // corpus reaches fixers that have a real opinion about these statements.
-    expect(totals.declines).toBeGreaterThan(100);
+    expect(totals.declines).toBeGreaterThan(2850); // measured 2,932
   });
 
   it('detects a fixer that destroys a sibling (planted POSITIVE control)', () => {
