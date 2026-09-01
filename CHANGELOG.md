@@ -1,3 +1,19 @@
+## [1.20.200](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.199...v1.20.200) (2026-09-01)
+
+
+### Bug Fixes
+
+* **enforce-firestore-doc-ref-generic:** stop type resolution at a shadowing type parameter (closes [#2258](https://github.com/BluMintInc/eslint-custom-rules/issues/2258)) ([212ecd5](https://github.com/BluMintInc/eslint-custom-rules/commit/212ecd58316bc1b247454f190d23a172123dee1c))
+* **enforce-firestore-set-merge:** stop class resolution at a shadowing parameter (closes [#2266](https://github.com/BluMintInc/eslint-custom-rules/issues/2266)) ([16fce97](https://github.com/BluMintInc/eslint-custom-rules/commit/16fce9722350ad9e009ed8089fc33a2f7769096a))
+* **no-direct-function-state:** stop alias resolution at a shadowing type parameter (closes [#2257](https://github.com/BluMintInc/eslint-custom-rules/issues/2257)) ([895baaa](https://github.com/BluMintInc/eslint-custom-rules/commit/895baaa44e177b675716e2ce0b95b1249e0b889d))
+* **no-explicit-return-type:** stop function resolution at a shadowing parameter (closes [#2265](https://github.com/BluMintInc/eslint-custom-rules/issues/2265)) ([2a61753](https://github.com/BluMintInc/eslint-custom-rules/commit/2a61753df0fa1971cfc0ed9ff1f47e6e77b46822))
+* **no-firestore-object-arrays:** stop resolution at a shadowing type parameter (closes [#2261](https://github.com/BluMintInc/eslint-custom-rules/issues/2261)) ([cf35aee](https://github.com/BluMintInc/eslint-custom-rules/commit/cf35aeec4d9ff8a9812ab869e00f9b4b31ac9909))
+* **prefer-batch-operations:** stop setter resolution at a shadowing parameter (closes [#2264](https://github.com/BluMintInc/eslint-custom-rules/issues/2264)) ([dbdb6cf](https://github.com/BluMintInc/eslint-custom-rules/commit/dbdb6cfd17719b85213d80156f721ce36589c30d))
+* **prefer-spread-over-reassembly:** stop resolution at a shadowing type parameter (closes [#2259](https://github.com/BluMintInc/eslint-custom-rules/issues/2259)) ([6546266](https://github.com/BluMintInc/eslint-custom-rules/commit/6546266859d0c8499f37583aee1f82daf6964da7))
+* **prevent-children-clobber:** stop alias resolution at a shadowing parameter (closes [#2263](https://github.com/BluMintInc/eslint-custom-rules/issues/2263)) ([d8458b0](https://github.com/BluMintInc/eslint-custom-rules/commit/d8458b03367c0007185560582ba7bcf4cc8e746b))
+* **require-hooks-default-params:** stop type resolution at a shadowing type parameter (closes [#2262](https://github.com/BluMintInc/eslint-custom-rules/issues/2262)) ([7690486](https://github.com/BluMintInc/eslint-custom-rules/commit/769048657f737d0b5ee21a2a048c90bcf53cd2a4))
+* **require-props-composition:** stop props resolution at a shadowing type parameter (closes [#2260](https://github.com/BluMintInc/eslint-custom-rules/issues/2260)) ([c49c341](https://github.com/BluMintInc/eslint-custom-rules/commit/c49c34168211610a6815ded418c8efb4bd652d14))
+
 ## [1.20.199](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.198...v1.20.199) (2026-09-01)
 
 

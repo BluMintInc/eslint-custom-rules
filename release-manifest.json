@@ -1,5 +1,91 @@
 [
   {
+    "version": "1.20.200",
+    "date": "2026-09-01T14:50:44.328Z",
+    "rules": [
+      {
+        "name": "enforce-firestore-doc-ref-generic",
+        "changeType": "fix",
+        "issues": [
+          2258
+        ],
+        "summary": "stop type resolution at a shadowing type parameter (closes #2258)"
+      },
+      {
+        "name": "enforce-firestore-set-merge",
+        "changeType": "fix",
+        "issues": [
+          2266
+        ],
+        "summary": "stop class resolution at a shadowing parameter (closes #2266)"
+      },
+      {
+        "name": "no-direct-function-state",
+        "changeType": "fix",
+        "issues": [
+          2257
+        ],
+        "summary": "stop alias resolution at a shadowing type parameter (closes #2257)"
+      },
+      {
+        "name": "no-explicit-return-type",
+        "changeType": "fix",
+        "issues": [
+          2265
+        ],
+        "summary": "stop function resolution at a shadowing parameter (closes #2265)"
+      },
+      {
+        "name": "no-firestore-object-arrays",
+        "changeType": "fix",
+        "issues": [
+          2261
+        ],
+        "summary": "stop resolution at a shadowing type parameter (closes #2261)"
+      },
+      {
+        "name": "prefer-batch-operations",
+        "changeType": "fix",
+        "issues": [
+          2264
+        ],
+        "summary": "stop setter resolution at a shadowing parameter (closes #2264)"
+      },
+      {
+        "name": "prefer-spread-over-reassembly",
+        "changeType": "fix",
+        "issues": [
+          2259
+        ],
+        "summary": "stop resolution at a shadowing type parameter (closes #2259)"
+      },
+      {
+        "name": "prevent-children-clobber",
+        "changeType": "fix",
+        "issues": [
+          2263
+        ],
+        "summary": "stop alias resolution at a shadowing parameter (closes #2263)"
+      },
+      {
+        "name": "require-hooks-default-params",
+        "changeType": "fix",
+        "issues": [
+          2262
+        ],
+        "summary": "stop type resolution at a shadowing type parameter (closes #2262)"
+      },
+      {
+        "name": "require-props-composition",
+        "changeType": "fix",
+        "issues": [
+          2260
+        ],
+        "summary": "stop props resolution at a shadowing type parameter (closes #2260)"
+      }
+    ]
+  },
+  {
     "version": "1.20.199",
     "date": "2026-09-01T09:29:27.682Z",
     "rules": [
