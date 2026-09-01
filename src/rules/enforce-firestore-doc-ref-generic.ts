@@ -10,7 +10,10 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 import { ASTHelpers } from '../utils/ASTHelpers';
-import { declarationOf, resolveInEnclosingScopes } from '../utils/lexicalScope';
+import {
+  declarationOf,
+  resolveNameInEnclosingScopes,
+} from '../utils/lexicalScope';
 
 type MessageIds = 'missingGeneric' | 'invalidGeneric';
 
@@ -272,15 +275,20 @@ function declarationOfType(
   from: TSESTree.Node,
   name: string,
 ): NamedTypeDeclaration | undefined {
-  return resolveInEnclosingScopes<NamedTypeDeclaration>(from, (statements) => {
-    for (const statement of statements) {
-      const declaration = typeDeclarationNamed(statement, name);
-      if (declaration) {
-        return declaration;
+  return resolveNameInEnclosingScopes<NamedTypeDeclaration>(
+    from,
+    name,
+    'type',
+    (statements) => {
+      for (const statement of statements) {
+        const declaration = typeDeclarationNamed(statement, name);
+        if (declaration) {
+          return declaration;
+        }
       }
-    }
-    return undefined;
-  });
+      return undefined;
+    },
+  );
 }
 
 /**

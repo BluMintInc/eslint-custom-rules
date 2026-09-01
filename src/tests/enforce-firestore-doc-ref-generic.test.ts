@@ -2436,8 +2436,50 @@ ruleTesterTs.run(
         const userRef = db.doc('users/1') as UserRef;
       `,
       },
+
+      // A type parameter shadows a same-named declaration for every type
+      // position inside it, so the outer `any`-carrying alias says nothing
+      // about this reference and cannot justify a report (#2258). Spelled as an
+      // alias rather than an interface because the shadow is independent of the
+      // declaration spelling, and the interface spelling would enlarge this
+      // suite's documented disagreement with `prefer-type-over-interface`
+      // without testing anything further.
+      {
+        code: `
+        type User = { data: any };
+        function getUserRef<User>(id: string) {
+          const userRef: DocumentReference<User> = db.collection('users').doc(id);
+          return userRef;
+        }
+      `,
+      },
+
+      // The same shadowing where the binder is a class rather than a function.
+      {
+        code: `
+        type User = { data: any };
+        class Repo<User> {
+          ref!: DocumentReference<User>;
+        }
+      `,
+      },
     ],
     invalid: [
+      // Over-decline control for the shadow test (#2258): a PARAMETER named
+      // `User` binds only in value space, so the interface still answers here
+      // and the report must survive. Declining on any same-named binder would
+      // silence this.
+      {
+        code: `
+        type User = { data: any };
+        function getUserRef(User: string) {
+          const userRef: DocumentReference<User> = db.collection('users').doc(User);
+          return userRef;
+        }
+      `,
+        errors: [invalidGenericError('DocumentReference')],
+      },
+
       /**
        * Crediting the return annotation on every function spelling (#1909) is
        * bounded by two things: the annotation has to exist, and it has to
