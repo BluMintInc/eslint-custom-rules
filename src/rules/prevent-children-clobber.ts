@@ -818,11 +818,10 @@ function bindingMayContainChildren(
 
   const services =
     (
-      context as unknown as {
-        sourceCode?: { parserServices?: MinimalParserServices };
+      context.getSourceCode() as unknown as {
+        parserServices?: MinimalParserServices;
       }
-    ).sourceCode?.parserServices ??
-    (context.parserServices as MinimalParserServices);
+    ).parserServices ?? (context.parserServices as MinimalParserServices);
   if (!services?.program || !services?.esTreeNodeToTSNodeMap) {
     return true;
   }

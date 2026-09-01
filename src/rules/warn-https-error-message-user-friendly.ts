@@ -101,7 +101,7 @@ export const warnHttpsErrorMessageUserFriendly = createRule<[], MessageIds>({
       visited: Set<string> = new Set(),
     ): boolean => {
       if (!node.body) return false;
-      const sourceCode = context.sourceCode ?? context.getSourceCode();
+      const sourceCode = context.getSourceCode();
       const walk = (current: TSESTree.Node): boolean => {
         if (
           current !== node &&

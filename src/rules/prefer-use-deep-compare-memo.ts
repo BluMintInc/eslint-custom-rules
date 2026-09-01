@@ -503,7 +503,7 @@ function isProvablyPrimitiveDependency(
 
 function collectMemoizedIdentifiers(context: Context): Set<string> {
   const memoized = new Set<string>();
-  const sourceCode = context.sourceCode;
+  const sourceCode = context.getSourceCode();
   const program = sourceCode.ast;
 
   function visit(node: TSESTree.Node): void {
@@ -995,7 +995,7 @@ function convertCallsFixes(
   calls: readonly ConvertibleCall[],
   printWidth: number,
 ): TSESLint.RuleFix[] | null {
-  const sourceCode = context.sourceCode;
+  const sourceCode = context.getSourceCode();
   // The callees are the text this fix deletes, so they are also the text
   // whatever carried the hook stops being read from: `useMemo` for a bare call,
   // `React` for a member call. A binding left with no reference at all is
@@ -1046,7 +1046,7 @@ function convertCallsFixes(
  * removal's surroundings as its own.
  */
 function deepCompareImportInsertions(context: Context): number[] {
-  const sourceCode = context.sourceCode;
+  const sourceCode = context.getSourceCode();
   if (findDeepCompareMemoImport(sourceCode.ast)) return [];
   const anchor = importAnchorLineStartIfOwned(
     sourceCode,
@@ -1059,7 +1059,7 @@ function ensureDeepCompareImportFixes(
   context: Context,
   fixer: TSESLint.RuleFixer,
 ): TSESLint.RuleFix[] {
-  const sourceCode = context.sourceCode;
+  const sourceCode = context.getSourceCode();
   const program = sourceCode.ast;
 
   // If already imported anywhere, skip adding
@@ -1089,7 +1089,7 @@ function ensureDeepCompareImportFixes(
 }
 
 function isImportedIdentifier(context: Context, name: string): boolean {
-  const sourceCode = context.sourceCode;
+  const sourceCode = context.getSourceCode();
   const program = sourceCode.ast;
   for (const node of program.body) {
     if (node.type === AST_NODE_TYPES.ImportDeclaration) {
@@ -1302,7 +1302,9 @@ export const preferUseDeepCompareMemo = createRule<Options, MessageIds>({
       'Program:exit'() {
         if (calls.length === 0) return;
 
-        const hookImport = findDeepCompareMemoImport(context.sourceCode.ast);
+        const hookImport = findDeepCompareMemoImport(
+          context.getSourceCode().ast,
+        );
         // Exactly the calls the carrier's fix rewrites: a suppressed report
         // loses its fix, and one whose scope binds the hook name to something
         // else must not be rewritten at all.

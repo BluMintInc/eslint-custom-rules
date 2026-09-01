@@ -740,7 +740,7 @@ export default createRule<[], MessageIds>({
             return;
           }
 
-          const sourceCode = context.sourceCode;
+          const sourceCode = context.getSourceCode();
           const initText = sourceCode.getText(init);
           const typeAnnotation = declaration.id.typeAnnotation;
           const typeText = typeAnnotation

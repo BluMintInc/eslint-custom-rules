@@ -26,7 +26,7 @@ linter.defineRule('probe/restricted-production', {
   create: (context) => ({
     '*'(node: TSESTree.Node) {
       if (isRestrictedProduction(node)) {
-        collected.push(context.sourceCode.getText(node as never));
+        collected.push(context.getSourceCode().getText(node as never));
       }
     },
   }),

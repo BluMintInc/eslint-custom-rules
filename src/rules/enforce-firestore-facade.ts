@@ -208,7 +208,7 @@ export const enforceFirestoreFacade = createRule<[], MessageIds>({
     const nonClientImportedLocals = new Set<string>();
     // Batches/transactions proven to originate from the client SDK.
     const clientFirestoreVariables = new Set<string>();
-    const sourceCode = context.sourceCode;
+    const sourceCode = context.getSourceCode();
 
     const clearFirestoreTrackingFor = (name: string): void => {
       firestoreDocRefVariables.delete(name);

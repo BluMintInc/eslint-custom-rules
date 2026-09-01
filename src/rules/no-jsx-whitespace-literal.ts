@@ -28,10 +28,7 @@ export const noJsxWhitespaceLiteral = createRule<Options, MessageIds>({
   },
   defaultOptions: [],
   create(context) {
-    const typedContext = context as typeof context & {
-      sourceCode?: ReturnType<typeof context.getSourceCode>;
-    };
-    const sourceCode = typedContext.sourceCode ?? context.getSourceCode();
+    const sourceCode = context.getSourceCode();
 
     /**
      * The rule's subject is a CHILD: only a container between an element's

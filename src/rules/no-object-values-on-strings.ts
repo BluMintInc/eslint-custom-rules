@@ -7,7 +7,7 @@ export const noObjectValuesOnStrings: TSESLint.RuleModule<
   never[]
 > = createRule({
   create(context) {
-    const sourceCode = context.sourceCode;
+    const sourceCode = context.getSourceCode();
     const parserServices = sourceCode.parserServices;
 
     // If TypeScript parser services are not available, return an empty object

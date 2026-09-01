@@ -26,7 +26,7 @@ const VISIBILITY_RANK: Record<Accessibility, number> = {
 
 export const noPassthroughGetters = createRule({
   create(context) {
-    const sourceCode = context.sourceCode;
+    const sourceCode = context.getSourceCode();
     return {
       // Target getter methods in classes
       MethodDefinition(node) {

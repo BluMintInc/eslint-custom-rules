@@ -152,7 +152,7 @@ export default createRule<[], MessageIds>({
         | TSESTree.FunctionExpression,
       parentParams: string[],
     ): boolean {
-      const scopeManager = context.sourceCode.scopeManager;
+      const scopeManager = context.getSourceCode().scopeManager;
       if (!scopeManager) return false;
       const scope = scopeManager.acquire(functionNode);
       if (!scope) return false;

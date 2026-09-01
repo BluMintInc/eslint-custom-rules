@@ -346,7 +346,7 @@ export const noFirestoreObjectArrays = createRule<[], MessageIds>({
       return {};
     }
 
-    const sourceCode = context.sourceCode;
+    const sourceCode = context.getSourceCode();
 
     // Namespace members are reachable unqualified from this table, which is what
     // lets a `NS.User[]` reference — whose rightmost name no lexical scope binds —

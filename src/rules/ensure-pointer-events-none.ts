@@ -680,7 +680,7 @@ export const ensurePointerEventsNone = createRule<Options, MessageIds>({
 
             return appendPointerEventsNone(
               fixer,
-              context.sourceCode,
+              context.getSourceCode(),
               node,
               printWidth,
             );

@@ -180,7 +180,7 @@ export const preferFragmentComponent = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
-    const sourceCode = context.sourceCode;
+    const sourceCode = context.getSourceCode();
     // ESLint builds fixes eagerly and drops inline-disabled reports afterwards,
     // so a rewrite riding on a suppressed report is discarded with it.
     // Resolving suppression before the fix is assembled keeps a report that

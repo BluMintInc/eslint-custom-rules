@@ -325,7 +325,7 @@ export const noRedundantUseCallbackWrapper = createRule<Options, MessageIds>({
     const option = context.options?.[0] ?? {};
     const knownHooks = new Set<string>(option.memoizedHookNames ?? []);
     const assumeAllUseAreMemoized = option.assumeAllUseAreMemoized === true;
-    const sourceCode = context.sourceCode;
+    const sourceCode = context.getSourceCode();
 
     // Every callee that memoizes the callback handed to it. `useLatestCallback`
     // belongs here because `use-latest-callback` — 'error' in the same

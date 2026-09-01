@@ -228,7 +228,7 @@ export function createSuppressionChecker<
   return (target) => {
     if (checker === null) {
       checker = createSuppressionCheckerFor(
-        context.sourceCode.getAllComments(),
+        context.getSourceCode().getAllComments(),
         context.id,
       );
     }

@@ -572,16 +572,18 @@ export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
       | TSESTree.TSTypeAliasDeclaration
       | TSESTree.TSInterfaceDeclaration
       | undefined {
-      const declarations = context.sourceCode.ast.body.filter(
-        (
-          statement,
-        ): statement is
-          | TSESTree.TSTypeAliasDeclaration
-          | TSESTree.TSInterfaceDeclaration =>
-          (statement.type === AST_NODE_TYPES.TSTypeAliasDeclaration ||
-            statement.type === AST_NODE_TYPES.TSInterfaceDeclaration) &&
-          statement.id.name === typeName,
-      );
+      const declarations = context
+        .getSourceCode()
+        .ast.body.filter(
+          (
+            statement,
+          ): statement is
+            | TSESTree.TSTypeAliasDeclaration
+            | TSESTree.TSInterfaceDeclaration =>
+            (statement.type === AST_NODE_TYPES.TSTypeAliasDeclaration ||
+              statement.type === AST_NODE_TYPES.TSInterfaceDeclaration) &&
+            statement.id.name === typeName,
+        );
 
       return declarations.length === 1 ? declarations[0] : undefined;
     }
@@ -694,7 +696,7 @@ export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
     function findModuleScopeDeclaration(
       name: string,
     ): TSESTree.Node | undefined {
-      for (const statement of context.sourceCode.ast.body) {
+      for (const statement of context.getSourceCode().ast.body) {
         const declaration =
           statement.type === AST_NODE_TYPES.ExportNamedDeclaration &&
           statement.declaration
@@ -744,7 +746,7 @@ export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
         return true;
       }
 
-      const sourceCode = context.sourceCode;
+      const sourceCode = context.getSourceCode();
       const program = sourceCode.ast;
 
       // Check for imported types first - if found, return true immediately

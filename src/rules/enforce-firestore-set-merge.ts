@@ -452,7 +452,7 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
-    const sourceCode = context.sourceCode;
+    const sourceCode = context.getSourceCode();
     const updateAliases = new Set<string>();
 
     /**

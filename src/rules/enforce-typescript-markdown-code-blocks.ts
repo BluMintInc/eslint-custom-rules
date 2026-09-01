@@ -286,7 +286,7 @@ export const enforceTypescriptMarkdownCodeBlocks = createRule<
 
     return {
       Program() {
-        const sourceCode = context.sourceCode;
+        const sourceCode = context.getSourceCode();
         const text = sourceCode.getText();
         const lines = splitLines(text);
 

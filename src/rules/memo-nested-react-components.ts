@@ -921,7 +921,7 @@ See: https://react.dev/learn/your-first-component#nesting-and-organizing-compone
       return {};
     }
 
-    const sourceCode = context.sourceCode ?? context.getSourceCode();
+    const sourceCode = context.getSourceCode();
     const reactImports = collectReactImports(sourceCode);
 
     const reportNestedComponentViolation = (

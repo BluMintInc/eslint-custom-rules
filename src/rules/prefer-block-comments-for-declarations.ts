@@ -10,7 +10,7 @@ export const preferBlockCommentsForDeclarations: TSESLint.RuleModule<
   never[]
 > = createRule({
   create(context) {
-    const sourceCode = context.sourceCode;
+    const sourceCode = context.getSourceCode();
 
     /**
      * Directives whose `//` form is load-bearing: ESLint reads them off the

@@ -608,7 +608,7 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
     const readMemoizeImports = () => {
       const aliases = new Map<string, string>();
       const namespaces = new Map<string, string>();
-      for (const statement of context.sourceCode.ast.body) {
+      for (const statement of context.getSourceCode().ast.body) {
         if (statement.type !== AST_NODE_TYPES.ImportDeclaration) {
           continue;
         }
@@ -650,7 +650,7 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
     const transactionAliases = () => {
       if (!transactionAliasCache) {
         transactionAliasCache = new Set<string>();
-        for (const statement of context.sourceCode.ast.body) {
+        for (const statement of context.getSourceCode().ast.body) {
           if (statement.type !== AST_NODE_TYPES.ImportDeclaration) {
             continue;
           }
@@ -870,7 +870,7 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
             }
 
             const fixes: TSESLint.RuleFix[] = [];
-            const sourceCode = context.sourceCode;
+            const sourceCode = context.getSourceCode();
 
             // Determine which identifier to use for the decorator
             let decoratorIdent = 'Memoize';

@@ -105,7 +105,7 @@ function getScopeForNode(
   >,
   node: TSESTree.Node,
 ): TSESLint.Scope.Scope {
-  const sourceCode = context.sourceCode ?? context.getSourceCode();
+  const sourceCode = context.getSourceCode();
 
   if (isEslint9OrLater(sourceCode)) {
     return getEslint9Scope(sourceCode, node);

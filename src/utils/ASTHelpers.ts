@@ -44,7 +44,7 @@ export class ASTHelpers {
     context: Readonly<TSESLint.RuleContext<string, readonly unknown[]>>,
     node: TSESTree.Node,
   ): TSESLint.Scope.Scope {
-    const sourceCode = (context as any).sourceCode as any;
+    const sourceCode = (context as any).getSourceCode?.();
     const sourceGetScope = sourceCode?.getScope;
     const contextGetScope = (context as any).getScope;
 
@@ -1110,7 +1110,7 @@ export class ASTHelpers {
     context: Readonly<TSESLint.RuleContext<string, readonly unknown[]>>,
     node: TSESTree.Node,
   ): readonly TSESLint.Scope.Variable[] {
-    const sourceCode = context.sourceCode;
+    const sourceCode = context.getSourceCode();
     const sourceCodeWithDeclaredVariables = sourceCode as unknown as {
       getDeclaredVariables?: (
         targetNode: TSESTree.Node,
@@ -1448,16 +1448,19 @@ export class ASTHelpers {
 
   /**
    * Helper to get ancestors of a node in a way that is compatible with both ESLint v8 and v9.
-   * In ESLint v9, context.getAncestors() is deprecated and moved to context.sourceCode.getAncestors(node).
+   * ESLint v9 drops the rule-context `getAncestors()` in favour of
+   * `SourceCode#getAncestors(node)`, so the SourceCode is asked first and the
+   * context method is the fallback. The SourceCode itself is reached through
+   * `getSourceCode()`, which every supported major exposes.
    */
   public static getAncestors(
     context: {
-      sourceCode?: unknown;
+      getSourceCode?: () => unknown;
       getAncestors?: () => TSESTree.Node[];
     },
     node: TSESTree.Node,
   ): TSESTree.Node[] {
-    const sourceCode = context.sourceCode as
+    const sourceCode = context.getSourceCode?.() as
       | { getAncestors?: (node: TSESTree.Node) => TSESTree.Node[] }
       | null
       | undefined;

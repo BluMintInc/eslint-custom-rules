@@ -69,7 +69,7 @@ export const requireHttpsErrorCause = createRule<Options, MessageIds>({
   },
   defaultOptions: [],
   create(context) {
-    const sourceCode = context.sourceCode ?? (context as any).getSourceCode();
+    const sourceCode = context.getSourceCode();
     const catchStack: CatchFrame[] = [];
 
     const reportMissingCause = (

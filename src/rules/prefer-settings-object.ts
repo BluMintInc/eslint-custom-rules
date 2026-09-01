@@ -58,7 +58,7 @@ export const preferSettingsObject = createRule<Options, MessageIds>({
   defaultOptions: [defaultOptions],
   create(context, [options]) {
     const finalOptions = { ...defaultOptions, ...options };
-    const { sourceCode } = context;
+    const sourceCode = context.getSourceCode();
 
     function getParameterType(param: TSESTree.Parameter): string | null {
       if (param.type === AST_NODE_TYPES.AssignmentPattern) {

@@ -583,7 +583,7 @@ export const enforceMicrodiff = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
-    const sourceCode = context.sourceCode;
+    const sourceCode = context.getSourceCode();
     const importedDiffLibraries = new Map<string, TSESTree.ImportDeclaration>();
     // The diff specifiers this file imports, keyed by node so a call site can
     // ask whether the binding it resolves to is one of them.

@@ -41,9 +41,7 @@ export const enforceDateTTime = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
-    const sourceCode =
-      (context as typeof context & { sourceCode?: TSESLint.SourceCode })
-        .sourceCode ?? context.getSourceCode();
+    const sourceCode = context.getSourceCode();
     const parserServices = sourceCode?.parserServices ?? context.parserServices;
     const checker = parserServices?.program?.getTypeChecker();
 

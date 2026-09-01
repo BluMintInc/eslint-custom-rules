@@ -96,33 +96,19 @@ const isAsyncFunctionExpression = (
 };
 
 /**
- * ESLint context with direct sourceCode property (newer versions)
- */
-interface SourceCodeContext {
-  sourceCode: TSESLint.SourceCode;
-}
-
-/**
- * ESLint context with getSourceCode method (older versions)
+ * ESLint context reached through the accessor every supported ESLint major
+ * exposes. The `sourceCode` PROPERTY arrives in 8.40, which is inside the
+ * declared peer range, so reading it directly would throw on an older install.
  */
 interface GetSourceCodeContext {
   getSourceCode: () => TSESLint.SourceCode;
 }
 
 /**
- * Union type representing ESLint contexts from different versions
+ * ESLint rule context, narrowed to the members this rule reaches for.
  */
-type ESLintRuleContext = (SourceCodeContext | GetSourceCodeContext) & {
+type ESLintRuleContext = GetSourceCodeContext & {
   getScope?: () => TSESLint.Scope.Scope | null;
-};
-
-/**
- * Checks if context has direct sourceCode property
- */
-const hasSourceCodeProperty = (
-  context: ESLintRuleContext,
-): context is SourceCodeContext => {
-  return 'sourceCode' in context && !!context.sourceCode;
 };
 
 /**
@@ -140,10 +126,6 @@ const hasGetSourceCodeMethod = (
  * Retrieves source code from an ESLint rule context
  */
 const getSourceCode = (context: ESLintRuleContext): TSESLint.SourceCode => {
-  if (hasSourceCodeProperty(context)) {
-    return context.sourceCode;
-  }
-
   if (hasGetSourceCodeMethod(context)) {
     return context.getSourceCode();
   }
@@ -155,9 +137,8 @@ const getSourceCode = (context: ESLintRuleContext): TSESLint.SourceCode => {
         (context as any).getFilename?.() ??
         'unknown'
       }. ` +
-      `Available properties: sourceCode=${typeof (context as any)
-        .sourceCode}, ` +
-      `getSourceCode=${typeof (context as any).getSourceCode}.`,
+      `Available properties: getSourceCode=${typeof (context as any)
+        .getSourceCode}.`,
   );
 };
 

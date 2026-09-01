@@ -681,7 +681,7 @@ function planMemoBinding(
     return { available: false, importFix: null };
   }
 
-  const sourceCode = context.sourceCode;
+  const sourceCode = context.getSourceCode();
   const program = sourceCode.ast;
   if (importsMemo(program)) {
     return { available: true, importFix: null };
@@ -879,7 +879,7 @@ function shouldSplitDeclaration(
     return false;
   }
 
-  const text = context.sourceCode.getText();
+  const text = context.getSourceCode().getText();
   const exportWrapper = exportWrapperOf(node);
   const start = (exportWrapper ?? node).range[0];
   const lineStart = text.lastIndexOf('\n', start - 1) + 1;
@@ -1028,7 +1028,7 @@ function splitFixes(
   defaultExport: TSESTree.Node | null,
 ): TSESLint.RuleFix[] {
   const name = node.id!.name;
-  const text = context.sourceCode.getText();
+  const text = context.getSourceCode().getText();
   const exportWrapper = exportWrapperOf(node);
   const start = (exportWrapper ?? node).range[0];
   const indent = text.slice(text.lastIndexOf('\n', start - 1) + 1, start);
@@ -1038,7 +1038,7 @@ function splitFixes(
     indent,
     !!exportWrapper && !defaultExport,
     printWidth,
-    indentUnitOf(context.sourceCode),
+    indentUnitOf(context.getSourceCode()),
   );
   const trailer = defaultExport ? `\n${indent}export default ${name};` : '';
 

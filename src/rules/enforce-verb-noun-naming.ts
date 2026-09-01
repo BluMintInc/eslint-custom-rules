@@ -4083,7 +4083,7 @@ export const enforceVerbNounNaming = createRule<Options, MessageIds>({
       }
 
       const names = new Set<string>();
-      for (const statement of context.sourceCode.ast.body) {
+      for (const statement of context.getSourceCode().ast.body) {
         if (
           statement.type === AST_NODE_TYPES.ExportNamedDeclaration &&
           !statement.source
@@ -4296,9 +4296,9 @@ export const enforceVerbNounNaming = createRule<Options, MessageIds>({
             id.type === AST_NODE_TYPES.Identifier &&
             id.typeAnnotation?.type === AST_NODE_TYPES.TSTypeAnnotation
           ) {
-            const typeText = context.sourceCode.getText(
-              id.typeAnnotation.typeAnnotation,
-            );
+            const typeText = context
+              .getSourceCode()
+              .getText(id.typeAnnotation.typeAnnotation);
             if (
               /\bReact\.(FC|FunctionComponent)\b/.test(typeText) ||
               /\b(FC|FunctionComponent)\b/.test(typeText)
@@ -4317,9 +4317,9 @@ export const enforceVerbNounNaming = createRule<Options, MessageIds>({
         memberParent?.type === AST_NODE_TYPES.PropertyDefinition &&
         memberParent.typeAnnotation?.type === AST_NODE_TYPES.TSTypeAnnotation
       ) {
-        const typeText = context.sourceCode.getText(
-          memberParent.typeAnnotation.typeAnnotation,
-        );
+        const typeText = context
+          .getSourceCode()
+          .getText(memberParent.typeAnnotation.typeAnnotation);
         if (
           /\bReact\.(FC|FunctionComponent)\b/.test(typeText) ||
           /\b(FC|FunctionComponent)\b/.test(typeText)
@@ -4330,9 +4330,9 @@ export const enforceVerbNounNaming = createRule<Options, MessageIds>({
 
       // Handle FunctionDeclaration/FunctionExpression/ArrowFunction return type: function Foo(): React.JSX.Element { ... }
       if (node.returnType?.type === AST_NODE_TYPES.TSTypeAnnotation) {
-        const typeText = context.sourceCode.getText(
-          node.returnType.typeAnnotation,
-        );
+        const typeText = context
+          .getSourceCode()
+          .getText(node.returnType.typeAnnotation);
         return (
           /\bReact\.(FC|FunctionComponent|JSX\.Element|ReactElement)\b/.test(
             typeText,
