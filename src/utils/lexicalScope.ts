@@ -150,6 +150,46 @@ export function enclosingStatementLists(
 }
 
 /**
+ * One statement container on the chain, with the binders guarding entry to it.
+ *
+ * {@link enclosingStatementLists} loses the nodes BETWEEN two containers, and
+ * those are exactly the ones that bind a name without holding a statement — a
+ * function's parameters and type parameters sit on the function, not on the
+ * block that is its body. A caller that materialises the chain rather than
+ * walking it once therefore cannot ask the question {@link
+ * resolveNameInEnclosingScopes} asks, unless the frames carry them.
+ *
+ * `barriers` holds the nodes crossed to reach this frame from the one inside
+ * it, so a binder among them shadows the name for this frame and every frame
+ * outside it.
+ */
+export type ScopeFrame = {
+  statements: readonly TSESTree.Node[];
+  barriers: readonly TSESTree.Node[];
+};
+
+/**
+ * The statement containers enclosing a node, innermost outward, each carrying
+ * the binders crossed to reach it.
+ */
+export function enclosingScopeFrames(from: TSESTree.Node): ScopeFrame[] {
+  const frames: ScopeFrame[] = [];
+  let barriers: TSESTree.Node[] = [];
+  let current: TSESTree.Node | undefined = from;
+  while (current) {
+    const statements = statementsOf(current);
+    if (statements) {
+      frames.push({ statements, barriers });
+      barriers = [];
+    } else {
+      barriers.push(current);
+    }
+    current = current.parent as TSESTree.Node | undefined;
+  }
+  return frames;
+}
+
+/**
  * Which of TypeScript's two declaration spaces a name is being resolved in.
  *
  * The distinction is load-bearing rather than pedantic: `function f<Props>()`
@@ -201,9 +241,9 @@ function forHeadBindsName(node: TSESTree.Node, name: string): boolean {
     node.type === AST_NODE_TYPES.ForStatement
       ? node.init
       : node.type === AST_NODE_TYPES.ForOfStatement ||
-          node.type === AST_NODE_TYPES.ForInStatement
-        ? node.left
-        : undefined;
+        node.type === AST_NODE_TYPES.ForInStatement
+      ? node.left
+      : undefined;
   return head?.type === AST_NODE_TYPES.VariableDeclaration
     ? head.declarations.some((declarator) =>
         patternBindsName(declarator.id, name),
