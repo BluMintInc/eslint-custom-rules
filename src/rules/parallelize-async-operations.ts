@@ -636,7 +636,7 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
       return {};
     }
 
-    const sourceCode = context.sourceCode;
+    const sourceCode = context.getSourceCode();
 
     // The file's filesystem bindings are a property of the file's scopes, not
     // of any one run, so they are resolved once per file and reused by every

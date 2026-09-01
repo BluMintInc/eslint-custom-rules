@@ -1816,9 +1816,7 @@ function validateHookForTransform(
 
   if (!depsArray) return null;
 
-  const sourceCode =
-    (context as unknown as { sourceCode?: TSESLint.SourceCode }).sourceCode ??
-    context.getSourceCode();
+  const sourceCode = context.getSourceCode();
   const depTexts = dependencyElements(depsArray, sourceCode);
   const depTextSet = new Set(depTexts);
   const scope = context.getScope();
@@ -1856,9 +1854,7 @@ export const enforceEarlyDestructuring = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
-    const sourceCode =
-      (context as unknown as { sourceCode?: TSESLint.SourceCode }).sourceCode ??
-      context.getSourceCode();
+    const sourceCode = context.getSourceCode();
     const visitorKeys =
       (sourceCode as unknown as { visitorKeys?: Record<string, string[]> })
         .visitorKeys ??

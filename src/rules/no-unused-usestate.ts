@@ -108,7 +108,7 @@ export const noUnusedUseState = createRule({
   },
   defaultOptions: [],
   create(context) {
-    const sourceCode = context.sourceCode;
+    const sourceCode = context.getSourceCode();
 
     /**
      * Every discarded pair the rule finds, in traversal order.

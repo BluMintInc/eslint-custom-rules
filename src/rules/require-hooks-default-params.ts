@@ -485,7 +485,7 @@ export const requireHooksDefaultParams = createRule<[], MessageIds>({
               messageId: 'requireDefaultParams',
               data: messageData,
               fix(fixer) {
-                const sourceCode = context.sourceCode;
+                const sourceCode = context.getSourceCode();
                 const broken = patternBreakFix(fixer, sourceCode, node, param);
                 if (broken) {
                   return broken;

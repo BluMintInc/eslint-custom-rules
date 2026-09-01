@@ -464,7 +464,7 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
       id: TSESTree.Identifier,
       newName: string,
     ): TSESLint.RuleFix[] | null {
-      const sourceCode = context.sourceCode;
+      const sourceCode = context.getSourceCode();
 
       const declarationFix = renameIdentifierToken(
         fixer,

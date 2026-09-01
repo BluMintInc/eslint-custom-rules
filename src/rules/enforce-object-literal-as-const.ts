@@ -290,7 +290,7 @@ export const enforceObjectLiteralAsConst = createRule({
         }
 
         // Check if the return statement is inside a function
-        const sourceCode = context.sourceCode;
+        const sourceCode = context.getSourceCode();
         // Use ASTHelpers.getAncestors for ESLint v8/v9 compatibility
         const ancestors = ASTHelpers.getAncestors(context, node);
         const isInFunction = ancestors.some(

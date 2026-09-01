@@ -538,13 +538,13 @@ function extractObjectName(
 function analyzeBooleanCondition(
   node: TSESTree.Node,
   context: {
-    sourceCode: {
+    getSourceCode(): {
       getText(node: TSESTree.Node): string;
     };
   },
   isObjectIdentifier: ObjectIdentifierPredicate,
 ): BooleanConditionPattern | null {
-  const sourceCode = context.sourceCode;
+  const sourceCode = context.getSourceCode();
   const expression = sourceCode.getText(node);
 
   if (isObjectExistenceCheck(node, isObjectIdentifier)) {
@@ -611,7 +611,7 @@ function analyzeBooleanCondition(
 function findBooleanConditionsInDependencies(
   depsArray: TSESTree.ArrayExpression,
   context: {
-    sourceCode: {
+    getSourceCode(): {
       getText(node: TSESTree.Node): string;
     };
   },

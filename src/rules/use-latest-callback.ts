@@ -1246,7 +1246,7 @@ export const useLatestCallback = createRule<Options, MessageIds>({
           return; // Don't modify imports if all useCallback calls return JSX
         }
 
-        const sourceCode = context.sourceCode;
+        const sourceCode = context.getSourceCode();
         const program = sourceCode.ast;
 
         const useCallbackSpecifiersOf = (

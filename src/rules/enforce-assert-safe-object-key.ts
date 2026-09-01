@@ -1179,10 +1179,11 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
       fixer: TSESLint.RuleFixer,
     ): TSESLint.RuleFix => {
       const importStatement = `import { assertSafe } from '${computeImportSpecifier()}';\n`;
+      const sourceCode = context.getSourceCode();
       return insertAtImportAnchor(
-        context.sourceCode,
+        sourceCode,
         fixer,
-        importInsertionAnchor(context.sourceCode),
+        importInsertionAnchor(sourceCode),
         importStatement,
       );
     };
@@ -1213,7 +1214,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
      * grouping parentheses `dropsGroupingParens` settles.
      */
     const planWrap = (node: TSESTree.Node, argText: string): PlannedEdit => {
-      const { sourceCode } = context;
+      const sourceCode = context.getSourceCode();
       const replacement = `${ASSERT_SAFE_NAME}(${argText})`;
       const parens = groupingParensAround(sourceCode, node);
       const outermost = parens[parens.length - 1];
@@ -1266,7 +1267,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
       node: TSESTree.Node,
       wrap: PlannedEdit,
     ): PlannedEdit | null => {
-      const { sourceCode } = context;
+      const sourceCode = context.getSourceCode();
       const { line } = node.loc.start;
       const original = sourceCode.lines[line - 1] ?? '';
       const delta = wrap.text.length - (wrap.range[1] - wrap.range[0]);
@@ -1351,7 +1352,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
       wrap: PlannedEdit,
       argText: string,
     ): PlannedEdit | null => {
-      const { sourceCode } = context;
+      const sourceCode = context.getSourceCode();
       const { text } = sourceCode;
       const { line } = node.loc.start;
       const original = sourceCode.lines[line - 1] ?? '';
@@ -1459,7 +1460,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
       const fixes: TSESLint.RuleFix[] = [];
 
       const carriesImport =
-        !importClaimed && !importsAssertSafe(context.sourceCode.ast);
+        !importClaimed && !importsAssertSafe(context.getSourceCode().ast);
       if (carriesImport) {
         fixes.push(addAssertSafeImport(fixer));
         importClaimed = true;
@@ -1553,7 +1554,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
      * always been wrapped whole.
      */
     const reportWrittenKey = (written: TSESTree.Node) =>
-      reportUseAssertSafe(written, context.sourceCode.getText(written));
+      reportUseAssertSafe(written, context.getSourceCode().getText(written));
 
     /**
      * Returns true when the identifier was initialized directly from an
@@ -1810,13 +1811,14 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
     ): boolean => {
       const namesNoPrototypeField = (domain: Set<string>): boolean =>
         ![...domain].some((value) => PROTOTYPE_SURFACE_NAMES.has(value));
+      const sourceCode = context.getSourceCode();
       if (
         keyAnnotation.type === AST_NODE_TYPES.TSTypeReference &&
         recordKeyType.type === AST_NODE_TYPES.TSTypeReference &&
         !keyAnnotation.typeParameters &&
         !recordKeyType.typeParameters &&
-        context.sourceCode.getText(keyAnnotation.typeName) ===
-          context.sourceCode.getText(recordKeyType.typeName)
+        sourceCode.getText(keyAnnotation.typeName) ===
+          sourceCode.getText(recordKeyType.typeName)
       ) {
         const domain = keyDomainOf(keyAnnotation, anchor, new Set());
         if (domain === 'open') {

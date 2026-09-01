@@ -280,7 +280,7 @@ function planBatch(
 export const noUselessFragment = createRule<[], 'noUselessFragment'>({
   name: 'no-useless-fragment',
   create(context) {
-    const sourceCode = context.sourceCode;
+    const sourceCode = context.getSourceCode();
 
     /**
      * Long-form fragments are recognized through the element's own scope, so a

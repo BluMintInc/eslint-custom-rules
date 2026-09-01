@@ -388,7 +388,7 @@ export const noCurlyBracketsAroundCommentedProperties = createRule<
   },
   defaultOptions: [],
   create(context) {
-    const sourceCode = context.sourceCode;
+    const sourceCode = context.getSourceCode();
 
     return {
       BlockStatement(node) {

@@ -1526,9 +1526,7 @@ export const noRedundantAnnotationAssertion = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
-    const sourceCode =
-      (context as typeof context & { sourceCode?: TSESLint.SourceCode })
-        .sourceCode ?? context.getSourceCode?.();
+    const sourceCode = context.getSourceCode();
     const parserServices = sourceCode?.parserServices ?? context.parserServices;
 
     if (

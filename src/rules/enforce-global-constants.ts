@@ -266,7 +266,7 @@ export const enforceGlobalConstants = createRule<Options, MessageIds>({
   },
   defaultOptions: [{}],
   create(context, [options]) {
-    const sourceCode = context.sourceCode;
+    const sourceCode = context.getSourceCode();
 
     const printWidth =
       typeof options.printWidth === 'number' && options.printWidth > 0

@@ -259,7 +259,7 @@ export const preferCloneDeep = createRule<[], MessageIds>({
     // Track processed nodes to avoid duplicate reports
     const processedNodes = new Set<TSESTree.Node>();
 
-    const sourceCode = context.sourceCode;
+    const sourceCode = context.getSourceCode();
 
     function normalizedTextOf(node: TSESTree.Node): string {
       return sourceCode.getText(node).replace(/\s+/g, '');

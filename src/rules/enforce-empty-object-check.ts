@@ -1048,9 +1048,9 @@ function buildDoc(
   node: TSESTree.Node,
   segmentStart: number,
   segmentEnd: number,
-  context: DocContext,
+  docContext: DocContext,
 ): LayoutDoc | null {
-  const { source } = context;
+  const { source } = docContext;
   const before = readSegmentGap(source.slice(segmentStart, node.range[0]), '(');
   const after = readSegmentGap(source.slice(node.range[1], segmentEnd), ')');
   if (!before || !after) {
@@ -1067,7 +1067,7 @@ function buildDoc(
    * the segment carried have just been accounted for, and handing them down
    * again makes the first child look unbalanced and rejects the whole tree.
    */
-  const core = buildCoreDoc(node, context);
+  const core = buildCoreDoc(node, docContext);
   if (!core) {
     return null;
   }
@@ -1088,13 +1088,13 @@ function buildDoc(
 
 function buildCoreDoc(
   node: TSESTree.Node,
-  context: DocContext,
+  docContext: DocContext,
 ): LayoutDoc | null {
-  const { sourceCode, source, targetRange } = context;
+  const { sourceCode, source, targetRange } = docContext;
   const [segmentStart, segmentEnd] = node.range;
 
   if (node.range[0] === targetRange[0] && node.range[1] === targetRange[1]) {
-    return context.targetDoc;
+    return docContext.targetDoc;
   }
 
   if (node.type === AST_NODE_TYPES.LogicalExpression) {
@@ -1110,13 +1110,13 @@ function buildCoreDoc(
       node.left,
       segmentStart,
       operatorToken.range[0],
-      context,
+      docContext,
     );
     const right = buildDoc(
       node.right,
       operatorToken.range[1],
       segmentEnd,
-      context,
+      docContext,
     );
     if (!left || !right) {
       return null;
@@ -1140,19 +1140,19 @@ function buildCoreDoc(
       node.test,
       segmentStart,
       questionToken.range[0],
-      context,
+      docContext,
     );
     const consequent = buildDoc(
       node.consequent,
       questionToken.range[1],
       colonToken.range[0],
-      context,
+      docContext,
     );
     const alternate = buildDoc(
       node.alternate,
       colonToken.range[1],
       segmentEnd,
-      context,
+      docContext,
     );
     if (!test || !consequent || !alternate) {
       return null;
@@ -1303,14 +1303,14 @@ function planWidenedFix(input: PlanInput): WidenedFix | null {
       { kind: 'leaf', text: `Object.keys(${identifierText}).length === 0` },
     ],
   };
-  const context: DocContext = {
+  const docContext: DocContext = {
     sourceCode,
     source,
     targetRange: target.range,
     targetDoc: needsParentheses ? { kind: 'group', inner: guard } : guard,
   };
 
-  const doc = buildDoc(root, root.range[0], root.range[1], context);
+  const doc = buildDoc(root, root.range[0], root.range[1], docContext);
   if (!doc) {
     return null;
   }
@@ -1330,7 +1330,7 @@ function planWidenedFix(input: PlanInput): WidenedFix | null {
     source.slice(root.range[0], target.range[0]) +
     (needsParentheses
       ? `(${flattenDoc(guard)})`
-      : flattenDoc(context.targetDoc)) +
+      : flattenDoc(docContext.targetDoc)) +
     source.slice(target.range[1], root.range[1]);
   const flat = flattenDoc(doc);
   if (

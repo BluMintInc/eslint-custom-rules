@@ -176,7 +176,7 @@ export const keyOnlyOutermostElement = createRule<Options, MessageIds>({
   },
   defaultOptions: [],
   create(context) {
-    const sourceCode = context.sourceCode;
+    const sourceCode = context.getSourceCode();
     // Track JSXElements that are direct children of a map callback
     const mapCallbackElements = new Set<TSESTree.JSXElement>();
     // Track JSXFragments that are direct children of a map callback

@@ -750,7 +750,7 @@ export const noUnnecessaryVerbSuffix = createRule<[], MessageIds>({
     let declarationIndex: DeclarationIndex | null = null;
     function getDeclarationIndex(): DeclarationIndex {
       if (declarationIndex === null) {
-        declarationIndex = buildDeclarationIndex(context.sourceCode);
+        declarationIndex = buildDeclarationIndex(context.getSourceCode());
       }
       return declarationIndex;
     }
@@ -810,7 +810,7 @@ export const noUnnecessaryVerbSuffix = createRule<[], MessageIds>({
       variable: TSESLint.Scope.Variable | null,
       suggestion: string,
     ): boolean {
-      const scopeManager = context.sourceCode.scopeManager;
+      const scopeManager = context.getSourceCode().scopeManager;
       const functionScope = scopeManager?.acquire(functionNode) ?? null;
       const declarationScope = variable?.scope ?? functionScope?.upper ?? null;
 
@@ -948,7 +948,7 @@ export const noUnnecessaryVerbSuffix = createRule<[], MessageIds>({
                 // no call site is left pointing at the old name. Every rewrite
                 // goes through renameIdentifier, because an identifier's range
                 // can carry trailing tokens that must survive a rename (#1351).
-                const { sourceCode } = context;
+                const sourceCode = context.getSourceCode();
                 const fixes = [
                   renameIdentifier(
                     fixer,

@@ -72,7 +72,7 @@ export const noUuidv4Base62AsKey = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
-    const sourceCode = context.sourceCode;
+    const sourceCode = context.getSourceCode();
 
     // Track imported uuidv4Base62 identifiers
     const importedUuidv4Base62 = new Set<string>();

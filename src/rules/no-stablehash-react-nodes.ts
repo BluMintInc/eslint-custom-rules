@@ -326,9 +326,7 @@ export const noStablehashReactNodes = createRule<[], MessageIds>({
 
     function getBindings(): Map<string, { isNamespace: boolean }> {
       if (bindings === null) {
-        const sourceCode =
-          (context as unknown as { sourceCode?: { ast: TSESTree.Program } })
-            .sourceCode ?? context.getSourceCode();
+        const sourceCode = context.getSourceCode();
         bindings = collectHashBindings(sourceCode.ast);
       }
       return bindings;

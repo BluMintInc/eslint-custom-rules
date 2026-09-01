@@ -872,7 +872,7 @@ function getMemoizedFunctionDescription(node) {
 }
 
 function reportAndFix(node, context, plan: ConversionPlan) {
-  const sourceCode = context.sourceCode;
+  const sourceCode = context.getSourceCode();
   const useMemoCallback = node.arguments[0];
 
   // Get the returned function from useMemo

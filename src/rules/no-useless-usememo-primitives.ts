@@ -429,7 +429,7 @@ export const noUselessUsememoPrimitives = createRule<Options, MessageIds>({
   defaultOptions: [DEFAULT_OPTIONS],
   create(context) {
     const options = { ...DEFAULT_OPTIONS, ...context.options[0] };
-    const sourceCode = context.sourceCode;
+    const sourceCode = context.getSourceCode();
     const services = sourceCode.parserServices;
     const parserServices =
       services &&

@@ -316,7 +316,7 @@ export const preferParamsOverParentId = createRule<[], MessageIds>({
   defaultOptions: [],
   create(context) {
     const handlerNodes = new Set<TSESTree.Node>();
-    const sourceCode = context.sourceCode;
+    const sourceCode = context.getSourceCode();
 
     /**
      * Every `ref.parent...id` read the rule reports, in traversal order.

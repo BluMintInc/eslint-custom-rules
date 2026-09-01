@@ -68,7 +68,7 @@ export const preferUrlToStringOverToJson: TSESLint.RuleModule<
   never[]
 > = createRule({
   create(context) {
-    const sourceCode = context.sourceCode;
+    const sourceCode = context.getSourceCode();
     const parserServices = sourceCode.parserServices;
 
     const urlIdentifierNames = new Set<string>();

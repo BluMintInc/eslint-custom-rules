@@ -123,7 +123,8 @@ export const enforceStableStringify = createRule<Options, MessageIds>({
                   }
 
                   const fixes: TSESLint.RuleFix[] = [];
-                  const program = context.sourceCode.ast;
+                  const sourceCode = context.getSourceCode();
+                  const program = sourceCode.ast;
 
                   // Add the import only when the file lacks it. Suggestions are
                   // applied one at a time with a re-lint in between, so each is
@@ -139,9 +140,9 @@ export const enforceStableStringify = createRule<Options, MessageIds>({
                     // unparseable.
                     fixes.push(
                       insertAtImportAnchor(
-                        context.sourceCode,
+                        sourceCode,
                         fixer,
-                        importInsertionAnchor(context.sourceCode),
+                        importInsertionAnchor(sourceCode),
                         "import stringify from 'safe-stable-stringify';\n",
                       ),
                     );

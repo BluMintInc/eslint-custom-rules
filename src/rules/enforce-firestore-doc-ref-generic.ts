@@ -1291,11 +1291,13 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
         return fileImportsProjectModule;
       }
 
-      const found = context.sourceCode.ast.body.some(
-        (statement) =>
-          statement.type === AST_NODE_TYPES.ImportDeclaration &&
-          isProjectModuleSpecifier(statement.source.value),
-      );
+      const found = context
+        .getSourceCode()
+        .ast.body.some(
+          (statement) =>
+            statement.type === AST_NODE_TYPES.ImportDeclaration &&
+            isProjectModuleSpecifier(statement.source.value),
+        );
 
       fileImportsProjectModule = found;
       return found;
@@ -1315,7 +1317,7 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
       }
 
       const locals = new Set<string>();
-      for (const statement of context.sourceCode.ast.body) {
+      for (const statement of context.getSourceCode().ast.body) {
         if (
           statement.type === AST_NODE_TYPES.ImportDeclaration &&
           statement.source.value === RULES_UNIT_TESTING_MODULE

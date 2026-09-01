@@ -255,7 +255,7 @@ export const preferUtilityFunctionOverPrivateStatic = createRule<
   },
   defaultOptions: [],
   create(context) {
-    const sourceCode = context.sourceCode;
+    const sourceCode = context.getSourceCode();
 
     /**
      * The variable each identifier in the file resolves to, built from the

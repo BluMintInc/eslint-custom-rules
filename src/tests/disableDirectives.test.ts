@@ -304,17 +304,26 @@ describe('createSuppressionChecker', () => {
 const target = 1;
 const after = 2;`;
 
-  /** A rule context stub exposing only what the checker consumes. */
+  /**
+   * A rule context stub exposing only what the checker consumes.
+   *
+   * The SourceCode is reachable through `getSourceCode()` and NOT through a
+   * `sourceCode` property, which is the shape every ESLint in the declared
+   * `peerDependencies.eslint` range guarantees — the property arrives only in
+   * 8.40. Withholding it keeps this stub a local check that the checker stays
+   * on the version-safe accessor (#2251).
+   */
   function contextStub(id: string, comments: TSESTree.Comment[]) {
     let getAllCommentsCalls = 0;
+    const sourceCode = {
+      getAllComments: () => {
+        getAllCommentsCalls += 1;
+        return comments;
+      },
+    };
     const context = {
       id,
-      sourceCode: {
-        getAllComments: () => {
-          getAllCommentsCalls += 1;
-          return comments;
-        },
-      },
+      getSourceCode: () => sourceCode,
     } as unknown as Readonly<TSESLint.RuleContext<string, unknown[]>>;
     return { context, callCount: () => getAllCommentsCalls };
   }

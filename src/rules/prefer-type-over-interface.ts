@@ -410,7 +410,7 @@ export const preferTypeOverInterface: TSESLint.RuleModule<MessageIds, Options> =
             return;
           }
 
-          const sourceCode = context.sourceCode;
+          const sourceCode = context.getSourceCode();
           const plan = planRewrite(sourceCode, node);
 
           // The per-arm intersection layout the fix emits is the formatter's

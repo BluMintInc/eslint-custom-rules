@@ -99,7 +99,7 @@ export const requireMigrationScriptMetadata = createRule<Options, MessageIds>({
       return {};
     }
 
-    const sourceCode = context.sourceCode ?? context.getSourceCode();
+    const sourceCode = context.getSourceCode();
     const comments = sourceCode.getAllComments();
     const firstToken = sourceCode.getFirstToken(sourceCode.ast, {
       includeComments: false,
@@ -109,7 +109,8 @@ export const requireMigrationScriptMetadata = createRule<Options, MessageIds>({
       Program() {
         const metadataCandidates = comments
           .filter(
-            (comment) => comment.type === 'Block' && comment.value.startsWith('*'),
+            (comment) =>
+              comment.type === 'Block' && comment.value.startsWith('*'),
           )
           .map((comment) => ({ comment, tags: parseJSDocTags(comment.value) }))
           .filter(({ tags }) =>

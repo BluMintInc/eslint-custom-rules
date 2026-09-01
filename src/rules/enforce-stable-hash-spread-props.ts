@@ -712,9 +712,7 @@ export const enforceStableHashSpreadProps = createRule<Options, MessageIds>({
   },
   defaultOptions: [{}],
   create(context) {
-    const sourceCode =
-      (context as unknown as { sourceCode?: TSESLint.SourceCode }).sourceCode ??
-      context.getSourceCode();
+    const sourceCode = context.getSourceCode();
     const [options = {}] = context.options;
     const hashImport = {
       source: options.hashImport?.source ?? DEFAULT_HASH_IMPORT.source,
