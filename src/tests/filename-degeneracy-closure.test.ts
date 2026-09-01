@@ -643,6 +643,29 @@ describe('filename-degeneracy fix closure', () => {
     expect(rewritten).toBeGreaterThan(5000);
     expect(derivationsObserved).toBeGreaterThan(1200);
     expect(rulesDeriving.size).toBeGreaterThanOrEqual(40);
+    /**
+     * The CONTROL arm's own denominator. Every comparison is differential
+     * against the benign stem, so a control that stops rewriting takes the
+     * derivation count down with it and the degenerate arm has nothing to
+     * compare against — a state that reads here as "no rule derives a name"
+     * rather than as a broken control.
+     *
+     * Floored, then closed per RULE: `derivations` is counted only on a
+     * fixture the control rewrote, so a rule deriving more often than its
+     * control fixed means the two counters have come apart. Per rule rather
+     * than in aggregate, because a global sum lets one rule's control collapse
+     * hide inside four thousand other fixtures (#1863).
+     */
+    const controlFixes = [...driveByRule.values()].reduce(
+      (total, entry) => total + entry.controlFixes,
+      0,
+    );
+    expect(controlFixes).toBeGreaterThan(4400); // measured 4,618
+    expect(
+      [...driveByRule.entries()]
+        .filter(([, entry]) => entry.derivations > entry.controlFixes)
+        .map(([rule]) => rule),
+    ).toEqual([]);
   });
 
   /**

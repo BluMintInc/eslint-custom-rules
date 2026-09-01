@@ -467,7 +467,12 @@ function buildDocsCorpus(): CorpusEntry[] {
 /** Every harvested `RuleTester` case, keyed by rule and carrying its options. */
 const fixtureCorpus = harvestFixtureCorpus();
 
-/** Non-vacuity accounting for the fixture channel; every field is asserted. */
+/**
+ * Non-vacuity accounting for the fixture channel. Every field is read by an
+ * `expect` in `accounts for every fixture it was handed` — a counter written
+ * and never asserted discards its inputs in silence, which is the shape that
+ * hid 106 fatal parses in #1984.
+ */
 const fixtureStats = {
   considered: 0,
   /** Cases whose owning rule's fixer rewrote them under the authentic name. */
@@ -1374,6 +1379,18 @@ describe('the closure guard is load-bearing', () => {
     ).toBe(fixtureStats.considered);
     expect(fixtureStats.crashed).toBe(0);
     expect(fixtureStats.rewritten).toBeGreaterThanOrEqual(170);
+    /**
+     * The fixture channel's OWN optioned contribution. `optionedEntries` above
+     * spans both channels, so it stays green on a fixture channel that has
+     * stopped carrying options at all — and a corpus channel dropping fixture
+     * options is what left 31 of 35 optioned, fixable rules gated at their
+     * defaults (#2224). Floored, then bounded by the pairs it is drawn from,
+     * since an optioned pair is always an entry this channel emitted.
+     */
+    expect(fixtureStats.optionedPairs).toBeGreaterThanOrEqual(125); // measured 132
+    expect(fixtureStats.optionedPairs).toBeLessThanOrEqual(
+      fixtureStats.rewritten + fixtureStats.rescuedByFanOut,
+    );
     // The harvest itself must not have silently collapsed. 23,932 cases over
     // the whole plugin is the pool this channel selects from; a floor here is
     // what separates "the filter admitted little" from "the harvest returned

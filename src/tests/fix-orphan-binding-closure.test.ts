@@ -748,7 +748,7 @@ describe('a fixer must not leave a binding unreferenced', () => {
    * partial registry all show up here rather than as a clean run.
    *
    * Measured (printed above, so a recalibration reads the numbers rather than
-   * guessing them): probed 23,824, soloFixes 70,588, rewritten 15,320, owners
+   * guessing them): probed 23,865, soloFixes 70,718, rewritten 15,332, owners
    * 192, rulesFixed 82, optionCarrying 783. A floor left far below its
    * measurement is the failure mode these guard against — the previous soloFixes
    * floor sat at 8,000 and the rewritten floor at 1,000, so either could have
@@ -762,6 +762,20 @@ describe('a fixer must not leave a binding unreferenced', () => {
         `owners=${stats.owners.size} rulesFixed=${stats.rulesFixed.size} ` +
         `exchanges=${stats.exchanges} optionCarrying=${carriage.carried}`,
     );
+    /**
+     * The coarsest denominator, sitting before every skip: it is the only
+     * record that the corpus loop reached the probe at all. A harvest that
+     * returns fewer suites, or a bucket filter that stops matching, shrinks
+     * this while every skip counter below stays at its measured zero — which
+     * reads as a clean sweep of a smaller corpus.
+     *
+     * Floored, then CLOSED against the two exits it can take. `threw` is
+     * asserted empty above, so every considered case either parsed and was
+     * probed or was recorded as a fatal input; a case leaving by any other
+     * path is one the sweep dropped in silence.
+     */
+    expect(stats.considered).toBeGreaterThan(23500); // measured 23,865
+    expect(stats.probed + stats.inputFatal).toBe(stats.considered);
     expect(stats.probed).toBeGreaterThan(23500);
     expect(stats.soloFixes).toBeGreaterThan(69000);
     expect(stats.rewritten).toBeGreaterThan(15000);

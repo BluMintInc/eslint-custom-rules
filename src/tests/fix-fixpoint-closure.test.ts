@@ -653,6 +653,43 @@ describe("the recommended config's --fix reaches a fixpoint", () => {
     // these, every one ordinary. If this reaches zero the two tests have stopped
     // differing here and the sharp one is unexercised.
     expect(stats.looseOscillations).toBeGreaterThan(11500); // measured 11,776
+    /**
+     * The re-lint arm PER OWNER. The aggregate above cannot see one owner's
+     * fixtures all taking the fast path, because the loss hides inside eleven
+     * thousand others — the granularity gap #1863 records. Two ways, so the row
+     * cannot go quiet in either direction: it sums to the aggregate, and no
+     * owner whose fixtures `--fix` rewrote can have skipped the second lint,
+     * since a rewrite means `verifyAndFix` applied something and `relinted` is
+     * that same flag.
+     */
+    expect(
+      [...perOwner.values()].reduce((total, row) => total + row.relinted, 0),
+    ).toBe(stats.relinted);
+    expect(
+      [...perOwner.entries()]
+        .filter(([, row]) => row.rewritten > 0 && row.relinted === 0)
+        .map(([owner]) => owner),
+    ).toEqual([]);
+    /**
+     * What the fixed output STILL reports, and the subset of that still
+     * carrying a fix. Both were printed and read by nothing, which is the
+     * #1984 shape: a number interpolated into a diagnostic is not a gate.
+     *
+     * `residualReported` is floored because it is the population the NO-OP
+     * verdict is drawn from — a sweep whose outputs stopped reporting anything
+     * would leave every convergence test trivially true — and bounded by
+     * `probed`, since a residual is recorded per probed fixture.
+     *
+     * `pendingAfterFix` is pinned at ZERO instead. A residual report that still
+     * carries a fix is the ten-pass-cap signature: `--fix` stopped with
+     * movement pending and what lands on disk is an arbitrary intermediate
+     * state. No fixture reaches it, which is exactly why the refix probe below
+     * is never paid for; a rise here means naming the fixture and deciding, not
+     * raising a threshold.
+     */
+    expect(stats.residualReported).toBeGreaterThan(23000); // measured 23,810
+    expect(stats.residualReported).toBeLessThanOrEqual(stats.probed);
+    expect(stats.pendingAfterFix).toBe(0);
   });
 
   it('catches two fixers that never reach a fixpoint (positive control)', () => {

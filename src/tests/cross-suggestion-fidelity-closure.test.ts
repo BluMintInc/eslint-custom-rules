@@ -348,6 +348,14 @@ const stats = {
   /** Pairs whose fixer rewrote the source, so a comparison could happen. */
   rewrites: 0,
   crossRewrites: 0,
+  /**
+   * The sweep's own comparison total, a DELIBERATE duplicate of
+   * `sugStats.comparisons`: both are incremented in the same loop body, one
+   * accounting for the sweep and one for the suggestion channel it feeds. The
+   * duplicate earns its place by being asserted as an identity below, which
+   * catches the two coming apart — a comparison counted in one accounting and
+   * not the other means the shared body no longer runs for both.
+   */
   comparisons: 0,
   rejectedNonNeutral: 0,
   fixersRewriting: new Set<string>(),
@@ -959,6 +967,11 @@ describe('the cross-paired suggestion fidelity guard is load-bearing', () => {
     expect(stats.comparisonsByLanguage.markdown).toBe(0);
     // The comparison total is the TypeScript arm and nothing else.
     expect(stats.comparisonsByLanguage.ts).toBe(sugStats.comparisons);
+    // And the sweep's own total is the same population reached through a
+    // second accounting. Asserted as an identity rather than floored: the two
+    // are incremented side by side, so equality is exact and a drift is a
+    // structural change rather than a corpus one.
+    expect(stats.comparisons).toBe(sugStats.comparisons);
   });
 
   /**

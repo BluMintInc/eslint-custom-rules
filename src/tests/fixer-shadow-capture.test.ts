@@ -1756,6 +1756,14 @@ const nestSum = (pick: (n: Nested) => number) =>
   nestedResults.reduce((a, n) => a + pick(n), 0);
 const nestedTotals = {
   rules: nestedResults.length,
+  /**
+   * The denominator every other nesting count is carved out of: a variant can
+   * only be wrappable, neutral or dropped if the rule reported on the fixture
+   * flat first. Kept at the top level so the population can be floored, since
+   * a corpus that stops reporting drains every bucket below at once and each
+   * of those reads as a quieter run rather than an empty one.
+   */
+  reporting: nestedVariants.reduce((a, v) => a + v.reporting, 0),
   neutral: nestSum((n) => n.neutral),
   dropped: nestSum((n) => n.dropped),
   /** Rules the wrap gives a function block at the report site. */
@@ -2316,6 +2324,20 @@ describe('fixers must not emit a reference an inner shadow captures', () => {
    */
   it('the nesting perturbation reaches a shadow it could not reach flat', () => {
     expect(nestedTotals.rules).toBeGreaterThanOrEqual(18);
+    /**
+     * The population every count below is carved out of, ASSERTED rather than
+     * merely accumulated. `wrappable`, `neutral` and each dropped bucket are
+     * subsets of the fixtures the rule reports on flat, so a corpus that stops
+     * reporting drains all of them together and every one of those floors reads
+     * as a quieter run rather than an empty one. Floored and then CLOSED
+     * against the buckets it contains, which is what keeps the containment from
+     * drifting silently: a variant leaving `reporting` without leaving a bucket
+     * would be counted twice.
+     */
+    expect(nestedTotals.reporting).toBeGreaterThanOrEqual(1700); // measured 1,786
+    expect(nestedTotals.reporting).toBeGreaterThanOrEqual(
+      nestedTotals.neutral + nestedTotals.dropped,
+    );
     expect(nestedTotals.enclosureGained).toBeGreaterThanOrEqual(10);
     expect(nestedTotals.probedRules).toBeGreaterThanOrEqual(3);
     expect(nestedTotals.neutral).toBeGreaterThanOrEqual(1070);
