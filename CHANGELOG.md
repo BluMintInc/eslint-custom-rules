@@ -1,3 +1,10 @@
+## [1.20.201](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.200...v1.20.201) (2026-09-01)
+
+
+### Bug Fixes
+
+* **use-custom-link:** decline the autofix when it would drop a specifier (closes [#2272](https://github.com/BluMintInc/eslint-custom-rules/issues/2272)) ([34ef36d](https://github.com/BluMintInc/eslint-custom-rules/commit/34ef36d8aa1bd589cbf85431bb10405dd17e7b2e)), closes [#2209](https://github.com/BluMintInc/eslint-custom-rules/issues/2209)
+
 ## [1.20.200](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.199...v1.20.200) (2026-09-01)
 
 

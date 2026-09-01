@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.201",
+    "date": "2026-09-01T19:58:16.746Z",
+    "rules": [
+      {
+        "name": "use-custom-link",
+        "changeType": "fix",
+        "issues": [
+          2272
+        ],
+        "summary": "decline the autofix when it would drop a specifier (closes #2272)"
+      }
+    ]
+  },
+  {
     "version": "1.20.200",
     "date": "2026-09-01T14:50:44.328Z",
     "rules": [
