@@ -168,6 +168,29 @@ const injectExports = (code: string, jsx: boolean): string | null => {
 };
 
 /**
+ * The spans the injected `export ` tokens occupy IN THE INJECTED TEXT. The
+ * i-th declaration (ascending) is preceded by i earlier insertions of 7
+ * characters each, because `injectExports` splices from the last offset
+ * backwards and so leaves every earlier offset untouched.
+ *
+ * A report landing inside one of these spans is a report about this guard's
+ * own scaffolding rather than about the fixture, which is the second of the
+ * two ways a perturbation has to be gated.
+ */
+const scaffoldSpans = (code: string, jsx: boolean): [number, number][] => {
+  const ast = parse(code, jsx);
+  if (!ast) return [];
+  return (ast.body as any[])
+    .filter((node) => EXPORTABLE.has(node.type) && !node.declare)
+    .map((node) => node.range[0])
+    .sort((a: number, b: number) => a - b)
+    .map((start: number, index: number) => [
+      start + 7 * index,
+      start + 7 * (index + 1),
+    ]);
+};
+
+/**
  * `injectExports` returns `null` both for a fixture that declares nothing
  * exportable AND for one that already exports everything it declares. The
  * second is the more interesting input, not a skip: it is where a fixer meets
@@ -375,7 +398,33 @@ const stats = {
   fixers: new Set<string>(),
   crossFixers: new Set<string>(),
   owners: new Set<string>(),
+  /**
+   * Perturbation accounting. `injectExports` rewrites the fixture before the
+   * screen runs, and the participating fixer set is read off the PERTURBED
+   * text, so a rule the injection silences leaves the sweep without being
+   * counted anywhere. These four measure that cost in both directions.
+   */
+  bareScreenFatal: 0,
+  bareScreenThrew: 0,
+  /** Fixable rule reports on the fixture but not once it is exported. */
+  perturbationSilenced: 0,
+  /** Fixable rule reports ONLY once exported: a pair the injection invented. */
+  perturbationAdmitted: 0,
+  /** Fixer declines the exported text but rewrites the fixture as written. */
+  perturbationFixLost: 0,
+  bareFixThrew: 0,
+  /** A report lying ENTIRELY inside an injected `export ` token. */
+  scaffoldReports: 0,
+  /** A report merely ANCHORED at one: the declaration's own new start. */
+  scaffoldAnchored: 0,
 };
+
+/** Per-rule ledgers for the three perturbation effects, so a move names names. */
+const silencedByRule = new Map<string, number>();
+const admittedByRule = new Map<string, number>();
+const fixLostByRule = new Map<string, number>();
+const bump = (map: Map<string, number>, key: string) =>
+  map.set(key, (map.get(key) || 0) + 1);
 
 const removals: Removal[] = [];
 const corpus = harvestFixtureCorpus();
@@ -461,6 +510,111 @@ for (const [owner, cases] of corpus.byRule) {
         .map((id) => id.slice(PREFIX.length)),
     );
 
+    /**
+     * The same screen over the UNPERTURBED fixture. Only meaningful where the
+     * text actually changed: an own-surface fixture IS its own bare text, so
+     * running it again would cost a lint per fixture to compare a set with
+     * itself.
+     */
+    let reportingBare = reporting;
+    if (surface.injected) {
+      let bare: Linter.LintMessage[] | null = null;
+      try {
+        bare = linter.verify(
+          source,
+          {
+            ...parsing,
+            rules: {
+              ...SCREEN,
+              ...(DIVERGENT_WITHOUT_PROGRAM.has(owner)
+                ? {}
+                : { [ownerId]: severityWithOptions(testCase) }),
+            },
+          } as unknown as Linter.Config,
+          filename,
+        );
+      } catch {
+        stats.bareScreenThrew++;
+      }
+      if (bare && bare.some((message) => message.fatal)) {
+        stats.bareScreenFatal++;
+        bare = null;
+      }
+      if (bare) {
+        reportingBare = new Set(
+          bare
+            .map((message) => message.ruleId)
+            .filter((id): id is string => id !== null && id.startsWith(PREFIX))
+            .map((id) => id.slice(PREFIX.length)),
+        );
+        for (const name of reportingBare) {
+          if (!reporting.has(name) && isFixable(name)) {
+            stats.perturbationSilenced++;
+            bump(silencedByRule, name);
+          }
+        }
+        for (const name of reporting) {
+          if (!reportingBare.has(name) && isFixable(name)) {
+            stats.perturbationAdmitted++;
+            bump(admittedByRule, name);
+          }
+        }
+      }
+      const spans = scaffoldSpans(source, jsx);
+      /**
+       * A `Linter` message carries `line`/`column`, never `range`, so the
+       * offset has to be rebuilt from the text being linted. Reading a
+       * `range` that is always `undefined` skips every message and reports a
+       * clean zero — the arm has to resolve a real offset or it asserts
+       * nothing.
+       */
+      const lineStarts = [0];
+      for (let at = 0; at < exported.length; at++) {
+        if (exported[at] === '\n') lineStarts.push(at + 1);
+      }
+      for (const message of screened) {
+        const id = message.ruleId;
+        if (!id || !id.startsWith(PREFIX)) continue;
+        const lineStart = lineStarts[message.line - 1];
+        if (lineStart === undefined) continue;
+        const at = lineStart + message.column - 1;
+        const endLineStart =
+          message.endLine === undefined
+            ? undefined
+            : lineStarts[message.endLine - 1];
+        /**
+         * A report with no end position is a whole-FILE report — several rules
+         * anchor one at 1:1 — and coincides with the first injected span
+         * whenever the first declaration starts the file. Treating its start as
+         * its end makes containment trivially true and counted 4,106 such
+         * reports as contamination. Only a report with a real extent can be
+         * said to lie inside the scaffolding.
+         */
+        const end =
+          endLineStart === undefined || message.endColumn === undefined
+            ? null
+            : endLineStart + message.endColumn - 1;
+        /**
+         * Anchoring at the injected offset is NOT contamination on its own:
+         * `export ` is spliced onto the front of a declaration, so a report
+         * about that declaration legitimately begins where the keyword now
+         * does. What would be contamination is a report lying ENTIRELY inside
+         * the 7 characters this guard wrote, which names nothing the fixture
+         * contains. Both are counted; only the second is gated.
+         */
+        if (spans.some(([from, to]) => at >= from && at < to)) {
+          stats.scaffoldAnchored++;
+          if (
+            end !== null &&
+            end > at &&
+            spans.some(([from, to]) => at >= from && end <= to)
+          ) {
+            stats.scaffoldReports++;
+          }
+        }
+      }
+    }
+
     for (const fixer of reporting) {
       if (DIVERGENT_WITHOUT_PROGRAM.has(fixer)) continue;
       if (!isFixable(fixer)) continue;
@@ -486,7 +640,38 @@ for (const [owner, cases] of corpus.byRule) {
         stats.fixThrew++;
         continue;
       }
-      if (result.output === exported) continue;
+      if (result.output === exported) {
+        /**
+         * The fixer declined the exported text. Asking the same fixer the same
+         * question about the fixture AS WRITTEN separates "this fixer has
+         * nothing to say here" from "the injected `export ` is what silenced
+         * it" — the second is coverage this guard never gets, and counting it
+         * is what keeps the blind spot from widening unobserved.
+         */
+        if (surface.injected) {
+          try {
+            const bareFix = linter.verifyAndFix(
+              source,
+              {
+                ...parsing,
+                rules: {
+                  [`${PREFIX}${fixer}`]: cross
+                    ? 'error'
+                    : severityWithOptions(testCase),
+                },
+              } as unknown as Linter.Config,
+              filename,
+            );
+            if (bareFix.output !== source) {
+              stats.perturbationFixLost++;
+              bump(fixLostByRule, fixer);
+            }
+          } catch {
+            stats.bareFixThrew++;
+          }
+        }
+        continue;
+      }
       stats.rewrites++;
       stats.fixers.add(fixer);
       if (cross) {
@@ -644,6 +829,10 @@ console.log(
     `  pairs: ${stats.pairs} (${stats.crossPairs} cross), rewrites ${stats.rewrites} (${stats.crossRewrites} cross), ${stats.fixThrew} threw, ${stats.unparseableOutput} unparseable outputs`,
     `  owners walked: ${stats.owners.size}`,
     `  fixers: ${stats.fixers.size} rewrote (${stats.crossFixers.size} cross-rule)`,
+    `  perturbation: ${stats.perturbationSilenced} silenced, ${stats.perturbationAdmitted} admitted, ${stats.perturbationFixLost} fix-lost, ${stats.scaffoldReports} inside scaffolding (${stats.scaffoldAnchored} anchored at it) (bare screen: ${stats.bareScreenFatal} fatal, ${stats.bareScreenThrew} threw, ${stats.bareFixThrew} fix threw)`,
+    `  perturbation by rule: silenced ${JSON.stringify([...silencedByRule].sort((a, b) => b[1] - a[1]))}`,
+    `  perturbation by rule: admitted ${JSON.stringify([...admittedByRule].sort((a, b) => b[1] - a[1]))}`,
+    `  perturbation by rule: fix-lost ${JSON.stringify([...fixLostByRule].sort((a, b) => b[1] - a[1]))}`,
     `  removals: ${removals.length} (${
       removals.filter((removal) => removal.cross).length
     } cross) across ${removalsByFixer.size} fixer(s)`,
@@ -712,6 +901,102 @@ describe('every fixable rule either rewrites or is named', () => {
       fixableRuleNames.length,
     );
     expect(silentFixers.length).toBeLessThanOrEqual(8);
+  });
+});
+
+/**
+ * The rules whose fixer rewrites the fixture AS WRITTEN but declines it once
+ * `injectExports` has exported every declaration. Each consults exportedness
+ * in its own source, and the injection flips that input corpus-wide.
+ *
+ * The shape, demonstrated on `global-const-style`: a rename is withheld on an
+ * exported binding, because renaming one breaks every importer.
+ *
+ *   const myConfigValue = { a: 1 };        -> const MY_CONFIG_VALUE = { a: 1 } as const;
+ *   export const myConfigValue = { a: 1 }; -> export const myConfigValue = { a: 1 } as const;
+ *
+ * That matters here more than anywhere else: a rename is the likeliest way for
+ * a fixer to drop a name from the export surface, which is the defect this
+ * whole file exists to catch, and the perturbation withholds it. The guard
+ * cannot stop perturbing — it needs a surface to break — so the honest answer
+ * is to MEASURE the cost and gate it, rather than let it drift unobserved
+ * behind `stats.fixers.size`, which only ever registers a rule that
+ * contributes NOWHERE.
+ *
+ * Two-way audited like every other ledger here: a rule that starts losing
+ * fixes fails, and a listed rule that stops losing them fails too.
+ */
+const PERTURBATION_FIX_LOST = new Set([
+  'global-const-style',
+  'consistent-callback-naming',
+  'no-unnecessary-verb-suffix',
+  'enforce-centralized-mock-firestore',
+  'enforce-react-type-naming',
+  'no-unnecessary-destructuring-rename',
+  'prefer-type-over-interface',
+  'enforce-exported-function-types',
+  'enforce-firestore-set-merge',
+]);
+
+describe('injectExports is gated as a perturbation, not trusted as a read', () => {
+  /**
+   * The second of the two neutrality gates. A report multiset can match while
+   * the SUBJECT has moved onto the scaffolding, so matching counts is not
+   * enough on its own: this asks WHERE each report lands and refuses any that
+   * sits inside an injected `export ` token.
+   */
+  it('lands no report inside an injected `export ` span', () => {
+    expect(stats.scaffoldReports).toBe(0);
+  });
+
+  it('names every rule whose fixer the injection silences', () => {
+    expect(
+      [...fixLostByRule.keys()].filter(
+        (name) => !PERTURBATION_FIX_LOST.has(name),
+      ),
+    ).toEqual([]);
+  });
+
+  it('carries no stale fix-loss entry', () => {
+    expect(
+      [...PERTURBATION_FIX_LOST].filter((name) => !fixLostByRule.has(name)),
+    ).toEqual([]);
+  });
+
+  /**
+   * Ceilings sit just above the measured cost, so a change that widens the
+   * blind spot registers instead of being absorbed. Floors sit just under it,
+   * so a harness that stopped perturbing — and therefore stopped measuring
+   * anything — fails rather than reading clean.
+   */
+  it('holds the perturbation cost to its measured size', () => {
+    expect(stats.perturbationFixLost).toBeLessThanOrEqual(1700); // measured 1492
+    expect(stats.perturbationSilenced).toBeLessThanOrEqual(400); // measured 332
+    expect(stats.perturbationAdmitted).toBeLessThanOrEqual(220); // measured 166
+  });
+
+  it('actually perturbs (non-vacuity)', () => {
+    expect(stats.perturbationFixLost).toBeGreaterThanOrEqual(1200); // measured 1492
+    expect(stats.perturbationSilenced).toBeGreaterThanOrEqual(250); // measured 332
+    expect(stats.perturbationAdmitted).toBeGreaterThanOrEqual(120); // measured 166
+    expect(stats.injected).toBeGreaterThanOrEqual(15000); // measured 17572
+    /**
+     * The anchored count is what proves the containment test is discriminating
+     * rather than never reached: reports DO land at the injected offset in
+     * bulk, and none of them lies inside the token.
+     */
+    expect(stats.scaffoldAnchored).toBeGreaterThanOrEqual(3500); // measured 4445
+  });
+
+  /**
+   * The differential is only attributable to the injection while the bare arm
+   * is as healthy as the perturbed one. A fatal parse or a throw there would
+   * silently subtract cases from the comparison.
+   */
+  it('loses no case to the bare arm', () => {
+    expect(stats.bareScreenFatal).toBe(0);
+    expect(stats.bareScreenThrew).toBe(0);
+    expect(stats.bareFixThrew).toBe(0);
   });
 });
 
