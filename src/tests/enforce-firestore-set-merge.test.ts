@@ -667,6 +667,28 @@ ruleTesterTs.run('enforce-firestore-set-merge', enforceFirestoreSetMerge, {
         }
       `,
     },
+    // Over-decline control for #2266: a shadow is namespace-specific. A type
+    // parameter takes `MessageProcessor` in TYPE space only, while `extends`
+    // names its superclass as a VALUE, so the outer class still answers and its
+    // RealtimeBatchManager evidence still earns the carve-out. Treating any
+    // same-named binder as a shadow would report this Realtime call, trading
+    // the missed report above for a false positive.
+    {
+      code: `
+        import { RealtimeBatchManager } from '../realtimeDb/RealtimeBatchManager';
+        class MessageProcessor {
+          protected readonly batchManager = new RealtimeBatchManager();
+        }
+        function build<MessageProcessor>() {
+          class ReadMessageProcessor extends MessageProcessor {
+            markRead(path, counts) {
+              this.batchManager.update(path, counts);
+            }
+          }
+          return ReadMessageProcessor;
+        }
+      `,
+    },
   ],
   invalid: [
     // Invalid cases using update. Issue #2097: an argument written across lines
@@ -1602,6 +1624,47 @@ export async function save(args) {
             }
           }
           return FirestoreSyncer;
+        }
+      `,
+    },
+    // The superclass name resolves to the binder nearest the subclass, and a
+    // function parameter is such a binder even though it holds no statement
+    // (#2266). The real base here is `build`'s opaque parameter, which carries
+    // no RealtimeBatchManager evidence, so the Realtime-Database carve-out does
+    // not apply. Walking statement containers alone finds the module-scope
+    // `MessageProcessor` instead and exempts a Firestore call on its strength.
+    {
+      code: `
+        import { RealtimeBatchManager } from '../realtimeDb/RealtimeBatchManager';
+        class MessageProcessor {
+          protected readonly batchManager = new RealtimeBatchManager();
+        }
+        function build(MessageProcessor) {
+          class ReadMessageProcessor extends MessageProcessor {
+            markRead(path, counts) {
+              this.batchManager.update(path, counts);
+            }
+          }
+          return ReadMessageProcessor;
+        }
+      `,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+        import { RealtimeBatchManager } from '../realtimeDb/RealtimeBatchManager';
+        class MessageProcessor {
+          protected readonly batchManager = new RealtimeBatchManager();
+        }
+        function build(MessageProcessor) {
+          class ReadMessageProcessor extends MessageProcessor {
+            markRead(path, counts) {
+              this.batchManager.set({
+                ref: path,
+                data: counts,
+                merge: true,
+              });
+            }
+          }
+          return ReadMessageProcessor;
         }
       `,
     },

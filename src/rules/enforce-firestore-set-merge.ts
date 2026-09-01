@@ -16,7 +16,11 @@ import {
   requiresLineBreakAfter,
   requiresOwnLine,
 } from '../utils/replacementSegments';
-import { declarationOf, resolveInEnclosingScopes } from '../utils/lexicalScope';
+import {
+  declarationOf,
+  resolveInEnclosingScopes,
+  resolveNameInEnclosingScopes,
+} from '../utils/lexicalScope';
 import { reindentRelocated } from '../utils/reindentRelocated';
 
 type MessageIds = 'preferSetMerge';
@@ -542,8 +546,12 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
       reference: TSESTree.Node,
     ): TSESTree.ClassBody | null {
       return (
-        resolveInEnclosingScopes<TSESTree.ClassBody>(
+        resolveNameInEnclosingScopes<TSESTree.ClassBody>(
           reference,
+          name,
+          // `extends X` names X as a value, so a value binder — the parameter
+          // of a mixin factory — is what shadows a same-named outer class.
+          'value',
           (statements, container) =>
             containerClasses(container, statements).get(name),
         ) ?? null
