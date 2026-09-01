@@ -390,6 +390,11 @@ Two consequences follow from resolution being lexical rather than file-wide:
   see never answers for it. When the props type cannot be resolved at all, the
   rule has nothing to test composition against and skips the component rather
   than guessing.
+- **A type parameter shadows too.** In `function MyButton<Data>({ ... }: Data)`
+  the annotation names the component's own opaque parameter rather than an outer
+  `Data`, so the props type is unresolvable and the component is skipped. The
+  shadow is read only in type space: a value named `Data` binds no type and
+  leaves the alias resolvable.
 
 ### What counts as the component's own render output
 

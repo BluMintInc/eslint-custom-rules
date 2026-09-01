@@ -7,6 +7,7 @@ import {
   BOUND_UNPROVABLE,
   declarationOf,
   resolveInEnclosingScopes,
+  resolveNameInEnclosingScopes,
   ScopeMatch,
 } from '../utils/lexicalScope';
 
@@ -2338,8 +2339,10 @@ function findPropsTypeAliasByName(
   typeName: string,
 ): TSESTree.TSTypeAliasDeclaration | null {
   return (
-    resolveInEnclosingScopes<TSESTree.TSTypeAliasDeclaration>(
+    resolveNameInEnclosingScopes<TSESTree.TSTypeAliasDeclaration>(
       scope,
+      typeName,
+      'type',
       (statements) => {
         for (const stmt of statements) {
           const declaration = declarationOf(stmt);
