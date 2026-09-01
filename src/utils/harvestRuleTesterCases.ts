@@ -63,7 +63,7 @@ const TESTS_DIR = path.join(__dirname, '..', 'tests');
  * Only suites that import the shared tester module can declare a case, since
  * `src/tests/no-local-rule-tester.test.ts` forbids a locally-built tester. That
  * makes the import a sound admission test rather than a heuristic, and it is
- * what keeps this affordable: the ~28 files it excludes are the meta-suites
+ * what keeps this affordable: the files it excludes are the meta-suites
  * (`fixer-type-safety`, `docs-examples-conformance`, `rule-crash-robustness`,
  * this guard's own siblings) which run full corpus sweeps at module scope and
  * cost more to load than every rule suite combined.
