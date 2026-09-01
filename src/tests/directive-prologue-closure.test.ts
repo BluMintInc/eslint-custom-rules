@@ -31,7 +31,7 @@
  * six emit a top-of-file import, which is the exact edit policed here.
  *
  * NON-VACUITY IS PER-RULE (#1863). A floor on `variantFixed`, measured at
- * 22,745, is a global sum: the 26 lowest-yield rules can go silent inside it
+ * 23,560, is a global sum: the 26 lowest-yield rules can go silent inside it
  * without moving it. Every member of `REWRITING_RULES` therefore has to have
  * rewritten a prologue-bearing source, or be named below with a measured cause
  * that fails when it goes stale.
@@ -200,6 +200,14 @@ type Finding = {
   rule: string;
   variant: Variant['kind'];
   origin: string;
+  /**
+   * Which corpus bucket the fixture came from. A finding reached from a `valid`
+   * fixture still names a real displacement, but the rewrite that produced it
+   * only happens because the rule reports on code its author declared clean —
+   * so the bucket is carried into the message rather than left to be re-derived
+   * from `origin`.
+   */
+  bucket: string;
   reason: 'SHEBANG_DISPLACED' | 'DIRECTIVE_DEMOTED';
   before: string;
   after: string;
@@ -218,23 +226,33 @@ const stats = {
   skippedInert: 0,
   /**
    * TypeScript fixtures of a rewriting rule that are not `invalid`, split by
-   * bucket. Both are counted rather than dropped by a bare `continue`: together
-   * they are the largest population this guard sets aside — 4,143 `valid` and
-   * 4,441 `output` cases — and a `continue` with no counter reads exactly like a
-   * corpus that does not hold them (#1984).
+   * bucket — 4,143 `valid` and 4,441 `output`.
    *
-   * The skip is a scope choice, and it is NOT yield-free. Driving both buckets
-   * through `probeCase`'s own base step measures 171 of the 8,584 producing a
-   * rewrite this guard could then place a prologue in front of: 126 `output`
-   * cases the fixer rewrites again (a `RuleTester` `output` is ONE fix pass, not
-   * the fixpoint, so a further pass is ordinary), 37 `valid` cases that report
-   * under this harness's invented filename and stripped `project`, and 8
-   * `output` cases offering a suggestion. Those inputs are unprobed here, which
-   * is a coverage question rather than a correctness one — and one this counter
-   * makes visible instead of leaving to a bare `continue`.
+   * These used to be SKIPPED, on the reasoning that the guard's question is
+   * asked of a fixture whose rule reports. It is not: the question is whether a
+   * rewrite displaces a prologue, and a rewrite reached from any bucket poses it
+   * just as well. Driving both through `probeCase` costs almost nothing beyond
+   * the base step, because a case the rule rewrites through neither channel
+   * returns before the variant arm — so the 8,584 are filtered down to the
+   * handful that actually rewrite by the code that was already there (#2255).
+   *
+   * Counted per bucket, not folded into `considered`, so the expansion stays
+   * legible: a corpus that stopped holding either bucket would otherwise be
+   * indistinguishable from one this guard simply covers (#1984).
    */
-  skippedValidBucket: 0,
-  skippedOutputBucket: 0,
+  validBucketProbed: 0,
+  outputBucketProbed: 0,
+  /**
+   * Base rewrites split by the bucket they came from, so the population the
+   * expansion actually added is a measured number rather than a claim. A
+   * `valid` fixture that rewrites is worth reading twice — see the arm below.
+   */
+  baseRewritesByBucket: { invalid: 0, valid: 0, output: 0 } as Record<
+    string,
+    number
+  >,
+  /** Rules contributing a rewrite from a bucket the sweep used to drop. */
+  rulesRewritingOffInvalid: new Set<string>(),
   /**
    * Fixtures that already open with a shebang or a directive of their own. The
    * variant arm cannot use them — a second copy of the same token makes "which
@@ -247,7 +265,7 @@ const stats = {
 };
 
 type Drive = {
-  /** TypeScript `invalid` fixtures reaching `probeCase`. */
+  /** TypeScript fixtures reaching `probeCase`, in every bucket. */
   considered: number;
   /** Those not already carrying a shebang or a directive of their own. */
   probeable: number;
@@ -435,6 +453,7 @@ const probeOwnPrologue = (
           ? 'shebang'
           : 'directive',
       origin: `${tc.origin} [own prologue]`,
+      bucket: tc.bucket,
       reason: displaced,
       before: tc.code,
       after,
@@ -482,6 +501,9 @@ const probeCase = (name: string, tc: FixtureCase, collect: Finding[]) => {
   const baseSuggests = suggestionOutputs(name, tc.code, rules, tc).length > 0;
   if (!baseFixed && !baseSuggests) return;
   drive.baseRewrites++;
+  stats.baseRewritesByBucket[tc.bucket] =
+    (stats.baseRewritesByBucket[tc.bucket] ?? 0) + 1;
+  if (tc.bucket !== 'invalid') stats.rulesRewritingOffInvalid.add(name);
   if (baseFixed) {
     stats.baseFixed++;
     stats.rulesFixing.add(name);
@@ -498,6 +520,7 @@ const probeCase = (name: string, tc: FixtureCase, collect: Finding[]) => {
       rule: name,
       variant: variant.kind,
       origin: tc.origin,
+      bucket: tc.bucket,
       reason: displaced,
       before: source,
       after,
@@ -568,11 +591,8 @@ for (const [name, cases] of corpus.byRule) {
       rulesWithNonTypeScriptFixtures.add(name);
       continue;
     }
-    if (tc.bucket !== 'invalid') {
-      if (tc.bucket === 'valid') stats.skippedValidBucket++;
-      else stats.skippedOutputBucket++;
-      continue;
-    }
+    if (tc.bucket === 'valid') stats.validBucketProbed++;
+    else if (tc.bucket === 'output') stats.outputBucketProbed++;
     stats.considered++;
     driveOf(name).considered++;
     probeCase(name, tc, findings);
@@ -591,7 +611,7 @@ const UNDRIVEN_CAUSES = {
   noCorpus:
     'the harvest holds no fixture for it, so nothing was ever handed to its fixer',
   noTsFixture:
-    'declares no TypeScript `invalid` fixture, and a directive prologue is a TypeScript question',
+    'declares no TypeScript fixture in any bucket, and a directive prologue is a TypeScript question',
   everyFixtureHasItsOwnPrologue:
     'every fixture already opens with a shebang or a directive, which makes it ambiguous which copy moved',
   neverRewritesItsOwnFixtures:
@@ -624,7 +644,7 @@ const measuredUndriven: Record<string, UndrivenCause> = Object.fromEntries(
  * Rewriting rules this probe never drove with a prologue present, each with the
  * measured cause.
  *
- * The floors below say the sweep produced 22,745 variant rewrites across 82
+ * The floors below say the sweep produced 23,560 variant rewrites across 82
  * rules; they cannot say that any PARTICULAR rule contributed one, and a rule
  * whose fixer went silent drops to zero inside a five-figure sum without moving
  * it (#1863). This map is the other direction: every member of
@@ -639,7 +659,7 @@ const UNDRIVEN_RULES: Record<string, UndrivenCause> = {
 
 /**
  * The suggestion channel, accounted separately for the reason its floor is
- * separate: `--fix` never applies a suggestion, and the fix channel's 22,745
+ * separate: `--fix` never applies a suggestion, and the fix channel's 23,560
  * rewrites would cover for every suggestion-capable rule going silent at once.
  */
 const suggestionRules = Object.entries(plugin.rules)
@@ -728,10 +748,17 @@ describe('directive prologue and shebang survive every fixer', () => {
               .length,
           0,
         );
-    expect(stats.skippedValidBucket).toBe(bucketCount('valid'));
-    expect(stats.skippedOutputBucket).toBe(bucketCount('output'));
-    expect(stats.skippedValidBucket).toBeGreaterThan(4000); // measured 4,143
-    expect(stats.skippedOutputBucket).toBeGreaterThan(4300); // measured 4,441
+    // Every TypeScript case of a rewriting rule is now DRIVEN, whichever bucket
+    // declared it. The equalities are kept pointing at the same corpus
+    // properties so a bucket that stopped reaching the sweep fails here rather
+    // than shrinking `considered` by an amount nobody notices.
+    expect(stats.validBucketProbed).toBe(bucketCount('valid'));
+    expect(stats.outputBucketProbed).toBe(bucketCount('output'));
+    expect(stats.validBucketProbed).toBeGreaterThan(4000); // measured 4,143
+    expect(stats.outputBucketProbed).toBeGreaterThan(4300); // measured 4,441
+    expect(stats.considered).toBe(
+      bucketCount('valid') + bucketCount('output') + bucketCount('invalid'),
+    );
   });
 
   /**
@@ -748,23 +775,68 @@ describe('directive prologue and shebang survive every fixer', () => {
         `ownPrologue=${stats.ownPrologue}/${stats.ownPrologueRewritten}/${stats.rulesOwnPrologue.size} ` +
         `baseSuggested=${stats.baseSuggested} variantSuggested=${stats.variantSuggested} ` +
         `rulesSuggesting=${stats.rulesSuggesting.size} ` +
-        `skippedValid=${stats.skippedValidBucket} skippedOutput=${stats.skippedOutputBucket} ` +
+        `validProbed=${stats.validBucketProbed} outputProbed=${stats.outputBucketProbed} ` +
+        `baseByBucket=${JSON.stringify(stats.baseRewritesByBucket)} ` +
+        `rulesOffInvalid=${stats.rulesRewritingOffInvalid.size} ` +
         `skippedInert=${stats.skippedInert} nonTsSkipped=${nonTypeScriptSkipped} ` +
         `rewritingRules=${REWRITING_RULES.size}`,
     );
     expect(stats.rulesProbed.size).toBeGreaterThanOrEqual(85); // measured 90
-    expect(stats.considered).toBeGreaterThanOrEqual(6200); // measured 6,337
-    expect(stats.baseFixed).toBeGreaterThanOrEqual(4450); // measured 4,553
-    expect(stats.variantFixed).toBeGreaterThanOrEqual(22000); // measured 22,745
+    expect(stats.considered).toBeGreaterThanOrEqual(14800); // measured 14,921
+    expect(stats.baseFixed).toBeGreaterThanOrEqual(4650); // measured 4,716
+    expect(stats.variantFixed).toBeGreaterThanOrEqual(23400); // measured 23,560
     expect(stats.rulesFixing.size).toBeGreaterThanOrEqual(80); // measured 82
   });
 
   /**
+   * The yield of driving the buckets this guard used to drop.
+   *
+   * Floored, because the expansion is worth nothing if the added cases all
+   * return at the base step: 8,584 extra fixtures that never rewrite would cost
+   * runtime and prove exactly as much as skipping them did. Measured at 171
+   * base rewrites (37 `valid`, 134 `output`) spread across 41 rules — twice the
+   * 20 the issue estimated — each of which the variant arm then places a
+   * prologue in front of.
+   *
+   * The `valid` 37 are the ones worth reading twice, and they are NOT evidence
+   * of an over-reporting rule. A `valid` fixture is declared valid under its own
+   * suite's `RuleTester` — its declared `filename` and `parserOptions`, and for
+   * a type-aware rule a real `project`. This harness lints it under an invented
+   * filename with `project` stripped, so a rule gated on either reports here and
+   * not there. The rewrite is therefore real *for this harness*, which is all
+   * this guard needs: it asks whether a fixer that runs displaces a prologue,
+   * not whether the fixer should have run. Findings carry their `bucket` so a
+   * report from this population is never mistaken for one off an `invalid`
+   * fixture.
+   */
+  it('the expanded buckets actually yield rewrites to probe', () => {
+    expect(
+      stats.baseRewritesByBucket.valid + stats.baseRewritesByBucket.output,
+    ).toBeGreaterThanOrEqual(160); // measured 171
+    expect(stats.baseRewritesByBucket.valid).toBeGreaterThanOrEqual(30); // measured 37
+    expect(stats.baseRewritesByBucket.output).toBeGreaterThanOrEqual(125); // measured 134
+    expect(stats.rulesRewritingOffInvalid.size).toBeGreaterThanOrEqual(38); // measured 41
+    // The buckets are driven, not merely counted: a base rewrite can only be
+    // recorded from a case that reached `probeCase`.
+    expect(stats.baseRewritesByBucket.invalid).toBeGreaterThan(
+      stats.baseRewritesByBucket.valid,
+    );
+  });
+
+  /**
    * The population the variant arm cannot use, now asked about the prologue it
-   * already carries. Measured at 70 fixtures across 21 rules, every one of them
-   * rewritten — so this arm drives fixers rather than merely counting inputs.
-   * Before #2216 the same 70 were dropped above `drive.probeable++`, invisible
-   * to every counter.
+   * already carries. Before #2216 these were dropped above `drive.probeable++`,
+   * invisible to every counter.
+   *
+   * Measured at 140 fixtures across 21 rules, of which 70 rewrite. The two
+   * numbers separated when #2255 brought the `valid` and `output` buckets into
+   * the sweep, and the gap is the expected shape rather than a loss: a `valid`
+   * fixture is one its author declared the rule silent on, and an `output`
+   * fixture is already at its post-fix state, so neither is likely to rewrite.
+   * `ownPrologueRewritten` is floored separately for exactly that reason — it is
+   * the half that proves this arm drives fixers rather than merely counting
+   * inputs, and folding the two together would let the driven half collapse
+   * behind a rising total.
    *
    * The planted controls below route through `probeCase` too and so add three
    * to these counters. The floors sit far enough above three that a collapsed
@@ -772,7 +844,7 @@ describe('directive prologue and shebang survive every fixer', () => {
    * certify nothing.
    */
   it('probes the fixtures that carry a prologue of their own', () => {
-    expect(stats.ownPrologue).toBeGreaterThanOrEqual(68); // measured 70
+    expect(stats.ownPrologue).toBeGreaterThanOrEqual(135); // measured 140
     expect(stats.ownPrologueRewritten).toBeGreaterThanOrEqual(68); // measured 70
     expect(stats.rulesOwnPrologue.size).toBeGreaterThanOrEqual(20); // measured 21
   });
@@ -896,7 +968,7 @@ describe('directive prologue and shebang survive every fixer', () => {
 
   /**
    * The suggestion channel gets its OWN floor. Rolled into the aggregate above,
-   * the 22,745 fix-channel rewrites would cover for it going to zero — which is
+   * the 23,560 fix-channel rewrites would cover for it going to zero — which is
    * exactly how it stayed unmeasured in four other guards until #1733.
    */
   it('probed the suggestion channel', () => {
@@ -1082,8 +1154,8 @@ afterAll(() => {
       `variantFixed=${stats.variantFixed} suggested=${stats.variantSuggested} findings=${findings.length} ` +
       `skipped(undrivable)=${stats.skippedUndrivable} ` +
       `skipped(inert)=${stats.skippedInert} ` +
-      `skipped(valid)=${stats.skippedValidBucket} ` +
-      `skipped(output)=${stats.skippedOutputBucket} ` +
+      `probed(valid)=${stats.validBucketProbed} ` +
+      `probed(output)=${stats.outputBucketProbed} ` +
       `ownPrologue=${stats.ownPrologue} ` +
       `ownPrologueRewritten=${stats.ownPrologueRewritten} ` +
       `rulesOwnPrologue=${stats.rulesOwnPrologue.size}\n`,
