@@ -145,13 +145,19 @@ for (const cases of corpus.byRule.values()) {
 }
 
 /**
- * Floors sit well under the measurement (194 rules, 17,343 cases, 316 suites) so
- * ordinary rule churn does not trip them, and far enough above zero that a
- * harvest which quietly stopped collecting cannot pass.
+ * Floors sit just under the measurement (194 rules, 23,932 cases across 367
+ * suites, of which 23,824 are TypeScript) rather than at a round number far
+ * below it: slack between a floor and its measurement is exactly the room a
+ * harvest that quietly stopped collecting needs to pass.
+ *
+ * The TypeScript count gets its own constant. Sharing one with the total forces
+ * whichever floor moves to be cut for the SMALLER population, which puts the
+ * slack back into the larger one.
  */
-const MIN_CASES = 15000;
-const MIN_SUITES = 300;
-const MIN_RULES = 150;
+const MIN_CASES = 23500; // measured 23,932
+const MIN_TS_CASES = 23400; // measured 23,824
+const MIN_SUITES = 360; // measured 367
+const MIN_RULES = 190; // measured 194
 
 const TESTS_ROOT = __dirname;
 
@@ -793,9 +799,12 @@ describe('every declared tester contributes to the corpus', () => {
   });
 
   it('harvests fixtures in every language, not just TypeScript', () => {
-    expect(casesByLanguage.get('ts')).toBeGreaterThan(MIN_CASES);
-    expect(casesByLanguage.get('json')).toBeGreaterThan(0);
-    expect(casesByLanguage.get('markdown')).toBeGreaterThan(0);
+    expect(casesByLanguage.get('ts')).toBeGreaterThan(MIN_TS_CASES);
+    // The two small populations are the entire corpus of two registered,
+    // `error`-severity, autofixing rules (#1860), and are invisible inside the
+    // TypeScript floor above — a bare `> 0` lets either fall to one case.
+    expect(casesByLanguage.get('json')).toBeGreaterThanOrEqual(8); // measured 8
+    expect(casesByLanguage.get('markdown')).toBeGreaterThanOrEqual(95); // measured 100
   });
 
   it('gives every non-TypeScript suite a corpus under its own language', () => {

@@ -555,17 +555,29 @@ describe('a fixer emits no restricted-production breach', () => {
  */
 describe('the restricted-production guard is load-bearing', () => {
   it('harvests the suite without losing it', () => {
+    // eslint-disable-next-line no-console
+    console.log(
+      `[restricted-production] suites=${corpus.suitesUsed} ` +
+        `scanned=${stats.fixturesScanned} rewritingRules=${REWRITING_RULES.length} ` +
+        `soloFixes=${stats.soloFixes} soloRules=${stats.soloRulesFixed.size} ` +
+        `fullFixes=${stats.fullFixes} suggestions=${stats.suggestionsChecked} ` +
+        `plants=${stats.plantsBuilt} plantFixes=${stats.plantFixes} ` +
+        `plantsRejected=${stats.plantsRejected} ` +
+        `rulesPerturbed=${stats.rulesPerturbed.size} ` +
+        `throw=${stats.plantsBuiltByProduction.throw}/${stats.plantFixesByProduction.throw}/${stats.rulesPerturbedByProduction.throw.size} ` +
+        `arrow=${stats.plantsBuiltByProduction.arrow}/${stats.plantFixesByProduction.arrow}/${stats.rulesPerturbedByProduction.arrow.size}`,
+    );
     expect(corpus.failures).toEqual([]);
-    expect(corpus.suitesUsed).toBeGreaterThan(250);
-    expect(stats.fixturesScanned).toBeGreaterThan(15000);
+    expect(corpus.suitesUsed).toBeGreaterThan(360); // measured 367
+    expect(stats.fixturesScanned).toBeGreaterThan(23400); // measured 23,824
   });
 
   it('drives every channel over a real population', () => {
-    expect(REWRITING_RULES.length).toBeGreaterThanOrEqual(60);
-    expect(stats.soloFixes).toBeGreaterThanOrEqual(8000);
-    expect(stats.soloRulesFixed.size).toBeGreaterThanOrEqual(70);
-    expect(stats.fullFixes).toBeGreaterThanOrEqual(7000);
-    expect(stats.suggestionsChecked).toBeGreaterThanOrEqual(200);
+    expect(REWRITING_RULES.length).toBeGreaterThanOrEqual(88); // measured 90
+    expect(stats.soloFixes).toBeGreaterThanOrEqual(14500); // measured 14,919
+    expect(stats.soloRulesFixed.size).toBeGreaterThanOrEqual(80); // measured 82
+    expect(stats.fullFixes).toBeGreaterThanOrEqual(11500); // measured 11,893
+    expect(stats.suggestionsChecked).toBeGreaterThanOrEqual(360); // measured 368
   });
 
   /**
@@ -574,17 +586,17 @@ describe('the restricted-production guard is load-bearing', () => {
    * plants would silently retire the arm that found #1969.
    */
   it('plants the shape the corpus does not contain', () => {
-    expect(stats.plantsBuilt).toBeGreaterThanOrEqual(1000);
-    expect(stats.plantFixes).toBeGreaterThanOrEqual(400);
-    expect(stats.rulesPerturbed.size).toBeGreaterThanOrEqual(20);
+    expect(stats.plantsBuilt).toBeGreaterThanOrEqual(2350); // measured 2,435
+    expect(stats.plantFixes).toBeGreaterThanOrEqual(880); // measured 910
+    expect(stats.rulesPerturbed.size).toBeGreaterThanOrEqual(26); // measured 28
     /**
-     * And what the plant arm THROWS AWAY, capped just above its measured 57.
+     * And what the plant arm THROWS AWAY, capped just above its measured 55.
      * A rejected plant never reaches the detector, so if rejection ever
      * approached the built total this arm would be back to the empty corpus it
-     * was created to escape — reporting exactly the green it reports now. The
+     * was created to escape — reporting exactly the green it reports here. The
      * counter was incremented and read by nothing.
      */
-    expect(stats.plantsRejected).toBeLessThanOrEqual(80);
+    expect(stats.plantsRejected).toBeLessThanOrEqual(65);
   });
 
   /**
@@ -602,10 +614,10 @@ describe('the restricted-production guard is load-bearing', () => {
     expect(stats.rulesPerturbedByProduction.throw.size).toBeGreaterThanOrEqual(
       3,
     );
-    expect(stats.plantsBuiltByProduction.arrow).toBeGreaterThanOrEqual(2000);
-    expect(stats.plantFixesByProduction.arrow).toBeGreaterThanOrEqual(800);
+    expect(stats.plantsBuiltByProduction.arrow).toBeGreaterThanOrEqual(2200);
+    expect(stats.plantFixesByProduction.arrow).toBeGreaterThanOrEqual(870);
     expect(stats.rulesPerturbedByProduction.arrow.size).toBeGreaterThanOrEqual(
-      20,
+      24,
     );
   });
 

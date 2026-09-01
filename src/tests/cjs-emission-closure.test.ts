@@ -772,7 +772,8 @@ console.log(
     `[cjs-emission] corpus A: ${outputStats.casesConsidered} invalid case(s), ` +
       `${outputStats.outputsAnalyzed} declared output(s) across ` +
       `${outputStats.rulesWithOutput.size} rule(s); ` +
-      `${outputStats.nonTsOutputs} from non-TS testers; unparseable ` +
+      `${outputStats.nonTsOutputs} from non-TS testers of which ` +
+      `${outputStats.nonTsOutputsAnalyzed} analysed; unparseable ` +
       `${outputStats.tsInputUnparseable} TS input(s)/` +
       `${outputStats.nonTsInputUnparseable} non-TS input(s)/` +
       `${outputStats.outputUnparseable} output(s); languages ` +
@@ -784,6 +785,9 @@ console.log(
       `${composedStats.outputUnanalyzable} output(s) unanalyzable; ` +
       `seen ${JSON.stringify(composedSeen)}, carried ` +
       `${JSON.stringify(composedCarried)}`,
+    `[cjs-emission] composed config: ${
+      Object.keys(FIX_CONFIG).length
+    } rule(s); ` + `harvest ${harvested.filesLoaded} file(s)`,
     `[cjs-emission] suggestion channel: ${totalSuggestionsApplied} suggestion(s) ` +
       `applied across ${suggestionRuleNames.length} rule(s); skips ` +
       `${JSON.stringify(suggestionSkips)}`,
@@ -884,10 +888,10 @@ describe('no fixer emits ESM-only syntax a CommonJS transform rejects', () => {
  */
 describe('the CJS emission guard is load-bearing', () => {
   it('harvests the suite without losing it', () => {
-    expect(harvested.filesLoaded).toBeGreaterThanOrEqual(250);
-    // Measured: 190 rules compose. At the >100 this replaced, 89 could fall
+    expect(harvested.filesLoaded).toBeGreaterThanOrEqual(275); // measured 282
+    // Measured: 189 rules compose. At the >100 this replaced, 89 could fall
     // out of the composed --fix while the suite stayed green.
-    expect(Object.keys(FIX_CONFIG).length).toBeGreaterThanOrEqual(185);
+    expect(Object.keys(FIX_CONFIG).length).toBeGreaterThanOrEqual(187);
     // The type-aware rules this guard once dropped for no stated reason must
     // now compose like any other, or the coverage the lift bought is silently
     // handed back. 15 of the 16 ship in recommended (`enforce-date-ttime` is
@@ -903,16 +907,16 @@ describe('the CJS emission guard is load-bearing', () => {
   });
 
   it('analyses enough declared outputs across enough rules', () => {
-    // Measured: 8,333 invalid cases and 3,724 declared outputs across 84 rules.
-    // The floors sit just under that rather than far below it — the previous
-    // 6,000/2,300/75 had decayed into 28% slack, which is more room than the
-    // entire corpus loss this guard exists to notice would have needed to hide.
-    expect(outputStats.casesConsidered).toBeGreaterThanOrEqual(8300);
-    expect(outputStats.outputsAnalyzed).toBeGreaterThanOrEqual(3700);
-    expect(outputStats.rulesWithOutput.size).toBeGreaterThanOrEqual(83);
-    // Declared SUGGESTION outputs are their own population (139 across 6 rules
-    // when this channel was added), and were read by nothing before #1733.
-    expect(outputStats.suggestionOutputsAnalyzed).toBeGreaterThanOrEqual(135);
+    // Measured: 10,185 invalid cases and 4,944 declared outputs across 84
+    // rules. The floors sit just under that rather than far below it — slack
+    // between a floor and its measurement is room for exactly the corpus loss
+    // this guard exists to notice.
+    expect(outputStats.casesConsidered).toBeGreaterThanOrEqual(10000);
+    expect(outputStats.outputsAnalyzed).toBeGreaterThanOrEqual(4800);
+    expect(outputStats.rulesWithOutput.size).toBeGreaterThanOrEqual(83); // measured 84
+    // Declared SUGGESTION outputs are their own population, measured at 160
+    // across 6 rules, and were read by nothing before #1733.
+    expect(outputStats.suggestionOutputsAnalyzed).toBeGreaterThanOrEqual(155);
     expect(outputStats.rulesWithSuggestionOutput.size).toBeGreaterThanOrEqual(
       6,
     );
@@ -926,10 +930,12 @@ describe('the CJS emission guard is load-bearing', () => {
      *
      * Corpus A never needed the drop in the first place: it is text analysis,
      * not a lint, so no parser is selected for a case and no filename is
-     * invented for one. Measured, the two rules contribute 14 declared outputs,
-     * of which the detector reads the 10 whose input is also valid TypeScript —
+     * invented for one. Measured, the two rules contribute 27 declared outputs,
+     * of which the detector reads the 15 whose input is also valid TypeScript —
      * a Markdown document is often both, since a fenced block is a template
-     * literal. Admission without that second number would be paper coverage.
+     * literal. Admission without that second number would be paper coverage,
+     * and both floors sit just under their measurement so the analysed half
+     * cannot collapse inside the declared one.
      */
     expect([...outputStats.languages].sort()).toEqual([
       'json',
@@ -940,8 +946,8 @@ describe('the CJS emission guard is load-bearing', () => {
       'enforce-typescript-markdown-code-blocks',
       'no-unpinned-dependencies',
     ]);
-    expect(outputStats.nonTsOutputs).toBeGreaterThanOrEqual(14);
-    expect(outputStats.nonTsOutputsAnalyzed).toBeGreaterThanOrEqual(10);
+    expect(outputStats.nonTsOutputs).toBeGreaterThanOrEqual(25); // measured 27
+    expect(outputStats.nonTsOutputsAnalyzed).toBeGreaterThanOrEqual(14); // measured 15
   });
 
   it("leaves no fixture unjudged by the harness's own filename or parse mode", () => {
@@ -1017,10 +1023,10 @@ describe('the CJS emission guard is load-bearing', () => {
       'markdown',
       'ts',
     ]);
-    // Measured: 7 JSON and 68 Markdown fixtures reach the filter, and none
+    // Measured: 7 JSON and 76 Markdown fixtures reach the filter, and none
     // mentions `import` or `await`, so corpus B carries TypeScript alone.
     expect(composedSeen.json).toBeGreaterThanOrEqual(7);
-    expect(composedSeen.markdown).toBeGreaterThanOrEqual(61);
+    expect(composedSeen.markdown).toBeGreaterThanOrEqual(70);
     // Nothing is lost between collection and linting.
     expect(
       Object.values(composedCarried).reduce((sum, count) => sum + count, 0),
@@ -1058,10 +1064,10 @@ describe('the CJS emission guard is load-bearing', () => {
         (rule) => (suggestionStats.get(rule) || 0) < 1,
       ),
     ).toEqual([]);
-    // Measured: 299 applied. The floor sits just under it, and the skip
+    // Measured: 368 applied. The floor sits just under it, and the skip
     // ledger pinned at zero above closes the headroom a dropped fixture
     // would otherwise hide in.
-    expect(totalSuggestionsApplied).toBeGreaterThanOrEqual(295);
+    expect(totalSuggestionsApplied).toBeGreaterThanOrEqual(360);
   });
 
   it('detects a module-scope await inside a SUGGESTION (positive control)', () => {
@@ -1107,11 +1113,11 @@ describe('the CJS emission guard is load-bearing', () => {
 
   it('actually rewrites a large share of the composed corpus', () => {
     // Step B is vacuous unless the config genuinely fixes these fixtures.
-    // Measured: 4,970 considered and 2,573 rewritten. The previous 1,500/300
-    // floors sat at a third and an eighth of that, enough slack to absorb the
-    // corpus loss this guard exists to notice several times over.
-    expect(composedStats.considered).toBeGreaterThanOrEqual(4900);
-    expect(composedStats.rewritten).toBeGreaterThanOrEqual(2500);
+    // Measured: 5,801 considered and 3,177 rewritten. Slack between a floor and
+    // its measurement is room to absorb the corpus loss this guard exists to
+    // notice, so each sits just under.
+    expect(composedStats.considered).toBeGreaterThanOrEqual(5600);
+    expect(composedStats.rewritten).toBeGreaterThanOrEqual(3050);
   });
 
   it('detects a module-scope await (positive control)', () => {

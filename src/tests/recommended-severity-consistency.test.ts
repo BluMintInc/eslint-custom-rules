@@ -373,9 +373,20 @@ describe('recommended config ↔ documented config severity', () => {
   );
 
   it('finds documented config examples to check', () => {
+    // eslint-disable-next-line no-console
+    console.log(
+      `[severity-consistency] pages=${pages.length} ` +
+        `withNotice=${
+          pages.filter((page) => page.notice !== undefined).length
+        } ` +
+        `withExamples=${withExamples.length}`,
+    );
     // Anti-vacuity floor for the example extractor only; whole-rule-set
     // coverage is guaranteed by the notice accounting above, not by this count.
-    expect(withExamples.length).toBeGreaterThanOrEqual(35);
+    // Cut just under the measurement so an extractor that stops recognising a
+    // block shape fails here: a floor of 35 against 51 lets a third of the
+    // documented examples leave this arm without moving it.
+    expect(withExamples.length).toBeGreaterThanOrEqual(50); // measured 51
   });
 
   it.each(withExamples)(

@@ -69,9 +69,10 @@ const DOCS_DIR = path.join(__dirname, '../../docs/rules');
  * module) exist only under a non-default option and were unreachable until this
  * channel landed.
  *
- * Channel 2 is deliberately NOT every fixture. Admitting all 13,754
- * fixable-rule fixtures yields 4,654 pairs and 38 contradiction pairs beyond
- * FIX_INDUCED_BASELINE — a corpus-BREADTH question, and a different one from
+ * Channel 2 is deliberately NOT every fixture. Admitting every fixable-rule
+ * fixture — 13,754 of them against the 17,343-case corpus that measurement was
+ * taken on — yields 4,654 pairs and 38 contradiction pairs beyond
+ * FIX_INDUCED_BASELINE, a corpus-BREADTH question and a different one from
  * this. Widening to it means triaging 38 pairs as fixer defects or design
  * deferrals, which is its own piece of work rather than a side effect of
  * carrying options. Admitted instead are the two sets the docs channel provably
@@ -1373,12 +1374,12 @@ describe('the closure guard is load-bearing', () => {
     ).toBe(fixtureStats.considered);
     expect(fixtureStats.crashed).toBe(0);
     expect(fixtureStats.rewritten).toBeGreaterThanOrEqual(170);
-    // The harvest itself must not have silently collapsed. 13,754 cases over
+    // The harvest itself must not have silently collapsed. 23,932 cases over
     // the whole plugin is the pool this channel selects from; a floor here is
     // what separates "the filter admitted little" from "the harvest returned
-    // nothing".
+    // nothing", and only a floor cut just under that pool can tell them apart.
     expect(fixtureCorpus.failures).toEqual([]);
-    expect(fixtureCorpus.totalCases).toBeGreaterThanOrEqual(13000);
+    expect(fixtureCorpus.totalCases).toBeGreaterThanOrEqual(23500);
   });
 
   /**

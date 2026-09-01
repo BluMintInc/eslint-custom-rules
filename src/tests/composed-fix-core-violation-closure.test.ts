@@ -927,16 +927,16 @@ describe('the composed --fix must not introduce a core violation', () => {
         `findings=${findings.length} composition=${composition.length} ` +
         `soloExplained=${soloExplained.length} attributionFixes=${stats.attributionFixes}`,
     );
-    // Measured at 1.20.148: 19,882 considered / 19,882 probed / 9,741
-    // rewritten / 192 owners. Each floor sits just under its own measurement,
-    // and each fails differently: a probe count with nothing rewritten means the
-    // fix pass never ran (the parser, filename or options plumbing lost), and a
-    // corpus that reaches few owners says nothing about the rest of the config
-    // however many snippets it holds.
-    expect(stats.considered).toBeGreaterThan(19500);
-    expect(stats.probed).toBeGreaterThan(19500);
-    expect(stats.rewritten).toBeGreaterThan(9400);
-    expect(stats.owners.size).toBeGreaterThan(185);
+    // Measured 23,824 considered / 23,824 probed / 11,785 rewritten / 192
+    // owners. Each floor sits just under its own measurement, and each fails
+    // differently: a probe count with nothing rewritten means the fix pass never
+    // ran (the parser, filename or options plumbing lost), and a corpus that
+    // reaches few owners says nothing about the rest of the config however many
+    // snippets it holds.
+    expect(stats.considered).toBeGreaterThan(23500);
+    expect(stats.probed).toBeGreaterThan(23500);
+    expect(stats.rewritten).toBeGreaterThan(11500);
+    expect(stats.owners.size).toBeGreaterThan(190);
   });
 
   /**
@@ -978,7 +978,9 @@ describe('the composed --fix must not introduce a core violation', () => {
       }
     }
     expect(stats.nonTsSkipped).toBe(nonTs);
-    expect(nonTs).toBeGreaterThan(0);
+    // A bare `> 0` lets the whole non-TypeScript population fall to one case
+    // while the equality above still holds.
+    expect(nonTs).toBeGreaterThanOrEqual(100); // measured 108
   });
 
   /**
@@ -1589,13 +1591,22 @@ describe('the composed --fix must not introduce a core violation', () => {
       .filter(([bucket]) => !BUCKETS.has(bucket))
       .map(([bucket, count]) => `${bucket}=${count}`)
       .sort();
+    // eslint-disable-next-line no-console
+    console.log(
+      `[composed-core] buckets ${[...byBucket]
+        .map(([bucket, count]) => `${bucket}:${count}`)
+        .sort()
+        .join(' ')}`,
+    );
     expect(skipped).toEqual([]);
     // An empty `skipped` is also what a bucket VANISHING from the harvest looks
-    // like, so name each one and floor it.
+    // like, so name each one and floor it just under its measurement — the
+    // 5,000/5,000/1,000 this replaces let the output bucket fall by three
+    // quarters without moving.
     expect([...byBucket.keys()].sort()).toEqual(['invalid', 'output', 'valid']);
-    expect(byBucket.get('valid')).toBeGreaterThan(5000);
-    expect(byBucket.get('invalid')).toBeGreaterThan(5000);
-    expect(byBucket.get('output')).toBeGreaterThan(1000);
+    expect(byBucket.get('valid')).toBeGreaterThan(9100); // measured 9,299
+    expect(byBucket.get('invalid')).toBeGreaterThan(9900); // measured 10,084
+    expect(byBucket.get('output')).toBeGreaterThan(4400); // measured 4,441
     expect(stats.considered).toBe(
       [...byBucket.values()].reduce((total, count) => total + count, 0),
     );

@@ -940,13 +940,17 @@ const OPTION_CARRIAGE_FLOOR = 750; // measured 783
  * noticed, so a fatal-parse ceiling of 200 against a measured 0 would readmit
  * that exact defect while still reading as an assertion.
  */
-// measured 95 — the CommonMark fence fixtures added to
-// `enforce-typescript-markdown-code-blocks` for #2213, including its CRLF and
-// code-span cases, took the non-TS population from 40 to 95. These cases are
-// judged instead by `lang-fix-closure`, the core-equivalent oracle for their
-// languages.
-const NON_TS_CEILING = 130;
-const SHARED_SCOPE_CEILING = 50; // measured 30
+/**
+ * The non-TypeScript population, floored rather than capped. It is the whole
+ * corpus of two registered, `error`-severity, autofixing rules plus the
+ * CommonMark fence fixtures `enforce-typescript-markdown-code-blocks` carries
+ * (#2213), and it is judged by `lang-fix-closure`, the core-equivalent oracle
+ * for those languages. A cap on it measures nothing this file decides; what
+ * matters is that the skip still equals the population and the population is
+ * still there.
+ */
+const NON_TS_FLOOR = 100; // measured 108
+const SHARED_SCOPE_CEILING = 40; // measured 33
 const INPUT_FATAL_CEILING = 10; // measured 0
 /**
  * The mode discount's own non-vacuity. Measured 2 - the two
@@ -1065,8 +1069,16 @@ describe("a rule's --fix must not introduce a type error on ANY rule's fixture",
     expect(stats.rewrites).toBeGreaterThanOrEqual(REWRITE_FLOOR);
     expect(assertedPairs.length).toBeGreaterThanOrEqual(ASSERTED_FLOOR);
     // Skips are bounded from ABOVE: each is a case this guard does not judge,
-    // so a harness regression shows up as a jump, not as a dip.
-    expect(stats.nonTypeScriptDropped).toBeLessThanOrEqual(NON_TS_CEILING);
+    // so a harness regression shows up as a jump, not as a dip. The
+    // non-TypeScript skip is the exception, because it is not a judgement at
+    // all but a PROPERTY of the corpus — every case whose language is not `ts`
+    // — and pinning it to that population is the one bound that cannot drift
+    // out from under its measurement.
+    const nonTypeScriptCases = [...corpus.byRule.values()]
+      .flat()
+      .filter((testCase) => testCase.language !== 'ts').length;
+    expect(stats.nonTypeScriptDropped).toBe(nonTypeScriptCases);
+    expect(nonTypeScriptCases).toBeGreaterThanOrEqual(NON_TS_FLOOR);
     expect(stats.sharedScopeDropped).toBeLessThanOrEqual(SHARED_SCOPE_CEILING);
     expect(stats.inputFatalDropped).toBeLessThanOrEqual(INPUT_FATAL_CEILING);
     expect(stats.threw).toBe(0);

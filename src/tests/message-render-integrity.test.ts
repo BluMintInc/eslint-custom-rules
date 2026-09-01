@@ -353,8 +353,11 @@ describe('message render integrity', () => {
     it('reaches the fixture corpus', () => {
       expect(corpus.failures).toEqual([]);
       expect(stats.crashes).toEqual([]);
-      expect(corpus.suitesUsed).toBeGreaterThanOrEqual(280);
-      expect(stats.casesProbed).toBeGreaterThanOrEqual(13000);
+      // Both floors sit just under their measurement. A floor of 13,000
+      // against 23,932 is room for 45% of the corpus to leave this probe
+      // without moving the number that is supposed to notice.
+      expect(corpus.suitesUsed).toBeGreaterThanOrEqual(360); // measured 367
+      expect(stats.casesProbed).toBeGreaterThanOrEqual(23500); // measured 23,932
     });
 
     /**
@@ -364,7 +367,7 @@ describe('message render integrity', () => {
      */
     it('makes every probed rule report', () => {
       expect(stats.rulesSilent).toEqual([]);
-      expect(stats.rulesProbed.size).toBeGreaterThanOrEqual(170);
+      expect(stats.rulesProbed.size).toBeGreaterThanOrEqual(190); // measured 194
     });
 
     /**
@@ -390,21 +393,39 @@ describe('message render integrity', () => {
           (rule) => !registeredRules.includes(rule),
         ),
       ).toEqual([]);
-      expect(registeredRules.length).toBeGreaterThan(150);
+      expect(registeredRules.length).toBeGreaterThan(190); // measured 194
     });
 
     /**
-     * Three floors that can genuinely diverge: reports rendered, the strictly
-     * smaller subset whose template can actually fail check 1, and the distinct
-     * message identities behind them. Flooring only the largest would let the
-     * asserted population collapse while the number still looked big (#1749).
+     * Four floors that can genuinely diverge: reports rendered, the strictly
+     * smaller subset whose template can actually fail check 1, the distinct
+     * message identities behind them, and the suggestion descriptions that
+     * reach `inspect` through a different field entirely. Flooring only the
+     * largest would let the asserted population collapse while the number still
+     * looked big (#1749).
      */
     it('asserts on a population large enough to matter', () => {
-      expect(stats.reportsRendered).toBeGreaterThanOrEqual(6000);
-      expect(stats.reportsWithTemplateVars).toBeGreaterThanOrEqual(5000);
+      // eslint-disable-next-line no-console
+      console.log(
+        `[message-render] suites=${corpus.suitesUsed} cases=${stats.casesProbed} ` +
+          `rulesProbed=${stats.rulesProbed.size} reports=${stats.reportsRendered} ` +
+          `withTemplateVars=${stats.reportsWithTemplateVars} ` +
+          `suggestions=${stats.suggestionsRendered} ids=${renderedIds.size} ` +
+          `declaredIds=${declaredIds.length}`,
+      );
+      expect(stats.reportsRendered).toBeGreaterThanOrEqual(11000); // measured 11,541
+      expect(stats.reportsWithTemplateVars).toBeGreaterThanOrEqual(9800); // measured 10,021
       expect(stats.reportsWithTemplateVars).toBeLessThan(stats.reportsRendered);
-      expect(renderedIds.size).toBeGreaterThanOrEqual(200);
+      expect(renderedIds.size).toBeGreaterThanOrEqual(285); // measured 291
       expect(renderedIds.size).toBeLessThan(stats.reportsRendered);
+      /**
+       * SUGGESTION descriptions are their own population and their own render
+       * path: `inspect` reaches them through `message.suggestions`, which no
+       * report-level count includes. At 368 against 11,541 reports the channel
+       * could stop rendering entirely without moving any floor above it, which
+       * is the state a counter incremented and read by nothing describes.
+       */
+      expect(stats.suggestionsRendered).toBeGreaterThanOrEqual(350); // measured 368
     });
 
     it('detects a missing data key, and only a missing one', () => {
@@ -433,7 +454,7 @@ describe('message render integrity', () => {
   });
 
   it('emits every message it declares', () => {
-    expect(declaredIds.length).toBeGreaterThanOrEqual(200);
+    expect(declaredIds.length).toBeGreaterThanOrEqual(280); // measured 287
     expect(deadIds).toEqual([]);
     // The dead-message closure runs its own skip list, so it can go dark for a
     // rule the render sweep still probes. Pinned equal, since a rule missing

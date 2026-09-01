@@ -347,10 +347,16 @@ describe('a suggestion must not hand the developer a core-rule violation', () =>
    * trips them.
    */
   it('actually swept the corpus it claims to', () => {
-    expect(stats.considered).toBeGreaterThan(19500); // measured 20363
-    expect(stats.edits).toBeGreaterThan(550); // measured 610
-    expect(stats.crossEdits).toBeGreaterThan(280); // measured 302
-    expect(stats.crossOwners.size).toBeGreaterThan(40); // measured 45
+    // eslint-disable-next-line no-console
+    console.log(
+      `[suggestion-core] considered=${stats.considered} edits=${stats.edits} ` +
+        `crossEdits=${stats.crossEdits} crossOwners=${stats.crossOwners.size} ` +
+        `nonTsDropped=${stats.nonTypeScriptDropped}`,
+    );
+    expect(stats.considered).toBeGreaterThan(23500); // measured 23,824
+    expect(stats.edits).toBeGreaterThan(650); // measured 688
+    expect(stats.crossEdits).toBeGreaterThan(305); // measured 320
+    expect(stats.crossOwners.size).toBeGreaterThan(43); // measured 46
     /**
      * Every rule declaring `hasSuggestions` must actually place a suggestion
      * somewhere in the corpus, or its arm of this guard is present but never
@@ -360,14 +366,26 @@ describe('a suggestion must not hand the developer a core-rule violation', () =>
   });
 
   /**
-   * The skips, asserted rather than merely counted. A non-TS fixture is
-   * expected and bounded; a fatal INPUT is not, and a ceiling cut close is what
-   * stops one from readmitting #1984's 106 silently dropped cases. The bound
-   * moved 60 -> 130 with #2213's CommonMark fence fixtures (measured 40 -> 95);
-   * `lang-fix-closure` is the instrument that judges that population.
+   * The skips, asserted rather than merely counted. The non-TypeScript drop is
+   * a PROPERTY of the corpus — every case whose language is not `ts` — so it is
+   * pinned to that population rather than to a ceiling, which is the one shape
+   * that cannot drift: a ceiling cut above the measurement readmits #1984's 106
+   * silently dropped cases as slack, and a ceiling cut at it fails the next time
+   * a Markdown fixture is added. A fatal INPUT is neither expected nor bounded.
+   * `lang-fix-closure` is the instrument that judges the non-TypeScript
+   * population itself.
    */
   it('accounts for every fixture it did not probe', () => {
-    expect(stats.nonTypeScriptDropped).toBeLessThan(130); // measured 95
+    const nonTypeScriptCases = [...corpus.byRule.values()]
+      .flat()
+      .filter((testCase) => testCase.language !== 'ts').length;
+    expect(stats.nonTypeScriptDropped).toBe(nonTypeScriptCases);
+    expect(stats.considered + stats.nonTypeScriptDropped).toBe(
+      corpus.totalCases,
+    );
+    // And the population itself must not vanish: an equality over zero is an
+    // accounting that accounts for nothing.
+    expect(nonTypeScriptCases).toBeGreaterThanOrEqual(100); // measured 108
     expect(stats.inputFatalDropped).toEqual(0);
     expect(stats.outputFatal).toEqual(0);
   });
