@@ -1542,6 +1542,24 @@ describe('the cross degenerate-identifier sweep is load-bearing', () => {
   });
 
   it('actually perturbs and REWRITES through foreign fixtures', () => {
+    /**
+     * The two denominators upstream of every count below, ASSERTED rather than
+     * accumulated. `fixtures` sits before any skip, so it is the only record
+     * that the pairing loop actually entered the probe; `bindings` is the pool
+     * the perturbations are drawn from, and a collector that stops finding
+     * declarations empties `considered` while every skip counter stays at its
+     * measured zero — the shape that reads as a clean sweep.
+     *
+     * `fixtures` is CLOSED against the pairing rather than floored: `probeCase`
+     * runs exactly once per uncapped pair, so the identity fails the moment a
+     * pair stops reaching the probe, which no floor cut under a moving corpus
+     * can promise.
+     */
+    expect(fixSweep.cross.fixtures).toBe(fixSweep.pairing.crossPairs);
+    expect(fixSweep.cross.fixtures + fixSweep.own.fixtures).toBe(
+      fixSweep.pairing.pairs,
+    );
+    expect(fixSweep.cross.bindings).toBeGreaterThan(11000); // measured 11,817
     expect(fixSweep.cross.considered).toBeGreaterThan(40000);
     expect(fixSweep.cross.rewritten).toBeGreaterThan(26000);
     expect(fixSweep.cross.rulesRewritten.size).toBeGreaterThan(55);

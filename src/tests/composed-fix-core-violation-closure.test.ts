@@ -940,6 +940,19 @@ describe('the composed --fix must not introduce a core violation', () => {
     expect(stats.probed).toBeGreaterThan(23500);
     expect(stats.rewritten).toBeGreaterThan(11500);
     expect(stats.owners.size).toBeGreaterThan(190);
+    /**
+     * The ablation's own work, printed above and read by nothing before. Every
+     * culprit set the baseline is keyed on comes out of these passes, so an
+     * ablation that stopped running would leave the baseline matched by
+     * findings nobody located — the culprit names would still be whatever the
+     * previous run wrote into the entry.
+     *
+     * Bounded below by the findings themselves as well as floored: `attribute`
+     * opens with one full-config reproduction per finding, so fewer passes than
+     * findings means the attribution loop skipped some.
+     */
+    expect(stats.attributionFixes).toBeGreaterThan(120); // measured 136
+    expect(stats.attributionFixes).toBeGreaterThanOrEqual(attributed.length);
   });
 
   /**

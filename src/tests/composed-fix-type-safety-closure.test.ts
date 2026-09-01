@@ -1275,6 +1275,13 @@ const ASSERTED_FLOOR = 10200; // measured 10590
 const TEXT_FLOOR = 20800; // measured 21452
 const OWNER_FLOOR = 188; // measured 192 (the 2 rules with only JSON/Markdown)
 /**
+ * The ablation's own work. Every culprit set the baseline is keyed on comes out
+ * of these fix passes, so an attribution loop that stopped running would leave
+ * the baseline matched by findings nobody located — the culprit names in each
+ * entry would be whatever the previous run wrote there.
+ */
+const ATTRIBUTION_FIX_FLOOR = 480; // measured 543
+/**
  * Ceilings, not floors: each is a case this guard does NOT judge, so a harness
  * regression shows up as a jump rather than a dip. Cut CLOSE deliberately — a
  * ceiling far above its measurement is the #1984 failure verbatim.
@@ -1434,6 +1441,13 @@ describe('the composed --fix must not introduce a type error', () => {
     // A cap that silently truncates would attribute a prefix and report the
     // rest as composition findings with an empty culprit set.
     expect(findings.length).toBeLessThanOrEqual(ATTRIBUTION_CAP);
+    // The passes those attributions cost, floored and bounded below by the
+    // findings themselves: `attribute` opens with one full-config reproduction
+    // per finding, so fewer passes than findings means the loop skipped some.
+    expect(stats.attributionFixes).toBeGreaterThanOrEqual(
+      ATTRIBUTION_FIX_FLOOR,
+    );
+    expect(stats.attributionFixes).toBeGreaterThanOrEqual(attributed.length);
     expect(
       composition.filter((finding) => finding.culprits.length === 0),
     ).toEqual([]);
