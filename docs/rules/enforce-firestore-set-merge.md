@@ -48,6 +48,10 @@ scope. Either one is enough:
    the module itself — under either the `class Base {}` or the
    `const Base = class {}` spelling, exported or not. The innermost declaration
    wins, so a nested class shadowing an outer one answers for the code below it.
+   A value binding shadows the same way even when it declares no class: in a
+   mixin factory `function build(Base) { class X extends Base {} }` the base is
+   the parameter, so an outer class of that name proves nothing about `X` and
+   the carve-out does not apply.
 2. **The data argument is a primitive literal** — a boolean, number, string,
    template literal, or one of those behind an assertion. Firestore's update
    data is an object of field updates, so a primitive in that position proves the
