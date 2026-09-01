@@ -202,6 +202,18 @@ Four constraints are load-bearing — read those files before writing another:
   unnoticed. And keep a floor just under its measured value — the floors that hid
   #1984 sat at 5,500 against an actual 8,141.
 
+  **Annotate every literal floor with `// measured N` on its own line**, whether
+  it sits inline in the `expect` or on the `const NAME = N;` that feeds it.
+  `src/tests/guard-floor-annotation.test.ts` reads those annotations statically
+  and fails any floor sitting more than 2x under the number beside it, so drift
+  becomes a mechanical check instead of a periodic manual sweep (three were
+  needed before it existed; one re-cut 47 floors, the worst 41.8x under).
+  Unannotated floors are counted as a migration backlog rather than failed —
+  adding the annotation as you touch a guard is how the backlog shrinks. Put the
+  annotation on the SAME line as the floor: a block comment above an assertion
+  block names several populations, and attaching one of them to whichever floor
+  follows would invent a measurement nobody made.
+
 **If a guard PERTURBS the fixture rather than reading it, the rewrite needs its
 own controls — three of them.** A skip reason is often a property of the
 fixtures, not of the rule: `fixer-shadow-capture` parked 21 rules on "no function
