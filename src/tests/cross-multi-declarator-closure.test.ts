@@ -1000,6 +1000,8 @@ console.log(
     `  screen fatal / threw:      ${stats.screenFatal} / ${stats.screenThrew}`,
     `  owners reached:            ${stats.owners.size}`,
     `  PAIRS:                     ${stats.pairs} (${stats.crossPairs} CROSS)`,
+    `  fixtures considered:       ${totals.fixturesConsidered} (${crossTotals.fixturesConsidered} cross)`,
+    `  fixtures with candidates:  ${totals.fixturesWithCandidates} (${crossTotals.fixturesWithCandidates} cross)`,
     `  control REPORTING:         ${totals.controlReporting} (${crossTotals.controlReporting} cross)`,
     `  control fatal:             ${totals.controlFatal} (${crossTotals.controlFatal} cross)`,
     `  perturbations emitted:     ${totals.perturbationsEmitted} (${crossTotals.perturbationsEmitted} cross)`,
@@ -1040,6 +1042,7 @@ const CROSS_PAIR_FLOOR = 52000;
 const OWNER_FLOOR = 190;
 const CONTROL_REPORTING_FLOOR = 60500;
 const CROSS_CONTROL_REPORTING_FLOOR = 52000;
+const CANDIDATE_FIXTURE_FLOOR = 50000; // measured 54646
 const PERTURBATION_FLOOR = 137000;
 const CROSS_PERTURBATION_FLOOR = 103000;
 const REWRITE_FLOOR = 26500;
@@ -1107,6 +1110,16 @@ describe('the cross multi-declarator sweep is load-bearing', () => {
     // The whole point of the file: without this the sweep is the shipped
     // own-corpus guard run a second time.
     expect(stats.crossPairs).toBeGreaterThanOrEqual(CROSS_PAIR_FLOOR);
+    /**
+     * The denominator every count below is drawn from. CLOSED against the
+     * pairing rather than only floored: `probeFixture` runs exactly once per
+     * counted pair, so the identity fails the moment a pair stops reaching the
+     * probe — a loss no floor cut under a moving corpus can promise to catch.
+     * The floor beside it keeps that identity from being satisfied by a corpus
+     * which collapsed on both sides at once.
+     */
+    expect(totals.fixturesConsidered).toBe(stats.pairs);
+    expect(totals.fixturesConsidered).toBeGreaterThanOrEqual(PAIR_FLOOR); // measured 84770
   });
 
   it('reaches the rules: the unperturbed control REPORTS', () => {
@@ -1124,6 +1137,15 @@ describe('the cross multi-declarator sweep is load-bearing', () => {
     );
     expect(crossTotals.perturbationsEmitted).toBeGreaterThanOrEqual(
       CROSS_PERTURBATION_FLOOR,
+    );
+    /**
+     * The narrower population the perturbation totals are spread over. A
+     * perturbation count alone cannot distinguish a sweep reaching most of the
+     * corpus from one emitting many variants of a handful of fixtures, which is
+     * the shape a shrinking candidate set decays into.
+     */
+    expect(totals.fixturesWithCandidates).toBeGreaterThanOrEqual(
+      CANDIDATE_FIXTURE_FLOOR,
     );
   });
 
