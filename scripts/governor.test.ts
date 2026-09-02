@@ -170,29 +170,50 @@ describe('governShellCommand', () => {
 describe('the jest worker grant', () => {
   const GRANT_ENV = 'BLUMINT_MAX_WORKERS';
 
-  const loadMaxWorkers = (value?: string) => {
-    const previous = process.env[GRANT_ENV];
+  const set = (key: string, value: string | undefined) => {
     if (value === undefined) {
-      delete process.env[GRANT_ENV];
+      delete process.env[key];
     } else {
-      process.env[GRANT_ENV] = value;
+      process.env[key] = value;
     }
+  };
+
+  /**
+   * `CI` is pinned alongside the grant because `calculateWorkers` answers
+   * `'100%'` for CI BEFORE it ever reads a grant. Left ambient, every arm below
+   * asserts a different contract depending on where it runs — green on a
+   * workstation, red on a runner, with the failure naming the grant rather than
+   * the environment that decided it. Each arm states its own environment.
+   */
+  const loadMaxWorkers = (value?: string, ci = false) => {
+    const previousGrant = process.env[GRANT_ENV];
+    const previousCi = process.env.CI;
+    set(GRANT_ENV, value);
+    set('CI', ci ? 'true' : undefined);
     try {
       jest.resetModules();
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       return require('../jest.config.js').maxWorkers;
     } finally {
-      if (previous === undefined) {
-        delete process.env[GRANT_ENV];
-      } else {
-        process.env[GRANT_ENV] = previous;
-      }
+      set(GRANT_ENV, previousGrant);
+      set('CI', previousCi);
       jest.resetModules();
     }
   };
 
   it('sizes to the grant when one is present', () => {
     expect(loadMaxWorkers('3')).toBe(3);
+  });
+
+  /**
+   * CI outranks the grant, and must: no governor runs on a hosted runner, so
+   * there is no pool for a reservation to queue against and the job owns the
+   * whole box. A grant reaching CI would mean something had leaked a stale
+   * reservation into an environment that cannot release it.
+   */
+  it('leaves a CI run at 100%, grant or no grant', () => {
+    expect(loadMaxWorkers(undefined, true)).toBe('100%');
+    expect(loadMaxWorkers('3', true)).toBe('100%');
   });
 
   /**
