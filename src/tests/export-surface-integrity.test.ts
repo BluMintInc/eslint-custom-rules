@@ -868,7 +868,9 @@ console.log(
 console.log(
   `[export-surface-integrity] perturbation: ${perturbationFixLost} fix(es) lost ` +
     `to the injection across ${perturbationFixLostByRule.size} rule(s) ` +
-    `${JSON.stringify([...perturbationFixLostByRule].sort((a, b) => b[1] - a[1]))}`,
+    `${JSON.stringify(
+      [...perturbationFixLostByRule].sort((a, b) => b[1] - a[1]),
+    )}`,
 );
 
 /**

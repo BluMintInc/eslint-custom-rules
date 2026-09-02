@@ -69,18 +69,18 @@ describe('recommended severity resolves through overrides, not the flat map', ()
       expect(globs.length).toBeGreaterThan(0);
       // A concrete path under the glob's root, not the glob itself.
       const matching = globs[0].replace('**/*.{ts,tsx}', 'a/b/c.ts');
-      expect(
-        Object.keys(overrideRulesFor(matching, NONE)),
-      ).toContain(`${PLUGIN_PREFIX}${name}`);
+      expect(Object.keys(overrideRulesFor(matching, NONE))).toContain(
+        `${PLUGIN_PREFIX}${name}`,
+      );
     }
   });
 
   it('leaves it disabled on a path no glob names', () => {
     for (const name of overrideOnly.keys()) {
       for (const outside of ['file.ts', 'react.tsx', 'lib/other/thing.ts']) {
-        expect(
-          Object.keys(overrideRulesFor(outside, NONE)),
-        ).not.toContain(`${PLUGIN_PREFIX}${name}`);
+        expect(Object.keys(overrideRulesFor(outside, NONE))).not.toContain(
+          `${PLUGIN_PREFIX}${name}`,
+        );
       }
     }
   });
@@ -124,9 +124,7 @@ describe('recommended severity resolves through overrides, not the flat map', ()
         testCase,
         'file.ts',
       );
-      expect(Object.keys(elsewhere)).not.toContain(
-        `${PLUGIN_PREFIX}${name}`,
-      );
+      expect(Object.keys(elsewhere)).not.toContain(`${PLUGIN_PREFIX}${name}`);
     }
   });
 });

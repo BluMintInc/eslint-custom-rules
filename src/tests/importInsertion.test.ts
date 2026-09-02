@@ -284,14 +284,20 @@ describe('importAnchorLineStartIfOwned and importAnchorIndent', () => {
     const text = `'use client';\n\tconst x = 1;\n`;
     const sourceCode = sourceCodeOf(text);
     expect(
-      importAnchorLineStartIfOwned(sourceCode, importInsertionAnchor(sourceCode)),
+      importAnchorLineStartIfOwned(
+        sourceCode,
+        importInsertionAnchor(sourceCode),
+      ),
     ).toEqual({ kind: 'index', index: text.indexOf('\tconst') });
   });
 
   it('widens an anchor that opens the file', () => {
     const sourceCode = sourceCodeOf(`const x = 1;\n`);
     expect(
-      importAnchorLineStartIfOwned(sourceCode, importInsertionAnchor(sourceCode)),
+      importAnchorLineStartIfOwned(
+        sourceCode,
+        importInsertionAnchor(sourceCode),
+      ),
     ).toEqual({ kind: 'index', index: 0 });
   });
 });
