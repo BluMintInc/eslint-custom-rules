@@ -87,6 +87,35 @@ function finalSegmentOf(source: string): string {
  */
 type WrapVerdict = boolean | undefined;
 
+/**
+ * The verdict over alternatives only one of which renders: the branches of a
+ * conditional, the operands of a logical, the several returns of a function
+ * `sx`. A wrapping alternative is a real seam whatever the others say, and only
+ * an all-`false` set proves the absence of one.
+ */
+function eitherBranchWraps(verdicts: WrapVerdict[]): WrapVerdict {
+  if (verdicts.includes(true)) {
+    return true;
+  }
+  return verdicts.length > 0 && verdicts.every((verdict) => verdict === false)
+    ? false
+    : undefined;
+}
+
+/**
+ * The verdict over members merged in source order. An object literal and a MUI
+ * `sx` array are both last-write-wins, so a member that resolves `flexWrap`
+ * overrides every earlier one — including back to `false`, which is what makes
+ * `{ flexWrap: 'wrap', ...NOWRAP }` a non-wrapping object (#2299).
+ *
+ * An `undefined` member is opaque rather than empty: an imported or
+ * caller-supplied spread may or may not carry `flexWrap`, so it leaves the last
+ * known verdict standing rather than erasing it.
+ */
+function mergeVerdict(previous: WrapVerdict, next: WrapVerdict): WrapVerdict {
+  return next === undefined ? previous : next;
+}
+
 export const enforceUseFlexGapOnWrap = createRule<Options, MessageIds>({
   name: 'enforce-use-flex-gap-on-wrap',
   meta: {
@@ -287,66 +316,64 @@ export const enforceUseFlexGapOnWrap = createRule<Options, MessageIds>({
           }
           return verdict;
         }
-        case AST_NODE_TYPES.ConditionalExpression: {
-          const consequent = wrapVerdict(target.consequent, seen);
-          const alternate = wrapVerdict(target.alternate, seen);
-          if (consequent === true || alternate === true) {
-            return true;
-          }
-          return consequent === false && alternate === false
-            ? false
-            : undefined;
-        }
-        case AST_NODE_TYPES.LogicalExpression: {
-          const left = wrapVerdict(target.left, seen);
-          const right = wrapVerdict(target.right, seen);
-          if (left === true || right === true) {
-            return true;
-          }
-          return left === false && right === false ? false : undefined;
-        }
+        case AST_NODE_TYPES.ConditionalExpression:
+          return eitherBranchWraps([
+            wrapVerdict(target.consequent, seen),
+            wrapVerdict(target.alternate, seen),
+          ]);
+        case AST_NODE_TYPES.LogicalExpression:
+          return eitherBranchWraps([
+            wrapVerdict(target.left, seen),
+            wrapVerdict(target.right, seen),
+          ]);
         default:
           return undefined;
       }
     }
 
-    /** Whether an object literal states a wrapping `flexWrap`. */
+    /**
+     * What an object literal states about `flexWrap`. The members are merged in
+     * source order rather than scanned for any wrapping one, because an `sx`
+     * object is last-write-wins: `{ flexWrap: 'wrap', ...BASE }` renders
+     * whatever `BASE` says, and only the mirror ordering wraps.
+     */
     function objectWraps(
       object: TSESTree.ObjectExpression,
       seen: Set<TSESTree.Node>,
-    ): boolean {
+    ): WrapVerdict {
+      let verdict: WrapVerdict = undefined;
       for (const property of object.properties) {
         if (property.type === AST_NODE_TYPES.SpreadElement) {
           // A spread of a local constant is read through; a spread of an
           // imported or caller-supplied value stays opaque, because resolving it
           // would need the cross-module analysis this rule declines.
-          if (sxWraps(property.argument, seen)) {
-            return true;
-          }
+          verdict = mergeVerdict(verdict, sxWraps(property.argument, seen));
           continue;
         }
         if (propertyNameOf(property) !== 'flexWrap') {
           continue;
         }
-        if (wrapVerdict(property.value, seen) === true) {
-          return true;
-        }
+        verdict = mergeVerdict(verdict, wrapVerdict(property.value, seen));
       }
-      return false;
+      return verdict;
     }
 
     /**
-     * Whether an `sx` expression states a wrapping `flexWrap` anywhere the rule
-     * can read statically. Four of the six wrapping Stacks in the consuming
-     * codebase hoist their `sx` to a module constant, including both live
-     * violations, so identifier resolution is the path that matters most.
+     * What an `sx` expression states about `flexWrap` where the rule can read it
+     * statically. Four of the six wrapping Stacks in the consuming codebase
+     * hoist their `sx` to a module constant, including both live violations, so
+     * identifier resolution is the path that matters most.
+     *
+     * The verdict is the tri-state rather than a boolean because this answer
+     * feeds a merge: a spread of `{ flexWrap: 'nowrap' }` has to override an
+     * earlier wrapping member, which a `false` meaning "nothing known" cannot.
      */
     function sxWraps(
       node: TSESTree.Node | undefined,
       seen: Set<TSESTree.Node>,
-    ): boolean {
+    ): WrapVerdict {
       if (!node) {
-        return false;
+        return undefined;
       }
       const target = unwrapAssertions(node);
       switch (target.type) {
@@ -354,7 +381,7 @@ export const enforceUseFlexGapOnWrap = createRule<Options, MessageIds>({
           return objectWraps(target, seen);
         case AST_NODE_TYPES.Identifier: {
           if (seen.has(target)) {
-            return false;
+            return undefined;
           }
           seen.add(target);
           return sxWraps(initializerOf(target), seen);
@@ -362,28 +389,41 @@ export const enforceUseFlexGapOnWrap = createRule<Options, MessageIds>({
         case AST_NODE_TYPES.ArrowFunctionExpression: {
           const body = unwrapAssertions(target.body);
           if (body.type === AST_NODE_TYPES.BlockStatement) {
-            return body.body.some(
-              (statement) =>
-                statement.type === AST_NODE_TYPES.ReturnStatement &&
-                sxWraps(statement.argument ?? undefined, seen),
+            return eitherBranchWraps(
+              body.body
+                .filter(
+                  (statement): statement is TSESTree.ReturnStatement =>
+                    statement.type === AST_NODE_TYPES.ReturnStatement,
+                )
+                .map((statement) =>
+                  sxWraps(statement.argument ?? undefined, seen),
+                ),
             );
           }
           return sxWraps(body, seen);
         }
         case AST_NODE_TYPES.ConditionalExpression:
           // Either branch renders, so either branch wrapping is a real seam.
-          return (
-            sxWraps(target.consequent, seen) || sxWraps(target.alternate, seen)
-          );
-        case AST_NODE_TYPES.ArrayExpression:
-          // MUI merges an array of sx entries left to right.
-          return target.elements.some((element) =>
-            element ? sxWraps(element, seen) : false,
-          );
+          return eitherBranchWraps([
+            sxWraps(target.consequent, seen),
+            sxWraps(target.alternate, seen),
+          ]);
+        case AST_NODE_TYPES.ArrayExpression: {
+          // MUI merges an array of sx entries left to right, so the entry that
+          // resolves `flexWrap` last owns the value.
+          let verdict: WrapVerdict = undefined;
+          for (const element of target.elements) {
+            verdict = mergeVerdict(
+              verdict,
+              element ? sxWraps(element, seen) : undefined,
+            );
+          }
+          return verdict;
+        }
         default:
           // A call expression is opaque. Guessing at what it returns would
           // report on code the rule cannot read.
-          return false;
+          return undefined;
       }
     }
 
@@ -521,8 +561,8 @@ export const enforceUseFlexGapOnWrap = createRule<Options, MessageIds>({
         // unreadable attribute is not a disagreement, so it falls through.
         const wraps =
           attributeVerdict ??
-          (sx ? sxWraps(attributeValueOf(sx), new Set()) : false);
-        if (!wraps) {
+          (sx ? sxWraps(attributeValueOf(sx), new Set()) : undefined);
+        if (wraps !== true) {
           return;
         }
 

@@ -64,6 +64,12 @@ leading-edge problem. That is the largest group of compliant wrapping sites.
 - Spreads of local constants inside `sx` are read through; a spread of an
   imported or caller-supplied value stays opaque. Both branches of a conditional
   `sx` are read, and a call-expression `sx` is skipped silently.
+- The members of an `sx` object — and the entries of an `sx` array, which MUI
+  applies left to right — are merged **last-write-wins**, so the member that
+  states `flexWrap` last owns the value: `{ flexWrap: 'wrap', ...BASE }` renders
+  whatever `BASE` says, while `{ ...BASE, flexWrap: 'wrap' }` wraps. An opaque
+  member overrides nothing, because it may carry no `flexWrap` at all, so a
+  wrapping key followed by an unresolvable spread is still reported.
 - A responsive `flexWrap` reports when **any** breakpoint wraps. The `spacing`
   value is never interpreted beyond zero versus non-zero.
 - `direction` is ignored: a wrapping column `Stack` has the symmetric defect.
@@ -187,12 +193,15 @@ import Stack from '@mui/material/Stack';
 
 const STACK_SPACING = { xs: 1, sm: 2 } as const;
 
+const TOP_OPTIONS_ROW_SX = {
+  alignItems: 'center',
+  justifyContent: 'space-between',
+} as const;
+
 const AuthenticationStack = () => (
   <Stack
-    alignItems={'center'}
     direction="row"
     flexWrap="wrap"
-    justifyContent={'space-between'}
     spacing={STACK_SPACING}
     sx={TOP_OPTIONS_ROW_SX}
     useFlexGap
@@ -201,6 +210,11 @@ const AuthenticationStack = () => (
   </Stack>
 );
 ```
+
+The shorthand-prop spelling of `flexWrap` reads the same as the `sx` key here:
+`prefer-sx-prop-over-system-props` relocates that prop into `sx`, and this rule
+resolves the pairing identically before and after that relocation. Every other
+system prop belongs in the hoisted `sx` object from the start.
 
 CSS `gap` in place of `spacing` needs no pairing:
 
@@ -225,6 +239,21 @@ const HEADER_SX = { alignItems: 'center', flexWrap: 'nowrap' } as const;
 
 const SectionHeader = () => (
   <Stack direction="row" spacing={2} sx={HEADER_SX}>
+    {children}
+  </Stack>
+);
+```
+
+A later member of the `sx` object overriding `flexWrap` back to a non-wrapping
+value, which leaves a single line:
+
+```tsx
+import Stack from '@mui/material/Stack';
+
+const BASE_ROW_SX = { flexWrap: 'nowrap' } as const;
+
+const CompactRow = () => (
+  <Stack direction="row" spacing={2} sx={{ flexWrap: 'wrap', ...BASE_ROW_SX }}>
     {children}
   </Stack>
 );

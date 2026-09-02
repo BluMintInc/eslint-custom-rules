@@ -268,6 +268,48 @@ const Row = ({ isSearchExpanded }) => (
   />
 );
 `,
+    // A later spread overrides `flexWrap` to a non-wrapping value, so the
+    // merged object does not wrap.
+    {
+      code: `
+import { Stack } from '@mui/material';
+const BASE = { flexWrap: 'nowrap' } as const;
+const El = () => <Stack spacing={2} sx={{ flexWrap: 'wrap', ...BASE }} />;
+`,
+    },
+    // A later spread of a non-wrapping object overrides an earlier wrapping
+    // spread.
+    {
+      code: `
+import { Stack } from '@mui/material';
+const WRAPS = { flexWrap: 'wrap' } as const;
+const NOWRAP = { flexWrap: 'nowrap' } as const;
+const El = () => <Stack spacing={2} sx={{ ...WRAPS, ...NOWRAP }} />;
+`,
+    },
+    // A later explicit key overrides a wrapping spread.
+    {
+      code: `
+${STACK_IMPORT}
+
+const WRAPS = { flexWrap: 'wrap' } as const;
+
+const Row = () => (
+  <Stack spacing={2} sx={{ ...WRAPS, flexWrap: 'nowrap' }} />
+);
+`,
+    },
+    // The array spelling of the same merge: MUI applies the entries left to
+    // right, so the last entry that states `flexWrap` owns it.
+    {
+      code: `
+${STACK_IMPORT}
+
+const Row = () => (
+  <Stack spacing={2} sx={[{ flexWrap: 'wrap' }, { flexWrap: 'nowrap' }]} />
+);
+`,
+    },
     // An empty `stackComponents` governs nothing.
     {
       code: `
@@ -664,6 +706,83 @@ ${STACK_IMPORT}
 const ICON_ROW_SX = { flexWrap: 'wrap', alignItems: 'center' } as const;
 
 const Row = () => <Stack spacing={2} sx={{ ...ICON_ROW_SX, pt: 1 }} useFlexGap />;
+`,
+      errors: [{ messageId: 'useFlexGapRequired' }],
+    },
+    // The mirror of the override: the explicit key is written last, so it is
+    // the value that renders.
+    {
+      code: `
+import { Stack } from '@mui/material';
+const BASE = { flexWrap: 'nowrap' } as const;
+const El = () => <Stack spacing={2} sx={{ ...BASE, flexWrap: 'wrap' }} />;
+`,
+      output: `
+import { Stack } from '@mui/material';
+const BASE = { flexWrap: 'nowrap' } as const;
+const El = () => <Stack spacing={2} sx={{ ...BASE, flexWrap: 'wrap' }} useFlexGap />;
+`,
+      errors: [{ messageId: 'useFlexGapRequired' }],
+    },
+    // The mirror of the two-spread override.
+    {
+      code: `
+import { Stack } from '@mui/material';
+const WRAPS = { flexWrap: 'wrap' } as const;
+const NOWRAP = { flexWrap: 'nowrap' } as const;
+const El = () => <Stack spacing={2} sx={{ ...NOWRAP, ...WRAPS }} />;
+`,
+      output: `
+import { Stack } from '@mui/material';
+const WRAPS = { flexWrap: 'wrap' } as const;
+const NOWRAP = { flexWrap: 'nowrap' } as const;
+const El = () => <Stack spacing={2} sx={{ ...NOWRAP, ...WRAPS }} useFlexGap />;
+`,
+      errors: [{ messageId: 'useFlexGapRequired' }],
+    },
+    // A trailing spread the rule cannot resolve leaves the wrapping key
+    // standing: an opaque member states nothing about `flexWrap`, so it is not
+    // an override.
+    {
+      code: `
+${STACK_IMPORT}
+
+import { BASE_SX } from './styles';
+
+const Row = () => (
+  <Stack spacing={2} sx={{ flexWrap: 'wrap', ...BASE_SX }} />
+);
+`,
+      output: `
+${STACK_IMPORT}
+
+import { BASE_SX } from './styles';
+
+const Row = () => (
+  <Stack spacing={2} sx={{ flexWrap: 'wrap', ...BASE_SX }} useFlexGap />
+);
+`,
+      errors: [{ messageId: 'useFlexGapRequired' }],
+    },
+    // A member with no `flexWrap` at all is not an override either.
+    {
+      code: `
+${STACK_IMPORT}
+
+const PADDING_SX = { pt: 1 } as const;
+
+const Row = () => (
+  <Stack spacing={2} sx={{ flexWrap: 'wrap', ...PADDING_SX }} />
+);
+`,
+      output: `
+${STACK_IMPORT}
+
+const PADDING_SX = { pt: 1 } as const;
+
+const Row = () => (
+  <Stack spacing={2} sx={{ flexWrap: 'wrap', ...PADDING_SX }} useFlexGap />
+);
 `,
       errors: [{ messageId: 'useFlexGapRequired' }],
     },
