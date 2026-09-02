@@ -782,10 +782,13 @@ describe('directive prologue and shebang survive every fixer', () => {
         `rewritingRules=${REWRITING_RULES.size}`,
     );
     expect(stats.rulesProbed.size).toBeGreaterThanOrEqual(85); // measured 90
-    expect(stats.considered).toBeGreaterThanOrEqual(14800); // measured 14,921
-    expect(stats.baseFixed).toBeGreaterThanOrEqual(4650); // measured 4,716
-    expect(stats.variantFixed).toBeGreaterThanOrEqual(23400); // measured 23,560
-    expect(stats.rulesFixing.size).toBeGreaterThanOrEqual(80); // measured 82
+    expect(stats.considered).toBeGreaterThanOrEqual(14800); // measured 15,074
+    // #2298 moved most of prefer-spread-over-reassembly's rewrites from the
+    // fix channel to the suggestion channel, which is where the two floors
+    // below lost their headroom; the suggestion counters below carry them.
+    expect(stats.baseFixed).toBeGreaterThanOrEqual(4600); // measured 4,653
+    expect(stats.variantFixed).toBeGreaterThanOrEqual(23000); // measured 23,245
+    expect(stats.rulesFixing.size).toBeGreaterThanOrEqual(80); // measured 83
   });
 
   /**
@@ -972,15 +975,15 @@ describe('directive prologue and shebang survive every fixer', () => {
    * exactly how it stayed unmeasured in four other guards until #1733.
    */
   it('probed the suggestion channel', () => {
-    expect(stats.rulesSuggesting.size).toBeGreaterThanOrEqual(6); // measured 7
-    expect(stats.baseSuggested).toBeGreaterThanOrEqual(310); // measured 318
-    expect(stats.variantSuggested).toBeGreaterThanOrEqual(1700); // measured 1,745
+    expect(stats.rulesSuggesting.size).toBeGreaterThanOrEqual(6); // measured 8
+    expect(stats.baseSuggested).toBeGreaterThanOrEqual(310); // measured 438
+    expect(stats.variantSuggested).toBeGreaterThanOrEqual(1700); // measured 2,345
   });
 
-  /** Per rule, so one chatty suggester cannot cover for the other six. */
+  /** Per rule, so one chatty suggester cannot cover for the other seven. */
   it('accounts for every suggestion-offering rule', () => {
     expect(measuredSuggestionUndriven).toEqual(SUGGESTION_UNDRIVEN_RULES);
-    expect(suggestionRules.length).toBeGreaterThanOrEqual(5); // measured 7
+    expect(suggestionRules.length).toBeGreaterThanOrEqual(5); // measured 8
     expect(
       Object.keys(SUGGESTION_UNDRIVEN_RULES).filter(
         (name) => !suggestionRules.includes(name),

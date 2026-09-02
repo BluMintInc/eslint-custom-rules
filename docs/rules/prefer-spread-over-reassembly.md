@@ -2,7 +2,7 @@
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
-🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
+🔧💡 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix) and manually fixable by [editor suggestions](https://eslint.org/docs/latest/use/core-concepts#rule-suggestions).
 
 <!-- end auto-generated rule header -->
 
@@ -21,11 +21,13 @@ The rule only fires when **all** of the following hold:
 - All destructured fields are forwarded with identical key names to a **single** target JSX element or object literal.
 - No destructured field is used anywhere else in the function body (conditional logic, side effects, transformations, etc.).
 
-The autofix:
+The rewrite:
 
 1. Replaces the destructured parameter with a single identifier (`props`, or a fresh non-colliding name).
 2. Replaces the identically-forwarded fields in the target with a spread (`{...props}`).
 3. Places the spread **first**, then any additional (non-destructured) props after it, so explicit overrides are preserved and remain effective.
+
+It is delivered as an **automatic fix only where the parameter's member set is known to be exactly the pick**; everywhere else it is offered as an editor suggestion. See [The rewrite is applied only where it is proven safe](#the-rewrite-is-applied-only-where-it-is-proven-safe).
 
 The fix splices out only the forwarded fields, so every retained prop keeps its original text, its line, and the comments attached to it. A directive such as `// eslint-disable-next-line no-console` sitting above a prop the fix keeps therefore stays attached to that prop, and cannot be silently discarded (which would re-enable the rule it suppresses). Comments attached to a field that the spread absorbs are removed along with that field, since the code they annotate no longer exists.
 
@@ -35,14 +37,25 @@ A parameter with a default value (`({ a, b }: FooProps = {} as FooProps)`) is ne
 
 Type-only wrappers on the target — `as const`, `satisfies T`, `as T`, `!`, and chains of them such as `as unknown as T` — are stripped before the target is classified. They compile away entirely, so a wrapped reassembly is the same reassembly; the autofix rewrites the literal in place and leaves the wrapper exactly as written.
 
+### The rewrite is applied only where it is proven safe
+
+The rewrite widens: `{...props}` forwards every member the parameter actually carries, not just the ones the author named. Whether that changes behaviour depends on the parameter's real type, which is exactly what the reader below may fail to establish.
+
+So the two decisions are separated. The **report** is unconditional wherever the reassembly pattern holds. The **automatic fix** is attached only when the parameter's type resolves to a member set that is exactly the destructured pick, which is a proof that the spread forwards the same members. In every other case — a union, an intersection, a mapped or conditional type, an index signature, a `Parameters<>` indirection, an unannotated parameter with no contextual type, an import the walk declines to follow — the rule reports without a fix and offers the rewrite as a **suggestion** instead, which an editor applies only when the author picks it.
+
+This asymmetry is deliberate. A missed autofix costs one keystroke. A wrong one silently changes what a function returns, and this rewrite has done so in consumer code five times (#1642, #1643, #1644, #1769, #2298) — in the last of those, forwarding a field that a downstream `'otherEvents' in props` membership check reads, which rendered content onto replies that carry none.
+
+Running `--fix` over a codebase therefore leaves most of this rule's findings in place. That is the intended outcome: each one still needs a human to confirm the parameter carries nothing beyond what was destructured.
+
 ### Narrowing picks are never reported
 
 A destructuring that deliberately takes a **subset** of a wider source type is left alone, because spreading the parameter would put every omitted member back on the result. The pick exists precisely so that those members do not flow through, so the rewrite changes what the function produces — for an object literal it adds keys, and for a JSX element it forwards props the child never asked for. The same protection covers both target kinds.
 
-The subset relation is established from syntax alone, without type information, so the rule stays silent only where the widening is demonstrable. Two shapes are read:
+The subset relation is established from syntax alone, without type information, so the rule stays silent only where the widening is demonstrable. Three shapes are read:
 
 - **The parameter's own annotation** — `({ path, body }: Unit)` or an inline `({ path, body }: { path: string; body: string; findings: unknown[] })`.
 - **The element type of an array method's receiver** — the callback of `.map()`, `.forEach()`, `.filter()` or `.flatMap()` whose receiver resolves to something annotated `Unit[]`, `readonly Unit[]`, `Array<Unit>` or `ReadonlyArray<Unit>`. The receiver is traced through `const` initializers, annotated bindings (an annotation holds on a `let` too, since it constrains every assignment), `as` assertions, `await`, and the declared return type of a local function.
+- **The declared type of the binding the callback is written into** — a codebase that centralises its shapes states them once, at the binding, and leaves every callback inside contextually typed by it. In `const CASE_ENTRY: CaseEntry = { sample: ({ title, position }) => ({ title, position }) }` the parameter's type is `CaseEntry`'s `sample` member's sole parameter type, which is read through the same enumerator as an annotation would be. The walk descends through an array literal, so a catalog spelled `const CASES: readonly CaseEntry[] = [ … ]` resolves per entry, and it looks through `as const` and a chain of non-generic aliases. The member must be written down exactly once as a one-parameter function type whose parameter states its own type; an overload set, a rest parameter and a member reached only through a third module all stop the walk.
 
 The referenced type must be a plain, fully written-out member list, reached either directly or through one of the three **key-preserving type operators**: `Readonly<T>`, `Required<T>` and `Partial<T>`. Each of those rewrites the modifiers of every member and leaves the key set identical, so the member list is read straight through the wrapper — `Readonly<{ path: string; body: string; findings: unknown[] }>`, `Readonly<Unit>` where `Unit` is an alias or interface, and a nested `Readonly<Partial<Unit>>` all enumerate exactly what they wrap.
 
@@ -54,7 +67,7 @@ The declaration may live in the file itself or in a **relative sibling module**,
 - **Named imports only.** `import type { Unit } from './types'`, `import { Unit } from './types'` and an import alias (`import type { Unit as U }`) all resolve. A namespace import is referenced as a qualified name (`Types.Unit`) and a default import carries no exported name, so neither resolves.
 - **One hop only.** The sibling must spell `export type X = …` or `export interface X { … }` directly. A `export { X }` specifier, a re-export (`export { X } from './y'`), a barrel (`export * from './y'`) and a type in the sibling that is itself imported from a third module all stop the walk. Inside that one sibling, resolution is the same as in the file under lint: alias chains, key-preserving operators and the shadowing rule below all apply there.
 
-Every other shape describes a member set assembled elsewhere and proves nothing, so it keeps reporting: a union, an intersection, a mapped or conditional type, an interface with an `extends` clause, an index signature, and any generic instantiation other than the three above. `Pick`, `Omit`, `Record`, `Exclude` and `Extract` are the notable exclusions — each rewrites the key set, and a wrong proof would silence a report the rule owes rather than merely fail to find one. A member set that matches the pick **exactly** keeps reporting too: that reassembly is exhaustive, so the spread rewrite is behavior-preserving.
+Every other shape describes a member set assembled elsewhere and proves nothing, so it keeps reporting: a union, an intersection, a mapped or conditional type, an interface with an `extends` clause, an index signature, and any generic instantiation other than the three above. `Pick`, `Omit`, `Record`, `Exclude` and `Extract` are the notable exclusions — each rewrites the key set, and a wrong proof would silence a report the rule owes rather than merely fail to find one. A member set that matches the pick **exactly** keeps reporting too, and is the one case that keeps its automatic fix: that reassembly is exhaustive, so the spread rewrite is behavior-preserving.
 
 A file that declares its own `Readonly`, `Required` or `Partial` — as a type alias, an interface, a class, an enum or an import of that name — is read as naming that declaration rather than the lib utility, so no unwrapping applies and the pick is treated as unprovable.
 

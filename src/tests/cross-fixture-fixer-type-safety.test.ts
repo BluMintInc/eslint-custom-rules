@@ -959,14 +959,19 @@ const NON_TS_FLOOR = 100; // measured 108
 const SHARED_SCOPE_CEILING = 40; // measured 33
 const INPUT_FATAL_CEILING = 10; // measured 0
 /**
- * The mode discount's own non-vacuity. Measured 2 - the two
- * `prefer-spread-over-reassembly` TS2698 pairs whose `never[]` receiver only
- * exists under `strictNullChecks`, which is the artifact class the discount was
- * adopted FOR. Floored just under, like every other floor here: a discount that
- * had stopped discounting anything would satisfy the same-code zero beside it
- * for free, and that zero would then be measuring nothing.
+ * The mode discount's own non-vacuity. Measured 1 - a strict-only TS2783
+ * (`'flexWrap' is specified more than once`) that
+ * `prefer-sx-prop-over-system-props` introduces on an
+ * enforce-use-flex-gap-on-wrap fixture, which is the artifact class the
+ * discount was adopted FOR. The two `prefer-spread-over-reassembly` TS2698
+ * pairs that were measured here when the discount was adopted moved to the
+ * SUGGESTION channel with #2298 and are accounted for, by name, in
+ * `cross-suggestion-type-safety`. Floored at the measurement, like every other
+ * floor here: a discount that had stopped discounting anything would satisfy
+ * the same-code zero beside it for free, and that zero would then be measuring
+ * nothing.
  */
-const DISCOUNT_DROP_FLOOR = 1; // measured 2
+const DISCOUNT_DROP_FLOOR = 1; // measured 1
 
 console.log(
   [

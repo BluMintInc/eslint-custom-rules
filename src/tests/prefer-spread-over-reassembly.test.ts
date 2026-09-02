@@ -1102,6 +1102,54 @@ function wrap(Wide: string) {
   };
 }
 `,
+
+    // Regression (#2298): the parameter is contextually typed by the DECLARED
+    // type of the binding the object literal is written into, not by an
+    // annotation of its own. `SampleInput` carries three members and the pick
+    // takes two, so spreading would forward `otherEvents` and change what the
+    // function returns.
+    `
+type SampleInput = Readonly<{
+  title: string;
+  position: number;
+  otherEvents: readonly string[] | undefined;
+}>;
+type QueuePositionProps = Readonly<{ title: string; position: number }>;
+type CaseEntry = Readonly<{
+  sample: (input: SampleInput) => QueuePositionProps;
+}>;
+const CASE_ENTRY: CaseEntry = {
+  sample: ({ title, position }) => ({ title, position }),
+};
+`,
+
+    // Regression (#2298): the same contextual route through an array of typed
+    // entries, which is how a catalog spells it.
+    `
+type SampleInput = Readonly<{
+  title: string;
+  position: number;
+  otherEvents: readonly string[] | undefined;
+}>;
+type CaseEntry = Readonly<{
+  sample: (input: SampleInput) => Readonly<{ title: string; position: number }>;
+}>;
+const CASES: readonly CaseEntry[] = [
+  { sample: ({ title, position }) => ({ title, position }) },
+];
+`,
+
+    // Regression (#2298): the entry type is reached through an alias chain and
+    // an `as const` assertion, both of which sit between the literal and the
+    // annotation that states its shape.
+    `
+type SampleInput = Readonly<{ title: string; position: number; extra: string }>;
+type CaseEntry = { sample: (input: SampleInput) => unknown };
+type CaseList = readonly CaseEntry[];
+const CASES: CaseList = [
+  { sample: ({ title, position }) => ({ title, position }) },
+] as const;
+`,
   ],
 
   invalid: [
@@ -1141,8 +1189,13 @@ const GameCatalogWrapperStable = memo(
   compareDeeply('hits'),
 );
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 const GameCatalogWrapperStable = memo(
   (props) => {
     return (
@@ -1152,6 +1205,11 @@ const GameCatalogWrapperStable = memo(
   compareDeeply('hits'),
 );
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Issue example 2: ChannelManager — all destructured fields forwarded,
@@ -1175,8 +1233,13 @@ const ChannelManagerCatalogWrapperStable = memo(
   compareDeeply('hits'),
 );
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 const ChannelManagerCatalogWrapperStable = memo(
   (props) => {
     return (
@@ -1189,6 +1252,11 @@ const ChannelManagerCatalogWrapperStable = memo(
   compareDeeply('hits'),
 );
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Issue example 3: FriendsView — destructured fields interspersed with extra non-destructured props.
@@ -1211,8 +1279,13 @@ const FriendsViewCatalogWrapperStable = memo(
   compareDeeply('hits', 'containerSx'),
 );
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 const FriendsViewCatalogWrapperStable = memo(
   (props) => {
     return (
@@ -1226,6 +1299,11 @@ const FriendsViewCatalogWrapperStable = memo(
   compareDeeply('hits', 'containerSx'),
 );
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Object literal reassembly via function parameter destructuring.
@@ -1235,12 +1313,22 @@ const transform = ({ a, b, c }) => {
   return { a, b, c };
 };
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 const transform = (props) => {
   return { ...props };
 };
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Simple concise arrow — self-closing JSX.
@@ -1248,10 +1336,20 @@ const transform = (props) => {
       code: `
 const Wrapper = ({ hits, isLoading }) => <Child hits={hits} isLoading={isLoading} />;
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 const Wrapper = (props) => <Child {...props} />;
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Extra non-destructured prop after spread (self-closing JSX).
@@ -1259,10 +1357,20 @@ const Wrapper = (props) => <Child {...props} />;
       code: `
 const Wrapper = ({ hits, isLoading }) => <Child hits={hits} isLoading={isLoading} extra="x" />;
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 const Wrapper = (props) => <Child {...props} extra="x" />;
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Three fields all forwarded.
@@ -1272,12 +1380,22 @@ const Wrapper = ({ a, b, c }) => {
   return <X a={a} b={b} c={c} />;
 };
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 const Wrapper = (props) => {
   return <X {...props} />;
 };
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // FunctionExpression (not arrow) as argument.
@@ -1287,12 +1405,22 @@ const Wrapper = memo(function({ hits, isLoading, onNearEnd }) {
   return <Child hits={hits} isLoading={isLoading} onNearEnd={onNearEnd} />;
 });
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 const Wrapper = memo(function(props) {
   return <Child {...props} />;
 });
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // minFields option respected — 3 fields, minFields=3 should flag.
@@ -1301,10 +1429,20 @@ const Wrapper = memo(function(props) {
 const Wrapper = ({ a, b, c }) => <X a={a} b={b} c={c} />;
 `,
       options: [{ minFields: 3 }],
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 const Wrapper = (props) => <X {...props} />;
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Object literal with extra prop.
@@ -1312,10 +1450,20 @@ const Wrapper = (props) => <X {...props} />;
       code: `
 const wrap = ({ x, y }) => ({ x, y, label: 'Origin' });
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 const wrap = (props) => ({ ...props, label: 'Origin' });
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Return object literal — non-concise (block body).
@@ -1325,12 +1473,22 @@ const makePoint = ({ x, y, z }) => {
   return { x, y, z };
 };
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 const makePoint = (props) => {
   return { ...props };
 };
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Annotated concise arrow (#1356) — annotation survives on a one-liner.
@@ -1338,10 +1496,20 @@ const makePoint = (props) => {
       code: `
 const Wrapper = ({ hits, isLoading }: ChildProps) => <Child hits={hits} isLoading={isLoading} />;
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 const Wrapper = (props: ChildProps) => <Child {...props} />;
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Generic annotation (#1356) — `Readonly<...>` survives verbatim.
@@ -1366,12 +1534,22 @@ const Wrapper = ({ hits, isLoading }: LoadedProps | EmptyProps) => {
   return <Child hits={hits} isLoading={isLoading} />;
 };
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 const Wrapper = (props: LoadedProps | EmptyProps) => {
   return <Child {...props} />;
 };
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Imported type alias (#1356) — a qualified name survives verbatim.
@@ -1382,13 +1560,23 @@ const Wrapper = ({ hits, isLoading }: ChildProps) => {
   return <Child hits={hits} isLoading={isLoading} />;
 };
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 import type { ChildProps } from './Child';
 const Wrapper = (props: ChildProps) => {
   return <Child {...props} />;
 };
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Multi-line annotation (#1356) — inline object type keeps its formatting.
@@ -1418,10 +1606,20 @@ const Wrapper = (props: {
       code: `
 const Wrapper = ({ hits, isLoading } : ChildProps) => <Child hits={hits} isLoading={isLoading} />;
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 const Wrapper = (props : ChildProps) => <Child {...props} />;
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Object-literal branch with an annotation (#1356) — the non-JSX target.
@@ -1431,12 +1629,22 @@ const transform = ({ a, b, c }: TransformInput) => {
   return { a, b, c };
 };
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 const transform = (props: TransformInput) => {
   return { ...props };
 };
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Object-literal branch, concise arrow with a generic annotation (#1356).
@@ -1444,10 +1652,20 @@ const transform = (props: TransformInput) => {
       code: `
 const wrap = ({ x, y }: Readonly<Point>) => ({ x, y, label: 'Origin' });
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 const wrap = (props: Readonly<Point>) => ({ ...props, label: 'Origin' });
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // FunctionExpression inside memo with an annotation (#1356).
@@ -1457,12 +1675,22 @@ const Wrapper = memo(function({ hits, isLoading, onNearEnd }: ChildProps) {
   return <Child hits={hits} isLoading={isLoading} onNearEnd={onNearEnd} />;
 });
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 const Wrapper = memo(function(props: ChildProps) {
   return <Child {...props} />;
 });
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Annotated arrow inside memo with a comparator argument (#1356).
@@ -1482,8 +1710,13 @@ const GameCatalogWrapperStable = memo(
   compareDeeply('hits'),
 );
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 const GameCatalogWrapperStable = memo(
   (props: GameDropdownSearchProps) => {
     return (
@@ -1493,6 +1726,11 @@ const GameCatalogWrapperStable = memo(
   compareDeeply('hits'),
 );
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // A destructured field named `props` forces a fresh parameter name; the
@@ -1501,10 +1739,20 @@ const GameCatalogWrapperStable = memo(
       code: `
 const Wrapper = ({ props, isLoading }: ChildProps) => <Child props={props} isLoading={isLoading} />;
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 const Wrapper = (props0: ChildProps) => <Child {...props0} />;
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1443): a directive comment attached to a RETAINED attribute
@@ -1528,8 +1776,13 @@ const Wrapper = memo(
   compareDeeply('hits'),
 );
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 const Wrapper = memo(
   (props) => {
     return (
@@ -1543,6 +1796,11 @@ const Wrapper = memo(
   compareDeeply('hits'),
 );
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1443): a comment attached to a COLLAPSED attribute goes away
@@ -1562,8 +1820,13 @@ const Wrapper = ({ hits, isLoading }) => {
   );
 };
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 const Wrapper = (props) => {
   return (
     <Child
@@ -1574,6 +1837,11 @@ const Wrapper = (props) => {
   );
 };
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1443): a block comment above a retained attribute survives.
@@ -1590,8 +1858,13 @@ const Wrapper = ({ hits, isLoading }) => {
   );
 };
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 const Wrapper = (props) => {
   return (
     <Child
@@ -1602,6 +1875,11 @@ const Wrapper = (props) => {
   );
 };
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1443): a trailing line comment on a retained attribute stays
@@ -1618,8 +1896,13 @@ const Wrapper = ({ hits, isLoading }) => {
   );
 };
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 const Wrapper = (props) => {
   return (
     <Child
@@ -1629,6 +1912,11 @@ const Wrapper = (props) => {
   );
 };
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1443): a multiline attribute value keeps its own formatting
@@ -1648,8 +1936,13 @@ const Wrapper = ({ hits, isLoading }) => {
   );
 };
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 const Wrapper = (props) => {
   return (
     <Child
@@ -1662,6 +1955,11 @@ const Wrapper = (props) => {
   );
 };
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1443): when EVERY attribute collapses the element still
@@ -1680,14 +1978,24 @@ const Wrapper = ({ hits, isLoading, onNearEnd }) => {
   );
 };
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 const Wrapper = (props) => {
   return (
     <Child {...props} />
   );
 };
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1443): a comment after the last collapsed attribute belongs
@@ -1704,8 +2012,13 @@ const Wrapper = ({ hits, isLoading }) => {
   );
 };
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 const Wrapper = (props) => {
   return (
     <Child
@@ -1715,6 +2028,11 @@ const Wrapper = (props) => {
   );
 };
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1443): a retained spread attribute keeps its position after
@@ -1732,8 +2050,13 @@ const Wrapper = ({ hits, isLoading }) => {
   );
 };
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 const Wrapper = (props) => {
   return (
     <Child
@@ -1744,6 +2067,11 @@ const Wrapper = (props) => {
   );
 };
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1443): a non-self-closing element keeps its children and the
@@ -1763,8 +2091,13 @@ const Wrapper = ({ hits, isLoading }) => {
   );
 };
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 const Wrapper = (props) => {
   return (
     <Child
@@ -1777,6 +2110,11 @@ const Wrapper = (props) => {
   );
 };
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1443): the object-literal branch splices too, so a directive
@@ -1792,8 +2130,13 @@ const transform = ({ a, b }) => {
   };
 };
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 const transform = (props) => {
   return {
     ...props,
@@ -1802,6 +2145,11 @@ const transform = (props) => {
   };
 };
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1443): object-literal splice with the retained property
@@ -1817,8 +2165,13 @@ const transform = ({ a, b }) => {
   };
 };
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 const transform = (props) => {
   return {
     ...props,
@@ -1827,6 +2180,11 @@ const transform = (props) => {
   };
 };
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1610): a type-only wrapper on the reassembled literal has no
@@ -1834,18 +2192,48 @@ const transform = (props) => {
     // The fixer edits the literal in place and leaves the wrapper verbatim.
     {
       code: `const g = ({ a, b }) => ({ a, b } as const);`,
-      output: `const g = (props) => ({ ...props } as const);`,
-      errors: [{ messageId: 'preferSpread' }],
+      output: null,
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `const g = (props) => ({ ...props } as const);`,
+            },
+          ],
+        },
+      ],
     },
     {
       code: `const h = (items) => items.map(({ id, name }) => { return { id, name } as const; });`,
-      output: `const h = (items) => items.map((props) => { return { ...props } as const; });`,
-      errors: [{ messageId: 'preferSpread' }],
+      output: null,
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `const h = (items) => items.map((props) => { return { ...props } as const; });`,
+            },
+          ],
+        },
+      ],
     },
     {
       code: `const s = ({ a, b }) => { return { a, b } satisfies Pair; };`,
-      output: `const s = (props) => { return { ...props } satisfies Pair; };`,
-      errors: [{ messageId: 'preferSpread' }],
+      output: null,
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `const s = (props) => { return { ...props } satisfies Pair; };`,
+            },
+          ],
+        },
+      ],
     },
 
     // Regression (#1610): block return, one row per wrapper form.
@@ -1855,12 +2243,22 @@ const t = ({ a, b }) => {
   return { a, b } as const;
 };
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 const t = (props) => {
   return { ...props } as const;
 };
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
     {
       code: `
@@ -1868,12 +2266,22 @@ const t = ({ a, b }) => {
   return { a, b } as Pair;
 };
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 const t = (props) => {
   return { ...props } as Pair;
 };
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
     {
       code: `
@@ -1881,12 +2289,22 @@ const t = ({ a, b }) => {
   return ({ a, b })!;
 };
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 const t = (props) => {
   return ({ ...props })!;
 };
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
     // A chain unwinds fully: `as unknown as T` is two wrappers deep.
     {
@@ -1895,12 +2313,22 @@ const t = ({ a, b }) => {
   return { a, b } as unknown as Pair;
 };
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 const t = (props) => {
   return { ...props } as unknown as Pair;
 };
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
     {
       code: `
@@ -1908,12 +2336,22 @@ const t = ({ a, b }) => {
   return { a, b } satisfies Pair as Pair;
 };
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 const t = (props) => {
   return { ...props } satisfies Pair as Pair;
 };
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1610): concise arrow, one row per wrapper form. Before the
@@ -1921,31 +2359,81 @@ const t = (props) => {
     // body was not a BlockStatement/ObjectExpression/JSXElement.
     {
       code: `const c = ({ x, y }) => ({ x, y } satisfies Point);`,
-      output: `const c = (props) => ({ ...props } satisfies Point);`,
-      errors: [{ messageId: 'preferSpread' }],
+      output: null,
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `const c = (props) => ({ ...props } satisfies Point);`,
+            },
+          ],
+        },
+      ],
     },
     {
       code: `const c = ({ x, y }) => ({ x, y } as Point);`,
-      output: `const c = (props) => ({ ...props } as Point);`,
-      errors: [{ messageId: 'preferSpread' }],
+      output: null,
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `const c = (props) => ({ ...props } as Point);`,
+            },
+          ],
+        },
+      ],
     },
     {
       code: `const c = ({ x, y }) => ({ x, y })!;`,
-      output: `const c = (props) => ({ ...props })!;`,
-      errors: [{ messageId: 'preferSpread' }],
+      output: null,
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `const c = (props) => ({ ...props })!;`,
+            },
+          ],
+        },
+      ],
     },
     {
       code: `const c = ({ x, y }) => ({ x, y } as unknown as Point);`,
-      output: `const c = (props) => ({ ...props } as unknown as Point);`,
-      errors: [{ messageId: 'preferSpread' }],
+      output: null,
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `const c = (props) => ({ ...props } as unknown as Point);`,
+            },
+          ],
+        },
+      ],
     },
 
     // Regression (#1610): a retained property survives the collapse behind a
     // wrapper exactly as it does without one.
     {
       code: `const c = ({ x, y }) => ({ x, y, label: 'Origin' } as const);`,
-      output: `const c = (props) => ({ ...props, label: 'Origin' } as const);`,
-      errors: [{ messageId: 'preferSpread' }],
+      output: null,
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `const c = (props) => ({ ...props, label: 'Origin' } as const);`,
+            },
+          ],
+        },
+      ],
     },
 
     // Regression (#1610): the parameter's type annotation and the return
@@ -1956,12 +2444,22 @@ const transform = ({ a, b, c }: TransformInput) => {
   return { a, b, c } as const;
 };
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 const transform = (props: TransformInput) => {
   return { ...props } as const;
 };
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1610): a directive on a retained property still survives when
@@ -1977,8 +2475,13 @@ const transform = ({ a, b }) => {
   } as const;
 };
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 const transform = (props) => {
   return {
     ...props,
@@ -1987,6 +2490,11 @@ const transform = (props) => {
   } as const;
 };
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1610): the live agora shape (useGroupSubgroups.tsx) — a
@@ -2002,14 +2510,24 @@ const toPreviews = (subgroups) => {
   });
 };
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 const toPreviews = (subgroups) => {
   return subgroups.map((props) => {
     return { ...props } as const;
   });
 };
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1610): a FunctionExpression body is unwrapped too.
@@ -2019,20 +2537,40 @@ const make = memo(function({ a, b }) {
   return { a, b } as const;
 });
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 const make = memo(function(props) {
   return { ...props } as const;
 });
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1610): the minFields option still gates the wrapped shape.
     {
       code: `const c = ({ a, b, d }) => ({ a, b, d } as const);`,
       options: [{ minFields: 3 }],
-      output: `const c = (props) => ({ ...props } as const);`,
-      errors: [{ messageId: 'preferSpread' }],
+      output: null,
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `const c = (props) => ({ ...props } as const);`,
+            },
+          ],
+        },
+      ],
     },
 
     // Control (#1610): the JSX block-return path already unwrapped one level
@@ -2043,25 +2581,55 @@ const W = ({ a, b }) => {
   return <X a={a} b={b} /> as const;
 };
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 const W = (props) => {
   return <X {...props} /> as const;
 };
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1610): the concise-arrow JSX counterpart, which the
     // block-only unwrap never reached.
     {
       code: `const W = ({ a, b }) => (<X a={a} b={b} /> as const);`,
-      output: `const W = (props) => (<X {...props} /> as const);`,
-      errors: [{ messageId: 'preferSpread' }],
+      output: null,
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `const W = (props) => (<X {...props} /> as const);`,
+            },
+          ],
+        },
+      ],
     },
     {
       code: `const W = ({ a, b }) => (<X a={a} b={b} /> satisfies Element);`,
-      output: `const W = (props) => (<X {...props} /> satisfies Element);`,
-      errors: [{ messageId: 'preferSpread' }],
+      output: null,
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `const W = (props) => (<X {...props} /> satisfies Element);`,
+            },
+          ],
+        },
+      ],
     },
 
     // Regression (#1610): a JSX return behind a chain of wrappers.
@@ -2071,12 +2639,22 @@ const W = ({ a, b }) => {
   return <X a={a} b={b} /> as unknown as JSX.Element;
 };
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 const W = (props) => {
   return <X {...props} /> as unknown as JSX.Element;
 };
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1610): a retained JSX attribute keeps its position and its
@@ -2094,8 +2672,13 @@ const W = ({ hits, isLoading }) => {
   ) as const;
 };
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 const W = (props) => {
   return (
     <Child
@@ -2106,6 +2689,11 @@ const W = (props) => {
   ) as const;
 };
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1642): a member set EQUAL to the pick is exhaustive, so the
@@ -2174,11 +2762,21 @@ const W = (props: Pair) => <Child {...props} />;
 import type { Unit } from './unit';
 const build = (units: Unit[]) => units.map(({ a, b }) => ({ a, b }));
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 import type { Unit } from './unit';
 const build = (units: Unit[]) => units.map((props) => ({ ...props }));
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1642): a union assembles its members elsewhere.
@@ -2187,11 +2785,21 @@ const build = (units: Unit[]) => units.map((props) => ({ ...props }));
 type Wide = { a: string; b: string; c: string } | { a: string; b: string };
 const pick = ({ a, b }: Wide) => ({ a, b });
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 type Wide = { a: string; b: string; c: string } | { a: string; b: string };
 const pick = (props: Wide) => ({ ...props });
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1642): so does an intersection.
@@ -2200,11 +2808,21 @@ const pick = (props: Wide) => ({ ...props });
 type Wide = { a: string; b: string } & Extra;
 const pick = ({ a, b }: Wide) => ({ a, b });
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 type Wide = { a: string; b: string } & Extra;
 const pick = (props: Wide) => ({ ...props });
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1642): a mapped type's members are computed from a key set.
@@ -2213,11 +2831,21 @@ const pick = (props: Wide) => ({ ...props });
 type Wide = { [K in Keys]: string };
 const pick = ({ a, b }: Wide) => ({ a, b });
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 type Wide = { [K in Keys]: string };
 const pick = (props: Wide) => ({ ...props });
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1642): a conditional type resolves to a member list only
@@ -2227,11 +2855,21 @@ const pick = (props: Wide) => ({ ...props });
 type Wide = Source extends object ? Source : never;
 const pick = ({ a, b }: Wide) => ({ a, b });
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 type Wide = Source extends object ? Source : never;
 const pick = (props: Wide) => ({ ...props });
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1642): an index signature admits members that are never
@@ -2241,11 +2879,21 @@ const pick = (props: Wide) => ({ ...props });
 type Wide = { a: string; b: string; [key: string]: string };
 const pick = ({ a, b }: Wide) => ({ a, b });
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 type Wide = { a: string; b: string; [key: string]: string };
 const pick = (props: Wide) => ({ ...props });
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1642): an interface's \`extends\` clause carries members from
@@ -2259,8 +2907,13 @@ interface Wide extends Base {
 }
 const pick = ({ a, b }: Wide) => ({ a, b });
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 interface Wide extends Base {
   a: string;
   b: string;
@@ -2268,6 +2921,11 @@ interface Wide extends Base {
 }
 const pick = (props: Wide) => ({ ...props });
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1642): a generic instantiation's members depend on the type
@@ -2277,11 +2935,21 @@ const pick = (props: Wide) => ({ ...props });
 type Wide<T> = { a: string; b: string; c: T };
 const pick = ({ a, b }: Wide<string>) => ({ a, b });
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 type Wide<T> = { a: string; b: string; c: T };
 const pick = (props: Wide<string>) => ({ ...props });
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1642): a member expression receiver — the property's type
@@ -2291,11 +2959,21 @@ const pick = (props: Wide<string>) => ({ ...props });
 type Unit = { a: string; b: string; c: string };
 const build = (state) => state.units.map(({ a, b }) => ({ a, b }));
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 type Unit = { a: string; b: string; c: string };
 const build = (state) => state.units.map((props) => ({ ...props }));
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1642): an unannotated reassignable receiver can hold
@@ -2306,12 +2984,22 @@ type Unit = { a: string; b: string; c: string };
 let units = [];
 const build = () => units.map(({ a, b }) => ({ a, b }));
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 type Unit = { a: string; b: string; c: string };
 let units = [];
 const build = () => units.map((props) => ({ ...props }));
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1642): an inferred return type is not written down.
@@ -2321,12 +3009,22 @@ type Unit = { a: string; b: string; c: string };
 const loadUnits = () => [];
 const build = () => loadUnits().map(({ a, b }) => ({ a, b }));
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 type Unit = { a: string; b: string; c: string };
 const loadUnits = () => [];
 const build = () => loadUnits().map((props) => ({ ...props }));
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1642): the binding in scope at the call site is the inner
@@ -2359,11 +3057,21 @@ const outer = (units: Unit[]) => {
 type Unit = { a: string; b: string; c: string };
 const build = (units: Unit[]) => wrap(({ a, b }) => ({ a, b }));
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 type Unit = { a: string; b: string; c: string };
 const build = (units: Unit[]) => wrap((props) => ({ ...props }));
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1642): a self-referential alias terminates without proving
@@ -2373,11 +3081,21 @@ const build = (units: Unit[]) => wrap((props) => ({ ...props }));
 type Wide = Wide;
 const pick = ({ a, b }: Wide) => ({ a, b });
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 type Wide = Wide;
 const pick = (props: Wide) => ({ ...props });
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1642): a pick naming a member the source type does not
@@ -2387,11 +3105,21 @@ const pick = (props: Wide) => ({ ...props });
 type Wide = { a: string; c: string; d: string };
 const pick = ({ a, b }: Wide) => ({ a, b });
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 type Wide = { a: string; c: string; d: string };
 const pick = (props: Wide) => ({ ...props });
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1642): the callback is not the first argument, so the
@@ -2401,11 +3129,21 @@ const pick = (props: Wide) => ({ ...props });
 type Unit = { a: string; b: string; c: string };
 const build = (units: Unit[]) => units.map(identity, ({ a, b }) => ({ a, b }));
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 type Unit = { a: string; b: string; c: string };
 const build = (units: Unit[]) => units.map(identity, (props) => ({ ...props }));
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1643): reading through \`Readonly\` widens what can be
@@ -2457,12 +3195,22 @@ type Big = { a: string; b: string; c: string };
 type Wide = Pick<Big, 'a' | 'b'>;
 const pick = ({ a, b }: Wide) => ({ a, b });
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 type Big = { a: string; b: string; c: string };
 type Wide = Pick<Big, 'a' | 'b'>;
 const pick = (props: Wide) => ({ ...props });
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1643): \`Omit\` removes keys.
@@ -2472,12 +3220,22 @@ type Big = { a: string; b: string; c: string };
 type Wide = Omit<Big, 'c'>;
 const pick = ({ a, b }: Wide) => ({ a, b });
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 type Big = { a: string; b: string; c: string };
 type Wide = Omit<Big, 'c'>;
 const pick = (props: Wide) => ({ ...props });
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1643): \`Record\` names no members at all.
@@ -2486,11 +3244,21 @@ const pick = (props: Wide) => ({ ...props });
 type Wide = Record<string, number>;
 const pick = ({ a, b }: Wide) => ({ a, b });
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 type Wide = Record<string, number>;
 const pick = (props: Wide) => ({ ...props });
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1643): only the three key-preserving operators are read
@@ -2502,12 +3270,22 @@ type Big = { a: string; b: string; c: string };
 type Wide = NonNullable<Big>;
 const pick = ({ a, b }: Wide) => ({ a, b });
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 type Big = { a: string; b: string; c: string };
 type Wide = NonNullable<Big>;
 const pick = (props: Wide) => ({ ...props });
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1643): a file declaring its own \`Readonly\` is not talking
@@ -2519,12 +3297,22 @@ type Readonly<T> = Pick<T, 'a' | 'b'>;
 type Big = { a: string; b: string; c: string };
 const pick = ({ a, b }: Readonly<Big>) => ({ a, b });
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 type Readonly<T> = Pick<T, 'a' | 'b'>;
 type Big = { a: string; b: string; c: string };
 const pick = (props: Readonly<Big>) => ({ ...props });
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1643): an imported \`Partial\` shadows the global just as a
@@ -2535,12 +3323,22 @@ import { Partial } from './types';
 type Big = { a: string; b: string; c: string };
 const pick = ({ a, b }: Partial<Big>) => ({ a, b });
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 import { Partial } from './types';
 type Big = { a: string; b: string; c: string };
 const pick = (props: Partial<Big>) => ({ ...props });
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1643): a nested declaration shadows too, so the whole file
@@ -2556,8 +3354,13 @@ const build = () => {
   return ({ a, b }: Required<Big>) => ({ a, b });
 };
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 type Big = { a: string; b: string; c: string };
 const build = () => {
   interface Required {
@@ -2567,6 +3370,11 @@ const build = () => {
   return (props: Required<Big>) => ({ ...props });
 };
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1643): an arity other than one is malformed for these
@@ -2576,11 +3384,21 @@ const build = () => {
 type Big = { a: string; b: string; c: string };
 const pick = ({ a, b }: Readonly<Big, Big>) => ({ a, b });
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 type Big = { a: string; b: string; c: string };
 const pick = (props: Readonly<Big, Big>) => ({ ...props });
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1643): the operator preserves keys, but the argument's own
@@ -2590,11 +3408,21 @@ const pick = (props: Readonly<Big, Big>) => ({ ...props });
 import type { Big } from './types';
 const pick = ({ a, b }: Readonly<Big>) => ({ a, b });
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 import type { Big } from './types';
 const pick = (props: Readonly<Big>) => ({ ...props });
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1643): a generic alias behind the operator resolves to a
@@ -2604,11 +3432,21 @@ const pick = (props: Readonly<Big>) => ({ ...props });
 type Big<T> = { a: string; b: string; c: T };
 const pick = ({ a, b }: Readonly<Big<string>>) => ({ a, b });
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 type Big<T> = { a: string; b: string; c: T };
 const pick = (props: Readonly<Big<string>>) => ({ ...props });
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1644): an imported member set that matches the pick exactly
@@ -2635,11 +3473,21 @@ const pick = (props: Exact) => ({ ...props });
 import type { Wide } from 'shared-types';
 const pick = ({ a, b }: Wide) => ({ a, b });
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 import type { Wide } from 'shared-types';
 const pick = (props: Wide) => ({ ...props });
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1644): a relative specifier that resolves to nothing on disk
@@ -2650,11 +3498,21 @@ const pick = (props: Wide) => ({ ...props });
 import type { Wide } from './missing-module';
 const pick = ({ a, b }: Wide) => ({ a, b });
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 import type { Wide } from './missing-module';
 const pick = (props: Wide) => ({ ...props });
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1644): the sibling re-exports the name from a third module,
@@ -2665,11 +3523,21 @@ const pick = (props: Wide) => ({ ...props });
 import type { Relayed } from './types';
 const pick = ({ a, b }: Relayed) => ({ a, b });
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 import type { Relayed } from './types';
 const pick = (props: Relayed) => ({ ...props });
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1644): the sibling's own declaration is a \`Pick\`, which
@@ -2680,11 +3548,21 @@ const pick = (props: Relayed) => ({ ...props });
 import type { NarrowPick } from './types';
 const pick = ({ a, b }: NarrowPick) => ({ a, b });
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 import type { NarrowPick } from './types';
 const pick = (props: NarrowPick) => ({ ...props });
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1644): the sibling's declaration aliases a type it imports
@@ -2695,11 +3573,21 @@ const pick = (props: NarrowPick) => ({ ...props });
 import type { ViaThird } from './types';
 const pick = ({ a, b }: ViaThird) => ({ a, b });
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 import type { ViaThird } from './types';
 const pick = (props: ViaThird) => ({ ...props });
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1644): a barrel names no declaration of its own.
@@ -2709,11 +3597,21 @@ const pick = (props: ViaThird) => ({ ...props });
 import type { Wide } from './barrel';
 const pick = ({ a, b }: Wide) => ({ a, b });
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 import type { Wide } from './barrel';
 const pick = (props: Wide) => ({ ...props });
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1644): the sibling resolves but exports no such name.
@@ -2723,11 +3621,21 @@ const pick = (props: Wide) => ({ ...props });
 import type { Missing } from './types';
 const pick = ({ a, b }: Missing) => ({ a, b });
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 import type { Missing } from './types';
 const pick = (props: Missing) => ({ ...props });
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1644): a specifier export is indistinguishable from a
@@ -2738,11 +3646,21 @@ const pick = (props: Missing) => ({ ...props });
 import type { SpecifierExported } from './types';
 const pick = ({ a, b }: SpecifierExported) => ({ a, b });
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 import type { SpecifierExported } from './types';
 const pick = (props: SpecifierExported) => ({ ...props });
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1644): a namespace import is referenced as a qualified name,
@@ -2753,11 +3671,21 @@ const pick = (props: SpecifierExported) => ({ ...props });
 import * as Types from './types';
 const pick = ({ a, b }: Types.Wide) => ({ a, b });
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 import * as Types from './types';
 const pick = (props: Types.Wide) => ({ ...props });
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1644): a default import carries no exported name to look up
@@ -2768,11 +3696,21 @@ const pick = (props: Types.Wide) => ({ ...props });
 import Wide from './types';
 const pick = ({ a, b }: Wide) => ({ a, b });
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 import Wide from './types';
 const pick = (props: Wide) => ({ ...props });
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1769): widening resolution must not disable the rule. A
@@ -2846,8 +3784,13 @@ function outer() {
   return pick;
 }
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 function other() {
   type Wide = { a: string; b: string; c: string };
   return null as unknown as Wide;
@@ -2857,6 +3800,11 @@ function outer() {
   return pick;
 }
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1769): the innermost declaration wins in the reporting
@@ -2893,14 +3841,24 @@ function outer() {
   return pick;
 }
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 function outer() {
   type Wide = Wide;
   const pick = (props: Wide) => ({ ...props });
   return pick;
 }
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1769): a two-link cycle across scopes terminates as well.
@@ -2913,8 +3871,13 @@ function outer() {
   return pick;
 }
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 type Wide = Inner;
 function outer() {
   type Inner = Wide;
@@ -2922,6 +3885,11 @@ function outer() {
   return pick;
 }
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1769): a nested declaration that enumerates nothing — an
@@ -2935,14 +3903,24 @@ function outer() {
   return pick;
 }
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 function outer() {
   type Wide = { a: string; b: string; [key: string]: string };
   const pick = (props: Wide) => ({ ...props });
   return pick;
 }
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1769): a nested declaration of \`Readonly\` shadows the lib
@@ -2957,8 +3935,13 @@ function outer() {
   return pick;
 }
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 function outer() {
   type Readonly<T> = Pick<T, 'a' | 'b'>;
   type Big = { a: string; b: string; c: string };
@@ -2966,6 +3949,11 @@ function outer() {
   return pick;
 }
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // ---------------------------------------------------------------------
@@ -2982,12 +3970,22 @@ function Wrapper({ a, b, c }) {
   return <X a={a} b={b} c={c} />;
 }
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 function Wrapper(props) {
   return <X {...props} />;
 }
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // The multi-attribute element collapses to a lone spread.
@@ -3003,14 +4001,24 @@ function Wrapper({ hits, isLoading, onNearEnd }) {
   );
 }
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 function Wrapper(props) {
   return (
     <Child {...props} />
   );
 }
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1356): the annotation survives on a declaration too. The
@@ -3045,12 +4053,22 @@ export function Wrapper({ hits, isLoading }) {
   return <Child hits={hits} isLoading={isLoading} />;
 }
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 export function Wrapper(props) {
   return <Child {...props} />;
 }
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // `export default function` is the same declaration one node deeper.
@@ -3060,12 +4078,22 @@ export default function Wrapper({ a, b }) {
   return <X a={a} b={b} />;
 }
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 export default function Wrapper(props) {
   return <X {...props} />;
 }
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // A default export may omit the name entirely; the fix edits the parameter
@@ -3076,12 +4104,22 @@ export default function ({ a, b }) {
   return <X a={a} b={b} />;
 }
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 export default function (props) {
   return <X {...props} />;
 }
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // A declaration nested in another function body.
@@ -3094,8 +4132,13 @@ function outer() {
   return Wrapper;
 }
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 function outer() {
   function Wrapper(props) {
     return <X {...props} />;
@@ -3103,6 +4146,11 @@ function outer() {
   return Wrapper;
 }
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // A declaration exported from inside a namespace.
@@ -3114,14 +4162,24 @@ namespace Shapes {
   }
 }
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 namespace Shapes {
   export function pick(props) {
     return { ...props };
   }
 }
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // The object-literal target branch.
@@ -3131,12 +4189,22 @@ function transform({ a, b, c }) {
   return { a, b, c };
 }
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 function transform(props) {
   return { ...props };
 }
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1443): a directive on a retained property survives the
@@ -3152,8 +4220,13 @@ function transform({ a, b }) {
   };
 }
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 function transform(props) {
   return {
     ...props,
@@ -3162,6 +4235,11 @@ function transform(props) {
   };
 }
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1443): a retained JSX attribute keeps its comment and line.
@@ -3178,8 +4256,13 @@ function Wrapper({ hits, isLoading }) {
   );
 }
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 function Wrapper(props) {
   return (
     <Child
@@ -3190,6 +4273,11 @@ function Wrapper(props) {
   );
 }
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1443): a non-self-closing element keeps its children.
@@ -3208,8 +4296,13 @@ function Wrapper({ hits, isLoading }) {
   );
 }
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 function Wrapper(props) {
   return (
     <Child
@@ -3222,6 +4315,11 @@ function Wrapper(props) {
   );
 }
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1610): the type-only wrapper is left verbatim and only the
@@ -3232,12 +4330,22 @@ function t({ a, b }) {
   return { a, b } as const;
 }
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 function t(props) {
   return { ...props } as const;
 }
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // A destructured field named `props` forces a fresh parameter name.
@@ -3247,12 +4355,22 @@ function W({ props, isLoading }: ChildProps) {
   return <Child props={props} isLoading={isLoading} />;
 }
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 function W(props0: ChildProps) {
   return <Child {...props0} />;
 }
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1356): a multi-line inline annotation keeps its formatting.
@@ -3284,12 +4402,22 @@ function W({ a, b, c }) {
 }
 `,
       options: [{ minFields: 3 }],
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 function W(props) {
   return <X {...props} />;
 }
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // `async` and `function*` are still declarations carrying a reassembly.
@@ -3299,12 +4427,22 @@ async function build({ a, b }) {
   return { a, b };
 }
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 async function build(props) {
   return { ...props };
 }
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
     {
       code: `
@@ -3312,12 +4450,22 @@ function* build({ a, b }) {
   return { a, b };
 }
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 function* build(props) {
   return { ...props };
 }
 `,
+            },
+          ],
+        },
+      ],
+      output: null,
     },
 
     // Regression (#1642): the narrowing proof runs in the safe direction on a
@@ -3410,13 +4558,82 @@ function pick<Wide>({ a, b }: Wide) {
   return { a, b };
 }
 `,
-      errors: [{ messageId: 'preferSpread' }],
-      output: `
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
 type Wide = { a: string; b: string; c: string };
 
 function pick<Wide>(props: Wide) {
   return { ...props };
 }
+`,
+            },
+          ],
+        },
+      ],
+      output: null,
+    },
+
+    // Regression (#2298): the production shape. `sample`'s type is assembled by
+    // a conditional over `Parameters<>`, which no syntactic reader will ever
+    // enumerate, so the pick stays unproven. The finding still stands — the
+    // author may well want the spread — but the rewrite is OFFERED rather than
+    // applied, because applying it would forward `otherEvents` to a consumer
+    // whose `'otherEvents' in props` check reads it.
+    {
+      code: `
+type SampleInput = Readonly<{ title: string; position: number; otherEvents: string[] }>;
+type Sampler = (input: SampleInput) => unknown;
+type CaseEntry = { sample: Parameters<Sampler>[0] extends object ? Sampler : never };
+const CASE_ENTRY: CaseEntry = {
+  sample: ({ title, position }) => ({ title, position }),
+};
+`,
+      errors: [
+        {
+          messageId: 'preferSpread',
+          suggestions: [
+            {
+              messageId: 'applySpread',
+              output: `
+type SampleInput = Readonly<{ title: string; position: number; otherEvents: string[] }>;
+type Sampler = (input: SampleInput) => unknown;
+type CaseEntry = { sample: Parameters<Sampler>[0] extends object ? Sampler : never };
+const CASE_ENTRY: CaseEntry = {
+  sample: (props) => ({ ...props }),
+};
+`,
+            },
+          ],
+        },
+      ],
+      output: null,
+    },
+
+    // Over-decline control for #2298: the contextual binding route resolves an
+    // EXHAUSTIVE member set, which is a proof that the spread forwards exactly
+    // what the pick did. The route must still autofix there — a route that only
+    // ever silences would be indistinguishable from not reading the binding at
+    // all.
+    {
+      code: `
+type SampleInput = Readonly<{ title: string; position: number }>;
+type CaseEntry = Readonly<{ sample: (input: SampleInput) => unknown }>;
+const CASES: readonly CaseEntry[] = [
+  { sample: ({ title, position }) => ({ title, position }) },
+];
+`,
+      errors: [{ messageId: 'preferSpread' }],
+      output: `
+type SampleInput = Readonly<{ title: string; position: number }>;
+type CaseEntry = Readonly<{ sample: (input: SampleInput) => unknown }>;
+const CASES: readonly CaseEntry[] = [
+  { sample: (props) => ({ ...props }) },
+];
 `,
     },
   ],

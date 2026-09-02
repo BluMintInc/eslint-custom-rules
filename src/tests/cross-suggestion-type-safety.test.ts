@@ -33,7 +33,7 @@
 import path from 'path';
 import { Linter } from 'eslint';
 import * as ts from 'typescript';
-import { intersectDiagnostics } from '../utils/fixtureTypeProgram';
+import { codeOf, intersectDiagnostics } from '../utils/fixtureTypeProgram';
 import {
   FixtureBucket,
   defaultFilenameFor,
@@ -1399,6 +1399,15 @@ const intersectionAccounts = assertedPairs.map((pair) => ({
 const discountDrops = intersectionAccounts.filter(
   (account) => account.dropped.length > 0,
 );
+
+/**
+ * The pairs the mode discount is EXPECTED to drop, keyed `<rule> <TS codes>`
+ * with the number of pairs. See the accounting test below for why each one is
+ * an artifact of the input and not of the suggestion.
+ */
+const EXPECTED_DISCOUNT_DROPS: Record<string, number> = {
+  'prefer-spread-over-reassembly TS2698': 2,
+};
 const codeMatchedDrops = intersectionAccounts.filter(
   (account) => account.codeMatchedDrops.length > 0,
 );
@@ -1536,15 +1545,32 @@ describe('the cross-paired suggestion type guard is load-bearing', () => {
         )
         .join('\n'),
     ).toBe('');
-    // The discount is INERT on this corpus: no suggestion introduces a
-    // diagnostic under one mode only, so the intersection and the union oracle
-    // agree at zero and there is no floor to hold here. Pinned rather than
-    // floored, because `>= 0` reads as an assertion and is not one - the day a
-    // suggestion does diverge by mode, someone looks at it instead of it
-    // landing silently inside the discount. Non-vacuity for the discount
-    // itself therefore comes from the planted controls, not from here: an inert
-    // discount and an absent one are indistinguishable on this corpus.
-    expect(discountDrops.length).toBe(0);
+    // Every drop is named, not merely counted. The discount exists for exactly
+    // one artifact class - a STRICT-only diagnostic on a degraded input - and
+    // the two pairs it discounts here are `prefer-spread-over-reassembly`'s
+    // #1986 shape: `let units = []` is `never[]` under strictNullChecks alone,
+    // so `{ ...props }` on it is TS2698 under strict and clean otherwise.
+    // Annotating the declaration makes it vanish on the AFTER side, which is
+    // what proves it an artifact of the input rather than of the rewrite.
+    // They arrived on this channel with #2298, which made the rewrite a
+    // suggestion wherever the pick is unproven; `fixer-type-safety` baselines
+    // the same two under its suggestion arm with the same explanation. Pinned
+    // as a map rather than floored: a third pair, a second code, or a second
+    // rule diverging by mode must fail here and be looked at, and an entry that
+    // stops reproducing must be deleted rather than absorb the next one.
+    expect(
+      Object.fromEntries(
+        discountDrops.reduce((counts, account) => {
+          const key = `${account.pair.fixer} ${[
+            ...new Set(account.dropped.map(codeOf)),
+          ]
+            .sort()
+            .join('+')}`;
+          counts.set(key, (counts.get(key) || 0) + 1);
+          return counts;
+        }, new Map<string, number>()),
+      ),
+    ).toEqual(EXPECTED_DISCOUNT_DROPS);
   });
 
   it('reaches suggestions through OTHER rules’ fixtures', () => {
