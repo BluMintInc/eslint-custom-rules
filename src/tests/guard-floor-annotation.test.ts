@@ -68,7 +68,20 @@ type FloorSite = {
 const toNumber = (raw: string) => Number(raw.replace(/[,_]/g, ''));
 
 /**
- * The measurement a comment claims, or null.
+ * A version stamp: a `v` prefix, or three-plus dotted numeric groups.
+ *
+ * Both discriminators are load-bearing and neither may be relaxed to a single
+ * optional-`v` dot pair. That spelling matches a plain `d.dd`, so a
+ * ratio-valued annotation was consumed whole as a stamp: `measured 0.98` parsed
+ * to null and its floor was counted as unannotated — a site quietly outside
+ * this gate's scope rather than a finding, which is the exact evasion the
+ * ratchet exists to close (#2294).
+ */
+const VERSION_STAMP = /\bv\d+(?:\.\d+)*\b|\b\d+\.\d+(?:\.\d+)+\b/g;
+
+/**
+ * The measurement a comment claims, or null. A share or a ratio is a
+ * measurement too, so the number read back may be fractional.
  *
  * Version stamps are stripped first. `Measured at 1.20.198: 23,824 considered`
  * otherwise yields `1` — the guard would then read every version-stamped
@@ -78,8 +91,8 @@ const toNumber = (raw: string) => Number(raw.replace(/[,_]/g, ''));
 export const measuredIn = (text: string): number | null => {
   const after = /\bmeasured\b(.*)$/is.exec(text);
   if (!after) return null;
-  const withoutVersions = after[1].replace(/\bv?\d+\.\d+(?:\.\d+)*\b/g, ' ');
-  const number = /\d[\d,_]*/.exec(withoutVersions);
+  const withoutVersions = after[1].replace(VERSION_STAMP, ' ');
+  const number = /\d[\d,_]*(?:\.\d+)?/.exec(withoutVersions);
   return number ? toNumber(number[0]) : null;
 };
 
@@ -341,6 +354,26 @@ describe('a guard floor must not drift below its own measurement', () => {
     expect(named[0].measured).toBe(8141);
   });
 
+  /**
+   * A share or a ratio is a floor like any other, and `0.98` is not a version.
+   * Read as one it parsed to null, and the site it annotated was filed as
+   * backlog instead of gated — indistinguishable from never having been
+   * annotated at all (#2294).
+   */
+  it('reads a ratio-valued measurement (positive control)', () => {
+    expect(measuredIn('measured 0.98')).toBe(0.98);
+
+    const ratio = floorSitesIn(
+      'expect(share).toBeGreaterThanOrEqual(0.95); // measured 0.98',
+    );
+    expect(ratio).toHaveLength(1);
+    expect(ratio[0].floor).toBe(0.95);
+    expect(ratio[0].measured).toBe(0.98);
+    expect((ratio[0].measured as number) / ratio[0].floor).toBeLessThan(
+      MAX_SLACK,
+    );
+  });
+
   it('passes a freshly cut floor and ignores what it should (negative controls)', () => {
     // Without these the arm above would pass just as well by flagging
     // everything, and the migration it demands would be unsatisfiable.
@@ -367,6 +400,11 @@ describe('a guard floor must not drift below its own measurement', () => {
     expect(measuredIn('Measured at 1.20.198: 23,824 considered')).toBe(23824);
     expect(measuredIn('measured at v1.20.192')).toBeNull();
     expect(measuredIn('a comment with no claim in it')).toBeNull();
+
+    // Narrowing the stamp pattern enough to admit `0.98` must not readmit the
+    // fabricated finding above, in either spelling a citation is written in.
+    expect(measuredIn('measured 181 at v1.20.190')).toBe(181);
+    expect(measuredIn('measured 181 (1.20.190)')).toBe(181);
 
     // A comment on a DIFFERENT line does not annotate the floor: the block
     // comments above an assertion block name several populations at once, and
