@@ -96,7 +96,7 @@ const PINNED: Record<string, { rules: string[]; note: string }> = {
       'no-redundant-annotation-assertion',
       'prefer-nullish-coalescing-boolean-props',
     ],
-    note: '#1982 groups B and E: a getter writing its type twice, and `|| []` under a heading that calls itself null/undefined handling while `??` is the plugin\'s own prescription',
+    note: "#1982 groups B and E: a getter writing its type twice, and `|| []` under a heading that calls itself null/undefined handling while `??` is the plugin's own prescription",
   },
   'prefer-type-alias-over-typeof-constant': {
     rules: ['no-redundant-annotation-assertion'],

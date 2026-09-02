@@ -12,8 +12,11 @@ function filterLintableFiles(files: readonly string[]) {
       // when we pass those files explicitly. These scripts are still covered by tests when applicable.
       !file.startsWith('.github/') &&
       !file.includes('node_modules') &&
-      !file.includes('.claude/tmp/') &&
-      !/\.(test|spec)\.(ts|tsx|js|jsx)$/.test(file)
+      !file.includes('.claude/tmp/')
+      // Test files are linted like any other source. They are where this
+      // repo's guards live, and exempting them let 436 of 436 lint errors
+      // accumulate there unseen (#2281). Kept diff-scoped, so untouched debt
+      // still cannot make the hook permanently red.
     );
   });
 }

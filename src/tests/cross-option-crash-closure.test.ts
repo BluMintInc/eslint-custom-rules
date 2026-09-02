@@ -672,9 +672,8 @@ describe('option payloads x foreign fixtures (crash oracle)', () => {
       },
     };
     const screenOf = (rule: unknown) =>
-      screenPayloads(rule, [
-        { key: '[{}]', options: [{}], source: 'control' },
-      ]).valid[0];
+      screenPayloads(rule, [{ key: '[{}]', options: [{}], source: 'control' }])
+        .valid[0];
 
     // Positive: the screen rewrites it, and the label says so.
     const defaulted = screenOf(withDefault);

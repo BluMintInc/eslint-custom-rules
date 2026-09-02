@@ -830,9 +830,15 @@ console.log(
     `  owners walked: ${stats.owners.size}`,
     `  fixers: ${stats.fixers.size} rewrote (${stats.crossFixers.size} cross-rule)`,
     `  perturbation: ${stats.perturbationSilenced} silenced, ${stats.perturbationAdmitted} admitted, ${stats.perturbationFixLost} fix-lost, ${stats.scaffoldReports} inside scaffolding (${stats.scaffoldAnchored} anchored at it) (bare screen: ${stats.bareScreenFatal} fatal, ${stats.bareScreenThrew} threw, ${stats.bareFixThrew} fix threw)`,
-    `  perturbation by rule: silenced ${JSON.stringify([...silencedByRule].sort((a, b) => b[1] - a[1]))}`,
-    `  perturbation by rule: admitted ${JSON.stringify([...admittedByRule].sort((a, b) => b[1] - a[1]))}`,
-    `  perturbation by rule: fix-lost ${JSON.stringify([...fixLostByRule].sort((a, b) => b[1] - a[1]))}`,
+    `  perturbation by rule: silenced ${JSON.stringify(
+      [...silencedByRule].sort((a, b) => b[1] - a[1]),
+    )}`,
+    `  perturbation by rule: admitted ${JSON.stringify(
+      [...admittedByRule].sort((a, b) => b[1] - a[1]),
+    )}`,
+    `  perturbation by rule: fix-lost ${JSON.stringify(
+      [...fixLostByRule].sort((a, b) => b[1] - a[1]),
+    )}`,
     `  removals: ${removals.length} (${
       removals.filter((removal) => removal.cross).length
     } cross) across ${removalsByFixer.size} fixer(s)`,
