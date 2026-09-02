@@ -97,6 +97,26 @@ Renaming a component to `SCREAMING_SNAKE` fights the React naming convention and
 also hides the declaration from every component-keyed sibling rule, each of which
 recognizes a component by its PascalCase binding.
 
+A third shape withholds the `SCREAMING_SNAKE` rename, and unlike the two above it
+is a **name-shape heuristic** rather than a claim about the value: a binding read
+off another object keeps its name when the binding name **and** the property name
+are both component-shaped, meaning each starts with a capital and carries a
+lowercase letter. Nothing has to be a component and the binding need never appear
+as a JSX element, so a coincidentally PascalCase constant is exempt too:
+
+```ts
+// Exempt — `StatusCode` and the property read are both component-shaped.
+const StatusCode = Constants.StatusCode;
+
+// Reported — the property is camelCase, so the heuristic does not apply.
+const StatusCode = Constants.statusCode;
+```
+
+The two differ only in the case of the property being read. The heuristic is
+deliberately coarse because the alternative is resolving what the property holds
+across files, which a single-file rule cannot do; the cost is that it exempts
+some constants that are not components.
+
 A wrapper is looked through, never treated as a carve-out of its own, so a data
 constant keeps exactly the reports it carries without one:
 
