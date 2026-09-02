@@ -1,3 +1,10 @@
+## [1.20.202](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.201...v1.20.202) (2026-09-02)
+
+
+### Bug Fixes
+
+* **require-props-composition:** treat an @mui/icons-material import as decorative whatever its binding is called (closes [#2282](https://github.com/BluMintInc/eslint-custom-rules/issues/2282)) ([5743c12](https://github.com/BluMintInc/eslint-custom-rules/commit/5743c126cee9965e2db7aa6daea8d144e38aede0))
+
 ## [1.20.201](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.200...v1.20.201) (2026-09-01)
 
 

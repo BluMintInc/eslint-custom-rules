@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.20.202",
+    "date": "2026-09-02T04:11:09.443Z",
+    "rules": [
+      {
+        "name": "require-props-composition",
+        "changeType": "fix",
+        "issues": [
+          2282
+        ],
+        "summary": "treat an @mui/icons-material import as decorative whatever its binding is called (closes #2282)"
+      }
+    ]
+  },
+  {
     "version": "1.20.201",
     "date": "2026-09-01T19:58:16.746Z",
     "rules": [
