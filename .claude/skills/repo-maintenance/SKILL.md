@@ -48,6 +48,16 @@ The repo's own Stop Hook gates every change before it can merge — the maintain
 
 2. **Quality Checks**: build (`npm run build`) must succeed, ESLint must pass on the **changed files** (scoped, not whole-repo — avoids tripping on unrelated pre-existing debt), and the tests **related to the change** (`jest --findRelatedTests`) must pass. The full suite is the CI backstop. For rule implementations the hook also prompts the agent to "Expand Tests" toward 20+ cases covering false positives/negatives.
 
+### 2b. Sharing the machine with other repos (the exec-governor)
+
+Several autonomous loops share one box, and every one of them runs jest as its gate. Jest sizes its worker fleet from the memory it can see, so two gates that start together each reserve against a machine the other has already spent and both get OOM-killed. Sampling free memory cannot prevent this — the fatal allocation spikes are shorter than any sampling interval — but a reservation can.
+
+Set **`BLUMINT_GOVERNOR_CLI`** to the absolute path of agora's `scripts/exec-governor/cli.ts`. The jest steps in `scripts/maintainer.ts` (the `validate` gate) and `scripts/claude-hooks/agent-check.ts` (the Stop Hook) then run under `governor run --profile=jest`, queueing behind any peer repo's governed run instead of racing it. `jest.config.js` reads the resulting `BLUMINT_MAX_WORKERS` grant, so a governed run sizes its fleet to what it was granted rather than to installed memory.
+
+Both sides must resolve the same pool: leave `BLUMINT_GOVERNOR_STATE_DIR` unset on both (it defaults to `~/.cache/blumint/exec-governor`), or set it to the same path on both. A repo pointed elsewhere governs a private pool and gains nothing.
+
+Leaving `BLUMINT_GOVERNOR_CLI` unset — CI, a laptop, any checkout with no agora clone beside it — runs the bare jest command, exactly as before. A configured path that has moved degrades the same way rather than failing the gate, since an unreachable governor is a fact about the machine, not a defect in the change under test. Note that a governed run buffers its child's output and replays it on exit rather than streaming live; that is the price of the reservation, and an ungoverned gate streams only up to the SIGKILL that discards the whole run. `governor status` shows who currently holds leases.
+
 ### 3. Driving a PR to clean
 
 To drive any open PR to review-clean + CI-green — addressing CodeRabbit/human review comments and fixing failing checks autonomously, committing + pushing each cycle — run `npm run pr-autopilot -- --pr=<n>` (see `.github/scripts/pr-autopilot.ts`). This replaces the old `claude-address-bot-review` label trigger. A human can run it the same way.

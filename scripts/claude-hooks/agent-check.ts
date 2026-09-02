@@ -18,6 +18,7 @@ import {
 } from './change-log';
 import type { Input, AgentCheckResult } from './types';
 import { validateRuleStructure } from './validate-rule-structure';
+import { governShellCommand } from '../governor';
 
 const EXPAND_TESTS_PROMPT = `
 Your implementation looks good so far! Now let's ensure comprehensive test coverage.
@@ -197,12 +198,19 @@ export async function validateTests(params: {
       })
       .join(' ');
 
-    // Run with coverage check enabled
-    testCommand = `CLAUDE_AGENT_COVERAGE_CHECK=true ${JEST_BASE_COMMAND} --findRelatedTests ${filesArg} ${JEST_FLAGS} --collectCoverage ${coverageFromFlags}`;
+    // Run with coverage check enabled. The env assignment stays outside the
+    // governor wrapper: the governor execs its program directly, so an
+    // assignment handed to it as the program name is an ENOENT rather than a
+    // variable. Prefixed here, this shell applies it and the child inherits it.
+    testCommand = `CLAUDE_AGENT_COVERAGE_CHECK=true ${governShellCommand(
+      `${JEST_BASE_COMMAND} --findRelatedTests ${filesArg} ${JEST_FLAGS} --collectCoverage ${coverageFromFlags}`,
+    )}`;
   } else {
     // Scenario B: Only Tests/Exclusions Changed - Standard Check without coverage enforcement
     const filesArg = changedTypeScriptFiles.join(' ');
-    testCommand = `${JEST_BASE_COMMAND} --findRelatedTests ${filesArg} ${JEST_FLAGS}`;
+    testCommand = governShellCommand(
+      `${JEST_BASE_COMMAND} --findRelatedTests ${filesArg} ${JEST_FLAGS}`,
+    );
   }
 
   const testResult = await executeCommandAsync(testCommand);

@@ -38,6 +38,33 @@ const isCoverageEnabled = () =>
 // idle limit must sit above this baseline or workers thrash (restart per file).
 const memoryPerWorkerGb = (coverageEnabled) => (coverageEnabled ? 1.25 : 1);
 
+/**
+ * The variable the machine-wide exec-governor uses to hand an admitted run its
+ * worker grant. Duplicated from agora's `scripts/exec-governor/grantEnvNames.js`
+ * rather than required: the two repos are separate clones with no shared
+ * package, and jest loads this config before any TypeScript transform exists.
+ *
+ * Drift in this literal is SILENT — an undefined variable simply restores the
+ * machine-total calculation below while every gate stays green — so
+ * `scripts/governor.test.ts` pins the spelling against the governor's own
+ * module.
+ */
+const GOVERNOR_MAX_WORKERS_ENV = 'BLUMINT_MAX_WORKERS';
+
+/**
+ * A governed run has already been told how large it may be, against a budget
+ * shared with every heavy check on this machine. The sizing below cannot see
+ * that budget: it reads installed memory, which counts a co-resident grant that
+ * is reserved but not yet allocated as free. So the grant wins where one exists,
+ * and the local calculation sizes every ungoverned call site (issue #2286).
+ */
+const readGovernorGrant = (raw, fallback) => {
+  if (!raw) return fallback;
+  const parsed = Math.round(Number(raw));
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return parsed;
+};
+
 // Cap workers by both available memory and half the cores (leaving headroom for
 // the editor and other processes). Without this, jest defaults to cores - 1.
 const calculateWorkers = () => {
@@ -45,7 +72,14 @@ const calculateWorkers = () => {
   const perWorker = memoryPerWorkerGb(isCoverageEnabled());
   const memBasedLimit = Math.max(1, Math.floor(memoryGb / perWorker));
   const cpuBasedLimit = Math.max(1, Math.floor(cpuCount * 0.5));
-  return Math.max(1, Math.min(memBasedLimit, cpuBasedLimit, cpuCount));
+  const ungovernedWorkers = Math.max(
+    1,
+    Math.min(memBasedLimit, cpuBasedLimit, cpuCount),
+  );
+  return readGovernorGrant(
+    process.env[GOVERNOR_MAX_WORKERS_ENV],
+    ungovernedWorkers,
+  );
 };
 
 // Recycle a worker once it exceeds its budget so a long run does not balloon
