@@ -159,9 +159,17 @@ describe('isLintablePath', () => {
     expect(isLintablePath('scripts/baz.js')).toBe(true);
   });
 
-  it('excludes tests, .github/, node_modules/, .claude/tmp/, and non-source', () => {
-    expect(isLintablePath('src/rules/foo.test.ts')).toBe(false);
-    expect(isLintablePath('src/rules/foo.spec.tsx')).toBe(false);
+  /**
+   * Test files are lintable. They hold this repo's guards, and exempting them
+   * is what let every one of its lint errors accumulate there unseen (#2281).
+   */
+  it('accepts test and spec files', () => {
+    expect(isLintablePath('src/rules/foo.test.ts')).toBe(true);
+    expect(isLintablePath('src/rules/foo.spec.tsx')).toBe(true);
+    expect(isLintablePath('src/tests/some-guard.test.ts')).toBe(true);
+  });
+
+  it('excludes .github/, node_modules/, .claude/tmp/, and non-source', () => {
     expect(isLintablePath('.github/scripts/x.ts')).toBe(false);
     expect(isLintablePath('node_modules/pkg/index.ts')).toBe(false);
     expect(isLintablePath('src/.claude/tmp/scratch.ts')).toBe(false);

@@ -213,15 +213,26 @@ const defaultRunner: Runner = (cmd, args) => {
 
 /**
  * Whether a path is one the repo's lint gate would lint: a source
- * `.ts/.tsx/.js/.jsx` file, excluding tests, `.github/`, `node_modules`, and
+ * `.ts/.tsx/.js/.jsx` file, excluding `.github/`, `node_modules`, and
  * `.claude/tmp/`. Mirrors the filter in `scripts/claude-hooks/lint-diff.ts`
  * (the `node_modules` match is path-segment-aware so a source file whose name
  * merely contains the substring isn't skipped).
+ *
+ * Test files are INCLUDED. Roughly 150 of the files under `src/tests/` are
+ * guards rather than rule fixtures, and they hold the corpus harnesses and
+ * closure sweeps this repo does most of its work in, so exempting them exempts
+ * its most intricate code. The exemption also shaped the debt it hid: while it
+ * stood, 436 of the repo's 436 lint errors sat in test files, and seven of them
+ * reached `main` through four separate green runs of this gate (#2281).
+ *
+ * The set stays DIFF-scoped — only paths changed against the develop
+ * merge-base — so pre-existing debt in files a change never touched still
+ * cannot make the gate permanently red. That part of the design is deliberate
+ * and is what a whole-repo `npm run lint` would break.
  */
 export function isLintablePath(file: string): boolean {
   return (
     /\.(ts|tsx|js|jsx)$/.test(file) &&
-    !/\.(test|spec)\.(ts|tsx|js|jsx)$/.test(file) &&
     !file.startsWith('.github/') &&
     !/(^|\/)node_modules(\/|$)/.test(file) &&
     !file.includes('.claude/tmp/')
