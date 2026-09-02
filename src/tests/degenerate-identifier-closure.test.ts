@@ -1332,7 +1332,7 @@ const LITERAL_UNDRIVEN: Record<string, UndrivenCause> = {
   'require-hooks-default-params': 'inventsNoName',
   'require-image-optimized': 'inventsNoName',
   'sync-onwrite-name-func': 'inventsNoName',
-  'use-custom-link': 'declinesOnDegenerateInput',
+  'use-custom-link': 'inventsNoName',
   'use-custom-memo': 'inventsNoName',
   'use-custom-router': 'declinesOnDegenerateInput',
   'vertically-group-related-functions': 'inventsNoName',
