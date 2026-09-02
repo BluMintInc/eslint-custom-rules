@@ -1468,9 +1468,15 @@ describe('degenerate-identifier fix closure', () => {
           untouched.length
         } rule(s): ${untouched.join(', ') || '(none)'}`,
     );
-    expect(totals.bindings).toBeGreaterThan(10000);
-    expect(totals.considered).toBeGreaterThan(40000);
-    expect(totals.rewritten).toBeGreaterThan(25000);
+    expect(totals.bindings).toBeGreaterThan(10000); // measured 20601
+    expect(totals.considered).toBeGreaterThan(40000); // measured 79355
+    expect(totals.rewritten).toBeGreaterThan(25000); // measured 56009
+    /**
+     * The denominator the three above are drawn from. Floored separately
+     * because a harness that lost most of the corpus would still clear a
+     * per-binding count while walking a fraction of the fixtures.
+     */
+    expect(totals.fixtures).toBeGreaterThan(5900); // measured 5991
     expect(totals.rulesRewritten.size).toBeGreaterThanOrEqual(70);
   });
 
@@ -1552,6 +1558,13 @@ describe('degenerate-identifier fix closure', () => {
     expect(totals.discardedUnparsable).toBe(0);
     expect(totals.discardedUnrenamable).toBe(0);
     expect(totals.unparsableFixture).toBe(0);
+    /**
+     * A FLOOR rather than a pinned zero, unlike its three siblings above. Those
+     * are defect signatures and any occurrence is a finding; a duplicate
+     * discard is the deliberate, expected outcome of two derivations landing on
+     * one name, so the honest gate is that the deduplication still happens.
+     */
+    expect(totals.discardedDuplicate).toBeGreaterThan(2900); // measured 3016
     expect(totals.fatalDetails.slice(0, 5).join('\n')).toBe('');
     expect(totals.fatals).toBe(0);
     expect(literalTotals.crashDetails.slice(0, 5).join('\n')).toBe('');
