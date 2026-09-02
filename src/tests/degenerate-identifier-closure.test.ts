@@ -1329,6 +1329,12 @@ const LITERAL_UNDRIVEN: Record<string, UndrivenCause> = {
   'prefer-fragment-shorthand': 'noPerturbableSite',
   'prefer-nullish-coalescing-boolean-props': 'inventsNoName',
   'prefer-params-over-parent-id': 'inventsNoName',
+  // The fix is attached only where the pick's source type resolves to exactly
+  // the destructured members (#2298); every fixture holding a literal this arm
+  // can degenerate sits on the unproven path, where the same rewrite is a
+  // SUGGESTION. The derivation is still measured — on the suggestion channel,
+  // where this rule is one of the deriving rules — so it is moved, not lost.
+  'prefer-spread-over-reassembly': 'declinesOnDegenerateInput',
   'prefer-type-over-interface': 'inventsNoName',
   'require-hooks-default-params': 'inventsNoName',
   'require-image-optimized': 'inventsNoName',
@@ -2010,7 +2016,7 @@ describe('degenerate-identifier fix closure', () => {
     expect(literalTotals.considered).toBeGreaterThan(14500); // measured 16,033
     expect(literalTotals.rewritten).toBeGreaterThan(7000); // measured 7,711
     expect(literalTotals.derivationsObserved).toBeGreaterThan(1500); // measured 1,731
-    expect(literalTotals.rulesDeriving.size).toBeGreaterThanOrEqual(28); // measured 39
+    expect(literalTotals.rulesDeriving.size).toBeGreaterThanOrEqual(28); // measured 38
   });
 
   /** The literal arm, per rule, both directions. */
@@ -2044,10 +2050,10 @@ describe('degenerate-identifier fix closure', () => {
         }`,
     );
     expect(literalSuggestionTotals.unreadableControl).toBe(0);
-    expect(literalSuggestionTotals.considered).toBeGreaterThan(1100); // measured 1,236
-    expect(literalSuggestionTotals.derivationsObserved).toBeGreaterThan(100); // measured 169
+    expect(literalSuggestionTotals.considered).toBeGreaterThan(1100); // measured 1,377
+    expect(literalSuggestionTotals.derivationsObserved).toBeGreaterThan(200); // measured 216
     expect(literalSuggestionTotals.rulesDeriving.size).toBeGreaterThanOrEqual(
-      4, // measured 4
+      4, // measured 5
     );
   });
 

@@ -1064,10 +1064,10 @@ describe('the CJS emission guard is load-bearing', () => {
    * Per-rule floor for corpus C. A total would let one prolific rule stand in
    * for another that stopped emitting entirely, and a rule with zero applied
    * suggestions was not tested on this channel at all — which is precisely the
-   * state #1733 records for all seven of them.
+   * state #1733 records for all eight of them.
    */
   it('accepts at least one suggestion from every suggestion-bearing rule', () => {
-    expect(suggestionRuleNames.length).toBeGreaterThanOrEqual(7); // measured 7
+    expect(suggestionRuleNames.length).toBeGreaterThanOrEqual(8); // measured 8
     expect(
       Object.fromEntries(
         suggestionRuleNames.map((rule) => [
@@ -1082,9 +1082,13 @@ describe('the CJS emission guard is load-bearing', () => {
       'enforce-snapshot-state-narrowing': expect.any(Number),
       'no-excessive-parent-chain': expect.any(Number),
       'prefer-document-flattening': expect.any(Number),
+      // Joined the channel with #2298: the spread rewrite is a suggestion
+      // wherever the pick's source type does not resolve, which is most of
+      // its fixtures.
+      'prefer-spread-over-reassembly': expect.any(Number),
       'react-memoize-literals': expect.any(Number),
     });
-    // None of the seven is type-aware, so every one of them is reachable under
+    // None of the eight is type-aware, so every one of them is reachable under
     // this bare Linter and none has a reason to be exempt.
     expect(
       suggestionRuleNames.filter(
@@ -1094,7 +1098,7 @@ describe('the CJS emission guard is load-bearing', () => {
     // Measured: 368 applied. The floor sits just under it, and the skip
     // ledger pinned at zero above closes the headroom a dropped fixture
     // would otherwise hide in.
-    expect(totalSuggestionsApplied).toBeGreaterThanOrEqual(360); // measured 368
+    expect(totalSuggestionsApplied).toBeGreaterThanOrEqual(470); // measured 480
   });
 
   it('detects a module-scope await inside a SUGGESTION (positive control)', () => {

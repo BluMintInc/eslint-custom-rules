@@ -13,7 +13,13 @@ import {
   resolveNameInEnclosingScopes,
 } from '../utils/lexicalScope';
 
-type MessageIds = 'preferSpread';
+type MessageIds = 'preferSpread' | 'applySpread';
+
+/**
+ * How much the source object's declared type proves about a destructured pick.
+ * See {@link classifyPick}.
+ */
+type PickClassification = 'narrowing' | 'exhaustive' | 'unproven';
 
 type Options = [{ minFields?: number }];
 
@@ -564,8 +570,24 @@ function findRelativeTypeImport(
 }
 
 /**
- * Enumerates every property name a type node declares, or null when the member
- * list cannot be established with certainty.
+ * A member set in the form its resolution produced.
+ *
+ * A type declared in the file under lint yields its member NODES, each of which
+ * carries its own declared type; a type reached through an imported sibling is
+ * read by a separate parse that hands back names alone. A caller needing a
+ * member's TYPE therefore works with the first form and declines the second,
+ * while a caller needing only the key set accepts both.
+ */
+type ResolvedMembers =
+  | {
+      readonly kind: 'members';
+      readonly members: readonly TSESTree.TypeElement[];
+    }
+  | { readonly kind: 'names'; readonly names: Set<string> };
+
+/**
+ * Resolves a type node to the member list it writes down, or null when the
+ * member set cannot be established with certainty.
  *
  * Only an unambiguous, fully written-out member list qualifies, reached either
  * directly or through the key-preserving operators in
@@ -577,13 +599,13 @@ function findRelativeTypeImport(
  * A name the file does not declare is looked up in the relative module that
  * imports it, once; see {@link importedTypeMemberNames}.
  */
-function memberNamesOf(
+function resolveTypeMembers(
   typeNode: TSESTree.TypeNode,
   scope: TypeResolutionScope,
   seen: Set<TSESTree.Node> = new Set(),
-): Set<string> | null {
+): ResolvedMembers | null {
   if (typeNode.type === AST_NODE_TYPES.TSTypeLiteral) {
-    return namesOfMembers(typeNode.members);
+    return { kind: 'members', members: typeNode.members };
   }
 
   if (
@@ -605,14 +627,15 @@ function memberNamesOf(
     ) {
       return null;
     }
-    return memberNamesOf(typeNode.typeParameters.params[0], scope, seen);
+    return resolveTypeMembers(typeNode.typeParameters.params[0], scope, seen);
   }
 
   const declaration = findLocalTypeDeclaration(scope.program, typeNode, name);
   if (!declaration) {
     // The file does not declare the name, so the only remaining source of a
     // written-down member list is the module it comes from.
-    return scope.resolveImportedMembers?.(name) ?? null;
+    const names = scope.resolveImportedMembers?.(name);
+    return names ? { kind: 'names', names } : null;
   }
 
   // A self-referential alias (`type T = T`) would otherwise recur forever. The
@@ -624,31 +647,227 @@ function memberNamesOf(
   }
   seen.add(declaration);
 
-  return memberNamesOfDeclaration(declaration, scope, seen);
+  return resolveTypeMembersOfDeclaration(declaration, scope, seen);
 }
 
 /**
- * The member names a type alias or interface declares. A generic declaration
+ * The members a type alias or interface declares. A generic declaration
  * describes a different member set per instantiation and an interface with an
  * `extends` clause inherits members written elsewhere, so neither enumerates.
  */
-function memberNamesOfDeclaration(
+function resolveTypeMembersOfDeclaration(
   declaration: TypeDeclaration,
   scope: TypeResolutionScope,
   seen: Set<TSESTree.Node>,
-): Set<string> | null {
+): ResolvedMembers | null {
   if (declaration.typeParameters) {
     return null;
   }
 
   if (declaration.type === AST_NODE_TYPES.TSTypeAliasDeclaration) {
-    return memberNamesOf(declaration.typeAnnotation, scope, seen);
+    return resolveTypeMembers(declaration.typeAnnotation, scope, seen);
   }
 
   if (declaration.extends && declaration.extends.length > 0) {
     return null;
   }
-  return namesOfMembers(declaration.body.body);
+  return { kind: 'members', members: declaration.body.body };
+}
+
+/**
+ * Enumerates every property name a type node declares, or null when the member
+ * list cannot be established with certainty.
+ */
+function memberNamesOf(
+  typeNode: TSESTree.TypeNode,
+  scope: TypeResolutionScope,
+  seen: Set<TSESTree.Node> = new Set(),
+): Set<string> | null {
+  const resolved = resolveTypeMembers(typeNode, scope, seen);
+  if (!resolved) {
+    return null;
+  }
+  return resolved.kind === 'names'
+    ? resolved.names
+    : namesOfMembers(resolved.members);
+}
+
+/**
+ * The type a chain of non-generic local aliases finally spells, or the node
+ * itself when the chain cannot be followed.
+ *
+ * A catalog names its element and callback shapes through aliases rather than
+ * writing them inline, so a reader that only recognises the literal spelling
+ * loses the proof on the layout it exists to serve.
+ */
+function unwrapLocalTypeAlias(
+  typeNode: TSESTree.TypeNode,
+  scope: TypeResolutionScope,
+  seen: Set<TSESTree.Node> = new Set(),
+): TSESTree.TypeNode {
+  if (
+    typeNode.type !== AST_NODE_TYPES.TSTypeReference ||
+    typeNode.typeName.type !== AST_NODE_TYPES.Identifier ||
+    typeNode.typeParameters
+  ) {
+    return typeNode;
+  }
+
+  const declaration = findLocalTypeDeclaration(
+    scope.program,
+    typeNode,
+    typeNode.typeName.name,
+  );
+  if (
+    !declaration ||
+    declaration.type !== AST_NODE_TYPES.TSTypeAliasDeclaration ||
+    declaration.typeParameters ||
+    seen.has(declaration)
+  ) {
+    return typeNode;
+  }
+  seen.add(declaration);
+  return unwrapLocalTypeAlias(declaration.typeAnnotation, scope, seen);
+}
+
+/**
+ * The declared type of one named member of a type, or null when the type does
+ * not write that member down exactly once.
+ *
+ * A name carried twice is an overload set or a declaration merge, whose
+ * effective signature is not the one written at either site, so it proves
+ * nothing about the parameter a callback receives.
+ */
+function memberTypeNodeOf(
+  typeNode: TSESTree.TypeNode,
+  scope: TypeResolutionScope,
+  memberName: string,
+): TSESTree.TypeNode | null {
+  const resolved = resolveTypeMembers(typeNode, scope);
+  if (!resolved || resolved.kind !== 'members') {
+    return null;
+  }
+
+  let matches = 0;
+  let annotation: TSESTree.TypeNode | null = null;
+  for (const member of resolved.members) {
+    if (member.type !== AST_NODE_TYPES.TSPropertySignature || member.computed) {
+      continue;
+    }
+    const key = member.key;
+    const name =
+      key.type === AST_NODE_TYPES.Identifier
+        ? key.name
+        : key.type === AST_NODE_TYPES.Literal && typeof key.value === 'string'
+        ? key.value
+        : null;
+    if (name !== memberName) {
+      continue;
+    }
+    matches += 1;
+    annotation = member.typeAnnotation?.typeAnnotation ?? null;
+  }
+  return matches === 1 ? annotation : null;
+}
+
+/**
+ * The declared type of the sole parameter of a function type, or null when the
+ * type is not a one-parameter signature that writes its parameter's type down.
+ *
+ * More than one parameter means the callback under lint is not the one this
+ * signature describes, and a rest parameter names no fixed member set at all.
+ */
+function soleParameterTypeOf(
+  typeNode: TSESTree.TypeNode,
+  scope: TypeResolutionScope,
+): TSESTree.TypeNode | null {
+  const signature = unwrapLocalTypeAlias(typeNode, scope);
+  if (
+    signature.type !== AST_NODE_TYPES.TSFunctionType ||
+    signature.params.length !== 1
+  ) {
+    return null;
+  }
+
+  const param = signature.params[0];
+  if (
+    param.type === AST_NODE_TYPES.RestElement ||
+    param.type === AST_NODE_TYPES.TSParameterProperty
+  ) {
+    return null;
+  }
+  return param.typeAnnotation?.typeAnnotation ?? null;
+}
+
+/**
+ * The type node an expression is declared to have by the binding or assertion
+ * it is written into.
+ *
+ * A codebase that centralises its shapes states them once at the binding —
+ * `const CASES: readonly CaseEntry[] = [...]` — and leaves every callback
+ * inside to be contextually typed by it, so a reader that only consults
+ * parameter annotations never sees the type that is actually written (#2298).
+ */
+function declaredTypeOfInitializer(
+  node: TSESTree.Node,
+): TSESTree.TypeNode | null {
+  const parent = node.parent;
+  if (!parent) {
+    return null;
+  }
+
+  if (
+    (parent.type === AST_NODE_TYPES.TSAsExpression ||
+      parent.type === AST_NODE_TYPES.TSSatisfiesExpression) &&
+    parent.expression === node
+  ) {
+    // `as const` states immutability rather than a shape, and it is written
+    // BELOW the binding's annotation, so the walk continues past it.
+    if (isConstAssertionType(parent.typeAnnotation)) {
+      return declaredTypeOfInitializer(parent);
+    }
+    return parent.typeAnnotation;
+  }
+
+  if (
+    parent.type === AST_NODE_TYPES.VariableDeclarator &&
+    parent.init === node &&
+    parent.id.type === AST_NODE_TYPES.Identifier &&
+    parent.id.typeAnnotation
+  ) {
+    return parent.id.typeAnnotation.typeAnnotation;
+  }
+
+  return null;
+}
+
+function isConstAssertionType(typeNode: TSESTree.TypeNode): boolean {
+  return (
+    typeNode.type === AST_NODE_TYPES.TSTypeReference &&
+    typeNode.typeName.type === AST_NODE_TYPES.Identifier &&
+    typeNode.typeName.name === 'const'
+  );
+}
+
+/**
+ * The declared type of the entry an object literal spells, looking through the
+ * array literal a catalog wraps its entries in.
+ */
+function declaredEntryTypeOf(
+  literal: TSESTree.ObjectExpression,
+  scope: TypeResolutionScope,
+): TSESTree.TypeNode | null {
+  const array = literal.parent;
+  if (
+    array?.type === AST_NODE_TYPES.ArrayExpression &&
+    array.elements.includes(literal)
+  ) {
+    const declared = declaredTypeOfInitializer(array);
+    return declared
+      ? arrayElementTypeOf(unwrapLocalTypeAlias(declared, scope))
+      : null;
+  }
+  return declaredTypeOfInitializer(literal);
 }
 
 /**
@@ -730,11 +949,19 @@ function readExportedTypeMembers(
     },
   };
 
-  return memberNamesOfDeclaration(
+  const resolved = resolveTypeMembersOfDeclaration(
     declaration,
     siblingScope,
     new Set([declaration as TSESTree.Node]),
   );
+  if (!resolved) {
+    return null;
+  }
+  // The sibling's scope carries no import resolver, so the walk inside it can
+  // only ever end at member nodes the sibling itself writes down.
+  return resolved.kind === 'names'
+    ? resolved.names
+    : namesOfMembers(resolved.members);
 }
 
 type ForwardedField = {
@@ -1274,6 +1501,7 @@ export const preferSpreadOverReassembly = createRule<Options, MessageIds>({
       recommended: 'error',
     },
     fixable: 'code',
+    hasSuggestions: true,
     schema: [
       {
         type: 'object',
@@ -1290,6 +1518,9 @@ export const preferSpreadOverReassembly = createRule<Options, MessageIds>({
       preferSpread:
         'Prefer spread over destructure-then-reassemble: replace the destructured parameter with a single identifier and use spread syntax on the target. ' +
         'This avoids silent bugs when new fields are added to the type.',
+      applySpread:
+        'Replace the destructured parameter with a single identifier and spread it onto the target. ' +
+        'Check first that the parameter carries no members beyond the ones destructured, since the spread forwards every member it has.',
     },
   },
   defaultOptions: [{ minFields: DEFAULT_MIN_FIELDS }],
@@ -1502,34 +1733,99 @@ export const preferSpreadOverReassembly = createRule<Options, MessageIds>({
     }
 
     /**
-     * Reports whether the destructured pick is provably a PROPER subset of the
-     * source object's own type, in which case spreading the parameter would add
-     * the members the author left out and change what the function produces
-     * (#1642: a GitHub review payload gained unknown keys).
+     * The member names of the parameter type a typed binding gives the
+     * function through the object literal it is a property of.
      *
-     * The proof runs in the safe direction only. A member set that matches the
-     * pick exactly is exhaustive, so the rewrite is behavior-preserving and the
-     * rule still reports; a type it cannot resolve — a union, an index
-     * signature, an instantiation of anything but a key-preserving operator, or
-     * an import whose module it declines to follow — yields no proof and the
-     * rule likewise still reports. Silence is reserved for the case where the
-     * widening is demonstrated.
+     * A catalog states its entries' shape once, on the binding
+     * (`const CASES: readonly CaseEntry[] = [...]`), and leaves every callback
+     * inside to be contextually typed by it. Such a parameter narrows exactly
+     * as an annotated one does, so a reader that stops at annotations rewrites
+     * a deliberate pick into a widening spread (#2298).
      */
-    function isProvablyNarrowingPick(
+    function contextualBindingMemberNames(
+      fn: CheckedFunction,
+    ): Set<string> | null {
+      const property = fn.parent;
+      if (
+        !property ||
+        property.type !== AST_NODE_TYPES.Property ||
+        property.value !== fn ||
+        property.computed
+      ) {
+        return null;
+      }
+
+      const key = property.key;
+      const propertyName =
+        key.type === AST_NODE_TYPES.Identifier
+          ? key.name
+          : key.type === AST_NODE_TYPES.Literal && typeof key.value === 'string'
+          ? key.value
+          : null;
+      if (propertyName === null) {
+        return null;
+      }
+
+      const literal = property.parent;
+      if (!literal || literal.type !== AST_NODE_TYPES.ObjectExpression) {
+        return null;
+      }
+
+      const entryType = declaredEntryTypeOf(literal, typeScope);
+      if (!entryType) {
+        return null;
+      }
+
+      const memberType = memberTypeNodeOf(entryType, typeScope, propertyName);
+      if (!memberType) {
+        return null;
+      }
+
+      const parameterType = soleParameterTypeOf(memberType, typeScope);
+      return parameterType ? memberNamesOf(parameterType, typeScope) : null;
+    }
+
+    /**
+     * How much the source object's own type proves about the destructured pick.
+     *
+     * `narrowing` — the pick is a PROPER subset of a resolved member set, so
+     * spreading the parameter would reinstate the members the author left out
+     * and change what the function produces (#1642: a GitHub review payload
+     * gained unknown keys). The rule stays silent.
+     *
+     * `exhaustive` — the resolved member set is exactly the pick, so the
+     * rewrite is demonstrably behavior-preserving and is applied.
+     *
+     * `unproven` — no member set resolves, or one resolves that does not even
+     * contain the pick. A union, an index signature, an instantiation of
+     * anything but a key-preserving operator, a `Parameters<>` indirection or
+     * an import whose module the walk declines to follow all land here. The
+     * finding still stands, but nothing about the rewrite's safety follows, so
+     * it is offered rather than applied.
+     */
+    function classifyPick(
       fn: CheckedFunction,
       param: TSESTree.ObjectPattern,
       destructuredNames: readonly string[],
-    ): boolean {
+    ): PickClassification {
       // An explicit annotation overrides whatever the call site would imply,
-      // so the contextual route is consulted only in its absence.
+      // so the contextual routes are consulted only in its absence.
       const memberNames = param.typeAnnotation
         ? memberNamesOf(param.typeAnnotation.typeAnnotation, typeScope)
-        : contextualElementMemberNames(fn);
+        : contextualElementMemberNames(fn) ?? contextualBindingMemberNames(fn);
 
-      if (!memberNames || memberNames.size <= destructuredNames.length) {
-        return false;
+      if (!memberNames) {
+        return 'unproven';
       }
-      return destructuredNames.every((name) => memberNames.has(name));
+      // A pick naming something the resolved type does not declare means the
+      // resolution describes a different shape than the one destructured, so
+      // its size says nothing about what a spread would forward.
+      if (!destructuredNames.every((name) => memberNames.has(name))) {
+        return 'unproven';
+      }
+      return memberNames.size > destructuredNames.length
+        ? 'narrowing'
+        : 'exhaustive';
     }
 
     function checkFunction(fn: CheckedFunction): void {
@@ -1592,60 +1888,72 @@ export const preferSpreadOverReassembly = createRule<Options, MessageIds>({
 
       // The pick may exist precisely because the omitted members must not flow
       // through; spreading would reinstate them.
-      if (isProvablyNarrowingPick(fn, param, destructuredNames)) {
+      const classification = classifyPick(fn, param, destructuredNames);
+      if (classification === 'narrowing') {
         return;
       }
+
+      const applySpread: TSESLint.ReportFixFunction = (fixer) => {
+        const fixes: TSESLint.RuleFix[] = [];
+
+        // Choose a fresh name for the props parameter that does not collide
+        // with any binding currently in scope.
+        const propsName = freshPropsName(namesSet);
+
+        // 1. Replace the destructured parameter with `props` (or fresh name),
+        // keeping any type annotation intact.
+        const paramFix = replacePatternWithName(
+          fixer,
+          sourceCode,
+          param,
+          propsName,
+        );
+        if (!paramFix) {
+          return null;
+        }
+        fixes.push(paramFix);
+
+        // 2. Collapse the forwarded fields into a single spread. Only the
+        // ranges of the fields being collapsed are spliced out; the retained
+        // ones — and the comments attached to them, which may be
+        // `eslint-disable` directives — are left exactly as authored.
+        const targetFix =
+          target.kind === 'jsx'
+            ? buildJsxSpreadFix(
+                fixer,
+                sourceCode,
+                target.openingElement,
+                forwardedNodes,
+                propsName,
+              )
+            : buildObjectSpreadFix(
+                fixer,
+                sourceCode,
+                target.expression,
+                forwardedNodes,
+                propsName,
+              );
+        if (!targetFix) {
+          return null;
+        }
+        fixes.push(targetFix);
+
+        return fixes;
+      };
 
       context.report({
         node: param,
         messageId: 'preferSpread',
-        fix(fixer) {
-          const fixes: TSESLint.RuleFix[] = [];
-
-          // Choose a fresh name for the props parameter that does not collide
-          // with any binding currently in scope.
-          const propsName = freshPropsName(namesSet);
-
-          // 1. Replace the destructured parameter with `props` (or fresh name),
-          // keeping any type annotation intact.
-          const paramFix = replacePatternWithName(
-            fixer,
-            sourceCode,
-            param,
-            propsName,
-          );
-          if (!paramFix) {
-            return null;
-          }
-          fixes.push(paramFix);
-
-          // 2. Collapse the forwarded fields into a single spread. Only the
-          // ranges of the fields being collapsed are spliced out; the retained
-          // ones — and the comments attached to them, which may be
-          // `eslint-disable` directives — are left exactly as authored.
-          const targetFix =
-            target.kind === 'jsx'
-              ? buildJsxSpreadFix(
-                  fixer,
-                  sourceCode,
-                  target.openingElement,
-                  forwardedNodes,
-                  propsName,
-                )
-              : buildObjectSpreadFix(
-                  fixer,
-                  sourceCode,
-                  target.expression,
-                  forwardedNodes,
-                  propsName,
-                );
-          if (!targetFix) {
-            return null;
-          }
-          fixes.push(targetFix);
-
-          return fixes;
-        },
+        // An exhaustive pick is PROVEN to spread to the same member set, so the
+        // rewrite is applied. Everything else is offered rather than applied:
+        // the spread forwards whatever the parameter's real type turns out to
+        // carry, and a widening this reader cannot disprove has silently
+        // changed consumer behaviour five times (#1642, #1643, #1644, #1769,
+        // #2298). A suggestion costs the author one keystroke; a wrong
+        // `--fix` costs a behaviour change nobody reviewed.
+        ...(classification === 'exhaustive'
+          ? { fix: applySpread }
+          : { suggest: [{ messageId: 'applySpread', fix: applySpread }] }),
       });
     }
 

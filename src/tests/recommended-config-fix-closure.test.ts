@@ -1028,6 +1028,31 @@ export const FIX_INDUCED_BASELINE: Record<string, string> = {
  * can rot.
  */
 export const SUGGESTION_INDUCED_BASELINE: Record<string, string> = {
+  // --- #2298 made prefer-spread-over-reassembly's rewrite a SUGGESTION
+  // wherever the pick's source type does not resolve, which is where every
+  // fixture below sits, so three pairs the fix channel never carried surface
+  // here. Two self-heal and one does not; each entry says which.
+  //
+  // The parameter is renamed `props0` only when `props` is already bound in
+  // the fixture, since the rewrite must not capture an existing binding.
+  // enforce-props-argument-name is fixable and renames it back to the
+  // conventional name once the collision is gone; the consistency report
+  // clears in the same pass. Verified end to end with verifyAndFix over the
+  // whole recommended config: both files end with zero reports from either.
+  'prefer-spread-over-reassembly (suggestion) -> enforce-props-argument-name':
+    'the fresh parameter name avoids an existing `props` binding and so is `props0`; the rename is fixable and the file ends clean under `--fix`',
+  'prefer-spread-over-reassembly (suggestion) -> enforce-props-naming-consistency':
+    'same `props0` mechanism as the entry above; the rename is fixable and the file ends clean under `--fix`',
+  // The spread is placed first so explicit props still override it, and a
+  // spread on an element that also carries JSX children is precisely what
+  // prevent-children-clobber objects to. That rule offers no fix, so the
+  // report is left standing for whoever accepts the suggestion — a wanted
+  // outcome, since the author is the one who can say whether the spread
+  // source carries a `children` member. Open question on the same footing as
+  // root cause 3 in #1477: should the suggestion decline on an element with
+  // children, or should the second rule ignore a spread the author accepted?
+  'prefer-spread-over-reassembly (suggestion) -> prevent-children-clobber':
+    'the emitted `{...props}` sits on an element that also has JSX children; prevent-children-clobber has no fix, so the report stands for whoever accepts the suggestion',
   // --- #1478 shape 1 — a declaration hoisted to module scope, which the rules
   // policing module scope then object to — used to arrive here through
   // enforce-dynamic-firebase-imports' suggestion. #1716 removed the mechanism:

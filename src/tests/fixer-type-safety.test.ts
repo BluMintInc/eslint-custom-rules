@@ -988,16 +988,33 @@ const TYPE_UNSAFE_BASELINE: Record<string, { pairs: number; note: string }> = {
       '(#2215) — every fixed snippet had been type-checking as `any`. ' +
       'Pinned at 4 so a fifth instance still fails.',
   },
+};
+
+/**
+ * The same contract as {@link TYPE_UNSAFE_BASELINE}, for the SUGGESTION
+ * channel. Kept separate because the channel a defect reaches the author
+ * through is part of what is being recorded: #2298 moved the entry below from
+ * the fix channel to this one by making the rewrite a suggestion wherever the
+ * pick is unproven, and a single shared map would have read that move as one
+ * defect disappearing and an unrelated one appearing.
+ */
+const TYPE_UNSAFE_SUGGESTION_BASELINE: Record<
+  string,
+  { pairs: number; note: string }
+> = {
   'prefer-spread-over-reassembly TS2698': {
     pairs: 2,
     note:
       "#1986. Both pairs are the rule's own #1642 regressions, whose receiver " +
       'is an empty array literal — `never[]` under strictNullChecks, and ' +
-      '`{ ...props }` on `never` is TS2698. The rule fires here by design: it ' +
-      'reports exactly when the element type is UNRESOLVABLE, and telling ' +
-      '"unresolvable" apart from "resolvably never" needs the checker, which ' +
-      'is unavailable without parserOptions.project. Awaiting the design call ' +
-      'on the issue; pinned at 2 so a third instance still fails.',
+      '`{ ...props }` on `never` is TS2698. The rewrite is OFFERED rather ' +
+      'than applied here (#2298), because the element type is UNRESOLVABLE, ' +
+      'and telling "unresolvable" apart from "resolvably never" needs the ' +
+      'checker, which is unavailable without parserOptions.project. That ' +
+      'downgrade keeps `--fix` from writing the TS2698 unprompted but does ' +
+      'not settle whether the suggestion should be withheld too, which is the ' +
+      'design call still open on the issue. Pinned at 2 so a third instance ' +
+      'still fails.',
   },
 };
 
@@ -1037,6 +1054,18 @@ for (const pair of assertedSuggestionPairs) {
   const added = introducedFor(pair);
   if (added.length) {
     suggestionFindingsByRule.get(pair.rule)!.push({ ...pair, added });
+  }
+}
+
+const baselinedSuggestionCounts = new Map<string, number>();
+for (const findings of suggestionFindingsByRule.values()) {
+  for (const finding of findings) {
+    const key = findingKey(finding);
+    if (!(key in TYPE_UNSAFE_SUGGESTION_BASELINE)) continue;
+    baselinedSuggestionCounts.set(
+      key,
+      (baselinedSuggestionCounts.get(key) || 0) + 1,
+    );
   }
 }
 
@@ -1344,8 +1373,27 @@ describe('a suggestion must not turn compiling code into non-compiling code', ()
     expect(observedUncoveredSuggestions).toEqual(UNCOVERED_SUGGESTIONS);
   });
 
+  /**
+   * The fix channel's baseline contract, restated here: a recorded defect must
+   * stay exactly as large as recorded, and one that stops reproducing must be
+   * deleted, or the entry quietly absorbs the next regression.
+   */
+  it('reproduces every baselined type-unsafe suggestion, and no more of it', () => {
+    expect(Object.fromEntries(baselinedSuggestionCounts)).toEqual(
+      Object.fromEntries(
+        Object.entries(TYPE_UNSAFE_SUGGESTION_BASELINE).map(
+          ([key, { pairs }]) => [key, pairs],
+        ),
+      ),
+    );
+  });
+
   it.each(suggestionRules)('%s', (rule) => {
-    const findings = suggestionFindingsByRule.get(rule)!;
+    const findings = suggestionFindingsByRule
+      .get(rule)!
+      .filter(
+        (finding) => !(findingKey(finding) in TYPE_UNSAFE_SUGGESTION_BASELINE),
+      );
     const problems: string[] = [];
     // Without this, a rule whose suggestions stopped compiling asserts nothing.
     if (
