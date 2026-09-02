@@ -244,7 +244,7 @@ const sites = [...dedup.values()];
 const annotated = sites.filter((site) => site.measured !== null);
 const unannotated = sites.filter((site) => site.measured === null);
 
-const ANNOTATED_FLOOR = 160; // measured 181
+const ANNOTATED_FLOOR = 500; // measured 563
 const FILE_FLOOR = 345; // measured 356
 const SITE_FLOOR = 530; // measured 569
 
