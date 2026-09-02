@@ -1,3 +1,16 @@
+# [1.21.0](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.202...v1.21.0) (2026-09-02)
+
+
+### Bug Fixes
+
+* **enforce-verb-noun-naming:** admit elide and bound as verbs (closes [#2295](https://github.com/BluMintInc/eslint-custom-rules/issues/2295)) ([a9d2650](https://github.com/BluMintInc/eslint-custom-rules/commit/a9d2650246a44a63dacb517e2ab32490be93d9f4)), closes [#1225](https://github.com/BluMintInc/eslint-custom-rules/issues/1225)
+* **prefer-sx-prop-over-system-props:** decline the fix when the sx literal already declares the moved key (closes [#2296](https://github.com/BluMintInc/eslint-custom-rules/issues/2296)) ([83c4ac2](https://github.com/BluMintInc/eslint-custom-rules/commit/83c4ac2f4efab8f9e13a7f78e5f964ac799f6b3b))
+
+
+### Features
+
+* **enforce-use-flex-gap-on-wrap:** flag a wrapping Stack that spaces with spacing but omits useFlexGap (closes [#2289](https://github.com/BluMintInc/eslint-custom-rules/issues/2289)) ([3a58940](https://github.com/BluMintInc/eslint-custom-rules/commit/3a5894005685abc03746bfb9e06e5ac6ad8f7a32)), closes [#1805](https://github.com/BluMintInc/eslint-custom-rules/issues/1805) [#2296](https://github.com/BluMintInc/eslint-custom-rules/issues/2296)
+
 ## [1.20.202](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.201...v1.20.202) (2026-09-02)
 
 

@@ -1,5 +1,35 @@
 [
   {
+    "version": "1.21.0",
+    "date": "2026-09-02T18:04:18.331Z",
+    "rules": [
+      {
+        "name": "enforce-use-flex-gap-on-wrap",
+        "changeType": "feat",
+        "issues": [
+          2289
+        ],
+        "summary": "flag a wrapping Stack that spaces with spacing but omits useFlexGap (closes #2289)"
+      },
+      {
+        "name": "enforce-verb-noun-naming",
+        "changeType": "fix",
+        "issues": [
+          2295
+        ],
+        "summary": "admit elide and bound as verbs (closes #2295)"
+      },
+      {
+        "name": "prefer-sx-prop-over-system-props",
+        "changeType": "fix",
+        "issues": [
+          2296
+        ],
+        "summary": "decline the fix when the sx literal already declares the moved key (closes #2296)"
+      }
+    ]
+  },
+  {
     "version": "1.20.202",
     "date": "2026-09-02T04:11:09.443Z",
     "rules": [
