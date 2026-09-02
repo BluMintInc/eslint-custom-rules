@@ -79,6 +79,64 @@ function isDecorativeIcon(name: string): boolean {
   return /Icon$/.test(name);
 }
 
+const MUI_ICONS_PACKAGE = '@mui/icons-material';
+
+/**
+ * Whether a specifier names the MUI icon package: the barrel
+ * (`@mui/icons-material`) or a per-icon deep path
+ * (`@mui/icons-material/CheckRounded`). Sibling packages such as
+ * `@mui/material` are deliberately not matched — the carve-out covers icons,
+ * not MUI at large, so a `@mui/lab` or `@mui/material` child stays a
+ * composition dependency.
+ */
+function isMuiIconSource(source: string): boolean {
+  return (
+    source === MUI_ICONS_PACKAGE || source.startsWith(`${MUI_ICONS_PACKAGE}/`)
+  );
+}
+
+/**
+ * Whether `localName` is bound by a value import from the MUI icon package.
+ * The `*Icon` suffix alone cannot decide this: MUI's own export names carry no
+ * such suffix (`NotificationsNoneRounded`, `CheckRounded`), and the plugin's
+ * own `enforce-mui-rounded-icons` fixer emits exactly that spelling, so the
+ * binding cannot be renamed to opt in (issue #2282). An icon is a decorative
+ * leaf wherever it comes from, so the import source answers the same question
+ * the suffix does.
+ *
+ * A sibling of `findRelativeImport`, which accepts only relative specifiers by
+ * design (issue #1316 reads a child module off disk and must not chase a
+ * package). Type-only imports bind no renderable value and are skipped.
+ */
+function isMuiIconImport(
+  program: TSESTree.Program,
+  localName: string,
+): boolean {
+  for (const stmt of program.body) {
+    if (
+      stmt.type !== AST_NODE_TYPES.ImportDeclaration ||
+      stmt.importKind === 'type' ||
+      typeof stmt.source.value !== 'string' ||
+      !isMuiIconSource(stmt.source.value)
+    ) {
+      continue;
+    }
+    for (const specifier of stmt.specifiers) {
+      if (specifier.local.name !== localName) {
+        continue;
+      }
+      // A module-scope name has one binding, so the first specifier that
+      // introduces it settles the question.
+      return (
+        specifier.type === AST_NODE_TYPES.ImportDefaultSpecifier ||
+        (specifier.type === AST_NODE_TYPES.ImportSpecifier &&
+          specifier.importKind !== 'type')
+      );
+    }
+  }
+  return false;
+}
+
 /**
  * Derives the expected Props type name for a JSX element name.
  * e.g. "LoadingButton" → "LoadingButtonProps"
@@ -2154,6 +2212,7 @@ export const requirePropsComposition = createRule<Options, MessageIds>({
           !isDecorativeIcon(name) &&
           name !== componentName &&
           !propSlots.has(name) &&
+          !isMuiIconImport(prog, name) &&
           !isZeroPropComponent(bodyScope, name),
       );
 
