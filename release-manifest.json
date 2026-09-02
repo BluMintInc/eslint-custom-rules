@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.21.1",
+    "date": "2026-09-02T22:30:34.104Z",
+    "rules": [
+      {
+        "name": "prefer-spread-over-reassembly",
+        "changeType": "fix",
+        "issues": [
+          2298
+        ],
+        "summary": "apply the spread only where the pick is proven exhaustive (closes #2298)"
+      }
+    ]
+  },
+  {
     "version": "1.21.0",
     "date": "2026-09-02T18:04:18.331Z",
     "rules": [

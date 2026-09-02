@@ -1,3 +1,10 @@
+## [1.21.1](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.21.0...v1.21.1) (2026-09-02)
+
+
+### Bug Fixes
+
+* **prefer-spread-over-reassembly:** apply the spread only where the pick is proven exhaustive (closes [#2298](https://github.com/BluMintInc/eslint-custom-rules/issues/2298)) ([5e4dbf7](https://github.com/BluMintInc/eslint-custom-rules/commit/5e4dbf741b0ece59e04db5c603764fa10f89928d)), closes [#1642](https://github.com/BluMintInc/eslint-custom-rules/issues/1642) [#1643](https://github.com/BluMintInc/eslint-custom-rules/issues/1643) [#1644](https://github.com/BluMintInc/eslint-custom-rules/issues/1644) [#1769](https://github.com/BluMintInc/eslint-custom-rules/issues/1769) [#1986](https://github.com/BluMintInc/eslint-custom-rules/issues/1986)
+
 # [1.21.0](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.20.202...v1.21.0) (2026-09-02)
 
 
