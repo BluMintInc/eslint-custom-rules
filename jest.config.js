@@ -1,6 +1,8 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
 // eslint-disable-next-line id-length
 const os = require('node:os');
+// eslint-disable-next-line id-length
+const fs = require('node:fs');
 
 // =============================================================================
 // Adaptive resource configuration (ported from the agora repo).
@@ -33,10 +35,50 @@ const isCoverageEnabled = () =>
   IS_CI ||
   COVERAGE_BY_CONTEXT[JEST_CONTEXT] === true;
 
-// Per-worker memory budget. ts-jest type-checks each file, so the baseline is
-// well above a transpile-only setup; coverage instrumentation adds more. The
-// idle limit must sit above this baseline or workers thrash (restart per file).
-const memoryPerWorkerGb = (coverageEnabled) => (coverageEnabled ? 1.25 : 1);
+// Per-worker memory budget, measured rather than estimated: workers of a
+// stop-hook run reached 1.3-2.3GB RSS against a 1GB figure, so the budget
+// under-counted real cost by half and the idle limit sat below the very working
+// set it exists to bound. computeWorkerIdleMemoryLimit derives from this number,
+// which makes it the ceiling a run ENFORCES rather than a description of one --
+// workers reached 2.3GB precisely because the old limit failed to bind.
+// ts-jest type-checks each file, which is why it sits far above transpile-only.
+const memoryPerWorkerGb = (coverageEnabled) => (coverageEnabled ? 2.5 : 2);
+
+// Headroom left to the OS and to whatever else holds the machine.
+const RESERVED_GB = 2;
+
+// Floor on the budget, so a momentarily tight machine still makes progress.
+const MIN_BUDGET_GB = 1;
+
+/**
+ * Sampled ONCE per process and reused. Two reads a moment apart legitimately
+ * disagree, and a run whose worker count depends on WHEN it asked is not
+ * reproducible; `scripts/governor.test.ts` re-requires this module and compares
+ * two sizings for equality, so a re-read would make that arm flake on an
+ * unrelated allocation rather than fail on a real drift.
+ */
+const AVAILABLE_GB_CACHE_KEY = '__blumintJestAvailableGb';
+
+// Memory actually obtainable right now, or null where no trustworthy signal
+// exists. Linux MemAvailable counts reclaimable page cache; os.freemem()
+// (MemFree) omits it and understates real headroom several-fold on a warm box,
+// so the absent case keeps the total-memory budget rather than acting on a
+// signal known to be wrong.
+const readAvailableGb = () => {
+  const cached = globalThis[AVAILABLE_GB_CACHE_KEY];
+  if (cached !== undefined) return cached;
+  let available = null;
+  try {
+    const match = fs
+      .readFileSync('/proc/meminfo', 'utf8')
+      .match(/^MemAvailable:\s+(\d+)\s+kB/m);
+    available = match ? Number(match[1]) / (1024 * 1024) : null;
+  } catch {
+    available = null;
+  }
+  globalThis[AVAILABLE_GB_CACHE_KEY] = available;
+  return available;
+};
 
 /**
  * The variable the machine-wide exec-governor uses to hand an admitted run its
@@ -65,12 +107,27 @@ const readGovernorGrant = (raw, fallback) => {
   return parsed;
 };
 
-// Cap workers by both available memory and half the cores (leaving headroom for
+// Cap workers by obtainable memory and by half the cores (leaving headroom for
 // the editor and other processes). Without this, jest defaults to cores - 1.
+//
+// The memory bound reads what is AVAILABLE rather than what is installed. This
+// suite runs on a host shared by several concurrent agent loops; sized against
+// total RAM each pool believes it owns the box, so co-resident pools commit a
+// multiple of what exists. That drove the host into a memory stall deep enough
+// to starve tailscaled and drop it off its network, which surfaced as ssh
+// timing out. Available memory coordinates the pools with no lock between them:
+// one starting while another is resident simply sees less. A governor grant
+// still outranks it, because a reservation sees a co-resident grant that is
+// committed but not yet allocated, and this sampling cannot.
 const calculateWorkers = () => {
   if (IS_CI) return '100%';
   const perWorker = memoryPerWorkerGb(isCoverageEnabled());
-  const memBasedLimit = Math.max(1, Math.floor(memoryGb / perWorker));
+  const availableGb = readAvailableGb();
+  const budgetGb =
+    availableGb === null
+      ? memoryGb
+      : Math.max(MIN_BUDGET_GB, availableGb - RESERVED_GB);
+  const memBasedLimit = Math.max(1, Math.floor(budgetGb / perWorker));
   const cpuBasedLimit = Math.max(1, Math.floor(cpuCount * 0.5));
   const ungovernedWorkers = Math.max(
     1,
