@@ -727,19 +727,27 @@ const CROSS_EXPORT_SURFACE_BASELINE: Record<string, string> = {
  * all and names none of them when it finally does. A rule that regressed into
  * silence would then be indistinguishable from one that was never reachable.
  *
- * Measured: none of the four is excluded by `silentWithoutProgramRuleNames` or
- * `DIVERGENT_WITHOUT_PROGRAM`, so each silence is a property of the fixtures or
- * of the rule's own fixer, not of the screen.
+ * Measured: neither entry is excluded by `silentWithoutProgramRuleNames` or
+ * `DIVERGENT_WITHOUT_PROGRAM`, so each silence is a property of the fixture
+ * corpus available to the screen, not of the screen itself.
+ *
+ * `use-custom-link` and `enforce-exported-function-types` previously sat here
+ * too. Each fixture corpus now carries a case exercising the rule's fixer
+ * without tripping the reason that used to withhold it — a default-only
+ * `next/link` import beside a declaration the module already exports for
+ * `use-custom-link` (its own carve-out fixtures, all multi-specifier imports,
+ * still decline), and a `declare type` props type for
+ * `enforce-exported-function-types`, which `findExportableTypeDeclaration`
+ * matches by AST type and name and which this guard's `injectExports` leaves
+ * alone because it filters on `!node.declare`. Both now contribute a rewrite
+ * that removes nothing, so both retired from this ledger rather than staying
+ * as a stale non-contribution entry the two-way audit below would reject.
  */
 const NON_CONTRIBUTING_FIXERS: Record<string, string> = {
   'enforce-typescript-markdown-code-blocks':
     'Markdown-only: every fixture is a .md file, and this sweep keeps only `language === "ts"` because a Markdown fixture has no declaration to receive an injected export.',
   'no-unpinned-dependencies':
     'JSON-only (package.json), dropped by the same TS-only filter, for the same reason.',
-  'use-custom-link':
-    'measured over its 13 invalid fixtures: the 8 it rewrites all land in `noSurface`, and the 3 carrying an own surface (`export type { LinkProps }` and the two beside it) are exactly the ones its fixer declines — each imports a non-default specifier that a default-only reconstruction would drop, so #2272 emits no fix rather than leave the binding dangling. `next/link` occurs in no other suite, so no foreign fixture reaches it either. Note the fixer replaces the WHOLE ImportDeclaration, not just its source text, so non-contribution here rests on that decline and not on the fixer being narrow: re-enabling the fix for the multi-specifier shape would have it rewrite a fixture that does have a surface, and should retire this entry.',
-  'enforce-exported-function-types':
-    'reported 282 times with 0 fixes. Two of its three message ids can never carry one (a declaration, hence a fix, is computed only for missingExportedPropsType), and that third precondition — a bare, not-yet-exported top-level type — is removed by this guard\'s own `injectExports`, which exports exactly that node first. Its only fixer action anywhere is `insertTextBefore(declaration, "export ")`, which is purely additive.',
 };
 
 /** Every fixable rule the plugin ships, by the guard's own fixability test. */

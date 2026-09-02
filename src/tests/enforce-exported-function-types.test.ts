@@ -2129,6 +2129,37 @@ ruleTesterJsx.run(
           },
         ],
       },
+      // Invalid case: the props type is declared ambient (`declare type`)
+      // rather than merely unexported. `findExportableTypeDeclaration`
+      // matches it by AST type and name regardless of the `declare` modifier,
+      // and prepending `export` to an ambient type alias is valid TypeScript
+      // (`export declare type ...`), so the fix still applies.
+      {
+        code: `
+        declare type BannerProps = {
+          message: string;
+        };
+
+        export function Banner({ message }: BannerProps) {
+          return <div>{message}</div>;
+        }
+      `,
+        output: `
+        export declare type BannerProps = {
+          message: string;
+        };
+
+        export function Banner({ message }: BannerProps) {
+          return <div>{message}</div>;
+        }
+      `,
+        errors: [
+          {
+            messageId: 'missingExportedPropsType',
+            data: { typeName: 'BannerProps' },
+          },
+        ],
+      },
     ],
   },
 );
