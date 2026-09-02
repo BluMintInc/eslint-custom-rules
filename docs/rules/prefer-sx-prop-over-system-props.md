@@ -225,7 +225,7 @@ One situation leaves the compact form in place on purpose:
 When the merged line would run past the print width and no safe rewrite exists inside the opening element's range, the rule still reports every system prop but emits **no fix** — an unfixed report beats authoring a line the formatter immediately rewraps. That covers:
 
 - **An element that does not start its own line** (`const el = <Box ... />;`, `return <Box ... />;`): the only formatter-stable rewrite parenthesizes the whole element, which is outside the opening element.
-- **Children on the opening element's line.** A formatter answers an over-long `<Typography sx={...}>text</Typography>` by moving the children, not the attributes, and the rule does not rewrite children.
+- **Children on the opening element's line.** A formatter answers an over-long `<Typography sx={...}>text</Typography>` by moving the children, not the attributes, and no rewrite confined to the opening element can undo that. The rule does rewrite the children's surrounding whitespace in one other case, so this is a limit of the over-long path rather than a blanket rule: where a merge collapses an element from more than one attribute to exactly one, the formatter's own layout rule flips and rejoins the children onto the opening element's line, and the fix carries that join with it. `<Box overflow="hidden" textOverflow="ellipsis">` with `hi` on its own line becomes `<Box sx={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>hi</Box>`.
 - **A comment between the element name and its attributes**: rebuilding the element from its attribute list would drop the comment.
 
 ## When to disable
