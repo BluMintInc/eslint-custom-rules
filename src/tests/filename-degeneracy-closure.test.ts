@@ -549,6 +549,7 @@ const DERIVATION_UNDRIVEN: Record<string, UndrivenCause> = {
   'enforce-early-destructuring': 'inventsNoName',
   'enforce-exported-function-types': 'inventsNoName',
   'enforce-unique-cursor-headers': 'inventsNoName',
+  'enforce-use-flex-gap-on-wrap': 'inventsNoName',
   'flatten-push-calls': 'inventsNoName',
   'jsdoc-above-field': 'inventsNoName',
   'key-only-outermost-element': 'inventsNoName',

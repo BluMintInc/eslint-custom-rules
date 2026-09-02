@@ -219,6 +219,7 @@ const PARSED_CASES_BY_RULE: Record<string, number> = {
   'enforce-types-directory-placement': 45,
   'enforce-typescript-markdown-code-blocks': 76,
   'enforce-unique-cursor-headers': 49,
+  'enforce-use-flex-gap-on-wrap': 61,
   'enforce-verb-noun-naming': 283,
   'ensure-pointer-events-none': 119,
   'export-if-in-doubt': 28,
