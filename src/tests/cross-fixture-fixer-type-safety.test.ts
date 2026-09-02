@@ -919,7 +919,13 @@ const CORPUS_FILES_FLOOR = 274; // measured 282
 const CORPUS_CASES_FLOOR = 23000; // measured 23932
 const FIXTURES_CONSIDERED_FLOOR = 23000; // measured 23791
 const SOLO_ATTEMPT_FLOOR = 41000; // measured 42193
-const REWRITE_FLOOR = 15000; // measured 15307
+const REWRITE_FLOOR = 15000; // measured 15319
+/**
+ * The cross-rule half of `REWRITE_FLOOR`. Floored separately because the total
+ * can hold while the CROSS population collapses, and cross pairs are the whole
+ * reason this file exists beside the own-corpus guard.
+ */
+const CROSS_REWRITE_FLOOR = 10000; // measured 10645
 const ASSERTED_FLOOR = 13300; // measured 13770
 const CROSS_GENERATED_FLOOR = 10200; // measured 10512
 const CROSS_FLOOR = 9200; // measured 9524
@@ -1067,6 +1073,7 @@ describe("a rule's --fix must not introduce a type error on ANY rule's fixture",
     );
     expect(stats.soloFixAttempts).toBeGreaterThanOrEqual(SOLO_ATTEMPT_FLOOR);
     expect(stats.rewrites).toBeGreaterThanOrEqual(REWRITE_FLOOR);
+    expect(stats.crossRewrites).toBeGreaterThanOrEqual(CROSS_REWRITE_FLOOR);
     expect(assertedPairs.length).toBeGreaterThanOrEqual(ASSERTED_FLOOR);
     // Skips are bounded from ABOVE: each is a case this guard does not judge,
     // so a harness regression shows up as a jump, not as a dip. The

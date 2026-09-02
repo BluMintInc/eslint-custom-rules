@@ -1482,16 +1482,22 @@ const plantedCase = (code: string): FixtureCase => ({
  * The floors are the measurement with headroom, and the corpus only grows, so
  * a fall through one is a harness regression rather than fixture churn.
  */
-const TRANSFORM_FLOORS: Record<string, { yielded: number; rules: number }> = {
-  'declaration->arrow': { yielded: 3800, rules: 120 },
-  'arrow->declaration': { yielded: 2100, rules: 90 },
+const TRANSFORM_FLOORS: Record<
+  string,
+  { yielded: number; rules: number; sites: number }
+> = {
+  // `sites` is the edit count, which one attempt can raise several times, so it
+  // moves independently of `yielded` and catches a transform that keeps
+  // producing variants while touching far less of each one.
+  'declaration->arrow': { yielded: 3800, rules: 120, sites: 5700 }, // measured 6036
+  'arrow->declaration': { yielded: 2100, rules: 90, sites: 3350 }, // measured 3541
   // Measured 229 variants over 61 rules. The floor deliberately sits ABOVE the
   // 122 over 44 this transform produced before the method-shorthand and
   // overlapping-edit repairs, so a regression to that state fails here instead
   // of passing as it did for as long as it existed.
-  'funcExpression->arrow': { yielded: 200, rules: 55 },
-  'conciseArrow->block': { yielded: 3000, rules: 125 },
-  'blockArrow->concise': { yielded: 950, rules: 78 },
+  'funcExpression->arrow': { yielded: 200, rules: 55, sites: 410 }, // measured 437
+  'conciseArrow->block': { yielded: 3000, rules: 125, sites: 5800 }, // measured 6130
+  'blockArrow->concise': { yielded: 950, rules: 78, sites: 1450 }, // measured 1548
 };
 
 /**
@@ -2011,11 +2017,27 @@ describe('every declared respelling must actually be produced', () => {
         rules: stats.rules.size,
         clearsYieldFloor: stats.outcomes.yielded >= floor.yielded,
         clearsRuleFloor: stats.rules.size >= floor.rules,
+        clearsSiteFloor: stats.sites >= floor.sites,
+        /**
+         * An identity rather than a floor: one `record()` call increments
+         * `attempted` and exactly one outcome bucket, so the two cannot drift
+         * unless a path stops recording an outcome at all. That is a stronger
+         * claim than any threshold, and it is what makes the bucket counts a
+         * partition rather than a sample.
+         */
+        attemptedPartitions:
+          stats.attempted ===
+          stats.outcomes.yielded +
+            stats.outcomes.unchanged +
+            stats.outcomes.unparsable +
+            stats.outcomes.recovered,
       }).toEqual({
         yielded: stats.outcomes.yielded,
         rules: stats.rules.size,
         clearsYieldFloor: true,
         clearsRuleFloor: true,
+        clearsSiteFloor: true,
+        attemptedPartitions: true,
       });
     },
   );
