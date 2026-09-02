@@ -1468,16 +1468,16 @@ describe('degenerate-identifier fix closure', () => {
           untouched.length
         } rule(s): ${untouched.join(', ') || '(none)'}`,
     );
-    expect(totals.bindings).toBeGreaterThan(10000); // measured 20601
-    expect(totals.considered).toBeGreaterThan(40000); // measured 79355
-    expect(totals.rewritten).toBeGreaterThan(25000); // measured 56009
+    expect(totals.bindings).toBeGreaterThan(18500); // measured 20601
+    expect(totals.considered).toBeGreaterThan(72000); // measured 79355
+    expect(totals.rewritten).toBeGreaterThan(50000); // measured 56009
     /**
      * The denominator the three above are drawn from. Floored separately
      * because a harness that lost most of the corpus would still clear a
      * per-binding count while walking a fraction of the fixtures.
      */
     expect(totals.fixtures).toBeGreaterThan(5900); // measured 5991
-    expect(totals.rulesRewritten.size).toBeGreaterThanOrEqual(70);
+    expect(totals.rulesRewritten.size).toBeGreaterThanOrEqual(70); // measured 81
   });
 
   /**
