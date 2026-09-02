@@ -1000,15 +1000,15 @@ describe('the export-surface guard is load-bearing', () => {
   it('injects exports into a large corpus and actually rewrites it', () => {
     // Floors, not equalities: fixtures move. A silent collapse of any of these
     // to zero is how this gate would pass while asserting nothing. Measured
-    // 8,200 considered / 7,593 carrying an export surface / 3,147 rewritten
-    // across 79 rules, once the fix arm stopped dropping fixtures that already
+    // 9,870 considered / 9,221 carrying an export surface / 4,129 rewritten
+    // across 81 rules, once the fix arm stopped dropping fixtures that already
     // export everything they declare (5,815 / 2,384 / 50 before that). The
     // floors sit just under the measurement: left far below, a floor absorbs
     // exactly the corpus loss this gate exists to notice.
-    expect(considered).toBeGreaterThan(8000);
-    expect(injected).toBeGreaterThan(7300);
-    expect(rewritten).toBeGreaterThan(2900);
-    expect(rulesExercised.size).toBeGreaterThan(75);
+    expect(considered).toBeGreaterThan(9500); // measured 9870
+    expect(injected).toBeGreaterThan(8900); // measured 9221
+    expect(rewritten).toBeGreaterThan(3900); // measured 4129
+    expect(rulesExercised.size).toBeGreaterThan(79); // measured 81
   });
 
   it('discards no case to a parse it chose wrong', () => {

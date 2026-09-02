@@ -244,5 +244,25 @@ ruleTesterJsx.run('use-custom-link', useCustomLink, {
         },
       ],
     },
+    {
+      // A default-only import beside a declaration this module already
+      // exports: the fixer rewrites only the `ImportDeclaration`'s source and
+      // must leave `HOME_ROUTE` exported exactly as written.
+      code: [
+        `import Link from 'next/link';`,
+        `export const HOME_ROUTE = '/';`,
+      ].join('\n'),
+      output: [
+        `import Link from 'src/components/Link';`,
+        `export const HOME_ROUTE = '/';`,
+      ].join('\n'),
+      filename: 'src/components/Foo.tsx',
+      errors: [
+        {
+          messageId: 'useCustomLink',
+          data: { localName: 'Link' },
+        },
+      ],
+    },
   ],
 });
