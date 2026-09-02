@@ -236,7 +236,7 @@ describe('schema options are read', () => {
   });
 
   it('covers every rule declaring schema properties', () => {
-    expect(rulesWithOptions.length).toBeGreaterThan(50);
+    expect(rulesWithOptions.length).toBeGreaterThan(50); // measured 71
   });
 
   it.each(rulesWithOptions.map(({ name, names }) => [name, names] as const))(
@@ -457,8 +457,8 @@ describe('rules survive every schema-valid option object', () => {
 
     // Measured: 10,624 cases, 71 of 71 optioned rules reporting. The scrape this
     // replaces reached 565 capped snippets and 50-odd rules.
-    expect(cases).toBeGreaterThanOrEqual(10000);
-    expect(triggered.length).toBeGreaterThanOrEqual(68);
+    expect(cases).toBeGreaterThanOrEqual(10000); // measured 10,649
+    expect(triggered.length).toBeGreaterThanOrEqual(68); // measured 71
   });
 
   it.each(

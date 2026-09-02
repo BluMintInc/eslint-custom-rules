@@ -134,9 +134,9 @@ const totalReports = measurements.reduce((sum, m) => sum + m.reports, 0);
  * reports) so ordinary rule churn does not trip them, but far enough above zero
  * that a harness which stopped linting cannot pass.
  */
-const MIN_CANDIDATES = 10;
-const MIN_REPORTING = 10;
-const MIN_REPORTS = 1102;
+const MIN_CANDIDATES = 10; // measured 16
+const MIN_REPORTING = 10; // measured 16
+const MIN_REPORTS = 1102; // measured 1,247
 
 const describeMeasurement = (m: Measurement) =>
   `${m.rule}: ${m.reports} reports over ${m.cases} cases` +
@@ -162,7 +162,7 @@ describe('type-aware rules are drivable without a program', () => {
   });
 
   it('has a non-vacuous corpus and candidate set', () => {
-    expect(corpus.totalCases).toBeGreaterThan(1000);
+    expect(corpus.totalCases).toBeGreaterThan(21500); // measured 23,980
     expect(candidates.length).toBeGreaterThanOrEqual(MIN_CANDIDATES);
     // Every candidate must be a registered rule, or its measurement is a
     // fabricated zero rather than a fact about the rule.

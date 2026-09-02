@@ -80,13 +80,13 @@ const PREFIX = '@blumintinc/blumint/';
  * close so that a corpus which quietly stops reaching a fixer fails here rather
  * than passing on a smaller population.
  */
-const FLOOR_CONSIDERED = 3350;
-const FLOOR_MARKDOWN = 3250;
-const FLOOR_JSON = 105;
-const FLOOR_REPORTS = 190;
-const FLOOR_FIXED = 145;
-const FLOOR_DECLARED = 78;
-const FLOOR_PLANTED = 1650;
+const FLOOR_CONSIDERED = 3350; // measured 3,435
+const FLOOR_MARKDOWN = 3250; // measured 3,322
+const FLOOR_JSON = 105; // measured 113
+const FLOOR_REPORTS = 190; // measured 207
+const FLOOR_FIXED = 145; // measured 164
+const FLOOR_DECLARED = 78; // measured 108
+const FLOOR_PLANTED = 1650; // measured 1,786
 const MD_RULE = 'enforce-typescript-markdown-code-blocks';
 const JSON_RULE = 'no-unpinned-dependencies';
 const REPO_ROOT = path.join(__dirname, '..', '..');

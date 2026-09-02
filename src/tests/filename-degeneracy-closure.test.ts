@@ -594,8 +594,8 @@ describe('filename-degeneracy fix closure', () => {
 
   it('harvested a corpus at all', () => {
     expect(corpus.failures).toEqual([]);
-    expect(corpus.filesLoaded).toBeGreaterThan(250);
-    expect(fixableRuleNames.length).toBeGreaterThanOrEqual(70);
+    expect(corpus.filesLoaded).toBeGreaterThan(250); // measured 282
+    expect(fixableRuleNames.length).toBeGreaterThanOrEqual(70); // measured 84
   });
 
   it('actually drove fixers with a degenerate file stem', () => {
@@ -639,10 +639,10 @@ describe('filename-degeneracy fix closure', () => {
     // rewrite" — two silent passes from one crash. Zero, not a ceiling: a fixer
     // crashing on a file stem is a defect wherever it happens.
     expect(fixThrew).toBe(0);
-    expect(considered).toBeGreaterThan(8000);
-    expect(rewritten).toBeGreaterThan(5000);
-    expect(derivationsObserved).toBeGreaterThan(1200);
-    expect(rulesDeriving.size).toBeGreaterThanOrEqual(40);
+    expect(considered).toBeGreaterThan(21500); // measured 23,964
+    expect(rewritten).toBeGreaterThan(16500); // measured 18,472
+    expect(derivationsObserved).toBeGreaterThan(2500); // measured 2,828
+    expect(rulesDeriving.size).toBeGreaterThanOrEqual(40); // measured 53
     /**
      * The CONTROL arm's own denominator. Every comparison is differential
      * against the benign stem, so a control that stops rewriting takes the
@@ -676,7 +676,7 @@ describe('filename-degeneracy fix closure', () => {
    */
   it('accounts for every fixable rule no degenerate stem could drive', () => {
     expect(measuredRewriteUndriven).toEqual(REWRITE_UNDRIVEN);
-    expect(fixableRuleNames.length).toBeGreaterThanOrEqual(70);
+    expect(fixableRuleNames.length).toBeGreaterThanOrEqual(70); // measured 84
   });
 
   it('accounts for every fixable rule that derives no name at all', () => {

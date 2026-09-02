@@ -896,18 +896,18 @@ describe('a fixer does not write text it does not own, on any rule’s fixtures'
    * headroom here is a few percent and no more.
    */
   it('actually swept the corpus it claims to', () => {
-    expect(SWEEP.fixtures).toBeGreaterThanOrEqual(20000);
-    expect(SWEEP.owners).toBeGreaterThanOrEqual(190);
-    expect(SWEEP.pairs).toBeGreaterThanOrEqual(34800);
-    expect(SWEEP.comparisons).toBeGreaterThanOrEqual(81000);
+    expect(SWEEP.fixtures).toBeGreaterThanOrEqual(20000); // measured 23,980
+    expect(SWEEP.owners).toBeGreaterThanOrEqual(190); // measured 194
+    expect(SWEEP.pairs).toBeGreaterThanOrEqual(34800); // measured 42,342
+    expect(SWEEP.comparisons).toBeGreaterThanOrEqual(81000); // measured 99,277
     // A pair whose fixer never rewrites anything proves nothing about what a
     // fixer writes, so the rewrite counts are the load-bearing ones.
-    expect(SWEEP.rewrites).toBeGreaterThanOrEqual(12300);
-    expect(SWEEP.fixersRewriting).toBeGreaterThanOrEqual(81);
+    expect(SWEEP.rewrites).toBeGreaterThanOrEqual(12300); // measured 15,364
+    expect(SWEEP.fixersRewriting).toBeGreaterThanOrEqual(81); // measured 84
     // The sound saving this sweep takes: a fixer that leaves the source alone
     // has no transform to compare. Counted so the skip is visible rather than
     // absorbed into the runtime.
-    expect(SWEEP.baseNoFix).toBeGreaterThanOrEqual(22000);
+    expect(SWEEP.baseNoFix).toBeGreaterThanOrEqual(22000); // measured 26,978
   });
 
   /**
@@ -932,9 +932,9 @@ describe('a fixer does not write text it does not own, on any rule’s fixtures'
    * and every aggregate floor above would still hold.
    */
   it('forms the CROSS pairs that are the point of this sweep', () => {
-    expect(SWEEP.crossPairs).toBeGreaterThanOrEqual(30000);
-    expect(SWEEP.crossRewrites).toBeGreaterThanOrEqual(8900);
-    expect(SWEEP.crossFixersRewriting).toBeGreaterThanOrEqual(57);
+    expect(SWEEP.crossPairs).toBeGreaterThanOrEqual(30000); // measured 36,287
+    expect(SWEEP.crossRewrites).toBeGreaterThanOrEqual(8900); // measured 10,658
+    expect(SWEEP.crossFixersRewriting).toBeGreaterThanOrEqual(57); // measured 60
     // #2023 and #2024 were each found through exactly one foreign suite, so the
     // breadth of owners a fixer is driven over is what makes that reachable.
     expect(SWEEP.crossPairs).toBeGreaterThan(SWEEP.pairs - SWEEP.crossPairs);
@@ -976,9 +976,9 @@ describe('a fixer does not write text it does not own, on any rule’s fixtures'
      * whose every perturbation is rejected contributes no COMPARISON — so the
      * floors are on comparisons.
      */
-    expect(SWEEP.comparisonsByLanguage.ts).toBeGreaterThanOrEqual(81000);
-    expect(SWEEP.comparisonsByLanguage.json).toBeGreaterThanOrEqual(20);
-    expect(SWEEP.comparisonsByLanguage.markdown).toBeGreaterThanOrEqual(22);
+    expect(SWEEP.comparisonsByLanguage.ts).toBeGreaterThanOrEqual(81000); // measured 99,205
+    expect(SWEEP.comparisonsByLanguage.json).toBeGreaterThanOrEqual(20); // measured 22
+    expect(SWEEP.comparisonsByLanguage.markdown).toBeGreaterThanOrEqual(45); // measured 50
   });
 
   it('rejects perturbations that are not comment-only', () => {

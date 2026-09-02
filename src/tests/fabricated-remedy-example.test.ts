@@ -73,7 +73,7 @@ describe('no rule fabricates a value in its remedy example', () => {
    * counted, so pin the corpus size rather than trusting a zero.
    */
   it('scans every rule source', () => {
-    expect(ruleFiles.length).toBeGreaterThan(190);
+    expect(ruleFiles.length).toBeGreaterThan(190); // measured 194
   });
 
   it.each(ruleFiles)('%s', (file) => {

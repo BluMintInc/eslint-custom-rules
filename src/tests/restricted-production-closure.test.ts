@@ -609,15 +609,15 @@ describe('the restricted-production guard is load-bearing', () => {
   it('drives BOTH restricted productions over a real population', () => {
     // Measured 177 / 22 / 4 and 2258 / 888 / 25 respectively; each floor sits
     // just under, so a collapse is caught while ordinary corpus drift is not.
-    expect(stats.plantsBuiltByProduction.throw).toBeGreaterThanOrEqual(150);
-    expect(stats.plantFixesByProduction.throw).toBeGreaterThanOrEqual(18);
+    expect(stats.plantsBuiltByProduction.throw).toBeGreaterThanOrEqual(150); // measured 177
+    expect(stats.plantFixesByProduction.throw).toBeGreaterThanOrEqual(18); // measured 22
     expect(stats.rulesPerturbedByProduction.throw.size).toBeGreaterThanOrEqual(
-      3,
+      3, // measured 4
     );
-    expect(stats.plantsBuiltByProduction.arrow).toBeGreaterThanOrEqual(2200);
-    expect(stats.plantFixesByProduction.arrow).toBeGreaterThanOrEqual(870);
+    expect(stats.plantsBuiltByProduction.arrow).toBeGreaterThanOrEqual(2200); // measured 2,270
+    expect(stats.plantFixesByProduction.arrow).toBeGreaterThanOrEqual(870); // measured 892
     expect(stats.rulesPerturbedByProduction.arrow.size).toBeGreaterThanOrEqual(
-      24,
+      24, // measured 25
     );
   });
 

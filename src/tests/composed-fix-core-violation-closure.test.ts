@@ -936,10 +936,10 @@ describe('the composed --fix must not introduce a core violation', () => {
     // fix pass never ran (the parser, filename or options plumbing lost), and a
     // corpus that reaches few owners says nothing about the rest of the config
     // however many snippets it holds.
-    expect(stats.considered).toBeGreaterThan(23500);
-    expect(stats.probed).toBeGreaterThan(23500);
-    expect(stats.rewritten).toBeGreaterThan(11500);
-    expect(stats.owners.size).toBeGreaterThan(190);
+    expect(stats.considered).toBeGreaterThan(23500); // measured 23,872
+    expect(stats.probed).toBeGreaterThan(23500); // measured 23,872
+    expect(stats.rewritten).toBeGreaterThan(11500); // measured 11,801
+    expect(stats.owners.size).toBeGreaterThan(190); // measured 192
     /**
      * The ablation's own work, printed above and read by nothing before. Every
      * culprit set the baseline is keyed on comes out of these passes, so an
@@ -1395,7 +1395,7 @@ describe('the composed --fix must not introduce a core violation', () => {
    * 5,500 against an actual 8,141.
    */
   it('drives the transition arm over the population the count gate drops', () => {
-    expect(stats.exchange).toBeGreaterThan(2100);
+    expect(stats.exchange).toBeGreaterThan(2100); // measured 2,171
     // Every fixture that parsed must have yielded a scope manager; without one
     // every reference count reads zero and the arm silently returns nothing.
     expect(stats.scopesMissing).toBe(0);

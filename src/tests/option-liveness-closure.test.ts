@@ -738,8 +738,8 @@ describe('option liveness', () => {
    * fixtures, finds zero inert options, and passes every assertion above.
    */
   it('probed a real corpus', () => {
-    expect(live.length).toBeGreaterThanOrEqual(135);
-    expect(fixturesConsidered).toBeGreaterThanOrEqual(5000);
+    expect(live.length).toBeGreaterThanOrEqual(135); // measured 163
+    expect(fixturesConsidered).toBeGreaterThanOrEqual(9500); // measured 10,639
     expect(undrivableSkipped.length).toBeLessThanOrEqual(8);
     expect(noCorpus).toEqual([]);
   });
@@ -767,7 +767,7 @@ describe('option liveness', () => {
    * If this floor reaches zero the guard has quietly become report-only.
    */
   it('exercises the fix channel', () => {
-    expect(liveViaFixOnly.length).toBeGreaterThanOrEqual(19);
+    expect(liveViaFixOnly.length).toBeGreaterThanOrEqual(19); // measured 22
   });
 
   it('classifies a planted live option as live', () => {

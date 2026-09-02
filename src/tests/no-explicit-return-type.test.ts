@@ -6542,7 +6542,7 @@ describe('no-explicit-return-type --fix emits code Prettier leaves alone', () =>
     // Equality, not a floor: a source edited into a shape Prettier rewrites is
     // one this guard stops asking about, which reads exactly like a pass.
     expect(settled.length).toBe(SOURCES.length);
-    expect(settled.length).toBeGreaterThanOrEqual(27);
+    expect(settled.length).toBeGreaterThanOrEqual(27); // measured 27
 
     const outputs = new Map(
       settled.map(([label, source]) => {
@@ -7482,7 +7482,7 @@ describe('enforce-memoize-async survives no-explicit-return-type --fix', () => {
     expect(decorated).toEqual([]);
     // The corpus cannot shrink out from under this without saying so.
     expect(examined).toBe(RESOURCE_HANDLE_FIXTURES.length);
-    expect(examined).toBeGreaterThanOrEqual(29);
+    expect(examined).toBeGreaterThanOrEqual(29); // measured 31
   });
 
   it('still memoizes a plain data result through the same pipeline', () => {
@@ -7944,7 +7944,7 @@ describe('no-explicit-return-type --fix emits Prettier-clean JSX', () => {
     // Equality, not a floor: an arm edited into a shape Prettier rewrites is one
     // this guard stops asking about, which reads exactly like a pass.
     expect(settled.length).toBe(SOURCES.length);
-    expect(settled.length).toBeGreaterThanOrEqual(12);
+    expect(settled.length).toBeGreaterThanOrEqual(12); // measured 12
 
     const outputs = new Map(
       settled.map(([label, source]) => {

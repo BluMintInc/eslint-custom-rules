@@ -1586,9 +1586,9 @@ describe('the composed --fix must not introduce a type error', () => {
     // An empty `skipped` is also what a bucket VANISHING from the harvest looks
     // like, so name each one and floor it.
     expect([...byBucket.keys()].sort()).toEqual(['invalid', 'output', 'valid']);
-    expect(byBucket.get('valid')).toBeGreaterThan(5000);
-    expect(byBucket.get('invalid')).toBeGreaterThan(5000);
-    expect(byBucket.get('output')).toBeGreaterThan(1000);
+    expect(byBucket.get('valid')).toBeGreaterThan(5000); // measured 9,320
+    expect(byBucket.get('invalid')).toBeGreaterThan(9000); // measured 10,105
+    expect(byBucket.get('output')).toBeGreaterThan(4000); // measured 4,447
     expect(stats.considered + stats.sharedScopeSkipped).toBe(
       [...byBucket.values()].reduce((total, count) => total + count, 0),
     );

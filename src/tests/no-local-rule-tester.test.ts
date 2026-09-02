@@ -61,7 +61,7 @@ const offenders = testFiles().flatMap((file) => {
  */
 describe('src/tests uses only the shared RuleTester instances', () => {
   it('scans the test suite', () => {
-    expect(testFiles().length).toBeGreaterThan(100);
+    expect(testFiles().length).toBeGreaterThan(330); // measured 369
   });
 
   it('detects a locally constructed tester', () => {

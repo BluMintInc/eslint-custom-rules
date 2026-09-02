@@ -980,7 +980,7 @@ describe('directive prologue and shebang survive every fixer', () => {
   /** Per rule, so one chatty suggester cannot cover for the other six. */
   it('accounts for every suggestion-offering rule', () => {
     expect(measuredSuggestionUndriven).toEqual(SUGGESTION_UNDRIVEN_RULES);
-    expect(suggestionRules.length).toBeGreaterThanOrEqual(5);
+    expect(suggestionRules.length).toBeGreaterThanOrEqual(5); // measured 7
     expect(
       Object.keys(SUGGESTION_UNDRIVEN_RULES).filter(
         (name) => !suggestionRules.includes(name),

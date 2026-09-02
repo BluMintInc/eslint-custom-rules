@@ -618,7 +618,7 @@ describe('fixture corpus accounting', () => {
      * they are the reason this exists, and a filter that stopped reaching them
      * is the one failure this test cannot be allowed to survive.
      */
-    expect(CORPUS_CONSUMERS.length).toBeGreaterThanOrEqual(40);
+    expect(CORPUS_CONSUMERS.length).toBeGreaterThanOrEqual(40); // measured 43
     expect(
       [
         'exemption-composition-closure.test.ts',
@@ -777,7 +777,7 @@ describe('fixture corpus accounting', () => {
 
     // Non-vacuity: 41 of the 42 consumers lint at the time of writing, and a
     // requirement measured over none of them is satisfied by every guard.
-    expect(linting.length).toBeGreaterThanOrEqual(38);
+    expect(linting.length).toBeGreaterThanOrEqual(38); // measured 42
   });
 });
 
@@ -795,7 +795,7 @@ describe('every declared tester contributes to the corpus', () => {
     // JSON suite becomes a fatal parse that reads as a silent rule.
     const unmapped = testerNames.filter((name) => !LANGUAGE_BY_TESTER[name]);
     expect(unmapped).toEqual([]);
-    expect(testerNames.length).toBeGreaterThanOrEqual(4);
+    expect(testerNames.length).toBeGreaterThanOrEqual(4); // measured 4
   });
 
   it('harvests fixtures in every language, not just TypeScript', () => {

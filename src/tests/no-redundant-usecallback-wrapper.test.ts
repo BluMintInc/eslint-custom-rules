@@ -2810,8 +2810,8 @@ function C(${shape.params ?? ''}) {
   }
 
   it('exercises both answers, so agreement is not agreement on nothing', () => {
-    expect(shapesReporting).toBeGreaterThanOrEqual(6);
-    expect(shapesSilent).toBeGreaterThanOrEqual(6);
+    expect(shapesReporting).toBeGreaterThanOrEqual(6); // measured 7
+    expect(shapesSilent).toBeGreaterThanOrEqual(6); // measured 8
     expect(shapesReporting + shapesSilent).toBe(SHAPES.length);
   });
 });

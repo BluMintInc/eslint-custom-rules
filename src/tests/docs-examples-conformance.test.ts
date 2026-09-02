@@ -245,14 +245,14 @@ const skippedPages: SkippedPage[] = [];
 
 describe('documented "correct" examples must not report', () => {
   it('finds rule docs to check', () => {
-    expect(ruleNames.length).toBeGreaterThan(100);
+    expect(ruleNames.length).toBeGreaterThan(100); // measured 194
   });
 
   afterAll(() => {
     // Sits just under the real count (384 at the time of writing) so a silent
     // drop of a page or two goes red, while adding docs does not require editing
     // this test. Raise it when coverage grows; never lower it to make a run pass.
-    expect(lintedBlocks).toBeGreaterThan(375);
+    expect(lintedBlocks).toBeGreaterThan(375); // measured 518
     const problems = [
       ...auditPageSkips(skippedPages, PAGES_WITHOUT_CORRECT_EXAMPLES),
       ...auditSkips(skippedBlocks, UNCHECKABLE_BLOCKS),
@@ -647,8 +647,8 @@ describe('claim-carrying segments of "incorrect" fences must report (#1622)', ()
     // Coverage floor: the corpus holds ~106 multi-segment incorrect fences and
     // ~20 claim-carrying segments; a collapse here means extraction or
     // segmentation broke, not that the docs got clean.
-    expect(multiFences).toBeGreaterThan(80);
-    expect(claimSegments).toBeGreaterThan(10);
+    expect(multiFences).toBeGreaterThan(80); // measured 115
+    expect(claimSegments).toBeGreaterThan(30); // measured 38
 
     const problems = auditClaimSegments(silents, SILENT_CLAIM_SEGMENTS);
     if (problems.length > 0) {
@@ -874,7 +874,7 @@ describe('documented "incorrect" fences must report (#1641)', () => {
     // vacuous green that makes a guard worse than none. The corpus holds 403
     // asserted fences; raise this as coverage grows, never lower it to make a
     // run pass.
-    expect(assertedFences).toBeGreaterThan(300);
+    expect(assertedFences).toBeGreaterThan(300); // measured 403
     // A ceiling on the one class that really does assert nothing. Unlintable
     // fences (1: the syntax error `no-curly-brackets-around-commented-properties`
     // documents on purpose) are packaging defects everywhere else.
@@ -899,8 +899,8 @@ describe('documented "incorrect" fences must report (#1641)', () => {
     // cannot is a fence retired THROUGH SILENT_INCORRECT_BLOCKS, which leaves
     // the audit clean and this floor red. Declaring requiresTypeChecking must
     // not become the way to retire an example.
-    expect(typeAwareFences).toBeGreaterThanOrEqual(8);
-    expect(typeAwareFencesFiring).toBeGreaterThanOrEqual(7);
+    expect(typeAwareFences).toBeGreaterThanOrEqual(8); // measured 8
+    expect(typeAwareFencesFiring).toBeGreaterThanOrEqual(7); // measured 7
   });
 
   it('catches an option-gated fence that never fires (control)', () => {
@@ -1330,14 +1330,14 @@ describe('claimed statements inside firing "incorrect" fences must report (#1742
     // corpus empties and this suite passes while asserting nothing. The corpus
     // holds 399 firing fences and 207 assertable statements; raise these as
     // coverage grows, never lower one to make a run pass.
-    expect(firingFences).toBeGreaterThan(300);
-    expect(assertedStatements).toBeGreaterThan(150);
+    expect(firingFences).toBeGreaterThan(300); // measured 399
+    expect(assertedStatements).toBeGreaterThan(150); // measured 207
     // The guard's REACH, which a statement count hides: statements cluster, so
     // `assertedStatements` can hold while the set of fences contributing them
     // shrinks. 99 of 399 firing fences reach statement granularity (#1747);
     // this floor fails if that set erodes, and should rise as #1747 descends
     // into declaration bodies.
-    expect(fencesWithStatements).toBeGreaterThan(90);
+    expect(fencesWithStatements).toBeGreaterThan(90); // measured 99
     // The declaration carve-out is the larger half by design; if that inverts,
     // the classification broke rather than the docs changing.
     expect(declarationStatements).toBeGreaterThan(assertedStatements);
@@ -1441,7 +1441,7 @@ describe('claimed statements inside firing "incorrect" fences must report (#1742
       expect(Number(fenceLine)).toBeGreaterThan(0);
       expect(Number(statementLine)).toBeGreaterThan(0);
       // A one-liner is a placeholder, not a verified exemption.
-      expect(reason.length).toBeGreaterThan(60);
+      expect(reason.length).toBeGreaterThan(120); // measured 139 (per-iteration floor; min of 13 observed values: 139,159,175,178,182,184,185,187,190,195,196,207,297)
       // The two classes are not interchangeable. A statement the rule genuinely
       // misses is debt and must name the issue that retires it; without that it
       // reads as an acquittal and the defect is never fixed.
@@ -1705,14 +1705,14 @@ describe('claim-carrying statements inside declaration bodies must report (#1748
     //
     // EXAMINED is how much interior the descent opens — it collapses if parsing
     // or the walker breaks.
-    expect(fencesExamined).toBeGreaterThan(140);
-    expect(nestedTotal).toBeGreaterThan(250);
+    expect(fencesExamined).toBeGreaterThan(140); // measured 193
+    expect(nestedTotal).toBeGreaterThan(250); // measured 429
     // ASSERTED is what this guard actually bites on, and it is the smaller,
     // load-bearing number: 17 claim-carrying statements across 13 fences. They
     // diverge because claims cluster (one fence can hold three), so a floor on
     // statements alone would hold while the set of fences producing them shrank.
-    expect(claimCarrying).toBeGreaterThan(5);
-    expect(fencesAsserted).toBeGreaterThan(5);
+    expect(claimCarrying).toBeGreaterThan(15); // measured 17
+    expect(fencesAsserted).toBeGreaterThan(11); // measured 13
     // The claim filter is what makes this assertable at all — 273 of 429 nested
     // statements are unclaimed setup that reports nothing, so a blanket
     // assertion would need an allowlist larger than the corpus it guards.
@@ -1737,7 +1737,7 @@ describe('claim-carrying statements inside declaration bodies must report (#1748
     // The true gain is the blind region #1747 named — fences whose entire top
     // level is one declaration, so #1742 judges nothing in them. This guard is
     // the only statement-level assertion that reaches inside those.
-    expect(fencesBlindToTopLevel).toBeGreaterThan(100);
+    expect(fencesBlindToTopLevel).toBeGreaterThan(100); // measured 189
     expect(assertedBlindToTopLevel).toBeGreaterThan(0);
     // Assertion reach is small by construction — 17 statements over 13 of the
     // 193 fences opened. This is a narrow, high-precision regression gate, not a

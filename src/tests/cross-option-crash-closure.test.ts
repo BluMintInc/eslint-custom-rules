@@ -537,10 +537,10 @@ const REACHABLE_FLOOR = 40; // measured 41
  * would have taken, so reverting the rotation (which makes the two equal) fails
  * here rather than passing with a smaller corpus.
  */
-const ROTATION_GAIN = 10;
+const ROTATION_GAIN = 55; // measured 60
 
 /** The share of the corpus the sweep must actually lint. */
-const CORPUS_COVERAGE = 0.95;
+const CORPUS_COVERAGE = 0.95; // measured 0.98
 
 describe('option payloads x foreign fixtures (crash oracle)', () => {
   it('no rule crashes on foreign code under a schema-valid payload', () => {

@@ -1435,9 +1435,9 @@ describe('degenerate-identifier fix closure', () => {
 
   it('harvested a corpus at all', () => {
     expect(corpus.failures).toEqual([]);
-    expect(corpus.filesLoaded).toBeGreaterThan(250);
-    expect(fixableRuleNames.length).toBeGreaterThanOrEqual(70);
-    expect(suggestingRuleNames.length).toBeGreaterThanOrEqual(7);
+    expect(corpus.filesLoaded).toBeGreaterThan(250); // measured 282
+    expect(fixableRuleNames.length).toBeGreaterThanOrEqual(70); // measured 84
+    expect(suggestingRuleNames.length).toBeGreaterThanOrEqual(7); // measured 7
   });
 
   /**
@@ -1539,7 +1539,7 @@ describe('degenerate-identifier fix closure', () => {
     );
     expect(missing).toEqual([]);
     for (const kind of REQUIRED_KINDS) {
-      expect(totals.kindsRewritten.get(kind)).toBeGreaterThan(50);
+      expect(totals.kindsRewritten.get(kind)).toBeGreaterThan(2600); // measured 2,920 (per-iteration floor; min of 7 observed values: 2920,3801,5023,6222,7602,10449,19728)
     }
   });
 
@@ -1623,9 +1623,9 @@ describe('degenerate-identifier fix closure', () => {
           untouched.length
         }): ${untouched.join(', ') || '(none)'}`,
     );
-    expect(suggestionTotals.considered).toBeGreaterThan(2000);
-    expect(suggestionTotals.suggestionEdits).toBeGreaterThan(1500);
-    expect(suggestionTotals.rulesRewritten.size).toBeGreaterThanOrEqual(5);
+    expect(suggestionTotals.considered).toBeGreaterThan(4400); // measured 4,908
+    expect(suggestionTotals.suggestionEdits).toBeGreaterThan(3300); // measured 3,676
+    expect(suggestionTotals.rulesRewritten.size).toBeGreaterThanOrEqual(5); // measured 7
   });
 
   it('no accepted suggestion emits source that fails to parse', () => {
@@ -2006,10 +2006,10 @@ describe('degenerate-identifier fix closure', () => {
     // arm while every other counter still reads clean, so this is asserted at
     // zero rather than merely reported.
     expect(literalTotals.unreadableControl).toBe(0);
-    expect(literalTotals.considered).toBeGreaterThan(1000);
-    expect(literalTotals.rewritten).toBeGreaterThan(100);
-    expect(literalTotals.derivationsObserved).toBeGreaterThan(800);
-    expect(literalTotals.rulesDeriving.size).toBeGreaterThanOrEqual(28);
+    expect(literalTotals.considered).toBeGreaterThan(14500); // measured 16,033
+    expect(literalTotals.rewritten).toBeGreaterThan(7000); // measured 7,711
+    expect(literalTotals.derivationsObserved).toBeGreaterThan(1500); // measured 1,731
+    expect(literalTotals.rulesDeriving.size).toBeGreaterThanOrEqual(28); // measured 39
   });
 
   /** The literal arm, per rule, both directions. */
@@ -2043,10 +2043,10 @@ describe('degenerate-identifier fix closure', () => {
         }`,
     );
     expect(literalSuggestionTotals.unreadableControl).toBe(0);
-    expect(literalSuggestionTotals.considered).toBeGreaterThan(500);
-    expect(literalSuggestionTotals.derivationsObserved).toBeGreaterThan(100);
+    expect(literalSuggestionTotals.considered).toBeGreaterThan(1100); // measured 1,236
+    expect(literalSuggestionTotals.derivationsObserved).toBeGreaterThan(100); // measured 169
     expect(literalSuggestionTotals.rulesDeriving.size).toBeGreaterThanOrEqual(
-      4,
+      4, // measured 4
     );
   });
 

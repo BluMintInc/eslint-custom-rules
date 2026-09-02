@@ -40,8 +40,8 @@ const rulesMissingUrl = allRules.filter(
 
 describe('meta.docs.url resolves to a real docs page', () => {
   it('checks a meaningful number of rules', () => {
-    expect(allRules.length).toBeGreaterThan(150);
-    expect(rulesWithUrl.length).toBeGreaterThan(150);
+    expect(allRules.length).toBeGreaterThan(150); // measured 194
+    expect(rulesWithUrl.length).toBeGreaterThan(150); // measured 194
   });
 
   it.each(rulesWithUrl)(

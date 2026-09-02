@@ -471,16 +471,16 @@ describe('line-scoped suppression allowances', () => {
     // scan that stopped matching directives, satisfies the closure above with
     // zeroes and reports a clean sweep.
     expect(harvested.failures).toEqual([]);
-    expect(harvested.filesLoaded).toBeGreaterThanOrEqual(270);
-    expect(stats.suitesScanned).toBeGreaterThanOrEqual(360);
+    expect(harvested.filesLoaded).toBeGreaterThanOrEqual(270); // measured 282
+    expect(stats.suitesScanned).toBeGreaterThanOrEqual(360); // measured 367
     expect(stats.suitesDropped).toBeLessThanOrEqual(8);
-    expect(stats.validScanned).toBeGreaterThanOrEqual(9000);
-    expect(stats.directivesInValid).toBeGreaterThanOrEqual(75);
-    expect(stats.bareDirectives).toBeGreaterThanOrEqual(8);
+    expect(stats.validScanned).toBeGreaterThanOrEqual(9000); // measured 9,441
+    expect(stats.directivesInValid).toBeGreaterThanOrEqual(75); // measured 81
+    expect(stats.bareDirectives).toBeGreaterThanOrEqual(8); // measured 8
     // 34 of the 81 cover the rule under test; the rest name a core or
     // `@typescript-eslint` rule and cannot make a case inert.
-    expect(stats.directivesCoveringRule).toBeGreaterThanOrEqual(30);
-    expect(candidates.length).toBeGreaterThanOrEqual(20);
+    expect(stats.directivesCoveringRule).toBeGreaterThanOrEqual(30); // measured 34
+    expect(candidates.length).toBeGreaterThanOrEqual(20); // measured 23
   });
 
   it('does not overlap the block-form accounting', () => {
@@ -652,6 +652,6 @@ describe('the line-scoped accounting is load-bearing', () => {
   it('finds real falsifiable cases in the corpus, not only planted ones', () => {
     // A corpus in which nothing survives would make the exactness closure a
     // statement about the classifier's floor rather than about the fixtures.
-    expect(falsifiable.length).toBeGreaterThanOrEqual(3);
+    expect(falsifiable.length).toBeGreaterThanOrEqual(3); // measured 3
   });
 });

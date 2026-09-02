@@ -336,7 +336,7 @@ describe('visitor key liveness', () => {
     // Scaled to the population rather than fixed, so growth cannot outrun these
     // and shrinkage cannot hide beneath them.
     expect(totalDeclared).toBeGreaterThanOrEqual(liveness.size * 2);
-    expect(totalLinted).toBeGreaterThanOrEqual(10000);
+    expect(totalLinted).toBeGreaterThanOrEqual(21500); // measured 23,980
     // The floor that matters: most declared keys must be OBSERVED firing, not
     // merely counted. A capture path that records nothing fails here first.
     expect(totalFired).toBeGreaterThanOrEqual(totalDeclared * 0.8);

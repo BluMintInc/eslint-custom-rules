@@ -46,7 +46,7 @@ describe('plugin loads against a compiler without a root-exported API', () => {
     const plugin = require('..') as PluginShape;
     const names = Object.keys(plugin.rules);
 
-    expect(EXPECTED_RULE_NAMES.length).toBeGreaterThan(150);
+    expect(EXPECTED_RULE_NAMES.length).toBeGreaterThan(150); // measured 194
     expect([...names].sort()).toEqual([...EXPECTED_RULE_NAMES].sort());
 
     const unusable = names.filter(
@@ -64,7 +64,7 @@ describe('plugin loads against a compiler without a root-exported API', () => {
     // an equality against the rule set — but every entry this plugin owns must
     // still name a rule the degraded load actually exposed. Entries owned by
     // other plugins (`@typescript-eslint/*`) are passed through untouched.
-    expect(configured.length).toBeGreaterThan(150);
+    expect(configured.length).toBeGreaterThan(150); // measured 190
     const PREFIX = '@blumintinc/blumint/';
     const dangling = configured
       .filter((id) => id.startsWith(PREFIX))

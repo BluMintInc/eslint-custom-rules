@@ -160,9 +160,9 @@ describe('rule option test coverage', () => {
    * actually walked. These are floors, not equalities — adding rules is fine.
    */
   it('measured the option population (guards against a vacuous pass)', () => {
-    expect(rulesWithOptions).toBeGreaterThanOrEqual(50);
-    expect(totalOptionNames).toBeGreaterThanOrEqual(140);
-    expect(coverage.length).toBeGreaterThanOrEqual(50);
+    expect(rulesWithOptions).toBeGreaterThanOrEqual(50); // measured 71
+    expect(totalOptionNames).toBeGreaterThanOrEqual(140); // measured 176
+    expect(coverage.length).toBeGreaterThanOrEqual(50); // measured 71
   });
 
   it.each(coverage.map((entry) => [entry.rule, entry] as const))(

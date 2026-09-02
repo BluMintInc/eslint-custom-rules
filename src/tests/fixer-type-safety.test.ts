@@ -1189,17 +1189,17 @@ describe('an autofix must not turn compiling code into non-compiling code', () =
    * fixing breaks, so the corpus size is asserted rather than assumed.
    */
   it('compiles a meaningful share of the fixable rules', () => {
-    expect(fixableRules.length).toBeGreaterThan(70);
+    expect(fixableRules.length).toBeGreaterThan(70); // measured 84
     // Exact, not a floor: every rule below the count is named in
     // UNCOVERED_FIXERS, so slack here would only re-open the hole it closes.
     expect(coverage.covered.length).toBe(
       fixableRules.length - Object.keys(UNCOVERED_FIXERS).length,
     );
-    expect(assertedPairs.length).toBeGreaterThanOrEqual(1800);
+    expect(assertedPairs.length).toBeGreaterThanOrEqual(3800); // measured 4,257
     expect(corpus.failures).toEqual([]);
     // The cap's DENOMINATOR. Without it the ceilings below read as healthy on a
     // corpus that collapsed to nothing. 14,004 when measured.
-    expect(harvested).toBeGreaterThanOrEqual(13000);
+    expect(harvested).toBeGreaterThanOrEqual(13000); // measured 14,124
   });
 
   /**
@@ -1252,7 +1252,7 @@ describe('an autofix must not turn compiling code into non-compiling code', () =
     expect(nonTypeScriptDropped).toBe(nonTypeScriptAvailable);
     // 108 when measured. Floors the equality so it cannot be satisfied by a
     // corpus that stopped carrying non-TypeScript fixtures at all.
-    expect(nonTypeScriptDropped).toBeGreaterThanOrEqual(100);
+    expect(nonTypeScriptDropped).toBeGreaterThanOrEqual(100); // measured 108
   });
 
   /**
@@ -1312,7 +1312,7 @@ describe('a suggestion must not turn compiling code into non-compiling code', ()
    * above proves the same pipeline flags a planted defect on this channel.
    */
   it('compiles at least one suggestion from every suggestion-emitting rule', () => {
-    expect(suggestionRules.length).toBeGreaterThanOrEqual(7);
+    expect(suggestionRules.length).toBeGreaterThanOrEqual(7); // measured 7
     expect(
       Object.fromEntries(
         suggestionRules.map((rule) => [
@@ -1321,7 +1321,7 @@ describe('a suggestion must not turn compiling code into non-compiling code', ()
         ]),
       ),
     ).toEqual(Object.fromEntries(suggestionRules.map((rule) => [rule, true])));
-    expect(assertedSuggestionPairs.length).toBeGreaterThanOrEqual(120);
+    expect(assertedSuggestionPairs.length).toBeGreaterThanOrEqual(270); // measured 297
 
     // The suggestion channel applies the same MAX_PAIRS_PER_RULE as the fix
     // channel, but counted its discards nowhere at all — not even in the

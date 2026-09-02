@@ -669,7 +669,7 @@ describe(`${RULE_NAME} default ignored libraries`, () => {
   it('derives injected modules from the rule sources', () => {
     // Controls: a derivation that silently stops finding anything (a parser
     // swap, a renamed directory) must fail here rather than pass vacuously.
-    expect(SOURCE_DIRS.flatMap(tsFilesIn).length).toBeGreaterThan(150);
+    expect(SOURCE_DIRS.flatMap(tsFilesIn).length).toBeGreaterThan(150); // measured 230
     expect(emittersOf('use-latest-callback')).toContain(
       'use-latest-callback.ts',
     );

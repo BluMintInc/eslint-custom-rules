@@ -1807,15 +1807,15 @@ describe('fix availability must not depend on how a function is spelled', () => 
 
   it('compares enough to make a zero mean something', () => {
     expect(corpus.failures).toEqual([]);
-    expect(probeRules.length).toBeGreaterThan(150);
-    expect(casesConsidered).toBeGreaterThan(5000);
-    expect(sharedMessageIds).toBeGreaterThan(3000);
-    expect(detectionComparisons).toBeGreaterThan(11000);
-    expect(rulesCompared.size).toBeGreaterThan(100);
+    expect(probeRules.length).toBeGreaterThan(150); // measured 194
+    expect(casesConsidered).toBeGreaterThan(21500); // measured 23,872
+    expect(sharedMessageIds).toBeGreaterThan(6500); // measured 7,222
+    expect(detectionComparisons).toBeGreaterThan(11000); // measured 16,305
+    expect(rulesCompared.size).toBeGreaterThan(100); // measured 163
     // The rows that can actually fail, floored separately: the counts above
     // survive intact even if every comparison piles onto a handful of rules.
-    expect(fixDrivenRules.length).toBeGreaterThan(50);
-    expect(detectionDrivenRules.length).toBeGreaterThan(140);
+    expect(fixDrivenRules.length).toBeGreaterThan(50); // measured 74
+    expect(detectionDrivenRules.length).toBeGreaterThan(140); // measured 163
   });
 
   /** Both directions, so a fixed rule must be removed rather than lingering. */
@@ -1852,7 +1852,7 @@ describe('fix availability must not depend on how a function is spelled', () => 
         (rule) => !fixableRuleNames.has(rule),
       ),
     ).toEqual([]);
-    expect(fixableRuleNames.size).toBeGreaterThan(50);
+    expect(fixableRuleNames.size).toBeGreaterThan(50); // measured 84
   });
 
   /** Both maps at once: an unexplained or unmeasurable entry is dead weight. */
@@ -2004,7 +2004,7 @@ describe('every declared respelling must actually be produced', () => {
         (total, stats) => total + stats.nested,
         0,
       ),
-    ).toBeGreaterThan(300);
+    ).toBeGreaterThan(700); // measured 781
   });
 
   it.each(TRANSFORMS.map((transform) => transform.name))(
@@ -2102,7 +2102,7 @@ describe('every declared respelling must actually be produced', () => {
     expect(
       RESPELLING_CONTROLS.filter((control) => control.output !== control.code)
         .length,
-    ).toBeGreaterThan(5);
+    ).toBeGreaterThan(5); // measured 9
   });
 
   it.each(

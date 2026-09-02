@@ -6758,7 +6758,7 @@ describe('enforce-assert-safe-object-key --fix beside a formatter (issue #2067)'
       .verify(UNFORMATTED, configFor(FORMATTER_ONLY), FILENAME)
       .map((message) => message.fix)
       .filter((fix): fix is NonNullable<typeof fix> => !!fix);
-    expect(fixes.length).toBeGreaterThanOrEqual(3);
+    expect(fixes.length).toBeGreaterThanOrEqual(3); // measured 4
 
     const keyStart = UNFORMATTED.indexOf('    KEY') + 4;
     expect(fixes.some((fix) => fix.range[0] < keyStart)).toBe(true);
@@ -6917,12 +6917,12 @@ describe('enforce-assert-safe-object-key: every fixed fixture parses (issue #206
     // Floors just under the measured values: a suite that stops declaring
     // fixtures, or a rule that stops fixing them, would otherwise leave the
     // assertion below passing over nothing.
-    expect(FIXTURES.length).toBeGreaterThanOrEqual(210);
+    expect(FIXTURES.length).toBeGreaterThanOrEqual(210); // measured 227
 
     const rewritten = FIXTURES.filter(
       (fixture) => fixWith(subject, fixture).output !== fixture.code,
     );
-    expect(rewritten.length).toBeGreaterThanOrEqual(196);
+    expect(rewritten.length).toBeGreaterThanOrEqual(196); // measured 215
   });
 
   it('emits text that parses for every invalid fixture', () => {
@@ -6979,6 +6979,6 @@ describe('enforce-assert-safe-object-key: every fixed fixture parses (issue #206
     const broken = FIXTURES.filter(
       (fixture) => parseFailure(fixWith(brokenFixer, fixture).output) !== null,
     );
-    expect(broken.length).toBeGreaterThanOrEqual(150);
+    expect(broken.length).toBeGreaterThanOrEqual(150); // measured 214
   });
 });

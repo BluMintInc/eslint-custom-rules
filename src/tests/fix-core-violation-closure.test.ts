@@ -445,11 +445,11 @@ describe('a fixer must not introduce a core eslint violation', () => {
         `owners=${stats.owners.size} rulesFixed=${stats.rulesFixed.size} ` +
         `optionCarrying=${carriage.carried}`,
     );
-    expect(stats.probed).toBeGreaterThan(23500);
-    expect(stats.soloFixes).toBeGreaterThan(69000);
-    expect(stats.rewritten).toBeGreaterThan(15000);
-    expect(stats.owners.size).toBeGreaterThan(185);
-    expect(stats.rulesFixed.size).toBeGreaterThan(78);
+    expect(stats.probed).toBeGreaterThan(23500); // measured 23,872
+    expect(stats.soloFixes).toBeGreaterThan(69000); // measured 70,742
+    expect(stats.rewritten).toBeGreaterThan(15000); // measured 15,337
+    expect(stats.owners.size).toBeGreaterThan(185); // measured 192
+    expect(stats.rulesFixed.size).toBeGreaterThan(78); // measured 82
     /**
      * What the sweep DISCARDS, held at its measured zero. A fatal parse is
      * indistinguishable from the rule staying silent, because every consumer

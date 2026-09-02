@@ -6723,9 +6723,9 @@ describe('prefer-map-over-conditional-dispatch fix layout vs Prettier', () => {
     );
     // Floors just under the measured counts, so a fixture edited out of any
     // sample fails here rather than quietly emptying it.
-    expect(settled.length).toBeGreaterThanOrEqual(125);
-    expect(functionValued.length).toBeGreaterThanOrEqual(15);
-    expect(jsxValued.length).toBeGreaterThanOrEqual(8);
+    expect(settled.length).toBeGreaterThanOrEqual(125); // measured 130
+    expect(functionValued.length).toBeGreaterThanOrEqual(15); // measured 16
+    expect(jsxValued.length).toBeGreaterThanOrEqual(8); // measured 9
     for (const testCase of [...functionValued, ...jsxValued]) {
       expect(prettier.format(testCase.output, PRETTIER_OPTIONS)).toBe(
         testCase.output,
@@ -6760,7 +6760,7 @@ describe('prefer-map-over-conditional-dispatch fix layout vs Prettier', () => {
     const widened = settled.filter((testCase) =>
       /if \(RESULT_BY_[A-Z_]+\[[\w.]+\] > 0\) \{/.test(testCase.output),
     );
-    expect(widened.length).toBeGreaterThanOrEqual(2);
+    expect(widened.length).toBeGreaterThanOrEqual(2); // measured 2
   });
 
   it('accounts for what it skips: a ceiling cut close to the measurement', () => {
@@ -6860,11 +6860,11 @@ describe('prefer-map-over-conditional-dispatch print-width classifier', () => {
 
   it('is not vacuous: both answers occur, and every spelling overflows', () => {
     const reflowed = SPELLINGS.filter((spelling) => prettierReflows(spelling));
-    expect(reflowed.length).toBeGreaterThanOrEqual(11);
-    expect(SPELLINGS.length - reflowed.length).toBeGreaterThanOrEqual(11);
+    expect(reflowed.length).toBeGreaterThanOrEqual(11); // measured 15
+    expect(SPELLINGS.length - reflowed.length).toBeGreaterThanOrEqual(11); // measured 15
     // 4 columns of indentation inside a broken type-argument list.
     for (const spelling of SPELLINGS) {
-      expect(spelling.length + 4).toBeGreaterThan(80);
+      expect(spelling.length + 4).toBeGreaterThan(80); // measured 84 (per-iteration floor; min of 21 observed values: 84,86,88,90,91,93,94,95,96,98,99,100,102,105,108,111,112,113,116,118,120)
     }
   });
 });
@@ -6937,8 +6937,8 @@ describe('prefer-map-over-conditional-dispatch quote normalizer', () => {
     const rewritten = SPELLINGS.filter(
       (spelling) => normalizeTypeQuotes(spelling, true) !== spelling,
     );
-    expect(rewritten.length).toBeGreaterThanOrEqual(10);
-    expect(SPELLINGS.length - rewritten.length).toBeGreaterThanOrEqual(4);
+    expect(rewritten.length).toBeGreaterThanOrEqual(10); // measured 14
+    expect(SPELLINGS.length - rewritten.length).toBeGreaterThanOrEqual(4); // measured 5
     // A quote inside a template literal type is content, not a delimiter, and
     // survives both settings untouched — the shape a regex would corrupt.
     expect(normalizeTypeQuotes("`it's-${string}`", true)).toBe(
@@ -7103,8 +7103,8 @@ describe('prefer-map-over-conditional-dispatch JSX entry layout', () => {
     );
     // Floors just under the measured counts, so a shape dropped from the
     // matrix fails here rather than quietly emptying an arm.
-    expect(authored.length).toBeGreaterThanOrEqual(145);
-    expect(declined.length).toBeGreaterThanOrEqual(25);
+    expect(authored.length).toBeGreaterThanOrEqual(145); // measured 146
+    expect(declined.length).toBeGreaterThanOrEqual(25); // measured 26
     const disagreements = authored
       .filter(
         (row) => (row.mine ?? []).join('\n') !== (row.theirs ?? []).join('\n'),
@@ -7157,12 +7157,12 @@ describe('prefer-map-over-conditional-dispatch JSX entry layout', () => {
     const brokeAfterOperator = declined.filter((row) =>
       (row.theirs ?? [])[0]?.endsWith(':'),
     );
-    expect(attributesOpened.length).toBeGreaterThanOrEqual(1);
-    expect(brokeAfterOperator.length).toBeGreaterThanOrEqual(1);
+    expect(attributesOpened.length).toBeGreaterThanOrEqual(10); // measured 12
+    expect(brokeAfterOperator.length).toBeGreaterThanOrEqual(1); // measured 2
   });
 
   it('leaves an entry within the width on one line, as Prettier does', () => {
-    expect(fitting.length).toBeGreaterThanOrEqual(290);
+    expect(fitting.length).toBeGreaterThanOrEqual(290); // measured 296
     const broken = fitting.filter(
       (row) => (row.theirs ?? []).join('\n') !== row.flat,
     );

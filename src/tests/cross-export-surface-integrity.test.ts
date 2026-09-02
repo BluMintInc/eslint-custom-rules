@@ -814,7 +814,7 @@ const CROSS_FIXER_FLOOR = 53; // measured 57
  * onto a handful of prolific suites, and this is the only counter that says the
  * sweep still walks the whole rule set.
  */
-const OWNER_FLOOR = 185;
+const OWNER_FLOOR = 185; // measured 194
 /**
  * Ceilings, cut CLOSE: each is a case this guard does NOT judge, so a harness
  * regression shows up as a jump. A ceiling parked far above its measurement is

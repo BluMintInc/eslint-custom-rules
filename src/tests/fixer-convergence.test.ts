@@ -503,14 +503,14 @@ describe('fixers must converge under the multi-pass fix loop', () => {
    * so the corpus size is asserted rather than assumed.
    */
   it('probes a meaningful share of the fixable rules', () => {
-    expect(fixableRules.length).toBeGreaterThan(70);
+    expect(fixableRules.length).toBeGreaterThan(70); // measured 84
     // Exact, not a floor: the accounting test names every rule below this
     // count, so slack here would just re-open the hole #1732 describes.
     expect(rulesChecked).toBe(
       fixableRules.length - Object.keys(UNREACHED_FIXERS).length,
     );
-    expect(totalProbed).toBeGreaterThanOrEqual(7500);
-    expect(totalChecked).toBeGreaterThanOrEqual(2500);
+    expect(totalProbed).toBeGreaterThanOrEqual(7500); // measured 14,255
+    expect(totalChecked).toBeGreaterThanOrEqual(2500); // measured 4,809
     expect(corpus.failures).toEqual([]);
   });
 
@@ -789,12 +789,12 @@ describe('the convergence detector is load-bearing', () => {
    */
   it('carries options and filenames from the fixtures themselves', () => {
     const cases = [...corpus.byRule.values()].flat();
-    expect(cases.filter((c) => c.options).length).toBeGreaterThanOrEqual(250);
-    expect(cases.filter((c) => c.filename).length).toBeGreaterThanOrEqual(3690);
+    expect(cases.filter((c) => c.options).length).toBeGreaterThanOrEqual(710); // measured 784
+    expect(cases.filter((c) => c.filename).length).toBeGreaterThanOrEqual(3690); // measured 4,131
     // Interpolated fixtures are the ones the text harvest could not see at all.
     expect(
       (corpus.byRule.get('no-usememo-for-pass-by-value') || []).length,
-    ).toBeGreaterThanOrEqual(198);
+    ).toBeGreaterThanOrEqual(198); // measured 220
   });
 });
 
@@ -821,7 +821,7 @@ describe('suggestions must clear the trigger they are offered for', () => {
    * emitting entirely.
    */
   it('applies at least one suggestion from every suggestion-emitting rule', () => {
-    expect(suggestionRules.length).toBeGreaterThanOrEqual(7);
+    expect(suggestionRules.length).toBeGreaterThanOrEqual(7); // measured 7
     expect(
       Object.fromEntries(
         suggestionRules.map((rule) => [
@@ -830,7 +830,7 @@ describe('suggestions must clear the trigger they are offered for', () => {
         ]),
       ),
     ).toEqual(Object.fromEntries(suggestionRules.map((rule) => [rule, true])));
-    expect(totalSuggestionsApplied).toBeGreaterThanOrEqual(250);
+    expect(totalSuggestionsApplied).toBeGreaterThanOrEqual(250); // measured 368
   });
 
   it.each(suggestionRules)('%s', (rule) => {

@@ -387,7 +387,7 @@ describe('eslint peer range must match the context APIs the source uses', () => 
   it('scans a meaningful number of source files', () => {
     // Without this floor a broken glob would empty `offenders` and the range
     // assertion below would pass while proving nothing.
-    expect(sourceFiles.length).toBeGreaterThan(150);
+    expect(sourceFiles.length).toBeGreaterThan(150); // measured 230
   });
 
   it('declares an eslint peer range', () => {
@@ -441,9 +441,9 @@ describe('the declared peer floor admits ESLint versions without context.sourceC
     // from no read at all.
     // Measured 599; the floor sits just under so that files quietly vanishing
     // from the scan fails rather than passes smaller.
-    expect(allSrcFiles.length).toBeGreaterThan(590);
+    expect(allSrcFiles.length).toBeGreaterThan(590); // measured 601
     expect(allSrcFiles.length).toBeGreaterThan(sourceFiles.length);
-    expect(declarationFiles.length).toBeGreaterThanOrEqual(1);
+    expect(declarationFiles.length).toBeGreaterThanOrEqual(1); // measured 3
     // A file that fails to parse yields no reads, which reads exactly like a
     // clean file unless the skip is asserted.
     expect(unparsedFiles).toEqual([]);
@@ -543,7 +543,7 @@ describe('every rule survives a rule context shaped as ESLint exposed it before 
 
   it('drives every registered rule against a non-empty corpus', () => {
     expect(legacy.rulesDriven).toBe(ruleEntries.length);
-    expect(legacy.rulesDriven).toBeGreaterThan(190);
+    expect(legacy.rulesDriven).toBeGreaterThan(190); // measured 194
     // A rule whose fixtures went missing is driven over nothing, which reads
     // exactly like a rule that survived. Measured: 194 of 194.
     expect(legacy.rulesWithCases).toBe(legacy.rulesDriven);
@@ -554,8 +554,8 @@ describe('every rule survives a rule context shaped as ESLint exposed it before 
     // running a visitor, and a fatal parse is indistinguishable from silence.
     // Floors sit just under the measurement (23,932 cases / 11,541 reports) so
     // that a corpus which quietly shrinks fails rather than passes smaller.
-    expect(modern.casesLinted).toBeGreaterThan(23000);
-    expect(modern.reports).toBeGreaterThan(11000);
+    expect(modern.casesLinted).toBeGreaterThan(23000); // measured 23,980
+    expect(modern.reports).toBeGreaterThan(11000); // measured 11,563
     expect(modern.fatals).toBe(0);
     expect(legacy.fatals).toBe(0);
   });

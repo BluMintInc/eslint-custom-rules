@@ -769,7 +769,7 @@ describe('the recommended config is closed under its own exemptions', () => {
 describe('the exemption closure guard is load-bearing', () => {
   it('harvests the suite without executing or losing it', () => {
     expect(harvested.failures).toEqual([]);
-    expect(harvested.filesLoaded).toBeGreaterThanOrEqual(250);
+    expect(harvested.filesLoaded).toBeGreaterThanOrEqual(250); // measured 282
     // Every suite must resolve to a rule except the handful that legitimately
     // test no rule (`rule-tester-parse-mode`'s parser assertions) or a core one.
     expect(suitesDropped.length).toBeLessThanOrEqual(8);
@@ -778,7 +778,7 @@ describe('the exemption closure guard is load-bearing', () => {
   it('exercises nearly every composable rule in the config', () => {
     // Guards the denominator: a high ratio over a collapsed rule set would
     // still look healthy.
-    expect(Object.keys(FIX_CONFIG).length).toBeGreaterThan(100);
+    expect(Object.keys(FIX_CONFIG).length).toBeGreaterThan(100); // measured 189
     // The type-aware rules this guard once dropped wholesale must now COMPOSE
     // like any other. Asserting their presence — rather than that some
     // exclusion set is populated — is what keeps the #1877 blind spot from
@@ -786,12 +786,12 @@ describe('the exemption closure guard is load-bearing', () => {
     const typeAwareInConfig = [...typeAwareRuleNames].filter(
       (name) => PREFIX + name in plugin.configs.recommended.rules,
     );
-    expect(typeAwareInConfig.length).toBeGreaterThan(5);
+    expect(typeAwareInConfig.length).toBeGreaterThan(13); // measured 15
     expect(
       typeAwareInConfig.filter((name) => !(PREFIX + name in FIX_CONFIG)),
     ).toEqual([]);
     // 172 of the composable rules contribute at least one fixture.
-    expect(casesByRule.size).toBeGreaterThanOrEqual(165);
+    expect(casesByRule.size).toBeGreaterThanOrEqual(165); // measured 189
   });
 
   it('reaches enough silent fixtures, and actually rewrites them', () => {
@@ -799,13 +799,13 @@ describe('the exemption closure guard is load-bearing', () => {
     // rather than far below it: the previous 5,500/5,400/1,500 had decayed into
     // 32% slack, which is more than enough room to absorb the entire corpus
     // loss this guard exists to notice.
-    expect(stats.considered).toBeGreaterThanOrEqual(8000);
+    expect(stats.considered).toBeGreaterThanOrEqual(8000); // measured 9,315
     // A case the rule already reports on cannot lose an exemption, so the
     // silent subset is the real corpus (8,095).
-    expect(stats.controlSilent).toBeGreaterThanOrEqual(7900);
+    expect(stats.controlSilent).toBeGreaterThanOrEqual(7900); // measured 9,257
     // And the config's `--fix` must actually rewrite a large share of them
     // (3,083), or step 2 is a no-op and every result is vacuous.
-    expect(stats.rewritten).toBeGreaterThanOrEqual(2900);
+    expect(stats.rewritten).toBeGreaterThanOrEqual(2900); // measured 3,407
   });
 
   it('loses no case to a filename the harness itself chose', () => {
@@ -844,11 +844,11 @@ describe('the exemption closure guard is load-bearing', () => {
    * which is the state #1733 records for all seven of them.
    */
   it('accounts for every suggestion-bearing rule, unreached ones by reason', () => {
-    expect(suggestionRuleNames.length).toBeGreaterThanOrEqual(7);
+    expect(suggestionRuleNames.length).toBeGreaterThanOrEqual(7); // measured 7
     expect(observedUnreachedCulprits).toEqual(UNREACHED_SUGGESTION_CULPRITS);
     // Measured: 83 applied. At the 40 this replaced, half the channel could
     // vanish while the suite stayed green.
-    expect(stats.suggestionsApplied).toBeGreaterThanOrEqual(80);
+    expect(stats.suggestionsApplied).toBeGreaterThanOrEqual(80); // measured 84
   });
 
   it('detects a destroyed exemption (positive control)', () => {
