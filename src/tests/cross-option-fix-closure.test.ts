@@ -717,7 +717,7 @@ describe('cross-option --fix closure', () => {
       testCase.code.includes(MARKER),
     );
     expect(polluted).toEqual([]);
-    expect(allCases.length).toBeGreaterThanOrEqual(20_000);
+    expect(allCases.length).toBeGreaterThanOrEqual(20_000); // measured 23,980
   });
 
   it('trips every oracle on a fixer that breaks only under its payload', () => {
@@ -730,18 +730,18 @@ describe('cross-option --fix closure', () => {
 
     // Each oracle must be independently live. Floors sit just under measured
     // (144 / 69 / 11 / 4) so a control that stops firing is loud.
-    expect(byKind.FATAL || 0).toBeGreaterThanOrEqual(100);
-    expect(byKind.CORE || 0).toBeGreaterThanOrEqual(45);
-    expect(byKind.RESTRICTED || 0).toBeGreaterThanOrEqual(8);
-    expect(byKind.COMMENT || 0).toBeGreaterThanOrEqual(3);
+    expect(byKind.FATAL || 0).toBeGreaterThanOrEqual(100); // measured 144
+    expect(byKind.CORE || 0).toBeGreaterThanOrEqual(45); // measured 69
+    expect(byKind.RESTRICTED || 0).toBeGreaterThanOrEqual(8); // measured 11
+    expect(byKind.COMMENT || 0).toBeGreaterThanOrEqual(3); // measured 4
 
     // The negative control changes the fix output but keeps it valid. If it
     // reported, every finding above would just be the differential firing.
     expect(findings.filter((f) => f.rule === '__ctl-negative')).toEqual([]);
 
     // The controls must have reached the differential at all.
-    expect(totals.pairsOutputDiffered).toBeGreaterThanOrEqual(300);
-    expect(totals.commentProbesNeutral).toBeGreaterThanOrEqual(200);
+    expect(totals.pairsOutputDiffered).toBeGreaterThanOrEqual(300); // measured 475
+    expect(totals.commentProbesNeutral).toBeGreaterThanOrEqual(200); // measured 301
   }, 600_000);
 
   it('lets no option payload make a fixer write broken output', () => {
@@ -761,16 +761,16 @@ describe('cross-option --fix closure', () => {
 
     // Floors cut just under each measured value, so a sweep that silently
     // stopped reaching the population fails rather than passing empty.
-    expect(totals.rulesProbed).toBeGreaterThanOrEqual(30); // 35
-    expect(totals.payloadsSchemaValid).toBeGreaterThanOrEqual(240); // 270
-    expect(totals.pairsConsidered).toBeGreaterThanOrEqual(140_000); // 158,719
-    expect(totals.pairsLinted).toBeGreaterThanOrEqual(35_000); // 40,209
-    expect(totals.pairsPayloadFixed).toBeGreaterThanOrEqual(16_000); // 18,412
+    expect(totals.rulesProbed).toBeGreaterThanOrEqual(30); // measured 35
+    expect(totals.payloadsSchemaValid).toBeGreaterThanOrEqual(240); // measured 273
+    expect(totals.pairsConsidered).toBeGreaterThanOrEqual(140_000); // measured 160,587
+    expect(totals.pairsLinted).toBeGreaterThanOrEqual(35_000); // measured 41,895
+    expect(totals.pairsPayloadFixed).toBeGreaterThanOrEqual(16_000); // measured 18,581
     // The one that proves the options are not inert decoration.
-    expect(totals.pairsOutputDiffered).toBeGreaterThanOrEqual(6_000); // 6,923
+    expect(totals.pairsOutputDiffered).toBeGreaterThanOrEqual(6_000); // measured 6,991
     // Own-corpus pairs are 4,553 of those; a foreign-only sweep leaves 2.
-    expect(totals.ownPairsOutputDiffered).toBeGreaterThanOrEqual(4_000);
-    expect(totals.commentProbesNeutral).toBeGreaterThanOrEqual(5_000); // 5,929
+    expect(totals.ownPairsOutputDiffered).toBeGreaterThanOrEqual(4_000); // measured 4,621
+    expect(totals.commentProbesNeutral).toBeGreaterThanOrEqual(5_000); // measured 5,996
 
     // What the sweep DISCARDS is asserted too: a skip counter no expectation
     // reads is how a population leaves silently.
@@ -789,8 +789,8 @@ describe('cross-option --fix closure', () => {
      * `pairsDefaultFixed` is the evidence the DEFAULT arm of the differential is
      * live rather than a constant.
      */
-    expect(totals.payloadsBuilt).toBeGreaterThanOrEqual(280); // 298
-    expect(totals.pairsDefaultFixed).toBeGreaterThanOrEqual(15_000); // 17,074
+    expect(totals.payloadsBuilt).toBeGreaterThanOrEqual(280); // measured 298
+    expect(totals.pairsDefaultFixed).toBeGreaterThanOrEqual(15_000); // measured 17,117
     /**
      * `pairsBothSilent` is read as an ACCOUNTING IDENTITY rather than a floor:
      * a pair moving between "both arms silent" and "linted" is ordinary (an
@@ -809,8 +809,8 @@ describe('cross-option --fix closure', () => {
      * The two outcomes are pinned in opposite directions for that reason — a
      * floor on the marker surviving, a ceiling on it being lost by both.
      */
-    expect(totals.commentProbesBuilt).toBeGreaterThanOrEqual(5_400); // 6,004
-    expect(totals.commentBothKept).toBeGreaterThanOrEqual(5_400); // 5,988
+    expect(totals.commentProbesBuilt).toBeGreaterThanOrEqual(5_400); // measured 6,006
+    expect(totals.commentBothKept).toBeGreaterThanOrEqual(5_400); // measured 5,990
     expect(totals.commentBothLost).toBeLessThanOrEqual(COMMENT_BOTH_LOST);
     // Payloads the rule's own schema refused, of 298 built. Rejection is
     // correct where a generated payload is not valid for that rule, but the

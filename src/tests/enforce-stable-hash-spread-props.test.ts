@@ -1946,7 +1946,7 @@ const MyComponent = ({ ...restProps }) => {
     // in silence. The three declines are the remainder, and the ceiling on them
     // keeps a regression that declines everything from reading as clean — a
     // fixer that emits nothing satisfies both oracles below perfectly.
-    expect(rewritten.length).toBeGreaterThanOrEqual(15);
+    expect(rewritten.length).toBeGreaterThanOrEqual(15); // measured 16
     expect(results.length - rewritten.length).toBeLessThanOrEqual(3);
     expect(
       results

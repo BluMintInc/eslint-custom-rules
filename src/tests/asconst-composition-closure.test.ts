@@ -621,20 +621,20 @@ console.log(
 describe("a sibling fixer's assertion must not silence a rule", () => {
   it('rewrites enough cases to make a zero mean something', () => {
     expect(corpus.failures).toEqual([]);
-    expect(victims.length).toBeGreaterThan(150);
+    expect(victims.length).toBeGreaterThan(150); // measured 189
     /**
      * The floor sits on cases a culprit ACTUALLY rewrote, not on cases
      * considered. Only a rewrite can produce a finding, so a collapse here —
      * a culprit losing its fixer, say — would make every assertion below pass
      * while examining nothing.
      */
-    expect(casesRewritten).toBeGreaterThan(200);
+    expect(casesRewritten).toBeGreaterThan(1100); // measured 1,296
     /**
      * …and a second floor on the rows that can actually fail. The count above
      * survives intact even if every rewrite piles onto a handful of rules,
      * which is exactly the state in which most per-rule rows go vacuous.
      */
-    expect(drivenVictims.length).toBeGreaterThan(90);
+    expect(drivenVictims.length).toBeGreaterThan(90); // measured 119
   });
 
   /**
@@ -691,7 +691,7 @@ describe("a sibling fixer's assertion must not silence a rule", () => {
 
     // Non-vacuity: a harness that stopped fixing would measure the empty set
     // and quietly agree with an empty CULPRITS.
-    expect(measured.length).toBeGreaterThan(2);
+    expect(measured.length).toBeGreaterThan(2); // measured 5
     expect(measured).toEqual([...CULPRITS].sort());
   });
 

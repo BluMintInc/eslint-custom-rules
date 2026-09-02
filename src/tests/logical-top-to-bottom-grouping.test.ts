@@ -3111,7 +3111,7 @@ function run() {
   const entries = Object.entries(TDZ_PRESSURE_CORPUS);
 
   it('exercises every scope the rule visits', () => {
-    expect(entries.length).toBeGreaterThanOrEqual(12);
+    expect(entries.length).toBeGreaterThanOrEqual(12); // measured 12
   });
 
   it('carries an oracle that fires on the shape the issue reported', () => {
@@ -3132,7 +3132,7 @@ const renderHarness = (harness) => {
     const rewritten = entries.filter(
       ([, code]) => fixJsxToFixpoint(code) !== code,
     );
-    expect(rewritten.length).toBeGreaterThanOrEqual(4);
+    expect(rewritten.length).toBeGreaterThanOrEqual(4); // measured 4
   });
 
   it.each(entries)('leaves %s runnable after --fix', (_name, code) => {

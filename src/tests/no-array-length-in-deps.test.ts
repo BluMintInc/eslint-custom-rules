@@ -2546,7 +2546,7 @@ const C = ({ ${base} }) => {
     expect(fixedCount).toBe(BASES.length);
     // Non-vacuity: the fallback rungs of the ladder must actually be walked,
     // or the suite would pass on a fixer that never changed its naming.
-    expect(fallbackCount).toBeGreaterThanOrEqual(15);
+    expect(fallbackCount).toBeGreaterThanOrEqual(15); // measured 17
   });
 
   it('keeps <base>Hash wherever no-hungarian accepts it', () => {
@@ -2586,8 +2586,8 @@ const C = ({ ${base} }) => {
     }
 
     // Both verdicts must be represented, or the agreement is trivial.
-    expect(rejected).toBeGreaterThanOrEqual(15);
-    expect(accepted).toBeGreaterThanOrEqual(25);
+    expect(rejected).toBeGreaterThanOrEqual(25); // measured 32
+    expect(accepted).toBeGreaterThanOrEqual(25); // measured 28
   });
 });
 

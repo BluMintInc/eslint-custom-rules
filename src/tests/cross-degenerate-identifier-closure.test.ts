@@ -1517,14 +1517,14 @@ beforeAll(() => {
 describe('the cross degenerate-identifier sweep is load-bearing', () => {
   it('harvests a corpus large enough for a zero to mean something', () => {
     expect(corpus.failures).toEqual([]);
-    expect(corpus.filesLoaded).toBeGreaterThan(250);
-    expect(fixSweep.pairing.fixturesScreened).toBeGreaterThan(20000);
+    expect(corpus.filesLoaded).toBeGreaterThan(250); // measured 282
+    expect(fixSweep.pairing.fixturesScreened).toBeGreaterThan(20000); // measured 23,872
   });
 
   it('pairs fixtures with FOREIGN rules, not just their owners', () => {
-    expect(fixSweep.pairing.crossPairs).toBeGreaterThan(2400);
-    expect(fixSweep.pairing.crossFixers.size).toBeGreaterThan(60);
-    expect(fixSweep.pairing.crossOwners.size).toBeGreaterThan(185);
+    expect(fixSweep.pairing.crossPairs).toBeGreaterThan(2400); // measured 2,777
+    expect(fixSweep.pairing.crossFixers.size).toBeGreaterThan(60); // measured 66
+    expect(fixSweep.pairing.crossOwners.size).toBeGreaterThan(185); // measured 192
     // The cross arm must be the BULK of the work, not a rounding error on it.
     expect(fixSweep.pairing.crossPairs).toBeGreaterThan(
       fixSweep.pairing.pairs / 2,
@@ -1562,9 +1562,9 @@ describe('the cross degenerate-identifier sweep is load-bearing', () => {
       fixSweep.pairing.pairs,
     );
     expect(fixSweep.cross.bindings).toBeGreaterThan(11000); // measured 11,817
-    expect(fixSweep.cross.considered).toBeGreaterThan(40000);
-    expect(fixSweep.cross.rewritten).toBeGreaterThan(26000);
-    expect(fixSweep.cross.rulesRewritten.size).toBeGreaterThan(55);
+    expect(fixSweep.cross.considered).toBeGreaterThan(40000); // measured 45,625
+    expect(fixSweep.cross.rewritten).toBeGreaterThan(26000); // measured 30,344
+    expect(fixSweep.cross.rulesRewritten.size).toBeGreaterThan(55); // measured 60
   });
 
   it('drove fixers from every binding shape, not just declarators', () => {
@@ -1576,14 +1576,14 @@ describe('the cross degenerate-identifier sweep is load-bearing', () => {
   });
 
   it('reaches the suggestion channel too, where --fix never looks', () => {
-    expect(suggestionSweep.cross.rewritten).toBeGreaterThan(1100);
-    expect(suggestionSweep.cross.suggestionEdits).toBeGreaterThan(1200);
-    expect(suggestionSweep.cross.rulesRewritten.size).toBeGreaterThan(4);
+    expect(suggestionSweep.cross.rewritten).toBeGreaterThan(1100); // measured 1,240
+    expect(suggestionSweep.cross.suggestionEdits).toBeGreaterThan(1200); // measured 1,328
+    expect(suggestionSweep.cross.rulesRewritten.size).toBeGreaterThan(4); // measured 5
   });
 
   it('keeps the own-corpus control alive as a harness check', () => {
-    expect(fixSweep.own.rewritten).toBeGreaterThan(2000);
-    expect(fixSweep.own.rulesRewritten.size).toBeGreaterThan(65);
+    expect(fixSweep.own.rewritten).toBeGreaterThan(2000); // measured 2,478
+    expect(fixSweep.own.rulesRewritten.size).toBeGreaterThan(65); // measured 73
   });
 
   it('accounts for every case it does NOT judge', () => {
@@ -1667,10 +1667,10 @@ describe('the cross degenerate-identifier LITERAL arm is load-bearing', () => {
    * against an actual 8,141.
    */
   it('pairs string literals with FOREIGN rules, not just their owners', () => {
-    expect(fixSweep.pairing.literalCrossPairs).toBeGreaterThanOrEqual(1900);
-    expect(fixSweep.pairing.literalCrossFixers.size).toBeGreaterThanOrEqual(55);
+    expect(fixSweep.pairing.literalCrossPairs).toBeGreaterThanOrEqual(1900); // measured 2,073
+    expect(fixSweep.pairing.literalCrossFixers.size).toBeGreaterThanOrEqual(55); // measured 61
     expect(fixSweep.pairing.literalCrossOwners.size).toBeGreaterThanOrEqual(
-      175,
+      175, // measured 190
     );
     // The cross arm must dominate the own arm, or this file is re-running the
     // shipped guard's coverage under a new name.
@@ -1680,13 +1680,13 @@ describe('the cross degenerate-identifier LITERAL arm is load-bearing', () => {
   });
 
   it('actually drove foreign fixers with degenerate literals', () => {
-    expect(fixSweep.literalCross.considered).toBeGreaterThanOrEqual(9500);
-    expect(fixSweep.literalCross.rewritten).toBeGreaterThanOrEqual(5500);
+    expect(fixSweep.literalCross.considered).toBeGreaterThanOrEqual(9500); // measured 10,095
+    expect(fixSweep.literalCross.rewritten).toBeGreaterThanOrEqual(5500); // measured 6,043
     expect(fixSweep.literalCross.rulesConsidered.size).toBeGreaterThanOrEqual(
-      57,
+      57, // measured 61
     );
     expect(fixSweep.literalCross.rulesRewritten.size).toBeGreaterThanOrEqual(
-      50,
+      50, // measured 55
     );
   });
 
@@ -1699,23 +1699,23 @@ describe('the cross degenerate-identifier LITERAL arm is load-bearing', () => {
    */
   it('reaches fixers that DERIVE a name from the literal', () => {
     expect(fixSweep.literalCross.derivationsObserved).toBeGreaterThanOrEqual(
-      1150,
+      1150, // measured 1,290
     );
-    expect(fixSweep.literalCross.rulesDeriving.size).toBeGreaterThanOrEqual(26);
+    expect(fixSweep.literalCross.rulesDeriving.size).toBeGreaterThanOrEqual(26); // measured 29
   });
 
   it('reaches the suggestion channel too, where --fix never looks', () => {
     expect(suggestionSweep.pairing.literalCrossPairs).toBeGreaterThanOrEqual(
-      150,
+      150, // measured 170
     );
-    expect(suggestionSweep.literalCross.considered).toBeGreaterThanOrEqual(800);
-    expect(suggestionSweep.literalCross.rewritten).toBeGreaterThanOrEqual(220);
+    expect(suggestionSweep.literalCross.considered).toBeGreaterThanOrEqual(800); // measured 904
+    expect(suggestionSweep.literalCross.rewritten).toBeGreaterThanOrEqual(220); // measured 255
     expect(
       suggestionSweep.literalCross.derivationsObserved,
-    ).toBeGreaterThanOrEqual(20);
+    ).toBeGreaterThanOrEqual(20); // measured 23
     expect(
       suggestionSweep.literalCross.rulesDeriving.size,
-    ).toBeGreaterThanOrEqual(2);
+    ).toBeGreaterThanOrEqual(2); // measured 2
   });
 
   /**
@@ -1725,9 +1725,9 @@ describe('the cross degenerate-identifier LITERAL arm is load-bearing', () => {
    * corpus is clean.
    */
   it('keeps the own-corpus literal control alive as a harness check', () => {
-    expect(fixSweep.literalOwn.considered).toBeGreaterThanOrEqual(900);
-    expect(fixSweep.literalOwn.derivationsObserved).toBeGreaterThanOrEqual(90);
-    expect(fixSweep.literalOwn.rulesDeriving.size).toBeGreaterThanOrEqual(28);
+    expect(fixSweep.literalOwn.considered).toBeGreaterThanOrEqual(900); // measured 980
+    expect(fixSweep.literalOwn.derivationsObserved).toBeGreaterThanOrEqual(90); // measured 103
+    expect(fixSweep.literalOwn.rulesDeriving.size).toBeGreaterThanOrEqual(28); // measured 31
   });
 
   it('accounts for every literal case it does NOT judge', () => {
@@ -1747,7 +1747,7 @@ describe('the cross degenerate-identifier LITERAL arm is load-bearing', () => {
       expect(totals.discardedUnparsable).toBe(0);
     }
     // What the two caps drop, carried rather than left implicit.
-    expect(fixSweep.pairing.fixturesWithLiteral).toBeGreaterThanOrEqual(11000);
+    expect(fixSweep.pairing.fixturesWithLiteral).toBeGreaterThanOrEqual(11000); // measured 12,106
     expect(fixSweep.pairing.fixturesWithoutLiteral).toBeGreaterThan(0);
     expect(fixSweep.pairing.literalCappedPairs).toBeGreaterThan(0);
     /**

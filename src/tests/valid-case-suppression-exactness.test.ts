@@ -86,13 +86,13 @@ describe('valid-case suppression allowances', () => {
   it('measures a corpus large enough to mean anything', () => {
     // 338 suites and 10 allowance entries at the time of writing; a harvest
     // that collapsed would satisfy both closures above with zeroes.
-    expect(harvested.suites.length).toBeGreaterThan(300);
+    expect(harvested.suites.length).toBeGreaterThan(300); // measured 372
     expect(
       Object.keys(CASES_ALLOWED_TO_SUPPRESS).length,
-    ).toBeGreaterThanOrEqual(10);
+    ).toBeGreaterThanOrEqual(10); // measured 10
     expect(
       [...suppressedByRunName.values()].reduce((a, b) => a + b, 0),
-    ).toBeGreaterThanOrEqual(21);
+    ).toBeGreaterThanOrEqual(21); // measured 21
   });
 
   it('detects a suppressed case (positive control) and a clean one (negative)', () => {

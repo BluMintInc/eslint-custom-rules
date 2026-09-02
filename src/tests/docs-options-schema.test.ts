@@ -368,7 +368,7 @@ describe('every rule is reachable by the docs guards', () => {
 
 describe('documented rule options', () => {
   it('finds rule docs to check', () => {
-    expect(ruleNames.length).toBeGreaterThan(150);
+    expect(ruleNames.length).toBeGreaterThan(150); // measured 194
   });
 
   it('can enumerate the option names of every optioned rule', () => {

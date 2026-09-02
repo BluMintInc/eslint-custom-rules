@@ -1036,23 +1036,23 @@ console.log(
 // corpus collapse — the floors that hid #1984 sat at 5,500 against an 8,141.
 // ---------------------------------------------------------------------------
 
-const FIXTURE_FLOOR = 20200;
-const PAIR_FLOOR = 72000;
-const CROSS_PAIR_FLOOR = 52000;
-const OWNER_FLOOR = 190;
-const CONTROL_REPORTING_FLOOR = 60500;
-const CROSS_CONTROL_REPORTING_FLOOR = 52000;
+const FIXTURE_FLOOR = 20200; // measured 23,872
+const PAIR_FLOOR = 72000; // measured 84,757
+const CROSS_PAIR_FLOOR = 52000; // measured 60,885
+const OWNER_FLOOR = 190; // measured 192
+const CONTROL_REPORTING_FLOOR = 60500; // measured 71,134
+const CROSS_CONTROL_REPORTING_FLOOR = 52000; // measured 60,885
 const CANDIDATE_FIXTURE_FLOOR = 50000; // measured 54646
-const PERTURBATION_FLOOR = 137000;
-const CROSS_PERTURBATION_FLOOR = 103000;
-const REWRITE_FLOOR = 26500;
-const CROSS_REWRITE_FLOOR = 20000;
-const MEASURED_FLOOR = 26300;
-const CROSS_MEASURED_FLOOR = 20000;
-const DECLINE_FLOOR = 41800;
-const CROSS_DECLINE_FLOOR = 39300;
-const FIXER_FLOOR = 80;
-const CROSS_FIXER_FLOOR = 57;
+const PERTURBATION_FLOOR = 137000; // measured 159,492
+const CROSS_PERTURBATION_FLOOR = 103000; // measured 119,630
+const REWRITE_FLOOR = 26500; // measured 31,185
+const CROSS_REWRITE_FLOOR = 20000; // measured 22,811
+const MEASURED_FLOOR = 26300; // measured 30,865
+const CROSS_MEASURED_FLOOR = 20000; // measured 22,811
+const DECLINE_FLOOR = 41800; // measured 49,097
+const CROSS_DECLINE_FLOOR = 39300; // measured 46,163
+const FIXER_FLOOR = 80; // measured 81
+const CROSS_FIXER_FLOOR = 57; // measured 58
 
 const SCREEN_FATAL_CEILING = 0;
 const SCREEN_THREW_CEILING = 0;
@@ -1100,7 +1100,7 @@ export const CROSS_MULTI_DECLARATOR_BASELINE: Record<string, string> = {};
 describe('the cross multi-declarator sweep is load-bearing', () => {
   it('harvests a corpus large enough for a zero to mean something', () => {
     expect(corpus.failures).toEqual([]);
-    expect(subjects.length).toBeGreaterThan(150);
+    expect(subjects.length).toBeGreaterThan(150); // measured 194
     expect(stats.fixtures).toBeGreaterThanOrEqual(FIXTURE_FLOOR);
     expect(stats.owners.size).toBeGreaterThanOrEqual(OWNER_FLOOR);
   });
@@ -1218,7 +1218,7 @@ describe('the cross multi-declarator sweep is load-bearing', () => {
     expect(stats.nonTs).toBe(nonTsAvailable);
     // Floored so the equality cannot be satisfied by a corpus that stopped
     // carrying non-TypeScript fixtures at all.
-    expect(stats.nonTs).toBeGreaterThanOrEqual(100);
+    expect(stats.nonTs).toBeGreaterThanOrEqual(100); // measured 108
     // Nothing is lost between the walk and the two buckets.
     expect(stats.fixtures + stats.nonTs).toBe(corpus.totalCases);
   });

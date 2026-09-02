@@ -3047,10 +3047,10 @@ describe('no-unnecessary-verb-suffix across member spellings', () => {
     // everything.
     const counts = Object.values(SPELLINGS).map((entry) => entry.reports);
     expect(counts.filter((count) => count > 0).length).toBeGreaterThanOrEqual(
-      4,
+      4, // measured 4
     );
     expect(counts.filter((count) => count === 0).length).toBeGreaterThanOrEqual(
-      4,
+      4, // measured 5
     );
   });
 });

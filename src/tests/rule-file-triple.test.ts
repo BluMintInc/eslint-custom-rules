@@ -74,7 +74,7 @@ describe('rule file triple', () => {
   // A registry that silently parses to nothing would make every assertion below
   // pass over an empty list, so prove the set is real before trusting it.
   it('parses a non-trivial rule registry', () => {
-    expect(RULE_NAMES.length).toBeGreaterThan(150);
+    expect(RULE_NAMES.length).toBeGreaterThan(150); // measured 194
     expect(new Set(RULE_NAMES).size).toBe(RULE_NAMES.length);
   });
 

@@ -1217,8 +1217,8 @@ describe('the multi-declarator probe is load-bearing', () => {
     // parked far below it: at 4,000 five sixths of the corpus could vanish while
     // this read healthy, which is more slack than the entire loss the guard
     // exists to notice — the floors that hid #1984 were only 1.5x out.
-    expect(corpus.totalCases).toBeGreaterThan(21000);
-    expect(totals.fixturesConsidered).toBeGreaterThan(21000);
+    expect(corpus.totalCases).toBeGreaterThan(21000); // measured 23,980
+    expect(totals.fixturesConsidered).toBeGreaterThan(21000); // measured 23,872
 
     // The language skip, asserted rather than merely printed into the summary
     // below (#2225). Pinned to the corpus property it is supposed to equal, not
@@ -1239,14 +1239,14 @@ describe('the multi-declarator probe is load-bearing', () => {
     expect(nonTypeScriptSkipped).toBe(nonTypeScriptAvailable);
     // 108 when measured. Floored so the equality above cannot be satisfied by
     // a corpus that stopped carrying non-TypeScript fixtures altogether.
-    expect(nonTypeScriptSkipped).toBeGreaterThanOrEqual(100);
+    expect(nonTypeScriptSkipped).toBeGreaterThanOrEqual(100); // measured 108
   });
 
   it('actually perturbs, across most of the rule set', () => {
     // 39,806 measured; the 3,000 this replaces tolerated a 92% collapse. The
     // other two sat in that same state: 1,500 against 14,044 fixtures with a
     // candidate, and 120 against 184 rules reached.
-    expect(totals.perturbationsEmitted).toBeGreaterThan(35000);
+    expect(totals.perturbationsEmitted).toBeGreaterThan(35000); // measured 39,862
     expect(totals.fixturesWithCandidates).toBeGreaterThan(13800); // measured 14,044
     expect(rulesExercised.size).toBeGreaterThan(180); // measured 184
     expect(skipped.variantUnparseable).toBeLessThan(

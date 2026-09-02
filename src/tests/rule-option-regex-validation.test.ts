@@ -380,7 +380,7 @@ describe('rule option regex validation', () => {
     ]);
     // The population that genuinely never compiles, floored so a harness that
     // stops reaching any rule cannot read as a clean sweep.
-    expect(tolerated.length).toBeGreaterThanOrEqual(280);
+    expect(tolerated.length).toBeGreaterThanOrEqual(280); // measured 304
   });
 
   /**

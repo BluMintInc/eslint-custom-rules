@@ -375,7 +375,7 @@ export function verdictFor(
  * so a broken extractor — which would make every assertion below vacuously
  * pass — fails loudly instead.
  */
-const MIN_ASSERTED_SPANS = 5;
+const MIN_ASSERTED_SPANS = 5; // measured 6
 
 /**
  * The exact `(filename, variant)` a verdict was decided at.
@@ -500,7 +500,7 @@ export function remedyVerdictFor(
  * count would let the asserted population fall to zero while the guard stayed
  * green.
  */
-const MIN_ASSERTED_REMEDIES = 12;
+const MIN_ASSERTED_REMEDIES = 12; // measured 14
 
 /**
  * The same floor over spans whose rule was MEASURED reachable at the filename
@@ -508,7 +508,7 @@ const MIN_ASSERTED_REMEDIES = 12;
  * that unhooks a rule from the probe fails here rather than sliding by on
  * unearned silence.
  */
-const MIN_EARNED_REMEDIES = 13;
+const MIN_EARNED_REMEDIES = 13; // measured 14
 
 /** Human-readable form of the site a verdict was decided at. */
 function describeSite(site: ProbeSite | undefined): string {
@@ -885,7 +885,7 @@ describe('the harness itself (controls)', () => {
     // A corpus that silently harvested nothing would make the oracle answer
     // `false` everywhere, which reads as "every rule is unreachable" rather
     // than as the broken harvest it is (#1984).
-    expect(invalidFixturesByRule.size).toBeGreaterThanOrEqual(150);
+    expect(invalidFixturesByRule.size).toBeGreaterThanOrEqual(150); // measured 194
     expect(
       (invalidFixturesByRule.get('enforce-callable-types') ?? []).length,
     ).toBeGreaterThan(0);

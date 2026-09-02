@@ -2203,13 +2203,13 @@ describe('fixers must not emit a reference an inner shadow captures', () => {
    * pass.
    */
   it('exercises a meaningful number of transforming rules', () => {
-    expect(transformingRules.length).toBeGreaterThan(80);
+    expect(transformingRules.length).toBeGreaterThan(80); // measured 90
     // Exact, not a floor: every unprobed rule is named below with the reason
     // the run produced for it, so slack here would only hide a rule going dark.
     expect(rulesProbed).toBe(
       transformingRules.length - Object.keys(UNPROBED_RULES).length,
     );
-    expect(totalProbed).toBeGreaterThanOrEqual(1300);
+    expect(totalProbed).toBeGreaterThanOrEqual(1300); // measured 1,455
     expect(corpus.failures).toEqual([]);
   });
 
@@ -2237,14 +2237,14 @@ describe('fixers must not emit a reference an inner shadow captures', () => {
       valueTotals.fixingUnderShadow + valueTotals.declinedUnderShadow,
     ).toBe(valueTotals.probed);
 
-    expect(totalTriggers).toBeGreaterThanOrEqual(1520);
-    expect(valueTotals.considered).toBeGreaterThanOrEqual(1470);
-    expect(valueTotals.duplicates).toBeGreaterThanOrEqual(40);
+    expect(totalTriggers).toBeGreaterThanOrEqual(1520); // measured 1,582
+    expect(valueTotals.considered).toBeGreaterThanOrEqual(1470); // measured 1,534
+    expect(valueTotals.duplicates).toBeGreaterThanOrEqual(40); // measured 48
 
     // The floor that measures fixer outputs examined rather than injections
     // landed. It is the number the per-rule assertions below actually rest on.
-    expect(valueTotals.examinedFixes).toBeGreaterThanOrEqual(160);
-    expect(valueTotals.fixingUnderShadow).toBeGreaterThanOrEqual(146);
+    expect(valueTotals.examinedFixes).toBeGreaterThanOrEqual(160); // measured 167
+    expect(valueTotals.fixingUnderShadow).toBeGreaterThanOrEqual(146); // measured 153
 
     // Channels measured at zero, pinned there. A patch that stops parsing or an
     // injection that stops verifying abandons the capture check silently, and
@@ -2259,13 +2259,13 @@ describe('fixers must not emit a reference an inner shadow captures', () => {
     // every one of them. The rescue floor beside it is what keeps this zero
     // from reading as "the differential never fires".
     expect(valueTotals.droppedInvalid).toBe(0);
-    expect(valueTotals.rescuedByAlternateShadow).toBeGreaterThanOrEqual(80);
+    expect(valueTotals.rescuedByAlternateShadow).toBeGreaterThanOrEqual(80); // measured 84
 
     // Channels measured firing. A control that never drops anything is
     // indistinguishable from an absent one.
-    expect(valueTotals.shadowNeverLanded).toBeGreaterThanOrEqual(66);
-    expect(valueTotals.silentUnderShadow).toBeGreaterThanOrEqual(1);
-    expect(valueTotals.droppedReportOnInjection).toBeGreaterThanOrEqual(1);
+    expect(valueTotals.shadowNeverLanded).toBeGreaterThanOrEqual(66); // measured 69
+    expect(valueTotals.silentUnderShadow).toBeGreaterThanOrEqual(1); // measured 9
+    expect(valueTotals.droppedReportOnInjection).toBeGreaterThanOrEqual(1); // measured 1
   });
 
   /**
@@ -2279,7 +2279,7 @@ describe('fixers must not emit a reference an inner shadow captures', () => {
   it('names the probed rules that answer only by declining', () => {
     expect(declineOnlyRules).toEqual(DECLINE_ONLY_RULES);
     expect(rulesExamining).toBe(rulesProbed - DECLINE_ONLY_RULES.length);
-    expect(rulesExamining).toBeGreaterThanOrEqual(13);
+    expect(rulesExamining).toBeGreaterThanOrEqual(13); // measured 14
   });
 
   /**
@@ -2323,7 +2323,7 @@ describe('fixers must not emit a reference an inner shadow captures', () => {
    * to be the first kind — enclosed rose off 0 while actionable rose too.
    */
   it('the nesting perturbation reaches a shadow it could not reach flat', () => {
-    expect(nestedTotals.rules).toBeGreaterThanOrEqual(18);
+    expect(nestedTotals.rules).toBeGreaterThanOrEqual(18); // measured 18
     /**
      * The population every count below is carved out of, ASSERTED rather than
      * merely accumulated. `wrappable`, `neutral` and each dropped bucket are
@@ -2338,19 +2338,19 @@ describe('fixers must not emit a reference an inner shadow captures', () => {
     expect(nestedTotals.reporting).toBeGreaterThanOrEqual(
       nestedTotals.neutral + nestedTotals.dropped,
     );
-    expect(nestedTotals.enclosureGained).toBeGreaterThanOrEqual(10);
-    expect(nestedTotals.probedRules).toBeGreaterThanOrEqual(3);
-    expect(nestedTotals.neutral).toBeGreaterThanOrEqual(1070);
+    expect(nestedTotals.enclosureGained).toBeGreaterThanOrEqual(10); // measured 10
+    expect(nestedTotals.probedRules).toBeGreaterThanOrEqual(3); // measured 3
+    expect(nestedTotals.neutral).toBeGreaterThanOrEqual(1070); // measured 1,122
     // An unvalidatable variant is not a valid one. Both zeros are trustworthy
     // only because the counter sits at its own skip rather than downstream.
     expect(validationErrors).toBe(0);
     expect(nestedTotals.droppedUnvalidatable).toBe(0);
     // Every gate must be observed removing something: a control that never
     // drops anything is indistinguishable from an absent one.
-    expect(nestedTotals.droppedByExportStrip).toBeGreaterThanOrEqual(23);
-    expect(nestedTotals.droppedByWrap).toBeGreaterThanOrEqual(262);
-    expect(nestedTotals.droppedReportOnWrapper).toBeGreaterThanOrEqual(98);
-    expect(nestedTotals.droppedInvalid).toBeGreaterThanOrEqual(6);
+    expect(nestedTotals.droppedByExportStrip).toBeGreaterThanOrEqual(23); // measured 24
+    expect(nestedTotals.droppedByWrap).toBeGreaterThanOrEqual(262); // measured 273
+    expect(nestedTotals.droppedReportOnWrapper).toBeGreaterThanOrEqual(98); // measured 103
+    expect(nestedTotals.droppedInvalid).toBeGreaterThanOrEqual(6); // measured 6
   });
 
   /**
@@ -2366,9 +2366,9 @@ describe('fixers must not emit a reference an inner shadow captures', () => {
    */
   it('keeps both neutrality gates load-bearing, not just the multiset one', () => {
     const { byVariant } = results.get('global-const-style')!.nested!;
-    expect(byVariant.arrow.droppedByWrap).toBeGreaterThanOrEqual(65);
+    expect(byVariant.arrow.droppedByWrap).toBeGreaterThanOrEqual(65); // measured 122
     expect(byVariant.arrow.droppedReportOnWrapper).toBe(0);
-    expect(byVariant.class.droppedReportOnWrapper).toBeGreaterThanOrEqual(40);
+    expect(byVariant.class.droppedReportOnWrapper).toBeGreaterThanOrEqual(40); // measured 69
     // Neither variant may leave it a usable fixture; a single survivor here
     // would be one the probe had silently swapped the subject of.
     expect(byVariant.arrow.neutral).toBe(0);
@@ -2418,9 +2418,9 @@ describe('fixers must not print a type name an inner type alias captures', () =>
     expect([...typeArmResults.keys()].sort()).toEqual([
       'prefer-map-over-conditional-dispatch',
     ]);
-    expect(typeArmSum((a) => a.sites)).toBeGreaterThanOrEqual(140);
-    expect(typeArmSum((a) => a.enclosed)).toBeGreaterThanOrEqual(138);
-    expect(typeArmSum((a) => a.probed)).toBeGreaterThanOrEqual(132);
+    expect(typeArmSum((a) => a.sites)).toBeGreaterThanOrEqual(140); // measured 146
+    expect(typeArmSum((a) => a.enclosed)).toBeGreaterThanOrEqual(138); // measured 143
+    expect(typeArmSum((a) => a.probed)).toBeGreaterThanOrEqual(132); // measured 137
     expect(typeArmSum((a) => a.droppedUnparsable)).toBe(0);
     expect(typeArmSum((a) => a.droppedShadowNeverLanded)).toBe(0);
     expect(typeArmSum((a) => a.droppedReportOnInjection)).toBe(0);
@@ -2887,10 +2887,10 @@ describe('the shadow-capture detector is load-bearing', () => {
    */
   it('carries options and filenames from the fixtures themselves', () => {
     const cases = [...corpus.byRule.values()].flat();
-    expect(cases.filter((c) => c.options).length).toBeGreaterThanOrEqual(702);
-    expect(cases.filter((c) => c.filename).length).toBeGreaterThanOrEqual(3690);
+    expect(cases.filter((c) => c.options).length).toBeGreaterThanOrEqual(702); // measured 784
+    expect(cases.filter((c) => c.filename).length).toBeGreaterThanOrEqual(3690); // measured 4,131
     expect(
       (corpus.byRule.get('no-usememo-for-pass-by-value') || []).length,
-    ).toBeGreaterThanOrEqual(198);
+    ).toBeGreaterThanOrEqual(198); // measured 220
   });
 });

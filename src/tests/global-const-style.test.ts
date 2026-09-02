@@ -2453,7 +2453,7 @@ describe('global-const-style as-const width carve-outs (Issue #2126)', () => {
     // Non-vacuity: each input must overflow the print width once the nine
     // columns are appended, otherwise the carve-out is never the reason the
     // declaration stays flat and the case guards nothing.
-    expect(expected.split('\n')[0].length).toBeGreaterThan(80);
+    expect(expected.split('\n')[0].length).toBeGreaterThan(80); // measured 81 (per-iteration floor; min of 4 observed values: 81,83,87,89)
 
     expect(fixWith(code)).toBe(expected);
   });

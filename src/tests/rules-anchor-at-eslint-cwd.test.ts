@@ -35,7 +35,7 @@ const RULES_DIR = path.join(__dirname, '..', 'rules');
 
 // The repo ships ~194 rules. A scan that visits far fewer files has silently
 // stopped finding them and would pass vacuously.
-const MIN_RULE_FILES_SCANNED = 150;
+const MIN_RULE_FILES_SCANNED = 150; // measured 194
 
 /**
  * Rules whose sanctioned fallback shape anchors this guard: if the matcher ever

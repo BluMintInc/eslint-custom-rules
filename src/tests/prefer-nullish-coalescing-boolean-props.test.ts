@@ -2547,7 +2547,7 @@ describe('prefer-nullish-coalescing-boolean-props: a broken chain is a prettier 
   });
 
   it('measures more than a handful of shapes', () => {
-    expect(LANDING_CASES.length).toBeGreaterThanOrEqual(12);
+    expect(LANDING_CASES.length).toBeGreaterThanOrEqual(12); // measured 12
   });
 
   // Planted positive control: the verbatim emission of the pre-fix fixer. Both
@@ -2706,7 +2706,7 @@ describe('prefer-nullish-coalescing-boolean-props: chain depth and gap breaks ar
   });
 
   it('covers both indentation directions and more than a handful of shapes', () => {
-    expect(DEPTH_CASES.length).toBeGreaterThanOrEqual(12);
+    expect(DEPTH_CASES.length).toBeGreaterThanOrEqual(12); // measured 12
     const tailDeeper = DEPTH_CASES.filter(([, expected]) =>
       /\n {4}secondary\.id|\n {6}secondary\.id|\n {4}[bdyz] \?\?|\n {4}[dz],/.test(
         expected,
@@ -2717,8 +2717,8 @@ describe('prefer-nullish-coalescing-boolean-props: chain depth and gap breaks ar
         expected,
       ),
     );
-    expect(tailDeeper.length).toBeGreaterThanOrEqual(4);
-    expect(tailFlush.length).toBeGreaterThanOrEqual(4);
+    expect(tailDeeper.length).toBeGreaterThanOrEqual(4); // measured 6
+    expect(tailFlush.length).toBeGreaterThanOrEqual(4); // measured 4
   });
 
   // Planted positive controls: the verbatim emissions of the pre-fix fixer. Each

@@ -906,7 +906,7 @@ describe('the CJS emission guard is load-bearing', () => {
     expect(harvested.filesLoaded).toBeGreaterThanOrEqual(275); // measured 282
     // Measured: 189 rules compose. At the >100 this replaced, 89 could fall
     // out of the composed --fix while the suite stayed green.
-    expect(Object.keys(FIX_CONFIG).length).toBeGreaterThanOrEqual(187);
+    expect(Object.keys(FIX_CONFIG).length).toBeGreaterThanOrEqual(187); // measured 189
     // The type-aware rules this guard once dropped for no stated reason must
     // now compose like any other, or the coverage the lift bought is silently
     // handed back. All 16 ship in recommended: `enforce-date-ttime` through an
@@ -938,14 +938,14 @@ describe('the CJS emission guard is load-bearing', () => {
     // rules. The floors sit just under that rather than far below it — slack
     // between a floor and its measurement is room for exactly the corpus loss
     // this guard exists to notice.
-    expect(outputStats.casesConsidered).toBeGreaterThanOrEqual(10000);
-    expect(outputStats.outputsAnalyzed).toBeGreaterThanOrEqual(4800);
+    expect(outputStats.casesConsidered).toBeGreaterThanOrEqual(10000); // measured 10,207
+    expect(outputStats.outputsAnalyzed).toBeGreaterThanOrEqual(4800); // measured 4,952
     expect(outputStats.rulesWithOutput.size).toBeGreaterThanOrEqual(83); // measured 84
     // Declared SUGGESTION outputs are their own population, measured at 160
     // across 6 rules, and were read by nothing before #1733.
-    expect(outputStats.suggestionOutputsAnalyzed).toBeGreaterThanOrEqual(155);
+    expect(outputStats.suggestionOutputsAnalyzed).toBeGreaterThanOrEqual(155); // measured 160
     expect(outputStats.rulesWithSuggestionOutput.size).toBeGreaterThanOrEqual(
-      6,
+      6, // measured 6
     );
   });
 
@@ -1052,8 +1052,8 @@ describe('the CJS emission guard is load-bearing', () => {
     ]);
     // Measured: 7 JSON and 76 Markdown fixtures reach the filter, and none
     // mentions `import` or `await`, so corpus B carries TypeScript alone.
-    expect(composedSeen.json).toBeGreaterThanOrEqual(7);
-    expect(composedSeen.markdown).toBeGreaterThanOrEqual(70);
+    expect(composedSeen.json).toBeGreaterThanOrEqual(7); // measured 7
+    expect(composedSeen.markdown).toBeGreaterThanOrEqual(70); // measured 76
     // Nothing is lost between collection and linting.
     expect(
       Object.values(composedCarried).reduce((sum, count) => sum + count, 0),
@@ -1067,7 +1067,7 @@ describe('the CJS emission guard is load-bearing', () => {
    * state #1733 records for all seven of them.
    */
   it('accepts at least one suggestion from every suggestion-bearing rule', () => {
-    expect(suggestionRuleNames.length).toBeGreaterThanOrEqual(7);
+    expect(suggestionRuleNames.length).toBeGreaterThanOrEqual(7); // measured 7
     expect(
       Object.fromEntries(
         suggestionRuleNames.map((rule) => [
@@ -1094,7 +1094,7 @@ describe('the CJS emission guard is load-bearing', () => {
     // Measured: 368 applied. The floor sits just under it, and the skip
     // ledger pinned at zero above closes the headroom a dropped fixture
     // would otherwise hide in.
-    expect(totalSuggestionsApplied).toBeGreaterThanOrEqual(360);
+    expect(totalSuggestionsApplied).toBeGreaterThanOrEqual(360); // measured 368
   });
 
   it('detects a module-scope await inside a SUGGESTION (positive control)', () => {
@@ -1143,8 +1143,8 @@ describe('the CJS emission guard is load-bearing', () => {
     // Measured: 5,801 considered and 3,177 rewritten. Slack between a floor and
     // its measurement is room to absorb the corpus loss this guard exists to
     // notice, so each sits just under.
-    expect(composedStats.considered).toBeGreaterThanOrEqual(5600);
-    expect(composedStats.rewritten).toBeGreaterThanOrEqual(3050);
+    expect(composedStats.considered).toBeGreaterThanOrEqual(5600); // measured 5,823
+    expect(composedStats.rewritten).toBeGreaterThanOrEqual(3050); // measured 3,185
   });
 
   it('detects a module-scope await (positive control)', () => {

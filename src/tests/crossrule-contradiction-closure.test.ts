@@ -1454,11 +1454,11 @@ describe('exempted pairs converge under the composed --fix', () => {
     // probe count with nothing rewritten means the fix pass never ran (the
     // options or parser plumbing lost), and a pair count without probes means
     // the divergence scan collapsed.
-    expect(convergenceStats.probes).toBeGreaterThanOrEqual(950);
-    expect(convergenceStats.rewritten).toBeGreaterThanOrEqual(760);
-    expect(convergenceStats.pairs.size).toBeGreaterThanOrEqual(64);
-    expect(byVerdict.CONVERGED).toBeGreaterThanOrEqual(750);
-    expect(byVerdict['NO-OP']).toBeGreaterThanOrEqual(190);
+    expect(convergenceStats.probes).toBeGreaterThanOrEqual(950); // measured 1,036
+    expect(convergenceStats.rewritten).toBeGreaterThanOrEqual(760); // measured 807
+    expect(convergenceStats.pairs.size).toBeGreaterThanOrEqual(64); // measured 69
+    expect(byVerdict.CONVERGED).toBeGreaterThanOrEqual(750); // measured 792
+    expect(byVerdict['NO-OP']).toBeGreaterThanOrEqual(190); // measured 244
     // A fixer that produced unparsable text would leave a fatal carrying no
     // `ruleId`, which the residual filter drops — i.e. it would read as
     // CONVERGED. Asserted rather than counted.
@@ -1655,14 +1655,14 @@ describe('the cross-rule contradiction guard is load-bearing', () => {
     // 177 pairs over 8,383 cases from 80 owners at the time of writing. Each
     // floor is separate: a high pair count over a collapsed corpus, or a large
     // corpus that reaches few owners, would each read as health.
-    expect(stats.pairsChecked).toBeGreaterThanOrEqual(170);
-    expect(stats.ownersWithCases.size).toBeGreaterThanOrEqual(76);
-    expect(stats.casesConsidered).toBeGreaterThanOrEqual(8100);
+    expect(stats.pairsChecked).toBeGreaterThanOrEqual(170); // measured 186
+    expect(stats.ownersWithCases.size).toBeGreaterThanOrEqual(76); // measured 82
+    expect(stats.casesConsidered).toBeGreaterThanOrEqual(8100); // measured 8,524
     expect(corpus.failures).toEqual([]);
     // And enough DISTINCT sibling rules must actually have spoken (28). A
     // corpus that reaches every owner but trips two chatty reporters would
     // clear every floor above while saying nothing about the other 23.
-    expect(stats.reportersHeardFrom.size).toBeGreaterThanOrEqual(26);
+    expect(stats.reportersHeardFrom.size).toBeGreaterThanOrEqual(26); // measured 30
   });
 
   /**
@@ -1673,7 +1673,7 @@ describe('the cross-rule contradiction guard is load-bearing', () => {
    */
   it('accounts for every documented pair: examined, or named with its cause', () => {
     expect(measuredUnexamined).toEqual(UNEXAMINED_PAIRS);
-    expect(documentedPairs.length).toBeGreaterThanOrEqual(172);
+    expect(documentedPairs.length).toBeGreaterThanOrEqual(172); // measured 190
     expect(
       Object.values(UNEXAMINED_PAIRS).filter(
         (cause) => !UNEXAMINED_CAUSES[cause],
@@ -1704,7 +1704,7 @@ describe('the cross-rule contradiction guard is load-bearing', () => {
    */
   it('considers every blessed fixture of every scanned owner', () => {
     expect(stats.casesConsidered).toBe(expectedCasesConsidered);
-    expect(expectedCasesConsidered).toBeGreaterThanOrEqual(8100);
+    expect(expectedCasesConsidered).toBeGreaterThanOrEqual(8100); // measured 8,524
   });
 
   it('keeps every valid fixture silent under its own rule', () => {

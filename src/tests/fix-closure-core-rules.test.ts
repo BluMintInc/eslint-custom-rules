@@ -235,14 +235,14 @@ describe('the recommended config is closed under its own autofixes (core rules)'
   it('exercises a non-trivial rule set', () => {
     // Guards against the config silently emptying (e.g. a rename of the plugin
     // prefix), which would make every fixture pass vacuously.
-    expect(Object.keys(RECOMMENDED).length).toBeGreaterThan(100);
+    expect(Object.keys(RECOMMENDED).length).toBeGreaterThan(100); // measured 189
     // The type-aware rules this guard once dropped wholesale must be COMPOSED,
     // not skipped — only the one measured divergence is discounted. Asserting
     // their presence is what stops the blanket exclusion returning silently.
     const typeAwareInConfig = [...typeAwareRuleNames].filter(
       (name) => PREFIX + name in plugin.configs.recommended.rules,
     );
-    expect(typeAwareInConfig.length).toBeGreaterThan(5);
+    expect(typeAwareInConfig.length).toBeGreaterThan(13); // measured 15
     expect(
       typeAwareInConfig.filter(
         (name) =>

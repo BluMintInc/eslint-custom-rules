@@ -740,13 +740,13 @@ describe(`${RULE_NAME} directive spellings match ESLint's own`, () => {
   // to have seen the sibling actually fire and actually go quiet.
   it('exercises both verdicts on a non-degenerate corpus', () => {
     expect(cases.filter((testCase) => testCase.bypass).length).toBeGreaterThan(
-      5,
+      5, // measured 8
     );
     expect(cases.filter((testCase) => !testCase.bypass).length).toBeGreaterThan(
-      5,
+      5, // measured 10
     );
-    expect(counters.silenced).toBeGreaterThan(5);
-    expect(counters.reported).toBeGreaterThan(5);
+    expect(counters.silenced).toBeGreaterThan(5); // measured 8
+    expect(counters.reported).toBeGreaterThan(5); // measured 10
     expect(counters.naming).toBe(counters.reported);
     expect(counters.extension).toBe(counters.silenced);
   });

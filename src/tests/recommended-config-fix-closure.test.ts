@@ -1275,19 +1275,19 @@ describe('the closure guard is load-bearing', () => {
   it('exercises most of the fixable rules in the recommended config', () => {
     // Guards the denominator: if rule registration broke, a high ratio over a
     // tiny rule set would still look healthy.
-    expect(fixableRuleNames.length).toBeGreaterThanOrEqual(80);
+    expect(fixableRuleNames.length).toBeGreaterThanOrEqual(80); // measured 83
     // 83 of 83 — EVERY fixable rule, where the documented blocks alone reached
     // 71. The three the docs channel cannot reach at all are named in their own
     // test below, so this total cannot go back to 80 without something going
     // red. Floors sit just under the measurement, per the floor-drift
     // discipline: the floors that hid #1984 sat at 5,500 against 8,141.
-    expect(exercisedRules.size).toBeGreaterThanOrEqual(83);
-    expect(corpus.length).toBeGreaterThanOrEqual(590);
+    expect(exercisedRules.size).toBeGreaterThanOrEqual(83); // measured 83
+    expect(corpus.length).toBeGreaterThanOrEqual(590); // measured 617
     // The fixture channel is the half the documented blocks cannot supply;
     // floored separately so a regression to a docs-only corpus cannot hide
     // inside the total above.
-    expect(corpus.length - docsCorpus.length).toBeGreaterThanOrEqual(170);
-    expect(docsCorpus.length).toBeGreaterThanOrEqual(420);
+    expect(corpus.length - docsCorpus.length).toBeGreaterThanOrEqual(170); // measured 178
+    expect(docsCorpus.length).toBeGreaterThanOrEqual(420); // measured 439
   });
 
   /**
@@ -1320,16 +1320,16 @@ describe('the closure guard is load-bearing', () => {
     );
 
     // 156 optioned pairs over 34 rules, against NINE over TWO before #2224.
-    expect(optionedEntries.length).toBeGreaterThanOrEqual(148);
-    expect(optionedRules.size).toBeGreaterThanOrEqual(32);
+    expect(optionedEntries.length).toBeGreaterThanOrEqual(148); // measured 156
+    expect(optionedRules.size).toBeGreaterThanOrEqual(32); // measured 34
 
     // Of the rules that are BOTH optioned and transform-bearing, how many are
     // reached under a real non-default option — the ratio #2224 measured at
     // 4 of 35. Floored as a RATIO rather than a count so that deleting an
     // optioned fixture cannot satisfy it by shrinking the denominator.
-    expect(optionedAndFixable.length).toBeGreaterThanOrEqual(32);
+    expect(optionedAndFixable.length).toBeGreaterThanOrEqual(32); // measured 35
     // 32 of 35, against the 4 of 35 #2224 measured.
-    expect(optionedAndFixableReached.length).toBeGreaterThanOrEqual(32);
+    expect(optionedAndFixableReached.length).toBeGreaterThanOrEqual(32); // measured 32
     // Named rather than floored, so a FOURTH rule dropping out goes red and so
     // does one of these three starting to produce a pair. Each is measured, and
     // none is a gap in this channel: the option either silences the rule
@@ -1357,7 +1357,7 @@ describe('the closure guard is load-bearing', () => {
         entry.after.includes('my/custom/hash/module') ||
         entry.after.includes('app/utils/stableHash'),
     );
-    expect(optionDependentOutput.length).toBeGreaterThanOrEqual(4);
+    expect(optionDependentOutput.length).toBeGreaterThanOrEqual(4); // measured 4
   });
 
   /**
@@ -1370,7 +1370,7 @@ describe('the closure guard is load-bearing', () => {
    */
   it('accounts for every fixture it was handed', () => {
     // 694 considered, of which 178 rewritten and 516 inert.
-    expect(fixtureStats.considered).toBeGreaterThanOrEqual(660);
+    expect(fixtureStats.considered).toBeGreaterThanOrEqual(660); // measured 694
     expect(
       fixtureStats.rewritten +
         fixtureStats.rescuedByFanOut +
@@ -1378,7 +1378,7 @@ describe('the closure guard is load-bearing', () => {
         fixtureStats.crashed,
     ).toBe(fixtureStats.considered);
     expect(fixtureStats.crashed).toBe(0);
-    expect(fixtureStats.rewritten).toBeGreaterThanOrEqual(170);
+    expect(fixtureStats.rewritten).toBeGreaterThanOrEqual(170); // measured 178
     /**
      * The fixture channel's OWN optioned contribution. `optionedEntries` above
      * spans both channels, so it stays green on a fixture channel that has
@@ -1396,7 +1396,7 @@ describe('the closure guard is load-bearing', () => {
     // what separates "the filter admitted little" from "the harvest returned
     // nothing", and only a floor cut just under that pool can tell them apart.
     expect(fixtureCorpus.failures).toEqual([]);
-    expect(fixtureCorpus.totalCases).toBeGreaterThanOrEqual(23500);
+    expect(fixtureCorpus.totalCases).toBeGreaterThanOrEqual(23500); // measured 23,980
   });
 
   /**
@@ -1602,7 +1602,7 @@ describe('the suggestion closure guard is load-bearing', () => {
   });
 
   it('exercises every suggestion-emitting rule in the recommended config', () => {
-    expect(suggestionRuleNames.length).toBeGreaterThanOrEqual(5);
+    expect(suggestionRuleNames.length).toBeGreaterThanOrEqual(5); // measured 5
     /**
      * A per-rule floor, not a total: one rule contributing hundreds of
      * suggestions would hold a total up while another quietly stopped emitting
@@ -1625,10 +1625,10 @@ describe('the suggestion closure guard is load-bearing', () => {
     // five rules, the scrape yielded 1,014 snippets and the harvest yields
     // 1,042 real cases, and every entry in SUGGESTION_INDUCED_BASELINE still
     // reproduces — which the staleness check above enforces.
-    expect(suggestionCorpus.length).toBeGreaterThanOrEqual(258);
+    expect(suggestionCorpus.length).toBeGreaterThanOrEqual(258); // measured 271
     // The fixture half specifically, so a regression to docs-only blocks —
     // which reach no suggestion for react-memoize-literals at all (#1601) —
     // cannot hide inside the total.
-    expect(suggestionFixturePairs).toBeGreaterThanOrEqual(200);
+    expect(suggestionFixturePairs).toBeGreaterThanOrEqual(200); // measured 246
   });
 });

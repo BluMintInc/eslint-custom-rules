@@ -841,11 +841,11 @@ describe('optional-chaining closure', () => {
   it('reaches enough of the corpus for a clean result to mean something', () => {
     // A rule that never fired on its own baseline cannot LOSE a report, so a
     // clean run over a silent corpus asserts nothing.
-    expect(rulesReporting.size).toBeGreaterThan(170);
-    expect(casesWithBaselineReports).toBeGreaterThan(6500);
-    expect(rulesPerturbed.size).toBeGreaterThan(155);
-    expect(sitesRewritten).toBeGreaterThan(26000);
-    expect(casesConsidered).toBeGreaterThan(13200);
+    expect(rulesReporting.size).toBeGreaterThan(170); // measured 192
+    expect(casesWithBaselineReports).toBeGreaterThan(6500); // measured 10,335
+    expect(rulesPerturbed.size).toBeGreaterThan(155); // measured 177
+    expect(sitesRewritten).toBeGreaterThan(26000); // measured 40,631
+    expect(casesConsidered).toBeGreaterThan(13200); // measured 21,026
     // Skips are how a sweep silently loses coverage, so each is asserted on its
     // own rather than summed. Only an unparsable BASELINE is legitimate — the
     // corpus declares a couple of deliberately malformed fixtures — and even
@@ -866,7 +866,7 @@ describe('optional-chaining closure', () => {
      * survives intact even if the whole corpus piles onto a handful of pairs,
      * which is the state in which most rule/arm rows go vacuous.
      */
-    expect(drivenPairs.length).toBeGreaterThan(250);
+    expect(drivenPairs.length).toBeGreaterThan(250); // measured 315
   });
 
   /**
