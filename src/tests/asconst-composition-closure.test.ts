@@ -434,7 +434,6 @@ const UNDRIVEN: Record<string, UndrivenCause> = {
   'require-migration-script-metadata': 'noAssertionAdded',
   'require-props-composition': 'noAssertionAdded',
   'test-file-location-enforcement': 'noAssertionAdded',
-  'use-custom-link': 'noAssertionAdded',
   'use-custom-memo': 'noAssertionAdded',
   'use-custom-router': 'noAssertionAdded',
 };
