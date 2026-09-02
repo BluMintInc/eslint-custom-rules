@@ -513,6 +513,24 @@ export { glyphPopulation };`,
       code: 'export const buildAxisProfile = (raster) => { return null; };',
       filename: 'scripts/design/proxy/ops/buildAxisProfile.mjs',
     },
+    // #2295: `elide` and `bound` are transitive verbs the NLP fallback
+    // misreads (unknown and past-participle respectively), so the allowlist
+    // carries them the same way #1225 carries `bucket`.
+    {
+      code: `export const elideMiddle = (entries: readonly string[]) => {
+  return entries.slice(1);
+};`,
+    },
+    {
+      code: `export const boundErrorDetails = (details: Readonly<Record<string, unknown>>) => {
+  return details;
+};`,
+    },
+    {
+      code: `export function boundConcurrency(limit: number) {
+  return Math.min(limit, 8);
+}`,
+    },
   ],
   invalid: [
     {
