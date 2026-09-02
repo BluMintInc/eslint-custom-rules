@@ -1290,6 +1290,7 @@ const BINDING_SUGGESTION_UNDRIVEN: Record<string, UndrivenCause> = {};
  */
 const LITERAL_UNDRIVEN: Record<string, UndrivenCause> = {
   'enforce-typescript-markdown-code-blocks': 'noTsFixture',
+  'enforce-use-flex-gap-on-wrap': 'inventsNoName',
   'no-unpinned-dependencies': 'noTsFixture',
   'class-methods-read-top-to-bottom': 'inventsNoName',
   'enforce-centralized-mock-firestore': 'inventsNoName',

@@ -252,6 +252,15 @@ const SPAN_POLICY: Record<string, Policy> = {
     filename: 'src/components/Widget.tsx',
   },
 
+  // Same extension gate as `prevent-children-clobber`: every fixture is a JSX
+  // element, so at `src/util/helper.ts` all 32 are a fatal parse and the
+  // remedy's silence belongs to the parser rather than to the rule. Measured:
+  // 32/32 fatal at `src/util/helper.ts`, 30/32 reporting here (the residue is
+  // the two option-carrying fixtures, which the replay drives at defaults).
+  'enforce-use-flex-gap-on-wrap|useFlexGapRequired': {
+    filename: 'src/components/Widget.tsx',
+  },
+
   // Gated on `targetPaths` (`src/hooks/**`, `src/contexts/**`, `src/pages/**`,
   // `src/components/**`): off-path its `create` returns an empty visitor set, so
   // a remedy probed at `src/util/helper.ts` banks silence from a rule that never

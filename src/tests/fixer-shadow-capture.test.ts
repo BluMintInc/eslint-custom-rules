@@ -2061,6 +2061,9 @@ const UNPROBED_RULES: Record<string, Reason> = {
   'enforce-props-argument-name': REASONS.noModuleBoundReference,
   'enforce-props-naming-consistency': REASONS.noModuleBoundReference,
   'enforce-react-type-naming': REASONS.noModuleBoundReference,
+  // Its whole fix is the bare attribute `useFlexGap`, which names a JSX prop
+  // rather than a binding: no scope resolves it, so no shadow can capture it.
+  'enforce-use-flex-gap-on-wrap': REASONS.noModuleBoundReference,
   'ensure-pointer-events-none': REASONS.noModuleBoundReference,
   'flatten-push-calls': REASONS.noModuleBoundReference,
   'key-only-outermost-element': REASONS.noModuleBoundReference,
