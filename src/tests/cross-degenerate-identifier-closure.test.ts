@@ -1477,6 +1477,7 @@ beforeAll(() => {
       `  screen fatal / threw:     ${pairing.screenFatal} / ${pairing.screenThrew}`,
       `  PAIRS:                    ${pairing.pairs} (${pairing.crossPairs} CROSS)`,
       `  dropped by the cap:       ${pairing.cappedPairs} (${pairing.crossCappedPairs} cross)`,
+      `  literal cap dropped:      ${pairing.literalCappedPairs} (${pairing.literalCrossCappedPairs} cross)`,
       `  distinct cross fixers:    ${pairing.crossFixers.size}`,
       `  distinct own fixers:      ${pairing.ownFixers.size}`,
       `  distinct cross owners:    ${pairing.crossOwners.size}`,
@@ -1494,6 +1495,7 @@ beforeAll(() => {
       `  rules REWRITTEN:          ${fixSweep.own.rulesRewritten.size}`,
       '  -- suggestion channel, CROSS --',
       `  pairs:                    ${suggestionSweep.pairing.crossPairs}`,
+      `  literal cap dropped:      ${suggestionSweep.pairing.literalCappedPairs} (${suggestionSweep.pairing.literalCrossCappedPairs} cross)`,
       `  perturbations:            ${suggestionSweep.cross.considered}`,
       `  rewritten:                ${suggestionSweep.cross.rewritten}`,
       `  suggestion edits:         ${suggestionSweep.cross.suggestionEdits}`,
@@ -1748,6 +1750,15 @@ describe('the cross degenerate-identifier LITERAL arm is load-bearing', () => {
     expect(fixSweep.pairing.fixturesWithLiteral).toBeGreaterThanOrEqual(11000);
     expect(fixSweep.pairing.fixturesWithoutLiteral).toBeGreaterThan(0);
     expect(fixSweep.pairing.literalCappedPairs).toBeGreaterThan(0);
+    /**
+     * The CROSS half of what the literal cap swallows, held under a ceiling
+     * rather than merely counted. `literalCappedPairs` above pools the own and
+     * cross arms, so the cross arm can drift towards starvation — every slot
+     * spent by an own pair — while that sum reads healthy, and the arm's own
+     * floors would still pass on whatever pairs survived.
+     */
+    expect(fixSweep.pairing.literalCrossCappedPairs).toBeLessThan(20000); // measured 17058
+    expect(suggestionSweep.pairing.literalCrossCappedPairs).toBeLessThan(700); // measured 553
     expect(fixSweep.pairing.literalRangesDropped).toBeLessThanOrEqual(3000);
   });
 

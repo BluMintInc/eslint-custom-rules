@@ -866,6 +866,11 @@ console.log(
     `${rulesExercised.size} rules`,
 );
 console.log(
+  `[export-surface-integrity] default arm: ${defaultInjected} injected / ` +
+    `${defaultRewritten} rewritten across ${defaultRulesExercised.size} rules ` +
+    `/ ${defaultRemovals.length} removal(s)`,
+);
+console.log(
   `[export-surface-integrity] perturbation: ${perturbationFixLost} fix(es) lost ` +
     `to the injection across ${perturbationFixLostByRule.size} rule(s) ` +
     `${JSON.stringify(
@@ -952,6 +957,14 @@ describe('the export-surface guard is load-bearing', () => {
     // The hand-written surfaces are counted too, so the arm cannot be credited
     // for reach the corpus already had.
     expect(defaultBearing).toBeGreaterThanOrEqual(20);
+    /**
+     * The arm's own REMOVALS, which is what the array beside the push is kept
+     * for. `removals` pools all three channels, so the two this arm contributes
+     * could fall to zero without moving it, and the baseline entry documenting
+     * them only requires its KEY to still occur — which either one satisfies
+     * alone, while that entry's own reason records BOTH.
+     */
+    expect(defaultRemovals.length).toBeGreaterThanOrEqual(2); // measured 2
   });
 
   it('detects a DELETED default export (positive control)', () => {
