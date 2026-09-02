@@ -182,12 +182,40 @@ describe('isLintablePath', () => {
 });
 
 describe('validateViaStopHooks', () => {
+  /**
+   * The jest step routes through the machine-wide exec-governor when
+   * `BLUMINT_GOVERNOR_CLI` names a reachable one (#2286), so the command list
+   * these arms assert depends on ambient machine configuration. Pinning the
+   * variable makes each arm state which shape it is testing, rather than
+   * passing on a laptop and failing on the box that has an agora clone beside
+   * it.
+   */
+  const withGovernorCli = <T>(value: string | undefined, body: () => T): T => {
+    const previous = process.env.BLUMINT_GOVERNOR_CLI;
+    if (value === undefined) {
+      delete process.env.BLUMINT_GOVERNOR_CLI;
+    } else {
+      process.env.BLUMINT_GOVERNOR_CLI = value;
+    }
+    try {
+      return body();
+    } finally {
+      if (previous === undefined) {
+        delete process.env.BLUMINT_GOVERNOR_CLI;
+      } else {
+        process.env.BLUMINT_GOVERNOR_CLI = previous;
+      }
+    }
+  };
+
   it('runs build → eslint on changed files → jest scoped to related tests, returning true when all pass', () => {
     const calls: string[] = [];
-    const ok = validateViaStopHooks(
-      (cmd, args) => calls.push(`${cmd} ${args.join(' ')}`),
-      () => ['src/rules/foo.ts', 'src/util/bar.ts'],
-      () => ['src/rules/foo.ts', 'src/tests/foo.test.ts'],
+    const ok = withGovernorCli(undefined, () =>
+      validateViaStopHooks(
+        (cmd, args) => calls.push(`${cmd} ${args.join(' ')}`),
+        () => ['src/rules/foo.ts', 'src/util/bar.ts'],
+        () => ['src/rules/foo.ts', 'src/tests/foo.test.ts'],
+      ),
     );
     expect(ok).toBe(true);
     expect(calls).toEqual([
@@ -197,12 +225,57 @@ describe('validateViaStopHooks', () => {
     ]);
   });
 
+  /**
+   * The governed shape. Only the jest step moves: build and lint are cheap and
+   * single-process, so reserving a jest-sized slice for them would idle the
+   * pool against work that never threatened it.
+   */
+  it('routes only the jest step through the governor when one is configured', () => {
+    const calls: string[] = [];
+    const ok = withGovernorCli(__filename, () =>
+      validateViaStopHooks(
+        (cmd, args) => calls.push(`${cmd} ${args.join(' ')}`),
+        () => ['src/rules/foo.ts'],
+        () => ['src/tests/foo.test.ts'],
+      ),
+    );
+    expect(ok).toBe(true);
+    expect(calls).toEqual([
+      'npm run build',
+      'npx eslint src/rules/foo.ts',
+      `npx tsx ${__filename} run --profile=jest -- npx jest --findRelatedTests src/tests/foo.test.ts --passWithNoTests`,
+    ]);
+  });
+
+  /**
+   * A configured path that is gone degrades to the bare call rather than
+   * failing the gate: a moved agora clone is a machine fact, not a defect in
+   * the change under test.
+   */
+  it('falls back to the bare jest call when the configured governor is missing', () => {
+    const calls: string[] = [];
+    const ok = withGovernorCli('/nonexistent/exec-governor/cli.ts', () =>
+      validateViaStopHooks(
+        (cmd, args) => calls.push(`${cmd} ${args.join(' ')}`),
+        () => [],
+        () => ['src/tests/foo.test.ts'],
+      ),
+    );
+    expect(ok).toBe(true);
+    expect(calls).toEqual([
+      'npm run build',
+      'npx jest --findRelatedTests src/tests/foo.test.ts --passWithNoTests',
+    ]);
+  });
+
   it('skips the lint step when no source files changed but still runs related tests', () => {
     const calls: string[] = [];
-    const ok = validateViaStopHooks(
-      (cmd, args) => calls.push(`${cmd} ${args.join(' ')}`),
-      () => [],
-      () => ['src/tests/foo.test.ts'],
+    const ok = withGovernorCli(undefined, () =>
+      validateViaStopHooks(
+        (cmd, args) => calls.push(`${cmd} ${args.join(' ')}`),
+        () => [],
+        () => ['src/tests/foo.test.ts'],
+      ),
     );
     expect(ok).toBe(true);
     expect(calls).toEqual([

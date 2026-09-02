@@ -31,6 +31,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { governArgv } from './governor';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { dispatch } = require('./dispatch-agora-release');
 // Shared, build-free canonical rule-name set (parsed from src/index.ts's rules
@@ -434,10 +435,17 @@ export function validateViaStopHooks(
   }
   const testFiles = getTestFiles();
   if (testFiles.length > 0) {
-    steps.push([
-      'npx',
-      ['jest', '--findRelatedTests', ...testFiles, '--passWithNoTests'],
-    ]);
+    // Routed through the machine-wide governor when one is configured, so this
+    // gate queues behind a peer repo's jest instead of racing it into a mutual
+    // OOM kill (issue #2286). Unconfigured, this is the bare `npx jest` call.
+    steps.push(
+      governArgv('npx', [
+        'jest',
+        '--findRelatedTests',
+        ...testFiles,
+        '--passWithNoTests',
+      ]),
+    );
   }
   for (const [cmd, args] of steps) {
     try {
