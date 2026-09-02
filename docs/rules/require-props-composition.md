@@ -467,7 +467,12 @@ above is `ListPanel`'s own output and counts as its dependency.
 The built-in list includes layout and utility primitives that don't benefit from composition:
 `Box`, `Stack`, `Typography`, `Fragment`, `Divider`, `Container`, `Grid`, `Paper`, `Card`, `CardContent`, `CardHeader`, `CardActions`, `List`, `ListItem`, `Table`, `TableBody`, `TableCell`, `TableHead`, `TableRow`, `Toolbar`, `AppBar`, `Drawer`, `Modal`, `Backdrop`, `Collapse`, `Fade`, `Grow`, `Slide`, `Zoom`, `CircularProgress`, `LinearProgress`, `Skeleton`, `Suspense`, `StrictMode`, `Profiler`, `ErrorBoundary`, `React.Fragment`, `React.Suspense`, `React.StrictMode`.
 
-Any component whose name ends in `Icon` (e.g. `CheckIcon`, `RefreshIcon` from `@mui/icons-material`) is also treated as a decorative leaf and excluded — icons expose no composable customization surface a parent should re-expose. Interactive components like `IconButton` are unaffected (they end in `Button`, not `Icon`).
+Icons are also treated as decorative leaves and excluded — icons expose no composable customization surface a parent should re-expose. The carve-out keys on **two** signals, either of which suffices:
+
+- **The name suffix.** Any component whose name ends in `Icon` (e.g. `CheckIcon`, `RefreshIcon`).
+- **The import source.** Any binding imported from `@mui/icons-material`, through the barrel (`import { CheckRounded } from '@mui/icons-material'`) or a per-icon deep path (`import CheckRounded from '@mui/icons-material/CheckRounded'`), under any local alias. MUI's own export names carry no `Icon` suffix, and the `enforce-mui-rounded-icons` fixer emits exactly that spelling (`PersonOutlined` becomes `PersonRounded`), so the suffix alone leaves those icons demanding a `<Icon>Props` type that does not exist.
+
+Both signals are narrow. Interactive components like `IconButton` are unaffected by the suffix (they end in `Button`, not `Icon`), and the source test covers the icon package alone: a child from `@mui/material`, `@mui/lab` or any other `@mui/*` package keeps its customization surface and stays a composition dependency, as does one from a package whose name merely begins with `@mui/icons-material`.
 
 ### Component slots declared as props
 

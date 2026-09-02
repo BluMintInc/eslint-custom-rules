@@ -347,6 +347,97 @@ const IconLabel = ({ label, active }: IconLabelProps) => {
 };
 `,
     },
+    // 22b. Issue #1307 follow-up: an @mui/icons-material icon is decorative
+    // whatever its binding is called. MUI's own export names carry no `Icon`
+    // suffix, and the enforce-mui-rounded-icons fixer emits exactly this spelling.
+    {
+      filename: 'src/components/NotificationsEmpty.tsx',
+      code: `
+import Box from '@mui/material/Box';
+import NotificationsNoneRounded from '@mui/icons-material/NotificationsNoneRounded';
+
+export type NotificationsEmptyProps = {
+  primary: string;
+  secondary?: string;
+};
+
+const NotificationsEmptyUnmemoized = ({
+  primary,
+  secondary,
+}: Readonly<NotificationsEmptyProps>) => {
+  return (
+    <Box>
+      <NotificationsNoneRounded sx={{ fontSize: 20, color: 'text.muted' }} />
+      <span>{primary}</span>
+      {!!secondary && <span>{secondary}</span>}
+    </Box>
+  );
+};
+`,
+    },
+    // 22c. The barrel-import twin of 22b: the carve-out keys on the import
+    // SOURCE, so a named import from '@mui/icons-material' is decorative too.
+    {
+      filename: 'src/components/NotificationsEmptyBarrel.tsx',
+      code: `
+import Box from '@mui/material/Box';
+import { NotificationsNoneRounded } from '@mui/icons-material';
+
+export type NotificationsEmptyProps = {
+  primary: string;
+  secondary?: string;
+};
+
+const NotificationsEmptyUnmemoized = ({
+  primary,
+  secondary,
+}: Readonly<NotificationsEmptyProps>) => {
+  return (
+    <Box>
+      <NotificationsNoneRounded sx={{ fontSize: 20, color: 'text.muted' }} />
+      <span>{primary}</span>
+      {!!secondary && <span>{secondary}</span>}
+    </Box>
+  );
+};
+`,
+    },
+    // 22d. The carve-out reads the import SOURCE, so every alias spelling of a
+    // MUI icon is decorative: a renamed barrel member and a renamed deep-path
+    // default alike, neither of which carries an `Icon` suffix.
+    {
+      filename: 'src/components/StatusGlyphs.tsx',
+      code: `
+import Box from '@mui/material/Box';
+import { CheckRounded as CheckGlyph } from '@mui/icons-material';
+import CloseGlyph from '@mui/icons-material/CloseRounded';
+
+type StatusGlyphsProps = { done: boolean; };
+const StatusGlyphs = ({ done }: StatusGlyphsProps) => {
+  return <Box>{done ? <CheckGlyph /> : <CloseGlyph />}</Box>;
+};
+`,
+    },
+    // 22e. The memo() wrapper spelling of 22b: the icon is dropped from the dep
+    // set wherever the component function is declared.
+    {
+      filename: 'src/components/NotificationsBadge.tsx',
+      code: `
+import { memo } from 'react';
+import Box from '@mui/material/Box';
+import NotificationsNoneRounded from '@mui/icons-material/NotificationsNoneRounded';
+
+type NotificationsBadgeProps = { count: number; };
+const NotificationsBadge = memo(({ count }: NotificationsBadgeProps) => {
+  return (
+    <Box>
+      <NotificationsNoneRounded />
+      <span>{count}</span>
+    </Box>
+  );
+});
+`,
+    },
     // 23. A single icon dependency is not enough to trip the rule. (issue #1307)
     {
       filename: 'src/components/StatusDot.tsx',
@@ -3878,6 +3969,96 @@ const renderButton = (MyButtonProps: string) => {
             dependencyList: "'LoadingButton'",
             missingList: "'LoadingButtonProps'",
             primaryDep: 'LoadingButtonProps',
+          },
+        },
+      ],
+    },
+    // 103. Issue #2282 boundary: the import-source carve-out covers the icon
+    // package, not MUI at large. Tooltip comes from '@mui/material', keeps its
+    // customization surface and stays the sole dependency — pinned on
+    // dependencyList so the assertion proves the icon was dropped AND the
+    // sibling MUI child was retained.
+    {
+      filename: 'src/components/DismissControl.tsx',
+      code: `
+import Tooltip from '@mui/material/Tooltip';
+import CloseRounded from '@mui/icons-material/CloseRounded';
+
+type DismissControlProps = { onDismiss: () => void; label: string; };
+const DismissControl = ({ onDismiss, label }: DismissControlProps) => {
+  return (
+    <Tooltip title={label}>
+      <CloseRounded onClick={onDismiss} />
+    </Tooltip>
+  );
+};
+`,
+      errors: [
+        {
+          messageId: 'missingPropsComposition',
+          data: {
+            componentName: 'DismissControl',
+            propsTypeName: 'DismissControlProps',
+            dependencyList: "'Tooltip'",
+            missingList: "'TooltipProps'",
+            primaryDep: 'TooltipProps',
+          },
+        },
+      ],
+    },
+    // 104. Issue #2282 boundary, barrel spelling: a named import from another
+    // '@mui/*' package is a composition dependency just as a deep-path one is.
+    {
+      filename: 'src/components/SubmitControl.tsx',
+      code: `
+import { LoadingButton } from '@mui/lab';
+import CheckRounded from '@mui/icons-material/CheckRounded';
+
+type SubmitControlProps = { onSubmit: () => void; label: string; };
+const SubmitControl = ({ onSubmit, label }: SubmitControlProps) => {
+  return (
+    <LoadingButton onClick={onSubmit}>
+      <CheckRounded />
+      {label}
+    </LoadingButton>
+  );
+};
+`,
+      errors: [
+        {
+          messageId: 'missingPropsComposition',
+          data: {
+            componentName: 'SubmitControl',
+            propsTypeName: 'SubmitControlProps',
+            dependencyList: "'LoadingButton'",
+            missingList: "'LoadingButtonProps'",
+            primaryDep: 'LoadingButtonProps',
+          },
+        },
+      ],
+    },
+    // 105. Issue #2282 boundary: the deep-path match requires the separator, so
+    // a package whose name merely STARTS with the icon package's is not carved
+    // out. '@mui/icons-material-custom' is a different package.
+    {
+      filename: 'src/components/SparkleBadge.tsx',
+      code: `
+import Sparkle from '@mui/icons-material-custom/Sparkle';
+
+type SparkleBadgeProps = { active: boolean; };
+const SparkleBadge = ({ active }: SparkleBadgeProps) => {
+  return <div>{active ? <Sparkle /> : null}</div>;
+};
+`,
+      errors: [
+        {
+          messageId: 'missingPropsComposition',
+          data: {
+            componentName: 'SparkleBadge',
+            propsTypeName: 'SparkleBadgeProps',
+            dependencyList: "'Sparkle'",
+            missingList: "'SparkleProps'",
+            primaryDep: 'SparkleProps',
           },
         },
       ],
