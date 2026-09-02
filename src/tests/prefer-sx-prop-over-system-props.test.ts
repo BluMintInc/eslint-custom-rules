@@ -1613,6 +1613,153 @@ export const Panel = () => (
   some fairly long children text here indeed
 </Box>;`,
       },
+
+      // --- #2296: the `sx` literal already declares the moved prop's key.
+      // Splicing it in emits `{ display: 'flex', display: 'block' }` — TS1117,
+      // and whichever value the runtime keeps, one of the two spellings the
+      // author wrote is silently discarded. The two disagree and only the
+      // author can say which wins, so the prop is reported without a fix. ---
+      {
+        code: `<Box display="flex" sx={{ display: 'block' }} />`,
+        errors: [{ messageId: 'preferSxProp', data: { prop: 'display' } }],
+        output: null,
+      },
+
+      // A string-literal key names the same property as the bare identifier,
+      // so it collides just the same.
+      {
+        code: `<Box display="flex" sx={{ 'display': 'block' }} />`,
+        errors: [{ messageId: 'preferSxProp', data: { prop: 'display' } }],
+        output: null,
+      },
+
+      // A computed key whose expression is a literal is still readable, and
+      // names the same property.
+      {
+        code: `<Box display="flex" sx={{ ['display']: 'block' }} />`,
+        errors: [{ messageId: 'preferSxProp', data: { prop: 'display' } }],
+        output: null,
+      },
+
+      // A computed key built from anything else resolves only at runtime, so it
+      // is a possible collision with every moved prop — including one whose
+      // name is nowhere in the literal.
+      {
+        code: `<Box display="flex" sx={{ [key]: 'block' }} />`,
+        errors: [{ messageId: 'preferSxProp', data: { prop: 'display' } }],
+        output: null,
+      },
+      {
+        code: `<Box display="flex" mt={2} sx={{ [key]: 'block' }} />`,
+        errors: [
+          { messageId: 'preferSxProp', data: { prop: 'display' } },
+          { messageId: 'preferSxProp', data: { prop: 'mt' } },
+        ],
+        output: null,
+      },
+
+      // One disagreeing pair does not hold the rest of the element back: the
+      // colliding prop is reported and left alone, every other prop merges.
+      {
+        code: `<Box display="flex" mt={2} sx={{ display: 'block' }} />`,
+        errors: [
+          { messageId: 'preferSxProp', data: { prop: 'display' } },
+          { messageId: 'preferSxProp', data: { prop: 'mt' } },
+        ],
+        output: `<Box display="flex" sx={{ mt: 2, display: 'block' }} />`,
+      },
+
+      // Every prop colliding leaves nothing to merge, so no fix is emitted at
+      // all — both props are still reported.
+      {
+        code: `<Box display="flex" mt={2} sx={{ display: 'block', mt: 1 }} />`,
+        errors: [
+          { messageId: 'preferSxProp', data: { prop: 'display' } },
+          { messageId: 'preferSxProp', data: { prop: 'mt' } },
+        ],
+        output: null,
+      },
+
+      // A spread does not hide the keys written beside it: `display` is
+      // declared in this literal, so it collides.
+      {
+        code: `<Box display="flex" sx={{ ...base, display: 'block' }} />`,
+        errors: [{ messageId: 'preferSxProp', data: { prop: 'display' } }],
+        output: null,
+      },
+
+      // A spread's own members are not keys this literal declares. Merging
+      // beside it duplicates nothing — it overrides, exactly as any member
+      // written after a spread does — so the fix still applies.
+      {
+        code: `<Box display="flex" sx={{ ...base }} />`,
+        errors: [{ messageId: 'preferSxProp', data: { prop: 'display' } }],
+        output: `<Box sx={{ display: 'flex', ...base }} />`,
+      },
+
+      // The same key nested under a selector is a different property of a
+      // different object, so it is not a collision.
+      {
+        code: `<Box display="flex" sx={{ '&:hover': { display: 'none' } }} />`,
+        errors: [{ messageId: 'preferSxProp', data: { prop: 'display' } }],
+        output: `<Box sx={{ display: 'flex', '&:hover': { display: 'none' } }} />`,
+      },
+
+      // The array form prepends an object of its own rather than merging in
+      // place, so a key an existing entry declares is not duplicated; MUI
+      // applies later entries last, which keeps `sx`'s precedence over the
+      // system prop exactly as it was before the fix.
+      {
+        code: `<Box display="flex" sx={[{ display: 'block' }]} />`,
+        errors: [{ messageId: 'preferSxProp', data: { prop: 'display' } }],
+        output: `<Box sx={[{ display: 'flex' }, { display: 'block' }]} />`,
+      },
+
+      // A colliding prop kept by the merge is reproduced verbatim when the
+      // element has to be restructured to fit the print width.
+      {
+        code: `<Stack direction="row" alignItems="center" width="100%" sx={{ alignItems: 'flex-start' }} />`,
+        errors: [
+          { messageId: 'preferSxProp', data: { prop: 'alignItems' } },
+          { messageId: 'preferSxProp', data: { prop: 'width' } },
+        ],
+        output: `<Stack
+  direction="row"
+  alignItems="center"
+  sx={{ width: '100%', alignItems: 'flex-start' }}
+/>`,
+      },
+
+      // The same split inside a literal the author already broke open: the
+      // expanded merge keeps the colliding prop where it was written.
+      {
+        code: `<Box
+  display="flex"
+  mt={2}
+  sx={{
+    display: 'block',
+  }}
+/>;`,
+        errors: [
+          { messageId: 'preferSxProp', data: { prop: 'display' } },
+          { messageId: 'preferSxProp', data: { prop: 'mt' } },
+        ],
+        output: `<Box
+  display="flex"
+  sx={{
+    mt: 2,
+    display: 'block',
+  }}
+/>;`,
+      },
+
+      // #2289's inline twin: the attribute and the `sx` entry disagree about
+      // `flexWrap`, which is the pairing that produced the duplicate key.
+      {
+        code: `<Stack flexWrap="nowrap" sx={{ flexWrap: 'wrap' }} useFlexGap spacing={2} />`,
+        errors: [{ messageId: 'preferSxProp', data: { prop: 'flexWrap' } }],
+        output: null,
+      },
     ],
   },
 );

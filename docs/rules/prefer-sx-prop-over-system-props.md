@@ -138,11 +138,40 @@ The column the autofix wraps at, matching Prettier's option of the same name. Se
 The autofix moves all detected system props into `sx`:
 
 1. **No existing `sx`** — creates `sx={{ ...systemProps }}` on the first system prop position.
-2. **Existing `sx={{ ... }}`** — merges system props at the front of the existing object (preserving all existing keys including string selector keys like `'.MuiInput-root'`).
+2. **Existing `sx={{ ... }}`** — merges system props at the front of the existing object (preserving all existing keys including string selector keys like `'.MuiInput-root'`), except for a prop the object [already declares](#a-key-the-sx-object-already-declares).
 3. **Existing `sx={[...]}` (array)** — prepends `{ ...systemProps }` as the first array element.
 4. **Existing `sx={expr}` (variable/expression)** — wraps it: `sx={{ ...systemProps, ...expr }}`.
 
 When the rule cannot safely determine the shape of `sx`, it still reports the violation but skips the autofix to prevent incorrect merges.
+
+### A key the `sx` object already declares
+
+Where the `sx` object literal already declares the moved prop's key, the two spellings disagree about the value, and the rule **reports the prop without fixing it**:
+
+```tsx
+// Reported, left as written — no fix
+<Box display="flex" sx={{ display: 'block' }} />
+```
+
+Merging would emit `sx={{ display: 'flex', display: 'block' }}`: TS1117 (_an object literal cannot have multiple properties with the same name_), and whichever value the runtime keeps, one of the two values the author wrote is silently discarded. Only the author can say which one wins, so the fix stands down and the report asks for that decision.
+
+The decline is per prop, not per element — every other system prop on the same element still merges:
+
+```tsx
+// Before
+<Box display="flex" mt={2} sx={{ display: 'block' }} />
+
+// After: `mt` moved, the disagreeing `display` left for the author
+<Box display="flex" sx={{ mt: 2, display: 'block' }} />
+```
+
+What counts as the same key:
+
+- `display`, `'display'` and `['display']` all name the same property and collide.
+- A computed key the rule cannot read (`{ [key]: 'block' }`) may resolve to any name, so it is treated as a possible collision with **every** moved prop on that element and the whole merge stands down.
+- A key written beside a spread (`{ ...base, display: 'block' }`) is a key this literal declares, so it collides. The spread's own members are not: merging beside a spread duplicates nothing, it overrides — exactly as any member written after a spread does — so `<Box display="flex" sx={{ ...base }} />` is still fixed.
+- The same key nested under a selector (`{ '&:hover': { display: 'none' } }`) belongs to a different object and does not collide.
+- The array form is unaffected: it prepends an object of its own instead of merging in place, so `<Box display="flex" sx={[{ display: 'block' }]} />` becomes `<Box sx={[{ display: 'flex' }, { display: 'block' }]} />`. MUI applies later entries last, which preserves `sx`'s precedence over the system prop exactly as it stood before the fix.
 
 ### Formatting of the emitted `sx`
 

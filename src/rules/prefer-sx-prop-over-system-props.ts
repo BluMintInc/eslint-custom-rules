@@ -484,6 +484,78 @@ const sxSlotOf = (sxAttr: TSESTree.JSXAttribute | null): SxSlot => {
 };
 
 /**
+ * The property names an `sx` object literal declares, or null when one of its
+ * keys is not statically readable. A computed key built from anything but a
+ * literal resolves to a name only at runtime, so it is reported as unknown
+ * rather than as no key at all, and the caller reads that as a possible
+ * collision with every moved prop.
+ *
+ * A spread's own members are deliberately not counted: the moved props are
+ * spliced in as new members of this literal, and a name the spread happens to
+ * carry is not duplicated by that splice — it is overridden, exactly as any
+ * other member written beside the spread overrides it.
+ */
+const declaredKeysOf = (
+  object: TSESTree.ObjectExpression,
+): Set<string> | null => {
+  const keys = new Set<string>();
+  for (const property of object.properties) {
+    if (property.type !== AST_NODE_TYPES.Property) {
+      continue;
+    }
+    const { key } = property;
+    if (!property.computed && key.type === AST_NODE_TYPES.Identifier) {
+      keys.add(key.name);
+      continue;
+    }
+    // A literal key is readable whether or not it is written computed:
+    // `'display'` and `['display']` both name the same property.
+    if (
+      key.type === AST_NODE_TYPES.Literal &&
+      (typeof key.value === 'string' || typeof key.value === 'number')
+    ) {
+      keys.add(String(key.value));
+      continue;
+    }
+    return null;
+  }
+  return keys;
+};
+
+/**
+ * The moved props whose name the `sx` object literal already declares. Splicing
+ * one in emits `{ display: 'flex', display: 'block' }` — TS1117, and whichever
+ * value the runtime keeps, one of the two spellings the author wrote is
+ * discarded. The two disagree and only the author can say which wins, so the
+ * fix stands down for those props while every other prop on the element still
+ * merges (#2296).
+ *
+ * Only the object slot is merged into in place. A new `sx`, an array entry and
+ * the `{ ...moved, ...expr }` wrap each emit a fresh object literal, whose keys
+ * cannot duplicate a name written elsewhere.
+ */
+const collidingPropsOf = (
+  systemPropAttrs: TSESTree.JSXAttribute[],
+  sxAttr: TSESTree.JSXAttribute | null,
+): ReadonlySet<TSESTree.JSXAttribute> => {
+  const slot = sxSlotOf(sxAttr);
+  if (slot.kind !== 'object') {
+    return new Set();
+  }
+  const declared = declaredKeysOf(slot.object);
+  if (declared === null) {
+    return new Set(systemPropAttrs);
+  }
+  return new Set(
+    systemPropAttrs.filter(
+      (attr) =>
+        attr.name.type === AST_NODE_TYPES.JSXIdentifier &&
+        declared.has(attr.name.name),
+    ),
+  );
+};
+
+/**
  * Plans every edit the autofix makes for one JSX element.
  *
  * Prettier keeps an author's decision to break an object literal across lines
@@ -1181,9 +1253,19 @@ export const preferSxPropOverSystemProps = createRule<Options, MessageIds>({
 
         const sourceCode = context.getSourceCode();
 
-        // Report each system prop. Only the first carries the fixer to avoid
-        // overlapping fix ranges on the same element.
-        systemPropAttrs.forEach((attr, index) => {
+        // A prop whose name the `sx` literal already declares is reported
+        // without a fix: merging it would duplicate the key. The rest of the
+        // element is still merged, so one disagreeing pair does not hold the
+        // other props back.
+        const collidingProps = collidingPropsOf(systemPropAttrs, sxAttr);
+        const fixableAttrs = systemPropAttrs.filter(
+          (attr) => !collidingProps.has(attr),
+        );
+
+        // Report each system prop. Only the first fixable one carries the fixer
+        // to avoid overlapping fix ranges on the same element.
+        const fixAnchor = fixableAttrs[0] ?? null;
+        systemPropAttrs.forEach((attr) => {
           const propName =
             attr.name.type === AST_NODE_TYPES.JSXIdentifier
               ? attr.name.name
@@ -1194,12 +1276,12 @@ export const preferSxPropOverSystemProps = createRule<Options, MessageIds>({
             messageId: 'preferSxProp',
             data: { prop: propName },
             fix:
-              index === 0
+              attr === fixAnchor
                 ? (fixer) =>
                     planSxEdits(
                       sourceCode,
                       node,
-                      systemPropAttrs,
+                      fixableAttrs,
                       sxAttr,
                       printWidth,
                     ).map((edit) =>
