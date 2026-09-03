@@ -693,6 +693,28 @@ export const EXEMPTION_DESTROYED_BASELINE: Record<string, string> = {
    */
   'no-entire-object-hook-deps -> enforce-global-constants':
     'the culprit deletes an unread `useMemo` dependency (its documented behaviour), emptying the array, which is precisely the shape the victim exists to report; neither rule is outside its remit, so the composition needs a product decision (#1884)',
+
+  /**
+   * The post-fix report is the detection #2319 RESTORED, not one it lost, so
+   * this entry records a widening working rather than a carve-out breaking.
+   *
+   * The fixture pins that an explicit MUTABLE tuple signature makes freezing
+   * unsafe: `function getPair(): [Group, GroupRef] { return [group, groupRef]
+   * as SomePair; }` is silent because `as const` would hand callers a
+   * `readonly` tuple the signature promises is mutable. Either
+   * annotation-stripping fixer in the config deletes that signature — which is
+   * why the culprit is `(unattributed)` rather than one name — and with only
+   * the sole return's own `as SomePair` left, the type the value must satisfy
+   * is a readonly pair, so the freeze is provably safe and the victim reports.
+   *
+   * Before #2319 the victim read only the signature and went silent on the
+   * stripped form; that silence is the defect the issue filed. Keeping the
+   * signature, or dropping the assertion with it (`function getPair():
+   * [Group, GroupRef] { return [group, groupRef]; }`), is clean under the
+   * whole config (measured).
+   */
+  '(unattributed) -> enforce-object-literal-as-const':
+    "either annotation-stripping fixer deletes the mutable tuple signature the exemption keys on, leaving the sole return's own `as SomePair` as the type the value must satisfy. The victim reads that named type through `acceptsReadonlyArray`, which treats any type REFERENCE other than `Array` as accepting a readonly array — its established convention for named types, unchanged by #2319 — so the freeze reads as safe and it reports. Correct in production, where #2319 verified under a real program that `SomePair` is `readonly [Group, GroupRef]` and both spellings give callers the identical effective type. This is #2319's restored detection firing, not a destroyed carve-out (#2319)",
 };
 
 const observedPairs = new Set(findings.map(pairKey));

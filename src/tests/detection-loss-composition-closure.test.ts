@@ -906,14 +906,6 @@ export const DETECTION_DESTROYED_BASELINE: Record<string, string> = {
     'the culprit strips the annotation read at react-memoize-literals.ts:1767; the function still returns a union, so only the detection is gone (#2003)',
   'no-explicit-return-type+no-redundant-annotation-assertion -> prefer-getter-over-parameterless-method':
     'either culprit alone strips the `: string` annotation `functionYieldsThenable` trusts over the body (prefer-getter-over-parameterless-method.ts:1035-1037); the coerced getter candidate is byte-for-byte unchanged, and body scanning then wrongly exempts it as async. A seventh instance of the #2003 class, and the first with a second culprit (#2003)',
-
-  /**
-   * The callee-spelling family. A fixer that swaps which hook wraps an
-   * expression leaves the expression alone, and a victim whose visitor is gated
-   * on a hard-coded hook name stops seeing it.
-   */
-  'no-redundant-annotation-assertion -> enforce-object-literal-as-const':
-    "the culprit deletes the return annotation because the sole return statement's `as SomePair` already states the same type, but `declaredReturnTypeOf` reads only the function-level annotation (enforce-object-literal-as-const.ts:118,365-368), so a still-provably-safe freeze reads as unprovable. Confirmed under a real program: both spellings give callers the identical effective type (#2319)",
 };
 
 const UNLISTED = [...observedPairs.keys()]
