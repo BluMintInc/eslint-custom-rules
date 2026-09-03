@@ -864,6 +864,24 @@ export const noHungarian = createRule<[], MessageIds>({
         }
         const parts = variableName.split('_');
         const lastIndex = parts.length - 1;
+
+        // A leading single-letter segment (B_, I_) carries the same tag as the
+        // camelCase prefix (bIsActive), so global-const-style's rename to
+        // SCREAMING_SNAKE_CASE (bIsActive -> B_IS_ACTIVE) must not disarm the
+        // rule. Gated on `parts.length > 1` (guaranteed here, since the
+        // no-underscore case already returned above) so a lone `B` — with no
+        // following segment — is left alone: there is no tagged name to catch,
+        // only an isolated identifier. Reuses SINGLE_LETTER_PREFIXES rather than
+        // hardcoding b/i so the two casings can never diverge on which letters
+        // count. Real first-word segments (TAB_INDEX, LIB_VERSION, UI_CONFIG)
+        // are untouched because they are longer than one letter.
+        if (
+          parts.length > 1 &&
+          SINGLE_LETTER_PREFIXES.has(parts[0].toLowerCase())
+        ) {
+          return true;
+        }
+
         return TYPE_MARKERS.some((marker) => {
           const markerUpper = marker.toUpperCase();
           const normalizedMarker = marker.toLowerCase();

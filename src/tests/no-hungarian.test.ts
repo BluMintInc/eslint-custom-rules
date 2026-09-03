@@ -1034,6 +1034,26 @@ ruleTesterTs.run('no-hungarian-screaming-snake-case', noHungarian, {
     // Multi-segment names where the full-type-word is neither first nor last.
     'const getObjectMergeResult = () => {};',
     'function processStringParser() { return ""; }',
+
+    // Issue #2317: the leading single-letter SCREAMING_SNAKE segment check must
+    // hold its carve-out boundary — a real multi-letter first segment (TAB, LIB,
+    // UI) is a word fragment, not a lone b/i type tag, so these stay valid even
+    // though they contain an underscore-separated leading segment.
+    'const TAB_INDEX = 0;',
+    'const LIB_VERSION = "1.0.0";',
+    'const UI_CONFIG = { theme: "dark" };',
+    'const BIN_PATH = "/usr/bin";',
+    'const ID_TOKEN = "abc123";',
+    // A lone single letter with no following segment is not a tagged name —
+    // there is nothing after the letter for it to be a "prefix" of.
+    'const B = true;',
+    'const I = 5;',
+    // Only `b`/`i` are Hungarian single-letter prefixes; any other leading
+    // single-letter segment is left untouched (mirrors the camelCase branch,
+    // which only recognizes SINGLE_LETTER_PREFIXES).
+    'const X_AXIS = 0;',
+    'const Y_COORDINATE = 0;',
+    'const T_SHIRT_SIZE = "M";',
   ],
   invalid: [
     // Invalid SCREAMING_SNAKE_CASE examples - with Hungarian notation
@@ -1264,6 +1284,39 @@ ruleTesterTs.run('no-hungarian-screaming-snake-case', noHungarian, {
     {
       code: 'const WRAPPER_OBJ_PROPS_DEFAULT = {};',
       errors: [errorFor('WRAPPER_OBJ_PROPS_DEFAULT')],
+    },
+
+    // Issue #2317: global-const-style renames bIsActive to B_IS_ACTIVE, which
+    // must keep firing — a leading single-letter segment (B_, I_) carries the
+    // same tag as the camelCase prefix it was renamed from.
+    {
+      code: 'const B_IS_ACTIVE = true;',
+      errors: [errorFor('B_IS_ACTIVE')],
+    },
+    {
+      code: 'const I_COUNT = 0;',
+      errors: [errorFor('I_COUNT')],
+    },
+    {
+      code: 'const B_ACTIVE = true;',
+      errors: [errorFor('B_ACTIVE')],
+    },
+    {
+      code: 'const I_MAX_RETRY_COUNT = 3;',
+      errors: [errorFor('I_MAX_RETRY_COUNT')],
+    },
+    {
+      code: 'export const B_IS_ENABLED = false;',
+      errors: [errorFor('B_IS_ENABLED')],
+    },
+    {
+      code: `
+      class ConfigFlags {
+        static B_IS_ACTIVE = true;
+        static I_RETRY_COUNT = 0;
+      }
+      `,
+      errors: [errorFor('B_IS_ACTIVE'), errorFor('I_RETRY_COUNT')],
     },
   ],
 });

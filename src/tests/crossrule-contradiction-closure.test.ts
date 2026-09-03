@@ -197,6 +197,37 @@ type Exemption = {
  * then update the entry and say what changed.
  */
 const KNOWN_DIVERGENT: Record<string, Exemption> = {
+  'no-hungarian::global-const-style': {
+    reason:
+      "PIPELINE: 99 of this rule's blessed texts declare a module-scope const " +
+      'whose subject is the NAME under test rather than its casing or `as ' +
+      'const`, so the sibling supplies both; the composed `--fix` converges ' +
+      'with ZERO residual on 95 (measured). The 4 NO-OPs — `export const ' +
+      "printBanner = 'printing';` and three like it — are the sibling's own " +
+      'documented decline: it adds `as const` but will not rename an EXPORTED ' +
+      'binding, since that would break every importer, so `upperSnakeCase` ' +
+      'stands as advice rather than a rewrite. Not exporting the const, or ' +
+      'spelling it `MINT_TOKEN` at the point of export, is clean under BOTH ' +
+      '(measured both ways).',
+    cases: { upperSnakeCase: 70, asConst: 88 },
+  },
+  'global-const-style::no-hungarian': {
+    reason:
+      'INCIDENTAL, and predating the mention that enrols the pair: the 4 ' +
+      'blessed texts are sibling fixtures whose subject is the `as ' +
+      'const`/UPPER_SNAKE spelling, and each happens to end in a segment this ' +
+      'rule reads as a TYPE_MARKER — `PARSE_HTML_STRING`, `CONFIG_OBJ`, ' +
+      '`NOT_A_NUMBER`, and the camelCase `mockedClass`. This rule objects to ' +
+      'the NAME rather than to anything the rename did: all 4 report ' +
+      'identically under this rule as it stands on the parent commit, where ' +
+      "neither source names the other (measured), and #2317's new " +
+      'leading-single-letter-segment arm cannot reach them, since none begins ' +
+      'with a one-letter segment. The composed `--fix` is a NO-OP on all 4 ' +
+      'because this rule ships no fixer. Dropping the type suffix satisfies ' +
+      'both: `PARSE_HTML`, `CONFIG`, `MISSING_SCORE` and `someClassMock` are ' +
+      'each clean under BOTH (measured).',
+    cases: { noHungarian: 4 },
+  },
   'prefer-destructuring-no-class::global-const-style': {
     reason:
       "PIPELINE: 25 of this rule's blessed texts declare a module-scope const " +
