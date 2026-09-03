@@ -298,6 +298,11 @@ const KNOWN_DIVERGENT: Record<string, Exemption> = {
       'PIPELINE: the mock payload literals lack `as const`; `--fix` supplies it on all 5 without changing which module the mock comes from.',
     cases: { enforceAsConst: 5 },
   },
+  'enforce-positive-naming::global-const-style': {
+    reason:
+      "PIPELINE: the fixtures name module-scope consts in camelCase to display the NAME under test, without regard to the module-constant casing; `--fix` supplies SCREAMING_SNAKE/`as const` and all 54 fall silent under BOTH rules (measured, every one), with the owner reporting on ZERO of the renamed spellings. That last number is the point of the pair: the owner judges a name by its WORDS, so `hasNoAccess` and `HAS_NO_ACCESS` get the same answer and the sibling's rename can no longer carry a negatively named constant out of the owner's view. While the owner's gate was casing-sensitive the same rename SILENCED it (#2306).",
+    cases: { asConst: 9, upperSnakeCase: 54 },
+  },
   'enforce-positive-naming::no-explicit-return-type': {
     reason:
       'PIPELINE: the fixtures annotate an inferable boolean return to display the name under test; `--fix` strips all 6.',
