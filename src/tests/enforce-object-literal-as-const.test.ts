@@ -587,6 +587,72 @@ function isSame(a, b) {
         }
       `,
       },
+      // Valid case (#2319): more than one return means no single assertion
+      // describes the whole inferred signature, so the fallback does not
+      // apply and the array stays under the #2015 decline
+      {
+        code: `
+        function getPair(flag) {
+          if (flag) {
+            return [group, groupRef] as SomePair;
+          }
+          return [group, groupRef];
+        }
+      `,
+      },
+      // Valid case (#2319): the sole return's own assertion spells a mutable
+      // tuple directly — freezing it into a readonly tuple still conflicts
+      // with the type the assertion states, exactly as a mutable signature
+      // would decline under #1526
+      {
+        code: `
+        function getPair() {
+          return [group, groupRef] as [Group, GroupRef];
+        }
+      `,
+      },
+      // Valid case (#2319): a mutable array type in the sole return's
+      // assertion is the same mutable shape spelled without a tuple
+      {
+        code: `
+        function getNames() {
+          return [name1, name2] as string[];
+        }
+      `,
+      },
+      // Valid case (#2319): an existing signature annotation stays
+      // authoritative over the return statement's own assertion — the
+      // mutable signature declines the freeze regardless of what the return
+      // itself asserts
+      {
+        code: `
+        function getPair(): [Group, GroupRef] {
+          return [group, groupRef] as SomePair;
+        }
+      `,
+      },
+      // Valid case (#2319): a sole return already using `as const` is
+      // unaffected by the fallback — it is handled by the earlier `as const`
+      // short-circuit, not by reading it as a declared type
+      {
+        code: `
+        function getPair() {
+          return [group, groupRef] as const;
+        }
+      `,
+      },
+      // Valid case (#2319): the React-hook carve-out (#511, #1324) still wins
+      // over the new fallback — a memoized array stays exempt whether or not
+      // its sole return carries an assertion
+      {
+        code: `
+        function usePair() {
+          return useMemo(() => {
+            return [group, groupRef] as SomePair;
+          }, [group, groupRef]);
+        }
+      `,
+      },
     ]),
     invalid: withParserOptions(parserOptions, [
       // Invalid case: array literal without 'as const'
@@ -704,6 +770,105 @@ function isSame(a, b) {
       {
         code: `
         function getPair(): readonly [Group, GroupRef] {
+          return [group, groupRef] as SomePair;
+        }
+      `,
+        errors: [{ messageId: 'enforceAsConst' }],
+        output: null,
+      },
+      // Invalid case (#2319): the signature carries no annotation, but the sole
+      // return statement's own assertion states the type just as forcefully —
+      // this is the exact shape `no-redundant-annotation-assertion --fix`
+      // produces by deleting a signature that repeated this assertion, and the
+      // rule must not go silent just because the type moved.
+      {
+        code: `
+        function getPair() {
+          return [group, groupRef] as SomePair;
+        }
+      `,
+        errors: [{ messageId: 'enforceAsConst' }],
+        output: null,
+      },
+      // Invalid case (#2319): the sole return's assertion spells the readonly
+      // tuple out directly rather than through a named alias
+      {
+        code: `
+        function getPair() {
+          return [group, groupRef] as readonly [Group, GroupRef];
+        }
+      `,
+        errors: [{ messageId: 'enforceAsConst' }],
+        output: null,
+      },
+      // Invalid case (#2319): the fallback applies to an arrow function's sole
+      // return the same way it does to a declaration
+      {
+        code: `
+        const getPair = () => {
+          return [group, groupRef] as SomePair;
+        };
+      `,
+        errors: [{ messageId: 'enforceAsConst' }],
+        output: null,
+      },
+      // Invalid case (#2319): an unannotated class method's sole return
+      {
+        code: `
+        class PairService {
+          getPair() {
+            return [group, groupRef] as SomePair;
+          }
+        }
+      `,
+        errors: [{ messageId: 'enforceAsConst' }],
+        output: null,
+      },
+      // Invalid case (#2319): an async function's sole return assertion types
+      // the awaited value directly — no `Promise<T>` wrapper to peel off an
+      // assertion that targets the expression, not the signature
+      {
+        code: `
+        async function getPair() {
+          return [group, groupRef] as SomePair;
+        }
+      `,
+        errors: [{ messageId: 'enforceAsConst' }],
+        output: null,
+      },
+      // Invalid case (#2319): a generator's sole return assertion likewise
+      // types the returned value directly, not through `Generator<Y, T, N>`
+      {
+        code: `
+        function* generatePair() {
+          yield 1;
+          return [group, groupRef] as SomePair;
+        }
+      `,
+        errors: [{ messageId: 'enforceAsConst' }],
+        output: null,
+      },
+      // Invalid case (#2319): a plain readonly array assertion, not a tuple,
+      // still counts as a declared type accepting the readonly shape
+      {
+        code: `
+        function getNames() {
+          return [name1, name2] as readonly string[];
+        }
+      `,
+        errors: [{ messageId: 'enforceAsConst' }],
+        output: null,
+      },
+      // Invalid case (#2319): a nested function's own return does not inflate
+      // the outer function's return count — the outer still has exactly one
+      // return of its own, so its assertion is read as the fallback. Getting
+      // the boundary wrong here would silently drop this report.
+      {
+        code: `
+        function getPair() {
+          function helper() {
+            return [other];
+          }
           return [group, groupRef] as SomePair;
         }
       `,

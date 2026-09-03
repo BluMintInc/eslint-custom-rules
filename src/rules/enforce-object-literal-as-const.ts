@@ -138,14 +138,96 @@ function declaredReturnTypeOf(fn: FunctionNode): TSESTree.TypeNode | undefined {
 }
 
 /**
+ * Every `return` statement lexically owned by `fn` — a `return` inside a
+ * nested function returns from that function, not this one, so descent stops
+ * at each function boundary. Both single-node and array-valued child
+ * properties are walked (`BlockStatement.body` is an array,
+ * `IfStatement.consequent` a single node): a walk keyed on a plain `isNode`
+ * check alone silently skips every array-shaped child.
+ */
+function returnStatementsOf(fn: FunctionNode): TSESTree.ReturnStatement[] {
+  const returns: TSESTree.ReturnStatement[] = [];
+  function visit(node: TSESTree.Node): void {
+    if (node.type === 'ReturnStatement') {
+      returns.push(node);
+      return;
+    }
+    if (node !== fn && FUNCTION_TYPES.has(node.type)) {
+      return;
+    }
+    for (const key in node) {
+      if (key === 'parent') {
+        continue;
+      }
+      const value = (node as unknown as Record<string, unknown>)[key];
+      if (Array.isArray(value)) {
+        for (const item of value) {
+          if (ASTHelpers.isNode(item)) {
+            visit(item);
+          }
+        }
+      } else if (ASTHelpers.isNode(value)) {
+        visit(value);
+      }
+    }
+  }
+  visit(fn.body);
+  return returns;
+}
+
+/**
+ * The type carried by the sole `return` statement's own `as` assertion — a
+ * fallback reading used only when the signature itself states nothing. A
+ * single return whose expression is asserted to a type states that type as
+ * forcefully as a signature would: TS infers nothing beyond it, since there
+ * is nothing else to union it with. Two or more returns lose this — each
+ * return's own assertion describes only its branch, and the signature TS
+ * infers unions them, so no single assertion speaks for the whole function.
+ *
+ * Reading only the signature is exactly what let
+ * `no-redundant-annotation-assertion`'s `--fix` disarm this rule: deleting a
+ * signature that repeats a sole return's assertion moves the type
+ * information rather than removing it, and this rule read only the moved-from
+ * location (#2319).
+ *
+ * `as const` is excluded: it names no separate type to read here — it is the
+ * very rewrite this rule is deciding whether to apply, not a statement of
+ * what a signature would accept.
+ */
+function soleReturnAssertionTypeOf(
+  fn: FunctionNode,
+): TSESTree.TypeNode | undefined {
+  const returns = returnStatementsOf(fn);
+  if (returns.length !== 1) {
+    return undefined;
+  }
+  const { argument } = returns[0];
+  if (!argument || argument.type !== 'TSAsExpression') {
+    return undefined;
+  }
+  const { typeAnnotation } = argument;
+  const isAsConst =
+    typeAnnotation.type === 'TSTypeReference' &&
+    typeAnnotation.typeName.type === 'Identifier' &&
+    typeAnnotation.typeName.name === 'const';
+  return isAsConst ? undefined : typeAnnotation;
+}
+
+/**
  * The type the *returned expression* must satisfy. For an async function or a
  * generator the declared return type wraps that expression's type, so the
  * wrapper is peeled off before the annotation is judged.
+ *
+ * With no signature annotation in view, the sole return statement's own
+ * assertion (`soleReturnAssertionTypeOf`) is read directly as the value's
+ * type instead: it targets the returned expression itself, not a
+ * function-level return type, so it carries no Promise/Generator wrapper to
+ * peel the way a signature annotation would.
  */
 function returnedValueTypeOf(fn: FunctionNode): TSESTree.TypeNode | undefined {
   const declared = declaredReturnTypeOf(fn);
   if (!declared) {
-    return undefined;
+    return soleReturnAssertionTypeOf(fn);
   }
   const referenceName = typeReferenceNameOf(declared);
   if (fn.generator) {
@@ -273,9 +355,14 @@ export const enforceObjectLiteralAsConst = createRule({
         return false;
       }
       const enclosingFunction = enclosingFunctionOf(ancestors);
-      // With no declared return type in view, the inferred tuple is what the
-      // callers get.
-      if (!enclosingFunction || !declaredReturnTypeOf(enclosingFunction)) {
+      // With no declared return type in view — neither the signature nor, as
+      // a fallback, the sole return statement's own assertion — the inferred
+      // tuple is what the callers get.
+      if (
+        !enclosingFunction ||
+        (!declaredReturnTypeOf(enclosingFunction) &&
+          !soleReturnAssertionTypeOf(enclosingFunction))
+      ) {
         return true;
       }
       const returnedValueType = returnedValueTypeOf(enclosingFunction);

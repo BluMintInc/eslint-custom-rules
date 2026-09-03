@@ -197,6 +197,26 @@ type Exemption = {
  * then update the entry and say what changed.
  */
 const KNOWN_DIVERGENT: Record<string, Exemption> = {
+  'enforce-object-literal-as-const::no-redundant-annotation-assertion': {
+    reason:
+      "PIPELINE, and the residual is #2319's own restored detection: the single " +
+      'blessed fixture writes `function getPair(): [Group, GroupRef] { return ' +
+      '[group, groupRef] as SomePair; }` to pin that a MUTABLE declared tuple ' +
+      'makes freezing unsafe, so this rule declines. The sibling correctly ' +
+      "calls the signature a restatement of the sole return's `as SomePair` " +
+      'and deletes it; with only that assertion left, the type the value must ' +
+      'satisfy is the named `SomePair`, which is ' +
+      'read through `acceptsReadonlyArray` as accepting a readonly array — its ' +
+      'established convention for a named type, unchanged by #2319 — and this ' +
+      'rule reports `enforceAsConst` on the post-fix ' +
+      'text (measured: NO-OP, this rule alone still reporting, since the ' +
+      'diagnostic carries no fix). That report is exactly what #2319 restored ' +
+      '— before it, `declaredReturnTypeOf` read only the signature and the ' +
+      'rule went silent on the stripped form. The same signature without the ' +
+      'assertion, `export function getPair(): [Group, GroupRef] { return ' +
+      '[group, groupRef]; }`, is clean under BOTH (measured).',
+    cases: { redundantAnnotationAndAssertion: 1 },
+  },
   'no-restricted-properties-fix::global-const-style': {
     reason:
       "PIPELINE: 13 of this rule's blessed texts declare a module-scope const " +

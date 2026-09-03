@@ -51,15 +51,43 @@ With no annotation, the frozen arity becomes part of the *inferred* return type 
 
 The damage lands in a **different function** from the one edited, and the rule reads a single file's syntax — the callers are beyond what it can see, so it cannot judge which of them the arity change breaks (issue #2015). Annotating the signature with a `readonly` type states the contract explicitly and brings the literal back into scope for the rule.
 
+#### The sole return statement's own assertion
+
+A signature is not the only place a type can be stated outright. When the signature carries no annotation but the function has exactly one `return`, and that return's argument already carries its own `as` assertion, the asserted type is read as if it had been written on the signature:
+
+```ts
+function getPair() {
+  return [group, groupRef] as SomePair; // reported — SomePair states the type
+}
+```
+
+This closes a gap where `no-redundant-annotation-assertion`'s `--fix` deletes a return-type annotation that repeats the sole return's own assertion verbatim: the type information does not leave the file, it moves from the signature to the `return`, and this rule now follows it there.
+
+The fallback needs the assertion to be exactly as authoritative as a signature would be, so it applies only when there is a single `return` in the function. A `return` inside a nested function belongs to that function, not the enclosing one, and is not counted:
+
+```ts
+function getPair(flag: boolean) {
+  if (flag) {
+    return [group, groupRef] as SomePair; // not reported — a second return exists
+  }
+  return [group, groupRef];
+}
+```
+
+With two or more returns, no single assertion describes the whole inferred signature, so the array stays under the signature-declares-nothing exemption above. `as const` itself is never read as the fallback's declared type — treating it as one would be circular, since it is the very rewrite this rule is deciding whether to apply.
+
+An existing signature annotation always takes precedence over this fallback, whatever the return statement asserts.
+
 In both positions the rule stays **silent** rather than reporting without a fix. Nothing the author can do at the literal satisfies the rule — honouring it means changing the function's contract and every call site that depends on the array's length or mutability. A finding no local edit can resolve is noise, and noise on a file is what blocks the rule's adoption.
 
 The declared type is read syntactically, from wherever it is written for the enclosing function:
 
 - its own return annotation, including a method's (`getNames(): string[]`);
 - the annotation on the variable or class property that declares it (`const getNames: () => string[] = () => …`);
-- an assertion on the function expression (`(() => …) as () => string[]`).
+- an assertion on the function expression (`(() => …) as () => string[]`);
+- with no annotation anywhere above, the sole `return` statement's own `as` assertion — see [The sole return statement's own assertion](#the-sole-return-statements-own-assertion).
 
-For an `async` function the awaited type is used (`Promise<string[]>` is a mutable array position), and for a generator the second type argument is (`Generator<number, string[], void>`).
+For an `async` function the awaited type is used (`Promise<string[]>` is a mutable array position), and for a generator the second type argument is (`Generator<number, string[], void>`). These wrappers apply to a signature-level annotation only: a return statement's own assertion already types the returned expression directly, so it is read as-is.
 
 A `readonly` spelling accepts the readonly tuple, so those positions are reported and fixed as usual: `readonly string[]`, `ReadonlyArray<string>`, `readonly [string, number]`, `Promise<readonly string[]>`, and any union with a `readonly` member. The mutable spellings — `T[]`, `[A, B]`, `Array<T>` — and unions in which no member accepts a readonly tuple (`string[] | undefined`) are exempt.
 
@@ -118,6 +146,15 @@ const config = useMemo(() => {
 // annotation keeping it out of the arity carve-out
 function getHits(): readonly Hit[] {
   return [ANY_GAME_HIT];
+}
+```
+
+```ts
+// No signature annotation, but the sole return's own assertion states the
+// type just as authoritatively — reported, and NOT auto-fixed, the same as
+// any other pre-existing assertion
+function getPair() {
+  return [group, groupRef] as SomePair;
 }
 ```
 
@@ -216,6 +253,25 @@ function diff(a: number, b: number) {
 
 function isSame(a: number, b: number) {
   return diff(a, b).length === 0;
+}
+```
+
+```ts
+// The sole return's assertion spells a mutable tuple directly — freezing it
+// would still conflict with the type the assertion states (TS4104)
+function getPair() {
+  return [group, groupRef] as [Group, GroupRef];
+}
+```
+
+```ts
+// Two returns: no single assertion describes the whole inferred signature, so
+// the fallback does not apply and the array stays silent
+function getPair(flag: boolean) {
+  if (flag) {
+    return [group, groupRef] as SomePair;
+  }
+  return [group, groupRef];
 }
 ```
 
