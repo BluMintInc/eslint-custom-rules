@@ -942,6 +942,71 @@ ruleTesterJsx.run('memo-nested-react-components', memoNestedReactComponents, {
         });
       `,
     },
+    // `use-latest-callback`'s --fix rewrites `useCallback(fn, [])` into
+    // `useLatestCallback(fn)`, so this rule reads the replacement hook too
+    // (#2313). These cases pin that the carve-outs the `useCallback` spelling
+    // enjoys survive the rename rather than the name simply widening reports.
+    {
+      name: 'useLatestCallback wrapping a plain handler is not a component (#2313)',
+      code: `
+        import useLatestCallback from 'use-latest-callback';
+
+        const handleClick = useLatestCallback((event) => {
+          event.preventDefault();
+          return event.clientX;
+        });
+      `,
+    },
+    {
+      name: 'useLatestCallback returning an object carrying JSX is not a component (#2313)',
+      code: `
+        import useLatestCallback from 'use-latest-callback';
+
+        const buildConfig = useLatestCallback(() => {
+          return {
+            title: 'example',
+            footer: <div>not treated as component</div>,
+          };
+        });
+      `,
+    },
+    {
+      name: 'lowercase render callback via useLatestCallback stays silent (#2313)',
+      code: `
+        import useLatestCallback from 'use-latest-callback';
+
+        const renderHit = useLatestCallback((hit) => <AccordionCompetitor {...hit} />);
+      `,
+    },
+    {
+      name: 'lowercase render callback via useLatestCallback in a render body stays silent (#2313)',
+      code: `
+        import useLatestCallback from 'use-latest-callback';
+
+        const MyList = () => {
+          const renderHit = useLatestCallback((hit) => <Hit {...hit} />);
+          return <Hits render={renderHit} />;
+        };
+      `,
+    },
+    {
+      name: 'useLatestCallback honours ignorePatterns (#2313)',
+      code: `
+        import useLatestCallback from 'use-latest-callback';
+
+        const IgnoredComp = useLatestCallback(() => {
+          return <div>Should be ignored via pattern</div>;
+        });
+      `,
+      filename: 'Component.test.tsx',
+      options: [{ ignorePatterns: ['**/*.test.tsx'] }],
+    },
+    {
+      name: 'useLatestCallback with a spread argument is not inspected (#2313)',
+      code: `
+        const Comp = useLatestCallback(...args);
+      `,
+    },
   ],
   invalid: [
     // The test-runner exemption reads only the NEAREST enclosing function, so a
@@ -1749,6 +1814,101 @@ ruleTesterJsx.run('memo-nested-react-components', memoNestedReactComponents, {
           data: {
             componentName: 'Row',
             locationDescription: 'a render body',
+          },
+        },
+      ],
+    },
+    // The post-image of `use-latest-callback`'s --fix. The rename swaps which
+    // memoization hook wraps the callback; the component is still constructed
+    // inline inside render scope, so the advice this rule gives (hoist to module
+    // scope) is unchanged and the report must survive the rewrite (#2313).
+    {
+      name: 'forwardRef component wrapped in useLatestCallback still reports (#2313)',
+      code: `
+        import { forwardRef } from 'react';
+        import useLatestCallback from 'use-latest-callback';
+        const RefComp = useLatestCallback(forwardRef((props, ref) => <div ref={ref} />));
+      `,
+      errors: [
+        {
+          messageId: 'memoizeNestedComponent',
+          data: {
+            componentName: 'RefComp',
+            locationDescription: 'useLatestCallback()',
+          },
+        },
+      ],
+    },
+    {
+      name: 'PascalCase component-type prop built with useLatestCallback still reports (#2313)',
+      code: `
+        import useLatestCallback from 'use-latest-callback';
+
+        const UserCarouselWrapperUnmemoized = ({ ContentCard = UserCardLayout, ...rest }) => {
+          const CarouselWrapper = useLatestCallback(
+            (props) => <UserVerticalCarousel {...props} ContentCard={ContentCard} />,
+          );
+          return <AlgoliaLayout CatalogWrapper={CarouselWrapper} />;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'memoizeNestedComponent',
+          data: {
+            componentName: 'CarouselWrapper',
+            locationDescription: 'useLatestCallback()',
+          },
+        },
+      ],
+    },
+    {
+      name: 'conditional JSX return through useLatestCallback still reports (#2313)',
+      code: `
+        import useLatestCallback from 'use-latest-callback';
+        const Comp = useLatestCallback((flag: boolean) => flag && <div />);
+      `,
+      errors: [{ messageId: 'memoizeNestedComponent' }],
+    },
+    {
+      name: 'createElement return through useLatestCallback still reports (#2313)',
+      code: `
+        import React from 'react';
+        import useLatestCallback from 'use-latest-callback';
+        const Comp = useLatestCallback(() => React.createElement('div'));
+      `,
+      errors: [{ messageId: 'memoizeNestedComponent' }],
+    },
+    {
+      // The hook allowlist is read through unwrapNode, so the optional and
+      // member spellings of the replacement hook reach it exactly as the
+      // `useCallback` ones do.
+      name: 'PascalCase component via an optional useLatestCallback call reports (#2313)',
+      code: `
+        import useLatestCallback from 'use-latest-callback';
+        const CustomButton = useLatestCallback?.(({ onClick }) => <button onClick={onClick} />);
+      `,
+      errors: [
+        {
+          messageId: 'memoizeNestedComponent',
+          data: {
+            componentName: 'CustomButton',
+            locationDescription: 'useLatestCallback()',
+          },
+        },
+      ],
+    },
+    {
+      name: 'PascalCase component via a member useLatestCallback call reports (#2313)',
+      code: `
+        import * as Hooks from 'use-latest-callback';
+        const CustomButton = Hooks.useLatestCallback(({ onClick }) => <button onClick={onClick} />);
+      `,
+      errors: [
+        {
+          messageId: 'memoizeNestedComponent',
+          data: {
+            componentName: 'CustomButton',
+            locationDescription: 'useLatestCallback()',
           },
         },
       ],

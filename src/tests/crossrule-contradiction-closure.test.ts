@@ -467,6 +467,24 @@ const KNOWN_DIVERGENT: Record<string, Exemption> = {
       'PIPELINE: the fixtures import `memo` from `react`; `--fix` redirects all 4 to the repo wrapper.',
     cases: { useCustomMemo: 4 },
   },
+  'memo-nested-react-components::use-latest-callback': {
+    reason:
+      'PIPELINE, and the sibling`s fixer is the step: the 5 blessed fixtures ' +
+      'are valid cases that wrap a NON-component in `useCallback(fn, [])` as ' +
+      'scenery — a click handler, a config builder whose object merely holds ' +
+      'JSX, a noop, a list getter, a non-React factory — to pin the boundary ' +
+      'the owner must not cross. The sibling rewrites every one to ' +
+      '`useLatestCallback(fn)` and the composed `--fix` converges with ZERO ' +
+      'residual under both rules (measured, 5 of 5): none of them is a ' +
+      'component, so the owner stays silent beside the renamed call exactly ' +
+      'as it did beside the original. That silence is the owner`s REAL ' +
+      'answer rather than an artefact of the hook name, which is what #2313 ' +
+      'fixed: before it, `useLatestCallback` was absent from `CALLBACK_HOOKS` ' +
+      'and the renamed call was not inspected at all. The pair joins this ' +
+      'list because that fix names `use-latest-callback` in this rule`s ' +
+      'source.',
+    cases: { useLatestCallback: 5 },
+  },
   'no-direct-function-state::no-type-assertion-returns': {
     reason:
       'INCIDENTAL: the fixture returns `null as unknown as ToClose` to keep the state type UNRESOLVABLE, which is the carve-out under test; returning a typed local instead keeps the type local and is clean under both (measured).',

@@ -923,9 +923,6 @@ export const DETECTION_DESTROYED_BASELINE: Record<string, string> = {
    * expression leaves the expression alone, and a victim whose visitor is gated
    * on a hard-coded hook name stops seeing it.
    */
-  'use-latest-callback -> memo-nested-react-components':
-    "the culprit renames the wrapping hook to `useLatestCallback`, which is absent from the victim's `CALLBACK_HOOKS` allowlist (memo-nested-react-components.ts:18-22,944); the component is still constructed inline in render scope, which the victim's own message says the swap does not fix (#2313)",
-
   'require-memo -> no-inline-component-prop':
     'the culprit rewrites the inline component to `memo(NamedReference)`, and the victim resolves a `memo(…)` argument only when it is a function literal (no-inline-component-prop.ts:175,463); the named function is still declared inside the component, so its identity is still unstable (#2314)',
 
