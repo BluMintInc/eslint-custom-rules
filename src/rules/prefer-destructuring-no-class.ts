@@ -150,19 +150,65 @@ function isStaticClassMember(node: TSESTree.Node, context: any): boolean {
 }
 
 /**
+ * Extracts the literal name a MemberExpression's property spells, when that
+ * name is comparable to a binding identifier (an Identifier's own name, or a
+ * string Literal's value). A non-string literal (e.g. `obj[0]`) can never
+ * equal an identifier name, so it is excluded here rather than at every
+ * caller.
+ */
+function getComparablePropertyName(propertyNode: TSESTree.Node): string | null {
+  if (propertyNode.type === AST_NODE_TYPES.Identifier) {
+    return propertyNode.name;
+  }
+  if (
+    propertyNode.type === AST_NODE_TYPES.Literal &&
+    typeof propertyNode.value === 'string'
+  ) {
+    return propertyNode.value;
+  }
+  return null;
+}
+
+/**
  * Check if the property name matches the variable name in an assignment
  */
 function isMatchingPropertyName(
   propertyNode: TSESTree.Node,
   variableName: string,
 ): boolean {
-  if (propertyNode.type === AST_NODE_TYPES.Identifier) {
-    return propertyNode.name === variableName;
-  }
-  if (propertyNode.type === AST_NODE_TYPES.Literal) {
-    return propertyNode.value === variableName;
-  }
-  return false;
+  return getComparablePropertyName(propertyNode) === variableName;
+}
+
+/**
+ * Strips underscores and lowercases a name so a SCREAMING_SNAKE_CASE binding
+ * compares equal to the camelCase property it reads (`MY_VALUE` vs
+ * `myValue`), not merely a pure case shift (`FOO` vs `foo`). A rename tool
+ * such as `global-const-style` reshapes only the BINDING to fit a naming
+ * convention; it never touches the property expression on the right-hand
+ * side, so the two spellings diverge in casing and word separators without
+ * the assignment becoming a genuine rename of what the binding refers to.
+ */
+function normalizeForLooseNameMatch(name: string): string {
+  return name.replace(/_/g, '').toLowerCase();
+}
+
+/**
+ * Case/underscore-insensitive counterpart to `isMatchingPropertyName`, used
+ * only where `enforceForRenamedProperties` is off. The default gate must
+ * still recognize `const FOO = obj.foo;` as the same property access it
+ * recognizes for `const foo = obj.foo;` (#2316), while a genuinely different
+ * name (`TOTAL` vs `count`) keeps failing the match.
+ */
+function isMatchingPropertyNameIgnoringCase(
+  propertyNode: TSESTree.Node,
+  variableName: string,
+): boolean {
+  const propertyName = getComparablePropertyName(propertyNode);
+  return (
+    propertyName !== null &&
+    normalizeForLooseNameMatch(propertyName) ===
+      normalizeForLooseNameMatch(variableName)
+  );
 }
 
 /**
@@ -324,6 +370,14 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
         return false;
       }
 
+      // `super.x` has no destructurable form: `const { x } = super;` is a
+      // syntax error, since `super` must be followed by a call or a member
+      // access. Reachable for any binding whose name matches the property in
+      // any casing, so the guard belongs here rather than at one call site.
+      if (memberExpression.object.type === AST_NODE_TYPES.Super) {
+        return false;
+      }
+
       if (!options.object) {
         return false;
       }
@@ -332,7 +386,10 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
         return true;
       }
 
-      return isMatchingPropertyName(memberExpression.property, identifier.name);
+      return isMatchingPropertyNameIgnoringCase(
+        memberExpression.property,
+        identifier.name,
+      );
     }
 
     function getPatternKeyText(
@@ -357,10 +414,16 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
 
       const patternKeyText = getPatternKeyText(memberExpression, propertyText);
 
+      // Alias whenever the destructured key would not itself spell the
+      // target binding: a computed key never can, and any literal spelling
+      // mismatch — an explicit rename under `enforceForRenamedProperties`,
+      // or a case/underscore-only difference the default gate now tolerates
+      // (#2316) — must keep `key: target`, or the emitted destructuring
+      // binds the wrong name (or, for `const { FOO } = OBJ;` where the
+      // property is `foo`, no name at all).
       if (
         memberExpression.computed ||
-        (options.enforceForRenamedProperties &&
-          !isMatchingPropertyName(memberExpression.property, targetName))
+        !isMatchingPropertyName(memberExpression.property, targetName)
       ) {
         return `${patternKeyText}: ${targetName}`;
       }
@@ -469,8 +532,13 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
         memberExpr.computed,
         sourceCode,
       );
+      // Tracks whether the FIXED destructuring needs an alias — the same
+      // question `getDestructuringBindingText` answers — so the message
+      // wording ("with renaming", the target-name note) stays truthful for
+      // a case/underscore-only spelling difference the default gate now
+      // reports (#2316), not only for an explicit
+      // `enforceForRenamedProperties` rename.
       const usesRenaming =
-        options.enforceForRenamedProperties &&
         !!targetName &&
         !isMatchingPropertyName(memberExpr.property, targetName);
       const aliasName = targetName ?? propertyText;

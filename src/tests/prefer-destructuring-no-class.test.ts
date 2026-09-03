@@ -3,6 +3,36 @@ import { preferDestructuringNoClass } from '../rules/prefer-destructuring-no-cla
 
 ruleTesterTs.run('prefer-destructuring-no-class', preferDestructuringNoClass, {
   valid: [
+    // `super.x` has no destructurable spelling — `const { x } = super;` is a
+    // syntax error — so the rule must stay silent whatever the binding is
+    // called. The case-insensitive match of #2316 makes every casing of the
+    // property name reach this shape, where only an exact match did before.
+    {
+      code: `
+export class Base {
+  protected static readonly BASE = { retries: 3 };
+}
+export class Derived extends Base {
+  private static get config() {
+    const base = super.BASE;
+    return base;
+  }
+}
+`,
+    },
+    {
+      code: `
+export class Base {
+  protected static readonly BASE = 1;
+}
+export class Derived extends Base {
+  private static get config() {
+    const BASE = super.BASE;
+    return BASE;
+  }
+}
+`,
+    },
     // Class instances should be ignored
     `
       class Example {
@@ -169,6 +199,62 @@ ruleTesterTs.run('prefer-destructuring-no-class', preferDestructuringNoClass, {
           assign();
         }
       }
+    `,
+    // A binding whose name differs by more than case/underscores from the
+    // property it reads must still NOT match under the default gate — the
+    // loose comparison only tolerates a naming-convention shift, not an
+    // arbitrary rename (#2316).
+    `
+      const OBJ = { count: 123 };
+      const TOTAL = OBJ.count;
+    `,
+    // Private identifiers stay exempt from destructuring suggestions
+    // regardless of how the binding is cased — `#value` cannot be spelled
+    // inside a destructuring pattern at all.
+    `
+      class Example {
+        #value = 1;
+        static extract(instance: any) {
+          const VALUE = instance.#value;
+          return VALUE;
+        }
+      }
+    `,
+    // A non-string literal key (e.g. a numeric index) has no comparable name
+    // at all, so it can never loosely match a binding — the gate must not
+    // coerce a number into a string for comparison.
+    `
+      const OBJ = [1, 2, 3];
+      const ONE = OBJ[1];
+    `,
+    // Class-instance exemption is independent of the destination binding's
+    // casing: the case-insensitive gate only changes the NAME match, not
+    // whether the object is a class instance at all.
+    `
+      class Example {
+        constructor() {
+          this.value = 42;
+        }
+      }
+      const example = new Example();
+      const VALUE = example.value;
+    `,
+    // `this` access inside a class method is exempt regardless of the
+    // destination binding's casing, for the same reason.
+    `
+      class Example {
+        private value: number;
+        constructor(props: { value: number }) {
+          const VALUE = this.value;
+        }
+      }
+    `,
+    // Static class members stay exempt regardless of casing.
+    `
+      class Example {
+        static value = 42;
+      }
+      const VALUE = Example.value;
     `,
   ],
   invalid: [
@@ -516,6 +602,217 @@ ruleTesterTs.run('prefer-destructuring-no-class', preferDestructuringNoClass, {
         let value;
         const obj = { foo: 123 };
         ({ [key]: value } = obj);
+      `,
+    },
+    // A SCREAMING_SNAKE_CASE binding derived from a `global-const-style`
+    // rewrite (`const foo = OBJ.foo;` -> `const FOO = OBJ.foo;`) is a pure
+    // case shift, not a genuine rename: the default gate must still catch it
+    // (#2316), and the fixer must alias the binding since `const { FOO } =
+    // OBJ;` would read a nonexistent property.
+    {
+      code: `
+        const OBJ = { foo: 123 };
+        const FOO = OBJ.foo;
+      `,
+      errors: [
+        {
+          messageId: 'preferDestructuring',
+          data: {
+            object: 'OBJ',
+            property: 'foo',
+            targetNote: ' to "FOO"',
+            renamingHint: ' with renaming',
+            example: 'const { foo: FOO } = OBJ;',
+          },
+        },
+      ],
+      output: `
+        const OBJ = { foo: 123 };
+        const { foo: FOO } = OBJ;
+      `,
+    },
+    // SCREAMING_SNAKE_CASE binding derived from a camelCase property: the
+    // loose match strips underscores in addition to lowercasing, or a
+    // global-const-style rename of a camelCase-sourced constant would still
+    // disarm the rule (#2316).
+    {
+      code: `
+        const OBJ = { myValue: 1 };
+        const MY_VALUE = OBJ.myValue;
+      `,
+      errors: [
+        {
+          messageId: 'preferDestructuring',
+          data: {
+            object: 'OBJ',
+            property: 'myValue',
+            targetNote: ' to "MY_VALUE"',
+            renamingHint: ' with renaming',
+            example: 'const { myValue: MY_VALUE } = OBJ;',
+          },
+        },
+      ],
+      output: `
+        const OBJ = { myValue: 1 };
+        const { myValue: MY_VALUE } = OBJ;
+      `,
+    },
+    // The comparison is symmetric: a lowercase binding reading a
+    // SCREAMING_SNAKE_CASE-keyed property matches loosely too.
+    {
+      code: `
+        const OBJ = { FOO: 1 };
+        const foo = OBJ.FOO;
+      `,
+      errors: [
+        {
+          messageId: 'preferDestructuring',
+          data: {
+            object: 'OBJ',
+            property: 'FOO',
+            targetNote: ' to "foo"',
+            renamingHint: ' with renaming',
+            example: 'const { FOO: foo } = OBJ;',
+          },
+        },
+      ],
+      output: `
+        const OBJ = { FOO: 1 };
+        const { FOO: foo } = OBJ;
+      `,
+    },
+    // A computed access with a string-literal key participates in the same
+    // loose match, and the fixer keeps the bracket form for the key while
+    // aliasing the binding.
+    {
+      code: `
+        const OBJ = { foo: 123 };
+        const FOO = OBJ['foo'];
+      `,
+      errors: [
+        {
+          messageId: 'preferDestructuring',
+          data: {
+            object: 'OBJ',
+            property: "'foo'",
+            targetNote: ' to "FOO"',
+            renamingHint: ' with renaming',
+            example: "const { ['foo']: FOO } = OBJ;",
+          },
+        },
+      ],
+      output: `
+        const OBJ = { foo: 123 };
+        const { ['foo']: FOO } = OBJ;
+      `,
+    },
+    // The AssignmentExpression path gets the same alias treatment as
+    // VariableDeclarator.
+    {
+      code: `
+        let FOO;
+        const OBJ = { foo: 123 };
+        FOO = OBJ.foo;
+      `,
+      errors: [
+        {
+          messageId: 'preferDestructuring',
+          data: {
+            object: 'OBJ',
+            property: 'foo',
+            targetNote: ' to "FOO"',
+            renamingHint: ' with renaming',
+            example: '({ foo: FOO } = OBJ)',
+          },
+        },
+      ],
+      output: `
+        let FOO;
+        const OBJ = { foo: 123 };
+        ({ foo: FOO } = OBJ);
+      `,
+    },
+    // Case-insensitive matching applies through a nested member chain too.
+    {
+      code: `
+        const OBJ = { nested: { foo: 123 } };
+        const FOO = OBJ.nested.foo;
+      `,
+      errors: [
+        {
+          messageId: 'preferDestructuring',
+          data: {
+            object: 'OBJ.nested',
+            property: 'foo',
+            targetNote: ' to "FOO"',
+            renamingHint: ' with renaming',
+            example: 'const { foo: FOO } = OBJ.nested;',
+          },
+        },
+      ],
+      output: `
+        const OBJ = { nested: { foo: 123 } };
+        const { foo: FOO } = OBJ.nested;
+      `,
+    },
+    // `enforceForRenamedProperties: true` already tolerated this rename
+    // before the fix; pinning it here guards the refactor of the shared
+    // alias logic against regressing the already-correct path.
+    {
+      code: `
+        const OBJ = { foo: 123 };
+        const FOO = OBJ.foo;
+      `,
+      options: [{ object: true, enforceForRenamedProperties: true }],
+      errors: [
+        {
+          messageId: 'preferDestructuring',
+          data: {
+            object: 'OBJ',
+            property: 'foo',
+            targetNote: ' to "FOO"',
+            renamingHint: ' with renaming',
+            example: 'const { foo: FOO } = OBJ;',
+          },
+        },
+      ],
+      output: `
+        const OBJ = { foo: 123 };
+        const { foo: FOO } = OBJ;
+      `,
+    },
+    // An annotated declarator with a case-shifted binding is reported like
+    // any other annotated declarator: the annotation blocks the fixer
+    // regardless of why the report fired.
+    {
+      code: `
+        const OBJ = { foo: 123 };
+        const FOO: number = OBJ.foo;
+      `,
+      errors: [{ messageId: 'preferDestructuring' }],
+      output: null,
+    },
+    // `let`/`var` declarations keep their kind through the alias fix.
+    {
+      code: `
+        const OBJ = { foo: 123 };
+        let FOO = OBJ.foo;
+      `,
+      errors: [
+        {
+          messageId: 'preferDestructuring',
+          data: {
+            object: 'OBJ',
+            property: 'foo',
+            targetNote: ' to "FOO"',
+            renamingHint: ' with renaming',
+            example: 'let { foo: FOO } = OBJ;',
+          },
+        },
+      ],
+      output: `
+        const OBJ = { foo: 123 };
+        let { foo: FOO } = OBJ;
       `,
     },
   ],

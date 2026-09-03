@@ -197,6 +197,32 @@ type Exemption = {
  * then update the entry and say what changed.
  */
 const KNOWN_DIVERGENT: Record<string, Exemption> = {
+  'prefer-destructuring-no-class::global-const-style': {
+    reason:
+      "PIPELINE: 25 of this rule's blessed texts declare a module-scope const " +
+      'purely as scenery for the class or member shape under test, without ' +
+      'regard to its naming, and the sibling supplies the UPPER_SNAKE name and ' +
+      '`as const` they omit. The composed `--fix` converges with ZERO residual ' +
+      'on all 25 (measured): a class instance or static member access is not ' +
+      "destructurable whatever the binding is called, so this rule's verdict " +
+      'is unchanged by either rewrite. The pair joins this list because the ' +
+      "#2316 fix names `global-const-style` in this rule's source.",
+    cases: { upperSnakeCase: 15, asConst: 21 },
+  },
+  'global-const-style::prefer-destructuring-no-class': {
+    reason:
+      'PIPELINE: the blessed text declares `const Provider = provider.Provider;` ' +
+      "beside a JSX probe to pin the sibling's component carve-out, and this " +
+      'rule reads it as the plain dot access it is. The composed `--fix` ' +
+      'converges with ZERO residual to `const { Provider } = provider;`, ' +
+      'leaving the carve-out the fixture pins intact (measured, 1 of 1). The ' +
+      'disagreement predates the mention that enrols the pair: the same text ' +
+      'reports identically under this rule as it stands on the parent commit, ' +
+      'where neither source names the other (measured), because the binding ' +
+      "and the property already spell the same name and #2316's " +
+      'case-insensitive match is not what reaches it.',
+    cases: { preferDestructuring: 1 },
+  },
   'no-unused-props::no-entire-object-hook-deps': {
     reason:
       "HANDOFF, and the sibling says so in its own source. The owner's " +
