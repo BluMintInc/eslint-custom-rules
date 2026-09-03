@@ -1115,6 +1115,25 @@ export const SUGGESTION_INDUCED_BASELINE: Record<string, string> = {
   // hoisted at all.
   'react-memoize-literals (suggestion) -> enforce-global-constants':
     "the emitted `[/* __TODO_MEMOIZATION_DEPENDENCIES__ */]` is a syntactically empty dependency array until the developer fills it in, which is the suggestion's stated contract; with real dependencies the report disappears",
+
+  // --- Resolved by design, not deferred, and the residual report is the point
+  // of #2315. The documented snippet holds two independent violations: a
+  // `typeof state !== 'string'` narrowing and a `state || defaultUser`
+  // fallback. Accepting the suggestion on the first replaces that test with
+  // `isSnapshotReady(state)`, and the `typeof` test was the signal
+  // prefer-nullish-coalescing-boolean-props used to leave the `||` alone — it
+  // reads a string-valued operand as one where `||` may be a deliberate
+  // empty-string default. With the test gone it reports.
+  //
+  // That report self-heals: it is fixable, and `--fix` over the whole
+  // recommended config rewrites the line to `state ?? defaultUser` and clears
+  // it. Measured end to end with verifyAndFix: the emitted pair's report is
+  // absent from the output, and what survives is this rule's own
+  // `noNullishFallback` on the result — the sibling's advice being unsound on
+  // a snapshot state is exactly what #2315 taught this rule to keep saying.
+  // Before it, the same rewrite left this rule silent.
+  'enforce-snapshot-state-narrowing (suggestion) -> prefer-nullish-coalescing-boolean-props':
+    "the suggestion replaces the `typeof` test the sibling reads as a string signal, so the sibling stops exempting `state || fallback`; that rewrite is fixable and its own report clears under `--fix`, leaving this rule's `noNullishFallback` on the `??` result standing by design (#2315)",
 };
 
 const docsCorpus = buildDocsCorpus();

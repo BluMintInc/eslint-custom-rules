@@ -923,9 +923,6 @@ export const DETECTION_DESTROYED_BASELINE: Record<string, string> = {
    * expression leaves the expression alone, and a victim whose visitor is gated
    * on a hard-coded hook name stops seeing it.
    */
-  'prefer-nullish-coalescing-boolean-props -> enforce-snapshot-state-narrowing':
-    "the culprit rewrites `||` to `??`, which the victim's `LogicalExpression` guard does not accept (enforce-snapshot-state-narrowing.ts:580-581); a snapshot state's sentinels are truthy strings and never nullish, so both operators return the same wrong value (#2315)",
-
   'no-redundant-annotation-assertion -> enforce-object-literal-as-const':
     "the culprit deletes the return annotation because the sole return statement's `as SomePair` already states the same type, but `declaredReturnTypeOf` reads only the function-level annotation (enforce-object-literal-as-const.ts:118,365-368), so a still-provably-safe freeze reads as unprovable. Confirmed under a real program: both spellings give callers the identical effective type (#2319)",
 };

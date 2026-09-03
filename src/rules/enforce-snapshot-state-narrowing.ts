@@ -11,7 +11,7 @@ import {
   insertAtImportAnchor,
 } from '../utils/importInsertion';
 
-type MessageIds = 'noFalsyCheck' | 'noRawTypeof';
+type MessageIds = 'noFalsyCheck' | 'noNullishFallback' | 'noRawTypeof';
 
 type Options = [
   {
@@ -120,6 +120,11 @@ export const enforceSnapshotStateNarrowing = createRule<Options, MessageIds>({
       // exist. Every report and suggestion supplies it.
       noFalsyCheck:
         "Do not use boolean coercion on FirestoreSnapshotState<T>. All string states ('idle', 'loading', 'not-found') are truthy, so '{{expression}}' does not behave as intended. Use {{guard}}(state) to narrow to T, or compare explicitly (e.g., state === 'loading').",
+      // `??` is a distinct mistake from `||`, so it gets its own wording: the
+      // problem is not truthiness but that no state is nullish, which makes the
+      // fallback unreachable rather than merely unreliable.
+      noNullishFallback:
+        "Do not use nullish coalescing on FirestoreSnapshotState<T>. No state ('idle', 'loading', 'not-found') is null or undefined, so '{{expression}}' always evaluates to the state itself and the fallback is unreachable, leaving a state string bound where data was expected. Use {{guard}}(state) to choose between them (e.g., {{guard}}(state) ? state : fallback), or compare explicitly (e.g., state === 'loading').",
       noRawTypeof:
         "Do not use '{{expression}}' to narrow FirestoreSnapshotState<T> to data. Use {{guard}}(state) instead to maintain the abstraction boundary.",
     },
@@ -463,14 +468,16 @@ export const enforceSnapshotStateNarrowing = createRule<Options, MessageIds>({
     }
 
     /**
-     * Reports a falsy/truthy check on a snapshot-state identifier.
+     * Reports a narrowing violation on a snapshot-state identifier and attaches
+     * the guard-based rewrite as its suggestion.
      *
      * `replacement` must match the polarity of the flagged expression: a falsy
      * check reads `!isSnapshotReady(state)`, a truthy one `isSnapshotReady(state)`.
      * `fixNode` defaults to the reported node but can be widened when the whole
      * surrounding expression has to be rewritten (e.g. `state || fallback`).
      */
-    function reportFalsyCheck(
+    function reportNarrowing(
+      messageId: 'noFalsyCheck' | 'noNullishFallback',
       node: TSESTree.Node,
       expression: string,
       replacement: string,
@@ -478,15 +485,27 @@ export const enforceSnapshotStateNarrowing = createRule<Options, MessageIds>({
     ): void {
       context.report({
         node,
-        messageId: 'noFalsyCheck',
+        messageId,
         data: { expression, guard: guardName },
         suggest: guardSuggestion(
-          'noFalsyCheck',
+          messageId,
           fixNode,
           replacement,
           context.getScope(),
         ),
       });
+    }
+
+    /**
+     * Reports a falsy/truthy check on a snapshot-state identifier.
+     */
+    function reportFalsyCheck(
+      node: TSESTree.Node,
+      expression: string,
+      replacement: string,
+      fixNode: TSESTree.Node = node,
+    ): void {
+      reportNarrowing('noFalsyCheck', node, expression, replacement, fixNode);
     }
 
     return {
@@ -574,33 +593,43 @@ export const enforceSnapshotStateNarrowing = createRule<Options, MessageIds>({
         }
       },
 
-      // LogicalExpression: state && expr, state || expr
+      // LogicalExpression: state && expr, state || expr, state ?? expr
       LogicalExpression(node: TSESTree.LogicalExpression) {
         const left = node.left;
-        if (
-          (node.operator === '&&' || node.operator === '||') &&
-          left.type === AST_NODE_TYPES.Identifier &&
-          isSnapshotVar(left)
-        ) {
-          if (node.operator === '&&') {
-            // `state && expr` guards expr, so swapping the operand for the
-            // guard keeps both the polarity and the narrowing of `state`.
-            reportFalsyCheck(left, left.name, `${guardName}(${left.name})`);
-            return;
-          }
-          // `state || fallback` evaluates to the state itself when it is
-          // usable, so a bare operand swap would yield `true` instead of the
-          // data. Only the conditional form preserves that value.
-          const guarded = `${guardName}(${left.name}) ? ${
-            left.name
-          } : ${getText(node.right)}`;
-          reportFalsyCheck(
-            left,
-            left.name,
-            needsParentheses(node) ? `(${guarded})` : guarded,
-            node,
-          );
+        if (left.type !== AST_NODE_TYPES.Identifier || !isSnapshotVar(left)) {
+          return;
         }
+
+        if (node.operator === '&&') {
+          // `state && expr` guards expr, so swapping the operand for the
+          // guard keeps both the polarity and the narrowing of `state`.
+          reportFalsyCheck(left, left.name, `${guardName}(${left.name})`);
+          return;
+        }
+
+        // `??` joins the `||` arm rather than the `&&` one: both are fallback
+        // forms whose left operand carries the value, so both need the same
+        // conditional rewrite. `??` is no safer than `||` on a snapshot state —
+        // every non-data member of the union is a truthy string and none is
+        // nullish, so neither operator can reach its fallback — but it fails
+        // for a different reason, so it reports under its own message.
+        const isNullishFallback = node.operator === '??';
+
+        // `state || fallback` evaluates to the state itself when it is
+        // usable, so a bare operand swap would yield `true` instead of the
+        // data. Only the conditional form preserves that value.
+        const guarded = `${guardName}(${left.name}) ? ${left.name} : ${getText(
+          node.right,
+        )}`;
+        reportNarrowing(
+          isNullishFallback ? 'noNullishFallback' : 'noFalsyCheck',
+          left,
+          // The nullish message turns on the whole expression being dead, so it
+          // shows the operator and the fallback it can never reach.
+          isNullishFallback ? getText(node) : left.name,
+          needsParentheses(node) ? `(${guarded})` : guarded,
+          node,
+        );
       },
 
       // BinaryExpression: typeof state === 'object', typeof state !== 'string'
