@@ -22,6 +22,11 @@ The rule ignores:
 - Non-Firestore `update` methods (e.g., `createHash().update()`).
 - `update()` on a Realtime Database batch manager — see below.
 
+It reports without fixing when the call is not the single-data-object form the
+`set(data, { merge: true })` rewrite is valid for — the `update(field, value, …)`
+varargs overload and the `update(data, precondition)` overload — see
+[Call shapes the fix declines](#call-shapes-the-fix-declines).
+
 ### Realtime Database receivers
 
 Realtime Database's batch manager is held under the same `batchManager` field
@@ -82,6 +87,63 @@ await setDoc(ref, { theme: 'dark' }, { merge: true });
 
 - Adds `setDoc` alongside `updateDoc` instead when any reference to `updateDoc` survives the pass, because a multi-rule `--fix` can drop a sibling violation's fix and strand that reference on a removed binding. An existing `firebase/firestore` import is extended rather than duplicated.
 - Declines to fix when `setDoc` is already bound to something else, since the added import would collide with that declaration (TS2440/TS2300) and a narrower-scope shadow would rebind the emitted call to the local value with no diagnostic at all. A `setDoc` imported from a *different* firestore entry point counts as something else: `firebase-admin`'s API is not the modular SDK's, so emitting the call against it would call another function.
+
+### Call shapes the fix declines
+
+`set` has exactly two parameters, `set(data, options)`, so appending
+`{ merge: true }` is a valid rewrite of exactly one `update` call shape: the
+single data object. `update` ships two further documented forms, and appending
+to either emits broken code — one of them silently:
+
+| Form | What the append emitted | Why it is wrong |
+| --- | --- | --- |
+| `ref.update(field, value, …)` | `ref.set('a.b', 1, { merge: true })` | `set` reads the field NAME as the document data, and everything past the second argument is a type error. |
+| `ref.update(data, precondition)` | `ref.set(data, { exists: true }, { merge: true })` | `set` reads its second argument as `SetOptions`. A `Precondition` carries neither `merge` nor `mergeFields`, so the guard is dropped **and** the merge never applies — and a `set` without merge overwrites the whole document, deleting every field the partial update was not naming. |
+
+The second one is the reason the fix is withheld rather than approximated: it
+converts a guarded partial update into a full-document overwrite, exits 0, and
+produces no diagnostic without type information.
+
+The fix therefore fires only on the single-data-object form:
+
+* `ref.update(data)` — exactly one argument, and it is not a string, a template
+  literal, another primitive, or a `FieldPath` (`new FieldPath('a', 'b')`,
+  `admin.firestore.FieldPath.documentId()`);
+* `transaction.update(ref, data)`, `batch.update(ref, data)`,
+  `bulkWriter.update(ref, data)` — exactly two, with the same test on the
+  second;
+* `updateDoc(ref, data)` — exactly two, with the same test on the second;
+* `batchManager.update(ref, data)` — exactly two, since the descriptor object
+  the rewrite builds carries no third argument anywhere.
+
+A spread (`ref.update(...args)`) hides the argument count outright and declines
+for the same reason.
+
+Whether a receiver takes the reference first is read from its last camelCase
+segment — `batch`, `writeBatch`, `bulkWriter`, `transaction`, `tx`, `txn`,
+`trx`, `writer` — rather than from a substring, because a name that merely
+*contains* one of those words is usually a document: `transactionRef` is a
+document in a `transactions` collection, and its single argument is data. An
+unrecognised receiver reads as a document, which is safe in both directions: its
+one-argument calls still rewrite, since `update(data)` is the only valid reading
+of a single argument on any of these receivers, and its two-argument calls
+decline rather than gamble the precondition rewrite on a name. A receiver that
+matches can still be a document — `const batch = db.collection('batches').doc(id)`
+— so an object literal in the reference position withdraws the name's evidence
+and the call declines: no batch or transaction passes a document's *data* where
+its *reference* goes.
+
+**The report stands in every declined case.** Suppressing it instead was
+considered and rejected. Neither broken form has a mechanical `set` equivalent —
+the varargs one has to be folded into an object literal by hand, and a
+precondition has no `set` counterpart at all — but both are still genuine
+`update()` uses that this rule exists to surface, and the author who wrote one
+resolves it by converting the call or by opting out with a reviewable
+`eslint-disable-next-line`. Suppressing would additionally hand the decision to
+the receiver-name heuristic above: a batch this rule fails to recognise would
+stop reporting a violation it can plainly see, which trades a declined **fix**
+for an unenforced **rule**. Declining at the fixer keeps the finding and loses
+only the automation.
 
 ### Indentation of the batch manager descriptor
 
