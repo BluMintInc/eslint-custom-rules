@@ -15,9 +15,21 @@ type ComponentDetectionResult = {
   componentIsCallback: boolean;
 };
 
+/**
+ * Memoization hooks whose first argument this rule inspects for a nested
+ * component.
+ *
+ * `useLatestCallback` belongs here because the sibling `use-latest-callback`
+ * rule rewrites `useCallback(fn, [])` into `useLatestCallback(fn)` under
+ * `--fix`. That rewrite changes only which hook wraps the callback; the
+ * component is still constructed inline inside render scope, which is the
+ * identity churn this rule reports. Omitting the name let the sibling's fix
+ * silently disarm this rule on the very code it had just flagged (#2313).
+ */
 const CALLBACK_HOOKS = new Set([
   'useCallback',
   'useDeepCompareCallback',
+  'useLatestCallback',
   'useMemo',
   'useDeepCompareMemo',
 ]);

@@ -12,7 +12,7 @@ When a component function reference changes, React treats it as a **different co
 
 - **Why**: Component identity stability is critical for React. Inline components often receive a new identity when their containing scope re-renders, causing React to unmount and remount them. Wrapping with `memo()` does NOT fix this—`memo()` only prevents re-renders when props change, not when the component identity itself changes. `useCallback` and `useMemo` can produce stable references when dependencies don't change, but inline component definitions remain fragile and can easily become unstable or stale if dependencies are incorrectly managed.
 - **What it checks**:
-  - Flags components created inside `useCallback`, `useMemo`, `useDeepCompareCallback`, or `useDeepCompareMemo`.
+  - Flags components created inside `useCallback`, `useLatestCallback`, `useMemo`, `useDeepCompareCallback`, or `useDeepCompareMemo`.
   - Flags components (Uppercase identifiers) defined inside render bodies.
   - Flags inline function components passed to component-type props (`*Wrapper`, `*Component`, `*Template`, `*Header`, `*Footer`).
 - **Exemptions**:
@@ -44,6 +44,12 @@ const LoadingWrapperInternal = useCallback<FC<Props>>(
   },
   [isLoading], // When isLoading changes → new component identity → remount
 );
+
+// STILL BAD: `use-latest-callback`'s auto-fix only renames the wrapping hook.
+// The component is constructed inline in render scope either way.
+const LoadingWrapperInternal = useLatestCallback<FC<Props>>((props) => {
+  return <LoadingWrapper isLoading={isLoading} {...props} />;
+});
 ```
 
 ### Component-Type Prop (Bad)
@@ -108,9 +114,11 @@ const MyPage = () => {
 
 - **Render-prop callbacks** (e.g., `render={...}`) are fine; this rule targets component-type props only. A prop counts as component-type only when its name is uppercase-initial **and** ends in `Wrapper`, `Component`, `Template`, `Header`, or `Footer`. A lowercase-initial prop is a render callback even when its tail matches a suffix, so `renderHeader={...}`, `renderFooter={...}`, and `renderTemplate={...}` are not flagged, while `HeaderComponent={...}` and `CatalogWrapper={...}` are. This matches how the rule treats bindings: a non-PascalCase name such as `renderHit` is a render callback, not a component.
 - **JSX elements** passed directly to props are fine (e.g., `header={<TitleSelect />}`).
+- **`useLatestCallback` is inspected like `useCallback`.** The paired `use-latest-callback` rule rewrites `useCallback(fn, [])` into `useLatestCallback(fn)` under `--fix`. That rewrite changes only which memoization hook wraps the callback: the component is still constructed inline inside render scope, so it still gets a new identity on re-render and this rule still reports. Swapping memoization hooks is not the remedy — hoisting the component to module scope is.
 - **Optional-chained spellings** read the same as their plain twins. ESTree wraps a whole optional chain in a `ChainExpression`, so `memo?.(Row)`, `React?.memo(Row)` and `(React?.memo)(Row)` are the same already-memoized hand-back as `memo(Row)`, and `it?.()` / `describe?.()` / `jest?.mock()` keep the test-runner and module-mock exemptions. A non-memo optional call such as `wrap?.(Row)` is still not a memoized hand-back, so the nested component it returns is still flagged.
 
 ## Version
 
 - Introduced in v1.12.6
 - Updated in v1.12.7 to include render bodies and component-type props.
+- Updated to inspect `useLatestCallback`, so `use-latest-callback`'s auto-fix cannot silence this rule on code it had just flagged.
