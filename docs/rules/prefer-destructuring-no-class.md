@@ -31,7 +31,7 @@ When set to `true` (default), enforces object destructuring for property access.
 
 ### `enforceForRenamedProperties`
 
-When set to `false` (default), only enforces destructuring when the property name matches the variable name. When set to `true`, enforces destructuring even when the property needs to be renamed.
+When set to `false` (default), only enforces destructuring when the property name matches the variable name. The match ignores case and underscores, so a variable name that only differs from the property by a naming-convention shift (`FOO` reading `.foo`, `MY_VALUE` reading `.myValue`) still counts as matching — a tool such as `global-const-style` rewriting a module-scope `const` to `SCREAMING_SNAKE_CASE` changes only the binding's spelling, not which property it reads. A variable name that differs beyond case and underscores (`total` reading `.count`) is still treated as a rename and is not reported. When set to `true`, enforces destructuring even when the property needs to be renamed.
 
 ## Examples
 
@@ -50,6 +50,11 @@ const userName = user.name;
 let role;
 const user = { role: 'admin' };
 role = user.role;
+
+// A binding that only case/underscore-shifts the property name still
+// matches under the default options — this is still reported
+const OBJ = { foo: 123 };
+const FOO = OBJ.foo;
 ```
 
 ### ✅ Correct
@@ -65,6 +70,21 @@ const { name, age } = user;
 // eslint-options: {"enforceForRenamedProperties": true}
 const user = { name: 'John' };
 const { name: userName } = user;
+```
+
+```ts
+// A case/underscore-only difference is still fixed with an alias, so the
+// binding name (FOO) is preserved rather than reading a property that
+// doesn't exist
+const OBJ = { foo: 123 };
+const { foo: FOO } = OBJ;
+```
+
+```ts
+// A name that differs beyond case/underscores is a genuine rename and stays
+// exempt under the default options
+const OBJ = { count: 123 };
+const total = OBJ.count;
 ```
 
 ```ts
@@ -86,9 +106,23 @@ const user = new User('John');
 const name = user.name; // Allowed for class instances
 ```
 
+```ts
+// `super.x` has no destructuring form at all: `const { BASE } = super;` is a
+// syntax error, because `super` must be followed by a call or a member
+// access. The rule stays silent whatever the binding is called.
+class Derived extends Base {
+  private static get config() {
+    const base = super.BASE;
+    return base;
+  }
+}
+```
+
 ## Auto-fix
 
 The fixer rewrites the declaration as a destructuring pattern (for example, `const name = user.name;` becomes `const { name } = user;`) and rewrites assignments as `({ name } = user);`.
+
+When the binding's spelling differs from the property's — whether from `enforceForRenamedProperties: true`, or from the case/underscore-only difference the default gate tolerates — the fixer emits the aliased form (`const { foo: FOO } = OBJ;`) so the binding name is preserved. Emitting the plain form (`const { FOO } = OBJ;`) would read a property named `FOO`, which may not exist on the object at all.
 
 The fix is withheld when the declared variable carries a type annotation:
 

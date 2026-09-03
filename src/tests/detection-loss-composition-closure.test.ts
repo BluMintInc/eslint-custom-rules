@@ -913,8 +913,6 @@ export const DETECTION_DESTROYED_BASELINE: Record<string, string> = {
    * type, and a victim that matches names literally loses sight of code it
    * still objects to.
    */
-  'global-const-style -> prefer-destructuring-no-class':
-    'the culprit renames the destination binding to UPPER_SNAKE_CASE and leaves the source `OBJ.foo` untouched, breaking the exact name match `canDestructureObjectProperty` requires (prefer-destructuring-no-class.ts:335); the un-destructured dot access is unchanged (#2316)',
   'global-const-style -> no-hungarian':
     "the culprit renames `bIsActive` to `B_IS_ACTIVE`, and the victim's single-letter prefix check only looks at a lowercase first character (no-hungarian.ts:806-812); the same `b` tag survives in a branch that does not look for it (#2317)",
 
