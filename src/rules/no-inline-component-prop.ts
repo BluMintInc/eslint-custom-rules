@@ -23,6 +23,13 @@ const DEFAULT_OPTIONS: Required<Options[number]> = {
 
 const INLINE_COMPONENT_NAME = 'inline component';
 
+/**
+ * Names followed through wrapper calls before declining. The shapes a fixer
+ * emits need two (`const X = memo(XUnmemoized)`, plus one wrapper above it);
+ * the bound is what keeps a cycle or a long chain from walking the scope graph.
+ */
+const MAX_ALIAS_HOPS = 3;
+
 function isPascalCase(name: string): boolean {
   return /^[A-Z][A-Za-z0-9]*$/.test(name);
 }
@@ -128,12 +135,22 @@ function returnsCreateElement(node: TSESTree.Node): boolean {
   return false;
 }
 
-function isFunctionNode(
-  node: TSESTree.Node | null | undefined,
-): node is
+type FunctionNode =
   | TSESTree.ArrowFunctionExpression
   | TSESTree.FunctionExpression
-  | TSESTree.FunctionDeclaration {
+  | TSESTree.FunctionDeclaration;
+
+/**
+ * Resolves an identifier standing in a wrapper call's argument position to the
+ * function it names, or `undefined` when the reference is not decidable here.
+ */
+type IdentifierResolver = (
+  identifier: TSESTree.Identifier,
+) => FunctionNode | undefined;
+
+function isFunctionNode(
+  node: TSESTree.Node | null | undefined,
+): node is FunctionNode {
   if (!node) return false;
   return (
     node.type === AST_NODE_TYPES.ArrowFunctionExpression ||
@@ -165,45 +182,58 @@ function getCalleeName(callee: TSESTree.LeftHandSideExpression): string | null {
   return null;
 }
 
+const WRAPPER_CALLEE_NAMES = new Set([
+  'useCallback',
+  'React.useCallback',
+  'useMemo',
+  'React.useMemo',
+  'memo',
+  'React.memo',
+  'forwardRef',
+  'React.forwardRef',
+]);
+
+/**
+ * `resolveIdentifier` is what lets `memo(Inner)` be judged at all. `require-memo`
+ * rewrites a nested component into `function InnerUnmemoized() {...}` plus
+ * `const Inner = memo(InnerUnmemoized)`, so reading only an inline literal here
+ * made that rewrite silence this rule while the hazard survived: the renamed
+ * declaration is still recreated per render, and `memo` re-invoked on a fresh
+ * argument yields a fresh component type. Callers that cannot decide where the
+ * name is declared pass no resolver and keep the literal-only reading.
+ */
 function getFunctionFromCall(
   call: TSESTree.CallExpression,
-): TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression | undefined {
+  resolveIdentifier?: IdentifierResolver,
+): FunctionNode | undefined {
   const calleeName = getCalleeName(call.callee);
+  if (!calleeName || !WRAPPER_CALLEE_NAMES.has(calleeName)) {
+    return undefined;
+  }
   const firstArg = unwrapExpression(
     (call.arguments[0] as TSESTree.Expression | null | undefined) ?? null,
   );
-  if (!firstArg || !isFunctionNode(firstArg)) {
-    return undefined;
-  }
-  if (
-    calleeName === 'useCallback' ||
-    calleeName === 'React.useCallback' ||
-    calleeName === 'useMemo' ||
-    calleeName === 'React.useMemo' ||
-    calleeName === 'memo' ||
-    calleeName === 'React.memo' ||
-    calleeName === 'forwardRef' ||
-    calleeName === 'React.forwardRef'
-  ) {
+  if (!firstArg) return undefined;
+  if (isFunctionNode(firstArg)) {
     return firstArg;
+  }
+  if (firstArg.type === AST_NODE_TYPES.Identifier && resolveIdentifier) {
+    return resolveIdentifier(firstArg);
   }
   return undefined;
 }
 
 function getFunctionFromInit(
   init: TSESTree.Expression | null | undefined,
-):
-  | TSESTree.ArrowFunctionExpression
-  | TSESTree.FunctionExpression
-  | TSESTree.FunctionDeclaration
-  | undefined {
+  resolveIdentifier?: IdentifierResolver,
+): FunctionNode | undefined {
   const unwrapped = unwrapExpression(init);
   if (!unwrapped) return undefined;
   if (isFunctionNode(unwrapped)) {
     return unwrapped;
   }
   if (unwrapped.type === AST_NODE_TYPES.CallExpression) {
-    return getFunctionFromCall(unwrapped);
+    return getFunctionFromCall(unwrapped, resolveIdentifier);
   }
   return undefined;
 }
@@ -425,6 +455,66 @@ export const noInlineComponentProp = createRule<Options, MessageIds>({
       return false;
     }
 
+    /**
+     * Follows an identifier in a wrapper call's argument position to the
+     * function it names, declining wherever the reference does not prove
+     * per-render churn.
+     *
+     * Every decline below is a name whose binding is NOT recreated by the
+     * consuming render, or one this rule cannot see the definition of at all:
+     * an unresolved name (import, global, ambient), a parameter, a catch or
+     * class binding, a name declared more than once, a binding assigned more
+     * than once (its identity is not fixed by any single declaration), and a
+     * declaration outside the consuming scope. Only a single-write `Variable`
+     * or `FunctionName` declared by the very function whose JSX passes it along
+     * churns per render.
+     */
+    function resolveLocalFunction(
+      identifier: TSESTree.Identifier,
+      consumerFunction: TSESTree.Node | null,
+      seen: Set<TSESLint.Scope.Variable>,
+    ): FunctionNode | undefined {
+      // An alias chain is bounded so a cycle (`const A = memo(A)`) and a long
+      // re-export chain both terminate rather than recursing on the scope graph.
+      if (seen.size >= MAX_ALIAS_HOPS) return undefined;
+
+      const variable = findVariableInScopes(context, identifier);
+      if (!variable || seen.has(variable)) return undefined;
+      seen.add(variable);
+
+      if (variable.defs.length !== 1) return undefined;
+      const definition = variable.defs[0];
+      if (
+        definition.type !== 'Variable' &&
+        definition.type !== 'FunctionName'
+      ) {
+        return undefined;
+      }
+
+      const writeCount = variable.references.filter((reference) =>
+        reference.isWrite(),
+      ).length;
+      if (writeCount > 1) return undefined;
+
+      const defNode = definition.node;
+      if (
+        resolvedOptions.allowModuleScopeFactories &&
+        isStableForConsumer(defNode, consumerFunction)
+      ) {
+        return undefined;
+      }
+
+      if (defNode.type === AST_NODE_TYPES.FunctionDeclaration) {
+        return defNode;
+      }
+      if (defNode.type === AST_NODE_TYPES.VariableDeclarator) {
+        return getFunctionFromInit(defNode.init, (next) =>
+          resolveLocalFunction(next, consumerFunction, seen),
+        );
+      }
+      return undefined;
+    }
+
     function shouldReportDefinition(
       definition: TSESLint.Scope.Definition,
       displayName: string | undefined,
@@ -446,16 +536,14 @@ export const noInlineComponentProp = createRule<Options, MessageIds>({
         return false;
       }
 
-      let fnNode:
-        | TSESTree.ArrowFunctionExpression
-        | TSESTree.FunctionExpression
-        | TSESTree.FunctionDeclaration
-        | undefined;
+      let fnNode: FunctionNode | undefined;
 
       if (defNode.type === AST_NODE_TYPES.FunctionDeclaration) {
         fnNode = defNode;
       } else if (defNode.type === AST_NODE_TYPES.VariableDeclarator) {
-        fnNode = getFunctionFromInit(defNode.init);
+        fnNode = getFunctionFromInit(defNode.init, (identifier) =>
+          resolveLocalFunction(identifier, consumerFunction, new Set()),
+        );
       } else {
         return false;
       }

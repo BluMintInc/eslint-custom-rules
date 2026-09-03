@@ -38,6 +38,47 @@ export function useCatalogLayout() {
 
 Blocks that are not functions — loop bodies, `if` branches, `try` blocks — do not change the enclosing function, so a wrapper declared inside one still belongs to the surrounding component and is reported. An IIFE that encloses both the definition and the consumer is likewise the same-function case.
 
+### Wrapper calls given a name rather than a literal
+
+`memo(...)`, `forwardRef(...)`, `useCallback(...)` and `useMemo(...)` are read through to the function they wrap, whether the argument is written inline or handed over as an identifier. An identifier is followed to its declaration through the scope chain, and the verdict is taken from **where that declaration sits** — so `memo(LocalFn)` and `memo(ModuleScopeFn)` get opposite answers.
+
+This matters because `require-memo`'s autofix rewrites a nested component into exactly that shape: the declaration is renamed to `<Name>Unmemoized` and a sibling `const <Name> = memo(<Name>Unmemoized)` is appended beside it. Both statements stay in the render scope, so the declaration is still recreated per render and `memo` is re-invoked with a fresh argument — the wrapper is not stable, and the rewrite must not read as a repair.
+
+```tsx
+// ❌ Reported: the renamed declaration is recreated on every render of Page,
+// so memo() returns a new component type each time.
+function Page() {
+  function ItemComponentUnmemoized(props: { value: string }) {
+    return <Row {...props} />;
+  }
+  const ItemComponent = memo(ItemComponentUnmemoized);
+  return <List ItemComponent={ItemComponent} />;
+}
+```
+
+```tsx
+// ✅ Not reported: the declaration and the memo() call both run once.
+function ItemComponentUnmemoized(props: { value: string }) {
+  return <Row {...props} />;
+}
+const ItemComponent = memo(ItemComponentUnmemoized);
+
+function Page() {
+  return <List ItemComponent={ItemComponent} />;
+}
+```
+
+A reference is followed only where the declaration it names decides the question. The rule declines — reports nothing — when the argument is:
+
+- an **imported** name, or one that does not resolve at all (a global, or an ambient declaration from a file the rule never sees);
+- a **parameter**, whose identity is the caller's to keep stable;
+- a name **declared more than once**, or **assigned more than once** (a reassigned `let`), since no single declaration fixes what `memo()` receives;
+- a **class**, catch or other non-function binding;
+- declared **outside** the consuming render scope, which is the stable case above;
+- anything other than a plain identifier — a member expression, an element access, a call result.
+
+Alias chains through wrapper calls are followed for a bounded number of hops, so `const Inner = forwardRef(InnerUnmemoized); const Wrapper = memo(Inner);` still lands on the local declaration while a self-referential initializer terminates rather than recursing.
+
 ❌ Inline wrapper recreated per render:
 
 ```tsx
@@ -168,5 +209,17 @@ function Page({ header }: { header: JSX.Element }) {
 function Page() {
   const wrappers = { CatalogWrapper: (props: { children: JSX.Element }) => <div {...props} /> };
   return <AlgoliaLayout CatalogWrapper={wrappers.CatalogWrapper} />;
+}
+```
+
+```tsx
+// A local name handed to memo() is judged on its declaration, so the
+// rename-plus-wrap shape a fixer emits is still reported.
+function Page() {
+  const CatalogWrapperUnmemoized = (props: { children: JSX.Element }) => (
+    <Wrapper {...props} />
+  );
+  const CatalogWrapper = memo(CatalogWrapperUnmemoized);
+  return <AlgoliaLayout CatalogWrapper={CatalogWrapper} />;
 }
 ```

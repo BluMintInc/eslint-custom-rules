@@ -40,6 +40,40 @@ const MODULE_SCOPE_WRAPPER_OBJECT_AS_CONST = `
     }
     `;
 
+// The exact shape `require-memo`'s --fix emits for a nested component: the
+// declaration is renamed to `<Name>Unmemoized` and a sibling `const <Name> =
+// memo(<Name>Unmemoized)` is appended. Both statements stay inside the render
+// scope, so the declaration is still recreated per render and `memo` is
+// re-invoked on a fresh argument — the hazard the culprit's rewrite was
+// supposed to remove survives it, and this rule must keep saying so.
+const RENAME_AND_WRAP_IN_RENDER = `
+    import { memo } from '../util/memo';
+
+    function Page() {
+      function ItemComponentUnmemoized(props: { value: string }) {
+        return <Row {...props} />;
+      }
+      const ItemComponent = memo(ItemComponentUnmemoized);
+      return <List ItemComponent={ItemComponent} />;
+    }
+    `;
+
+// The same rewrite applied at module scope is the CORRECT, stable pattern: the
+// declaration is created once and `memo` is invoked once. Sharing the text with
+// the fixture above leaves the declaration's scope as the sole difference.
+const RENAME_AND_WRAP_AT_MODULE_SCOPE = `
+    import { memo } from '../util/memo';
+
+    function ItemComponentUnmemoized(props: { value: string }) {
+      return <Row {...props} />;
+    }
+    const ItemComponent = memo(ItemComponentUnmemoized);
+
+    function Page() {
+      return <List ItemComponent={ItemComponent} />;
+    }
+    `;
+
 ruleTesterJsx.run('no-inline-component-prop', noInlineComponentProp, {
   valid: [
     `
@@ -237,6 +271,131 @@ ruleTesterJsx.run('no-inline-component-prop', noInlineComponentProp, {
     );
 
     export const element = <AlgoliaLayout CatalogWrapper={StableWrapper} />;
+    `,
+    // memo(<identifier>) is judged on where the identifier is DECLARED. Every
+    // case below resolves to a binding the consuming render does not recreate,
+    // or to no visible binding at all, so each one must stay silent.
+    RENAME_AND_WRAP_AT_MODULE_SCOPE,
+    {
+      code: RENAME_AND_WRAP_AT_MODULE_SCOPE,
+      options: [{ allowModuleScopeFactories: true }],
+    },
+    // An imported name is defined in another module and cannot churn with this
+    // render.
+    `
+    import { memo } from '../util/memo';
+    import { ItemComponentUnmemoized } from './ItemComponent';
+
+    function Page() {
+      const ItemComponent = memo(ItemComponentUnmemoized);
+      return <List ItemComponent={ItemComponent} />;
+    }
+    `,
+    // A parameter is supplied by the caller; its identity is the caller's to
+    // keep stable, and the message's remedy would not apply.
+    `
+    import { memo } from '../util/memo';
+
+    function Page({ Inner }: { Inner: any }) {
+      const ItemComponent = memo(Inner);
+      return <List ItemComponent={ItemComponent} />;
+    }
+    `,
+    // An unresolvable name — a global, or an ambient declaration from a file
+    // this rule never sees — proves nothing about churn.
+    `
+    import { memo } from '../util/memo';
+
+    function Page() {
+      const ItemComponent = memo(SomeGlobalComponent);
+      return <List ItemComponent={ItemComponent} />;
+    }
+    `,
+    // A rebound binding is not fixed by any single declaration, so the
+    // declaration site does not decide what memo() receives.
+    `
+    import { memo } from '../util/memo';
+
+    function Page({ flag }: { flag: boolean }) {
+      let Inner = (props: { value: string }) => <Row {...props} />;
+      if (flag) {
+        Inner = OtherRow;
+      }
+      const ItemComponent = memo(Inner);
+      return <List ItemComponent={ItemComponent} />;
+    }
+    `,
+    // Declared by a strictly outer function: created once per call of that
+    // function, so every run of the consumer sees the identical reference.
+    `
+    import { memo } from '../util/memo';
+
+    export function withCatalog() {
+      function ItemComponentUnmemoized(props: { value: string }) {
+        return <Row {...props} />;
+      }
+      const ItemComponent = memo(ItemComponentUnmemoized);
+
+      return function Page() {
+        return <List ItemComponent={ItemComponent} />;
+      };
+    }
+    `,
+    // A class binding is not the function-shaped declaration this branch reads,
+    // and the conservative reading declines it.
+    `
+    import { memo } from '../util/memo';
+
+    function Page() {
+      class ItemComponentUnmemoized extends Component {
+        render() {
+          return <Row />;
+        }
+      }
+      const ItemComponent = memo(ItemComponentUnmemoized);
+      return <List ItemComponent={ItemComponent} />;
+    }
+    `,
+    // A self-referential initializer must terminate rather than recurse on the
+    // scope graph, and it names no function to judge.
+    `
+    import { memo } from '../util/memo';
+
+    function Page() {
+      const ItemComponent = memo(ItemComponent);
+      return <List ItemComponent={ItemComponent} />;
+    }
+    `,
+    // memo() with no argument resolves to nothing.
+    `
+    import { memo } from '../util/memo';
+
+    function Page() {
+      const ItemComponent = memo();
+      return <List ItemComponent={ItemComponent} />;
+    }
+    `,
+    // A destructured local carries no function-shaped initializer of its own.
+    `
+    import { memo } from '../util/memo';
+
+    function Page({ deps }: { deps: any }) {
+      const { Inner } = deps;
+      const ItemComponent = memo(Inner);
+      return <List ItemComponent={ItemComponent} />;
+    }
+    `,
+    // A member expression in argument position is not a resolvable name.
+    `
+    import { memo } from '../util/memo';
+
+    function Page() {
+      const wrappers = {
+        Inner: (props: { value: string }) => <Row {...props} />,
+      };
+      const ItemComponent = memo(wrappers.Inner);
+      return <List ItemComponent={ItemComponent} />;
+    }
     `,
   ],
   invalid: [
@@ -530,6 +689,102 @@ ruleTesterJsx.run('no-inline-component-prop', noInlineComponentProp, {
         };
       }
       `,
+      options: [{ allowModuleScopeFactories: false }],
+      errors: [{ messageId: 'inlineComponentProp' }],
+    },
+    // The rename-plus-wrap spelling `require-memo`'s --fix emits. Resolving the
+    // identifier is what keeps this reported: reading only an inline function
+    // literal let one fixer disable this rule while the violation survived.
+    {
+      code: RENAME_AND_WRAP_IN_RENDER,
+      errors: [{ messageId: 'inlineComponentProp' }],
+    },
+    // Past the print width the culprit breaks its sole argument onto its own
+    // line. The verdict is a property of the reference, not of the formatting.
+    {
+      code: `
+      import { memo } from '../util/memo';
+
+      function Page() {
+        function ItemComponentWithARatherLongNameUnmemoized(props: { value: string }) {
+          return <Row {...props} />;
+        }
+        const ItemComponentWithARatherLongName = memo(
+          ItemComponentWithARatherLongNameUnmemoized,
+        );
+        return <List ItemComponent={ItemComponentWithARatherLongName} />;
+      }
+      `,
+      errors: [{ messageId: 'inlineComponentProp' }],
+    },
+    // The namespaced spelling of the same call.
+    {
+      code: `
+      import React from 'react';
+
+      function Page() {
+        const CatalogWrapperUnmemoized = (props: { children: JSX.Element }) => (
+          <Wrapper {...props} />
+        );
+        const CatalogWrapper = React.memo(CatalogWrapperUnmemoized);
+        return <AlgoliaLayout CatalogWrapper={CatalogWrapper} />;
+      }
+      `,
+      errors: [{ messageId: 'inlineComponentProp' }],
+    },
+    // forwardRef takes the same argument position, and a local reference churns
+    // through it identically.
+    {
+      code: `
+      import React from 'react';
+
+      function Page() {
+        const InnerUnmemoized = (props: { children: JSX.Element }, ref: any) => (
+          <div ref={ref}>{props.children}</div>
+        );
+        const CatalogWrapper = React.forwardRef(InnerUnmemoized);
+        return <AlgoliaLayout CatalogWrapper={CatalogWrapper} />;
+      }
+      `,
+      errors: [{ messageId: 'inlineComponentProp' }],
+    },
+    // A bounded chain of wrapper calls still lands on the local declaration.
+    {
+      code: `
+      import { memo, forwardRef } from '../util/memo';
+
+      function Page() {
+        const InnerUnmemoized = (props: { children: JSX.Element }) => (
+          <Wrapper {...props} />
+        );
+        const Inner = forwardRef(InnerUnmemoized);
+        const CatalogWrapper = memo(Inner);
+        return <AlgoliaLayout CatalogWrapper={CatalogWrapper} />;
+      }
+      `,
+      errors: [{ messageId: 'inlineComponentProp' }],
+    },
+    // A hook body re-runs per render of its caller, so the rewritten shape
+    // churns there for the same reason it does in a component.
+    {
+      code: `
+      import { memo } from '../util/memo';
+
+      export function useCatalogLayout() {
+        function CatalogWrapperUnmemoized(props: { children: unknown }) {
+          return <div>{props.children}</div>;
+        }
+        const CatalogWrapper = memo(CatalogWrapperUnmemoized);
+        return <AlgoliaLayout CatalogWrapper={CatalogWrapper} />;
+      }
+      `,
+      errors: [{ messageId: 'inlineComponentProp' }],
+    },
+    // Twin of the valid module-scope fixture: withdrawing the stability
+    // carve-out reports the identical text, which pins that the resolution
+    // reaches the declaration rather than declining for some other reason.
+    {
+      code: RENAME_AND_WRAP_AT_MODULE_SCOPE,
       options: [{ allowModuleScopeFactories: false }],
       errors: [{ messageId: 'inlineComponentProp' }],
     },

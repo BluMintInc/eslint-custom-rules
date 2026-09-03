@@ -923,9 +923,6 @@ export const DETECTION_DESTROYED_BASELINE: Record<string, string> = {
    * expression leaves the expression alone, and a victim whose visitor is gated
    * on a hard-coded hook name stops seeing it.
    */
-  'require-memo -> no-inline-component-prop':
-    'the culprit rewrites the inline component to `memo(NamedReference)`, and the victim resolves a `memo(…)` argument only when it is a function literal (no-inline-component-prop.ts:175,463); the named function is still declared inside the component, so its identity is still unstable (#2314)',
-
   'prefer-nullish-coalescing-boolean-props -> enforce-snapshot-state-narrowing':
     "the culprit rewrites `||` to `??`, which the victim's `LogicalExpression` guard does not accept (enforce-snapshot-state-narrowing.ts:580-581); a snapshot state's sentinels are truthy strings and never nullish, so both operators return the same wrong value (#2315)",
 
