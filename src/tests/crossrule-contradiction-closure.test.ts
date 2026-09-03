@@ -197,6 +197,22 @@ type Exemption = {
  * then update the entry and say what changed.
  */
 const KNOWN_DIVERGENT: Record<string, Exemption> = {
+  'no-restricted-properties-fix::global-const-style': {
+    reason:
+      "PIPELINE: 13 of this rule's blessed texts declare a module-scope const " +
+      'purely as scenery for the property access under test, and the sibling ' +
+      'supplies the UPPER_SNAKE name and `as const` they omit; the composed ' +
+      '`--fix` converges with ZERO residual on 12 (measured). The 13th is the ' +
+      '#2318 fixture pinning that a configured lowercase `object` does not ' +
+      'reach an unrelated PascalCase `Foo` — which it still does not, on the ' +
+      "text as written. After the sibling's rename it does, and legitimately: " +
+      '`const Foo = …` and `const foo = …` both fix to the byte-identical ' +
+      '`const FOO = … as const;` (measured both ways), so under this sibling ' +
+      'the two spellings are ONE binding name and no reader could tell them ' +
+      'apart. Configuring the restriction on the name the codebase actually ' +
+      'carries — `FOO` — is clean under both.',
+    cases: { asConst: 11, upperSnakeCase: 12 },
+  },
   'no-hungarian::global-const-style': {
     reason:
       "PIPELINE: 99 of this rule's blessed texts declare a module-scope const " +
@@ -1075,6 +1091,12 @@ const measuredUnexamined: Record<string, UnexaminedCause> = Object.fromEntries(
  * being made about it.
  */
 const UNEXAMINED_PAIRS: Record<string, UnexaminedCause> = {
+  // `no-restricted-properties-fix` is registered but ships ABSENT from
+  // `configs.recommended.rules`: its whole subject is a per-consumer
+  // `object`/`property` restriction list, so it has nothing to enforce until
+  // someone configures one. It is therefore never a reporter here, and only
+  // the direction that reports on ITS fixtures is examined (#2318).
+  'global-const-style::no-restricted-properties-fix': 'reporterNotEnabled',
   'enforce-assert-safe-object-key::test-file-location-enforcement':
     'reporterIsFilenameArtifact',
   // `enforce-dynamic-file-naming` is registered and declares

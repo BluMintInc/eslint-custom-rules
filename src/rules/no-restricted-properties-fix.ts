@@ -4,6 +4,55 @@ import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 type MessageIds = 'restrictedProperty';
 
 /**
+ * Mirrors `global-const-style`'s own `toUpperSnakeCase`: both must agree on
+ * what a camelCase name becomes so that a config `object` string written
+ * before the sibling rule's rename still recognizes the code after it
+ * (Issue #2318 -- `global-const-style` renames a module-scope
+ * `disallowedObject` const to `DISALLOWED_OBJECT`, and a purely spelling-based
+ * match against `disallowedObject` goes silent on the renamed identifier even
+ * though the same restricted property is still being read off it). Splitting
+ * on case *boundaries* rather than just uppercasing keeps acronym runs intact
+ * and reproduces the sibling rule's output exactly.
+ */
+function toUpperSnakeCase(name: string): string {
+  return name
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
+    .toUpperCase()
+    .replace(/^_/, '');
+}
+
+/** Whether `name` already has the exact shape `global-const-style` emits. */
+function isUpperSnakeCase(name: string): boolean {
+  return /^[A-Z][A-Z0-9_]*$/.test(name);
+}
+
+/**
+ * Matches a configured `object` name against an identifier, tolerating the
+ * one rewrite `global-const-style` performs on it: a module-scope const
+ * renamed from camelCase to UPPER_SNAKE_CASE. The match stays restricted to
+ * identifiers that are ALREADY in that exact UPPER_SNAKE_CASE shape --
+ * comparing case-insensitively across the board would also equate a
+ * configured `foo` with an unrelated PASCAL-cased `Foo` (a React component
+ * name, say), which `global-const-style` never rewrites and which the
+ * configured `foo` was never meant to reach. Restricting the tolerant branch
+ * to names `global-const-style` could plausibly have produced keeps the
+ * broadened match tied to the one rename it is compensating for, rather than
+ * a blanket case-insensitive comparison that would invite false positives on
+ * unrelated identifiers.
+ */
+function objectNameMatches(
+  identifierName: string,
+  configuredName: string,
+): boolean {
+  return (
+    identifierName === configuredName ||
+    (isUpperSnakeCase(identifierName) &&
+      identifierName === toUpperSnakeCase(configuredName))
+  );
+}
+
+/**
  * This rule is a wrapper around the core ESLint no-restricted-properties rule
  * that adds special handling for Object.keys() and Object.values() results.
  * It prevents false positives when accessing standard array properties/methods
@@ -128,7 +177,7 @@ export const noRestrictedPropertiesFix = createRule<
           const objectMatches =
             restrictedProp.object &&
             node.object.type === AST_NODE_TYPES.Identifier &&
-            node.object.name === restrictedProp.object;
+            objectNameMatches(node.object.name, restrictedProp.object);
 
           const propertyMatches =
             restrictedProp.property &&
@@ -163,10 +212,22 @@ export const noRestrictedPropertiesFix = createRule<
             propertyMatches
           ) {
             // Check if the object is in the allowObjects list
+            const objectIdentifierName =
+              node.object.type === AST_NODE_TYPES.Identifier
+                ? node.object.name
+                : '';
+            // `allowObjects` names a BINDING exactly as `object` does, so it
+            // must tolerate the same UPPER_SNAKE_CASE rewrite. Normalizing only
+            // the restrictive side would let `global-const-style`'s rename turn
+            // an explicitly allowed access (`router.push`) into a reported one
+            // (#2318).
+            const allowObjects = restrictedProp.allowObjects;
             if (
-              restrictedProp.allowObjects &&
+              allowObjects &&
               node.object.type === AST_NODE_TYPES.Identifier &&
-              restrictedProp.allowObjects.includes(node.object.name)
+              allowObjects.some((allowed) =>
+                objectNameMatches(objectIdentifierName, allowed),
+              )
             ) {
               continue;
             }
