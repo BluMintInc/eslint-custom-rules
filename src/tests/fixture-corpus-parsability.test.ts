@@ -343,7 +343,7 @@ const PARSED_CASES_BY_RULE: Record<string, number> = {
   'require-https-error-cause': 34,
   'require-image-optimized': 108,
   'require-memo': 181,
-  'require-memoize-jsx-returners': 199,
+  'require-memoize-jsx-returners': 208,
   'require-migration-script-metadata': 36,
   'require-props-composition': 233,
   'require-server-timestamp-for-firestore-dates': 63,

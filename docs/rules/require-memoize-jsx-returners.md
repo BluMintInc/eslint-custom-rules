@@ -41,6 +41,7 @@ class ProviderFactory {
 - Skips members with a **private name** (`#view() { … }`, `get #view() { … }`), where no decorator is legal either (see below).
 - Skips `render()` on a **React class component** — a class extending `Component` / `PureComponent` / `React.Component` / `React.PureComponent` — because React calls `render()` on every state and props change, so memoizing it pins the component to its first output (see below).
 - Functions inside React components that rely on hooks (e.g., `useCallback`, `useMemo`) are out of scope because the rule only inspects class members.
+- Treats a member returning `memo(Component)` as returning a JSX factory. The `memo` binding is recognized when it comes from `react` **or** from the project's memo wrapper `src/util/memo`, in any spelling of that module (see below).
 - Recognizes `@Memoize`, aliased imports, and namespaced forms like `@memoize.Memoize()`. Auto-fix reuses existing aliases and inserts `import { Memoize } from '@blumintinc/typescript-memoize';` if missing.
 - When other decorators exist, `@Memoize()` is added without removing them; multiple violations in a file share a single inserted import.
 - The decorator attaches to the member itself, so a member that shares its line receives it inline (see below).
@@ -365,3 +366,59 @@ fix, and is the remedy for a property arrow whose JSX is worth memoizing. This
 carve-out rests on the same ground as the class-expression and private-name
 ones above, and is tied to the legacy-decorator signature in the same way that
 `enforce-memoize-async`'s matching carve-out is.
+
+### Recognized `memo` imports
+
+A member returning `memo(Component)` returns a JSX-producing factory, so it is
+reported like any other. The `memo` binding is recognized when it is imported
+from:
+
+- **`react`** — `import { memo } from 'react'`, an aliased specifier
+  (`import { memo as memoized } from 'react'`), or `React.memo` reached through
+  a default or namespace import.
+- **the project's memo wrapper, `src/util/memo`**, which re-exports React's
+  `memo`, through a named specifier — aliased or not, and beside any companion
+  the wrapper also exports (`import { memo, compareDeeply } from ...`). That
+  import is what `use-custom-memo` rewrites every react `memo` import to, so
+  recognizing the react spelling alone would let that rule's `--fix` switch this
+  one off: the import line changes, the member does not, and an undecorated JSX
+  factory stays intact while its detection disappears.
+
+Every spelling of the wrapper counts, because they name one module — the
+`src/util/memo` alias `use-custom-memo` emits, a `@/util/memo` alias, and any
+depth of relative path (`../util/memo`, `../../../util/memo`). A relative
+specifier is resolved against the importing file first, so a file sitting inside
+the wrapper's own directory, which spells it `../memo`, is recognized too.
+
+```tsx
+// src/components/edit/Provider.tsx
+import { Memoize } from '@blumintinc/typescript-memoize';
+import { memo, compareDeeply } from '../../util/memo';
+
+class Provider {
+  // Reported without the decorator, exactly as the `react` spelling is.
+  @Memoize()
+  public get ProviderComponent() {
+    const UnmemoizedProvider = () => <div />;
+    return memo(UnmemoizedProvider, compareDeeply('id'));
+  }
+}
+```
+
+A `memo` from any other module is a different function, and a member returning
+it is left alone. The module's path segments decide this, not the name `memo`
+alone, so a neighbouring `./memo`, a `util/memoize`, and a package that merely
+spells the word are all outside the rule:
+
+```tsx
+// src/components/Cache.tsx
+import { memo } from 'lodash-memo';
+
+// Not reported: this `memo` is not React's.
+class Cache {
+  public get Component() {
+    const Inner = () => <div />;
+    return memo(Inner);
+  }
+}
+```

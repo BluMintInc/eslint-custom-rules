@@ -84,6 +84,56 @@ class LocalMemoHelper {
 }`,
     },
     {
+      // A package that merely spells `memo` is not React's memo, however the
+      // wrapper module is recognised.
+      filename: 'file.tsx',
+      code: `import { memo } from 'lodash-memo';
+
+class UnrelatedMemoHelper {
+  get ProviderComponent() {
+    const Inner = () => <div>Wrapped</div>;
+    return memo(Inner);
+  }
+}`,
+    },
+    {
+      filename: 'file.tsx',
+      code: `import { memo } from 'src/util/memoize';
+
+class NeighbouringModule {
+  get ProviderComponent() {
+    const Inner = () => <div>Wrapped</div>;
+    return memo(Inner);
+  }
+}`,
+    },
+    {
+      // A relative specifier resolves against the importing file, so `../memo`
+      // outside the wrapper's own directory names a different module.
+      filename: 'src/components/react/Provider.tsx',
+      code: `import { memo } from '../memo';
+
+class NeighbouringRelativeModule {
+  get ProviderComponent() {
+    const Inner = () => <div>Wrapped</div>;
+    return memo(Inner);
+  }
+}`,
+    },
+    {
+      filename: 'file.tsx',
+      code: `import { Memoize } from '@blumintinc/typescript-memoize';
+import { memo } from 'src/util/memo';
+
+class DecoratedProvider {
+  @Memoize()
+  public get ProviderComponent() {
+    const UnmemoizedProvider = () => <div>Wrapped</div>;
+    return memo(UnmemoizedProvider);
+  }
+}`,
+    },
+    {
       filename: 'file.tsx',
       code: `class NoJsxFactory {
   build() {
@@ -349,6 +399,120 @@ class RendererFactory {
   @Memoize()
   public get Renderer() {
     return () => () => <div>Double Wrapped</div>;
+  }
+}`,
+    },
+    {
+      // The spelling most of the consumer tree uses, beside the wrapper's own
+      // `compareDeeply` companion.
+      filename: 'src/components/edit/Provider.tsx',
+      code: `import { memo, compareDeeply } from '../../util/memo';
+
+class RelativeProvider {
+  public get ProviderComponent() {
+    const UnmemoizedProvider = () => <div>Wrapped</div>;
+    return memo(UnmemoizedProvider, compareDeeply('id'));
+  }
+}`,
+      errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+      output: `import { Memoize } from '@blumintinc/typescript-memoize';
+import { memo, compareDeeply } from '../../util/memo';
+
+class RelativeProvider {
+  @Memoize()
+  public get ProviderComponent() {
+    const UnmemoizedProvider = () => <div>Wrapped</div>;
+    return memo(UnmemoizedProvider, compareDeeply('id'));
+  }
+}`,
+    },
+    {
+      filename: 'file.tsx',
+      code: `import { memo as memoized } from '@/util/memo';
+
+class AliasedProvider {
+  public get ProviderComponent() {
+    const UnmemoizedProvider = () => <div>Wrapped</div>;
+    return memoized(UnmemoizedProvider);
+  }
+}`,
+      errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+      output: `import { Memoize } from '@blumintinc/typescript-memoize';
+import { memo as memoized } from '@/util/memo';
+
+class AliasedProvider {
+  @Memoize()
+  public get ProviderComponent() {
+    const UnmemoizedProvider = () => <div>Wrapped</div>;
+    return memoized(UnmemoizedProvider);
+  }
+}`,
+    },
+    {
+      // A file inside the wrapper's own directory spells it `../memo`, which
+      // names the wrapper only once resolved against the importing file.
+      filename: 'src/util/react/buildContext.tsx',
+      code: `import { memo } from '../memo';
+
+class InDirectoryProvider {
+  public get ProviderComponent() {
+    const UnmemoizedProvider = () => <div>Wrapped</div>;
+    return memo(UnmemoizedProvider);
+  }
+}`,
+      errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+      output: `import { Memoize } from '@blumintinc/typescript-memoize';
+import { memo } from '../memo';
+
+class InDirectoryProvider {
+  @Memoize()
+  public get ProviderComponent() {
+    const UnmemoizedProvider = () => <div>Wrapped</div>;
+    return memo(UnmemoizedProvider);
+  }
+}`,
+    },
+    {
+      // A method, not a getter, and the wrapper reached through a deeper
+      // relative path.
+      filename: 'src/components/x/y/Renderer.tsx',
+      code: `import { memo } from '../../../util/memo';
+
+class Renderer {
+  public buildRow() {
+    const Row = () => <li>Row</li>;
+    return memo(Row);
+  }
+}`,
+      errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+      output: `import { Memoize } from '@blumintinc/typescript-memoize';
+import { memo } from '../../../util/memo';
+
+class Renderer {
+  @Memoize()
+  public buildRow() {
+    const Row = () => <li>Row</li>;
+    return memo(Row);
+  }
+}`,
+    },
+    {
+      filename: 'file.tsx',
+      code: `import { memo } from 'src/util/memo';
+class Provider {
+  public get ProviderComponent() {
+    const UnmemoizedProvider = () => <div>Wrapped</div>;
+    return memo(UnmemoizedProvider);
+  }
+}`,
+      errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+      output: `import { Memoize } from '@blumintinc/typescript-memoize';
+import { memo } from 'src/util/memo';
+class Provider {
+  @Memoize()
+  public get ProviderComponent() {
+    const UnmemoizedProvider = () => <div>Wrapped</div>;
+    return memo(UnmemoizedProvider);
   }
 }`,
     },

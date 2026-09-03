@@ -7,12 +7,19 @@ import {
   importInsertionAnchor,
   insertAtImportAnchor,
 } from '../utils/importInsertion';
+import { isCustomMemoModuleImport } from '../utils/memoModule';
 
 type MessageIds = 'requireMemoizeJsxReturner';
 type Options = [];
 
 type JsxFactoryContext = {
-  reactMemoIdentifiers: Set<string>;
+  /**
+   * Every local name bound to a `memo` that wraps a component — React's own and
+   * the project wrapper's, which re-exports it. `use-custom-memo` rewrites the
+   * react spelling to the wrapper, so a set holding only react's bindings empties
+   * the moment that fixer runs.
+   */
+  memoIdentifiers: Set<string>;
   reactNamespaceIdentifiers: Set<string>;
   reactCreateElementIdentifiers: Set<string>;
 };
@@ -462,7 +469,7 @@ function callExpressionReturnsJSX(
     }
 
     if (
-      factoryContext.reactMemoIdentifiers.has(callee.name) &&
+      factoryContext.memoIdentifiers.has(callee.name) &&
       firstNonSpreadArgument &&
       expressionReturnsJSX(
         firstNonSpreadArgument,
@@ -984,11 +991,11 @@ export const requireMemoizeJsxReturners = createRule<Options, MessageIds>({
     const isReportSuppressed = createSuppressionChecker(context);
 
     const jsxReturnCache = new WeakMap<FunctionLike, JsxReturnCacheState>();
-    const reactMemoIdentifiers = new Set<string>();
+    const memoIdentifiers = new Set<string>();
     const reactNamespaceIdentifiers = new Set<string>();
     const reactCreateElementIdentifiers = new Set<string>();
     const factoryContext: JsxFactoryContext = {
-      reactMemoIdentifiers,
+      memoIdentifiers,
       reactNamespaceIdentifiers,
       reactCreateElementIdentifiers,
     };
@@ -1004,7 +1011,7 @@ export const requireMemoizeJsxReturners = createRule<Options, MessageIds>({
               specifier.imported.type === AST_NODE_TYPES.Identifier &&
               specifier.imported.name === 'memo'
             ) {
-              reactMemoIdentifiers.add(
+              memoIdentifiers.add(
                 specifier.local?.name ?? specifier.imported.name,
               );
             } else if (
@@ -1023,6 +1030,22 @@ export const requireMemoizeJsxReturners = createRule<Options, MessageIds>({
               specifier.type === AST_NODE_TYPES.ImportNamespaceSpecifier
             ) {
               reactNamespaceIdentifiers.add(specifier.local.name);
+            }
+          });
+        } else if (isCustomMemoModuleImport(sourceValue, filename)) {
+          // The wrapper re-exports React's `memo` and nothing else this rule
+          // reads, so only the `memo` binding is collected: `createElement` and
+          // a namespace object stay bound to a react import, keeping an
+          // unrelated `X.createElement` out.
+          node.specifiers.forEach((specifier) => {
+            if (
+              specifier.type === AST_NODE_TYPES.ImportSpecifier &&
+              specifier.imported.type === AST_NODE_TYPES.Identifier &&
+              specifier.imported.name === 'memo'
+            ) {
+              memoIdentifiers.add(
+                specifier.local?.name ?? specifier.imported.name,
+              );
             }
           });
         }
