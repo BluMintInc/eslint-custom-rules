@@ -908,15 +908,6 @@ export const DETECTION_DESTROYED_BASELINE: Record<string, string> = {
     'either culprit alone strips the `: string` annotation `functionYieldsThenable` trusts over the body (prefer-getter-over-parameterless-method.ts:1035-1037); the coerced getter candidate is byte-for-byte unchanged, and body scanning then wrongly exempts it as async. A seventh instance of the #2003 class, and the first with a second culprit (#2003)',
 
   /**
-   * The identifier-spelling family. A renaming fixer is the mirror of an
-   * annotation-stripping one: the carrier destroyed is the NAME rather than the
-   * type, and a victim that matches names literally loses sight of code it
-   * still objects to.
-   */
-  'global-const-style -> no-hungarian':
-    "the culprit renames `bIsActive` to `B_IS_ACTIVE`, and the victim's single-letter prefix check only looks at a lowercase first character (no-hungarian.ts:806-812); the same `b` tag survives in a branch that does not look for it (#2317)",
-
-  /**
    * The callee-spelling family. A fixer that swaps which hook wraps an
    * expression leaves the expression alone, and a victim whose visitor is gated
    * on a hard-coded hook name stops seeing it.

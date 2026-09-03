@@ -18,7 +18,7 @@ This rule disallows embedding type information in identifier names (Hungarian no
 
 - Locally declared identifiers that start or end with common type markers (camelCase, PascalCase, or SCREAMING_SNAKE_CASE).
 - Class members and parameters that reuse the same markers.
-- Single-letter type prefixes `b` (boolean) and `i` (integer/index) when followed by an uppercase letter, e.g. `bIsActive`, `iCount`.
+- Single-letter type prefixes `b` (boolean) and `i` (integer/index) when followed by an uppercase letter, e.g. `bIsActive`, `iCount`. The same tag is caught in `SCREAMING_SNAKE_CASE` when the letter is a leading segment of its own followed by at least one more segment, e.g. `B_IS_ACTIVE`, `I_COUNT` — this keeps the rule firing on names that `global-const-style` renames from camelCase into `SCREAMING_SNAKE_CASE` (`bIsActive` → `B_IS_ACTIVE`).
 - The rule allows common compound nouns (for example, `PhoneNumber`, `EmailAddress`) and descriptive suffixes like `Formatted`, `Parsed`, or `Converted`.
 - Built-in methods and imported identifiers are ignored to avoid false positives for code you do not control.
 
@@ -33,6 +33,7 @@ This rule disallows embedding type information in identifier names (Hungarian no
 - **Glyph-domain `Symbol` compounds.** A trailing `Symbol` whose head noun names something that is *written with a glyph* denotes that printed character (`"$"`, `"BTC"`, `"kg"`, `"Fe"`), not the JavaScript `symbol` primitive — the value is a string, so there is no type marker to strip, and stripping it yields a wrong name (`currency` is the currency, not the character it is written with). ISO 4217 and CLDR call the glyph a *currency symbol*. Examples: `currencySymbol`, `getCurrencySymbol`, `tickerSymbol`, `tokenSymbol`, `unitSymbol`, `elementSymbol`, `CURRENCY_SYMBOL`. This is the `Symbol` analog of the `<entity>Number` carve-out. The `Symbol` marker is otherwise intact: head nouns whose value really is a JS symbol keep firing (`idSymbol`, `cacheSymbol`, `brandSymbol`), as does any use in *prefix* position (`symbolKey`, `SYMBOL_TABLE`).
 - **Taxonomy `Class` compounds.** A trailing `Class` whose head noun names a bucketing taxonomy denotes the *category a value falls into*, not the JavaScript `class` construct — "window size class" is the Material Design 3 / UIKit term for a breakpoint bucket (compact/medium/expanded), a regex *character class* is `[a-z]`, an S3 *storage class* is `"STANDARD"`. The value is a string or number map, so there is no type marker to strip, and stripping it yields a wrong name (`WINDOW_SIZE` names a width, not a bucket). Examples: `WINDOW_SIZE_CLASS`, `windowSizeClass`, `SIZE_CLASS`, `characterClass`, `storageClass`, `assetClass`, `weightClass`, `fareClass`. This is the `Class` analog of the `<entity>Number` carve-out. The `Class` marker is otherwise intact: head nouns outside the taxonomy list keep firing (`UserClass`, `userClass`, `HELPER_CLASS`), as does any use in *prefix* position (`classRegistry`, `CLASS_MAP`).
 - **Converter functions.** A name whose FINAL segment is a full type word placed directly after a conversion head (`to`, `as`, `from`, `parse`, `into`, `convertTo`) names the type the conversion *produces*, not the type of the value the identifier holds — the identifier holds a function. Stripping the type word leaves `to` / `parse` / `from`, which name nothing, so the whole compound is the concept, exactly as in the `StringToNumber` type-concept allowance above. Examples: `toNumber`, `toBoolean`, `toArray`, `toObject`, `parseBoolean`, `fromString`, `asNumber`, `convertToNumber`, `toString`, `TO_NUMBER`. This is the converter pattern the sibling `enforce-verb-noun-naming` rule documents as correct, so the two recommended rules agree on it. The exemption is granted only where the declaration syntactically PROVES a function — a function declaration, a function/arrow initializer, a class method, or a class field holding a function — which is the `Symbol` / `Class` proof running the other way: there it withdraws a carve-out, here it grants one. Anything else keeps firing: a non-function binding (`const toNumber = 5`, `let toNumber: (v: string) => number`, `const toNumber = parseFloat`), an accessor whose use site reads as a value (`get toNumber()`), a parameter holding the converted value (`function convert(toNumber: string)`), an abbreviation marker anywhere (`strToNumber`, `toNum`, `toStr`), and the type word in any other position (`numberToValue`, `toDisplayString`). A `: symbol` or `: boolean` return annotation confirms the conversion target rather than withdrawing the exemption.
+- **Real-word first `SCREAMING_SNAKE_CASE` segments.** The single-letter prefix check only fires when the leading segment is EXACTLY `B` or `I` on its own; a longer first segment is a word fragment, not a lone-letter type tag, so `TAB_INDEX`, `LIB_VERSION`, `UI_CONFIG`, and `BIN_PATH` stay valid. A bare `B` or `I` with no following segment is left alone too — there is no tagged name for the letter to prefix.
 - **Type annotations.** The rule judges only the identifier name, never the annotation, so `type TeamSize = Readonly<Range<number>>` is allowed. The exceptions are the glyph and taxonomy carve-outs above: a declaration that syntactically proves a JS `symbol` — an explicit `: symbol` / `unique symbol` annotation, or a `Symbol()` initializer — withdraws the former, so `const currencySymbol: symbol = Symbol('currency')` is still flagged; a declaration that syntactically proves a real class — a `class` expression initializer, a class declaration's own name, or a `new (...) => T` constructor-type annotation — withdraws the latter, so `const SizeClass = class {}` is still flagged.
 
 ### How to fix
@@ -49,6 +50,8 @@ const userDataObject = { name: "John", age: 30 };
 const itemsArray = ["apple", "banana"];
 
 const USER_ROLES_ARRAY = ["admin", "user"];
+const B_IS_ACTIVE = true;
+const I_COUNT = 0;
 
 function getUserObjectData() {
   const paramString = "value";
@@ -68,6 +71,12 @@ const userData = { name: "John", age: 30 };
 const items = ["apple", "banana"];
 
 const userRoles = ["admin", "user"];
+
+// A real word as the leading SCREAMING_SNAKE_CASE segment is not a lone-letter
+// type tag, so these stay valid
+const TAB_INDEX = 0;
+const LIB_VERSION = "1.0.0";
+const UI_CONFIG = { theme: "dark" };
 
 function getUserData() {
   const name = "John";
