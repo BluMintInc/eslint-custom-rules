@@ -117,6 +117,17 @@ await userSetter.set({
 });
 ```
 
+## Editor suggestion
+
+The rule offers the suggestion "Add shouldFlatten: true to the DocSetter options."
+
+- When the options literal has no `shouldFlatten` member, the suggestion adds one, creating the options object when the constructor has no second argument.
+- When the options literal already writes `shouldFlatten: false`, the suggestion rewrites that value to `true` in place. Appending a second member would give the literal the same key twice (`TS1117`, and core `no-dupe-keys`).
+- When the existing `shouldFlatten` value is anything but the literal `false` — a variable, a conditional, a call, a shorthand reference, a getter — it may already be `true`, so the suggestion is withheld and only the violation is reported. Change those by hand.
+- The key is read in every static spelling: `shouldFlatten`, `'shouldFlatten'` and `['shouldFlatten']` all name the same option, both when deciding whether flattening is enabled and when editing.
+
+Options passed by reference, wrapped in a type assertion, or spread into the call cannot be edited textually, so those carry no suggestion either.
+
 ## When Not To Use It
 
 You might consider disabling this rule if:

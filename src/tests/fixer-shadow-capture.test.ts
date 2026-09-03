@@ -2002,17 +2002,23 @@ const UNPROBED_RULES: Record<string, Reason> = {
   'enforce-unique-cursor-headers': REASONS.noEnclosingBlock,
 
   /**
-   * The two the injection's own controls reject. Each has a landing shadow and
+   * The one the injection's own controls reject. It has a landing shadow and
    * nothing else, which is the row a `probed` total on its own scores green —
    * the injection lands, and no fixer output is read behind it (#2247).
    *
-   * `enforce-centralized-mock-firestore` reports on the shadow. Its one trigger
-   * names `mockFirestore`, and standing
-   * `const mockFirestore = …` inside `async function setupTests()` moves its
-   * single report off the fixture's `const { mockFirestore: … } = await
-   * import(…)` at offset 55 and onto the injected declaration at offset 45 —
-   * one report in, one out, the same subject swap the class wrapper produces on
-   * `global-const-style`.
+   * `enforce-centralized-mock-firestore` LEFT this class, and the departure was
+   * measured before it was accepted: holding the widened rule fixed and
+   * restoring only its pre-#2307 fixtures returns the count to 28, and the
+   * fixtures alone carry it to 29. The corpus moved it, not the rule.
+   * `reportsOnInjection` was always a fact about that corpus rather than about
+   * the rule — the rule had exactly ONE trigger, and it named `mockFirestore`
+   * inside `async function setupTests()`, so the injected
+   * `const mockFirestore = …` at offset 45 stood AHEAD of the fixture's own
+   * `const { mockFirestore: … } = await import(…)` at offset 55. This rule
+   * reports once per file on the first subject it collects, so the shadow
+   * standing first took the single report onto the scaffolding. #2307 adds a
+   * trigger the controls accept, and the rule is driven by the arm below
+   * instead — a stronger gate than the entry it replaces.
    *
    * `enforce-timestamp-now` is silenced by it. All 9 of its triggers name
    * `Timestamp`, and the rule keys on `Timestamp` resolving to the
@@ -2021,7 +2027,6 @@ const UNPROBED_RULES: Record<string, Reason> = {
    * resolve. A fixer that does not run cannot demonstrate anything about where
    * what it emits resolves.
    */
-  'enforce-centralized-mock-firestore': REASONS.reportsOnInjection,
   'enforce-timestamp-now': REASONS.silencedByShadow,
 
   // Nested, their reports DO land in a function block, and the fix still emits
@@ -2050,8 +2055,8 @@ const UNPROBED_RULES: Record<string, Reason> = {
   // `enforce-centralized-mock-firestore` left this class for the same reason
   // (#1967): its fixer injects a module-scope `mockFirestore` import and then
   // renames the call sites to it, so once a fixture destructured the mock under
-  // a new name INSIDE a function, the reason stopped holding. It carries the
-  // `reportsOnInjection` reason above rather than this one.
+  // a new name INSIDE a function, the reason stopped holding. It is absent from
+  // this map entirely, having since left `reportsOnInjection` too (#2307).
   'enforce-early-destructuring': REASONS.noModuleBoundReference,
   'enforce-empty-object-check': REASONS.noModuleBoundReference,
   'enforce-exported-function-types': REASONS.noModuleBoundReference,
@@ -2206,13 +2211,13 @@ describe('fixers must not emit a reference an inner shadow captures', () => {
    * pass.
    */
   it('exercises a meaningful number of transforming rules', () => {
-    expect(transformingRules.length).toBeGreaterThan(80); // measured 90
+    expect(transformingRules.length).toBeGreaterThan(80); // measured 91
     // Exact, not a floor: every unprobed rule is named below with the reason
     // the run produced for it, so slack here would only hide a rule going dark.
     expect(rulesProbed).toBe(
       transformingRules.length - Object.keys(UNPROBED_RULES).length,
     );
-    expect(totalProbed).toBeGreaterThanOrEqual(1300); // measured 1,455
+    expect(totalProbed).toBeGreaterThanOrEqual(1300); // measured 1,456
     expect(corpus.failures).toEqual([]);
   });
 
@@ -2220,7 +2225,7 @@ describe('fixers must not emit a reference an inner shadow captures', () => {
    * What the injections actually did, as an accounting rather than a total.
    *
    * `totalProbed` counts SHADOWS STOOD, which is not work done: 1,302 of the
-   * 1,455 end with the rule declining every fix, so a floor on it certifies
+   * 1,456 end with the rule declining every fix, so a floor on it certifies
    * mostly that injections landed. `examinedFixes` is the count of fixer
    * outputs read back and resolved, and it is an order of magnitude smaller.
    * Both matter and neither substitutes for the other — a decline IS the

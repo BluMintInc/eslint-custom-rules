@@ -48,6 +48,22 @@ const BATCH_MANAGER = 'batchManager';
  * the rule's scope entirely.
  */
 const REALTIME_BATCH_MANAGER = 'RealtimeBatchManager';
+/** Firestore's single-field addressing class, in every spelling it reaches. */
+const FIELD_PATH = 'FieldPath';
+/**
+ * Receivers whose `update(…)` puts the document reference in the first
+ * position. See {@link takesReferenceFirst}.
+ */
+const REFERENCE_FIRST_RECEIVERS = new Set([
+  'batch',
+  'writebatch',
+  'bulkwriter',
+  'transaction',
+  'trx',
+  'tx',
+  'txn',
+  'writer',
+]);
 
 /**
  * Where a firestore export enters the file: the entry inside `import { … }`, or
@@ -372,6 +388,95 @@ function unwrapTransparent(node: TSESTree.Node): TSESTree.Node {
   return stripped.type === AST_NODE_TYPES.ChainExpression
     ? unwrapTransparent(stripped.expression)
     : stripped;
+}
+
+/**
+ * Whether an expression names Firestore's `FieldPath`, which addresses a single
+ * field rather than carrying a document's data.
+ *
+ * Every spelling reaches the same class — a bare `new FieldPath('a', 'b')`, the
+ * namespaced `new admin.firestore.FieldPath(…)`, and the static
+ * `admin.firestore.FieldPath.documentId()` — so the rightmost `FieldPath`
+ * segment anywhere in the callee or the member chain is what answers.
+ */
+function namesFieldPath(node: TSESTree.Node): boolean {
+  const expression = unwrapTransparent(node);
+  switch (expression.type) {
+    case AST_NODE_TYPES.Identifier:
+      return expression.name === FIELD_PATH;
+    case AST_NODE_TYPES.MemberExpression:
+      return (
+        (!expression.computed &&
+          expression.property.type === AST_NODE_TYPES.Identifier &&
+          expression.property.name === FIELD_PATH) ||
+        namesFieldPath(expression.object)
+      );
+    case AST_NODE_TYPES.NewExpression:
+    case AST_NODE_TYPES.CallExpression:
+      return namesFieldPath(expression.callee);
+    default:
+      return false;
+  }
+}
+
+/**
+ * Whether an argument is the document-data object the rewrite appends its
+ * options to, rather than the field name of `update(field, value, …)`.
+ *
+ * A primitive and a `FieldPath` are the two things the varargs overload puts in
+ * that position, and neither is data: handing one to `set` makes it the whole
+ * document (#2311).
+ */
+function isDocumentData(node: TSESTree.Node | undefined): boolean {
+  return !!node && !isPrimitiveLiteral(node) && !namesFieldPath(node);
+}
+
+/** The identifier that names a receiver, however the expression reaches it. */
+function receiverName(node: TSESTree.Node): string | null {
+  const receiver = unwrapTransparent(node);
+  switch (receiver.type) {
+    case AST_NODE_TYPES.Identifier:
+      return receiver.name;
+    case AST_NODE_TYPES.MemberExpression:
+      return !receiver.computed &&
+        receiver.property.type === AST_NODE_TYPES.Identifier
+        ? receiver.property.name
+        : null;
+    case AST_NODE_TYPES.CallExpression:
+      return receiverName(receiver.callee);
+    default:
+      return null;
+  }
+}
+
+/** A name's last camelCase (or snake_case) segment, lowercased. */
+function lastNameSegment(name: string): string {
+  const segments = name.match(/[A-Z]+(?![a-z])|[A-Z]?[a-z0-9]+|[A-Z]/g) ?? [];
+  return (segments[segments.length - 1] ?? '').toLowerCase();
+}
+
+/**
+ * Whether a receiver's `update(…)` takes the document reference FIRST, which
+ * puts the data it merges in the second position.
+ *
+ * `WriteBatch`, `Transaction` and `BulkWriter` all spell the call
+ * `update(ref, data)`, while a `DocumentReference` spells it `update(data)`.
+ * The two readings of a two-argument call are not interchangeable — on a
+ * reference the second argument is a `Precondition`, which `set` has no
+ * parameter for — so the shape gate has to know which one it is looking at.
+ *
+ * The match is on the receiver's last camelCase SEGMENT rather than on a
+ * substring: a name that merely contains one of these words is usually a
+ * document, `transactionRef` being a document in a `transactions` collection.
+ * An unrecognised receiver therefore reads as a document, which is the safe
+ * default in both directions: its one-argument calls still rewrite, because
+ * `update(data)` is the only valid reading of a single argument on ANY of these
+ * receivers, and its two-argument calls decline rather than gamble the
+ * precondition rewrite on a name.
+ */
+function takesReferenceFirst(node: TSESTree.Node): boolean {
+  const name = receiverName(node);
+  return name !== null && REFERENCE_FIRST_RECEIVERS.has(lastNameSegment(name));
 }
 
 /**
@@ -1284,7 +1389,11 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
       // BatchManager takes a single descriptor object, so its arguments are
       // genuinely restructured rather than extended.
       if (objectText.includes('batchManager')) {
-        if (args.length < 2) {
+        // The descriptor is built from the reference and the data alone, so an
+        // argument past the second is copied nowhere: a call carrying one is
+        // some other overload, and rewriting it would DELETE that argument
+        // rather than merely mislay it (#2311).
+        if (args.length !== 2 || !isDocumentData(args[1])) {
           return null;
         }
         // This branch is the one rewrite that cannot edit the call in place: it
@@ -1328,6 +1437,50 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
               `${indent}})`,
           ),
         ];
+      }
+
+      // `set` has exactly two parameters, `set(data, options)`, so appending
+      // `{ merge: true }` is a valid rewrite of ONE call shape: the single
+      // data object. `update` has two more documented forms, and the append
+      // corrupts both (#2311).
+      //
+      // `update(field, value, …)` addresses fields positionally. Appending
+      // there emits `set(field, value, …, { merge: true })`, where `set` reads
+      // the field NAME as the document data and every argument past the second
+      // is a type error.
+      //
+      // `update(data, precondition)` guards the write on the document's
+      // existence or its version. Appending there emits
+      // `set(data, precondition, { merge: true })`: `set` reads the
+      // precondition as its `SetOptions`, which carries neither `merge` nor
+      // `mergeFields`, so the guard is dropped AND the merge never applies —
+      // and a `set` without merge overwrites the whole document, deleting
+      // every field the partial update was not naming. That rewrite exits 0
+      // and produces no diagnostic without type information, which is why the
+      // fix is withheld rather than approximated.
+      //
+      // The REPORT stands in both cases. Neither form has a mechanical `set`
+      // equivalent — the varargs one has to be folded into an object literal
+      // and the precondition has no `set` counterpart at all — so the author is
+      // told, converts by hand, or opts out with a reviewable
+      // `eslint-disable-next-line`. Suppressing the report instead would hand
+      // the decision to a receiver-name heuristic: a receiver this rule fails
+      // to recognise as a batch would stop reporting a violation it can see,
+      // turning a declined FIX into an unenforced RULE.
+      const dataIndex = takesReferenceFirst(callee.object) ? 1 : 0;
+      if (args.length !== dataIndex + 1 || !isDocumentData(args[dataIndex])) {
+        return null;
+      }
+      // A receiver NAMED like a batch may still be a document — `const batch =
+      // db.collection('batches').doc(id)` — and its two-argument call is then
+      // the precondition overload after all. No batch or transaction passes a
+      // document's data where its reference goes, so an object literal in the
+      // first position withdraws the name's evidence and the call declines.
+      if (
+        dataIndex === 1 &&
+        unwrapTransparent(args[0]).type === AST_NODE_TYPES.ObjectExpression
+      ) {
+        return null;
       }
 
       const appended = appendArguments(
@@ -1561,14 +1714,23 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
       fixer: TSESLint.RuleFixer,
       rewrite: UpdateRewrite,
     ): TSESLint.RuleFix[] | null {
+      // The modular SDK spells the varargs overload
+      // `updateDoc(ref, field, value, …)`, which the append corrupts exactly as
+      // it corrupts the method form: `setDoc(ref, field, value, …)` reads the
+      // field NAME as the document data and overwrites the document with it
+      // (#2311). `setDoc` has no third parameter past its options, so anything
+      // beyond `updateDoc(ref, data)` declines.
+      const args = rewrite.call.arguments;
+      if (args.length > 2 || (args.length === 2 && !isDocumentData(args[1]))) {
+        return null;
+      }
+
       // `setDoc` takes the document data between the reference and the
       // options, so a call that passed no data gets an empty object to merge.
       const appended = appendArguments(
         fixer,
         rewrite.call,
-        rewrite.call.arguments.length > 1
-          ? [MERGE_OPTION]
-          : [EMPTY_DATA, MERGE_OPTION],
+        args.length > 1 ? [MERGE_OPTION] : [EMPTY_DATA, MERGE_OPTION],
         SET_DOC.length - rewrite.identifier.name.length,
       );
       if (!appended) {

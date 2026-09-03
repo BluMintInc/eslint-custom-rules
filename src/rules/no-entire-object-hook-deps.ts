@@ -15,14 +15,34 @@ import type { TypeChecker, Node, Type, UnionType } from 'typescript';
 
 type MessageIds = 'avoidEntireObject' | 'removeUnusedDependency';
 
-const HOOK_NAMES = new Set(['useEffect', 'useCallback', 'useMemo']);
+/**
+ * The hook calls whose last argument is a dependency array.
+ *
+ * why: the deep-compare family mirrors React's hooks argument-for-argument —
+ * callback first, dependency array last — so every analysis below applies to
+ * them unchanged. They are enumerated rather than matched by prefix because two
+ * fixable rules in this plugin (`prefer-use-deep-compare-memo` and
+ * `no-useless-usememo-primitives`) rewrite `useMemo` into `useDeepCompareMemo`
+ * while leaving the dependency array byte-identical; without these entries that
+ * rename would take the call out of this rule's sight. Deep comparison makes an
+ * entire-object dependency strictly WORSE, not acceptable: every render walks
+ * every property of the object rather than comparing one reference (#2309).
+ */
+const HOOK_NAMES = new Set([
+  'useEffect',
+  'useCallback',
+  'useMemo',
+  'useDeepCompareEffect',
+  'useDeepCompareCallback',
+  'useDeepCompareMemo',
+]);
 
 /**
  * Hooks that run for their side effects rather than producing a value. An
  * unread dependency means something different here than in useMemo/useCallback
  * — see `callsCorrespondingSetter`.
  */
-const EFFECT_HOOK_NAMES = new Set(['useEffect']);
+const EFFECT_HOOK_NAMES = new Set(['useEffect', 'useDeepCompareEffect']);
 
 /**
  * Hooks that do not run their callback: they hand it back as a value, so the
@@ -33,7 +53,10 @@ const EFFECT_HOOK_NAMES = new Set(['useEffect']);
  * body dereferences is therefore not licensed to appear in the array; see
  * `collectGuardedPaths`.
  */
-const DEFERRED_BODY_HOOK_NAMES = new Set(['useCallback']);
+const DEFERRED_BODY_HOOK_NAMES = new Set([
+  'useCallback',
+  'useDeepCompareCallback',
+]);
 
 /**
  * A string key quoted the way a formatter quotes it.

@@ -36,6 +36,78 @@ function isProperty(node: TSESTree.Node): node is TSESTree.Property {
 }
 
 /**
+ * Resolves the property name every static spelling of a key denotes:
+ * `shouldFlatten`, `'shouldFlatten'` and `['shouldFlatten']` all occupy the
+ * same slot, so a literal that writes one of them cannot gain another without
+ * duplicating the key. A key built from an expression denotes an unknown
+ * property and yields no name.
+ */
+function staticKeyName(property: TSESTree.Property): string | undefined {
+  const key = property.key;
+
+  if (!property.computed && isIdentifier(key)) {
+    return key.name;
+  }
+
+  if (key.type === AST_NODE_TYPES.Literal && typeof key.value === 'string') {
+    return key.value;
+  }
+
+  if (
+    key.type === AST_NODE_TYPES.TemplateLiteral &&
+    key.expressions.length === 0 &&
+    key.quasis.length === 1
+  ) {
+    return key.quasis[0].value.cooked;
+  }
+
+  return undefined;
+}
+
+/**
+ * The single answer to "does this options literal already write shouldFlatten".
+ * The reader that decides whether to report and the writer that builds the
+ * suggestion share it so they cannot disagree about which members exist: a
+ * writer that misses a member the reader sees appends a duplicate key.
+ */
+function findShouldFlattenProperty(
+  options: TSESTree.ObjectExpression,
+): TSESTree.Property | undefined {
+  for (const property of options.properties) {
+    if (!isProperty(property)) continue;
+    if (staticKeyName(property) === 'shouldFlatten') {
+      return property;
+    }
+  }
+
+  return undefined;
+}
+
+function isLiteralBoolean(node: TSESTree.Node, expected: boolean): boolean {
+  return node.type === AST_NODE_TYPES.Literal && node.value === expected;
+}
+
+/**
+ * Flattening counts as enabled only for a literal `true`. A variable, a
+ * ternary or a call may evaluate either way, so those are treated as unknown
+ * and the violation is still reported.
+ */
+function hasEnabledShouldFlatten(newExpr: TSESTree.NewExpression): boolean {
+  if (newExpr.arguments.length < 2) {
+    return false;
+  }
+
+  const optionsArg = newExpr.arguments[1];
+  if (!isObjectExpression(optionsArg)) {
+    return false;
+  }
+
+  const property = findShouldFlattenProperty(optionsArg);
+
+  return !!property && isLiteralBoolean(property.value, true);
+}
+
+/**
  * Appends an entry to a comma-separated list by anchoring on its last element
  * and deriving the separator from whatever already follows that element.
  * Prettier formats multiline lists with a trailing comma, so prefixing a comma
@@ -155,6 +227,19 @@ export const preferDocumentFlattening = createRule<[], MessageIds>({
           return null;
         }
 
+        const existing = findShouldFlattenProperty(optionsArg);
+        if (existing) {
+          // Appending a second `shouldFlatten` member is never correct: the
+          // literal would carry the key twice (TS1117, and core no-dupe-keys).
+          // A literal `false` is rewritten in place; any other value — a
+          // variable, a ternary, a call, a shorthand reference, an accessor —
+          // may already be true, so the edit is declined rather than guessed.
+          if (isLiteralBoolean(existing.value, false)) {
+            return fixer.replaceText(existing.value, 'true');
+          }
+          return null;
+        }
+
         const lastEntry =
           optionsArg.properties[optionsArg.properties.length - 1];
 
@@ -225,29 +310,8 @@ export const preferDocumentFlattening = createRule<[], MessageIds>({
         if (className !== 'DocSetter' && className !== 'DocSetterTransaction')
           return;
 
-        // Check if shouldFlatten option is provided
-        let hasShouldFlatten = false;
-
         // The options object is typically the second argument
-        if (node.arguments.length >= 2) {
-          const optionsArg = node.arguments[1];
-
-          if (isObjectExpression(optionsArg)) {
-            for (const property of optionsArg.properties) {
-              if (!isProperty(property)) continue;
-
-              if (
-                isIdentifier(property.key) &&
-                property.key.name === 'shouldFlatten' &&
-                property.value.type === AST_NODE_TYPES.Literal &&
-                property.value.value === true
-              ) {
-                hasShouldFlatten = true;
-                break;
-              }
-            }
-          }
-        }
+        const hasShouldFlatten = hasEnabledShouldFlatten(node);
 
         // Get variable name from parent node if it's a variable declaration
         let instanceName = '';
@@ -293,24 +357,7 @@ export const preferDocumentFlattening = createRule<[], MessageIds>({
             className === 'DocSetter' ||
             className === 'DocSetterTransaction'
           ) {
-            let hasShouldFlatten = false;
-            if (object.arguments.length >= 2) {
-              const optionsArg = object.arguments[1];
-              if (isObjectExpression(optionsArg)) {
-                for (const property of optionsArg.properties) {
-                  if (!isProperty(property)) continue;
-                  if (
-                    isIdentifier(property.key) &&
-                    property.key.name === 'shouldFlatten' &&
-                    property.value.type === AST_NODE_TYPES.Literal &&
-                    property.value.value === true
-                  ) {
-                    hasShouldFlatten = true;
-                    break;
-                  }
-                }
-              }
-            }
+            const hasShouldFlatten = hasEnabledShouldFlatten(object);
 
             if (!hasShouldFlatten) {
               instance = {

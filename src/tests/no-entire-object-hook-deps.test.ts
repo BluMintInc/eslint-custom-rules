@@ -1470,6 +1470,94 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
     },
+    // Issue #2309: the deep-compare hooks must not become a source of FALSE
+    // positives either — a correctly narrowed dependency stays silent under
+    // every spelling.
+    {
+      code: `
+        const MyComponent = ({ user }) => {
+          const label = useDeepCompareMemo(() => {
+            return user.name;
+          }, [user.name]);
+          return <span>{label}</span>;
+        };
+      `,
+    },
+    {
+      code: `
+        const MyComponent = ({ user }) => {
+          const greet = useDeepCompareCallback(() => {
+            console.log(user.name);
+          }, [user.name]);
+          return <button onClick={greet}>Greet</button>;
+        };
+      `,
+    },
+    {
+      code: `
+        const MyComponent = ({ user }) => {
+          useDeepCompareEffect(() => {
+            console.log(user.name);
+          }, [user.name]);
+        };
+      `,
+    },
+    // A spread still needs the entire object under the deep-compare spelling.
+    {
+      code: `
+        const MyComponent = ({ user }) => {
+          const copy = useDeepCompareMemo(() => {
+            return { ...user };
+          }, [user]);
+          return <span>{copy.name}</span>;
+        };
+      `,
+    },
+    // Effect-arm carve-out reaches `useDeepCompareEffect`: an unread dependency
+    // the body never writes is a deliberate reset-on-scope-change TRIGGER, so
+    // it is left alone. The `useDeepCompareMemo` twin of this shape reports
+    // (see the invalid block), which is what makes this a classification proof
+    // rather than a silence the rule owes to anything else.
+    {
+      code: `
+        const useResettingPagination = (status, filter, isPaginated) => {
+          const [pageSize, setPageSize] = useState(10);
+          useDeepCompareEffect(() => {
+            if (!isPaginated) {
+              return;
+            }
+            setPageSize(10);
+          }, [isPaginated, status, filter]);
+          return { pageSize };
+        };
+      `,
+    },
+    // A hand-maintained array is honoured under the deep-compare spelling too:
+    // the exhaustive-deps suppression gates the deleting fixer the same way.
+    {
+      code: `
+        const MyComponent = ({ status, onDone }) => {
+          // eslint-disable-next-line react-hooks/exhaustive-deps
+          const handleClick = useDeepCompareCallback(() => {
+            onDone();
+          }, [onDone, status]);
+          return <button onClick={handleClick}>Go</button>;
+        };
+      `,
+    },
+    // A hook name that merely LOOKS like the family is not one: the set is
+    // enumerated, not prefix-matched, so an unrelated custom hook whose second
+    // argument happens to be an array is untouched.
+    {
+      code: `
+        const MyComponent = ({ user }) => {
+          const value = useDeepCompareSomethingElse(() => {
+            return user.name;
+          }, [user]);
+          return <span>{value}</span>;
+        };
+      `,
+    },
   ],
   invalid: [
     ...optionalComputedFixCases,
@@ -3480,6 +3568,192 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
     },
+    // Issue #2309: `prefer-use-deep-compare-memo` and
+    // `no-useless-usememo-primitives` both rewrite `useMemo` into
+    // `useDeepCompareMemo` and leave the dependency array byte-identical. The
+    // violation those arrays carry is strictly worse afterwards — a deep
+    // comparison walks every property of the entire object on every render —
+    // so the rename must not take the call out of this rule's sight. The exact
+    // shape from the report, which passed as valid before the hook-name set
+    // learned the deep-compare family.
+    {
+      code: `
+function useThing(state, defaultStateValue) {
+  const stateValue = useDeepCompareMemo(() => state?.[0] || defaultStateValue, [defaultStateValue, state]);
+  return stateValue;
+}
+`,
+      errors: [{ messageId: 'avoidEntireObject' }],
+      output: `
+function useThing(state, defaultStateValue) {
+  const stateValue = useDeepCompareMemo(() => state?.[0] || defaultStateValue, [defaultStateValue, state?.[0]]);
+  return stateValue;
+}
+`,
+    },
+    // Control: the `useMemo` spelling of the very same snippet. Without it the
+    // deep-compare case could pass because the rule reports everything rather
+    // than because the rename is now recognised.
+    {
+      code: `
+function useThing(state, defaultStateValue) {
+  const stateValue = useMemo(() => state?.[0] || defaultStateValue, [defaultStateValue, state]);
+  return stateValue;
+}
+`,
+      errors: [avoid('state', 'state?.[0]')],
+      output: `
+function useThing(state, defaultStateValue) {
+  const stateValue = useMemo(() => state?.[0] || defaultStateValue, [defaultStateValue, state?.[0]]);
+  return stateValue;
+}
+`,
+    },
+    // `useDeepCompareEffect` narrows exactly as `useEffect` does.
+    {
+      code: `
+        const MyComponent = ({ userData }) => {
+          useDeepCompareEffect(() => {
+            console.log(userData.name);
+          }, [userData]);
+        };
+      `,
+      errors: [avoid('userData', 'userData.name')],
+      output: `
+        const MyComponent = ({ userData }) => {
+          useDeepCompareEffect(() => {
+            console.log(userData.name);
+          }, [userData.name]);
+        };
+      `,
+    },
+    // `useDeepCompareCallback` narrows exactly as `useCallback` does.
+    {
+      code: `
+        const MyComponent = ({ userData }) => {
+          const onClick = useDeepCompareCallback(() => {
+            console.log(userData.name);
+          }, [userData]);
+          return <button onClick={onClick}>Go</button>;
+        };
+      `,
+      errors: [avoid('userData', 'userData.name')],
+      output: `
+        const MyComponent = ({ userData }) => {
+          const onClick = useDeepCompareCallback(() => {
+            console.log(userData.name);
+          }, [userData.name]);
+          return <button onClick={onClick}>Go</button>;
+        };
+      `,
+    },
+    // Classification, deferred-body arm: `useDeepCompareCallback` hands its
+    // body back rather than running it, so a deep dereference stops at the
+    // receiver (issue #1991). Routing it to the `useMemo` arm instead would
+    // print `user.address.city` here.
+    {
+      code: `
+        const MyComponent = ({ user }) => {
+          const showAddress = useDeepCompareCallback(() => {
+            console.log(user.address.city);
+          }, [user]);
+          return <button onClick={showAddress}>Show Address</button>;
+        };
+      `,
+      errors: [avoid('user', 'user.address')],
+      output: `
+        const MyComponent = ({ user }) => {
+          const showAddress = useDeepCompareCallback(() => {
+            console.log(user.address.city);
+          }, [user.address]);
+          return <button onClick={showAddress}>Show Address</button>;
+        };
+      `,
+    },
+    // The differential that pins the classification: the SAME body under
+    // `useDeepCompareMemo` runs during the render that evaluates the array, so
+    // the whole path is licensed.
+    {
+      code: `
+        const MyComponent = ({ user }) => {
+          const city = useDeepCompareMemo(() => {
+            return user.address.city;
+          }, [user]);
+          return <span>{city}</span>;
+        };
+      `,
+      errors: [avoid('user', 'user.address.city')],
+      output: `
+        const MyComponent = ({ user }) => {
+          const city = useDeepCompareMemo(() => {
+            return user.address.city;
+          }, [user.address.city]);
+          return <span>{city}</span>;
+        };
+      `,
+    },
+    // ... and under `useDeepCompareEffect`, which also runs its body.
+    {
+      code: `
+        const MyComponent = ({ user }) => {
+          useDeepCompareEffect(() => {
+            console.log(user.address.city);
+          }, [user]);
+        };
+      `,
+      errors: [avoid('user', 'user.address.city')],
+      output: `
+        const MyComponent = ({ user }) => {
+          useDeepCompareEffect(() => {
+            console.log(user.address.city);
+          }, [user.address.city]);
+        };
+      `,
+    },
+    // Classification, effect arm: an unread dependency an effect also WRITES is
+    // a circular dependency rather than a reset trigger, so it reports. The
+    // matching valid case below proves the carve-out itself reached
+    // `useDeepCompareEffect` — a hook wrongly routed to the value-producing arm
+    // would report both.
+    {
+      code: `
+        const MyComponent = ({ a }) => {
+          useDeepCompareEffect(() => {
+            setA(undefined);
+          }, [a]);
+          return null;
+        };
+      `,
+      errors: [removeUnused('a')],
+      output: null,
+    },
+    // Value-producing arm: an unread dependency is dead weight in
+    // `useDeepCompareMemo` regardless of any setter call.
+    {
+      code: `
+        const MyComponent = ({ status, onDone }) => {
+          const label = useDeepCompareMemo(() => {
+            return onDone();
+          }, [onDone, status]);
+          return <span>{label}</span>;
+        };
+      `,
+      errors: [removeUnused('status')],
+      output: null,
+    },
+    // ... and in `useDeepCompareCallback` too.
+    {
+      code: `
+        const MyComponent = ({ status, onDone }) => {
+          const handleClick = useDeepCompareCallback(() => {
+            onDone();
+          }, [onDone, status]);
+          return <button onClick={handleClick}>Go</button>;
+        };
+      `,
+      errors: [removeUnused('status')],
+      output: null,
+    },
   ],
 });
 
@@ -3647,6 +3921,31 @@ const Component = ({ registry }: { registry: Map<string, number> }) => {
 };
 `,
     },
+    // Issue #2309: the type-aware arms must treat the deep-compare spellings
+    // identically. The method carve-out (a prototype reference is the same
+    // value for every instance) still fires under `useDeepCompareMemo`.
+    {
+      filename: 'src/components/DeepCompareSetMethodDep.tsx',
+      code: `
+const Component = ({ arrivalIds, rows }: { arrivalIds: Set<string>; rows: { id: string }[] }) => {
+  const visible = useDeepCompareMemo(() => {
+    return rows.filter((row) => arrivalIds.has(row.id));
+  }, [rows, arrivalIds]);
+  return <div>{visible.length}</div>;
+};
+`,
+    },
+    // A primitive dependency is screened out by the checker under the
+    // deep-compare spelling too.
+    {
+      filename: 'src/components/DeepComparePrimitiveDep.tsx',
+      code: `
+const Component = ({ label, count }: { label: string; count: number }) => {
+  const text = useDeepCompareMemo(() => label.toUpperCase(), [label, count]);
+  return <span>{text}</span>;
+};
+`,
+    },
   ]),
   invalid: withParserOptions(typedParserOptions, [
     // Negative control: a plain data property must STILL narrow. Without this
@@ -3782,6 +4081,44 @@ const Component = ({ ids, user }: { ids: Set<string>; user: { id: string; name: 
       `,
       errors: [removeUnused('trigger')],
       output: null,
+    },
+    // Issue #2309 negative control for the typed arm: a plain data property
+    // must still narrow under `useDeepCompareMemo`. Without it the two valid
+    // cases above would be indistinguishable from the rule staying silent on
+    // the whole family whenever type information is available.
+    {
+      filename: 'src/components/DeepCompareDataPropertyDep.tsx',
+      code: `
+const Component = ({ user }: { user: { id: string; name: string } }) => {
+  const label = useDeepCompareMemo(() => user.id, [user]);
+  return <span>{label}</span>;
+};
+`,
+      errors: [avoid('user', 'user.id')],
+      output: `
+const Component = ({ user }: { user: { id: string; name: string } }) => {
+  const label = useDeepCompareMemo(() => user.id, [user.id]);
+  return <span>{label}</span>;
+};
+`,
+    },
+    // The same for `useDeepCompareCallback`, whose deferred body stops the path
+    // at the receiver while still refusing the entire object.
+    {
+      filename: 'src/components/DeepCompareCallbackDataPropertyDep.tsx',
+      code: `
+const Component = ({ user }: { user: { profile: { id: string } } }) => {
+  const read = useDeepCompareCallback(() => user.profile.id, [user]);
+  return <div>{read}</div>;
+};
+`,
+      errors: [avoid('user', 'user.profile')],
+      output: `
+const Component = ({ user }: { user: { profile: { id: string } } }) => {
+  const read = useDeepCompareCallback(() => user.profile.id, [user.profile]);
+  return <div>{read}</div>;
+};
+`,
     },
   ]),
 });

@@ -762,7 +762,11 @@ await userRef.set(
         await transactionRef.set({ status: 'settled' }, { merge: true });
       `,
     },
-    // Arguments past the second are kept rather than dropped.
+    // A second argument on a DOCUMENT receiver is `update`'s `Precondition`, and
+    // `set` reads its second argument as `SetOptions`. Appending there dropped
+    // the guard and parked `{ merge: true }` in a parameter `set` does not have,
+    // so the merge never applied and the write overwrote the whole document
+    // (#2311). This fixture asserted that append; it now asserts the decline.
     {
       code: `
         const admin = require('firebase-admin');
@@ -771,12 +775,7 @@ await userRef.set(
         await userRef.update({ theme: 'dark' }, precondition);
       `,
       errors: [{ messageId: 'preferSetMerge' }],
-      output: `
-        const admin = require('firebase-admin');
-        const db = admin.firestore();
-        const userRef = db.collection('users').doc(userId);
-        await userRef.set({ theme: 'dark' }, precondition, { merge: true });
-      `,
+      output: null,
     },
     // Invalid cases using updateDoc: the rewritten call needs `setDoc` bound,
     // and the last reference to `updateDoc` frees its specifier (issue #1439).
@@ -2375,9 +2374,12 @@ await userRef.set(
 );
 `,
     },
-    // Arguments past the second ride along: the rewrite edits the separators of
-    // the list it found rather than rebuilding it from the two arguments it
-    // cares about.
+    // The same decline across lines. `set` has exactly two parameters, so a
+    // third and fourth argument are a type error however they are laid out; the
+    // earlier behaviour carried them across and produced code that does not
+    // compile (#2311). The "arguments past the second are not dropped"
+    // invariant this fixture used to assert is superseded: no call carrying one
+    // is rewritten at all now, so there is nothing left to drop.
     {
       code: `
 const admin = require('firebase-admin');
@@ -2392,19 +2394,7 @@ await userRef.update(
 );
 `,
       errors: [{ messageId: 'preferSetMerge' }],
-      output: `
-const admin = require('firebase-admin');
-const db = admin.firestore();
-const userRef = db.collection('users').doc(userId);
-await userRef.set(
-  {
-    theme: 'dark',
-  },
-  precondition,
-  extra,
-  { merge: true },
-);
-`,
+      output: null,
     },
     // The emitted depth is the call's own: the list lands one step past the line
     // its parenthesis opens on and closes at that line's column, so an argument
@@ -2441,7 +2431,30 @@ export function syncAll(refs) {
     },
     // A comment between the arguments of a list that stays flat is untouched,
     // because the option is appended after the last argument and nothing
-    // between them is inside an edited range.
+    // between them is inside an edited range. The receiver is a transaction, so
+    // the two arguments are the reference and its data — the one two-argument
+    // shape the rewrite is valid for. Its document-receiver spelling,
+    // `userRef.update(data, /* keep me */ pre)`, is the precondition overload
+    // and declines instead (#2311).
+    {
+      code: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+await db.runTransaction(async (transaction) => {
+  transaction.update(userRef, /* keep me */ { theme: 'dark' });
+});
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+await db.runTransaction(async (transaction) => {
+  transaction.set(userRef, /* keep me */ { theme: 'dark' }, { merge: true });
+});
+`,
+    },
+    // The same call written on a document receiver: two arguments there are
+    // `update(data, precondition)`, which has no `set` rewrite at all.
     {
       code: `
 const admin = require('firebase-admin');
@@ -2450,12 +2463,7 @@ const userRef = db.collection('users').doc(userId);
 await userRef.update({ theme: 'dark' }, /* keep me */ pre);
 `,
       errors: [{ messageId: 'preferSetMerge' }],
-      output: `
-const admin = require('firebase-admin');
-const db = admin.firestore();
-const userRef = db.collection('users').doc(userId);
-await userRef.set({ theme: 'dark' }, /* keep me */ pre, { merge: true });
-`,
+      output: null,
     },
     // A comment sits INSIDE the span of the argument it annotates, so a broken
     // list rewrites only the separators around it and the comment survives at
@@ -3029,6 +3037,277 @@ export async function save(ref) {
         { messageId: 'preferSetMerge' },
         { messageId: 'preferSetMerge' },
       ],
+      output: null,
+    },
+    // Issue #2311: `update()` has two documented call forms the append-an-
+    // argument rewrite is invalid for. The varargs field/value overload hands
+    // `set` a string as document data, and the precondition overload drops the
+    // guard while parking `{ merge: true }` in a parameter `set` does not have,
+    // turning a guarded partial update into a full-document overwrite. Both
+    // keep the report and decline the fix.
+    {
+      code: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+const userRef = db.collection('users').doc(userId);
+await userRef.update('preferences.theme', 'dark', 'preferences.fontSize', 14);
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: null, // fix must be declined
+    },
+    {
+      code: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+const userRef = db.collection('users').doc(userId);
+await userRef.update({ theme: 'dark' }, { lastUpdateTime: ts });
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: null, // fix must be declined
+    },
+    // The other precondition spelling. `{ exists: true }` guards the write on
+    // the document being there, which is the entire reason the call was
+    // written; `set` has no parameter that carries it.
+    {
+      code: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+const ref = db.collection('users').doc(userId);
+await ref.update({ a: 1 }, { exists: true });
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: null,
+    },
+    // The varargs form reproduces identically on a transaction receiver, where
+    // the fields start one position later.
+    {
+      code: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+await db.runTransaction(async (transaction) => {
+  transaction.update(userRef, 'a.b', 1, 'c.d', 2);
+});
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: null,
+    },
+    // A transaction's own precondition overload, `update(ref, data,
+    // precondition)`: a third argument is one more than `set` has parameters
+    // for, whichever receiver it rides on.
+    {
+      code: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+await db.runTransaction(async (transaction) => {
+  transaction.update(userRef, { a: 1 }, { exists: true });
+});
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: null,
+    },
+    // And on a batch receiver.
+    {
+      code: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+const batch = db.batch();
+batch.update(userRef, 'a.b', 1);
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: null,
+    },
+    // A field path is a field path however it is spelled: a template literal
+    // evaluates to a string whatever it interpolates.
+    {
+      code: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+const userRef = db.collection('users').doc(userId);
+await userRef.update(\`preferences.\${key}\`, 'dark');
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: null,
+    },
+    // The constructed `FieldPath`, which addresses a field whose name contains
+    // the separator the string form would split on.
+    {
+      code: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+const userRef = db.collection('users').doc(userId);
+await userRef.update(new FieldPath('preferences', 'theme'), 'dark');
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: null,
+    },
+    // The namespaced static spelling reaches the same class through a member
+    // chain, so the check reads the chain rather than its rightmost segment.
+    {
+      code: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+const userRef = db.collection('users').doc(userId);
+await userRef.update(admin.firestore.FieldPath.documentId(), 'dark');
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: null,
+    },
+    // A spread hides the argument count outright, so neither the shape gate nor
+    // the option's position can be settled. The method form declines it for the
+    // same reason the `updateDoc` form does.
+    {
+      code: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+const userRef = db.collection('users').doc(userId);
+await userRef.update(...args);
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: null,
+    },
+    // A transaction call passing only the reference is not the single-data
+    // form either: appending there emits `set(ref, { merge: true })`, which
+    // writes the OPTIONS object as the document's data.
+    {
+      code: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+await db.runTransaction(async (transaction) => {
+  transaction.update(userRef);
+});
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: null,
+    },
+    // The BatchManager descriptor is built from the reference and the data
+    // alone, so a third argument is copied nowhere. The rewrite used to accept
+    // any call with at least two arguments and DELETE the rest (#2311).
+    {
+      code: `
+        this.batchManager.update(notificationRef, updates, extra);
+      `,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: null,
+    },
+    // The modular SDK ships the same varargs overload,
+    // `updateDoc(ref, field, value, …)`, and the append corrupts it the same
+    // way: `setDoc` would read `'preferences.theme'` as the document data.
+    {
+      code: `
+import { updateDoc } from 'firebase/firestore';
+export async function save(ref) {
+  await updateDoc(ref, 'preferences.theme', 'dark');
+}
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: null,
+    },
+    // Its `FieldPath` spelling, which carries no string for a text-level check
+    // to catch.
+    {
+      code: `
+import { updateDoc } from 'firebase/firestore';
+export async function save(ref) {
+  await updateDoc(ref, new FieldPath('preferences', 'theme'), 'dark');
+}
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: null,
+    },
+    // One unrewritable call declines the WHOLE import-retiring batch, exactly
+    // as a directive-carrying tail does: retiring `updateDoc` while one call
+    // still reads it would leave the file with an unbound name.
+    {
+      code: `
+import { updateDoc } from 'firebase/firestore';
+export async function save(ref) {
+  await updateDoc(ref, { theme: 'dark' });
+  await updateDoc(ref, 'a.b', 1);
+}
+`,
+      errors: [
+        { messageId: 'preferSetMerge' },
+        { messageId: 'preferSetMerge' },
+      ],
+      output: null,
+    },
+    // The controls the gate must not swallow: the single-data-object form on
+    // each receiver still rewrites, with the reference-first receivers keeping
+    // their two arguments and the document receiver its one.
+    {
+      code: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+const userRef = db.collection('users').doc(userId);
+await userRef.update({ theme: 'dark', fontSize: 14 });
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+const userRef = db.collection('users').doc(userId);
+await userRef.set({ theme: 'dark', fontSize: 14 }, { merge: true });
+`,
+    },
+    {
+      code: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+const batch = db.batch();
+batch.update(userRef, { theme: 'dark' });
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+const batch = db.batch();
+batch.set(userRef, { theme: 'dark' }, { merge: true });
+`,
+    },
+    // `writeBatch` and `bulkWriter` are matched on their last camelCase segment,
+    // so both read as reference-first without being named outright.
+    {
+      code: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+const writeBatch = db.batch();
+writeBatch.update(userRef, { theme: 'dark' });
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+const writeBatch = db.batch();
+writeBatch.set(userRef, { theme: 'dark' }, { merge: true });
+`,
+    },
+    {
+      code: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+const bulkWriter = db.bulkWriter();
+bulkWriter.update(userRef, { theme: 'dark' });
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+const bulkWriter = db.bulkWriter();
+bulkWriter.set(userRef, { theme: 'dark' }, { merge: true });
+`,
+    },
+    // A receiver NAMED like a batch can still be a document, and its second
+    // argument is then the precondition after all. No batch passes a document's
+    // DATA where its reference goes, so an object literal in the first position
+    // withdraws the name's evidence and the call declines.
+    {
+      code: `
+const admin = require('firebase-admin');
+const db = admin.firestore();
+const batch = db.collection('batches').doc(batchId);
+await batch.update({ status: 'done' }, { exists: true });
+`,
+      errors: [{ messageId: 'preferSetMerge' }],
       output: null,
     },
   ],

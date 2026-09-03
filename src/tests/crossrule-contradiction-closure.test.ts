@@ -213,6 +213,80 @@ const KNOWN_DIVERGENT: Record<string, Exemption> = {
       "the `Pick` resolution the owner's case exists to pin.",
     cases: { removeUnusedDependency: 1 },
   },
+  'no-entire-object-hook-deps::no-useless-usememo-primitives': {
+    reason:
+      "INCIDENTAL: the owner's fixtures pin which dependency SHAPES the " +
+      'entire-object check accepts, and memoize a primitive as scenery — a ' +
+      'template string built from `user.name` and three sibling spellings of ' +
+      'the same. The sibling objects to the `useMemo` wrapper, not to the ' +
+      'dependency array under test. Returning a non-primitive keeps both the ' +
+      'wrapper and the dependency the fixture exists to pin and is clean ' +
+      'under BOTH rules — `useMemo(() => ({ text: `Hello, ${user.name}!` }), ' +
+      '[user.name])` leaves zero messages (measured); so does dropping the ' +
+      'wrapper outright. The pair joins this list because the #2309 fix names ' +
+      "`no-useless-usememo-primitives` in this rule's source, as the sibling " +
+      'whose `useMemo` -> `useDeepCompareMemo` rename the hook-name set has ' +
+      'to follow. The disagreement itself predates the mention: the pre-fix ' +
+      'rule, with the mention present and only the three React hook names in ' +
+      'the set, diverges on exactly these 4 fixtures (measured).',
+    cases: { uselessUseMemoPrimitive: 4 },
+  },
+  'no-entire-object-hook-deps::prefer-use-deep-compare-memo': {
+    reason:
+      'PIPELINE, and the sibling`s fixer is the step: the owner`s fixtures ' +
+      'hold plain `useMemo` calls whose dependency is a whole object, which ' +
+      'is precisely the input the sibling rewrites to `useDeepCompareMemo`. ' +
+      'The rename is clean under BOTH rules on the shape this entry covers ' +
+      '(measured): where the body reads the object as a whole — `hits.map(' +
+      '...)` — the entire-object dependency is the correct one and the owner ' +
+      'stays silent beside the renamed call. That silence is now the owner`s ' +
+      'REAL answer rather than an artefact of the callee spelling, which is ' +
+      'what #2309 fixed: before it, the renamed call left the hook-name set ' +
+      'and the owner went blind to every dependency in it. The pair joins ' +
+      'this list because that fix names `prefer-use-deep-compare-memo` in ' +
+      "this rule's source. The disagreement predates the mention — the " +
+      'pre-fix rule, mention present, diverges on exactly these 30 fixtures ' +
+      '(measured).',
+    cases: { preferUseDeepCompareMemo: 30 },
+  },
+  'no-useless-usememo-primitives::no-entire-object-hook-deps': {
+    reason:
+      "INCIDENTAL: the owner's fixtures pin which RESULT types make a " +
+      '`useMemo` useless, and list the whole object in the dependency array ' +
+      'as scenery — `useMemo(() => user?.name ?? `Guest`, [user])` and one ' +
+      'sibling spelling. The sibling objects to the dependency granularity, ' +
+      'which is a detail neither fixture set out to pin. Narrowing it to the ' +
+      'member path actually read — `[user?.name]` — is clean under BOTH ' +
+      'rules (measured) and leaves the primitive result the owner is testing ' +
+      'untouched. The pair joins this list because the #2309 fix names ' +
+      "`no-useless-usememo-primitives` in the sibling's source; the " +
+      'disagreement predates the mention, the pre-fix sibling reporting on ' +
+      'exactly these 2 fixtures (measured).',
+    cases: { avoidEntireObject: 2 },
+  },
+  'prefer-use-deep-compare-memo::no-entire-object-hook-deps': {
+    reason:
+      "INCIDENTAL: the owner's fixtures pin WHICH HOOK a dependency shape " +
+      'calls for, and the sibling objects to the granularity of the ' +
+      'dependency itself — `[config]` where the body reads only ' +
+      '`config.title`. The two rules answer different questions and both ' +
+      'answers hold at once: narrowing the dependency to the member path is ' +
+      'clean under BOTH rules, on the `useMemo` spelling and on the ' +
+      '`useDeepCompareMemo` spelling alike (measured, both). 3 -> 43 because ' +
+      'the #2309 FIX LANDED. The 3 are the owner`s plain-`useMemo` fixtures ' +
+      'and predate the mention (measured on the pre-fix rule with the ' +
+      'mention present). The 40 that joined are the owner`s ' +
+      '`useDeepCompareMemo` fixtures — its own fixer`s output — which the ' +
+      'sibling could not see at all while its hook-name set held only the ' +
+      'three React spellings. Their reporting is the pair working rather ' +
+      'than disagreeing: under deep comparison an entire-object dependency ' +
+      'is strictly WORSE than under reference comparison, every render ' +
+      'walking every property, so the shape the sibling names is the one the ' +
+      'rename makes more expensive rather than less. Blessing the hook ' +
+      'choice was never a claim about the dependency, and the remedy leaves ' +
+      'the hook choice standing.',
+    cases: { avoidEntireObject: 43 },
+  },
   'enforce-assert-safe-object-key::prefer-union-from-const-array': {
     reason:
       "PIPELINE: the #1875 fixtures declare in-file `type Kind = 'live' | 'simulated'` aliases to pin the compiler-bounded Record carve-out — 12 valid fixtures plus the fixed outputs of 9 invalid ones — and the sibling wants every such alias derived from an `as const` values array. The composed `--fix` rewrites the alias on all 21 and the carve-out reads the derived `(typeof KINDS)[number]` spelling — via name identity or the array's own literal elements — so the valid fixtures end silent under BOTH rules with zero `assertSafe` wraps, and the outputs keep their already-wrapped keys exempt (measured, every one). Was 20 for a corpus-identity reason rather than a reach one: the carve-out's `String()` and template-interpolation fixtures used to fix to the BYTE-IDENTICAL `m[assertSafe(kind)]`, which the corpus deduped to a single case. #2144 stopped the fixer replacing a coercion with its operand, so those outputs are now `m[assertSafe(String(kind))]` and ``m[assertSafe(`${kind}`)]`` — two distinct texts, both entering the corpus on the same alias the entry was already signed off for. The disagreement reached no new shape.",
@@ -1474,11 +1548,11 @@ describe('exempted pairs converge under the composed --fix', () => {
     // probe count with nothing rewritten means the fix pass never ran (the
     // options or parser plumbing lost), and a pair count without probes means
     // the divergence scan collapsed.
-    expect(convergenceStats.probes).toBeGreaterThanOrEqual(950); // measured 1,036
-    expect(convergenceStats.rewritten).toBeGreaterThanOrEqual(760); // measured 807
-    expect(convergenceStats.pairs.size).toBeGreaterThanOrEqual(64); // measured 69
-    expect(byVerdict.CONVERGED).toBeGreaterThanOrEqual(750); // measured 792
-    expect(byVerdict['NO-OP']).toBeGreaterThanOrEqual(190); // measured 244
+    expect(convergenceStats.probes).toBeGreaterThanOrEqual(950); // measured 1,192
+    expect(convergenceStats.rewritten).toBeGreaterThanOrEqual(760); // measured 955
+    expect(convergenceStats.pairs.size).toBeGreaterThanOrEqual(64); // measured 77
+    expect(byVerdict.CONVERGED).toBeGreaterThanOrEqual(750); // measured 940
+    expect(byVerdict['NO-OP']).toBeGreaterThanOrEqual(190); // measured 252
     // A fixer that produced unparsable text would leave a fatal carrying no
     // `ruleId`, which the residual filter drops — i.e. it would read as
     // CONVERGED. Asserted rather than counted.
@@ -1675,14 +1749,14 @@ describe('the cross-rule contradiction guard is load-bearing', () => {
     // 177 pairs over 8,383 cases from 80 owners at the time of writing. Each
     // floor is separate: a high pair count over a collapsed corpus, or a large
     // corpus that reaches few owners, would each read as health.
-    expect(stats.pairsChecked).toBeGreaterThanOrEqual(170); // measured 186
-    expect(stats.ownersWithCases.size).toBeGreaterThanOrEqual(76); // measured 82
-    expect(stats.casesConsidered).toBeGreaterThanOrEqual(8100); // measured 8,524
+    expect(stats.pairsChecked).toBeGreaterThanOrEqual(170); // measured 198
+    expect(stats.ownersWithCases.size).toBeGreaterThanOrEqual(76); // measured 85
+    expect(stats.casesConsidered).toBeGreaterThanOrEqual(8100); // measured 9,035
     expect(corpus.failures).toEqual([]);
     // And enough DISTINCT sibling rules must actually have spoken (28). A
     // corpus that reaches every owner but trips two chatty reporters would
     // clear every floor above while saying nothing about the other 23.
-    expect(stats.reportersHeardFrom.size).toBeGreaterThanOrEqual(26); // measured 30
+    expect(stats.reportersHeardFrom.size).toBeGreaterThanOrEqual(26); // measured 33
   });
 
   /**
@@ -1693,7 +1767,7 @@ describe('the cross-rule contradiction guard is load-bearing', () => {
    */
   it('accounts for every documented pair: examined, or named with its cause', () => {
     expect(measuredUnexamined).toEqual(UNEXAMINED_PAIRS);
-    expect(documentedPairs.length).toBeGreaterThanOrEqual(172); // measured 190
+    expect(documentedPairs.length).toBeGreaterThanOrEqual(172); // measured 202
     expect(
       Object.values(UNEXAMINED_PAIRS).filter(
         (cause) => !UNEXAMINED_CAUSES[cause],
@@ -1724,7 +1798,7 @@ describe('the cross-rule contradiction guard is load-bearing', () => {
    */
   it('considers every blessed fixture of every scanned owner', () => {
     expect(stats.casesConsidered).toBe(expectedCasesConsidered);
-    expect(expectedCasesConsidered).toBeGreaterThanOrEqual(8100); // measured 8,524
+    expect(expectedCasesConsidered).toBeGreaterThanOrEqual(8100); // measured 9,035
   });
 
   it('keeps every valid fixture silent under its own rule', () => {

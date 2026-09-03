@@ -17,10 +17,18 @@
 
 ## What this rule checks
 
-- `useEffect`, `useMemo`, and `useCallback` dependency arrays.
+- `useEffect`, `useMemo`, and `useCallback` dependency arrays, plus their deep-compare counterparts `useDeepCompareEffect`, `useDeepCompareMemo`, and `useDeepCompareCallback`.
 - Flags when you list an entire object even though the hook body only reads specific properties (including optional chaining paths).
 - Flags dependencies you put in a `useMemo`/`useCallback` array but never reference in the hook body.
 - Requires TypeScript with `parserOptions.project` so the rule can distinguish objects from primitives and arrays, and methods from data properties.
+
+### The deep-compare hooks are covered
+
+`useDeepCompareEffect`, `useDeepCompareMemo`, and `useDeepCompareCallback` take a callback first and a dependency array last, exactly as React's own hooks do, so every check on this page applies to them unchanged. Each one is classified as its base hook: `useDeepCompareEffect` follows the `useEffect` rules (unread-dependency carve-out for re-run triggers), `useDeepCompareCallback` follows the `useCallback` rules (its body is handed back rather than run, so deferred reads stop the path), and `useDeepCompareMemo` follows the `useMemo` rules.
+
+Depending on an entire object is **worse** under deep comparison, not acceptable: every render walks every property of the object rather than comparing one reference. So a hook rewritten from `useMemo` to `useDeepCompareMemo` — by hand, or by `prefer-use-deep-compare-memo` and `no-useless-usememo-primitives`, which perform exactly that rename and leave the dependency array untouched — keeps being checked.
+
+The names are matched exactly rather than by prefix, so an unrelated hook of your own whose name merely begins the same way is not treated as a dependency-array hook.
 
 ### Methods keep the whole object
 
@@ -70,13 +78,13 @@ A condition is not the only licence a hook body can hold for a deep dereference.
 
 The first link is kept whatever the position, because dereferencing the dependency object is what the array already does. Further links are kept only where they are spelled `?.`, which short-circuits instead of throwing: `try { return a.b?.c?.d; } catch {}` keeps `a.b?.c?.d`.
 
-The distinction is whether the hook itself runs the code, not where the code sits. A `useEffect` or `useMemo` body runs, so `useEffect(() => { log(a.b.c.d); }, [a])` still narrows to `a.b.c.d` — an array that throws there is an array whose hook body would have thrown anyway. A `try`/`finally` with no handler re-raises, so its block licenses nothing either.
+The distinction is whether the hook itself runs the code, not where the code sits. A `useEffect`, `useDeepCompareEffect`, `useMemo` or `useDeepCompareMemo` body runs, so `useEffect(() => { log(a.b.c.d); }, [a])` still narrows to `a.b.c.d` — an array that throws there is an array whose hook body would have thrown anyway. A `try`/`finally` with no handler re-raises, so its block licenses nothing either.
 
 A **called member never terminates a path** either: `u.date.toISOString()` depends on `u.date`. Beyond dereferencing the guarded receiver, `Date.prototype.toISOString` is one shared value for every date, so pinning it would stop the hook from ever invalidating — the same reasoning as the method carve-out above. A function held directly on the dependency object (`userData?.getName?.()`) still narrows, since falling back to the receiver there would surrender the narrowing entirely.
 
 ### Unread dependencies on `useEffect`
 
-An effect runs for its side effects rather than to produce a value, so a dependency the body never reads is normally deliberate: it is a **re-run trigger** for React's reset-on-scope-change pattern ("when the scope identified by these values changes, reset the derived state"). Deleting such a trigger keeps the code compiling while silently stopping the reset, so the rule leaves it alone.
+An effect — `useEffect` or `useDeepCompareEffect` — runs for its side effects rather than to produce a value, so a dependency the body never reads is normally deliberate: it is a **re-run trigger** for React's reset-on-scope-change pattern ("when the scope identified by these values changes, reset the derived state"). Deleting such a trigger keeps the code compiling while silently stopping the reset, so the rule leaves it alone.
 
 The one shape where an unread effect dependency is genuinely wrong is a **circular dependency**: the effect writes the very value it depends on and therefore retriggers itself. The rule recognises this by the corresponding state setter — a dependency named `channelGroupActive` is only reported when the effect body calls `setChannelGroupActive(...)` (dependency `count` pairs with `setCount`, and so on). The setter call may be nested anywhere in the body, including inside an inner `async` function, a `startTransition` callback, or a `.then()`.
 
@@ -89,7 +97,7 @@ Suppressing `react-hooks/exhaustive-deps` for a hook declares its dependency arr
 - The rule may appear anywhere in a multi-rule list, with or without a trailing `-- justification`.
 - A file-level `/* eslint-disable react-hooks/exhaustive-deps */` exempts every hook in the file.
 
-The suppression must name `react-hooks/exhaustive-deps` explicitly; a directive for another rule, a bare `eslint-disable-next-line`, and prose that merely mentions the rule name all leave the check enabled. This applies to `useEffect`, `useMemo`, and `useCallback` alike, and it composes with the circular-dependency check above rather than replacing it. Narrowing an entire object to the fields you read is unaffected — that transform keeps the dependency instead of dropping it.
+The suppression must name `react-hooks/exhaustive-deps` explicitly; a directive for another rule, a bare `eslint-disable-next-line`, and prose that merely mentions the rule name all leave the check enabled. This applies to `useEffect`, `useMemo`, `useCallback` and their deep-compare counterparts alike, and it composes with the circular-dependency check above rather than replacing it. Narrowing an entire object to the fields you read is unaffected — that transform keeps the dependency instead of dropping it.
 
 ## Incorrect
 
@@ -139,6 +147,18 @@ function EventEndedText({ endDate, hydrated }) {
 Message:
 `What's wrong: Dependency "hydrated" is listed in the array but never read inside the hook body. Why it matters: The hook reruns when "hydrated" changes without affecting the result and can hide the real missing dependency. How to fix: Remove it or add the specific value that actually drives the hook.`
 
+```typescript
+function Component({ user }) {
+  // Deep comparison walks every property of user on every render, so listing
+  // the whole object here costs more than it did under useMemo
+  const greeting = useDeepCompareMemo(() => `Hello ${user.name}`, [user]);
+  return <div>{greeting}</div>;
+}
+```
+
+Message:
+`What's wrong: Dependency array includes entire object "user". Why it matters: Any change to its other properties reruns the hook even though the hook reads only user.name, creating extra renders and stale memoized values. How to fix: Depend on those fields instead.`
+
 ## Correct
 
 ```typescript
@@ -153,6 +173,13 @@ function Component({ channelGroupIdRouter }) {
   useEffect(() => {
     setChannelGroupActive(toActiveChannelGroup(channelGroupIdRouter));
   }, [channelGroupIdRouter]);
+}
+```
+
+```typescript
+function Component({ user }) {
+  const greeting = useDeepCompareMemo(() => `Hello ${user.name}`, [user.name]);
+  return <div>{greeting}</div>;
 }
 ```
 
@@ -274,9 +301,9 @@ dependency cannot be reproduced in a fixture at all.
 
 - Rewrites your dependency arrays to list the specific fields your hook reads.
 - Stops a rewritten path at any link whose safety comes from a guard, a non-null assertion, a preceding `?.`, an enclosing `catch`, or a body the hook does not run, so `--fix` never turns code that survives into a `TypeError` on the next render.
-- Removes dependencies you keep in a `useMemo`/`useCallback` array but never use.
-- Removes an unread `useEffect` dependency only when the effect also calls its corresponding setter, so deliberate re-run triggers survive `--fix`.
-- Never removes an entry from an array you manage by hand with a `react-hooks/exhaustive-deps` suppression, on any of the three hooks.
+- Removes dependencies you keep in a `useMemo`/`useCallback` array (or their deep-compare counterparts) but never use.
+- Removes an unread `useEffect`/`useDeepCompareEffect` dependency only when the effect also calls its corresponding setter, so deliberate re-run triggers survive `--fix`.
+- Never removes an entry from an array you manage by hand with a `react-hooks/exhaustive-deps` suppression, on any of the covered hooks.
 - Reports but does not rewrite when every read of the entry's binding is itself a dependency-array entry. A value declared and then read only inside dependency arrays is load-bearing by construction — the declaration would be pointless otherwise — so removing any one entry discards a deliberate recompute trigger, and removing all of them strands the declaration, which `no-unused-vars` and `noUnusedLocals` then flag. The verdict ignores which entry is under repair, because two hooks listing the same unread dependency would otherwise each see the other's entry as a surviving reader and strand the binding between them. Deleting the declaration alongside the entries is not an option when it is a hook call, since that changes the component's hook order, so the fix steps aside and leaves the choice to you. A **positional parameter** is exempt, so its entries are still removed. That is a deliberate residue rather than a claim of safety — `noUnusedParameters` reports one too — but it honours an `_` prefix there, and the composed sweep over the whole fixture corpus found no case of one arising on its own. A **destructured prop** is not exempt. That is the instrument's other half — `noUnusedParameters` reports a destructured property wherever it sits, including a rest sibling and including an `_`-prefixed one — and it is the common shape in a React component, so stranding one turns a green build red wherever `tsc --noEmit` gates. `no-unused-props` cannot clean up after the fixer either, being report-only. The report still stands; only the rewrite is withheld, and you resolve it by removing the prop or by giving it a real read.
 - Never narrows a dependency read only through `.current`, so `--fix` cannot emit the `[ref.current]` array that `react-hooks/exhaustive-deps` rejects.
 - Keeps every comment standing between two dependencies. Removing an entry removes its separator too, so the edit reaches the neighbouring entry — but a note in that gap may document the dependency you are keeping, or suppress another rule for it, so each one is re-emitted on a line of its own instead of being deleted with the entry.
