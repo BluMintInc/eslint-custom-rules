@@ -507,6 +507,30 @@ if (typeof outcome === 'string') {
       `const isTrimmedValue = (value: string) =>
   value.trim() === value ? true : 'untrimmed';
 const outcome = isTrimmedValue(input);`,
+
+      // A default written with `??` is read exactly as the `||` spelling of the
+      // same default, so a prefixed name stays silent under either operator.
+      'const isActive = check() ?? false;',
+      'const hasAccess = permissions.canEdit ?? false;',
+
+      // Widening the operator set must not start reading a non-boolean default
+      // as a boolean one: the fallback screen classifies from the OPERAND, and
+      // a string, number, array, object or template default settles it against
+      // booleanness whichever operator introduces it.
+      "const name = getName() ?? 'anon';",
+      'const count = getCount() ?? 0;',
+      'const items = getItems() ?? [];',
+      'const options = getOptions() ?? {};',
+      'const label = getLabel() ?? `none`;',
+
+      // The left operand of a `??` default reaches booleanness through a callee
+      // name just as the `||` spelling does, so a use site reading the value as
+      // a string outranks it identically. Without this, the `??` spelling would
+      // report where `||` stays silent.
+      `const outcome = isNotEmpty(value) ?? isTrimmed(value);
+if (typeof outcome === 'string') {
+  throw new Error(outcome);
+}`,
     ],
     invalid: [
       // Variables without proper boolean prefixes
@@ -1667,6 +1691,73 @@ const wrapper = new Wrapper(completed);`,
             type: 'variable',
             name: 'completed',
             capitalizedName: 'Completed',
+            prefixes: defaultPrefixes,
+          }),
+        ],
+      },
+
+      // A boolean default reads the same under either fallback operator. The
+      // `??` spelling is what `prefer-nullish-coalescing-boolean-props` rewrites
+      // `||` into, so reading only `||` would let that fixer disarm this rule.
+      {
+        code: `const active = isActive() ?? false;
+export { active };`,
+        errors: [
+          buildError({
+            type: 'variable',
+            name: 'active',
+            capitalizedName: 'Active',
+            prefixes: defaultPrefixes,
+          }),
+        ],
+      },
+
+      // The `||` control for the case above: it must keep reporting.
+      {
+        code: `const active = isActive() || false;
+export { active };`,
+        errors: [
+          buildError({
+            type: 'variable',
+            name: 'active',
+            capitalizedName: 'Active',
+            prefixes: defaultPrefixes,
+          }),
+        ],
+      },
+      {
+        code: 'const loggedIn = user.isLoggedIn ?? true;',
+        errors: [
+          buildError({
+            type: 'variable',
+            name: 'loggedIn',
+            capitalizedName: 'LoggedIn',
+            prefixes: defaultPrefixes,
+          }),
+        ],
+      },
+      {
+        code: 'const enabled = flags?.isEnabled ?? false;',
+        errors: [
+          buildError({
+            type: 'variable',
+            name: 'enabled',
+            capitalizedName: 'Enabled',
+            prefixes: defaultPrefixes,
+          }),
+        ],
+      },
+
+      // A conjunction is not a default — its right operand is the result rather
+      // than a fallback — so it keeps its own both-operand analysis and reports
+      // independently of the fallback operator set.
+      {
+        code: 'const active = hasAccess() && isEnabled();',
+        errors: [
+          buildError({
+            type: 'variable',
+            name: 'active',
+            capitalizedName: 'Active',
             prefixes: defaultPrefixes,
           }),
         ],
