@@ -14,6 +14,16 @@ Use this rule when you need to block risky properties (for example, untyped `req
 - Skips safe array members on the arrays returned by `Object.keys()` and `Object.values()` to avoid noisy false positives.
 - Explains why an access is blocked and reminds developers to choose the approved alternative.
 
+### Matching a renamed `object`
+
+The configured `object` name is matched against the identifier, tolerating one specific rewrite: a module-scope constant that `@blumintinc/blumint/global-const-style` has renamed from camelCase to `UPPER_SNAKE_CASE`. Without this, configuring `"object": "disallowedObject"` and then running `global-const-style`'s autofix (which renames the constant to `DISALLOWED_OBJECT`) would silently disarm the restriction, even though the same restricted property is still being read off the same value.
+
+The tolerant match only accepts an identifier that already has the exact `UPPER_SNAKE_CASE` shape `global-const-style` produces (splitting on case boundaries the same way `global-const-style` does, so acronym runs like `apiKey` → `API_KEY` are handled correctly). A blanket case-insensitive comparison is deliberately avoided: it would also equate an unrelated PascalCase name (a React component, say) with a lowercase `object` option — for example `"object": "foo"` would wrongly match a component named `Foo`. Matching only the exact `UPPER_SNAKE_CASE` rewrite keeps the broadened match tied to the one rename it compensates for.
+
+The `allowObjects` list is normalized the **same** way, because it names a binding by spelling exactly as `object` does. Normalizing only the restrictive side would let `global-const-style`'s rename turn an access the user explicitly allowed (`router.push`) into a reported one — the same defect in the direction that manufactures a false positive rather than losing a report.
+
+The `property` name is **not** normalized: `global-const-style` renames the *binding*, never an object's properties, so there is no equivalent rewrite to compensate for on that side and loosening it would only add false-positive risk.
+
 ### Examples of **correct** code with this rule:
 
 ```js
@@ -48,6 +58,14 @@ const value = disallowedObject.disallowedProperty;
 const myArray = [1, 2, 3];
 myArray.push(4);
 // Error: Access to "myArray.push" is restricted. Use navigation helpers instead. Restricted properties often bypass safer APIs, hide side effects, or encourage patterns this codebase forbids. Use the allowed alternative from your rule configuration or remove this property access.
+```
+
+A constant `global-const-style` has renamed is still reported, because the same restricted property is still read off the same value:
+
+```js
+/* eslint @blumintinc/blumint/no-restricted-properties-fix: ["error", [{ "object": "disallowedObject", "property": "disallowedProperty", "message": "This property is disallowed." }]] */
+const DISALLOWED_OBJECT = { disallowedProperty: 'value' };
+const renamedValue = DISALLOWED_OBJECT.disallowedProperty;
 ```
 
 ## Options
