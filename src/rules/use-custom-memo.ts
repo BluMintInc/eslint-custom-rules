@@ -5,13 +5,12 @@ import {
   TSESTree,
 } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import {
+  CUSTOM_MEMO_MODULE_PATH,
+  CUSTOM_MEMO_MODULE_SOURCE,
+} from '../utils/memoModule';
 
 type MessageIds = 'useCustomMemo';
-
-const MEMO_MODULE = `'src/util/memo'`;
-
-/** `MEMO_MODULE` carries the quotes the fixer emits; a path never does. */
-const MEMO_MODULE_PATH = MEMO_MODULE.slice(1, -1);
 
 const SOURCE_EXTENSION = /\.(?:ts|tsx|js|jsx)$/;
 
@@ -28,10 +27,10 @@ const SOURCE_EXTENSION = /\.(?:ts|tsx|js|jsx)$/;
  */
 const isMemoModule = (filename: string): boolean => {
   const normalized = filename.replace(/\\/g, '/').replace(SOURCE_EXTENSION, '');
-  if (!normalized.endsWith(MEMO_MODULE_PATH)) {
+  if (!normalized.endsWith(CUSTOM_MEMO_MODULE_PATH)) {
     return false;
   }
-  const suffixStart = normalized.length - MEMO_MODULE_PATH.length;
+  const suffixStart = normalized.length - CUSTOM_MEMO_MODULE_PATH.length;
   return suffixStart === 0 || normalized[suffixStart - 1] === '/';
 };
 
@@ -284,7 +283,7 @@ export const useCustomMemo = createRule<[], MessageIds>({
             const sourceCode = context.getSourceCode();
             const memoImport = buildImport(
               memoSpecifiers,
-              MEMO_MODULE,
+              CUSTOM_MEMO_MODULE_SOURCE,
               node.importKind,
               sourceCode,
             );

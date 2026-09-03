@@ -591,11 +591,19 @@ const emittedImports: EmittedImport[] = collectWith(EMITTED_IMPORT);
 
 /**
  * A constant can carry the quotes the fixer emits inside its own VALUE, as
- * `use-custom-memo.ts:11` does with ``const MEMO_MODULE = `'src/util/memo'` ``.
- * The emitted template then reads ``... from ${MEMO_MODULE};`` — no quotes in
- * its static text, so no quote-keyed pattern can see the specifier, and the
- * file contributes no row at all rather than an UNRESOLVED one. Unwrapping the
- * value recovers the specifier instead of leaving that emitter invisible.
+ * `memoModule.ts` does with
+ * ``const CUSTOM_MEMO_MODULE_SOURCE = `'src/util/memo'` ``. The template
+ * `use-custom-memo.ts` emits then reads
+ * ``... from ${CUSTOM_MEMO_MODULE_SOURCE};`` — no quotes in its static text, so
+ * no quote-keyed pattern can see the specifier, and the emitting file
+ * contributes no row at all rather than an UNRESOLVED one. Unwrapping the value
+ * recovers the specifier instead of leaving that emitter invisible.
+ *
+ * Carrier and emitter are separate files because two rules read the same
+ * specifier: `use-custom-memo` writes it and `require-memoize-jsx-returners`
+ * recognises what it wrote. The harvest reads every module-scope constant
+ * whichever file declares it, so the recovery is unaffected by the split — only
+ * the file the row is attributed to moves.
  */
 const QUOTE_WRAPPED = /^(['"])(.*)\1$/;
 
@@ -698,7 +706,7 @@ describe(`${RULE_NAME} default ignored libraries`, () => {
     ).toEqual([]);
 
     expect(quoteWrappedSpecifiers).toContainEqual({
-      file: 'use-custom-memo.ts',
+      file: 'memoModule.ts',
       specifier: 'src/util/memo',
     });
     expect(quoteWrappedSpecifiers.length).toBeGreaterThanOrEqual(1); // measured 1
