@@ -114,6 +114,34 @@ ruleTesterTs.run('enforce-positive-naming', enforcePositiveNaming, {
     'type Form = { isNotBlank: (value?: string) => string | true };',
     'interface Form { hasNoErrors: (value?: string) => string | true; }',
     'interface Form { isNotBlank: (value?: string) => void; }',
+
+    // Casing is not meaning: the boolean-name gate reads a name's WORDS, so a
+    // positively named binding stays silent in every spelling convention.
+    // `global-const-style` mandates SCREAMING_SNAKE for module-level constants,
+    // which makes that spelling ordinary rather than exotic (#2306).
+    'const IS_DISABLED = true;',
+    "const HAS_ACCESS = user.permissions.includes('admin');",
+    'const CAN_SUBMIT = true;',
+    "const HasAccess = user.permissions.includes('admin');",
+    'const IsVerified = user.verified;',
+    "const has_access = user.permissions.includes('admin');",
+    'const is_enabled = true;',
+
+    // A term that merely contains a negative prefix (`indexed`, `unique`) is
+    // exempt in every spelling, not only in the camelCase one.
+    'const IS_INDEXED = checkIndex(doc);',
+    'const IS_UNIQUE = checkUnique(doc);',
+    'const IsUnique = checkUnique(doc);',
+
+    // `island` opens with the letters of the `is` prefix without naming a
+    // predicate, and no negative term follows it.
+    'const ISLAND_COUNT = islands.length;',
+
+    // The validator carve-out survives the spelling-independent gate: a
+    // predicate returning an error message or `true` is not a boolean in any
+    // casing. The exemption rides the returned literal rather than a return
+    // annotation, which `no-explicit-return-type` would strip under `--fix`.
+    "const IS_NOT_BLANK = (value?: string) => (value ? true : 'Must not be blank');",
   ],
   invalid: [
     // Invalid boolean variables with "not" prefix
@@ -370,6 +398,110 @@ export const isNotBlank = <B>((value?: string): boolean => !!value);
           },
         },
       ],
+    },
+
+    // A negative name reads as negative in every casing convention. The gate
+    // judges a name by its words, so the SCREAMING_SNAKE spelling that
+    // `global-const-style` mandates for module constants is judged like its
+    // camelCase twin instead of escaping the rule entirely (#2306).
+    {
+      code: `const HAS_NO_ACCESS = !user.permissions.includes('admin');\nconsole.log(HAS_NO_ACCESS);`,
+      errors: [{ messageId: 'avoidNegativeNaming' }],
+    },
+    {
+      code: 'const IS_NOT_READY = !ready;',
+      errors: [
+        {
+          messageId: 'avoidNegativeNaming',
+          data: {
+            name: 'IS_NOT_READY',
+            alternatives: 'IS_READY',
+          },
+        },
+      ],
+    },
+    {
+      code: 'const DOES_NOT_EXIST = !exists;',
+      errors: [
+        {
+          messageId: 'avoidNegativeNaming',
+          data: {
+            name: 'DOES_NOT_EXIST',
+            alternatives: 'DOES_EXIST',
+          },
+        },
+      ],
+    },
+    {
+      code: 'const SHOULD_NOT_RETRY = attempts > 3;',
+      errors: [
+        {
+          messageId: 'avoidNegativeNaming',
+          data: {
+            name: 'SHOULD_NOT_RETRY',
+            alternatives: 'SHOULD_RETRY',
+          },
+        },
+      ],
+    },
+
+    // Every site the rule visits — object property, parameter, class field —
+    // answers the SCREAMING_SNAKE spelling the way it answers the camelCase one.
+    {
+      code: 'const config = { IS_NOT_READY: true };',
+      errors: [
+        {
+          messageId: 'avoidNegativeNaming',
+          data: {
+            name: 'IS_NOT_READY',
+            alternatives: 'IS_READY',
+          },
+        },
+      ],
+    },
+    {
+      code: 'export function check(IS_NOT_VALID: boolean) { return IS_NOT_VALID; }',
+      errors: [
+        {
+          messageId: 'avoidNegativeNaming',
+          data: {
+            name: 'IS_NOT_VALID',
+            alternatives: 'IS_VALID',
+          },
+        },
+      ],
+    },
+    {
+      code: 'class Session { IS_NOT_READY = false; }',
+      errors: [
+        {
+          messageId: 'avoidNegativeNaming',
+          data: {
+            name: 'IS_NOT_READY',
+            alternatives: 'IS_READY',
+          },
+        },
+      ],
+    },
+
+    // PascalCase and snake_case spellings report too. Only the report is
+    // pinned: the suggested alternative is spelled from the hand-maintained
+    // prefix map, whose casing follows the map key rather than the binding.
+    {
+      code: `const HasNoAccess = !user.permissions.includes('admin');`,
+      errors: [{ messageId: 'avoidNegativeNaming' }],
+    },
+    {
+      code: 'const IsNotReady = !ready;',
+      errors: [{ messageId: 'avoidNegativeNaming' }],
+    },
+    {
+      code: `const has_no_access = !user.permissions.includes('admin');`,
+      errors: [{ messageId: 'avoidNegativeNaming' }],
+    },
+    {
+      code: 'const is_not_ready = !ready;',
+      errors: [{ messageId: 'avoidNegativeNaming' }],
     },
   ],
 });

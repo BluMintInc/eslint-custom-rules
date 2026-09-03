@@ -13,6 +13,8 @@ This rule reports when a boolean-like identifier starts with a negative prefix s
 - Explicit `boolean` type annotations or boolean literal initializers.
 - Common boolean prefixes (`is`, `has`, `can`, `should`, `will`, `does`) on identifiers, methods, properties, or parameters.
 
+Prefix detection reads a name's *words*, not its raw spelling, so the same name is judged identically in camelCase, PascalCase, SCREAMING_SNAKE_CASE and snake_case. `hasNoAccess`, `HasNoAccess`, `HAS_NO_ACCESS` and `has_no_access` all report. This matters because [`global-const-style`](./global-const-style.md) mandates SCREAMING_SNAKE_CASE for module-level constants, so a casing-sensitive check would place every module constant outside this rule's reach.
+
 A class member is judged in every spelling it has: a method, a getter or setter, a **class field** — both the property-arrow form (`isNotAdmin = (user) => !user.admin`) and the plain data form (`isNotReady = false`, `shouldNotRetry!: boolean`) — and the `abstract` declaration of either. Writing `=` in front of a member changes nothing a reader has to mentally invert, so it does not change the answer.
 
 The rule ignores:
@@ -34,6 +36,10 @@ type State = { isUnreachable: boolean; doesNotExist: boolean };
 class Session { get isDisallowed() { return !this.isEnabled; } }
 class Flags { isNotReady = false; isNotAdmin = (user: User) => !user.admin; }
 abstract class Job { abstract shouldNotRetry: boolean; }
+
+// The casing convention does not change the meaning of the name.
+const HAS_NO_ACCESS = !user.permissions.includes('admin');
+const IS_NOT_READY = !ready;
 ```
 
 ### Examples of **correct** code for this rule:
@@ -46,6 +52,12 @@ type State = { isReachable: boolean; doesExist: boolean };
 class Session { get isAllowed() { return this.isEnabled; } }
 class Flags { isReady = false; isAdmin = (user: User) => user.admin; }
 abstract class Job { abstract shouldRetry: boolean; }
+
+// A positive name stays silent in every casing convention, and a word that
+// merely contains a negative prefix (`indexed`, `unique`) stays exempt in all
+// of them.
+const HAS_ACCESS = user.permissions.includes('admin');
+const IS_INDEXED = checkIndex(doc);
 
 // Validator predicate: returns an error message or `true`, not a boolean.
 const isNotBlank = (value?: string) =>

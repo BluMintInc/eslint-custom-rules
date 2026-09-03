@@ -915,6 +915,25 @@ function splitNameIntoWords(name: string): string[] {
   return spacedName.toLowerCase().trim().split(/\s+/).filter(Boolean);
 }
 
+// Name prefixes that mark a binding as a predicate rather than a value.
+const BOOLEAN_NAME_PREFIXES = ['is', 'has', 'can', 'should', 'will', 'does'];
+
+/**
+ * Whether a name reads as boolean-like, judged on the name's WORDS rather than
+ * its raw spelling. A casing-sensitive prefix test answers `hasNoAccess` and
+ * `HAS_NO_ACCESS` differently even though they carry the same meaning, and
+ * `global-const-style` mandates the SCREAMING_SNAKE spelling for module-level
+ * constants — so every module constant would sit outside this rule's reach.
+ * Joining the split words normalizes camelCase, PascalCase, SCREAMING_SNAKE and
+ * snake_case onto one lowercase form before the prefix test runs.
+ */
+function hasBooleanNamePrefix(name: string): boolean {
+  const normalizedName = splitNameIntoWords(name).join('');
+  return BOOLEAN_NAME_PREFIXES.some((prefix) =>
+    normalizedName.startsWith(prefix),
+  );
+}
+
 // Map of negative boolean terms to suggested positive alternatives
 const BOOLEAN_POSITIVE_ALTERNATIVES: Record<string, string[]> = {
   // Boolean prefixes - These will be removed from suggestions
@@ -1336,17 +1355,8 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
         }
       }
 
-      const nameLowercase = name.toLowerCase();
-
       // Check for negative prefixes in boolean-like variables
-      if (
-        nameLowercase.startsWith('is') ||
-        nameLowercase.startsWith('has') ||
-        nameLowercase.startsWith('can') ||
-        nameLowercase.startsWith('should') ||
-        nameLowercase.startsWith('will') ||
-        nameLowercase.startsWith('does')
-      ) {
+      if (hasBooleanNamePrefix(name)) {
         // We already checked exception words above, so no need to check again
 
         for (const prefix of BOOLEAN_NEGATIVE_PREFIXES) {
@@ -1515,12 +1525,7 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
       // Check if the node has a name that suggests it's a boolean
       if (
         node.type === AST_NODE_TYPES.Identifier &&
-        (node.name.startsWith('is') ||
-          node.name.startsWith('has') ||
-          node.name.startsWith('can') ||
-          node.name.startsWith('should') ||
-          node.name.startsWith('will') ||
-          node.name.startsWith('does'))
+        hasBooleanNamePrefix(node.name)
       ) {
         return true;
       }
