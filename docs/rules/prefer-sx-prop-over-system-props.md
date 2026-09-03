@@ -173,6 +173,30 @@ What counts as the same key:
 - The same key nested under a selector (`{ '&:hover': { display: 'none' } }`) belongs to a different object and does not collide.
 - The array form is unaffected: it prepends an object of its own instead of merging in place, so `<Box display="flex" sx={[{ display: 'block' }]} />` becomes `<Box sx={[{ display: 'flex' }, { display: 'block' }]} />`. MUI applies later entries last, which preserves `sx`'s precedence over the system prop exactly as it stood before the fix.
 
+### The same name written twice among the moved props
+
+Two system props on one element can name the same property. The merge emits one
+entry per moved prop, so the fresh object literal duplicates the key on its own
+— no `sx` need be present at all — and the rule **reports both and fixes
+neither**:
+
+```tsx
+// Reported twice, left as written — no fix
+<Box display="flex" display="block" />
+```
+
+The two values disagree and only the author can say which one was meant, exactly
+as for [a key the `sx` object already declares](#a-key-the-sx-object-already-declares).
+The decline stays per prop: a name written once on the same element still moves.
+
+```tsx
+// Before
+<Box display="flex" mt={2} display="block" />
+
+// After: `mt` moved, the disagreeing `display` pair left for the author
+<Box display="flex" sx={{ mt: 2 }} display="block" />
+```
+
 ### Formatting of the emitted `sx`
 
 The merged `sx` stays on one line whenever it fits within [`printWidth`](#printwidth). Past that, the object is broken open with one property per line, indented relative to the JSX attribute:

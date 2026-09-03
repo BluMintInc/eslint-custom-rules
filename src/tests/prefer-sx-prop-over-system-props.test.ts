@@ -1760,6 +1760,78 @@ export const Panel = () => (
         errors: [{ messageId: 'preferSxProp', data: { prop: 'flexWrap' } }],
         output: null,
       },
+
+      // #2300: two moved props can disagree with EACH OTHER, not just with
+      // `sx`. Merging both emits `{ display: 'flex', display: 'block' }` —
+      // the same TS1117 literal #2296 stands down for — so both duplicates
+      // are reported and neither is fixed.
+      {
+        code: `
+import { Box } from '@mui/material';
+const El = () => <Box display="flex" display="block" />;
+`,
+        errors: [
+          { messageId: 'preferSxProp', data: { prop: 'display' } },
+          { messageId: 'preferSxProp', data: { prop: 'display' } },
+        ],
+        output: null,
+      },
+
+      // The duplicated pair does not hold the rest of the element back: `mt`
+      // is named once, so it still merges into a fresh `sx` at its own
+      // position while both `display` attributes stay where they were written.
+      {
+        code: `
+import { Box } from '@mui/material';
+const El = () => <Box display="flex" mt={2} display="block" />;
+`,
+        errors: [
+          { messageId: 'preferSxProp', data: { prop: 'display' } },
+          { messageId: 'preferSxProp', data: { prop: 'mt' } },
+          { messageId: 'preferSxProp', data: { prop: 'display' } },
+        ],
+        output: `
+import { Box } from '@mui/material';
+const El = () => <Box display="flex" sx={{ mt: 2 }} display="block" />;
+`,
+      },
+
+      // The same standoff with an `sx` object to merge into: the duplicated
+      // name is declined on both sides and the singly named prop merges in
+      // place, so the existing collision path and the duplicate path compose.
+      {
+        code: `<Box display="flex" mt={2} display="block" sx={{ p: 1 }} />`,
+        errors: [
+          { messageId: 'preferSxProp', data: { prop: 'display' } },
+          { messageId: 'preferSxProp', data: { prop: 'mt' } },
+          { messageId: 'preferSxProp', data: { prop: 'display' } },
+        ],
+        output: `<Box display="flex" display="block" sx={{ mt: 2, p: 1 }} />`,
+      },
+
+      // Every moved prop duplicated leaves nothing to merge, so no fix is
+      // emitted at all — each attribute is still reported.
+      {
+        code: `<Box display="flex" display="block" display="grid" />`,
+        errors: [
+          { messageId: 'preferSxProp', data: { prop: 'display' } },
+          { messageId: 'preferSxProp', data: { prop: 'display' } },
+          { messageId: 'preferSxProp', data: { prop: 'display' } },
+        ],
+        output: null,
+      },
+
+      // A duplicated name is a collision whatever the `sx` slot is: the array
+      // form prepends a fresh object literal, which cannot carry the name
+      // twice either.
+      {
+        code: `<Box display="flex" display="block" sx={[base]} />`,
+        errors: [
+          { messageId: 'preferSxProp', data: { prop: 'display' } },
+          { messageId: 'preferSxProp', data: { prop: 'display' } },
+        ],
+        output: null,
+      },
     ],
   },
 );
