@@ -254,6 +254,77 @@ ruleTesterTs.run('no-useless-usememo-primitives', noUselessUsememoPrimitives, {
       `,
       parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
     },
+    // #2312: the deep-compare hook is governed, and every carve-out the React
+    // spelling has holds under it unchanged. A reference result is what that
+    // hook exists for, so it is exactly the shape that must stay silent.
+    {
+      code: `
+        const value = useDeepCompareMemo(() => ({ a, b }), [a, b]);
+      `,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+    },
+    {
+      code: `
+        const list = useDeepCompareMemo(() => [a, b], [a, b]);
+      `,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+    },
+    {
+      code: `
+        const handler = useDeepCompareMemo(() => () => doThing(a), [a]);
+      `,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+    },
+    {
+      code: `
+        const promised = useDeepCompareMemo(async () => 42, []);
+      `,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+    },
+    {
+      code: `
+        const iterator = useDeepCompareMemo(function* () { yield 1; return 1; }, []);
+      `,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+    },
+    {
+      code: `
+        const checksum = useDeepCompareMemo(() => computeChecksum(data), [data]);
+      `,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+    },
+    {
+      code: `
+        const stamp = useDeepCompareMemo(() => Date.now(), []);
+      `,
+      options: [{ ignoreCallExpressions: false }],
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+    },
+    // The hook set is enumerated rather than matched by prefix, and these are
+    // why. `useDeepCompareCallback` hands the callback itself back, so the
+    // value it produces is a function however primitive the body is, and
+    // `useDeepCompareEffect` produces no value at all — inlining either would
+    // change what the code does.
+    {
+      code: `
+        const callback = useDeepCompareCallback(() => 1, []);
+      `,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+    },
+    {
+      code: `
+        useDeepCompareEffect(() => 1, []);
+      `,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+    },
+    // A memo hook this rule does not govern stays out of its sight, so the set
+    // cannot widen to every name ending in `Memo`.
+    {
+      code: `
+        const cached = useCustomMemo(() => 1, []);
+      `,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+    },
   ],
   invalid: [
     {
@@ -313,7 +384,7 @@ ruleTesterTs.run('no-useless-usememo-primitives', noUselessUsememoPrimitives, {
       errors: [
         {
           messageId: 'uselessUseMemoPrimitive',
-          data: { valueKind: 'boolean value' },
+          data: { hook: 'useMemo', valueKind: 'boolean value' },
         },
       ],
       output: `
@@ -358,7 +429,7 @@ ruleTesterTs.run('no-useless-usememo-primitives', noUselessUsememoPrimitives, {
       errors: [
         {
           messageId: 'uselessUseMemoPrimitive',
-          data: { valueKind: 'string value' },
+          data: { hook: 'useMemo', valueKind: 'string value' },
         },
       ],
       output: `
@@ -373,7 +444,7 @@ ruleTesterTs.run('no-useless-usememo-primitives', noUselessUsememoPrimitives, {
       errors: [
         {
           messageId: 'uselessUseMemoPrimitive',
-          data: { valueKind: 'string value' },
+          data: { hook: 'useMemo', valueKind: 'string value' },
         },
       ],
       output: `
@@ -388,7 +459,7 @@ ruleTesterTs.run('no-useless-usememo-primitives', noUselessUsememoPrimitives, {
       errors: [
         {
           messageId: 'uselessUseMemoPrimitive',
-          data: { valueKind: 'boolean value' },
+          data: { hook: 'useMemo', valueKind: 'boolean value' },
         },
       ],
       output: `
@@ -403,7 +474,7 @@ ruleTesterTs.run('no-useless-usememo-primitives', noUselessUsememoPrimitives, {
       errors: [
         {
           messageId: 'uselessUseMemoPrimitive',
-          data: { valueKind: 'number value' },
+          data: { hook: 'useMemo', valueKind: 'number value' },
         },
       ],
       output: `
@@ -418,7 +489,7 @@ ruleTesterTs.run('no-useless-usememo-primitives', noUselessUsememoPrimitives, {
       errors: [
         {
           messageId: 'uselessUseMemoPrimitive',
-          data: { valueKind: 'null value' },
+          data: { hook: 'useMemo', valueKind: 'null value' },
         },
       ],
       output: `
@@ -433,7 +504,7 @@ ruleTesterTs.run('no-useless-usememo-primitives', noUselessUsememoPrimitives, {
       errors: [
         {
           messageId: 'uselessUseMemoPrimitive',
-          data: { valueKind: 'bigint value' },
+          data: { hook: 'useMemo', valueKind: 'bigint value' },
         },
       ],
       output: `
@@ -458,7 +529,7 @@ ruleTesterTs.run('no-useless-usememo-primitives', noUselessUsememoPrimitives, {
       errors: [
         {
           messageId: 'uselessUseMemoPrimitive',
-          data: { valueKind: 'undefined value' },
+          data: { hook: 'useMemo', valueKind: 'undefined value' },
         },
       ],
       output: `
@@ -478,7 +549,7 @@ ruleTesterTs.run('no-useless-usememo-primitives', noUselessUsememoPrimitives, {
       errors: [
         {
           messageId: 'uselessUseMemoPrimitive',
-          data: { valueKind: 'string value' },
+          data: { hook: 'useMemo', valueKind: 'string value' },
         },
       ],
       output: `
@@ -499,7 +570,7 @@ ruleTesterTs.run('no-useless-usememo-primitives', noUselessUsememoPrimitives, {
       errors: [
         {
           messageId: 'uselessUseMemoPrimitive',
-          data: { valueKind: 'string value' },
+          data: { hook: 'useMemo', valueKind: 'string value' },
         },
       ],
       output: `
@@ -518,7 +589,7 @@ ruleTesterTs.run('no-useless-usememo-primitives', noUselessUsememoPrimitives, {
       errors: [
         {
           messageId: 'uselessUseMemoPrimitive',
-          data: { valueKind: 'number value' },
+          data: { hook: 'useMemo', valueKind: 'number value' },
         },
       ],
       output: `
@@ -1572,6 +1643,162 @@ const o = {
 const o = {
   a: 1 /* deliberately empty */,
 };
+`,
+    },
+    // #2312: `useDeepCompareMemo` caches the callback's result against a
+    // dependency array exactly as `useMemo` does, so a primitive result is
+    // useless under it for the same reason — and the report quotes the hook the
+    // call actually names rather than the one the rule was first written for.
+    {
+      code: `
+        const zero = useDeepCompareMemo(() => 0, []);
+      `,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+      errors: [
+        {
+          messageId: 'uselessUseMemoPrimitive',
+          data: { hook: 'useDeepCompareMemo', valueKind: 'number value' },
+        },
+      ],
+      output: `
+        const zero = 0;
+      `,
+    },
+    {
+      code: `
+        const countText = useDeepCompareMemo(() => \`Count: \${count}\`, [count]);
+      `,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+      errors: [
+        {
+          messageId: 'uselessUseMemoPrimitive',
+          data: { hook: 'useDeepCompareMemo', valueKind: 'string value' },
+        },
+      ],
+      output: `
+        const countText = \`Count: \${count}\`;
+      `,
+    },
+    {
+      code: `
+        const label = useDeepCompareMemo(() => {
+          return isPending ? 'Pending Response' : 'Request to Join';
+        }, [isPending]);
+      `,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+      errors: [{ messageId: 'uselessUseMemoPrimitive' }],
+      output: `
+        const label = isPending ? 'Pending Response' : 'Request to Join';
+      `,
+    },
+    // The member form of the deep-compare spelling, so the namespaced arm
+    // follows the same set as the bare one.
+    {
+      code: `
+        const isFlagged = deepCompare.useDeepCompareMemo(() => true, []);
+      `,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+      errors: [
+        {
+          messageId: 'uselessUseMemoPrimitive',
+          data: { hook: 'useDeepCompareMemo', valueKind: 'boolean value' },
+        },
+      ],
+      output: `
+        const isFlagged = true;
+      `,
+    },
+    // The import the unwrap strands is the one the CALL resolved to, read off
+    // the deletion itself rather than from a hardcoded name: here the
+    // deep-compare package's, which React never bound.
+    {
+      code: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+
+export const useThing = () => useDeepCompareMemo(() => 1, []);
+`,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+      errors: [{ messageId: 'uselessUseMemoPrimitive' }],
+      output: `
+export const useThing = () => 1;
+`,
+    },
+    // A surviving deep-compare call keeps that import, on the same terms the
+    // React spelling keeps its own.
+    {
+      code: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+
+export const useCount = () => useDeepCompareMemo(() => 1, []);
+export const useConfig = (items) => useDeepCompareMemo(() => ({ items }), [items]);
+`,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+      errors: [{ messageId: 'uselessUseMemoPrimitive' }],
+      output: `
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+
+export const useCount = () => 1;
+export const useConfig = (items) => useDeepCompareMemo(() => ({ items }), [items]);
+`,
+    },
+    // Both spellings in one file — the state a partially applied rename leaves
+    // behind. Neither unwrap is its own binding's last use judged alone, and
+    // the single batched fix unbinds both packages.
+    {
+      code: `
+import { useMemo } from 'react';
+import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+
+export const useA = () => useMemo(() => 1, []);
+export const useB = () => useDeepCompareMemo(() => 2, []);
+`,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+      errors: [
+        {
+          messageId: 'uselessUseMemoPrimitive',
+          data: { hook: 'useMemo', valueKind: 'number value' },
+        },
+        {
+          messageId: 'uselessUseMemoPrimitive',
+          data: { hook: 'useDeepCompareMemo', valueKind: 'number value' },
+        },
+      ],
+      output: `
+export const useA = () => 1;
+export const useB = () => 2;
+`,
+    },
+    // A namespace import of the deep-compare package unbinds the namespace,
+    // since the member expression is the only reference the deleted span
+    // carried.
+    {
+      code: `
+import * as deepCompare from '@blumintinc/use-deep-compare';
+
+export const useA = () => deepCompare.useDeepCompareMemo(() => 1, []);
+`,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+      errors: [{ messageId: 'uselessUseMemoPrimitive' }],
+      output: `
+export const useA = () => 1;
+`,
+    },
+    // A comment stranded by the unwrap is carried into the replacement under
+    // the deep-compare spelling too: the rewrite the fixer performs is the same
+    // one, so nothing about comment fidelity turns on which hook was called.
+    {
+      code: `
+const message = useDeepCompareMemo(() => {
+  // documents the fallback
+  return flag ? 'a' : 'b';
+}, [flag]);
+`,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+      errors: [{ messageId: 'uselessUseMemoPrimitive' }],
+      output: `
+const message =
+  // documents the fallback
+  flag ? 'a' : 'b';
 `,
     },
   ],

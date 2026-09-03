@@ -69,11 +69,13 @@ function indentOfLine(line: string): string {
   return /^[\t ]*/.exec(line)?.[0] ?? '';
 }
 
-/** A `useMemo` call the rule reports, held until `Program:exit`. */
+/** A memo-hook call the rule reports, held until `Program:exit`. */
 type Violation = {
   node: TSESTree.CallExpression;
   returnedExpression: TSESTree.Expression;
   valueKind: string;
+  /** The hook the call names, which the report quotes back verbatim. */
+  hook: string;
 };
 
 /** A violation whose rewrite ships, with the edit and deletions it owns. */
@@ -137,9 +139,39 @@ function rangesOverlap(
   return a[0] < b[1] && b[0] < a[1];
 }
 
-function isUseMemoCallee(callee: TSESTree.LeftHandSideExpression): boolean {
+/**
+ * The memo hooks this rule governs, by the name they are called under.
+ *
+ * `useDeepCompareMemo` (from `@blumintinc/use-deep-compare`) mirrors `useMemo`
+ * argument for argument — a callback whose result is cached against a
+ * dependency array — so every judgement below reads the same call shape and
+ * every rewrite produces the same text. Memoizing a primitive is equally
+ * pointless under it: a value with no identity to preserve gains nothing from a
+ * cache, and deep comparison makes the bargain WORSE rather than acceptable,
+ * since each render now walks the dependency array by value to protect it.
+ *
+ * They are enumerated rather than matched by prefix because a fixable,
+ * recommended sibling rewrites the callee of a `useMemo` to the deep-compare
+ * spelling to repair a dependency-identity problem, leaving the callback
+ * byte-identical. Keyed on the literal `useMemo` alone, this rule went silent on
+ * the result while the useless memoization it objects to survived the rename
+ * untouched — renaming the callee by hand reproduces the blind spot with no
+ * fixer involved (#2312).
+ */
+const MEMO_HOOK_NAMES = new Set(['useMemo', 'useDeepCompareMemo']);
+
+/**
+ * The hook a call invokes, or `null` where it is not a memo hook at all.
+ *
+ * A namespaced call answers with the bare hook name rather than the whole
+ * callee text, so `React.useMemo` and `useMemo` report identically: the
+ * namespace is the caller's import style, not part of what the report is about.
+ */
+function memoHookNameOf(
+  callee: TSESTree.LeftHandSideExpression,
+): string | null {
   if (callee.type === AST_NODE_TYPES.Identifier) {
-    return callee.name === 'useMemo';
+    return MEMO_HOOK_NAMES.has(callee.name) ? callee.name : null;
   }
 
   if (
@@ -147,10 +179,11 @@ function isUseMemoCallee(callee: TSESTree.LeftHandSideExpression): boolean {
     !callee.computed &&
     callee.property.type === AST_NODE_TYPES.Identifier
   ) {
-    return callee.property.name === 'useMemo';
+    const { name } = callee.property;
+    return MEMO_HOOK_NAMES.has(name) ? name : null;
   }
 
-  return false;
+  return null;
 }
 
 function getReturnedExpression(
@@ -423,7 +456,7 @@ export const noUselessUsememoPrimitives = createRule<Options, MessageIds>({
     ],
     messages: {
       uselessUseMemoPrimitive:
-        'useMemo wraps a primitive {{valueKind}}. → Primitives are pass-by-value and have no identity to preserve, so memoization provides zero referential-stability benefit and only adds unnecessary hook overhead. → Remove useMemo and inline the expression directly.',
+        '{{hook}} wraps a primitive {{valueKind}}. → Primitives are pass-by-value and have no identity to preserve, so memoization provides zero referential-stability benefit and only adds unnecessary hook overhead. → Remove {{hook}} and inline the expression directly.',
     },
   },
   defaultOptions: [DEFAULT_OPTIONS],
@@ -469,9 +502,9 @@ export const noUselessUsememoPrimitives = createRule<Options, MessageIds>({
     }
 
     /**
-     * Every `useMemo` call the rule reports, in traversal order.
+     * Every memo-hook call the rule reports, in traversal order.
      *
-     * Reporting is deferred to `Program:exit` because the `useMemo` import is
+     * Reporting is deferred to `Program:exit` because the hook's import is
      * unbound only once no surviving call references it. Judged one call at a
      * time, a file with two of them never sees either as the binding's last
      * use, and the pass that unwraps both resolves every report — so nothing
@@ -786,7 +819,8 @@ export const noUselessUsememoPrimitives = createRule<Options, MessageIds>({
 
     return {
       CallExpression(node) {
-        if (!isUseMemoCallee(node.callee)) {
+        const hook = memoHookNameOf(node.callee);
+        if (!hook) {
           return;
         }
 
@@ -850,17 +884,19 @@ export const noUselessUsememoPrimitives = createRule<Options, MessageIds>({
           return;
         }
 
-        violations.push({ node, returnedExpression, valueKind });
+        violations.push({ node, returnedExpression, valueKind, hook });
       },
 
       'Program:exit'() {
         if (violations.length === 0) return;
 
         const planned = planViolations();
-        // One plan over every surviving rewrite: the `useMemo` binding is left
+        // One plan over every surviving rewrite: the hook's binding is left
         // unreferenced by their union even when no single unwrap strips its
         // last use, and the pass that applies them all resolves every report —
-        // so this is the only moment the stranded import is visible.
+        // so this is the only moment the stranded import is visible. Which
+        // binding that is comes from the deletions themselves, so the
+        // deep-compare import is unbound on the same terms as React's.
         const importRemoval =
           planned.length > 0
             ? planOrphanedImportRemoval(
@@ -885,6 +921,7 @@ export const noUselessUsememoPrimitives = createRule<Options, MessageIds>({
             node: violation.node,
             messageId: 'uselessUseMemoPrimitive',
             data: {
+              hook: violation.hook,
               valueKind: violation.valueKind,
             },
             fix:
