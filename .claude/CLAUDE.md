@@ -165,6 +165,29 @@ an evasion is a defect in the guard, not a licence.
 `src/tests/comment-fix-fidelity.test.ts` and
 `src/tests/export-surface-integrity.test.ts` are the other two worked examples.
 
+**Ask what a transform REMOVES, not only what it introduces.** Nearly every
+closure guard counts violations a fix CREATES. A fixer that deletes the carrier
+another rule keys its detection off makes that rule go blind silently, at exit 0,
+and was invisible to all of them.
+`src/tests/detection-loss-composition-closure.test.ts` is that direction: it
+sweeps `invalid` fixtures, runs the composed `--fix` MINUS the victim, and fails
+when the victim goes silent. Two things it needs that the introduce-direction
+does not:
+
+* **A baseline, because most losses are CORRECT.** 460 of its 540 losses are the
+  culprit genuinely repairing the violation. Repair versus blinding turns on
+  whether the objectionable construct SURVIVES the rewrite, which no oracle
+  decides — so each `culprit -> victim` pair carries the measured reason, and a
+  blinding entry carries its issue (#2003, #2312-#2319).
+* **A real `parserOptions.project` for checker-driven victims.** Without lib
+  files `(typeof X)[number]` degenerates to `any` and the victim goes quiet for a
+  reason no consumer has; that faked 161 of 701 candidates. Re-judge as a
+  DIFFERENTIAL — if the victim is silent on the PRE-image under the project too,
+  the instrument cannot speak and the candidate is KEPT. Put only ONE fixture in
+  that program at a time: a snippet with no import or export is a SCRIPT, so
+  several at once collide in the global scope and the checker returns error
+  types, which reads as exactly the silence being tested for.
+
 Four constraints are load-bearing — read those files before writing another:
 
 * **Match rules by object identity**, not by the name passed to `run`. Name-keyed
