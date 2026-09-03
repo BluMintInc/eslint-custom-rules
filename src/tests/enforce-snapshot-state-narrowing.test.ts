@@ -170,6 +170,55 @@ if (state) { return state.name; }
         `,
         options: [{ excludeFiles: ['UserCard.tsx'] }],
       },
+
+      // ---- VALID: `??` boundaries (issue #2315) ----
+
+      // 24. `??` on a genuinely nullable value that is not a snapshot state.
+      // This is the operator's correct use and must never be flagged.
+      `
+      const maybeUser = findUser(id);
+      const data = maybeUser ?? defaultUser;
+      `,
+
+      // 25. A property of a narrowed state can be nullish, so `??` on it is the
+      // right operator. Only a bare snapshot-state operand is a violation.
+      `
+      const state = useDocSnapshot({ docPath });
+      const name = isSnapshotReady(state) ? state.name ?? 'anonymous' : '';
+      `,
+
+      // 26. The shape the `??` suggestion produces is itself silent, so
+      // applying it converges instead of re-reporting.
+      `
+      const state = useDocSnapshot({ docPath });
+      const data = (isSnapshotReady(state) ? state : null) ?? defaultUser;
+      `,
+
+      // 27. `??` on a non-snapshot binding that merely sits beside one
+      `
+      const state = useDocSnapshot({ docPath });
+      const cached = readCache(docPath);
+      const data = cached ?? defaultUser;
+      `,
+
+      // 28. A snapshot state on the RIGHT of `??` is not flagged, matching the
+      // `||` arm: the rule only claims the operand whose value decides the
+      // expression, so the conservative boundary is identical for both.
+      `
+      const state = useDocSnapshot({ docPath });
+      const data = fallback ?? state;
+      `,
+
+      // 29. excludeFiles covers the `??` spelling too. Invalid case 62 is the
+      // same code under the same filename with no options and it reports.
+      {
+        filename: 'src/components/UserCard.tsx',
+        code: `
+const state = useDocSnapshot({ docPath });
+const data = state ?? defaultUser;
+        `,
+        options: [{ excludeFiles: ['UserCard.tsx'] }],
+      },
     ],
 
     invalid: [
@@ -1456,6 +1505,250 @@ import { useDocSnapshot } from 'src/hooks/useDocSnapshot';
 const state = useDocSnapshot({ docPath });
 if (isSnapshotReady(state)) { return state.name; }
 `,
+              },
+            ],
+          },
+        ],
+      },
+
+      // ---- REGRESSIONS: `??` is a fallback form too (issue #2315) ----
+      // `prefer-nullish-coalescing-boolean-props` rewrites `state || fallback`
+      // to `state ?? fallback`. The violation survives that rewrite verbatim —
+      // no member of the union is null or undefined — so each case below mirrors
+      // the `||` case of the same shape.
+
+      // 55. The post-rewrite spelling of case 11
+      {
+        code: `
+const state = useCachedDocSnapshot({ docPath });
+const data = state ?? defaultUser;
+        `,
+        errors: [
+          {
+            messageId: 'noNullishFallback',
+            suggestions: [
+              {
+                messageId: 'noNullishFallback',
+                output: withGuardImport(`
+const state = useCachedDocSnapshot({ docPath });
+const data = isSnapshotReady(state) ? state : defaultUser;
+        `),
+              },
+            ],
+          },
+        ],
+      },
+
+      // 56. The post-rewrite spelling of case 21
+      {
+        code: `
+const state = useDocSnapshot({ docPath });
+const data = state ?? null;
+        `,
+        errors: [
+          {
+            messageId: 'noNullishFallback',
+            suggestions: [
+              {
+                messageId: 'noNullishFallback',
+                output: withGuardImport(`
+const state = useDocSnapshot({ docPath });
+const data = isSnapshotReady(state) ? state : null;
+        `),
+              },
+            ],
+          },
+        ],
+      },
+
+      // 57. Chained `??` is parenthesized so the conditional does not swallow
+      // the remaining operands (the post-rewrite spelling of case 25)
+      {
+        code: `
+const state = useDocSnapshot({ docPath });
+const data = state ?? cached ?? fallback;
+        `,
+        errors: [
+          {
+            messageId: 'noNullishFallback',
+            suggestions: [
+              {
+                messageId: 'noNullishFallback',
+                output: withGuardImport(`
+const state = useDocSnapshot({ docPath });
+const data = (isSnapshotReady(state) ? state : cached) ?? fallback;
+        `),
+              },
+            ],
+          },
+        ],
+      },
+
+      // 58. `??` inside JSX needs no extra parentheses (case 26's spelling)
+      {
+        code: `
+const state = useDocSnapshot({ docPath });
+return <div>{state ?? <Spinner />}</div>;
+        `,
+        errors: [
+          {
+            messageId: 'noNullishFallback',
+            suggestions: [
+              {
+                messageId: 'noNullishFallback',
+                output: withGuardImport(`
+const state = useDocSnapshot({ docPath });
+return <div>{isSnapshotReady(state) ? state : <Spinner />}</div>;
+        `),
+              },
+            ],
+          },
+        ],
+      },
+
+      // 59. Source parentheses already group the expression (case 27's spelling)
+      {
+        code: `
+const state = useDocSnapshot({ docPath });
+const id = (state ?? fallback).id;
+        `,
+        errors: [
+          {
+            messageId: 'noNullishFallback',
+            suggestions: [
+              {
+                messageId: 'noNullishFallback',
+                output: withGuardImport(`
+const state = useDocSnapshot({ docPath });
+const id = (isSnapshotReady(state) ? state : fallback).id;
+        `),
+              },
+            ],
+          },
+        ],
+      },
+
+      // 60. An argument position binds loosely enough for the bare conditional
+      {
+        code: `
+const state = useDocSnapshot({ docPath });
+render(state ?? defaultUser);
+        `,
+        errors: [
+          {
+            messageId: 'noNullishFallback',
+            suggestions: [
+              {
+                messageId: 'noNullishFallback',
+                output: withGuardImport(`
+const state = useDocSnapshot({ docPath });
+render(isSnapshotReady(state) ? state : defaultUser);
+        `),
+              },
+            ],
+          },
+        ],
+      },
+
+      // 61. The configured guard drives the `??` rewrite too (case 40's
+      // spelling), so the option is not silently confined to `||`
+      {
+        code: `
+const state = useCachedDocSnapshot({ docPath });
+const data = state ?? defaultUser;
+        `,
+        options: [
+          {
+            guardFunctions: ['isSnapshotDataReady'],
+            guardImportSource: 'src/utils/guards',
+          },
+        ],
+        errors: [
+          {
+            messageId: 'noNullishFallback',
+            suggestions: [
+              {
+                messageId: 'noNullishFallback',
+                output: withImport(
+                  'isSnapshotDataReady',
+                  'src/utils/guards',
+                  `
+const state = useCachedDocSnapshot({ docPath });
+const data = isSnapshotDataReady(state) ? state : defaultUser;
+        `,
+                ),
+              },
+            ],
+          },
+        ],
+      },
+
+      // 62. The filename valid case 29 excludes, with no options: the exclusion
+      // is the only thing keeping that case quiet.
+      {
+        filename: 'src/components/UserCard.tsx',
+        code: `
+const state = useDocSnapshot({ docPath });
+const data = state ?? defaultUser;
+        `,
+        errors: [
+          {
+            messageId: 'noNullishFallback',
+            suggestions: [
+              {
+                messageId: 'noNullishFallback',
+                output: withGuardImport(`
+const state = useDocSnapshot({ docPath });
+const data = isSnapshotReady(state) ? state : defaultUser;
+        `),
+              },
+            ],
+          },
+        ],
+      },
+
+      // 63. A file already importing the guard gets no duplicate import for the
+      // `??` arm either
+      {
+        code: `
+import { isSnapshotReady } from 'src/types/FirestoreSnapshotState';
+const state = useDocSnapshot({ docPath });
+const data = state ?? defaultUser;
+        `,
+        errors: [
+          {
+            messageId: 'noNullishFallback',
+            suggestions: [
+              {
+                messageId: 'noNullishFallback',
+                output: `
+import { isSnapshotReady } from 'src/types/FirestoreSnapshotState';
+const state = useDocSnapshot({ docPath });
+const data = isSnapshotReady(state) ? state : defaultUser;
+        `,
+              },
+            ],
+          },
+        ],
+      },
+
+      // 64. `&&` keeps its own arm and message: widening the operator gate must
+      // not have rerouted the narrowing form through the fallback rewrite.
+      {
+        code: `
+const state = useDocSnapshot({ docPath });
+const label = state && state.name;
+        `,
+        errors: [
+          {
+            messageId: 'noFalsyCheck',
+            suggestions: [
+              {
+                messageId: 'noFalsyCheck',
+                output: withGuardImport(`
+const state = useDocSnapshot({ docPath });
+const label = isSnapshotReady(state) && state.name;
+        `),
               },
             ],
           },
