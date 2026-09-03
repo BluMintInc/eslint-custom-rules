@@ -515,6 +515,82 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
       );
     }
 
+    /** A property the fix would replace with the FieldPath entries it holds. */
+    type FlattenPlan = {
+      property: TSESTree.Property;
+      /** The key the property writes when its fix is dropped. */
+      key: string;
+      entries: FieldPathEntry[];
+    };
+
+    // Keys the rewritten literal writes, counted. A flattening fix replaces the
+    // property whole, so a dropped plan contributes its own key back rather than
+    // its entries.
+    function countEmittedKeys(
+      plans: readonly FlattenPlan[],
+      dropped: ReadonlySet<FlattenPlan>,
+      keptKeys: readonly string[],
+    ): Map<string, number> {
+      const counts = new Map<string, number>();
+      const count = (key: string) =>
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+
+      for (const key of keptKeys) {
+        count(key);
+      }
+      for (const plan of plans) {
+        if (dropped.has(plan)) {
+          count(plan.key);
+          continue;
+        }
+        for (const entry of plan.entries) {
+          count(entry.key);
+        }
+      }
+
+      return counts;
+    }
+
+    // Flattening synthesizes a dot-path key that the enclosing literal may
+    // already write: `{ 'roles.contributor': a, roles: { contributor: b } }`
+    // flattens onto its own sibling. Emitting it spells the same key twice,
+    // which is TS1117, and the input carries no answer to which value should
+    // win, so the property is left for a human to resolve while the report
+    // stands (#2303). A spread between the two does not separate them, since it
+    // writes no statically known key of its own.
+    //
+    // The whole property is dropped rather than the colliding entry alone: the
+    // fix rewrites the property as one span, so emitting only its clean leaves
+    // would delete the colliding leaf's value outright — silent data loss in
+    // place of a duplicate key.
+    //
+    // Dropping a plan restores its own key to the literal, which can collide in
+    // turn with a key another plan flattens into, so the decision is taken to a
+    // fixpoint. Dropping only ever grows the set, which is what terminates it.
+    function dropCollidingPlans(
+      plans: readonly FlattenPlan[],
+      keptKeys: readonly string[],
+    ): ReadonlySet<FlattenPlan> {
+      const dropped = new Set<FlattenPlan>();
+
+      let settled = false;
+      while (!settled) {
+        settled = true;
+        const counts = countEmittedKeys(plans, dropped, keptKeys);
+        for (const plan of plans) {
+          if (dropped.has(plan)) {
+            continue;
+          }
+          if (plan.entries.some((entry) => (counts.get(entry.key) ?? 0) > 1)) {
+            dropped.add(plan);
+            settled = false;
+          }
+        }
+      }
+
+      return dropped;
+    }
+
     // Replace only the properties that actually need flattening, leaving every
     // other property, its comments, and the original indentation untouched
     function buildFieldPathFixes(
@@ -522,44 +598,50 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
       sourceCode: TSESLint.SourceCode,
       fixer: TSESLint.RuleFixer,
     ): TSESLint.RuleFix[] {
-      const fixes: TSESLint.RuleFix[] = [];
+      const plans: FlattenPlan[] = [];
+      // Keys the literal keeps as written, which the synthesized keys must not
+      // land on
+      const keptKeys: string[] = [];
 
       for (const property of node.properties) {
-        if (
-          property.type !== AST_NODE_TYPES.Property ||
-          property.computed ||
-          property.method ||
-          property.kind !== 'init' ||
-          property.value.type !== AST_NODE_TYPES.ObjectExpression
-        ) {
+        // A spread or a computed key writes nothing knowable statically, so it
+        // is neither flattened nor comparable against a synthesized key
+        if (property.type !== AST_NODE_TYPES.Property || property.computed) {
           continue;
         }
 
         const keyText = getPropertyKeyText(property);
+        if (keyText === undefined) {
+          continue;
+        }
+
         // Root-level numeric keys model array-style buckets rather than
         // Firestore document fields, so they are never flattened
-        if (keyText === undefined || isNumericKey(property)) {
-          continue;
-        }
+        const entries =
+          !property.method &&
+          property.kind === 'init' &&
+          property.value.type === AST_NODE_TYPES.ObjectExpression &&
+          !isNumericKey(property)
+            ? collectFieldPathEntries(property.value, keyText, sourceCode)
+            : null;
 
-        const entries = collectFieldPathEntries(
-          property.value,
-          keyText,
-          sourceCode,
-        );
-        if (!entries) {
-          continue;
+        if (entries) {
+          plans.push({ property, key: keyText, entries });
+        } else {
+          keptKeys.push(keyText);
         }
-
-        fixes.push(
-          fixer.replaceTextRange(
-            property.range,
-            renderFlattenedProperty(property, entries, sourceCode),
-          ),
-        );
       }
 
-      return fixes;
+      const dropped = dropCollidingPlans(plans, keptKeys);
+
+      return plans
+        .filter((plan) => !dropped.has(plan))
+        .map((plan) =>
+          fixer.replaceTextRange(
+            plan.property.range,
+            renderFlattenedProperty(plan.property, plan.entries, sourceCode),
+          ),
+        );
     }
 
     function getPropertyKeyText(

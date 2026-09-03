@@ -1243,6 +1243,199 @@ ds.set({
 `,
         errors: [{ messageId: 'enforceFieldPathSyntax' }],
       },
+      // Issue #2303: the flattened key is already spelled by a dotted sibling,
+      // so emitting it would write the same key twice (TS1117). Which value
+      // wins is not recoverable from the input, so the fix is declined and the
+      // report stands for a human to resolve.
+      {
+        code: `
+const ds = new DocSetter();
+ds.set({ 'roles.contributor': a, roles: { contributor: b } });
+`,
+        output: null,
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+      },
+      // The collision is a property of the keys, not of their order
+      {
+        code: `
+const ds = new DocSetter();
+ds.set({ roles: { contributor: b }, 'roles.contributor': a });
+`,
+        output: null,
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+      },
+      // A collision two levels down is the same collision
+      {
+        code: `
+const ds = new DocSetter();
+ds.set({ 'a.b.c': x, a: { b: { c: y } } });
+`,
+        output: null,
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+      },
+      // updateIfExists writes the same payload shape as set()
+      {
+        code: `
+const ds = new DocSetter();
+ds.updateIfExists({ 'roles.contributor': a, roles: { contributor: b } });
+`,
+        output: null,
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+      },
+      // A spread between the two keys does not separate them: the spread
+      // contributes no static key, so the dotted twin still collides
+      {
+        code: `
+const ds = new DocSetter();
+ds.set({ 'roles.contributor': a, ...rest, roles: { contributor: b } });
+`,
+        output: null,
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+      },
+      // Partial overlap: one leaf collides and one does not. The property is
+      // declined whole, because the fix replaces the property in one span and
+      // emitting only the clean leaf would drop the colliding leaf's value
+      {
+        code: `
+const ds = new DocSetter();
+ds.set({ 'roles.contributor': a, roles: { contributor: b, owner: c } });
+`,
+        output: null,
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+      },
+      // Two nested properties flattening onto one another collide even though
+      // neither key is written verbatim in the input
+      {
+        code: `
+const ds = new DocSetter();
+ds.set({ a: { b: { c: 1 } }, 'a.b': { c: 2 } });
+`,
+        output: null,
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+      },
+      // Only the colliding property is declined; a nested sibling that collides
+      // with nothing is still flattened
+      {
+        code: `
+const ds = new DocSetter();
+ds.set({ 'roles.contributor': a, roles: { contributor: b }, meta: { x: 1 } });
+`,
+        output: `
+const ds = new DocSetter();
+ds.set({ 'roles.contributor': a, roles: { contributor: b }, 'meta.x': 1 });
+`,
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+      },
+      // Control: a dotted sibling naming a different leaf is not a collision
+      {
+        code: `
+const ds = new DocSetter();
+ds.set({ 'roles.owner': a, roles: { contributor: b } });
+`,
+        output: `
+const ds = new DocSetter();
+ds.set({ 'roles.owner': a, 'roles.contributor': b });
+`,
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+      },
+      // Control: no dotted twin at all, so flattening proceeds
+      {
+        code: `
+const ds = new DocSetter();
+ds.set({ roles: { contributor: b } });
+`,
+        output: `
+const ds = new DocSetter();
+ds.set({ 'roles.contributor': b });
+`,
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+      },
+      // Control: a dotted sibling that shares only the leaf name under another
+      // parent is not a collision
+      {
+        code: `
+const ds = new DocSetter();
+ds.set({ 'perms.contributor': a, roles: { contributor: b } });
+`,
+        output: `
+const ds = new DocSetter();
+ds.set({ 'perms.contributor': a, 'roles.contributor': b });
+`,
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+      },
+      // Control: a dotted sibling that is a PREFIX of the flattened key writes
+      // a different key, so flattening proceeds
+      {
+        code: `
+const ds = new DocSetter();
+ds.set({ 'roles.contributor': a, roles: { contributor: { level: b } } });
+`,
+        output: `
+const ds = new DocSetter();
+ds.set({ 'roles.contributor': a, 'roles.contributor.level': b });
+`,
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+      },
+      // Dropping a colliding property restores its own key to the literal,
+      // which collides in turn with the key its sibling flattens into, so the
+      // decision has to reach a fixpoint before any fix is emitted
+      {
+        code: `
+const ds = new DocSetter();
+ds.set({ 'a.b': { c: 1 }, 'a.b.c': 9, a: { b: 2 } });
+`,
+        output: null,
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+      },
+      // A property whose own leaves collide with each other is declined too:
+      // the duplicate is already in the input, and flattening would carry it
+      // into a key the developer never wrote
+      {
+        code: `
+const ds = new DocSetter();
+ds.set({ a: { b: 1, b: 2 } });
+`,
+        output: null,
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+      },
+      // An inner numeric key flattens into a dot path like any other, and
+      // collides with the dotted twin spelling the same path
+      {
+        code: `
+const ds = new DocSetter();
+ds.set({ 'roles.0': a, roles: { 0: b } });
+`,
+        output: null,
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+      },
+      // The collision survives multi-line layout: it is keyed on the key, not
+      // on how the property is written
+      {
+        code: `
+const ds = new DocSetter();
+ds.set({
+  'roles.contributor': a,
+  roles: {
+    contributor: b,
+  },
+});
+`,
+        output: null,
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+      },
+      // Control: a duplicate the input already carries elsewhere does not stop
+      // an unrelated property from flattening
+      {
+        code: `
+const ds = new DocSetter();
+ds.set({ 'x.y': 1, 'x.y': 2, roles: { contributor: b } });
+`,
+        output: `
+const ds = new DocSetter();
+ds.set({ 'x.y': 1, 'x.y': 2, 'roles.contributor': b });
+`,
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+      },
     ],
   },
 );
@@ -1668,5 +1861,152 @@ describe('enforce-fieldpath-syntax-in-docsetter: a relocated comment is emitted 
         '// keep',
       ),
     ).toBe(2);
+  });
+});
+
+// Issue #2303: RuleTester compares the fixed text as a string, so a fix that
+// wrote the same key twice looked like any other rewrite. These cases run the
+// real fixer and ask `no-dupe-keys` — the `eslint:recommended` rule that scores
+// the defect — whether the rewrite introduced a duplicate.
+describe('enforce-fieldpath-syntax-in-docsetter: the fix writes no key twice (issue #2303)', () => {
+  const RULE_ID = '@blumintinc/blumint/enforce-fieldpath-syntax-in-docsetter';
+
+  const parserOptions = {
+    ecmaVersion: 2020 as const,
+    sourceType: 'module' as const,
+  };
+
+  const makeLinter = () => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      RULE_ID,
+      enforceFieldPathSyntaxInDocSetter as unknown as Rule.RuleModule,
+    );
+    return linter;
+  };
+
+  const lint = (code: string) =>
+    makeLinter().verifyAndFix(
+      code,
+      {
+        parser: '@typescript-eslint/parser',
+        parserOptions,
+        rules: { [RULE_ID]: 'error' as const },
+      },
+      'save.ts',
+    ).output;
+
+  const duplicateKeys = (code: string) =>
+    makeLinter()
+      .verify(
+        code,
+        {
+          parser: '@typescript-eslint/parser',
+          parserOptions,
+          rules: { 'no-dupe-keys': 'error' as const },
+        },
+        'save.ts',
+      )
+      .filter((message) => message.ruleId === 'no-dupe-keys').length;
+
+  /** `[name, source]` — every one flattens onto a key the literal already has. */
+  const COLLIDES = [
+    [
+      'dotted twin precedes the nested property',
+      "const ds = new DocSetter();\nds.set({ 'roles.contributor': a, roles: { contributor: b } });\n",
+    ],
+    [
+      'dotted twin follows the nested property',
+      "const ds = new DocSetter();\nds.set({ roles: { contributor: b }, 'roles.contributor': a });\n",
+    ],
+    [
+      'collision two levels down',
+      "const ds = new DocSetter();\nds.set({ 'a.b.c': x, a: { b: { c: y } } });\n",
+    ],
+    [
+      'updateIfExists carries the same payload shape',
+      "const ds = new DocSetter();\nds.updateIfExists({ 'roles.contributor': a, roles: { contributor: b } });\n",
+    ],
+    [
+      'a spread between the two does not separate them',
+      "const ds = new DocSetter();\nds.set({ 'roles.contributor': a, ...rest, roles: { contributor: b } });\n",
+    ],
+    [
+      'partial overlap: one leaf collides, one does not',
+      "const ds = new DocSetter();\nds.set({ 'roles.contributor': a, roles: { contributor: b, owner: c } });\n",
+    ],
+    [
+      'two nested properties flatten onto each other',
+      "const ds = new DocSetter();\nds.set({ a: { b: { c: 1 } }, 'a.b': { c: 2 } });\n",
+    ],
+    [
+      'a drop restores a key its sibling flattens into',
+      "const ds = new DocSetter();\nds.set({ 'a.b': { c: 1 }, 'a.b.c': 9, a: { b: 2 } });\n",
+    ],
+  ] as const;
+
+  it.each(COLLIDES)('declines: %s', (_name, source) => {
+    // Non-vacuity: the source has to be free of duplicates for the fixer to be
+    // the one that introduces them
+    expect(duplicateKeys(source)).toBe(0);
+
+    const output = lint(source);
+
+    expect(duplicateKeys(output)).toBe(0);
+    expect(output).toBe(source);
+  });
+
+  /** `[name, source, the entry the fix must still emit]` — no collision here. */
+  const REWRITTEN = [
+    [
+      'dotted sibling naming a different leaf',
+      "const ds = new DocSetter();\nds.set({ 'roles.owner': a, roles: { contributor: b } });\n",
+      "'roles.contributor': b",
+    ],
+    [
+      'no dotted twin at all',
+      'const ds = new DocSetter();\nds.set({ roles: { contributor: b } });\n',
+      "'roles.contributor': b",
+    ],
+    [
+      'same leaf name under another parent',
+      "const ds = new DocSetter();\nds.set({ 'perms.contributor': a, roles: { contributor: b } });\n",
+      "'roles.contributor': b",
+    ],
+    [
+      'dotted sibling that is only a prefix of the synthesized key',
+      "const ds = new DocSetter();\nds.set({ 'roles.contributor': a, roles: { contributor: { level: b } } });\n",
+      "'roles.contributor.level': b",
+    ],
+    [
+      'clean property beside a colliding one',
+      "const ds = new DocSetter();\nds.set({ 'roles.contributor': a, roles: { contributor: b }, meta: { x: 1 } });\n",
+      "'meta.x': 1",
+    ],
+  ] as const;
+
+  // The decline must be keyed on the synthesized key rather than on the mere
+  // presence of a dotted sibling, or it stops fixing everything it used to
+  it.each(REWRITTEN)('still rewrites: %s', (_name, source, emitted) => {
+    const output = lint(source);
+
+    expect(output).not.toBe(source);
+    expect(output).toContain(emitted);
+    expect(duplicateKeys(output)).toBe(0);
+  });
+
+  // Without this the oracle above would pass on any output at all: it states
+  // that the emission the bug produced does score as a duplicate.
+  it('scores the duplicate the bug emitted', () => {
+    expect(
+      duplicateKeys(
+        "const ds = new DocSetter();\nds.set({ 'roles.contributor': a, 'roles.contributor': b });\n",
+      ),
+    ).toBe(1);
   });
 });

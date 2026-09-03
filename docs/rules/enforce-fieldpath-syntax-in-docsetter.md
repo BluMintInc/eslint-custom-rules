@@ -230,6 +230,22 @@ await docSetter.set({
 // });
 ```
 
+### A flattened key the literal already writes
+
+Mixing the two spellings is only safe while they name different fields. When flattening a nested property would synthesize a key the same object literal already writes, the two entries collide: the rewrite would spell one key twice, which TypeScript rejects (TS1117) and `no-dupe-keys` flags. Which value should win is not recoverable from the input, so the fix is declined and the violation is left reported for you to resolve:
+
+```javascript
+const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
+await docSetter.set({
+  'roles.contributor': a,
+  roles: { contributor: b }, // Reported, not rewritten: 'roles.contributor' is already written above
+});
+```
+
+The decline is keyed on the synthesized key itself, so a dotted sibling naming a different leaf (`'roles.owner'` beside `roles: { contributor: b }`) still flattens as usual. Order does not matter, and a spread between the two does not separate them, since a spread writes no key the rule can compare against.
+
+A property with a partial overlap — `roles: { contributor: b, owner: c }` beside `'roles.contributor': a`, where one leaf collides and one does not — is declined whole. The fix rewrites a property as a single span, so emitting only its clean leaves would delete the colliding leaf's value outright, trading a duplicate key for silent data loss. Any other nested property in the same call that collides with nothing is still flattened.
+
 ### Mixed Nesting
 
 You can mix already-flattened paths with nested objects:
@@ -252,6 +268,7 @@ This rule provides automatic fixes that convert nested object syntax into FieldP
 1. Carry every comment inside a flattened property through to the rewrite exactly once — hoisted above the entry when it sits between nested properties, carried along with the value when it sits inside one — which keeps `eslint-disable-next-line` directives covering the code they were written for
 1. Re-emit a method shorthand as a function expression, since a FieldPath key needs a value in expression position
 1. Re-indent the relocated value to the column it lands in, so the fix is already formatted the way Prettier would print it
+1. Decline to rewrite a nested property whose flattened key is already written by the same object literal, since emitting it would spell one key twice
 1. Decline to rewrite a nested property that cannot be flattened losslessly — one containing a spread, a computed key, an accessor, a method referencing `super`, or nothing at all. The violation is still reported so you can flatten it by hand instead of receiving a fix that drops payload fields.
 
 ## When Not to Use
