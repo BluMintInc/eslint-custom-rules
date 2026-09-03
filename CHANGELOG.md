@@ -1,3 +1,12 @@
+## [1.21.2](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.21.1...v1.21.2) (2026-09-03)
+
+
+### Bug Fixes
+
+* **enforce-use-flex-gap-on-wrap:** merge sx members last-write-wins (closes [#2299](https://github.com/BluMintInc/eslint-custom-rules/issues/2299), closes [#2301](https://github.com/BluMintInc/eslint-custom-rules/issues/2301)) ([cd056b5](https://github.com/BluMintInc/eslint-custom-rules/commit/cd056b584c37efef54481d09a5763333a9c78081))
+* **no-hungarian:** exempt converter functions whose final segment names the conversion target (closes [#2302](https://github.com/BluMintInc/eslint-custom-rules/issues/2302)) ([3adf642](https://github.com/BluMintInc/eslint-custom-rules/commit/3adf642749d9689ae8ca4a229d6a7aef2bbe7cd2)), closes [#1835](https://github.com/BluMintInc/eslint-custom-rules/issues/1835) [#2030](https://github.com/BluMintInc/eslint-custom-rules/issues/2030) [#1294](https://github.com/BluMintInc/eslint-custom-rules/issues/1294)
+* **prefer-sx-prop-over-system-props:** decline a name written twice among the moved props (closes [#2300](https://github.com/BluMintInc/eslint-custom-rules/issues/2300)) ([1fa649b](https://github.com/BluMintInc/eslint-custom-rules/commit/1fa649ba7519995c7eee00e82263b2efe2678011)), closes [#2296](https://github.com/BluMintInc/eslint-custom-rules/issues/2296) [#2296](https://github.com/BluMintInc/eslint-custom-rules/issues/2296)
+
 ## [1.21.1](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.21.0...v1.21.1) (2026-09-02)
 
 

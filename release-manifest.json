@@ -1,5 +1,36 @@
 [
   {
+    "version": "1.21.2",
+    "date": "2026-09-03T01:55:23.074Z",
+    "rules": [
+      {
+        "name": "enforce-use-flex-gap-on-wrap",
+        "changeType": "fix",
+        "issues": [
+          2299,
+          2301
+        ],
+        "summary": "merge sx members last-write-wins (closes #2299, closes #2301)"
+      },
+      {
+        "name": "no-hungarian",
+        "changeType": "fix",
+        "issues": [
+          2302
+        ],
+        "summary": "exempt converter functions whose final segment names the conversion target (closes #2302)"
+      },
+      {
+        "name": "prefer-sx-prop-over-system-props",
+        "changeType": "fix",
+        "issues": [
+          2300
+        ],
+        "summary": "decline a name written twice among the moved props (closes #2300)"
+      }
+    ]
+  },
+  {
     "version": "1.21.1",
     "date": "2026-09-02T22:30:34.104Z",
     "rules": [
