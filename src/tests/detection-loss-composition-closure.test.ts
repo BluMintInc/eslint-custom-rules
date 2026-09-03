@@ -807,6 +807,9 @@ export const DETECTION_DESTROYED_BASELINE: Record<string, string> = {
   'no-useless-usememo-primitives -> optimize-object-boolean-conditions':
     "the culprit deletes a primitive-returning `useMemo` along with its dependency array, so there is no hook call left for the victim's `isHookCall` visitor to inspect and no dependency array left to churn (optimize-object-boolean-conditions.ts:664-673)",
 
+  'no-useless-usememo-primitives -> no-entire-object-hook-deps':
+    "the culprit unwraps a `useMemo` whose body only builds a template string from the object's fields — `useMemo(() => `${userData?.id}: ${userData?.name}`, [userData])` — into the bare expression, deleting the hook call and its dependency array together; with no array left there is no entire-object dependency for `avoidEntireObject` to narrow (measured: the culprit replayed alone unwraps all 3, and the victim is silent on every post-image). The pair surfaces with #2312, which taught the culprit the deep-compare spelling this corpus reaches under the composed fix",
+
   'no-explicit-return-type -> enforce-object-literal-as-const':
     'the culprit strips the return annotation, and the victim deliberately exempts an array literal returned from an unannotated function because freezing it would leak an inferred arity to every caller (enforce-object-literal-as-const.ts:241-267, #2015); the post-fix shape is that documented exemption',
 
@@ -920,8 +923,6 @@ export const DETECTION_DESTROYED_BASELINE: Record<string, string> = {
    * expression leaves the expression alone, and a victim whose visitor is gated
    * on a hard-coded hook name stops seeing it.
    */
-  'prefer-use-deep-compare-memo -> no-useless-usememo-primitives':
-    'the culprit renames the callee to `useDeepCompareMemo` to fix a dependency-identity problem, but `isUseMemoCallee` matches the literal name `useMemo` (no-useless-usememo-primitives.ts:140-151,789); the callback still memoizes a bare primitive (#2312)',
   'use-latest-callback -> memo-nested-react-components':
     "the culprit renames the wrapping hook to `useLatestCallback`, which is absent from the victim's `CALLBACK_HOOKS` allowlist (memo-nested-react-components.ts:18-22,944); the component is still constructed inline in render scope, which the victim's own message says the swap does not fix (#2313)",
 
