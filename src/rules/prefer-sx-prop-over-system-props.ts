@@ -522,27 +522,52 @@ const declaredKeysOf = (
   return keys;
 };
 
+/** The names carried by more than one of the moved props. */
+const duplicatedNamesOf = (
+  systemPropAttrs: TSESTree.JSXAttribute[],
+): ReadonlySet<string> => {
+  const seen = new Set<string>();
+  const duplicated = new Set<string>();
+  for (const attr of systemPropAttrs) {
+    if (attr.name.type !== AST_NODE_TYPES.JSXIdentifier) {
+      continue;
+    }
+    const { name } = attr.name;
+    if (seen.has(name)) {
+      duplicated.add(name);
+      continue;
+    }
+    seen.add(name);
+  }
+  return duplicated;
+};
+
 /**
- * The moved props whose name the `sx` object literal already declares. Splicing
- * one in emits `{ display: 'flex', display: 'block' }` — TS1117, and whichever
- * value the runtime keeps, one of the two spellings the author wrote is
- * discarded. The two disagree and only the author can say which wins, so the
- * fix stands down for those props while every other prop on the element still
- * merges (#2296).
+ * The moved props that cannot be spliced into one object literal without
+ * duplicating a key. Doing so emits `{ display: 'flex', display: 'block' }` —
+ * TS1117, and whichever value the runtime keeps, one of the two spellings the
+ * author wrote is discarded. The two disagree and only the author can say which
+ * wins, so the fix stands down for those props while every other prop on the
+ * element still merges (#2296).
  *
- * Only the object slot is merged into in place. A new `sx`, an array entry and
- * the `{ ...moved, ...expr }` wrap each emit a fresh object literal, whose keys
- * cannot duplicate a name written elsewhere.
+ * A name is duplicated two ways. The `sx` object literal may already declare
+ * it, which only the object slot can do because only that slot is merged into
+ * in place. Or two moved props may carry the SAME name (`<Box display="flex"
+ * display="block" />`, itself TS17001): the fresh object literal a new `sx`, an
+ * array entry or the `{ ...moved, ...expr }` wrap emits carries one entry per
+ * moved prop, so it duplicates that name on its own with no `sx` involved
+ * (#2300). Both duplicates stand down — the rule cannot know which the author
+ * meant — while the report on each stays, so the author is still told to move
+ * the prop.
  */
 const collidingPropsOf = (
   systemPropAttrs: TSESTree.JSXAttribute[],
   sxAttr: TSESTree.JSXAttribute | null,
 ): ReadonlySet<TSESTree.JSXAttribute> => {
+  const duplicated = duplicatedNamesOf(systemPropAttrs);
   const slot = sxSlotOf(sxAttr);
-  if (slot.kind !== 'object') {
-    return new Set();
-  }
-  const declared = declaredKeysOf(slot.object);
+  const declared =
+    slot.kind === 'object' ? declaredKeysOf(slot.object) : new Set<string>();
   if (declared === null) {
     return new Set(systemPropAttrs);
   }
@@ -550,7 +575,7 @@ const collidingPropsOf = (
     systemPropAttrs.filter(
       (attr) =>
         attr.name.type === AST_NODE_TYPES.JSXIdentifier &&
-        declared.has(attr.name.name),
+        (declared.has(attr.name.name) || duplicated.has(attr.name.name)),
     ),
   );
 };
@@ -1253,10 +1278,10 @@ export const preferSxPropOverSystemProps = createRule<Options, MessageIds>({
 
         const sourceCode = context.getSourceCode();
 
-        // A prop whose name the `sx` literal already declares is reported
-        // without a fix: merging it would duplicate the key. The rest of the
-        // element is still merged, so one disagreeing pair does not hold the
-        // other props back.
+        // A prop whose name the `sx` literal already declares, or that another
+        // moved prop on this element repeats, is reported without a fix:
+        // merging it would duplicate the key. The rest of the element is still
+        // merged, so one disagreeing pair does not hold the other props back.
         const collidingProps = collidingPropsOf(systemPropAttrs, sxAttr);
         const fixableAttrs = systemPropAttrs.filter(
           (attr) => !collidingProps.has(attr),
