@@ -1599,11 +1599,12 @@ describe('the cross degenerate-identifier sweep is load-bearing', () => {
      * A byte-identical perturbation another binding already produced. Not a
      * loss of coverage — the input was probed — but the ceiling is cut close
      * so a collapse into duplicates cannot masquerade as a clean sweep.
-     * Measured 1624. The class-method fixtures of #2165 carry near-identical
-     * one-member class bodies, so renaming their sole binding to a degenerate
-     * name collides across them — corpus growth, not a collapse.
+     * The class-method fixtures of #2165 and the wrapper-`memo` getters of
+     * #2305 carry near-identical one-member class bodies, so renaming their
+     * sole binding to a degenerate name collides across them — corpus growth,
+     * not a collapse.
      */
-    expect(fixSweep.cross.discardedDuplicate).toBeLessThan(1650);
+    expect(fixSweep.cross.discardedDuplicate).toBeLessThan(1680); // measured 1652
     /**
      * A fixture TypeScript cannot parse at all. Cut close to the measured
      * value so a harness regression that starts dropping fixtures fails here

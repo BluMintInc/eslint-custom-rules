@@ -555,8 +555,13 @@ const KNOWN_DIVERGENT: Record<string, Exemption> = {
   },
   'require-memoize-jsx-returners::enforce-dynamic-imports': {
     reason:
-      'INCIDENTAL: the fixtures import the UPSTREAM `typescript-memoize`; the injected fork `@blumintinc/typescript-memoize` is on `DEFAULT_IGNORED_LIBRARIES` and clean under both (measured).',
-    cases: { dynamicImportRequired: 3 },
+      'INCIDENTAL: the fixtures import the UPSTREAM `typescript-memoize`; the injected fork `@blumintinc/typescript-memoize` is on `DEFAULT_IGNORED_LIBRARIES` and clean under both (measured). 3 -> 4 is the #2305 negative control: one fixture imports `memo` from the unrelated package `lodash-memo` to pin that a package merely SPELLING memo is not the React binding. The sibling reports the PACKAGE, not the shape — the same fixture written against a relative module is clean under both (measured), and it is the package-ness that makes it a control here.',
+    cases: { dynamicImportRequired: 4 },
+  },
+  'require-memoize-jsx-returners::use-custom-memo': {
+    reason:
+      'PIPELINE: the fixture is a fixed output importing `memo` from `react`, the spelling the sibling migrates to the project wrapper `src/util/memo`. Composed `--fix` converges to the wrapper import beside the injected `@Memoize()` and both rules end silent, from the fixed output and from the react-spelled input alike (measured, both). The pair joins this list because #2305 names `use-custom-memo` in this rule source: recognising the wrapper `memo` is exactly what keeps the sibling rewrite from switching this rule off, so the two agree on the FIXED text and differ only on the react spelling the sibling exists to migrate.',
+    cases: { useCustomMemo: 1 },
   },
   'require-props-composition::memo-nested-react-components': {
     reason:
