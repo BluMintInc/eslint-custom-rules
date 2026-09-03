@@ -602,8 +602,15 @@ console.log(
  * be read as covering the other's regression.
  */
 const pairKey = (finding: Finding) => {
+  // A multi-culprit finding is keyed by its sorted culprit list joined with
+  // `+`, mirroring `detection-loss-composition-closure`. Collapsing it to a
+  // single `(unattributed)` token would let one baseline entry exempt EVERY
+  // future multi-culprit finding against the same victim, whatever its
+  // fixture and whichever fixers reach it (#2320).
   const culprit =
-    finding.culprits.length === 1 ? finding.culprits[0] : '(unattributed)';
+    finding.culprits.length === 0
+      ? '(unattributed)'
+      : [...finding.culprits].sort().join('+');
   return finding.channel === 'suggestion'
     ? `${culprit} (suggestion) -> ${finding.victim}`
     : `${culprit} -> ${finding.victim}`;
@@ -701,11 +708,13 @@ export const EXEMPTION_DESTROYED_BASELINE: Record<string, string> = {
    * The fixture pins that an explicit MUTABLE tuple signature makes freezing
    * unsafe: `function getPair(): [Group, GroupRef] { return [group, groupRef]
    * as SomePair; }` is silent because `as const` would hand callers a
-   * `readonly` tuple the signature promises is mutable. Either
-   * annotation-stripping fixer in the config deletes that signature — which is
-   * why the culprit is `(unattributed)` rather than one name — and with only
-   * the sole return's own `as SomePair` left, the type the value must satisfy
-   * is a readonly pair, so the freeze is provably safe and the victim reports.
+   * `readonly` tuple the signature promises is mutable. BOTH annotation-
+   * stripping fixers in the config delete that signature on their own, which is
+   * why the key names two culprits rather than one: `attributeCulprits` replays
+   * each candidate ALONE, and each of these reproduces the destruction by
+   * itself. With only the sole return's own `as SomePair` left, the type the
+   * value must satisfy is a readonly pair, so the freeze is provably safe and
+   * the victim reports.
    *
    * Before #2319 the victim read only the signature and went silent on the
    * stripped form; that silence is the defect the issue filed. Keeping the
@@ -713,7 +722,7 @@ export const EXEMPTION_DESTROYED_BASELINE: Record<string, string> = {
    * [Group, GroupRef] { return [group, groupRef]; }`), is clean under the
    * whole config (measured).
    */
-  '(unattributed) -> enforce-object-literal-as-const':
+  'no-explicit-return-type+no-redundant-annotation-assertion -> enforce-object-literal-as-const':
     "either annotation-stripping fixer deletes the mutable tuple signature the exemption keys on, leaving the sole return's own `as SomePair` as the type the value must satisfy. The victim reads that named type through `acceptsReadonlyArray`, which treats any type REFERENCE other than `Array` as accepting a readonly array — its established convention for named types, unchanged by #2319 — so the freeze reads as safe and it reports. Correct in production, where #2319 verified under a real program that `SomePair` is `readonly [Group, GroupRef]` and both spellings give callers the identical effective type. This is #2319's restored detection firing, not a destroyed carve-out (#2319)",
 };
 
@@ -740,6 +749,16 @@ describe('the recommended config is closed under its own exemptions', () => {
                 hits.length
               } fixture(s), e.g. ${hits[0].messageIds.join(',')})`,
               `    ${hits[0].origin} as ${hits[0].filename}`,
+              // The key spells the culprits, but only when attribution found
+              // some. Printing the list explicitly is what tells a maintainer
+              // apart the two cases they must act on differently: a named
+              // fixer to fix or baseline, versus a destruction no single rule
+              // reproduces, which needs the composition itself judged (#2320).
+              `    culprits: ${
+                hits[0].culprits.length > 0
+                  ? `${hits[0].culprits.join(', ')} (each reproduces it ALONE)`
+                  : 'none alone — two or more fixers are needed together'
+              }`,
               `    --- valid fixture (the rule is silent on this) ---`,
               hits[0].before.replace(/^/gm, '      '),
               `    --- after the config's own --fix (the rule now reports) ---`,
@@ -1009,5 +1028,58 @@ describe('the exemption closure guard is load-bearing', () => {
       { filename: inert.filename },
     );
     expect((verify(fixed.output, solo, inert) || []).length).toBe(0);
+  });
+
+  it('keys a multi-culprit finding by its culprits, not one shared token', () => {
+    // The #2320 defect, pinned directly on the key function. Collapsing every
+    // finding with more than one culprit to a single `(unattributed)` token
+    // made ONE baseline entry exempt EVERY future multi-culprit destruction of
+    // the same victim — whatever fixture reached it, and whichever fixers did.
+    // Two unrelated pairs against one victim must key differently.
+    const shell = (culprits: string[]): Finding => ({
+      victim: 'a-victim',
+      culprits,
+      channel: 'fix',
+      messageIds: [],
+      filename: 'x.ts',
+      origin: 'planted control',
+      before: '',
+      after: '',
+    });
+
+    expect(pairKey(shell(['b-fixer', 'a-fixer']))).toBe(
+      'a-fixer+b-fixer -> a-victim',
+    );
+    // Sorted, so a key cannot depend on the order `attributeCulprits` replayed
+    // the config in — otherwise a baseline entry would rot on a reordering.
+    expect(pairKey(shell(['a-fixer', 'b-fixer']))).toBe(
+      pairKey(shell(['b-fixer', 'a-fixer'])),
+    );
+    expect(pairKey(shell(['c-fixer', 'd-fixer']))).not.toBe(
+      pairKey(shell(['a-fixer', 'b-fixer'])),
+    );
+    // A single culprit keeps the spelling `FIX_INDUCED_BASELINE` shares, so
+    // widening the key shape does not silently restate every existing entry.
+    expect(pairKey(shell(['a-fixer']))).toBe('a-fixer -> a-victim');
+    // `(unattributed)` survives only for a destruction NO single rule
+    // reproduces, which is the one case attribution genuinely cannot name.
+    expect(pairKey(shell([]))).toBe('(unattributed) -> a-victim');
+  });
+
+  it('reaches the multi-culprit key on the real corpus', () => {
+    // A key shape nothing exercises is indistinguishable from one that is
+    // wrong, so the corpus must actually produce a `+` key rather than the
+    // control alone proving it.
+    const multiCulprit = [...observedPairs].filter((pair) =>
+      pair.includes('+'),
+    );
+    expect(multiCulprit.length).toBeGreaterThanOrEqual(1); // measured 1
+    // And attribution must not have collapsed the other way: a replay that
+    // silently found nothing would name every pair `(unattributed)` and still
+    // satisfy every other assertion in this file.
+    const unattributed = [...observedPairs].filter((pair) =>
+      pair.startsWith('(unattributed)'),
+    );
+    expect(unattributed.length).toBeLessThanOrEqual(2); // measured 0
   });
 });
