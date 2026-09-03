@@ -317,6 +317,22 @@ const KNOWN_DIVERGENT: Record<string, Exemption> = {
       'PIPELINE: the module-scope wrapper fixtures declare plain `const` bindings to exercise the allowModuleScopeFactories carve-out, without regard to naming or `as const`; `--fix` supplies both and converges with ZERO residual reports (measured), and the component check reads the object identically through `unwrapExpression`. Surviving that converged spelling is exactly what #1864 fixed.',
     cases: { asConst: 3, upperSnakeCase: 5 },
   },
+  'no-inline-component-prop::require-memo': {
+    reason:
+      'PIPELINE: the 16 blessed fixtures are valid cases declaring a bare ' +
+      'component — a module-scope wrapper, a page, a list — to exercise a ' +
+      'carve-out (module scope, a parameter, a destructured or reassigned ' +
+      'binding) without regard to memoization. The sibling wraps each in ' +
+      '`memo(...)` and the composed `--fix` converges with ZERO residual on ' +
+      '15 of 16 (measured). The 16th is the reassigned-`let` decline fixture ' +
+      'from #2314: the sibling memoizes the enclosing `Page` but still ' +
+      'reports the inner `let Inner = (props) => <Row />` it does not wrap, ' +
+      'a residual no further pass moves (measured), while the owner stays ' +
+      'silent because a reassigned binding is exactly what #2314 declines ' +
+      'to resolve. The pair joins this list because that fix names ' +
+      '`require-memo` in this rule`s source.',
+    cases: { requireMemo: 16 },
+  },
   'enforce-centralized-mock-firestore::global-const-style': {
     reason:
       'PIPELINE: the mock fixtures declare module-scope consts without `as const` or SCREAMING_SNAKE; `--fix` supplies both on all 9 and centralization is untouched.',
