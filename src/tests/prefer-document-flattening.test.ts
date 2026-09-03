@@ -1,3 +1,4 @@
+import { Linter, Rule } from 'eslint';
 import { ruleTesterTs } from '../utils/ruleTester';
 import { preferDocumentFlattening } from '../rules/prefer-document-flattening';
 
@@ -484,7 +485,36 @@ ruleTesterTs.run('prefer-document-flattening', preferDocumentFlattening, {
         ...rest
       });
     `,
+    // Test: a string key enables flattening just as an identifier key does
+    `
+      const setter = new DocSetter<VirtualWallet>(walletCollection, { 'shouldFlatten': true });
+
+      await setter.set({ id, roles: { owner: { id } } });
+    `,
+
+    // Test: a computed key holding a string literal names the same option
+    `
+      const setter = new DocSetter<VirtualWallet>(walletCollection, { ['shouldFlatten']: true });
+
+      await setter.set({ id, roles: { owner: { id } } });
+    `,
+
+    // Test: a template key with no expressions names the same option
+    `
+      const setter = new DocSetter<VirtualWallet>(walletCollection, { [\`shouldFlatten\`]: true });
+
+      await setter.set({ id, roles: { owner: { id } } });
+    `,
+
+    // Test: an inline instantiation with shouldFlatten enabled
+    `
+      await new DocSetter<VirtualWallet>(walletCollection, { shouldFlatten: true }).set({
+        id,
+        roles: { owner: { id } },
+      });
+    `,
   ],
+
   invalid: [
     // Test: DocSetter without shouldFlatten setting nested objects
     {
@@ -1495,5 +1525,475 @@ await tx.set({ id, roles: { owner: { id } } });
         'DocSetterTransaction',
       ),
     },
+
+    // Test: options already declaring shouldFlatten: false must have that value
+    // rewritten, never a second shouldFlatten appended (issue #2304)
+    {
+      code: `
+const s = new DocSetter(db.collection('u'), { shouldFlatten: false });
+await s.set({ id: 'a', profile: { personal: { firstName: 'J' } } });
+`,
+      errors: [
+        {
+          messageId: 'preferDocumentFlattening' as const,
+          suggestions: [
+            {
+              messageId: 'addShouldFlatten' as const,
+              output: `
+const s = new DocSetter(db.collection('u'), { shouldFlatten: true });
+await s.set({ id: 'a', profile: { personal: { firstName: 'J' } } });
+`,
+            },
+          ],
+        },
+      ],
+    },
+
+    // Test: shouldFlatten: false alongside other options is rewritten in place
+    {
+      code: `
+const setter = new DocSetter<VirtualWallet>(walletCollection, { convertDate: true, shouldFlatten: false });
+
+await setter.set({ id, roles: { owner: { id } } });
+`,
+      errors: errorsWithSuggestions(
+        'setter',
+        suggests(`
+const setter = new DocSetter<VirtualWallet>(walletCollection, { convertDate: true, shouldFlatten: true });
+
+await setter.set({ id, roles: { owner: { id } } });
+`),
+      ),
+    },
+
+    // Test: DocSetterTransaction options declaring shouldFlatten: false
+    {
+      code: `
+const tx = new DocSetterTransaction<VirtualWallet>(walletCollection, { transaction, shouldFlatten: false });
+
+await tx.set({ id, roles: { owner: { id } } });
+`,
+      errors: errorsWithSuggestions(
+        'tx',
+        suggests(`
+const tx = new DocSetterTransaction<VirtualWallet>(walletCollection, { transaction, shouldFlatten: true });
+
+await tx.set({ id, roles: { owner: { id } } });
+`),
+        'DocSetterTransaction',
+      ),
+    },
+
+    // Test: the member to rewrite is not the anchor the append path would use
+    {
+      code: `
+const setter = new DocSetter<VirtualWallet>(walletCollection, { shouldFlatten: false, convertDate: true });
+
+await setter.set({ id, roles: { owner: { id } } });
+`,
+      errors: errorsWithSuggestions(
+        'setter',
+        suggests(`
+const setter = new DocSetter<VirtualWallet>(walletCollection, { shouldFlatten: true, convertDate: true });
+
+await setter.set({ id, roles: { owner: { id } } });
+`),
+      ),
+    },
+
+    // Test: multiline options with a trailing comma keep their formatting
+    {
+      code: `
+const setter = new DocSetter<VirtualWallet>(walletCollection, {
+  shouldFlatten: false,
+  convertDate: true,
+});
+
+await setter.set({ id, roles: { owner: { id } } });
+`,
+      errors: errorsWithSuggestions(
+        'setter',
+        suggests(`
+const setter = new DocSetter<VirtualWallet>(walletCollection, {
+  shouldFlatten: true,
+  convertDate: true,
+});
+
+await setter.set({ id, roles: { owner: { id } } });
+`),
+      ),
+    },
+
+    // Test: a string key writes the same property, so it is rewritten rather
+    // than joined by an identifier-keyed duplicate
+    {
+      code: `
+const setter = new DocSetter<VirtualWallet>(walletCollection, { 'shouldFlatten': false });
+
+await setter.set({ id, roles: { owner: { id } } });
+`,
+      errors: errorsWithSuggestions(
+        'setter',
+        suggests(`
+const setter = new DocSetter<VirtualWallet>(walletCollection, { 'shouldFlatten': true });
+
+await setter.set({ id, roles: { owner: { id } } });
+`),
+      ),
+    },
+
+    // Test: a computed key holding a string literal denotes the same property
+    {
+      code: `
+const setter = new DocSetter<VirtualWallet>(walletCollection, { ['shouldFlatten']: false });
+
+await setter.set({ id, roles: { owner: { id } } });
+`,
+      errors: errorsWithSuggestions(
+        'setter',
+        suggests(`
+const setter = new DocSetter<VirtualWallet>(walletCollection, { ['shouldFlatten']: true });
+
+await setter.set({ id, roles: { owner: { id } } });
+`),
+      ),
+    },
+
+    // Test: a key built from an expression names an unknown property, so the
+    // append path still applies and cannot duplicate anything
+    {
+      code: `
+const setter = new DocSetter<VirtualWallet>(walletCollection, { [flattenKey]: false });
+
+await setter.set({ id, roles: { owner: { id } } });
+`,
+      errors: errorsWithSuggestions(
+        'setter',
+        suggests(`
+const setter = new DocSetter<VirtualWallet>(walletCollection, { [flattenKey]: false, shouldFlatten: true });
+
+await setter.set({ id, roles: { owner: { id } } });
+`),
+      ),
+    },
+
+    // Test: only the value is rewritten, so a comment on the member survives
+    {
+      code: `
+const setter = new DocSetter<VirtualWallet>(walletCollection, { shouldFlatten: /* disabled */ false });
+
+await setter.set({ id, roles: { owner: { id } } });
+`,
+      errors: errorsWithSuggestions(
+        'setter',
+        suggests(`
+const setter = new DocSetter<VirtualWallet>(walletCollection, { shouldFlatten: /* disabled */ true });
+
+await setter.set({ id, roles: { owner: { id } } });
+`),
+      ),
+    },
+
+    // Test: an inline instantiation reaches the same rewrite
+    {
+      code: `
+await new DocSetter<VirtualWallet>(walletCollection, { shouldFlatten: false }).set({ id, roles: { owner: { id } } });
+`,
+      errors: errorsWithSuggestions(
+        '(inline-0)',
+        suggests(`
+await new DocSetter<VirtualWallet>(walletCollection, { shouldFlatten: true }).set({ id, roles: { owner: { id } } });
+`),
+      ),
+    },
+
+    // Test: a variable value may already be true at runtime, so the suggestion
+    // is declined instead of guessing; appending would duplicate the key
+    {
+      code: `
+const setter = new DocSetter<VirtualWallet>(walletCollection, { shouldFlatten: isFlattened });
+
+await setter.set({ id, roles: { owner: { id } } });
+`,
+      errors: errorsWithSuggestions('setter', []),
+    },
+
+    // Test: a conditional value is unknown, so the suggestion is declined
+    {
+      code: `
+const setter = new DocSetter<VirtualWallet>(walletCollection, { shouldFlatten: isLegacy ? false : true });
+
+await setter.set({ id, roles: { owner: { id } } });
+`,
+      errors: errorsWithSuggestions('setter', []),
+    },
+
+    // Test: a call result is unknown, so the suggestion is declined
+    {
+      code: `
+const setter = new DocSetter<VirtualWallet>(walletCollection, { shouldFlatten: resolveFlatten() });
+
+await setter.set({ id, roles: { owner: { id } } });
+`,
+      errors: errorsWithSuggestions('setter', []),
+    },
+
+    // Test: a shorthand member writes the key just as a longhand one does
+    {
+      code: `
+const setter = new DocSetter<VirtualWallet>(walletCollection, { shouldFlatten });
+
+await setter.set({ id, roles: { owner: { id } } });
+`,
+      errors: errorsWithSuggestions('setter', []),
+    },
+
+    // Test: an asserted value is not a literal, so the suggestion is declined
+    {
+      code: `
+const setter = new DocSetter<VirtualWallet>(walletCollection, { shouldFlatten: false as boolean });
+
+await setter.set({ id, roles: { owner: { id } } });
+`,
+      errors: errorsWithSuggestions('setter', []),
+    },
+
+    // Test: a getter occupies the key, and no value node can be rewritten
+    {
+      code: `
+const setter = new DocSetter<VirtualWallet>(walletCollection, { get shouldFlatten() { return false; } });
+
+await setter.set({ id, roles: { owner: { id } } });
+`,
+      errors: errorsWithSuggestions('setter', []),
+    },
   ],
+});
+
+// RuleTester compares a suggestion's output as a string, so a fixture only
+// catches the defect it was written for. This block runs the suggestion the
+// rule actually offers and scores the result with core `no-dupe-keys`, which
+// is the property the bug broke: the writer appended `shouldFlatten: true`
+// without reading the key the target literal already wrote (issue #2304).
+describe('prefer-document-flattening: the suggestion writes shouldFlatten once (issue #2304)', () => {
+  const RULE_ID = '@blumintinc/blumint/prefer-document-flattening';
+
+  const parserOptions = {
+    ecmaVersion: 2020 as const,
+    sourceType: 'module' as const,
+  };
+
+  const makeLinter = () => {
+    const linter = new Linter();
+    linter.defineParser(
+      '@typescript-eslint/parser',
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('@typescript-eslint/parser'),
+    );
+    linter.defineRule(
+      RULE_ID,
+      preferDocumentFlattening as unknown as Rule.RuleModule,
+    );
+    return linter;
+  };
+
+  const reports = (code: string) =>
+    makeLinter()
+      .verify(
+        code,
+        {
+          parser: '@typescript-eslint/parser',
+          parserOptions,
+          rules: { [RULE_ID]: 'error' as const },
+        },
+        'save.ts',
+      )
+      .filter((message) => message.ruleId === RULE_ID);
+
+  const duplicateKeys = (code: string) =>
+    makeLinter()
+      .verify(
+        code,
+        {
+          parser: '@typescript-eslint/parser',
+          parserOptions,
+          rules: { 'no-dupe-keys': 'error' as const },
+        },
+        'save.ts',
+      )
+      .filter((message) => message.ruleId === 'no-dupe-keys').length;
+
+  /** The rule offers at most one suggestion per report, so no fix can overlap. */
+  const applySuggestion = (code: string) => {
+    const [message] = reports(code);
+    const suggestion = message.suggestions?.[0];
+    if (!suggestion) {
+      throw new Error('no suggestion offered');
+    }
+    const [start, end] = suggestion.fix.range;
+    return code.slice(0, start) + suggestion.fix.text + code.slice(end);
+  };
+
+  const source = (construction: string) =>
+    `${construction}\nsetter.set({ id, roles: { owner: { id } } });\n`;
+
+  /** `[name, source, the text the applied suggestion must contain]` */
+  const REWRITES = [
+    [
+      'shouldFlatten: false alone',
+      source(
+        "const setter = new DocSetter(db.collection('u'), { shouldFlatten: false });",
+      ),
+      '{ shouldFlatten: true }',
+    ],
+    [
+      'shouldFlatten: false after another option',
+      source(
+        "const setter = new DocSetter(db.collection('u'), { convertDate: true, shouldFlatten: false });",
+      ),
+      '{ convertDate: true, shouldFlatten: true }',
+    ],
+    [
+      'shouldFlatten: false before another option',
+      source(
+        "const setter = new DocSetter(db.collection('u'), { shouldFlatten: false, convertDate: true });",
+      ),
+      '{ shouldFlatten: true, convertDate: true }',
+    ],
+    [
+      'DocSetterTransaction options',
+      source(
+        'const setter = new DocSetterTransaction(db, { transaction, shouldFlatten: false });',
+      ),
+      '{ transaction, shouldFlatten: true }',
+    ],
+    [
+      'a string key names the same option',
+      source(
+        "const setter = new DocSetter(db.collection('u'), { 'shouldFlatten': false });",
+      ),
+      "{ 'shouldFlatten': true }",
+    ],
+    [
+      'a computed string key names the same option',
+      source(
+        "const setter = new DocSetter(db.collection('u'), { ['shouldFlatten']: false });",
+      ),
+      "{ ['shouldFlatten']: true }",
+    ],
+    [
+      'multiline options with a trailing comma',
+      source(
+        "const setter = new DocSetter(db.collection('u'), {\n  shouldFlatten: false,\n  convertDate: true,\n});",
+      ),
+      'shouldFlatten: true,',
+    ],
+    [
+      'no options object: the append path still applies',
+      source("const setter = new DocSetter(db.collection('u'));"),
+      '{ shouldFlatten: true }',
+    ],
+    [
+      'options without the key: the append path still applies',
+      source(
+        "const setter = new DocSetter(db.collection('u'), { convertDate: true });",
+      ),
+      'convertDate: true, shouldFlatten: true',
+    ],
+    [
+      'empty options: the append path still applies',
+      source("const setter = new DocSetter(db.collection('u'), {});"),
+      '{ shouldFlatten: true }',
+    ],
+    [
+      'a key built from an expression names an unknown option',
+      source(
+        "const setter = new DocSetter(db.collection('u'), { [flattenKey]: false });",
+      ),
+      '[flattenKey]: false, shouldFlatten: true',
+    ],
+  ] as const;
+
+  it.each(REWRITES)('writes one shouldFlatten: %s', (_name, code, emitted) => {
+    // Non-vacuity: the input must be duplicate-free for the suggestion to be
+    // the thing that introduces a duplicate
+    expect(duplicateKeys(code)).toBe(0);
+    expect(reports(code)).toHaveLength(1);
+
+    const output = applySuggestion(code);
+
+    expect(output).toContain(emitted);
+    expect(duplicateKeys(output)).toBe(0);
+    expect(output.match(/shouldFlatten/g)).toHaveLength(1);
+    // The suggestion has to reach a fixpoint, or it is offered again forever
+    expect(reports(output)).toHaveLength(0);
+  });
+
+  /** Values that may already be true, where appending would duplicate the key. */
+  const DECLINES = [
+    [
+      'a variable',
+      source(
+        "const setter = new DocSetter(db.collection('u'), { shouldFlatten: isFlattened });",
+      ),
+    ],
+    [
+      'a conditional',
+      source(
+        "const setter = new DocSetter(db.collection('u'), { shouldFlatten: isLegacy ? false : true });",
+      ),
+    ],
+    [
+      'a call',
+      source(
+        "const setter = new DocSetter(db.collection('u'), { shouldFlatten: resolveFlatten() });",
+      ),
+    ],
+    [
+      'a shorthand reference',
+      source(
+        "const setter = new DocSetter(db.collection('u'), { shouldFlatten });",
+      ),
+    ],
+    [
+      'an asserted literal',
+      source(
+        "const setter = new DocSetter(db.collection('u'), { shouldFlatten: false as boolean });",
+      ),
+    ],
+    [
+      'a getter',
+      source(
+        "const setter = new DocSetter(db.collection('u'), { get shouldFlatten() { return false; } });",
+      ),
+    ],
+  ] as const;
+
+  it.each(DECLINES)(
+    'reports without a suggestion rather than guessing: %s',
+    (_name, code) => {
+      const [message, ...rest] = reports(code);
+
+      expect(rest).toHaveLength(0);
+      expect(message.suggestions ?? []).toHaveLength(0);
+    },
+  );
+
+  // Without this the oracle above would pass on any output: it states that the
+  // emission the bug produced does score as a duplicate.
+  it('scores the duplicate the bug emitted', () => {
+    expect(
+      duplicateKeys(
+        source(
+          "const setter = new DocSetter(db.collection('u'), { shouldFlatten: false, shouldFlatten: true });",
+        ),
+      ),
+    ).toBe(1);
+  });
+
+  // A silent drop of every shape would leave both oracles asserting nothing.
+  it('exercises both arms', () => {
+    expect(REWRITES.length).toBeGreaterThanOrEqual(9); // measured 11
+    expect(DECLINES.length).toBeGreaterThanOrEqual(5); // measured 6
+  });
 });
