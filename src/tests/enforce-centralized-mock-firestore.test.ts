@@ -155,6 +155,78 @@ export { mockFirestore };`,
         code: `export const mockFirestore = jest.fn();`,
         filename: 'C:\\repo\\src\\__test-utils__\\mockFirestore.ts',
       },
+
+      // -------------------------------------------------------------------
+      // The normalized match is anchored to the WHOLE identifier, so a name
+      // that merely CONTAINS the mock's is a different mock and stays this
+      // rule's non-business (#2307).
+      // -------------------------------------------------------------------
+
+      {
+        code: `const mockFirestoreAdmin = jest.fn();
+beforeEach(() => { mockFirestoreAdmin({}); });`,
+      },
+      {
+        code: `const MOCK_FIRESTORE_ADMIN = jest.fn();
+beforeEach(() => { MOCK_FIRESTORE_ADMIN({}); });`,
+      },
+      {
+        code: `const MOCK_STORAGE = {} as const;
+beforeEach(() => { use(MOCK_STORAGE); });`,
+      },
+      {
+        code: `const firestoreMock = jest.fn();
+beforeEach(() => { firestoreMock({}); });`,
+      },
+      {
+        code: `const FIRESTORE_MOCK = jest.fn();
+beforeEach(() => { FIRESTORE_MOCK({}); });`,
+      },
+      {
+        code: `const { MOCK_FIRESTORE_ADMIN } = require('./localMocks');
+beforeEach(() => { MOCK_FIRESTORE_ADMIN({}); });`,
+      },
+      // A near-miss class property, and the `this.` reference that reads it
+      {
+        code: `class T {
+  private mockFirestoreAdmin = jest.fn();
+  run() { this.mockFirestoreAdmin({}); }
+}`,
+      },
+      // A SCREAMING_SNAKE_CASE object-literal key is a property name, not a
+      // binding, exactly as the camelCase spelling of it is
+      {
+        code: `const MOCKS = { MOCK_FIRESTORE: jest.fn() } as const;
+beforeEach(() => { MOCKS.MOCK_FIRESTORE({}); });`,
+      },
+      // An alias of the CENTRALIZED import is the shared mock under another
+      // spelling, not a local one
+      {
+        code: `import { mockFirestore as MOCK_FIRESTORE } from '../../../../../__test-utils__/mockFirestore';
+
+beforeEach(() => { MOCK_FIRESTORE({}); });`,
+      },
+      // The centralized module stays exempt whatever it spells its own
+      // definition
+      {
+        code: `export const MOCK_FIRESTORE = jest.fn();`,
+        filename: 'src/__test-utils__/mockFirestore.ts',
+      },
+      // ...including when it declares itself as a function
+      {
+        code: `export function mockFirestore() { return jest.fn(); }`,
+        filename: 'src/__test-utils__/mockFirestore.ts',
+      },
+      // A function declaration whose name merely CONTAINS the mock's is another
+      // binding, under the declaration form as much as the const form
+      {
+        code: `function mockFirestoreAdmin() { return jest.fn(); }
+beforeEach(() => { mockFirestoreAdmin(); });`,
+      },
+      {
+        code: `function MOCK_FIRESTORE_ADMIN() { return jest.fn(); }
+beforeEach(() => { MOCK_FIRESTORE_ADMIN(); });`,
+      },
     ],
     invalid: [
       // Invalid case: Local mockFirestore declaration
@@ -1071,6 +1143,214 @@ const mockFirestore = localMocks.mockFirestore;
 beforeEach(() => { mockFirestore({}); });`,
         errors: [ERROR],
         output: null,
+      },
+
+      // ---------------------------------------------------------------------
+      // The binding is matched by the name it NORMALISES to, so a mock cannot
+      // hide behind its spelling. `global-const-style` renames module
+      // constants into SCREAMING_SNAKE_CASE, which walked the mock straight
+      // out of this rule's view (#2307).
+      // ---------------------------------------------------------------------
+
+      // The reported spelling from #2307
+      {
+        code: `const MOCK_FIRESTORE = { collection: () => ({}) };
+console.log(MOCK_FIRESTORE);`,
+        errors: [ERROR],
+        output: `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
+console.log(mockFirestore);`,
+      },
+
+      // The camelCase control: the spelling that always reported still does
+      {
+        code: `const mockFirestore = { collection: () => ({}) };
+console.log(mockFirestore);`,
+        errors: [ERROR],
+        output: `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
+console.log(mockFirestore);`,
+      },
+      // Separators and casing are the only difference, so every spelling of
+      // the one name is the one name
+      {
+        code: `const mock_firestore = jest.fn();
+beforeEach(() => { mock_firestore({}); });`,
+        errors: [ERROR],
+        output: `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
+beforeEach(() => { mockFirestore({}); });`,
+      },
+      {
+        code: `const MockFirestore = jest.fn();
+beforeEach(() => { MockFirestore({}); });`,
+        errors: [ERROR],
+        output: `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
+beforeEach(() => { mockFirestore({}); });`,
+      },
+      {
+        code: `const MOCKFIRESTORE = jest.fn();
+beforeEach(() => { MOCKFIRESTORE({}); });`,
+        errors: [ERROR],
+        output: `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
+beforeEach(() => { mockFirestore({}); });`,
+      },
+      // EVERY reference is rewritten, not only the call sites: a reference the
+      // retirement leaves behind under the old spelling names nothing
+      {
+        code: `const MOCK_FIRESTORE = jest.fn();
+beforeEach(() => { MOCK_FIRESTORE({}); });
+afterEach(() => { MOCK_FIRESTORE.mockClear(); });
+export const use = () => MOCK_FIRESTORE;`,
+        errors: [ERROR],
+        output: `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
+beforeEach(() => { mockFirestore({}); });
+afterEach(() => { mockFirestore.mockClear(); });
+export const use = () => mockFirestore;`,
+      },
+      // A destructured require under the new spelling
+      {
+        code: `const { MOCK_FIRESTORE } = require('./localMocks');
+beforeEach(() => { MOCK_FIRESTORE({}); });`,
+        errors: [ERROR],
+        output: `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
+beforeEach(() => { mockFirestore({}); });`,
+      },
+      // ...and one renamed away from it: the property key is what is matched,
+      // and the local it binds is rewritten to the imported name
+      {
+        code: `const { MOCK_FIRESTORE: customMock } = require('./localMocks');
+beforeEach(() => { customMock({}); });`,
+        errors: [ERROR],
+        output: `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
+beforeEach(() => { mockFirestore({}); });`,
+      },
+      // Deeply nested destructuring, whose match moved out of the esquery
+      // selector so that it could normalize
+      {
+        code: `const {
+  mocks: {
+    firestore: {
+      MOCK_FIRESTORE
+    }
+  }
+} = require('./complexMocks');
+beforeEach(() => { MOCK_FIRESTORE({}); });`,
+        errors: [ERROR],
+        output: `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
+beforeEach(() => { mockFirestore({}); });`,
+      },
+      // A class property and the `this.` references that read it
+      {
+        code: `class TestClass {
+  private MOCK_FIRESTORE = jest.fn();
+  run() { this.MOCK_FIRESTORE({}); }
+  clear() { this.MOCK_FIRESTORE.mockClear(); }
+}`,
+        errors: [ERROR],
+        output: `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
+class TestClass {
+  run() { mockFirestore({}); }
+  clear() { mockFirestore.mockClear(); }
+}`,
+      },
+      // A declarator sharing its `const` with live siblings
+      {
+        code: `const before = 1, MOCK_FIRESTORE = jest.fn(), after = 2;
+beforeEach(() => { MOCK_FIRESTORE({}); use(before, after); });`,
+        errors: [ERROR],
+        output: `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
+const before = 1, after = 2;
+beforeEach(() => { mockFirestore({}); use(before, after); });`,
+      },
+      // The export surface is a cross-file contract under any spelling
+      {
+        code: `export const MOCK_FIRESTORE = jest.fn();
+beforeEach(() => { MOCK_FIRESTORE({}); });`,
+        errors: [ERROR],
+        output: null,
+      },
+      // A binding spelled exactly `mockFirestore` that OUTLIVES the retirement
+      // would be redeclared by the injected import, so the fix is withheld and
+      // the report stands (#2307)
+      {
+        code: `import { mockFirestore } from './localMocks';
+const MOCK_FIRESTORE = jest.fn();
+beforeEach(() => { MOCK_FIRESTORE({}); mockFirestore({}); });`,
+        errors: [ERROR],
+        output: null,
+      },
+      // A local mock declared as a function is retired like the arrow-const
+      // spelling of it, so it cannot survive to collide with the injected
+      // import and cost the sibling mock its fix
+      {
+        code: `function mockFirestore() { return null; }
+const MOCK_FIRESTORE = jest.fn();
+beforeEach(() => { MOCK_FIRESTORE({}); mockFirestore(); });`,
+        errors: [ERROR],
+        output: `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
+beforeEach(() => { mockFirestore({}); mockFirestore(); });`,
+      },
+      // The same file with the mock respelled as an arrow const, which the fix
+      // has to answer identically: declaration FORM is not a hiding place
+      {
+        code: `const mockFirestore = () => { return null; };
+const MOCK_FIRESTORE = jest.fn();
+beforeEach(() => { MOCK_FIRESTORE({}); mockFirestore(); });`,
+        errors: [ERROR],
+        output: `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
+beforeEach(() => { mockFirestore({}); mockFirestore(); });`,
+      },
+      // A function declaration standing alone as the local mock
+      {
+        code: `function mockFirestore() { return jest.fn(); }
+beforeEach(() => { mockFirestore(); });`,
+        errors: [ERROR],
+        output: `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
+beforeEach(() => { mockFirestore(); });`,
+      },
+      // ...and under the normalized spelling, whose references are rewritten to
+      // the name the shared module exports
+      {
+        code: `function MOCK_FIRESTORE() { return jest.fn(); }
+beforeEach(() => { MOCK_FIRESTORE(); });
+afterEach(() => { MOCK_FIRESTORE.mockClear(); });`,
+        errors: [ERROR],
+        output: `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
+beforeEach(() => { mockFirestore(); });
+afterEach(() => { mockFirestore.mockClear(); });`,
+      },
+      // An exported function declaration is the same cross-file contract an
+      // exported `const` is
+      {
+        code: `export function MOCK_FIRESTORE() { return jest.fn(); }
+beforeEach(() => { MOCK_FIRESTORE(); });`,
+        errors: [ERROR],
+        output: null,
+      },
+      // `export default` fronts a function declaration where it cannot front a
+      // `const`, and retiring it strips the module's default export
+      {
+        code: `export default function mockFirestore() { return jest.fn(); }`,
+        errors: [ERROR],
+        output: null,
+      },
+      // An overload signature is a declaration of the same name that the
+      // retirement leaves standing, so the injected import would redeclare it
+      {
+        code: `function mockFirestore(): void;
+function mockFirestore() { return; }
+beforeEach(() => { mockFirestore(); });`,
+        errors: [ERROR],
+        output: null,
+      },
+      // A camelCase local alongside the new spelling: both are the local mock,
+      // both are retired, and the survivor check does not fire on the one the
+      // fix is removing
+      {
+        code: `const MOCK_FIRESTORE = jest.fn();
+const mockFirestore = MOCK_FIRESTORE;
+beforeEach(() => { mockFirestore({}); });`,
+        errors: [ERROR],
+        output: `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
+beforeEach(() => { mockFirestore({}); });`,
       },
     ],
   },

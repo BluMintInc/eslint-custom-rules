@@ -1283,17 +1283,26 @@ const BINDING_SUGGESTION_UNDRIVEN: Record<string, UndrivenCause> = {};
  * `noPerturbableSite` are facts about the FIXTURES — a rule whose corpus holds
  * no string literal to degenerate, or whose fixer stops firing once one is
  * replaced — and neither is announced by any metadata, which is why each is
- * recorded rather than counted. `rulesDeriving.size >= 28` against an actual 38
- * lets ten rules go dark unheard, and a rule LEAVING this list has started
+ * recorded rather than counted. `rulesDeriving.size >= 28` against an actual 39
+ * lets eleven rules go dark unheard, and a rule LEAVING this list has started
  * deriving a name from author content, which is exactly the population #1811
  * and #1813 came out of.
+ *
+ * `enforce-centralized-mock-firestore` left it, and the departure was measured
+ * before it was accepted: normalized detection retires a `MOCK_FIRESTORE`
+ * local, so the injected `import { mockFirestore }` writes an identifier its
+ * three destructuring fixtures never held. The invented name is the shared
+ * module's EXPORT — a constant of the rule — and is `mockFirestore` under the
+ * control literal and under all three degenerate values alike, so nothing about
+ * it is read off author content and no value can collapse it. The rule is now
+ * covered by the positive arm below instead, which is a stronger gate than the
+ * entry it replaces (#2307).
  */
 const LITERAL_UNDRIVEN: Record<string, UndrivenCause> = {
   'enforce-typescript-markdown-code-blocks': 'noTsFixture',
   'enforce-use-flex-gap-on-wrap': 'inventsNoName',
   'no-unpinned-dependencies': 'noTsFixture',
   'class-methods-read-top-to-bottom': 'inventsNoName',
-  'enforce-centralized-mock-firestore': 'inventsNoName',
   'enforce-dynamic-firebase-imports': 'inventsNoName',
   'enforce-early-destructuring': 'inventsNoName',
   'enforce-exported-function-types': 'inventsNoName',
@@ -2016,7 +2025,7 @@ describe('degenerate-identifier fix closure', () => {
     expect(literalTotals.considered).toBeGreaterThan(14500); // measured 16,033
     expect(literalTotals.rewritten).toBeGreaterThan(7000); // measured 7,711
     expect(literalTotals.derivationsObserved).toBeGreaterThan(1500); // measured 1,731
-    expect(literalTotals.rulesDeriving.size).toBeGreaterThanOrEqual(28); // measured 38
+    expect(literalTotals.rulesDeriving.size).toBeGreaterThanOrEqual(28); // measured 39
   });
 
   /** The literal arm, per rule, both directions. */

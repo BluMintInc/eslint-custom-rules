@@ -6,11 +6,11 @@
 
 <!-- end auto-generated rule header -->
 
-If a file defines or re-exports a local `mockFirestore` instead of importing it from `../../../../../__test-utils__/mockFirestore`, that mock drifts away from the canonical behavior and hides API changes. Import the centralized mock so fixes land in one place and every suite stays aligned.
+If a file defines or re-exports a local `mockFirestore` instead of importing it from `../../../../../__test-utils__/mockFirestore`, that mock drifts away from the canonical behavior and hides API changes. Import the centralized mock so fixes land in one place and every suite stays aligned. The binding is matched by the name it normalizes to, so `MOCK_FIRESTORE` and `mock_firestore` are the same mock as `mockFirestore` — see "The names that count as the local mock" below.
 
 ## Rule Details
 
-If you define a local `mockFirestore`, your tests diverge from the canonical behavior. When Firestore data shapes or helper APIs change, scattered mocks silently drift and break only in the suites that forget to update, while the centralized mock absorbs the change once. This rule reports any file where you declare, destructure, or reference a local `mockFirestore` (including renames and `this.mockFirestore`) instead of importing from the shared path, and the fixer rewrites the file to import the shared mock and swap local references to it.
+If you define a local `mockFirestore`, your tests diverge from the canonical behavior. When Firestore data shapes or helper APIs change, scattered mocks silently drift and break only in the suites that forget to update, while the centralized mock absorbs the change once. This rule reports any file where you declare, destructure, or reference a local `mockFirestore` (including renames, other spellings of the same name, and `this.mockFirestore`) instead of importing from the shared path, and the fixer rewrites the file to import the shared mock and swap local references to it.
 
 ### Autofix behavior
 
@@ -146,6 +146,15 @@ beforeEach(() => {
 });
 ```
 
+Declaring the mock as a function hides it no better than spelling it
+differently does:
+
+```js
+function mockFirestore() {
+  return jest.fn();
+}
+```
+
 ### Examples of **correct** code for this rule:
 
 ```js
@@ -174,6 +183,114 @@ The centralized module defines the mock it exports:
 // File: __test-utils__/mockFirestore.ts
 export const mockFirestore = jest.fn();
 ```
+
+### The names that count as the local mock
+
+A binding is the local mock when its name matches `mockFirestore` after
+separators (`_`, `-`) are dropped and case is folded. A mock must not be able to
+hide behind its spelling: `global-const-style` renames module-scope constants
+into `SCREAMING_SNAKE_CASE`, so under the composed recommended config a
+`mockFirestore` becomes a `MOCK_FIRESTORE` and walks straight out of a
+literal match — and a hand-written `MOCK_FIRESTORE` is equally invisible with no
+fixer involved.
+
+The comparison is against the WHOLE identifier, never a substring, so a name
+that merely contains `mockFirestore` names a different mock and is left alone:
+
+| Binding                                                              | Reported              |
+| -------------------------------------------------------------------- | --------------------- |
+| `mockFirestore`, `MOCK_FIRESTORE`, `mock_firestore`, `MockFirestore` | yes — one name        |
+| `mockFirestoreAdmin`, `MOCK_FIRESTORE_ADMIN`                         | no — a different mock |
+| `firestoreMock`, `FIRESTORE_MOCK`, `MOCK_STORAGE`                    | no — a different name |
+
+Normalization applies to every place the rule DETECTS the mock: a `const`
+binding, a `function` declaration, a destructured property key (including
+`require`, dynamic `import` and deeply nested patterns), a class property, and a
+`this.` reference to one. It does not apply to the two places the name is a
+fixed contract rather than something being recognized:
+
+- The specifier imported from the shared module. It exports the mock under one
+  spelling, so `import { MOCK_FIRESTORE } from '../../../../../__test-utils__/mockFirestore'`
+  would import a name that module does not have.
+- The text the fixer emits. The injected import and every rewritten reference
+  spell the mock `mockFirestore`, because that is the binding the import
+  introduces.
+
+Because the emitted name is fixed, retiring a mock spelled some other way is a
+rename: the fixer rewrites **every** reference to the retired binding, not only
+the calls, so nothing is left naming a binding that is gone.
+
+```js
+// before
+const MOCK_FIRESTORE = jest.fn();
+beforeEach(() => {
+  MOCK_FIRESTORE({});
+});
+afterEach(() => {
+  MOCK_FIRESTORE.mockClear();
+});
+// after
+import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
+beforeEach(() => {
+  mockFirestore({});
+});
+afterEach(() => {
+  mockFirestore.mockClear();
+});
+```
+
+### Declaration form is not a hiding place either
+
+Spelling and declaration form are two doors into the same hiding place, so a
+local mock written as a `function` declaration is retired exactly as the
+`const`-holding-an-arrow spelling of it is. Both of these collapse to the same
+file:
+
+```js
+// before
+function mockFirestore() {
+  return jest.fn();
+}
+beforeEach(() => {
+  mockFirestore();
+});
+```
+
+```js
+// before
+const mockFirestore = () => {
+  return jest.fn();
+};
+beforeEach(() => {
+  mockFirestore();
+});
+```
+
+```js
+// after, from either spelling
+import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
+beforeEach(() => {
+  mockFirestore();
+});
+```
+
+Leaving the declaration form unrecognized would cost more than the missed
+report: a file whose other local mock IS flagged would lose its fix outright,
+because the injected import cannot be added beside a surviving
+`function mockFirestore`.
+
+The export-surface restriction described under "Autofix behavior" covers this
+form too, in both of its spellings. `export function mockFirestore() {…}` puts
+the name on the module's export surface, and
+`export default function mockFirestore() {…}` — a shape a `const` cannot take —
+makes the mock the module's default export; retiring either breaks importers a
+single-file fixer cannot reach, so both are reported without an autofix.
+
+The one case that rename cannot serve is a collision. When a binding spelled
+exactly `mockFirestore` outlives the retirement — an import of that name from
+somewhere else, a `class mockFirestore`, or the overload signature above a
+retired implementation — the injected import would redeclare it, so the fix is
+withheld and the report stands for a human to resolve.
 
 ## When Not To Use It
 

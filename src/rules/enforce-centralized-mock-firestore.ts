@@ -1,4 +1,4 @@
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 import {
   ImportInsertionAnchor,
@@ -26,6 +26,38 @@ type MessageIds = 'useCentralizedMockFirestore';
 const MOCK_FIRESTORE_MODULE = '__test-utils__/mockFirestore';
 
 const MOCK_FIRESTORE_PATH = `../../../../../${MOCK_FIRESTORE_MODULE}`;
+
+/**
+ * The name the centralized module actually exports, and therefore the exact
+ * text the fixer emits and the exact text every emitted-name comparison is
+ * made against. Detection normalizes (see {@link isMockFirestoreName});
+ * emission cannot — `import { MOCK_FIRESTORE } from …` would import a name the
+ * shared module does not export, and rewriting a reference to anything but
+ * this spelling leaves it unbound.
+ */
+const MOCK_FIRESTORE_EXPORT = 'mockFirestore';
+
+/**
+ * The local mock's name reduced to the one form every spelling of it shares:
+ * separators dropped and case folded.
+ *
+ * A mock must not be able to hide behind its spelling. `global-const-style` —
+ * also `recommended: 'error'`, also fixable — renames module constants into
+ * SCREAMING_SNAKE_CASE, so the composed config walks a `mockFirestore` out of
+ * this rule's view by turning it into `MOCK_FIRESTORE`; a hand-written
+ * `MOCK_FIRESTORE` is equally invisible with no fixer involved (#2307).
+ */
+const MOCK_FIRESTORE_BINDING = 'mockfirestore';
+
+/**
+ * Whether an identifier names the local mock, comparing whole identifiers
+ * rather than substrings. `mockFirestoreAdmin`, `MOCK_FIRESTORE_ADMIN` and
+ * `firestoreMock` name something else, and claiming them is another rule's
+ * business.
+ */
+function isMockFirestoreName(name: string): boolean {
+  return name.replace(/[_-]/g, '').toLowerCase() === MOCK_FIRESTORE_BINDING;
+}
 
 const SOURCE_EXTENSION = /\.(?:ts|tsx|js|jsx)$/;
 
@@ -63,17 +95,27 @@ const isCentralizedMockModule = (filename: string): boolean => {
  * safest. `global-const-style` and `renameFixes` withhold their fixes on the
  * same grounds.
  *
- * Only `ExportNamedDeclaration` can front a flagged node: `export default`
- * takes an expression, never a `const`, and a class property — the other shape
- * this rule flags — belongs to its class rather than to the module, so
+ * Both export forms can front a flagged node. `export default` takes an
+ * expression rather than a `const`, but it does take a FUNCTION declaration,
+ * and `export default function mockFirestore() {}` makes the module's default
+ * export the very thing being retired — the same cross-file contract break
+ * under a different name. A class property is on neither surface: it belongs
+ * to its class rather than to the module, so
  * `export default class { mockFirestore = … }` exports nothing by that name.
  */
+const EXPORT_FRONTS = new Set<string>([
+  AST_NODE_TYPES.ExportNamedDeclaration,
+  AST_NODE_TYPES.ExportDefaultDeclaration,
+]);
+
 function isExportedDeclaration(node: TSESTree.Node): boolean {
   const statement =
     node.parent?.type === AST_NODE_TYPES.VariableDeclaration
       ? node.parent
       : node;
-  return statement.parent?.type === AST_NODE_TYPES.ExportNamedDeclaration;
+  return (
+    !!statement.parent && EXPORT_FRONTS.has(statement.parent.type as string)
+  );
 }
 
 /**
@@ -158,23 +200,18 @@ const STATEMENT_CONTAINERS = new Set<string>([
 ]);
 
 /**
- * The declaration when it stands as a statement of its own, and nothing
- * otherwise.
+ * Whether the node stands as a statement of its own, and so may give up the
+ * whole line it occupies.
  *
- * An `export const` is deliberately not widened to the `export` that fronts it:
- * swallowing the keyword retires the name from the module's export surface, so
- * such a declaration has no retirable statement at all and its enclosing
- * `ExportNamedDeclaration` is absent from `STATEMENT_CONTAINERS` for that
- * reason. `isExportedDeclaration` refuses the same shape ahead of this call and
- * covers the multi-declarator form this branch never sees.
+ * An `export`ed declaration is deliberately not widened to the `export` that
+ * fronts it: swallowing the keyword retires the name from the module's export
+ * surface, so such a declaration has no retirable statement at all and the
+ * export node types are absent from `STATEMENT_CONTAINERS` for that reason.
+ * `isExportedDeclaration` refuses the same shape ahead of this call and covers
+ * the multi-declarator form this branch never sees.
  */
-function retirableStatement(
-  declaration: TSESTree.VariableDeclaration,
-): TSESTree.Node | undefined {
-  return declaration.parent &&
-    STATEMENT_CONTAINERS.has(declaration.parent.type as string)
-    ? declaration
-    : undefined;
+function isRetirableStatement(node: TSESTree.Node): boolean {
+  return !!node.parent && STATEMENT_CONTAINERS.has(node.parent.type as string);
 }
 
 function retiredSpan(node: TSESTree.Node): RetiredSpan | undefined {
@@ -182,13 +219,12 @@ function retiredSpan(node: TSESTree.Node): RetiredSpan | undefined {
   if (parent?.type === AST_NODE_TYPES.VariableDeclaration) {
     const { declarations } = parent;
     if (declarations.length === 1) {
-      const statement = retirableStatement(parent);
-      if (!statement) {
+      if (!isRetirableStatement(parent)) {
         return undefined;
       }
       return {
-        start: statement.range[0],
-        end: statement.range[1],
+        start: parent.range[0],
+        end: parent.range[1],
         whole: true,
       };
     }
@@ -210,6 +246,15 @@ function retiredSpan(node: TSESTree.Node): RetiredSpan | undefined {
       };
     }
     return undefined;
+  }
+  if (node.type === AST_NODE_TYPES.FunctionDeclaration) {
+    // A function declaration nested anywhere but a statement position — the
+    // body of an `if` under Annex B, say — cannot be excised without leaving
+    // the enclosing construct malformed, so it forfeits the fix like any other
+    // unretirable shape.
+    return isRetirableStatement(node)
+      ? { start: node.range[0], end: node.range[1], whole: true }
+      : undefined;
   }
   if (node.type === AST_NODE_TYPES.PropertyDefinition) {
     return { start: node.range[0], end: node.range[1], whole: true };
@@ -253,9 +298,23 @@ const retirementCarriesOrphan: OrphanUnbinder = (variables, removed) =>
 
 /**
  * Collapses edits that touch, so an overlap can never rewrite a range twice.
+ *
+ * Identical edits are dropped rather than merged: two visitors can reach the
+ * same reference — a renamed destructured binding is both a tracked call site
+ * and a retired binding's reference — and merging concatenates the texts, which
+ * would emit `mockFirestoremockFirestore` in place of the name.
  */
 function mergeEdits(edits: SourceEdit[]): SourceEdit[] {
-  const sorted = [...edits].sort((a, b) => a.start - b.start || a.end - b.end);
+  const seen = new Set<string>();
+  const unique = edits.filter((edit) => {
+    const key = `${edit.start}:${edit.end}:${edit.text}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+  const sorted = [...unique].sort((a, b) => a.start - b.start || a.end - b.end);
   const merged: SourceEdit[] = [];
   for (const edit of sorted) {
     const last = merged[merged.length - 1];
@@ -295,6 +354,40 @@ function importPlacement(
     (edit) => edit.start < offset && offset < edit.end,
   );
   return enclosing ? { kind: 'index', index: enclosing.start } : placement;
+}
+
+/**
+ * Whether a binding spelled exactly `mockFirestore` outlives the retirement in
+ * the scope the injected import binds into.
+ *
+ * Normalized detection is what puts this within reach: a local spelled
+ * `MOCK_FIRESTORE` is retired while an unrelated `mockFirestore` — a function
+ * declaration, an import of the same name from somewhere else — is left
+ * standing, and the two meet only once the import lands, so the emitted file
+ * redeclares the name. The fix is withheld and the report stands, which still
+ * surfaces the local mock for a human to retire (#2307).
+ */
+function collidesWithSurvivingBinding(
+  sourceCode: TSESLint.SourceCode,
+  removed: readonly TextRange[],
+): boolean {
+  const globalScope = sourceCode.scopeManager?.globalScope;
+  if (!globalScope) {
+    return false;
+  }
+  const scopes = [
+    globalScope,
+    ...globalScope.childScopes.filter((scope) => scope.type === 'module'),
+  ];
+  return scopes.some((scope) =>
+    scope.variables.some(
+      (variable) =>
+        variable.name === MOCK_FIRESTORE_EXPORT &&
+        variable.defs.some(
+          (definition) => !isWithinAny(definition.name.range, removed),
+        ),
+    ),
+  );
 }
 
 export const enforceCentralizedMockFirestore = createRule<[], MessageIds>({
@@ -344,11 +437,18 @@ export const enforceCentralizedMockFirestore = createRule<[], MessageIds>({
           hasCentralizedImport = true;
           // Check for renamed imports
           for (const specifier of node.specifiers) {
+            // Both comparisons stay EXACT. `imported` names the shared
+            // module's export surface, which spells the mock one way; a
+            // normalized match here would treat `import { MOCK_FIRESTORE }`
+            // as the shared mock and rewrite its call sites to a name the
+            // module never exported. `local` is compared against the text the
+            // fixer emits, and a binding differing only in case is still a
+            // different binding that the rewrite has to reach.
             if (
               specifier.type === AST_NODE_TYPES.ImportSpecifier &&
               specifier.imported.type === AST_NODE_TYPES.Identifier &&
-              specifier.imported.name === 'mockFirestore' &&
-              specifier.local.name !== 'mockFirestore'
+              specifier.imported.name === MOCK_FIRESTORE_EXPORT &&
+              specifier.local.name !== MOCK_FIRESTORE_EXPORT
             ) {
               customMockFirestoreNames.add(specifier.local.name);
             }
@@ -359,7 +459,7 @@ export const enforceCentralizedMockFirestore = createRule<[], MessageIds>({
       VariableDeclarator(node) {
         if (
           node.id.type === AST_NODE_TYPES.Identifier &&
-          node.id.name === 'mockFirestore'
+          isMockFirestoreName(node.id.name)
         ) {
           mockFirestoreNodes.add(node);
         } else if (node.id.type === AST_NODE_TYPES.ObjectPattern) {
@@ -367,13 +467,14 @@ export const enforceCentralizedMockFirestore = createRule<[], MessageIds>({
             if (
               prop.type === AST_NODE_TYPES.Property &&
               prop.key.type === AST_NODE_TYPES.Identifier &&
-              prop.key.name === 'mockFirestore'
+              isMockFirestoreName(prop.key.name)
             ) {
               mockFirestoreNodes.add(node);
-              // Track renamed destructured imports
+              // Track renamed destructured imports. The comparison is against
+              // the emitted name, so any other spelling needs rewriting.
               if (
                 prop.value.type === AST_NODE_TYPES.Identifier &&
-                prop.value.name !== 'mockFirestore'
+                prop.value.name !== MOCK_FIRESTORE_EXPORT
               ) {
                 customMockFirestoreNames.add(prop.value.name);
               }
@@ -383,10 +484,23 @@ export const enforceCentralizedMockFirestore = createRule<[], MessageIds>({
         }
       },
 
+      // A local mock declared as a function is the same ad-hoc local mock as one
+      // declared as a `const` holding an arrow, which this rule already retires.
+      // Spelling and declaration FORM are two doors into the same hiding place:
+      // leaving this one open costs more than the missed report, because a file
+      // whose other local mock IS flagged loses its fix outright — the injected
+      // `import { mockFirestore }` would redeclare the surviving function, so
+      // `collidesWithSurvivingBinding` withholds the whole rewrite (#2307).
+      FunctionDeclaration(node) {
+        if (node.id && isMockFirestoreName(node.id.name)) {
+          mockFirestoreNodes.add(node);
+        }
+      },
+
       PropertyDefinition(node) {
         if (
           node.key.type === AST_NODE_TYPES.Identifier &&
-          node.key.name === 'mockFirestore'
+          isMockFirestoreName(node.key.name)
         ) {
           mockFirestoreNodes.add(node);
         }
@@ -418,13 +532,14 @@ export const enforceCentralizedMockFirestore = createRule<[], MessageIds>({
               if (
                 prop.type === AST_NODE_TYPES.Property &&
                 prop.key.type === AST_NODE_TYPES.Identifier &&
-                prop.key.name === 'mockFirestore'
+                isMockFirestoreName(prop.key.name)
               ) {
                 mockFirestoreNodes.add(parent);
-                // Track renamed destructured imports
+                // Track renamed destructured imports. The comparison is
+                // against the emitted name, as above.
                 if (
                   prop.value.type === AST_NODE_TYPES.Identifier &&
-                  prop.value.name !== 'mockFirestore'
+                  prop.value.name !== MOCK_FIRESTORE_EXPORT
                 ) {
                   customMockFirestoreNames.add(prop.value.name);
                 }
@@ -435,10 +550,18 @@ export const enforceCentralizedMockFirestore = createRule<[], MessageIds>({
         }
       },
 
-      // Handle complex object destructuring
-      'ObjectPattern > Property > ObjectPattern > Property > ObjectPattern > Property[key.name="mockFirestore"]'(
+      // Handle complex object destructuring. The name test lives in the body
+      // rather than in the selector because an esquery attribute match is
+      // literal, and this one has to normalize like every other detection site.
+      'ObjectPattern > Property > ObjectPattern > Property > ObjectPattern > Property'(
         node: TSESTree.Property,
       ) {
+        if (
+          node.key.type !== AST_NODE_TYPES.Identifier ||
+          !isMockFirestoreName(node.key.name)
+        ) {
+          return;
+        }
         let current: TSESTree.Node = node;
         while (current.parent) {
           if (current.parent.type === AST_NODE_TYPES.VariableDeclarator) {
@@ -454,7 +577,7 @@ export const enforceCentralizedMockFirestore = createRule<[], MessageIds>({
         if (
           node.object.type === AST_NODE_TYPES.ThisExpression &&
           node.property.type === AST_NODE_TYPES.Identifier &&
-          node.property.name === 'mockFirestore'
+          isMockFirestoreName(node.property.name)
         ) {
           thisExpressions.push(node);
         }
@@ -463,6 +586,23 @@ export const enforceCentralizedMockFirestore = createRule<[], MessageIds>({
       'Program:exit'() {
         if (mockFirestoreNodes.size > 0) {
           const sourceCode = context.getSourceCode();
+
+          // The bindings a flagged declaration introduces that are the local
+          // mock under a spelling other than the imported one. Filtering by
+          // name keeps a sibling of the same pattern — the `mocks` of
+          // `const { mocks: { firestore: { MOCK_FIRESTORE } } }` — out of the
+          // rewrite, since `getDeclaredVariables` answers for the whole
+          // declarator rather than for the matched property.
+          const renamedMockBindings = (): TSESLint.Scope.Variable[] =>
+            Array.from(mockFirestoreNodes).flatMap((node) =>
+              context
+                .getDeclaredVariables(node)
+                .filter(
+                  (variable) =>
+                    variable.name !== MOCK_FIRESTORE_EXPORT &&
+                    isMockFirestoreName(variable.name),
+                ),
+            );
 
           // Report only once for the entire file
           context.report({
@@ -520,8 +660,34 @@ export const enforceCentralizedMockFirestore = createRule<[], MessageIds>({
                 ([start, end]) => ({ start, end, text: '' }),
               );
 
+              const deletedRanges = [...removals, ...orphanRemovals].map(
+                ({ start, end }): TextRange => [start, end],
+              );
+              if (
+                !hasCentralizedImport &&
+                collidesWithSurvivingBinding(sourceCode, deletedRanges)
+              ) {
+                return null;
+              }
+
               // Replace custom mockFirestore references with the standard one
               const replacements: SourceEdit[] = [];
+
+              // Every reference to a retired binding whose spelling is not
+              // the imported one would be left unbound by the retirement, so
+              // the fix rewrites all of them — not merely the call sites the
+              // rename tracking above covers. `const MOCK_FIRESTORE = …` is
+              // replaced by `import { mockFirestore }`, and a surviving
+              // `MOCK_FIRESTORE` reference names nothing (#2307).
+              for (const variable of renamedMockBindings()) {
+                for (const reference of variable.references) {
+                  replacements.push({
+                    start: reference.identifier.range[0],
+                    end: reference.identifier.range[1],
+                    text: MOCK_FIRESTORE_EXPORT,
+                  });
+                }
+              }
 
               // Add replacements for custom mockFirestore names
               customMockFirestoreCallExpressions.forEach((node) => {
@@ -529,7 +695,7 @@ export const enforceCentralizedMockFirestore = createRule<[], MessageIds>({
                   replacements.push({
                     start: node.callee.range[0],
                     end: node.callee.range[1],
-                    text: 'mockFirestore',
+                    text: MOCK_FIRESTORE_EXPORT,
                   });
                 }
               });
@@ -539,7 +705,7 @@ export const enforceCentralizedMockFirestore = createRule<[], MessageIds>({
                 replacements.push({
                   start: expr.range[0],
                   end: expr.range[1],
-                  text: 'mockFirestore',
+                  text: MOCK_FIRESTORE_EXPORT,
                 });
               });
 
@@ -582,7 +748,7 @@ export const enforceCentralizedMockFirestore = createRule<[], MessageIds>({
                     sourceCode,
                     fixer,
                     importPlacement(sourceCode, anchor, edits),
-                    `${indent}import { mockFirestore } from '${MOCK_FIRESTORE_PATH}';\n`,
+                    `${indent}import { ${MOCK_FIRESTORE_EXPORT} } from '${MOCK_FIRESTORE_PATH}';\n`,
                   ),
                 );
               }
