@@ -311,6 +311,34 @@ Three limits keep this from swallowing true positives:
 - Only a booleanness read off a **name** can be outranked — an unresolvable boolean-prefixed callee, or a boolean-sounding property. Evidence about the value itself always wins: an explicit `: boolean` annotation, a boolean literal, a comparison or negation, a `Boolean()` coercion, and a callee whose reachable declaration classifies as boolean all stay flagged even where a use site contradicts them (that code is a type error, not a naming question).
 - The contradiction must be at a use site. A validator's *shape* alone changes nothing, so `const completed = isTaskFinished();` with nothing contradicting it anywhere stays flagged.
 
+#### Defaulted initializers (`||`, `??`)
+
+A default is read from its OPERANDS, never from the operator that introduces it,
+so `left || fallback` and `left ?? fallback` are judged identically. The two
+differ only in which absent-ish left values hand over to the fallback, which says
+nothing about whether the result is a boolean. Both spellings must be read
+because they are interconvertible under this plugin's own recommended config:
+[`prefer-nullish-coalescing-boolean-props`](./prefer-nullish-coalescing-boolean-props.md)
+rewrites `||` to `??` under `--fix`, and a rule reading only `||` would go silent
+on every binding that fixer touches.
+
+```ts
+// Flagged in both spellings — the fallback is a boolean literal.
+const active = isActive() || false;
+const alsoActive = isActive() ?? false;
+
+// Not flagged in either — a string, number, array, object or template default
+// settles the value against booleanness.
+const name = getName() ?? 'anon';
+const count = getCount() || 0;
+const items = getItems() ?? [];
+```
+
+A conjunction is a different shape: the right operand of `a && b` is the RESULT
+when the left is truthy rather than a default, so `&&` is classified from both
+operands instead (`user && user.isActive` is boolean, `user && user.name` is
+not).
+
 #### Optional chaining in an initializer
 
 An optional link (`user?.isLoggedIn`, `canDelete?.('x')`) is read through, so a

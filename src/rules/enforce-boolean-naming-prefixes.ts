@@ -54,6 +54,28 @@ const BOOLEANISH_BINARY_OPERATORS = new Set<
   TSESTree.BinaryExpression['operator']
 >(['===', '!==', '==', '!=', '>', '<', '>=', '<=', 'in', 'instanceof']);
 
+/**
+ * The operators that spell a DEFAULTED value: `left OP fallback` yields the
+ * left operand when it is present and the right operand only as a default. What
+ * makes such an initializer boolean is its operands, never which of the two
+ * joins them — `||` and `??` differ solely in which absent-ish left values hand
+ * over to the fallback.
+ *
+ * Both spellings must be read, because they are interconvertible under this
+ * plugin's own recommended config: `prefer-nullish-coalescing-boolean-props`
+ * rewrites `||` to `??` under `--fix`, so recognizing only `||` lets a sibling
+ * rule's fixer silence this one on every binding it touches.
+ *
+ * `&&` is deliberately excluded. Its right operand is the RESULT when the left
+ * is truthy rather than a default, so the fallback screen below — "a
+ * non-boolean literal on the right means the value is not a boolean" — would
+ * read the wrong operand. Conjunctions keep their own both-operand analysis,
+ * which already classifies `user && user.isActive` as boolean.
+ */
+const BOOLEAN_FALLBACK_OPERATORS = new Set<
+  TSESTree.LogicalExpression['operator']
+>(['||', '??']);
+
 type MemberName = {
   /** The bare word, which every prefix and underscore check reads. */
   name: string;
@@ -545,7 +567,9 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           return true;
         }
 
-        // Check for logical expressions (&&)
+        // Conjunctions classify from BOTH operands rather than through the
+        // fallback screen below, which is why `&&` is kept out of
+        // `BOOLEAN_FALLBACK_OPERATORS`.
         if (
           init.type === AST_NODE_TYPES.LogicalExpression &&
           init.operator === '&&'
@@ -569,12 +593,13 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           return false;
         }
 
-        // Special case for logical OR (||) - only consider it boolean if:
+        // Special case for a defaulted value (`||`, `??`) - only consider it
+        // boolean if:
         // 1. It's used with boolean literals or
         // 2. It's not used with array/object literals as fallbacks
         if (
           init.type === AST_NODE_TYPES.LogicalExpression &&
-          init.operator === '||'
+          BOOLEAN_FALLBACK_OPERATORS.has(init.operator)
         ) {
           // Check if right side is a non-boolean literal (array, object, string, number)
           const rightSide = init.right;
@@ -1408,10 +1433,11 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           );
         }
 
-        // `isFoo(x) || fallback` reaches booleanness through its left operand.
+        // `isFoo(x) || fallback` reaches booleanness through its left operand,
+        // and so does the `??` spelling of the same default.
         if (
           value.type === AST_NODE_TYPES.LogicalExpression &&
-          value.operator === '||'
+          BOOLEAN_FALLBACK_OPERATORS.has(value.operator)
         ) {
           return restsOnName(value.left);
         }

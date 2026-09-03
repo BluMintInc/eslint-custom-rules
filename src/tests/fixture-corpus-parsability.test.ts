@@ -168,7 +168,7 @@ const PARSED_CASES_BY_RULE: Record<string, number> = {
   'dynamic-https-errors': 131,
   'enforce-assert-safe-object-key': 400,
   'enforce-assert-throws': 174,
-  'enforce-boolean-naming-prefixes': 669,
+  'enforce-boolean-naming-prefixes': 682,
   'enforce-callable-types': 11,
   'enforce-callback-memo': 118,
   'enforce-centralized-mock-firestore': 89,
