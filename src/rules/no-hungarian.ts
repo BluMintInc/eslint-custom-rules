@@ -213,6 +213,28 @@ const DOMAIN_CLASS_HEAD_NOUNS = new Set([
   'vehicle',
 ]);
 
+// Conversion heads: the verb or preposition a CONVERTER function's name opens
+// with. In <head><Type> the trailing type word names what the function
+// PRODUCES (or consumes, for `from`), never the type of the value the
+// identifier holds — the identifier holds a function. Hungarian notation tags a
+// value with its own type, so `toNumber` is outside the notation entirely, and
+// stripping the type word destroys the name (`to`, `parse` and `from` denote
+// nothing on their own), which is this rule's own test for a domain compound
+// versus a tag. The same reasoning the rule already applies to the type-concept
+// names it exempts (`StringToNumber`) and to the `Parsed` / `Converted`
+// suffixes, applied to function names (#2302).
+//
+// `convertto` is the two-segment head `convertTo`, stored joined because the
+// lookup is done on the head segments concatenated and lowercased.
+const CONVERSION_HEADS = new Set([
+  'to',
+  'as',
+  'from',
+  'parse',
+  'into',
+  'convertto',
+]);
+
 // Common built-in JavaScript prototype methods
 const BUILT_IN_METHODS = new Set([
   // String methods
@@ -643,6 +665,70 @@ function isClassValuedDeclaration(node: TSESTree.Identifier): boolean {
   }
 }
 
+// Is `name` a conversion compound of the form <head><Type> (toNumber,
+// parseBoolean, fromString, asArray, convertToNumber), where the FINAL segment
+// is a full type word and everything before it is a conversion head? The type
+// word must be final and must follow the head directly, so a name that merely
+// contains a head keeps firing: `toNumberValue` names a value (the type word is
+// not the target), `numberToValue` leads with the type word, and `strToNumber`
+// carries an abbreviation marker, which no English word is spelled with.
+// Abbreviation markers are excluded by construction — FULL_TYPE_WORDS holds only
+// the spelled-out type words — so `toNum` / `toStr` are untouched.
+function isConversionTargetCompound(name: string): boolean {
+  const segments = splitCamelSegments(name);
+  if (segments.length < 2) {
+    return false;
+  }
+  const target = segments[segments.length - 1];
+  if (!FULL_TYPE_WORDS.has(target.toLowerCase())) {
+    return false;
+  }
+  const head = segments.slice(0, -1).join('').toLowerCase();
+  return CONVERSION_HEADS.has(head);
+}
+
+// Does the declaration site PROVE, syntactically, that the named value is a
+// function? Only a function declaration's own name, a function/arrow
+// initializer, or a class METHOD are conclusive without type information — an
+// aliased function (`const toNumber = parseFloat`) and a bare `(v: string) =>
+// number` annotation are deliberately not read, keeping the carve-out on the
+// shapes where the function body is written at the declaration itself.
+//
+// This is the mirror image of isSymbolTypedDeclaration (#1835) and
+// isClassValuedDeclaration (#2030): there the syntactic proof WITHDRAWS a
+// carve-out because it confirms the suffix encodes the value's type; here it
+// GRANTS one, because a function value is precisely what the type word cannot
+// be describing. Accessors are excluded (`get toNumber()` is read as a value at
+// every use site, so its `Number` does tag that value), as are computed keys,
+// whose identifier is a reference to some other binding rather than a
+// declaration.
+function isFunctionValuedDeclaration(node: TSESTree.Identifier): boolean {
+  const parent = node.parent;
+  if (!parent) {
+    return false;
+  }
+  const isFunctionValue = (value: TSESTree.Node | null | undefined) =>
+    !!value &&
+    (value.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+      value.type === AST_NODE_TYPES.FunctionExpression);
+  switch (parent.type) {
+    case AST_NODE_TYPES.FunctionDeclaration:
+      return parent.id === node;
+    case AST_NODE_TYPES.VariableDeclarator:
+      return parent.id === node && isFunctionValue(parent.init);
+    case AST_NODE_TYPES.MethodDefinition:
+      return (
+        parent.key === node && !parent.computed && parent.kind === 'method'
+      );
+    case AST_NODE_TYPES.PropertyDefinition:
+      return (
+        parent.key === node && !parent.computed && isFunctionValue(parent.value)
+      );
+    default:
+      return false;
+  }
+}
+
 // Rebuild a SCREAMING_SNAKE_CASE identifier's segments into a PascalCase compound
 // (["MATCH","NUMBER"] -> "MatchNumber") so the snake-case branch can reuse the
 // camelCase isDomainNumberCompound / DOMAIN_NUMBER_HEAD_NOUNS exemption verbatim,
@@ -686,11 +772,14 @@ export const noHungarian = createRule<[], MessageIds>({
     // `symbol` value, which vetoes the <domain>Symbol glyph exemption.
     // `isClassValued` is true when the declaration syntactically proves a JS
     // class value, which vetoes the <taxonomy>Class exemption.
+    // `isFunctionValued` is true when the declaration syntactically proves a
+    // function value, which GRANTS the converter-function exemption.
     function hasTypeMarker(
       variableName: string,
       isTypeName = false,
       isSymbolTyped = false,
       isClassValued = false,
+      isFunctionValued = false,
     ): boolean {
       // Type names whose type-word denotes a concept/relation (StringToNumber,
       // CapitalizedString, FuncKeys, PromiseOrValue) are not Hungarian — the word
@@ -801,6 +890,19 @@ export const noHungarian = createRule<[], MessageIds>({
             if (index !== 0 && index !== lastIndex) {
               return false;
             }
+            // A trailing "..._TYPE" word directly after a conversion head on a
+            // declaration that proves a function (TO_NUMBER, PARSE_BOOLEAN as
+            // arrow consts) names the conversion TARGET, not the constant's own
+            // type — the same carve-out as camelCase toNumber (#2302), routed
+            // through the shared PascalCase helper so the two casings cannot
+            // diverge (the #1294 asymmetry).
+            if (
+              isFunctionValued &&
+              index === lastIndex &&
+              isConversionTargetCompound(screamingSnakePartsToPascalCase(parts))
+            ) {
+              return false;
+            }
             // A trailing "..._NUMBER" whose preceding head noun is a domain
             // entity (MATCH_NUMBER, ISSUE_NUMBER, CURRENT_LINE_NUMBER) is a
             // domain compound, not a Hungarian type tag — route through the same
@@ -901,6 +1003,18 @@ export const noHungarian = createRule<[], MessageIds>({
               variableName[variableName.length - normalizedMarker.length],
             ))
         ) {
+          // A trailing full type word directly after a conversion head, on a
+          // declaration that syntactically proves a function (toNumber,
+          // parseBoolean, fromString, asArray, convertToNumber), names what the
+          // conversion PRODUCES — the identifier itself holds a function, so
+          // there is no value type being tagged, and stripping the word leaves
+          // `to` / `parse` / `from`, which name nothing (#2302). Scoped to
+          // full-word markers in SUFFIX position on a proven function, so
+          // `const toNumber = 5`, `toNum` / `toStr` / `strToNumber`, and
+          // `numberToValue` all keep firing.
+          if (isFunctionValued && isConversionTargetCompound(variableName)) {
+            return false;
+          }
           // A trailing "...Number" whose head noun is a domain entity
           // (issueNumber, lineNumber, roundNumber, versionNumber) is a domain
           // compound, not a Hungarian type tag: the suffix names WHAT the value
@@ -1046,6 +1160,7 @@ export const noHungarian = createRule<[], MessageIds>({
           isTypeName,
           isSymbolTypedDeclaration(node),
           isClassValuedDeclaration(node),
+          isFunctionValuedDeclaration(node),
         )
       ) {
         context.report({

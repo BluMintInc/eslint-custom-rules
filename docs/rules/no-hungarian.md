@@ -32,6 +32,7 @@ This rule disallows embedding type information in identifier names (Hungarian no
 - **PascalCase declarations whose type word qualifies a different head noun.** A component, class, function, or type name where a built-in type word modifies a distinct head noun is a domain compound, not a type tag — the value is a component or props type, never a number/bigint. Examples: `NumberAmountEditor`, `BigIntAmountEditor`, `BigIntAmountEditorProps`, mirroring `Intl.NumberFormat`, `StringBuilder`, and `NumberFormatter`. This is the leading-position analog of the `<entity>Number` carve-out and applies in any segment position (e.g. `CadenceBigIntEditor`). It is scoped to PascalCase (leading capital): a lowercase-initial variable such as `numberCount` or `stringValue` *is* naming its own value's type and stays flagged.
 - **Glyph-domain `Symbol` compounds.** A trailing `Symbol` whose head noun names something that is *written with a glyph* denotes that printed character (`"$"`, `"BTC"`, `"kg"`, `"Fe"`), not the JavaScript `symbol` primitive — the value is a string, so there is no type marker to strip, and stripping it yields a wrong name (`currency` is the currency, not the character it is written with). ISO 4217 and CLDR call the glyph a *currency symbol*. Examples: `currencySymbol`, `getCurrencySymbol`, `tickerSymbol`, `tokenSymbol`, `unitSymbol`, `elementSymbol`, `CURRENCY_SYMBOL`. This is the `Symbol` analog of the `<entity>Number` carve-out. The `Symbol` marker is otherwise intact: head nouns whose value really is a JS symbol keep firing (`idSymbol`, `cacheSymbol`, `brandSymbol`), as does any use in *prefix* position (`symbolKey`, `SYMBOL_TABLE`).
 - **Taxonomy `Class` compounds.** A trailing `Class` whose head noun names a bucketing taxonomy denotes the *category a value falls into*, not the JavaScript `class` construct — "window size class" is the Material Design 3 / UIKit term for a breakpoint bucket (compact/medium/expanded), a regex *character class* is `[a-z]`, an S3 *storage class* is `"STANDARD"`. The value is a string or number map, so there is no type marker to strip, and stripping it yields a wrong name (`WINDOW_SIZE` names a width, not a bucket). Examples: `WINDOW_SIZE_CLASS`, `windowSizeClass`, `SIZE_CLASS`, `characterClass`, `storageClass`, `assetClass`, `weightClass`, `fareClass`. This is the `Class` analog of the `<entity>Number` carve-out. The `Class` marker is otherwise intact: head nouns outside the taxonomy list keep firing (`UserClass`, `userClass`, `HELPER_CLASS`), as does any use in *prefix* position (`classRegistry`, `CLASS_MAP`).
+- **Converter functions.** A name whose FINAL segment is a full type word placed directly after a conversion head (`to`, `as`, `from`, `parse`, `into`, `convertTo`) names the type the conversion *produces*, not the type of the value the identifier holds — the identifier holds a function. Stripping the type word leaves `to` / `parse` / `from`, which name nothing, so the whole compound is the concept, exactly as in the `StringToNumber` type-concept allowance above. Examples: `toNumber`, `toBoolean`, `toArray`, `toObject`, `parseBoolean`, `fromString`, `asNumber`, `convertToNumber`, `toString`, `TO_NUMBER`. This is the converter pattern the sibling `enforce-verb-noun-naming` rule documents as correct, so the two recommended rules agree on it. The exemption is granted only where the declaration syntactically PROVES a function — a function declaration, a function/arrow initializer, a class method, or a class field holding a function — which is the `Symbol` / `Class` proof running the other way: there it withdraws a carve-out, here it grants one. Anything else keeps firing: a non-function binding (`const toNumber = 5`, `let toNumber: (v: string) => number`, `const toNumber = parseFloat`), an accessor whose use site reads as a value (`get toNumber()`), a parameter holding the converted value (`function convert(toNumber: string)`), an abbreviation marker anywhere (`strToNumber`, `toNum`, `toStr`), and the type word in any other position (`numberToValue`, `toDisplayString`). A `: symbol` or `: boolean` return annotation confirms the conversion target rather than withdrawing the exemption.
 - **Type annotations.** The rule judges only the identifier name, never the annotation, so `type TeamSize = Readonly<Range<number>>` is allowed. The exceptions are the glyph and taxonomy carve-outs above: a declaration that syntactically proves a JS `symbol` — an explicit `: symbol` / `unique symbol` annotation, or a `Symbol()` initializer — withdraws the former, so `const currencySymbol: symbol = Symbol('currency')` is still flagged; a declaration that syntactically proves a real class — a `class` expression initializer, a class declaration's own name, or a `new (...) => T` constructor-type annotation — withdraws the latter, so `const SizeClass = class {}` is still flagged.
 
 ### How to fix
@@ -126,6 +127,21 @@ function getCurrencySymbol(): string {
 const WINDOW_SIZE_CLASS = { compact: 0, medium: 600, expanded: 840 };
 const windowSizeClass = 'compact';
 const storageClass = 'STANDARD';
+
+// A converter's type word names what the conversion produces; the identifier
+// holds a function, so there is no value type being tagged
+function toNumber(value: string) {
+  return +value;
+}
+const toBoolean = (value: string): boolean => value === 'true';
+function parseBoolean(value: string) {
+  return value === 'true';
+}
+class Money {
+  public toString(): string {
+    return '$';
+  }
+}
 
 // The rule judges the name, never the type annotation
 type TeamSize = Readonly<Range<number>>;

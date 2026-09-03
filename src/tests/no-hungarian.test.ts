@@ -1596,3 +1596,170 @@ ruleTesterTs.run('no-hungarian-domain-class-compounds', noHungarian, {
     },
   ],
 });
+
+// Issue #2302: converter functions whose name is a conversion head followed by
+// the type being converted TO (toNumber, toBoolean, toArray, parseBoolean,
+// fromString, asNumber, convertToNumber) are not Hungarian notation — the
+// identifier holds a FUNCTION, so the type word names what the conversion
+// produces rather than the type of the named value, and stripping it leaves
+// `to` / `parse` / `from`, which name nothing. Same shape as the <entity>Number
+// (#1277), <domain>Symbol (#1835) and <taxonomy>Class (#2030) carve-outs, with
+// the syntactic proof running the other way: there a proven symbol/class value
+// WITHDRAWS the exemption, here a proven function value GRANTS it. The `to`
+// spelling is also the converter pattern the sibling verb-noun naming rule
+// documents as correct, so the two rules stop contradicting each other in
+// writing.
+ruleTesterTs.run('no-hungarian-converter-functions', noHungarian, {
+  valid: [
+    // The reproduction table from the issue, one row per declaration shape.
+    'function toNumber(value: string) { return +value; }',
+    'const toNumber = (value: string) => +value;',
+    'const toNumber = function (value: string) { return +value; };',
+    `function toBoolean(v: string) { return v === 'true'; }`,
+    'function toArray<T>(v: T | T[]) { return Array.isArray(v) ? v : [v]; }',
+    'function toObject(v: string) { return JSON.parse(v); }',
+    `function parseBoolean(v: string) { return v === 'true'; }`,
+    'function fromString(v: string) { return v; }',
+    'class Foo { toNumber() { return 1; } }',
+    // The sibling rule's documented converter example, verbatim from
+    // docs/rules/enforce-verb-noun-naming.md, so the two rules are pinned to
+    // agree on the exact line one of them blesses.
+    'function toNumber(value) { return +value; } // converter pattern allowed',
+    // Every conversion head, each with a full type word as the target.
+    'function asNumber(v: string) { return +v; }',
+    'function convertToNumber(v: string) { return +v; }',
+    'function intoArray<T>(v: T) { return [v]; }',
+    'function parseNumber(v: string) { return +v; }',
+    // Every full type word reachable as a conversion target.
+    'function toPromise(v: number) { return Promise.resolve(v); }',
+    'function toBigInt(v: number) { return BigInt(v); }',
+    'function toRegExp(v: string) { return new RegExp(v); }',
+    // A `symbol` return annotation CONFIRMS the conversion target instead of
+    // withdrawing the exemption — the reverse of the <domain>Symbol veto, where
+    // the same annotation proves the suffix tags the value's own type.
+    'function toSymbol(v: string): symbol { return Symbol(v); }',
+    'const toBoolean = (v: string): boolean => v === "true";',
+    // The canonical converter, which the rule exempts only as a member
+    // expression today.
+    'function toString(v: unknown) { return `${v}`; }',
+    'class Money { toString(): string { return "$"; } }',
+    // Class members: instance method, static method, field-arrow, static
+    // field-arrow.
+    'class Parser { static fromString(v: string) { return new Parser(); } }',
+    'class Foo { toNumber = (v: string) => +v; }',
+    'class Foo { static toNumber = (v: string) => +v; }',
+    // Async and generator function bodies are the same declaration shapes.
+    'const toNumber = async (v: string) => +v;',
+    'function* toArray<T>(v: T) { yield v; }',
+    // SCREAMING_SNAKE_CASE spellings go through the same helper, so the two
+    // casings cannot diverge (the #1294 asymmetry).
+    'const TO_NUMBER = (v: string) => +v;',
+    'const CONVERT_TO_NUMBER = (v: string) => +v;',
+    // Neighbours from the issue table that were already clean because their
+    // target is not a marker word; pinned so the carve-out is not what is
+    // holding them up.
+    'function toMap<T>(items: T[]) { return new Map(); }',
+    'const parseDate = (d: string) => new Date(d);',
+    // A full type word in a MIDDLE segment is exempt on the pre-existing
+    // middle-segment policy, not on this carve-out (which requires the type
+    // word to be the FINAL segment): these are clean before and after #2302.
+    'function toNumberValue(v: string) { return +v; }',
+    'function toBooleanFlag(v: string) { return true; }',
+  ],
+  invalid: [
+    // Abbreviation markers are type tags in any position — no English word is
+    // spelled that way — so a converter name carrying one still fires.
+    {
+      code: 'function strToNumber(v: string) { return +v; }',
+      errors: [errorFor('strToNumber')],
+    },
+    {
+      code: 'function toNum(v: string) { return +v; }',
+      errors: [errorFor('toNum')],
+    },
+    {
+      code: 'function toStr(v: number) { return `${v}`; }',
+      errors: [errorFor('toStr')],
+    },
+    {
+      code: 'const toObj = (v: string) => JSON.parse(v);',
+      errors: [errorFor('toObj')],
+    },
+    {
+      code: 'const STR_TO_NUMBER = (v: string) => +v;',
+      errors: [errorFor('STR_TO_NUMBER')],
+    },
+    { code: 'const TO_NUM = (v: string) => +v;', errors: [errorFor('TO_NUM')] },
+
+    // NO SYNTACTIC PROOF OF A FUNCTION: the name alone never earns the
+    // exemption, because on a value the type word does tag that value's type.
+    { code: 'const toNumber = 5;', errors: [errorFor('toNumber')] },
+    { code: 'const toNumber: number = 5;', errors: [errorFor('toNumber')] },
+    { code: 'const TO_NUMBER = 5;', errors: [errorFor('TO_NUMBER')] },
+    { code: 'class Foo { toNumber = 5; }', errors: [errorFor('toNumber')] },
+    // An annotation is not read, so a bare declaration and an aliased function
+    // keep firing: the carve-out is keyed on the declaration writing the
+    // function body.
+    {
+      code: 'let toNumber: (v: string) => number;',
+      errors: [errorFor('toNumber')],
+    },
+    { code: 'const toNumber = parseFloat;', errors: [errorFor('toNumber')] },
+    // An accessor is read as a VALUE at every use site (`money.toNumber`), so
+    // its type word tags that value.
+    {
+      code: 'class Foo { get toNumber() { return 1; } }',
+      errors: [errorFor('toNumber')],
+    },
+    {
+      code: 'class Foo { set toNumber(v: number) {} }',
+      errors: [errorFor('toNumber')],
+    },
+    // A computed key is a REFERENCE to some other binding, not a declaration of
+    // this function, so the carve-out must not reach it.
+    {
+      code: 'class Foo { [toNumber]() { return 1; } }',
+      errors: [errorFor('toNumber')],
+    },
+    // A parameter holds the converted VALUE, not the converter.
+    {
+      code: 'function convert(toNumber: string) { return toNumber; }',
+      errors: [errorFor('toNumber')],
+    },
+
+    // THE TYPE WORD OUTSIDE TARGET POSITION: leading (so it tags the input),
+    // or separated from the head by another word (so the head is not a
+    // conversion head at all).
+    {
+      code: 'function numberToValue(n: number) { return n; }',
+      errors: [errorFor('numberToValue')],
+    },
+    {
+      code: 'const toDisplayString = (v: number) => `${v}`;',
+      errors: [errorFor('toDisplayString')],
+    },
+    {
+      code: 'function convertUserToString(u: User) { return u.name; }',
+      errors: [errorFor('convertUserToString')],
+    },
+    {
+      code: 'const TO_DISPLAY_STRING = (v: number) => `${v}`;',
+      errors: [errorFor('TO_DISPLAY_STRING')],
+    },
+
+    // The carve-out is scoped to FULL type words as the conversion target:
+    // `Class`, `Interface` and `Enum` are markers but not conversion targets.
+    {
+      code: 'function toClass(v: string) { return class {}; }',
+      errors: [errorFor('toClass')],
+    },
+
+    // Every other marker is unchanged.
+    { code: 'const strName = "John";', errors: [errorFor('strName')] },
+    { code: 'const countNumber = 5;', errors: [errorFor('countNumber')] },
+    {
+      code: 'function getUserString() { return "x"; }',
+      errors: [errorFor('getUserString')],
+    },
+  ],
+});
