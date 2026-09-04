@@ -215,6 +215,17 @@ export function changesOf(oldConfig, newConfig): Difference[] {
   return diff(oldConfig, newConfig);
 }`,
     },
+    // The file's own `diffArrays`, with no import anywhere. The name is a
+    // candidate for a report and nothing more: what it binds is a local
+    // function, so renaming its calls would swap in a change list for whatever
+    // that function computes.
+    {
+      code: `function diffArrays(a, b) {
+  return [a, b];
+}
+
+export const changes = diffArrays(oldItems, newItems);`,
+    },
   ],
   invalid: [
     // Using deep-diff
@@ -237,7 +248,11 @@ function compareConfigs(oldConfig, newConfig) {
   return diff(oldConfig, newConfig);
 }`,
     },
-    // Using diff library
+    // Using the jsdiff `diff` package. Reported at both sites and rewritten at
+    // neither: `diffArrays` is a Myers SEQUENCE diff whose runs of
+    // `{value, added, removed, count}` are not microdiff's per-path change
+    // list, so the rename compiles and silently answers a different question
+    // (#2322). Retiring the import alongside it would strand `diffArrays`.
     {
       code: `import { diffArrays } from 'diff';
 
@@ -246,13 +261,12 @@ function compareArrays(oldArray, newArray) {
 }`,
       errors: [
         { messageId: 'enforceMicrodiffImport', data: { importSource: 'diff' } },
-        { messageId: 'enforceMicrodiff' },
+        {
+          messageId: 'enforceMicrodiffManual',
+          data: { importSource: 'diff' },
+        },
       ],
-      output: `import diff from '@blumintinc/microdiff';
-
-function compareArrays(oldArray, newArray) {
-  return diff(oldArray, newArray);
-}`,
+      output: null,
     },
     // Using deep-object-diff
     {
@@ -274,7 +288,10 @@ function compareObjects(oldObj, newObj) {
   return diff(oldObj, newObj);
 }`,
     },
-    // Using fast-diff
+    // Using fast-diff, which diffs STRINGS: its operands satisfy neither half
+    // of microdiff's `Record<string, unknown> | unknown[]` bound, so the rename
+    // is TS2345 unconditionally (#2322). Reported at both sites, rewritten at
+    // neither.
     {
       code: `import { diff as fastDiff } from 'fast-diff';
 
@@ -287,14 +304,11 @@ function findChanges(prev, next) {
           data: { importSource: 'fast-diff' },
         },
         {
-          messageId: 'enforceMicrodiff',
+          messageId: 'enforceMicrodiffManual',
+          data: { importSource: 'fast-diff' },
         },
       ],
-      output: `import diff from '@blumintinc/microdiff';
-
-function findChanges(prev, next) {
-  return diff(prev, next);
-}`,
+      output: null,
     },
     // Using Lodash difference functions. `_.differenceWith` returns the
     // elements of `original` with no comparator-equal match in `updated`, while
@@ -496,20 +510,16 @@ function findChanges(prev, next) {
   return fastDiff(prev, next);
 }
 `,
-      output: `
-const diff = undefined as unknown as never;
-import { diff as fastDiff } from 'fast-diff';
-
-function findChanges(prev, next) {
-  return fastDiff(prev, next);
-}
-`,
+      output: null,
       errors: [
         {
           messageId: 'enforceMicrodiffImport',
           data: { importSource: 'fast-diff' },
         },
-        { messageId: 'enforceMicrodiff' },
+        {
+          messageId: 'enforceMicrodiffManual',
+          data: { importSource: 'fast-diff' },
+        },
       ],
     },
     {
@@ -522,18 +532,16 @@ function findChanges(prev, next) {
   const diff = fastDiff;
   return fastDiff(prev, next);
 }`,
-      output: `import { diff as fastDiff } from 'fast-diff';
-
-function findChanges(prev, next) {
-  const diff = fastDiff;
-  return fastDiff(prev, next);
-}`,
+      output: null,
       errors: [
         {
           messageId: 'enforceMicrodiffImport',
           data: { importSource: 'fast-diff' },
         },
-        { messageId: 'enforceMicrodiff' },
+        {
+          messageId: 'enforceMicrodiffManual',
+          data: { importSource: 'fast-diff' },
+        },
       ],
     },
     {
@@ -616,8 +624,11 @@ function compareConfigs(oldConfig, newConfig) {
 }`,
     },
     {
-      // The competing import is itself the only thing binding `diff`, and the
-      // fix retires it, so the name is free for the microdiff import.
+      // The competing import binds `diff` under that very name, yet no fix
+      // retires it: jsdiff is left for manual conversion (#2322). The name it
+      // occupies is therefore not the fix's to claim — writing microdiff's
+      // import beside a surviving `import { diff } from 'diff'` is TS2300 — so
+      // the whole file comes out of the pass unchanged.
       code: `import { diff } from 'diff';
 
 function compareArrays(oldArray, newArray) {
@@ -625,13 +636,12 @@ function compareArrays(oldArray, newArray) {
 }`,
       errors: [
         { messageId: 'enforceMicrodiffImport', data: { importSource: 'diff' } },
-        { messageId: 'enforceMicrodiff' },
+        {
+          messageId: 'enforceMicrodiffManual',
+          data: { importSource: 'diff' },
+        },
       ],
-      output: `import diff from '@blumintinc/microdiff';
-
-function compareArrays(oldArray, newArray) {
-  return diff(oldArray, newArray);
-}`,
+      output: null,
     },
     {
       // fast-deep-equal is an allowed alternative, so its import survives the
@@ -694,7 +704,10 @@ function compareConfigs(oldConfig, newConfig) {
 }`,
     },
     {
-      // The same for a default import of a competing library.
+      // A default import binds no specifier the import handler tracks, so the
+      // call resolves through the name-only path — and the withholding has to
+      // cover that path too, or `fast-diff` is rewritten by the route the
+      // tracked branch does not see.
       code: `import fastDiff from 'fast-diff';
 
 function findChanges(oldItems, newItems) {
@@ -705,13 +718,12 @@ function findChanges(oldItems, newItems) {
           messageId: 'enforceMicrodiffImport',
           data: { importSource: 'fast-diff' },
         },
-        { messageId: 'enforceMicrodiff' },
+        {
+          messageId: 'enforceMicrodiffManual',
+          data: { importSource: 'fast-diff' },
+        },
       ],
-      output: `import diff from '@blumintinc/microdiff';
-
-function findChanges(oldItems, newItems) {
-  return diff(oldItems, newItems);
-}`,
+      output: null,
     },
     {
       // An alias renames the export away from the name-only list, so the call is
@@ -759,25 +771,25 @@ function compareObjects(oldObj, newObj) {
     {
       // A local binding of `diff` blocks the rename of a name-only call that
       // does resolve to a competing library, so the import is reported and left
-      // in place alongside the call it binds.
+      // in place alongside the call it binds. The library it resolves to
+      // withholds the rewrite on its own account as well, so the report names
+      // the manual conversion.
       code: `import { fastDiff } from 'fast-diff';
 const diff = 1;
 
 function run(objA, objB) {
   return fastDiff(objA, objB);
 }`,
-      output: `import { fastDiff } from 'fast-diff';
-const diff = 1;
-
-function run(objA, objB) {
-  return fastDiff(objA, objB);
-}`,
+      output: null,
       errors: [
         {
           messageId: 'enforceMicrodiffImport',
           data: { importSource: 'fast-diff' },
         },
-        { messageId: 'enforceMicrodiff' },
+        {
+          messageId: 'enforceMicrodiffManual',
+          data: { importSource: 'fast-diff' },
+        },
       ],
     },
     {
@@ -1630,6 +1642,238 @@ function hasConfigChanged(a, b) {
     diff(a, b).length > 0
   );
 }`,
+    },
+    // #2322. jsdiff and fast-diff are reported and never rewritten, whatever
+    // shape their operands take. Both sit in `DIFF_FUNCTION_NAMES` and
+    // `COMPETING_DIFF_MODULES`, so detection is unchanged; the withholding is
+    // keyed on the module the callee's binding RESOLVES to, which is the only
+    // thing that separates jsdiff's `diffArrays` from a `deepDiff` the fix does
+    // convert.
+    {
+      // Case A of the report: the rewrite compiles and answers a different
+      // question. `diffArrays` groups its inputs into runs, so equal non-empty
+      // arrays yield one kept run and `.length === 0` is false, where
+      // microdiff's list is empty exactly when the inputs are deeply equal.
+      code: `
+import { diffArrays } from 'diff';
+export const same = (a: string[], b: string[]) => diffArrays(a, b).length === 0;
+`,
+      errors: [
+        { messageId: 'enforceMicrodiffImport', data: { importSource: 'diff' } },
+        {
+          messageId: 'enforceMicrodiffManual',
+          data: { importSource: 'diff' },
+        },
+      ],
+      output: null,
+    },
+    {
+      // Case C of the report: `fast-diff` diffs strings, and `string` satisfies
+      // neither half of `Record<string, unknown> | unknown[]`, so this arm can
+      // never emit a rewrite that compiles (TS2345).
+      code: `
+import fastDiff from 'fast-diff';
+export const changes = (a: string, b: string) => fastDiff(a, b);
+`,
+      errors: [
+        {
+          messageId: 'enforceMicrodiffImport',
+          data: { importSource: 'fast-diff' },
+        },
+        {
+          messageId: 'enforceMicrodiffManual',
+          data: { importSource: 'fast-diff' },
+        },
+      ],
+      output: null,
+    },
+    {
+      // Case B of the report: jsdiff's third argument is a comparator bag, and
+      // microdiff's is `Partial<MicrodiffOptions>` — `{cyclesFix, isAtomic,
+      // isEqualAtomic}` — so carrying it across is TS2345 on the option name.
+      code: `
+import { diffArrays } from 'diff';
+export const same = (a: string[], b: string[]) =>
+  diffArrays(a, b, { comparator: (x, y) => x === y }).length === 0;
+`,
+      errors: [
+        { messageId: 'enforceMicrodiffImport', data: { importSource: 'diff' } },
+        {
+          messageId: 'enforceMicrodiffManual',
+          data: { importSource: 'diff' },
+        },
+      ],
+      output: null,
+    },
+    {
+      // The gate reads the binding, not the spelling: an alias off the
+      // conventional name is withheld exactly as the conventional one is.
+      code: `
+import { diffArrays as seqDiff } from 'diff';
+export const same = (a: string[], b: string[]) => seqDiff(a, b).length === 0;
+`,
+      errors: [
+        { messageId: 'enforceMicrodiffImport', data: { importSource: 'diff' } },
+        {
+          messageId: 'enforceMicrodiffManual',
+          data: { importSource: 'diff' },
+        },
+      ],
+      output: null,
+    },
+    {
+      // An arity the rewrite could not serve anyway still earns the report that
+      // names the manual conversion, because the module decides before the
+      // argument list does.
+      code: `
+import { diffArrays } from 'diff';
+export const runs = (oldItems: string[]) => diffArrays(oldItems);
+`,
+      errors: [
+        { messageId: 'enforceMicrodiffImport', data: { importSource: 'diff' } },
+        {
+          messageId: 'enforceMicrodiffManual',
+          data: { importSource: 'diff' },
+        },
+      ],
+      output: null,
+    },
+    {
+      // A microdiff import already in the file unlocks nothing: the rewrite is
+      // withheld on what jsdiff RETURNS, not on whether a `diff` is bound. The
+      // competing import survives with it, so its call keeps a binding.
+      code: `import diff from '@blumintinc/microdiff';
+import { diffArrays } from 'diff';
+
+export const runs = (oldItems, newItems) => diffArrays(oldItems, newItems);`,
+      errors: [
+        { messageId: 'enforceMicrodiffImport', data: { importSource: 'diff' } },
+        {
+          messageId: 'enforceMicrodiffManual',
+          data: { importSource: 'diff' },
+        },
+      ],
+      output: null,
+    },
+    {
+      // A value reference of jsdiff's export has no call to rewrite, and the
+      // import that binds it is left alone on the module's own account.
+      code: `import { diffArrays } from 'diff';
+
+export const chosen = diffArrays;`,
+      errors: [
+        { messageId: 'enforceMicrodiffImport', data: { importSource: 'diff' } },
+      ],
+      output: null,
+    },
+    {
+      // The withholding is narrow. `deep-diff` is a structural per-path diff,
+      // so its call and its import are converted exactly as before.
+      code: `import { diff as deepDiff } from 'deep-diff';
+
+export const changes = (oldConfig, newConfig) => deepDiff(oldConfig, newConfig);`,
+      errors: [
+        {
+          messageId: 'enforceMicrodiffImport',
+          data: { importSource: 'deep-diff' },
+        },
+        { messageId: 'enforceMicrodiff' },
+      ],
+      output: `import diff from '@blumintinc/microdiff';
+
+export const changes = (oldConfig, newConfig) => diff(oldConfig, newConfig);`,
+    },
+    {
+      // The same for `deep-object-diff`, the other structural differ the
+      // migration targets.
+      code: `import { detailedDiff } from 'deep-object-diff';
+
+export const changes = (oldObj, newObj) => detailedDiff(oldObj, newObj);`,
+      errors: [
+        {
+          messageId: 'enforceMicrodiffImport',
+          data: { importSource: 'deep-object-diff' },
+        },
+        { messageId: 'enforceMicrodiff' },
+      ],
+      output: `import diff from '@blumintinc/microdiff';
+
+export const changes = (oldObj, newObj) => diff(oldObj, newObj);`,
+    },
+    {
+      // Both kinds in one file. The convertible import is retired and its call
+      // renamed; jsdiff's import stays, so the `diffArrays` beside it is still
+      // bound. Neither name comes out of the pass unresolved.
+      code: `import { diffArrays } from 'diff';
+import { diff as deepDiff } from 'deep-diff';
+
+export const runs = (oldItems, newItems) => diffArrays(oldItems, newItems);
+export const changes = (oldConfig, newConfig) => deepDiff(oldConfig, newConfig);`,
+      errors: [
+        { messageId: 'enforceMicrodiffImport', data: { importSource: 'diff' } },
+        {
+          messageId: 'enforceMicrodiffImport',
+          data: { importSource: 'deep-diff' },
+        },
+        {
+          messageId: 'enforceMicrodiffManual',
+          data: { importSource: 'diff' },
+        },
+        { messageId: 'enforceMicrodiff' },
+      ],
+      output: `import { diffArrays } from 'diff';
+import diff from '@blumintinc/microdiff';
+
+export const runs = (oldItems, newItems) => diffArrays(oldItems, newItems);
+export const changes = (oldConfig, newConfig) => diff(oldConfig, newConfig);`,
+    },
+    {
+      // The same split with `fast-diff` on the withheld side, reached through
+      // the name-only resolution path a default import takes.
+      code: `import fastDiff from 'fast-diff';
+import { detailedDiff } from 'deep-object-diff';
+
+export const text = (a, b) => fastDiff(a, b);
+export const changes = (oldObj, newObj) => detailedDiff(oldObj, newObj);`,
+      errors: [
+        {
+          messageId: 'enforceMicrodiffImport',
+          data: { importSource: 'fast-diff' },
+        },
+        {
+          messageId: 'enforceMicrodiffImport',
+          data: { importSource: 'deep-object-diff' },
+        },
+        {
+          messageId: 'enforceMicrodiffManual',
+          data: { importSource: 'fast-diff' },
+        },
+        { messageId: 'enforceMicrodiff' },
+      ],
+      output: `import fastDiff from 'fast-diff';
+import diff from '@blumintinc/microdiff';
+
+export const text = (a, b) => fastDiff(a, b);
+export const changes = (oldObj, newObj) => diff(oldObj, newObj);`,
+    },
+    {
+      // A default import of `fast-diff` read as a value as well as called. The
+      // import survives the pass, so both references keep their binding.
+      code: `import fastDiff from 'fast-diff';
+
+export const chosen = fastDiff;
+export const changes = (a: string, b: string) => fastDiff(a, b);`,
+      errors: [
+        {
+          messageId: 'enforceMicrodiffImport',
+          data: { importSource: 'fast-diff' },
+        },
+        {
+          messageId: 'enforceMicrodiffManual',
+          data: { importSource: 'fast-diff' },
+        },
+      ],
+      output: null,
     },
   ],
 });

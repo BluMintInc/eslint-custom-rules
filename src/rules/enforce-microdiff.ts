@@ -6,7 +6,10 @@ import {
   insertAtImportAnchor,
 } from '../utils/importInsertion';
 
-type MessageIds = 'enforceMicrodiff' | 'enforceMicrodiffImport';
+type MessageIds =
+  | 'enforceMicrodiff'
+  | 'enforceMicrodiffManual'
+  | 'enforceMicrodiffImport';
 
 const DIFF_NAME = 'diff';
 
@@ -132,6 +135,31 @@ const COMPETING_DIFF_MODULES = new Set([
 ]);
 
 /**
+ * The competing libraries whose calls are reported but never rewritten, because
+ * microdiff answers a different question than either of them does.
+ *
+ * jsdiff (`diff`) is a Myers sequence diff. `diffArrays(a, b)` returns runs of
+ * `{value, added, removed, count}`, so equal inputs yield one *kept* run where
+ * microdiff returns the empty list — `changes.length === 0` flips meaning under
+ * the rename — and a consumer reading `.added`, `.removed`, `.value` or
+ * `.count` gets `.type`, `.path` and `.oldValue` instead. Neither loss is a
+ * compile error, so nothing downstream flags it. Its optional third argument is
+ * a comparator bag with no counterpart in `Partial<MicrodiffOptions>`, which is
+ * a compile error (TS2345).
+ *
+ * `fast-diff` diffs STRINGS. Its operands satisfy neither half of microdiff's
+ * `TData extends Record<string, unknown> | unknown[]` bound, so that arm cannot
+ * emit a rewrite that compiles at all (TS2345).
+ *
+ * Detection is unchanged — both keep their entries in `DIFF_FUNCTION_NAMES` and
+ * `COMPETING_DIFF_MODULES` — because reaching for either where a structural
+ * per-path diff is wanted is still the finding. Only the rewrite is withheld,
+ * and the import retirement with it: dropping the declaration while the calls
+ * it binds stay behind is what would leave the file with an unbound name.
+ */
+const UNCONVERTIBLE_DIFF_MODULES = new Set(['diff', 'fast-diff']);
+
+/**
  * A specifier that makes a bare `diff` resolve to microdiff's diff function:
  * its default export, or its named `diff` export, bound under the name the fix
  * emits.
@@ -192,7 +220,14 @@ function collectClaimableSpecifiers(
         .forEach((specifier) => claimable.add(specifier));
       return;
     }
-    if (COMPETING_DIFF_MODULES.has(source)) {
+    // A declaration no fix retires keeps every name it binds, so a `diff` it
+    // declares is not the fix's to write over: microdiff's import emitted
+    // beside a surviving `import { diff } from 'diff'` duplicates the binding
+    // (TS2300).
+    if (
+      COMPETING_DIFF_MODULES.has(source) &&
+      !UNCONVERTIBLE_DIFF_MODULES.has(source)
+    ) {
       statement.specifiers.forEach((specifier) => claimable.add(specifier));
     }
   });
@@ -577,6 +612,8 @@ export const enforceMicrodiff = createRule<[], MessageIds>({
     messages: {
       enforceMicrodiff:
         'Use the microdiff library for object and array comparison operations',
+      enforceMicrodiffManual:
+        'Use the microdiff library for object and array comparison operations. Convert this {{importSource}} call by hand: it returns a different result shape than the structural change list microdiff produces.',
       enforceMicrodiffImport:
         'Import diff from microdiff instead of {{importSource}}',
     },
@@ -952,6 +989,12 @@ export const enforceMicrodiff = createRule<[], MessageIds>({
               importSource,
             },
             fix(fixer) {
+              // Every call this declaration serves is left for manual
+              // conversion, so retiring it would strand each of them on a name
+              // nothing binds.
+              if (UNCONVERTIBLE_DIFF_MODULES.has(importSource)) {
+                return null;
+              }
               // Decline rather than duplicate or shadow a `diff` this file
               // already binds to something else, and rather than retire an
               // import whose references no call fix rewrites. The report stands
@@ -1053,6 +1096,20 @@ export const enforceMicrodiff = createRule<[], MessageIds>({
                 return;
               }
 
+              // A library microdiff does not stand in for is reported without
+              // the rename. The substitution would compile at some of these
+              // call sites and answer a different question there, which is a
+              // loss nothing downstream can flag.
+              if (UNCONVERTIBLE_DIFF_MODULES.has(importSource)) {
+                reportedNodes.add(node);
+                context.report({
+                  node,
+                  messageId: 'enforceMicrodiffManual',
+                  data: { importSource },
+                });
+                return;
+              }
+
               // Report it if it's from any other tracked library
               reportedNodes.add(node);
               context.report({
@@ -1073,6 +1130,22 @@ export const enforceMicrodiff = createRule<[], MessageIds>({
               // binds: a local function, variable, parameter, or an import from
               // anywhere but a competing diff library keeps its call untouched.
               if (!competingImport) {
+                return;
+              }
+
+              // The same withholding as above, reached by the other resolution
+              // path: a default import and an unrecognised export name are both
+              // bound here rather than tracked as specifiers, so gating only the
+              // tracked branch would leave `import fastDiff from 'fast-diff'`
+              // rewritten.
+              const competingSource = String(competingImport.source.value);
+              if (UNCONVERTIBLE_DIFF_MODULES.has(competingSource)) {
+                reportedNodes.add(node);
+                context.report({
+                  node,
+                  messageId: 'enforceMicrodiffManual',
+                  data: { importSource: competingSource },
+                });
                 return;
               }
 

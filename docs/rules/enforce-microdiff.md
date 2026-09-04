@@ -66,6 +66,8 @@ export const changes = detailedDiff(oldState, newState);
 
 Calls to `deepDiff`, `fastDiff`, `diffArrays`, and `detailedDiff` are reported only when the callee resolves through the scope chain to an import from one of the libraries this rule replaces (`deep-diff`, `fast-diff`, `diff`, `deep-object-diff`). A name bound to a local function, a variable, a parameter, or an import from any other module is the file's own — it is neither reported nor rewritten. An unbound name is left alone too, since renaming it to `diff` would only trade one unresolved name for another.
 
+Being reported is not the same as being rewritten. Two of the four libraries — `diff` (jsdiff) and `fast-diff` — are reported at every call and left for manual conversion, because microdiff answers a different question than either of them does. The section below sets out why.
+
 Resolution keys on the local name a specifier binds, so `import { somethingElse as detailedDiff } from 'deep-object-diff'` is covered. An alias pointing the other way (`import { detailedDiff as dd } from 'deep-object-diff'`) is caught by the separate tracking of every specifier a competing library's import binds, whatever name it is bound under.
 
 That tracking resolves call sites too, so a local binding that shadows the imported name answers its own calls:
@@ -85,7 +87,35 @@ Rewriting such a call would substitute microdiff's structural change list for wh
 
 ## Autofix
 
-The fix retires a competing library's import declaration and rewrites its call sites to `diff`, reusing an existing microdiff import when the file already has one. It declines whenever the file binds `diff` to something else — a module-scope declaration the inserted import would redeclare, or a narrower shadow that would silently capture the rewritten call — so the report stands for the author to resolve the name clash deliberately.
+The fix retires a competing library's import declaration and rewrites its call sites to `diff`, reusing an existing microdiff import when the file already has one. It declines whenever the file binds `diff` to something else — a module-scope declaration the inserted import would redeclare, or a narrower shadow that would silently capture the rewritten call — so the report stands for the author to resolve the name clash deliberately. It declines for `diff` (jsdiff) and `fast-diff` whatever the file looks like, for the reasons immediately below.
+
+### jsdiff and `fast-diff` are reported without a rewrite
+
+`diff` (jsdiff) and `fast-diff` are reported, and their calls and imports are both left as written. Neither is a structural per-path differ, so `diff(a, b)` is no drop-in for either.
+
+jsdiff's `diffArrays` is a Myers sequence diff. It returns runs of `{ value, added, removed, count }`, one per stretch of matched or unmatched elements, so two equal non-empty arrays yield a single *kept* run: `changes.length === 0` reads **false** there, while microdiff's list is empty exactly when the two sides are deeply equal. Code reading `.added`, `.removed`, `.value` or `.count` finds `.type`, `.path` and `.oldValue` in their place. A rename compiles at both sites, so it would change the answer with nothing downstream to flag it. The optional third argument is a comparator bag with no counterpart in `Partial<MicrodiffOptions>` — `{ cyclesFix, isAtomic, isEqualAtomic }` — which does not compile.
+
+`fast-diff` diffs **strings**. `string` satisfies neither half of microdiff's `TData extends Record<string, unknown> | unknown[]` bound, so that arm has no rewrite that type-checks at all.
+
+The report stands in both cases, because reaching for either where a structural object diff is wanted is the finding this rule exists for; the conversion is the author's, and the message says so. Withholding keys on the module the callee's binding resolves to rather than on the name it is written under, so an alias is covered as well:
+
+```ts
+// Reported, and left exactly as written — the import included, since the call
+// it binds is still there.
+import { diffArrays as seqDiff } from 'diff';
+
+export const same = (a: string[], b: string[]) => seqDiff(a, b).length === 0;
+```
+
+The import is held back with the call it binds, so a file mixing the two kinds comes out of the fix with every name still bound: the convertible declaration is retired and its call renamed, while the withheld one and its call sites are untouched.
+
+```ts
+import { diffArrays } from 'diff';
+import diff from '@blumintinc/microdiff';
+
+export const runs = (oldItems, newItems) => diffArrays(oldItems, newItems);
+export const changes = (oldConfig, newConfig) => diff(oldConfig, newConfig);
+```
 
 ### The import and its call sites move together
 
