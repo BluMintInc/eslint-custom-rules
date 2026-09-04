@@ -1,3 +1,12 @@
+## [1.21.6](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.21.5...v1.21.6) (2026-09-04)
+
+
+### Bug Fixes
+
+* **global-const-style:** follow alias chains when detecting mutation (closes [#2324](https://github.com/BluMintInc/eslint-custom-rules/issues/2324)) ([95aec01](https://github.com/BluMintInc/eslint-custom-rules/commit/95aec01029fe4157eede6b12e1e376effeef139a))
+* **no-try-catch-already-exists-in-transaction:** gate on Firestore provenance (closes [#2325](https://github.com/BluMintInc/eslint-custom-rules/issues/2325)) ([19535ff](https://github.com/BluMintInc/eslint-custom-rules/commit/19535ff961adf352d6c4903ff1814205ec19b573))
+* **prefer-sx-prop-over-system-props:** gate the rewrite on MUI provenance (closes [#2323](https://github.com/BluMintInc/eslint-custom-rules/issues/2323)) ([de6e533](https://github.com/BluMintInc/eslint-custom-rules/commit/de6e5332c2a156bb79bee76a51495cafdf1e082f))
+
 ## [1.21.5](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.21.4...v1.21.5) (2026-09-04)
 
 
