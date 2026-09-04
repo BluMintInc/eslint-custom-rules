@@ -403,6 +403,16 @@ literal union the checker resolved the discriminant to:
 - a tag access such as `body.kind`, whose resolved type is an anonymous literal
   union, is emitted as the indexed access through the object's named type
   (`Record<ThumbnailBody['kind'], V>`);
+- a discriminant whose type the checker resolved **past** its alias keeps the
+  alias name too, read off the discriminant's own annotation. TypeScript does
+  not retain `aliasSymbol` through an indexed access over a `typeof` query, so
+  `type Mode = (typeof MODE_VALUES)[number]` prints as `'light' | 'dark'` rather
+  than as `Mode`. That is the shape
+  [`prefer-union-from-const-array`](./prefer-union-from-const-array.md) emits,
+  so without the recovery this rule lost the guarantee below exactly where its
+  companion had just moved the key space into an `as const` array — the one
+  place the two rules compose. Reading the name off the annotation restores
+  `Record<Mode, V>`;
 - when no name is reachable — a fully inline type such as
   `declare const o: { kind: 'a' | 'b' }`, or a tag access the surrounding flow
   has already narrowed below its declared union — the resolved literal union is
@@ -422,6 +432,25 @@ The derived spelling ships only when the name resolves at the fix site and the
 property's declared key set matches the discriminant's; otherwise the fix falls
 back to the resolved literal union, because a weak key type beats one that does
 not compile.
+
+A name recovered from an annotation is held to the same standard, and a wrong
+name is worse than a widened one, so these keep the literal union:
+
+- **an annotation that is not a bare type reference.** A qualified name
+  (`mode: Theme.Mode`) and a parameterised one (`mode: Except<'y'>`) are not
+  denoted by any identifier the fix could emit on its own, and an inline type
+  (`mode: 'light' | 'dark'`, `mode: (typeof MODE_VALUES)[number]`) names nothing
+  to recover in the first place;
+- **a name that does not denote this union where the `Record` lands.** The
+  lookup happens at the fix site rather than at the annotation, so a nearer
+  declaration of the same name declines rather than silently re-keying the table
+  on the shadow;
+- **a discriminant the surrounding flow has already narrowed.** Its type is no
+  longer the one its alias declares, and `Record<Mode, V>` would demand entries
+  the construct has no branches for.
+
+Recovery only re-spells a key type the fix was already going to emit; it never
+changes whether the rule fires or whether a fix is offered.
 
 ### Line width
 

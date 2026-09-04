@@ -215,6 +215,38 @@ function attributePrintedName(
 }
 
 /**
+ * The bare identifier a declaration's own type annotation is written as, or
+ * null when the annotation is anything else.
+ *
+ * Only an un-parameterised reference to a plain identifier qualifies. A
+ * qualified name (`Theme.Mode`) needs its namespace to resolve at the fix site,
+ * which this answer cannot establish; a parameterised one (`Alias<'x'>`) is not
+ * denoted by its head at all, and emitting the head alone would name a
+ * different type. Both keep the printed union rather than guess.
+ */
+function annotatedTypeReferenceName(
+  declaration: ts.Declaration,
+): string | null {
+  const annotation =
+    ts.isParameter(declaration) ||
+    ts.isVariableDeclaration(declaration) ||
+    ts.isPropertySignature(declaration) ||
+    ts.isPropertyDeclaration(declaration)
+      ? declaration.type
+      : undefined;
+  if (
+    !annotation ||
+    !ts.isTypeReferenceNode(annotation) ||
+    !ts.isIdentifier(annotation.typeName) ||
+    (annotation.typeArguments?.length ?? 0) > 0
+  ) {
+    return null;
+  }
+  const name = annotation.typeName.text;
+  return BARE_TYPE_NAME.test(name) ? name : null;
+}
+
+/**
  * Function/constructor/conditional type notation must be parenthesized to
  * appear as a `|` union member, or the emitted annotation does not parse
  * ("Function type notation must be parenthesized when used in a union type").
@@ -1037,10 +1069,85 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
     }
 
     /**
+     * The bare type-alias name written on the discriminant's own annotation,
+     * when that name is provably the union the checker printed the members of.
+     *
+     * `checker.typeToString()` keeps an alias only while the type still carries
+     * an `aliasSymbol`, and TypeScript drops that resolving an indexed access
+     * over a `typeof` query — `const M = ['a', 'b'] as const; type Mode =
+     * (typeof M)[number]`, which is exactly the shape the key-space companion
+     * rule named on this rule's docs page emits. The printed text there is the
+     * widened literal union, the one spelling this rule's exhaustiveness
+     * promise exists to avoid: a stale `Record<'a' | 'b', V>` keeps
+     * typechecking after the union grows and only the LOOKUP complains, as
+     * TS7053 — an implicit-any diagnostic that disappears entirely under
+     * `noImplicitAny: false` and leaves the new member yielding `undefined` at
+     * runtime (#2009).
+     *
+     * The name is read off SYNTAX because the type no longer carries it, so it
+     * ships only against evidence that it denotes this very union: a bare,
+     * un-parameterised type reference written on the declaration the
+     * discriminant resolves to, whose symbol — resolved where the `Record`
+     * lands, not where the annotation was written — declares exactly this type.
+     * Mere presence of the name is not enough. Naming the WRONG union in the
+     * emitted `Record` breaks the build where the widened union merely weakens
+     * it, so anything short of type identity declines and keeps the printed
+     * text. Flow narrowing declines through the same check: a discriminant
+     * narrowed above the dispatch has a type the alias does not declare, and
+     * the alias would demand keys the construct has no branches for.
+     */
+    function annotationAliasTypeText(
+      discriminant: TSESTree.Node,
+      discriminantType: ts.Type,
+    ): { text: string; symbol: ts.Symbol } | null {
+      const tsNode = esTreeNodeToTSNodeMap.get(unwrapLink(discriminant));
+      const tsFixSite = esTreeNodeToTSNodeMap.get(discriminant);
+      if (!tsNode || !tsFixSite) {
+        return null;
+      }
+      try {
+        const symbol = checker.getSymbolAtLocation(tsNode);
+        const names = new Set(
+          (symbol?.declarations ?? [])
+            .map(annotatedTypeReferenceName)
+            .filter((name): name is string => name !== null),
+        );
+        // Two declarations annotated with different names (a merged symbol, an
+        // overload set) leave no single spelling that is right for both.
+        if (names.size !== 1) {
+          return null;
+        }
+        const [name] = names;
+        const inScope = checker
+          .getSymbolsInScope(
+            tsFixSite,
+            ts.SymbolFlags.Type | ts.SymbolFlags.Alias,
+          )
+          .find((candidate) => candidate.name === name);
+        if (!inScope) {
+          return null;
+        }
+        const declaredSymbol =
+          inScope.flags & ts.SymbolFlags.Alias
+            ? checker.getAliasedSymbol(inScope)
+            : inScope;
+        if (
+          checker.getDeclaredTypeOfSymbol(declaredSymbol) !== discriminantType
+        ) {
+          return null;
+        }
+        return { text: name, symbol: declaredSymbol };
+      } catch {
+        return null;
+      }
+    }
+
+    /**
      * Key type for the emitted `Record`. A discriminant whose own type prints
      * as a bare name already carries the union's identity, so that name is
-     * kept; otherwise the fix reaches for the tag's declaring type before
-     * settling for the resolved literal union (#1926).
+     * kept; otherwise the fix reaches for the tag's declaring type (#1926),
+     * then for the alias its annotation names where the checker resolved past
+     * one (#2009), before settling for the resolved literal union.
      */
     function discriminantTypeText(
       type: ts.Type,
@@ -1070,10 +1177,27 @@ export const preferMapOverConditionalDispatch = createRule<Opts, MessageIds>({
       // already ships only when the name resolves, at the fix site, to exactly
       // the object's declared type, and identity of the TYPE accepts a nearer
       // alias that denotes the same type — which compiles, and reads the same.
-      const text = indexedAccessTypeText(discriminant, type) ?? printed;
-      return text === null
+      const indexed = indexedAccessTypeText(discriminant, type);
+      if (indexed !== null) {
+        return { text: normalizeTypeQuotes(indexed, singleQuote), intended };
+      }
+      // Recovery runs only where the printer already produced usable text, so
+      // it can only change the SPELLING of a key type the rule was going to
+      // emit anyway — never whether the rule fires. A discriminant the printer
+      // could not print at all stays silent exactly as before.
+      if (printed !== null) {
+        const alias = annotationAliasTypeText(discriminant, type);
+        if (alias) {
+          // Unlike the printed bare name, this one was never checked against
+          // the fix site's scope by the printer, so it carries its symbol into
+          // the gate for the same shadow check (#2229).
+          recordAttribution(intended, alias.text, alias.symbol);
+          return { text: alias.text, intended };
+        }
+      }
+      return printed === null
         ? null
-        : { text: normalizeTypeQuotes(text, singleQuote), intended };
+        : { text: normalizeTypeQuotes(printed, singleQuote), intended };
     }
 
     /**
