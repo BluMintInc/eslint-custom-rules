@@ -1,5 +1,27 @@
 [
   {
+    "version": "1.21.5",
+    "date": "2026-09-04T15:01:41.191Z",
+    "rules": [
+      {
+        "name": "enforce-microdiff",
+        "changeType": "fix",
+        "issues": [
+          2322
+        ],
+        "summary": "report jsdiff and fast-diff without rewriting them (closes #2322)"
+      },
+      {
+        "name": "flatten-push-calls",
+        "changeType": "fix",
+        "issues": [
+          2321
+        ],
+        "summary": "gate the merge on syntactic array evidence (closes #2321)"
+      }
+    ]
+  },
+  {
     "version": "1.21.4",
     "date": "2026-09-04T11:47:38.427Z",
     "rules": [

@@ -1,3 +1,11 @@
+## [1.21.5](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.21.4...v1.21.5) (2026-09-04)
+
+
+### Bug Fixes
+
+* **enforce-microdiff:** report jsdiff and fast-diff without rewriting them (closes [#2322](https://github.com/BluMintInc/eslint-custom-rules/issues/2322)) ([e3f329a](https://github.com/BluMintInc/eslint-custom-rules/commit/e3f329a6fe156b3510cc2f2cb412cd853ed9f4a3))
+* **flatten-push-calls:** gate the merge on syntactic array evidence (closes [#2321](https://github.com/BluMintInc/eslint-custom-rules/issues/2321)) ([69344b5](https://github.com/BluMintInc/eslint-custom-rules/commit/69344b54e991c592028978e18c205b536bc82ecb))
+
 ## [1.21.4](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.21.3...v1.21.4) (2026-09-04)
 
 
