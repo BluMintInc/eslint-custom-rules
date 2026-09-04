@@ -1118,7 +1118,6 @@ const DETECTION_UNDRIVEN: Record<string, UndrivenCause> = {
   'no-redundant-boolean-callback-props': 'noRespelling',
   'no-restricted-properties-fix': 'silentOnComparedPairs',
   'no-static-constants-in-dynamic-files': 'silentOnComparedPairs',
-  'no-try-catch-already-exists-in-transaction': 'silentOnComparedPairs',
   'no-unnecessary-destructuring': 'silentOnComparedPairs',
   'no-unpinned-dependencies': 'noTsFixture',
   'omit-index-html': 'noRespelling',
@@ -1815,7 +1814,7 @@ describe('fix availability must not depend on how a function is spelled', () => 
     // The rows that can actually fail, floored separately: the counts above
     // survive intact even if every comparison piles onto a handful of rules.
     expect(fixDrivenRules.length).toBeGreaterThan(50); // measured 74
-    expect(detectionDrivenRules.length).toBeGreaterThan(140); // measured 163
+    expect(detectionDrivenRules.length).toBeGreaterThan(140); // measured 165
   });
 
   /** Both directions, so a fixed rule must be removed rather than lingering. */

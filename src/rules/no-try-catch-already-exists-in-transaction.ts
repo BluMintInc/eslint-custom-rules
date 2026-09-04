@@ -1,4 +1,5 @@
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
+import { ASTHelpers } from '../utils/ASTHelpers';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'noAlreadyExistsCatchInTransaction';
@@ -37,6 +38,157 @@ function isRunTransactionCall(node: TSESTree.CallExpression): boolean {
   }
 
   return false;
+}
+
+type ModuleRoot = {
+  /** Leading path segments of the package, e.g. `['@google-cloud']`. */
+  packageSegments: string[];
+  /** The product segment that follows them. */
+  product: string;
+};
+
+/**
+ * The package surfaces whose `runTransaction` is the Firestore one.
+ *
+ * The bare name is not unique to Firestore: `firebase/database` exports a
+ * `runTransaction` for the Realtime Database, which re-applies its update
+ * function locally on conflict and carries no gRPC status codes, so
+ * `ALREADY_EXISTS` is not part of its error model and neither remedy this rule
+ * offers exists there — `runCreateForgivenessTransaction` is backend-Firestore
+ * only. Reporting an RTDB transaction leaves a developer with no way to comply.
+ */
+const FIRESTORE_MODULE_ROOTS: ModuleRoot[] = [
+  { packageSegments: ['firebase'], product: 'firestore' },
+  { packageSegments: ['firebase-admin'], product: 'firestore' },
+  { packageSegments: ['@firebase'], product: 'firestore' },
+  { packageSegments: ['@google-cloud'], product: 'firestore' },
+];
+
+/**
+ * Split a module source into path segments with any version suffix dropped, so
+ * a pinned specifier (`firebase@10/firestore`) reduces to the same root as the
+ * plain one. A `@` at the start of a segment marks a scope, not a version.
+ */
+function moduleSegments(source: string): string[] {
+  return source.split('/').map((segment) => {
+    const versionIndex = segment.indexOf('@', 1);
+    return versionIndex === -1 ? segment : segment.slice(0, versionIndex);
+  });
+}
+
+/**
+ * Match the package root structurally rather than against one spelling: a deep
+ * entry point (`firebase/firestore/lite`), a build variant
+ * (`@firebase/firestore-compat`) and a pinned version all name the same
+ * product, and a trailing segment must not defeat the check.
+ */
+function isFirestoreModuleSource(source: string): boolean {
+  const segments = moduleSegments(source);
+  return FIRESTORE_MODULE_ROOTS.some(({ packageSegments, product }) => {
+    if (
+      !packageSegments.every((segment, index) => segments[index] === segment)
+    ) {
+      return false;
+    }
+    const productSegment = segments[packageSegments.length];
+    return (
+      productSegment === product || !!productSegment?.startsWith(`${product}-`)
+    );
+  });
+}
+
+/**
+ * The module `name` is imported from, or null when the file declares the name
+ * itself (a local helper, a parameter) or nothing declares it at all.
+ */
+function importedSourceOf(
+  scope: TSESLint.Scope.Scope,
+  name: string,
+): string | null {
+  const variable = ASTHelpers.findVariableInScope(scope, name);
+  if (!variable) {
+    return null;
+  }
+  for (const def of variable.defs) {
+    const specifier = def.node;
+    if (
+      specifier.type !== AST_NODE_TYPES.ImportSpecifier &&
+      specifier.type !== AST_NODE_TYPES.ImportDefaultSpecifier &&
+      specifier.type !== AST_NODE_TYPES.ImportNamespaceSpecifier
+    ) {
+      continue;
+    }
+    const declaration = specifier.parent;
+    if (
+      declaration?.type !== AST_NODE_TYPES.ImportDeclaration ||
+      typeof declaration.source.value !== 'string'
+    ) {
+      continue;
+    }
+    return declaration.source.value;
+  }
+  return null;
+}
+
+/**
+ * The identifier whose binding carries the call's provenance: the callee for
+ * `runTransaction(...)`, and the root of the member chain for
+ * `database.runTransaction(...)`, since the receiver is what an import names
+ * and the property alone matches every `<anything>.runTransaction`.
+ */
+function provenanceIdentifier(
+  callee: TSESTree.LeftHandSideExpression,
+): TSESTree.Identifier | null {
+  if (callee.type === AST_NODE_TYPES.Identifier) {
+    return callee;
+  }
+
+  let current: TSESTree.Node = callee;
+  while (
+    current.type === AST_NODE_TYPES.MemberExpression ||
+    current.type === AST_NODE_TYPES.ChainExpression ||
+    current.type === AST_NODE_TYPES.TSNonNullExpression
+  ) {
+    current =
+      current.type === AST_NODE_TYPES.MemberExpression
+        ? current.object
+        : current.expression;
+  }
+
+  return current.type === AST_NODE_TYPES.Identifier ? current : null;
+}
+
+/**
+ * Whether a `runTransaction` call is the Firestore one this rule speaks about.
+ *
+ * The gate speaks only when it knows: a binding that resolves to an import is
+ * judged by its module source, and anything else — a bare call, a parameter, a
+ * local helper, a member call on an unresolvable receiver — keeps the rule's
+ * posture of reporting, since a name with no traceable origin is far more often
+ * Firestore (`db.runTransaction(...)`) than not.
+ */
+function isFirestoreTransactionCall(
+  node: TSESTree.CallExpression,
+  context: Readonly<TSESLint.RuleContext<string, readonly unknown[]>>,
+): boolean {
+  if (!isRunTransactionCall(node)) {
+    return false;
+  }
+
+  const carrier = provenanceIdentifier(unwrapChainExpression(node.callee));
+  if (!carrier) {
+    return true;
+  }
+
+  const source = importedSourceOf(
+    ASTHelpers.getScope(context, node),
+    carrier.name,
+  );
+  if (source === null) {
+    return true;
+  }
+
+  return isFirestoreModuleSource(source);
 }
 
 function getCallbackArgument(
@@ -391,7 +543,7 @@ export const noTryCatchAlreadyExistsInTransaction = createRule<[], MessageIds>({
 
     return {
       CallExpression(node) {
-        if (!isRunTransactionCall(node)) {
+        if (!isFirestoreTransactionCall(node, context)) {
           return;
         }
 
@@ -402,7 +554,7 @@ export const noTryCatchAlreadyExistsInTransaction = createRule<[], MessageIds>({
       },
 
       'CallExpression:exit'(node: TSESTree.CallExpression) {
-        if (!isRunTransactionCall(node)) {
+        if (!isFirestoreTransactionCall(node, context)) {
           return;
         }
 

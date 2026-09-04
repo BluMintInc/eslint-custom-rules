@@ -226,6 +226,203 @@ ruleTesterTs.run(
         });
         `,
       },
+      // Realtime Database runTransaction: ALREADY_EXISTS is not part of its
+      // error model and the suggested remedy has no RTDB analog
+      {
+        code: `
+        import { runTransaction } from 'firebase/database';
+        await runTransaction(dbRef, (currentData) => {
+          try {
+            return currentData + 1;
+          } catch (error) {
+            if (error.code === 6) {
+              return currentData;
+            }
+            throw error;
+          }
+        });
+        `,
+      },
+      // Same shape under a different callee name stays silent
+      {
+        code: `
+        import { runInBatch } from 'somewhere';
+        await runInBatch(dbRef, (d) => {
+          try {
+            return d + 1;
+          } catch (error) {
+            if (error.code === 6) {
+              return d;
+            }
+            throw error;
+          }
+        });
+        `,
+      },
+      // Realtime Database import reached from a nested scope
+      {
+        code: `
+        import { runTransaction } from 'firebase/database';
+        export async function bumpCounter(dbRef) {
+          return runTransaction(dbRef, (currentData) => {
+            try {
+              return currentData + 1;
+            } catch (error) {
+              if (error.code === 'already-exists') {
+                return currentData;
+              }
+              throw error;
+            }
+          });
+        }
+        `,
+      },
+      // Realtime Database export aliased to the matched name still resolves to
+      // its module, so the import trace decides rather than the spelling
+      {
+        code: `
+        import { transaction as runTransaction } from 'firebase/database';
+        await runTransaction(dbRef, (currentData) => {
+          try {
+            return currentData + 1;
+          } catch (error) {
+            if (error.code === 6) {
+              return currentData;
+            }
+            throw error;
+          }
+        });
+        `,
+      },
+      // Aliasing the Realtime Database import away from the matched name
+      {
+        code: `
+        import { runTransaction as runRtdbTransaction } from 'firebase/database';
+        await runRtdbTransaction(dbRef, (currentData) => {
+          try {
+            return currentData + 1;
+          } catch (error) {
+            if (error.code === 'already-exists') {
+              return currentData;
+            }
+            throw error;
+          }
+        });
+        `,
+      },
+      // Realtime Database namespace import used as the receiver
+      {
+        code: `
+        import * as database from 'firebase/database';
+        await database.runTransaction(dbRef, (currentData) => {
+          try {
+            return currentData + 1;
+          } catch (error) {
+            if (error.code === 'already-exists') {
+              return currentData;
+            }
+            throw error;
+          }
+        });
+        `,
+      },
+      // Realtime Database default import used as the receiver
+      {
+        code: `
+        import rtdb from 'firebase/database';
+        await rtdb.runTransaction(dbRef, (currentData) => {
+          try {
+            return currentData + 1;
+          } catch (error) {
+            if (error.code === 6) {
+              return currentData;
+            }
+            throw error;
+          }
+        });
+        `,
+      },
+      // Admin SDK Realtime Database surface
+      {
+        code: `
+        import { runTransaction } from 'firebase-admin/database';
+        await runTransaction(dbRef, (currentData) => {
+          try {
+            return currentData + 1;
+          } catch (error) {
+            if (error.code === 'ALREADY_EXISTS') {
+              return currentData;
+            }
+            throw error;
+          }
+        });
+        `,
+      },
+      // Scoped Realtime Database package
+      {
+        code: `
+        import { runTransaction } from '@firebase/database';
+        await runTransaction(dbRef, (currentData) => {
+          try {
+            return currentData + 1;
+          } catch (error) {
+            if (error.code === 6) {
+              return currentData;
+            }
+            throw error;
+          }
+        });
+        `,
+      },
+      // Pinned Realtime Database specifier: the version suffix does not make
+      // the source unrecognizable
+      {
+        code: `
+        import { runTransaction } from 'firebase@10.1.0/database';
+        await runTransaction(dbRef, (currentData) => {
+          try {
+            return currentData + 1;
+          } catch (error) {
+            if (error.code === 6) {
+              return currentData;
+            }
+            throw error;
+          }
+        });
+        `,
+      },
+      // An unrelated package that exports the same name
+      {
+        code: `
+        import { runTransaction } from 'some-orm/client';
+        await runTransaction(session, (tx) => {
+          try {
+            return tx.insert(row);
+          } catch (error) {
+            if (error.code === 'already-exists') {
+              return null;
+            }
+            throw error;
+          }
+        });
+        `,
+      },
+      // Optional call on a Realtime Database namespace import
+      {
+        code: `
+        import * as database from 'firebase/database';
+        await database?.runTransaction(dbRef, (currentData) => {
+          try {
+            return currentData + 1;
+          } catch (error) {
+            if (error.code === 6) {
+              return currentData;
+            }
+            throw error;
+          }
+        });
+        `,
+      },
     ],
     invalid: [
       // Simple already-exists check in transaction
@@ -463,6 +660,269 @@ ruleTesterTs.run(
             await creator.createTransaction(transaction);
           } catch (error) {
             if (error?.code == '6') {
+              await appendAdvancementToExisting(transaction);
+            }
+          }
+        });
+        `,
+        errors: [{ messageId: 'noAlreadyExistsCatchInTransaction' }],
+      },
+      // Firestore modular runTransaction with a numeric already-exists check
+      {
+        code: `
+        import { runTransaction } from 'firebase/firestore';
+        await runTransaction(db, async (tx) => {
+          try {
+            tx.create(ref, {});
+          } catch (error) {
+            if (error.code === 6) {
+              return;
+            }
+            throw error;
+          }
+        });
+        `,
+        errors: [{ messageId: 'noAlreadyExistsCatchInTransaction' }],
+      },
+      // Admin SDK Firestore surface
+      {
+        code: `
+        import { runTransaction } from 'firebase-admin/firestore';
+        await runTransaction(db, async (transaction) => {
+          try {
+            await creator.createTransaction(transaction);
+          } catch (error) {
+            if (error.code === 'already-exists') {
+              await appendAdvancementToExisting(transaction);
+            }
+          }
+        });
+        `,
+        errors: [{ messageId: 'noAlreadyExistsCatchInTransaction' }],
+      },
+      // Server SDK Firestore surface
+      {
+        code: `
+        import { runTransaction } from '@google-cloud/firestore';
+        await runTransaction(db, async (transaction) => {
+          try {
+            await creator.createTransaction(transaction);
+          } catch (error) {
+            if (error.code === 6) {
+              await appendAdvancementToExisting(transaction);
+            }
+          }
+        });
+        `,
+        errors: [{ messageId: 'noAlreadyExistsCatchInTransaction' }],
+      },
+      // Firestore compat build
+      {
+        code: `
+        import { runTransaction } from '@firebase/firestore-compat';
+        await runTransaction(db, async (transaction) => {
+          try {
+            await creator.createTransaction(transaction);
+          } catch (error) {
+            if (error.code === 'already-exists') {
+              await appendAdvancementToExisting(transaction);
+            }
+          }
+        });
+        `,
+        errors: [{ messageId: 'noAlreadyExistsCatchInTransaction' }],
+      },
+      // Firestore deep entry point
+      {
+        code: `
+        import { runTransaction } from 'firebase/firestore/lite';
+        await runTransaction(db, async (transaction) => {
+          try {
+            await creator.createTransaction(transaction);
+          } catch (error) {
+            if (error.code === 'already-exists') {
+              await appendAdvancementToExisting(transaction);
+            }
+          }
+        });
+        `,
+        errors: [{ messageId: 'noAlreadyExistsCatchInTransaction' }],
+      },
+      // Pinned Firestore specifier
+      {
+        code: `
+        import { runTransaction } from 'firebase@10.1.0/firestore';
+        await runTransaction(db, async (transaction) => {
+          try {
+            await creator.createTransaction(transaction);
+          } catch (error) {
+            if (error.code === 6) {
+              await appendAdvancementToExisting(transaction);
+            }
+          }
+        });
+        `,
+        errors: [{ messageId: 'noAlreadyExistsCatchInTransaction' }],
+      },
+      // Firestore export aliased to the matched name
+      {
+        code: `
+        import { legacyRunTransaction as runTransaction } from 'firebase/firestore';
+        await runTransaction(db, async (transaction) => {
+          try {
+            await creator.createTransaction(transaction);
+          } catch (error) {
+            if (error.code === 'already-exists') {
+              await appendAdvancementToExisting(transaction);
+            }
+          }
+        });
+        `,
+        errors: [{ messageId: 'noAlreadyExistsCatchInTransaction' }],
+      },
+      // Firestore namespace import used as the receiver
+      {
+        code: `
+        import * as firestore from 'firebase/firestore';
+        await firestore.runTransaction(db, async (transaction) => {
+          try {
+            await creator.createTransaction(transaction);
+          } catch (error) {
+            if (error.code === 'already-exists') {
+              await appendAdvancementToExisting(transaction);
+            }
+          }
+        });
+        `,
+        errors: [{ messageId: 'noAlreadyExistsCatchInTransaction' }],
+      },
+      // Firestore default import used as the receiver
+      {
+        code: `
+        import firestore from 'firebase-admin/firestore';
+        await firestore.runTransaction(db, async (transaction) => {
+          try {
+            await creator.createTransaction(transaction);
+          } catch (error) {
+            if (error.code === 6) {
+              await appendAdvancementToExisting(transaction);
+            }
+          }
+        });
+        `,
+        errors: [{ messageId: 'noAlreadyExistsCatchInTransaction' }],
+      },
+      // Bare call with no import: an untraceable binding keeps the report
+      {
+        code: `
+        await runTransaction(db, async (transaction) => {
+          try {
+            await creator.createTransaction(transaction);
+          } catch (error) {
+            if (error.code === 'already-exists') {
+              await appendAdvancementToExisting(transaction);
+            }
+          }
+        });
+        `,
+        errors: [{ messageId: 'noAlreadyExistsCatchInTransaction' }],
+      },
+      // A locally declared runTransaction is not an import, so the report stands
+      {
+        code: `
+        export function runTransaction(db, updateFunction) {
+          return updateFunction(db);
+        }
+        await runTransaction(db, async (transaction) => {
+          try {
+            await creator.createTransaction(transaction);
+          } catch (error) {
+            if (error.code === 'already-exists') {
+              await appendAdvancementToExisting(transaction);
+            }
+          }
+        });
+        `,
+        errors: [{ messageId: 'noAlreadyExistsCatchInTransaction' }],
+      },
+      // A local binding shadowing the Realtime Database import resolves to the
+      // shadow, which carries no module provenance
+      {
+        code: `
+        import { runTransaction } from 'firebase/database';
+        export async function createOnce(db) {
+          const runTransaction = (target, updateFunction) => updateFunction(target);
+          return runTransaction(db, async (transaction) => {
+            try {
+              await creator.createTransaction(transaction);
+            } catch (error) {
+              if (error.code === 'already-exists') {
+                await appendAdvancementToExisting(transaction);
+              }
+            }
+          });
+        }
+        `,
+        errors: [{ messageId: 'noAlreadyExistsCatchInTransaction' }],
+      },
+      // A parameter shadowing the Realtime Database import
+      {
+        code: `
+        import { runTransaction } from 'firebase/database';
+        export async function createRecord(db, runTransaction) {
+          return runTransaction(db, async (transaction) => {
+            try {
+              await creator.createTransaction(transaction);
+            } catch (error) {
+              if (error.code === 6) {
+                await appendAdvancementToExisting(transaction);
+              }
+            }
+          });
+        }
+        `,
+        errors: [{ messageId: 'noAlreadyExistsCatchInTransaction' }],
+      },
+      // Optional call on a Firestore namespace import
+      {
+        code: `
+        import * as firestore from 'firebase/firestore';
+        await firestore?.runTransaction(db, async (transaction) => {
+          try {
+            await creator.createTransaction(transaction);
+          } catch (error) {
+            if (error.code === 'already-exists') {
+              await appendAdvancementToExisting(transaction);
+            }
+          }
+        });
+        `,
+        errors: [{ messageId: 'noAlreadyExistsCatchInTransaction' }],
+      },
+      // Non-null assertion on an unresolvable receiver
+      {
+        code: `
+        await db!.runTransaction(async (transaction) => {
+          try {
+            await creator.createTransaction(transaction);
+          } catch (error) {
+            if (error.code === 6) {
+              await appendAdvancementToExisting(transaction);
+            }
+          }
+        });
+        `,
+        errors: [{ messageId: 'noAlreadyExistsCatchInTransaction' }],
+      },
+      // Receiver produced by a call carries no binding to trace
+      {
+        code: `
+        import * as admin from 'firebase-admin';
+        await admin.firestore().runTransaction(async (transaction) => {
+          try {
+            await creator.createTransaction(transaction);
+          } catch (error) {
+            if (error.code === 'already-exists') {
               await appendAdvancementToExisting(transaction);
             }
           }
