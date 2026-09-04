@@ -115,6 +115,88 @@ ruleTesterTs.run('flatten-push-calls', flattenPushCalls, {
     arr.push(getValue() satisfies number);
     arr.push(other);
     `,
+    // Next.js routing: `Router.push(url, as, options)` is positional, so
+    // merging two navigations navigates once with the address bar masked by the
+    // second URL. Nothing here says `router` is an array, so the rule stays out.
+    `
+    import { useRouter } from 'next/router';
+    function goSomewhere() {
+      const router = useRouter();
+      router.push('/page-a');
+      router.push('/page-b');
+    }
+    `,
+    // Three of them merge into `push(a, b, c)`, which does not even compile
+    // against the three-parameter signature.
+    `
+    import { useRouter } from 'next/router';
+    function goEverywhere() {
+      const router = useRouter();
+      router.push('/page-a');
+      router.push('/page-b');
+      router.push('/page-c');
+    }
+    `,
+    // react-router carries the same positional shape: `history.push(path, state)`.
+    `
+    import { useHistory } from 'react-router-dom';
+    function navigate() {
+      const history = useHistory();
+      history.push('/a');
+      history.push('/b');
+    }
+    `,
+    // An unannotated parameter describes nothing about what is passed in.
+    `
+    function collect(sink) {
+      sink.push(alpha);
+      sink.push(beta);
+    }
+    `,
+    // A member chain carries no array evidence: the object literal it reads from
+    // may be reassigned, narrowed, or a getter returning a router-like value.
+    // Aliasing it behind an annotation (see the invalid list) restores the merge.
+    `
+    const state = { user: { items: [] } };
+    state.user.items.push(first);
+    state.user.items.push(second, third);
+    `,
+    // A call result says nothing about its own type.
+    `
+    const rows = getRows();
+    rows.push(alpha);
+    rows.push(beta);
+    `,
+    // The class declares no field of this name, so `this.items` is unresolved.
+    `
+    class Demo {
+      run(a: string, b: string) {
+        this.items.push(a);
+        this.items.push(b);
+      }
+    }
+    `,
+    // A destructured object property inherits no evidence from its source.
+    `
+    function render(props) {
+      const { items } = props;
+      items.push(alpha);
+      items.push(beta);
+    }
+    `,
+    // Declared without an annotation or an initializer.
+    `
+    let queue;
+    queue.push(alpha);
+    queue.push(beta);
+    `,
+    // `useRef<T[]>()` hands back a ref object rather than an array, so the
+    // binding itself is not one.
+    `
+    const listRef = useRef<string[]>([]);
+    listRef.push(alpha);
+    listRef.push(beta);
+    `,
   ],
   invalid: [
     {
@@ -158,6 +240,7 @@ ruleTesterTs.run('flatten-push-calls', flattenPushCalls, {
     {
       code: `
       class Demo {
+        private handlers: (() => void)[] = [];
         configure(fnA: () => void, fnB: () => void) {
           this.handlers.push(fnA);
           this.handlers.push(fnB);
@@ -167,6 +250,7 @@ ruleTesterTs.run('flatten-push-calls', flattenPushCalls, {
       `,
       output: `
       class Demo {
+        private handlers: (() => void)[] = [];
         configure(fnA: () => void, fnB: () => void) {
           this.handlers.push(fnA, fnB, fnC);
         }
@@ -176,13 +260,15 @@ ruleTesterTs.run('flatten-push-calls', flattenPushCalls, {
     },
     {
       code: `
-      const state = { user: { items: [] } };
-      state.user.items.push(first);
-      state.user.items.push(second, third);
+      const state = { user: { items: [] as string[] } };
+      const items: string[] = state.user.items;
+      items.push(first);
+      items.push(second, third);
       `,
       output: `
-      const state = { user: { items: [] } };
-      state.user.items.push(first, second, third);
+      const state = { user: { items: [] as string[] } };
+      const items: string[] = state.user.items;
+      items.push(first, second, third);
       `,
       errors: [{ messageId: 'flattenPushCalls' }],
     },
@@ -625,6 +711,7 @@ ruleTesterTs.run('flatten-push-calls', flattenPushCalls, {
       code: `
       class Demo {
         run() {
+          const arr: string[] = [];
           arr.push(alphaAlpha);
           arr.push(bravoBravo);
           arr.push(charlieChar);
@@ -636,6 +723,7 @@ ruleTesterTs.run('flatten-push-calls', flattenPushCalls, {
       output: `
       class Demo {
         run() {
+          const arr: string[] = [];
           arr.push(
             alphaAlpha,
             bravoBravo,
@@ -702,6 +790,269 @@ ruleTesterTs.run('flatten-push-calls', flattenPushCalls, {
         alpha,
         beta,
       );
+      `,
+      errors: [{ messageId: 'flattenPushCalls' }],
+    },
+    {
+      // An `Array<T>` annotation with no initializer is evidence on its own.
+      code: `
+      let items: Array<string>;
+      items.push(alpha);
+      items.push(beta);
+      `,
+      output: `
+      let items: Array<string>;
+      items.push(alpha, beta);
+      `,
+      errors: [{ messageId: 'flattenPushCalls' }],
+    },
+    {
+      // A `ReadonlyArray<T>` receiver is still an array, so the merge preserves
+      // meaning; whether `push` type-checks against it is the compiler's call.
+      code: `
+      const names: ReadonlyArray<string> = [];
+      names.push(alpha);
+      names.push(beta);
+      `,
+      output: `
+      const names: ReadonlyArray<string> = [];
+      names.push(alpha, beta);
+      `,
+      errors: [{ messageId: 'flattenPushCalls' }],
+    },
+    {
+      // The `readonly T[]` spelling of the same shape.
+      code: `
+      const values: readonly string[] = [];
+      values.push(alpha);
+      values.push(beta);
+      `,
+      output: `
+      const values: readonly string[] = [];
+      values.push(alpha, beta);
+      `,
+      errors: [{ messageId: 'flattenPushCalls' }],
+    },
+    {
+      // A tuple annotation binds an array too.
+      code: `
+      const parts: [string, string] = ['left', 'right'];
+      parts.push(alpha);
+      parts.push(beta);
+      `,
+      output: `
+      const parts: [string, string] = ['left', 'right'];
+      parts.push(alpha, beta);
+      `,
+      errors: [{ messageId: 'flattenPushCalls' }],
+    },
+    {
+      // Every member of the union is an array, so the receiver is one whichever
+      // branch it took.
+      code: `
+      let entries: string[] | number[];
+      entries.push(alpha);
+      entries.push(beta);
+      `,
+      output: `
+      let entries: string[] | number[];
+      entries.push(alpha, beta);
+      `,
+      errors: [{ messageId: 'flattenPushCalls' }],
+    },
+    {
+      code: `
+      const items = new Array<string>();
+      items.push(alpha);
+      items.push(beta);
+      `,
+      output: `
+      const items = new Array<string>();
+      items.push(alpha, beta);
+      `,
+      errors: [{ messageId: 'flattenPushCalls' }],
+    },
+    {
+      code: `
+      const items = Array.from(source);
+      items.push(alpha);
+      items.push(beta);
+      `,
+      output: `
+      const items = Array.from(source);
+      items.push(alpha, beta);
+      `,
+      errors: [{ messageId: 'flattenPushCalls' }],
+    },
+    {
+      code: `
+      const items = Array.of(one, two);
+      items.push(alpha);
+      items.push(beta);
+      `,
+      output: `
+      const items = Array.of(one, two);
+      items.push(alpha, beta);
+      `,
+      errors: [{ messageId: 'flattenPushCalls' }],
+    },
+    {
+      code: `
+      const items = source.filter(Boolean);
+      items.push(alpha);
+      items.push(beta);
+      `,
+      output: `
+      const items = source.filter(Boolean);
+      items.push(alpha, beta);
+      `,
+      errors: [{ messageId: 'flattenPushCalls' }],
+    },
+    {
+      code: `
+      const letters = word.split('');
+      letters.push(alpha);
+      letters.push(beta);
+      `,
+      output: `
+      const letters = word.split('');
+      letters.push(alpha, beta);
+      `,
+      errors: [{ messageId: 'flattenPushCalls' }],
+    },
+    {
+      code: `
+      const merged = [].concat(more);
+      merged.push(alpha);
+      merged.push(beta);
+      `,
+      output: `
+      const merged = [].concat(more);
+      merged.push(alpha, beta);
+      `,
+      errors: [{ messageId: 'flattenPushCalls' }],
+    },
+    {
+      // The head of a `useState<T[]>()` tuple is the array itself.
+      code: `
+      const [items, setItems] = useState<string[]>([]);
+      items.push(alpha);
+      items.push(beta);
+      `,
+      output: `
+      const [items, setItems] = useState<string[]>([]);
+      items.push(alpha, beta);
+      `,
+      errors: [{ messageId: 'flattenPushCalls' }],
+    },
+    {
+      code: `
+      function build(items: string[]) {
+        items.push(alpha);
+        items.push(beta);
+      }
+      `,
+      output: `
+      function build(items: string[]) {
+        items.push(alpha, beta);
+      }
+      `,
+      errors: [{ messageId: 'flattenPushCalls' }],
+    },
+    {
+      // A rest parameter binds an array by construction, annotation or not.
+      code: `
+      function build(...items) {
+        items.push(alpha);
+        items.push(beta);
+      }
+      `,
+      output: `
+      function build(...items) {
+        items.push(alpha, beta);
+      }
+      `,
+      errors: [{ messageId: 'flattenPushCalls' }],
+    },
+    {
+      // A parameter defaulted to an array literal.
+      code: `
+      function build(items = []) {
+        items.push(alpha);
+        items.push(beta);
+      }
+      `,
+      output: `
+      function build(items = []) {
+        items.push(alpha, beta);
+      }
+      `,
+      errors: [{ messageId: 'flattenPushCalls' }],
+    },
+    {
+      // A class field whose initializer alone carries the evidence.
+      code: `
+      class Demo {
+        private readonly queue = [];
+        enqueue(a: string, b: string) {
+          this.queue.push(a);
+          this.queue.push(b);
+        }
+      }
+      `,
+      output: `
+      class Demo {
+        private readonly queue = [];
+        enqueue(a: string, b: string) {
+          this.queue.push(a, b);
+        }
+      }
+      `,
+      errors: [{ messageId: 'flattenPushCalls' }],
+    },
+    {
+      // A constructor parameter property declares the field just as well.
+      code: `
+      class Queue {
+        constructor(private readonly items: string[]) {}
+        add(a: string, b: string) {
+          this.items.push(a);
+          this.items.push(b);
+        }
+      }
+      `,
+      output: `
+      class Queue {
+        constructor(private readonly items: string[]) {}
+        add(a: string, b: string) {
+          this.items.push(a, b);
+        }
+      }
+      `,
+      errors: [{ messageId: 'flattenPushCalls' }],
+    },
+    {
+      // An arrow function keeps the lexical `this`, so the field still applies.
+      code: `
+      class Demo {
+        items: string[] = [];
+        register() {
+          return () => {
+            this.items.push(alpha);
+            this.items.push(beta);
+          };
+        }
+      }
+      `,
+      output: `
+      class Demo {
+        items: string[] = [];
+        register() {
+          return () => {
+            this.items.push(alpha, beta);
+          };
+        }
+      }
       `,
       errors: [{ messageId: 'flattenPushCalls' }],
     },

@@ -350,6 +350,13 @@ const causeOf = (rule: string): UndrivenCause | null => {
  * Both directions and the cause itself are asserted below, so an entry cannot
  * outlive what it describes: a rule that becomes drivable fails as stale, and a
  * rule that goes dark fails as unrecorded.
+ *
+ * `flatten-push-calls` LEFT the list with #2321. Gating the merge on syntactic
+ * evidence that the receiver is an array means its fixtures now have to carry
+ * that evidence, and an array or object constant spelling it is exactly the
+ * subject the `as const` fixers rewrite — so the rule acquired a driveable
+ * subject rather than changing what it reports. It is covered by the positive
+ * arm instead, which is a stronger gate than the entry it replaces.
  */
 const UNDRIVEN: Record<string, UndrivenCause> = {
   'array-methods-this-context': 'noAssertionAdded',
@@ -380,7 +387,6 @@ const UNDRIVEN: Record<string, UndrivenCause> = {
    * value `readonly` and the rewrite was turning those fixtures into TS2339
    * (#2013). No assertion lands on a fixture this rule reports on any more.
    */
-  'flatten-push-calls': 'noAssertionAdded',
   'generic-starts-with-t': 'noAssertionAdded',
   'key-only-outermost-element': 'noAssertionAdded',
   'memoize-root-level-hocs': 'noAssertionAdded',
