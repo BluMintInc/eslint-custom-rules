@@ -20,7 +20,7 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
       with:
         # Job runs a remote installer (curl | bash) in the same job; don't leave
         # the checkout token in git config where a compromised installer could read it.
