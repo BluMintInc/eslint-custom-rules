@@ -18,7 +18,7 @@ import {
 } from './change-log';
 import type { Input, AgentCheckResult } from './types';
 import { validateRuleStructure } from './validate-rule-structure';
-import { governShellCommand } from '../governor';
+import { governShellCommand, isGovernorStartupFailure } from '../governor';
 
 const EXPAND_TESTS_PROMPT = `
 Your implementation looks good so far! Now let's ensure comprehensive test coverage.
@@ -186,6 +186,7 @@ export async function validateTests(params: {
   });
 
   let testCommand: string;
+  let bareTestCommand: string;
 
   if (sourceFiles.length > 0) {
     // Scenario A: Source Files Changed - Enforce 100% Coverage
@@ -202,18 +203,32 @@ export async function validateTests(params: {
     // governor wrapper: the governor execs its program directly, so an
     // assignment handed to it as the program name is an ENOENT rather than a
     // variable. Prefixed here, this shell applies it and the child inherits it.
+    const inner = `${JEST_BASE_COMMAND} --findRelatedTests ${filesArg} ${JEST_FLAGS} --collectCoverage ${coverageFromFlags}`;
+    bareTestCommand = `CLAUDE_AGENT_COVERAGE_CHECK=true ${inner}`;
     testCommand = `CLAUDE_AGENT_COVERAGE_CHECK=true ${governShellCommand(
-      `${JEST_BASE_COMMAND} --findRelatedTests ${filesArg} ${JEST_FLAGS} --collectCoverage ${coverageFromFlags}`,
+      inner,
     )}`;
   } else {
     // Scenario B: Only Tests/Exclusions Changed - Standard Check without coverage enforcement
     const filesArg = changedTypeScriptFiles.join(' ');
-    testCommand = governShellCommand(
-      `${JEST_BASE_COMMAND} --findRelatedTests ${filesArg} ${JEST_FLAGS}`,
-    );
+    const inner = `${JEST_BASE_COMMAND} --findRelatedTests ${filesArg} ${JEST_FLAGS}`;
+    bareTestCommand = inner;
+    testCommand = governShellCommand(inner);
   }
 
-  const testResult = await executeCommandAsync(testCommand);
+  let testResult = await executeCommandAsync(testCommand);
+
+  // The governor buys a memory reservation, not correctness, so a governor that
+  // cannot start must not decide the verdict: re-run the same gate unwrapped.
+  // The tests still run in full — only the reservation is lost — which keeps a
+  // peer clone's breakage from reading as a failure of the change under test.
+  if (
+    !testResult.isSuccess &&
+    isGovernorStartupFailure(testResult.output) &&
+    bareTestCommand !== testCommand
+  ) {
+    testResult = await executeCommandAsync(bareTestCommand);
+  }
 
   if (!testResult.isSuccess) {
     const { output } = testResult;

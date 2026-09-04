@@ -118,3 +118,36 @@ export function governShellCommand(
     cli,
   )} run --profile=${GOVERNOR_PROFILE} -- ${command}`;
 }
+
+/**
+ * Whether a governed run failed BEFORE it reached the command it wraps.
+ *
+ * `resolveGovernorCli` already degrades to bare when the configured path is
+ * gone, on the principle that a peer clone which moved is a fact about the
+ * machine rather than a defect in the change under test. A clone that is
+ * PRESENT but cannot load reaches that same conclusion one step later: the
+ * governor resolves its own imports against its repo root, so `npx tsx <cli>`
+ * launched from this checkout dies at module resolution and never starts jest.
+ * Without this the gate reports "Tests failed" for every change on the box,
+ * which is the outcome that principle exists to prevent.
+ *
+ * Keyed on the governor's own path appearing in the resolution failure, so a
+ * missing module raised by the code under test is never mistaken for one — that
+ * is a real failure and must still block.
+ */
+export function isGovernorStartupFailure(
+  output: string,
+  deps: GovernorDeps = {},
+): boolean {
+  const cli = resolveGovernorCli(deps);
+  if (cli === null) {
+    return false;
+  }
+  if (
+    !output.includes('MODULE_NOT_FOUND') &&
+    !output.includes('Cannot find module')
+  ) {
+    return false;
+  }
+  return output.includes(cli);
+}
