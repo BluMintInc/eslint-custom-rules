@@ -77,12 +77,62 @@ await runCreateForgivenessTransaction({
 });
 ```
 
+## Realtime Database is excluded
+
+`runTransaction` is not a Firestore-only name. Firebase ships a second one for the
+Realtime Database:
+
+```ts
+// firebase/firestore — reported
+export declare function runTransaction<T>(
+  firestore: Firestore,
+  updateFunction: (transaction: Transaction) => Promise<T>,
+  options?: TransactionOptions,
+): Promise<T>;
+
+// firebase/database — not reported
+export declare function runTransaction(
+  ref: DatabaseReference,
+  transactionUpdate: (currentData: any) => unknown,
+  options?: TransactionOptions,
+): Promise<TransactionResult>;
+```
+
+The Realtime Database re-applies its update function locally on conflict and its
+errors carry no gRPC status codes, so `ALREADY_EXISTS` (code `6`) is not part of
+its error model. Neither remedy this rule offers applies either —
+`runCreateForgivenessTransaction` is backend-Firestore only — so a report on an
+RTDB transaction leaves no way to comply except a blanket disable.
+
+The rule therefore traces the callee binding to its import and stays silent when
+the module is a Realtime Database surface:
+
+```ts
+// Not reported: the callee resolves to firebase/database
+import { runTransaction } from 'firebase/database';
+await runTransaction(dbRef, (currentData) => {
+  try {
+    return currentData + 1;
+  } catch (error) {
+    if (error.code === 6) {
+      return currentData;
+    }
+    throw error;
+  }
+});
+```
+
 ## Edge cases handled
 
 - Detects both `db.runTransaction(...)` and `runTransaction(firestore, ...)`.
 - Supports equality comparisons against `'already-exists'`, `'ALREADY_EXISTS'`, and numeric `6`.
 - Handles optional chaining, destructured catch params, aliases from the caught error, nested try/catch, and `switch` cases on `error.code`.
+- Resolves the provenance of the call through named, aliased, default, and namespace imports; for `database.runTransaction(...)` the receiver is what carries the module, not the property.
+- Recognizes Firestore package roots structurally, so a deep entry point (`firebase/firestore/lite`), a build variant (`@firebase/firestore-compat`), and a pinned specifier (`firebase@10.1.0/firestore`) all count: `firebase/firestore`, `firebase-admin/firestore`, `@firebase/firestore`, and `@google-cloud/firestore`.
 
 ## Limitations
 
 - Focuses on try/catch blocks inside the transaction callback; it does not follow external helpers invoked from inside the transaction. Keep `ALREADY_EXISTS` handling adjacent to the transaction call site.
+- The module gate speaks only when the binding resolves to an import. A call whose callee has no traceable origin — a bare `runTransaction(...)`, a parameter, a locally declared helper, or a member call on an unresolvable receiver such as `db.runTransaction(...)` — is reported, because an untraceable `runTransaction` is far more often Firestore than not. Wrapping a Realtime Database transaction in a local helper named `runTransaction` therefore still reports; import the RTDB function directly, or disable the rule at that call.
+- A binding that shadows an import (a parameter or local named `runTransaction`) resolves to the shadow, which carries no module provenance, so the call is reported.
+- Aliasing the import away from the name (`import { runTransaction as runRtdbTransaction }`) puts the call outside the rule entirely: matching starts from the callee's spelling.
