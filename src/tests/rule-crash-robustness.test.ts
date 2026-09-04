@@ -312,10 +312,11 @@ tsx(
 );
 // Regression for the leading-hole crash in prefer-sx-prop-over-system-props:
 // the fixer anchored on `elements[0]`, which a hole leaves null. Carries a
-// system prop so the rule reports and the fixer actually runs.
+// system prop so the rule reports and the fixer actually runs, and imports the
+// component from MUI because the rule reads provenance rather than the name.
 tsx(
   'sx-array-leading-hole',
-  'declare const Box: any;\ndeclare const isActive: boolean;\ndeclare const activeStyles: any;\nexport const A = () => <Box pt={2} sx={[, isActive && activeStyles]} />;\nexport const B = () => <Box mt={1} sx={[,]} />;\nexport const D = () => <Box display="flex" sx={[, , activeStyles]} />;\nexport const E = () => <Box mt={1} sx />;\nexport const F = () => <Box mt={1} sx={[]} />;\nexport const G = () => <Box mt={1} sx={{}} />;',
+  'import { Box } from "@mui/material";\ndeclare const isActive: boolean;\ndeclare const activeStyles: any;\nexport const A = () => <Box pt={2} sx={[, isActive && activeStyles]} />;\nexport const B = () => <Box mt={1} sx={[,]} />;\nexport const D = () => <Box display="flex" sx={[, , activeStyles]} />;\nexport const E = () => <Box mt={1} sx />;\nexport const F = () => <Box mt={1} sx={[]} />;\nexport const G = () => <Box mt={1} sx={{}} />;',
 );
 
 // Bare `return;` / `yield;` — an absent `argument`.

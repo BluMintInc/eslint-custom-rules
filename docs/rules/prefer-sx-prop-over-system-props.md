@@ -12,6 +12,27 @@ MUI system props (e.g. `mt`, `display`, `flexDirection`) are styling shorthands 
 
 This rule flags any MUI system prop used as a direct JSX attribute on a configured MUI component and provides an autofix that moves it into the `sx` prop.
 
+### Which elements count as MUI
+
+An element is MUI because of where its name comes from, never because of how it is spelled. `Box`, `Button`, `Card` and `Avatar` are ordinary words that design systems, third-party packages and first-party wrappers use too, and the autofix moves props into an `sx` slot only an MUI component reads. On a wrapper that forwards `width`/`height` to an `<img>`, that rewrite type-checks, lints clean and silently drops the attributes.
+
+The element's name is therefore resolved to whatever introduces it in the file, and the rule inspects it only when that is an `@mui/*` import:
+
+- Any `@mui/*` source qualifies — `@mui/material`, `@mui/joy`, `@mui/system`, `@mui/lab` and deep entry points such as `@mui/material/Box`.
+- Named, default and namespace imports all qualify. `<Ns.Box />` resolves through `Ns`, the namespace, so `<Chakra.Box />` is not MUI's `Box`.
+- An alias renames the binding, not the export: `import { Box as MuiBox }` still denotes MUI's `Box`, and the owned-prop exemptions below travel with the export rather than with the local name.
+- A component declared in the file, or imported from any other source, is not MUI — including one that shadows an `@mui/*` import in an inner scope.
+- A name nothing in the file declares is left alone. Reporting it would rest on the spelling alone, and a false negative beats rewriting the props of a component the rule cannot identify.
+
+A first-party wrapper that genuinely forwards its props to MUI lives outside `@mui/*` by definition, so it opts in by name through the [`components`](#components) option.
+
+```tsx
+import { Button } from 'src/components/Button';
+
+// Not reported: this `Button` is not MUI's, and `width`/`height` are its own API
+const Cta = () => <Button width={120} height={40}>Go</Button>;
+```
+
 ### System props flagged
 
 **Spacing:** `m`, `mt`, `mr`, `mb`, `ml`, `mx`, `my`, `p`, `pt`, `pr`, `pb`, `pl`, `px`, `py`
@@ -67,13 +88,17 @@ For a custom component whose props collide with a system prop name, use the [`al
 System props used directly — should be in `sx`:
 
 ```tsx
-<Stack spacing={2} alignItems="center" pb={6} />
+import { Stack } from '@mui/material';
+
+<Stack spacing={2} alignItems="center" pb={6} />;
 ```
 
 Multiple system props alongside an existing `sx`:
 
 ```tsx
-<Box pt={2} display="flex" sx={{ backgroundColor: 'primary.main' }} />
+import { Box } from '@mui/material';
+
+<Box pt={2} display="flex" sx={{ backgroundColor: 'primary.main' }} />;
 ```
 
 ### Examples of correct code
@@ -81,19 +106,33 @@ Multiple system props alongside an existing `sx`:
 All styling in `sx`; Stack's real props (`spacing`, `direction`) left in place:
 
 ```tsx
-<Stack spacing={2} direction="row" sx={{ alignItems: 'center', pb: 6 }} />
+import { Stack } from '@mui/material';
+
+<Stack spacing={2} direction="row" sx={{ alignItems: 'center', pb: 6 }} />;
 ```
 
 Merged correctly into an existing `sx` object:
 
 ```tsx
-<Box sx={{ pt: 2, display: 'flex', backgroundColor: 'primary.main' }} />
+import { Box } from '@mui/material';
+
+<Box sx={{ pt: 2, display: 'flex', backgroundColor: 'primary.main' }} />;
 ```
 
 A prop the component owns stays where it is — `maxWidth` here is a breakpoint key `Container` resolves itself, not a CSS length:
 
 ```tsx
-<Container maxWidth="xl" sx={{ py: 4 }} />
+import { Container } from '@mui/material';
+
+<Container maxWidth="xl" sx={{ py: 4 }} />;
+```
+
+A component that merely shares a name with an MUI one keeps its own props, whatever they are called:
+
+```tsx
+import { Card } from 'react-bootstrap';
+
+<Card width={200} />;
 ```
 
 ## Options
@@ -115,7 +154,17 @@ Type: `string[]`
 
 Default: `['Box', 'Stack', 'Typography', 'Grid', 'Paper', 'Container', 'Card', 'CardContent', 'CardActions', 'Button', 'IconButton', 'Chip', 'Avatar', 'Badge', 'Divider', 'List', 'ListItem', 'ListItemText', 'ListItemIcon', 'Menu', 'MenuItem', 'Drawer', 'Dialog', 'DialogTitle', 'DialogContent', 'DialogActions', 'Tabs', 'Tab', 'AppBar', 'Toolbar']`
 
-The list of MUI component names to check. Only JSX elements whose name matches an entry in this list are inspected. You can extend it with custom MUI-based components or aliases.
+The list of MUI component names to check. It is the second of the two conditions an element has to meet: it must resolve to an `@mui/*` import **and** name a component on this list. For an aliased import the name compared is the MUI export, not the local binding, so `import { Box as MuiBox }` is covered by the entry `Box`.
+
+Naming a component here is also the opt-in for a first-party wrapper that forwards its props to MUI. Such a wrapper lives outside `@mui/*` by definition, so a name on this list is honored whatever introduced it:
+
+```tsx
+// eslint-options: { "components": ["Panel"] }
+import { Panel } from 'src/components/Panel';
+
+// Reported: `Panel` is named in `components`, so provenance is not consulted
+<Panel mt={2} />;
+```
 
 ### `allowedProps`
 
@@ -283,7 +332,7 @@ When the merged line would run past the print width and no safe rewrite exists i
 
 ## When to disable
 
-In rare cases where a prop shares a name with a system prop but serves a different purpose in a custom component, add it to the `allowedProps` option rather than disabling the rule.
+In rare cases where a prop shares a name with a system prop but serves a different purpose in a custom component, add it to the `allowedProps` option rather than disabling the rule. A custom component that is not MUI at all needs nothing: the rule never inspects it.
 
 ## Relationship to `no-margin-properties`
 
