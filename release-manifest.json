@@ -1,5 +1,27 @@
 [
   {
+    "version": "1.21.7",
+    "date": "2026-09-04T21:52:00.765Z",
+    "rules": [
+      {
+        "name": "global-const-style",
+        "changeType": "fix",
+        "issues": [
+          2327
+        ],
+        "summary": "follow the binding into a container (closes #2327)"
+      },
+      {
+        "name": "no-try-catch-already-exists-in-transaction",
+        "changeType": "fix",
+        "issues": [
+          2326
+        ],
+        "summary": "report on first-party imports (closes #2326)"
+      }
+    ]
+  },
+  {
     "version": "1.21.6",
     "date": "2026-09-04T20:52:21.747Z",
     "rules": [

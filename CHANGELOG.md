@@ -1,3 +1,11 @@
+## [1.21.7](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.21.6...v1.21.7) (2026-09-04)
+
+
+### Bug Fixes
+
+* **global-const-style:** follow the binding into a container (closes [#2327](https://github.com/BluMintInc/eslint-custom-rules/issues/2327)) ([86f396a](https://github.com/BluMintInc/eslint-custom-rules/commit/86f396aa156ea8a0c497f665ba3b6ee91a9b75c8)), closes [#2324](https://github.com/BluMintInc/eslint-custom-rules/issues/2324) [#2324](https://github.com/BluMintInc/eslint-custom-rules/issues/2324)
+* **no-try-catch-already-exists-in-transaction:** report on first-party imports (closes [#2326](https://github.com/BluMintInc/eslint-custom-rules/issues/2326)) ([5b81522](https://github.com/BluMintInc/eslint-custom-rules/commit/5b81522103ab56dda9a8e0d25b9d1a08f546466d))
+
 ## [1.21.6](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.21.5...v1.21.6) (2026-09-04)
 
 
