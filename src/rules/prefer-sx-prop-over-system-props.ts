@@ -4,6 +4,7 @@ import {
   TSESLint,
   TSESTree,
 } from '@typescript-eslint/utils';
+import { ASTHelpers } from '../utils/ASTHelpers';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'preferSxProp';
@@ -126,7 +127,12 @@ const MUI_SYSTEM_PROPS = new Set([
 ]);
 
 /**
- * Default MUI component names to check. The user can extend this via options.
+ * The MUI components this rule covers.
+ *
+ * The list narrows what provenance has already selected: an element is
+ * inspected only when it resolves to an `@mui/*` import AND names one of these,
+ * so a name here can never be the whole reason an element is rewritten. The
+ * `components` option replaces the list.
  */
 const DEFAULT_MUI_COMPONENTS = new Set([
   'Box',
@@ -251,6 +257,104 @@ function isUpperCase(name: string): boolean {
     name[0] === name[0].toUpperCase() &&
     name[0] !== name[0].toLowerCase()
   );
+}
+
+/**
+ * The package namespace every MUI distribution publishes under: `@mui/material`,
+ * `@mui/joy`, `@mui/system`, `@mui/lab` and their deep entry points
+ * (`@mui/material/Box`).
+ */
+const MUI_PACKAGE_PREFIX = '@mui/';
+
+const isMuiSource = (source: string): boolean =>
+  source.startsWith(MUI_PACKAGE_PREFIX);
+
+type ImportBinding = {
+  source: string;
+  /**
+   * The name the module exports, which an alias renames locally:
+   * `import { Box as MuiBox }` binds `MuiBox` to the export `Box`, and the
+   * export is what identifies the component.
+   */
+  exportedName: string;
+};
+
+/**
+ * The import that introduces `name`, or null when the file declares it itself
+ * (a local component, a parameter) or nothing declares it at all.
+ */
+function importBindingOf(
+  scope: TSESLint.Scope.Scope,
+  name: string,
+): ImportBinding | null {
+  const variable = ASTHelpers.findVariableInScope(scope, name);
+  if (!variable) {
+    return null;
+  }
+  for (const def of variable.defs) {
+    const specifier = def.node;
+    if (
+      specifier.type !== AST_NODE_TYPES.ImportSpecifier &&
+      specifier.type !== AST_NODE_TYPES.ImportDefaultSpecifier &&
+      specifier.type !== AST_NODE_TYPES.ImportNamespaceSpecifier
+    ) {
+      continue;
+    }
+    const declaration = specifier.parent;
+    if (
+      declaration?.type !== AST_NODE_TYPES.ImportDeclaration ||
+      typeof declaration.source.value !== 'string'
+    ) {
+      continue;
+    }
+    return {
+      source: declaration.source.value,
+      // A default or namespace import has no exported name to read, so the
+      // local name is the only thing that names the component.
+      exportedName:
+        specifier.type === AST_NODE_TYPES.ImportSpecifier
+          ? specifier.imported.name
+          : name,
+    };
+  }
+  return null;
+}
+
+/**
+ * The MUI export a JSX element names, or null when the element does not come
+ * from MUI.
+ *
+ * Provenance, not spelling, is what makes an element MUI: `Box`, `Button`,
+ * `Card` and `Avatar` are ordinary words that design systems, third-party
+ * packages and first-party wrappers use too, and this rule ships a fixer that
+ * moves props into an `sx` slot a non-MUI component has no reading for. On a
+ * wrapper forwarding `width`/`height` to an `<img>`, that rewrite type-checks,
+ * lints clean and silently drops the attributes.
+ *
+ * `<Ns.Box>` resolves through `Ns`, the namespace: the object carries the
+ * provenance, so reading the property alone matches every `<Anything.Box>`.
+ */
+function muiExportOf(
+  node: TSESTree.JSXOpeningElement,
+  scope: TSESLint.Scope.Scope,
+): string | null {
+  const { name } = node;
+  if (name.type === AST_NODE_TYPES.JSXIdentifier) {
+    const binding = importBindingOf(scope, name.name);
+    return binding && isMuiSource(binding.source) ? binding.exportedName : null;
+  }
+  if (name.type === AST_NODE_TYPES.JSXMemberExpression) {
+    let object: TSESTree.JSXTagNameExpression = name.object;
+    while (object.type === AST_NODE_TYPES.JSXMemberExpression) {
+      object = object.object;
+    }
+    if (object.type !== AST_NODE_TYPES.JSXIdentifier) {
+      return null;
+    }
+    const binding = importBindingOf(scope, object.name);
+    return binding && isMuiSource(binding.source) ? name.property.name : null;
+  }
+  return null;
 }
 
 /**
@@ -1220,9 +1324,15 @@ export const preferSxPropOverSystemProps = createRule<Options, MessageIds>({
   },
   defaultOptions: [{}],
   create(context, [options]) {
-    const componentSet = options.components
+    // Naming a component here is the documented opt-in for a first-party
+    // wrapper that forwards its props to MUI. Such a wrapper is defined by
+    // living outside `@mui/*`, so the names the user lists are honored whatever
+    // introduced them.
+    const explicitComponents = options.components
       ? new Set(options.components)
-      : DEFAULT_MUI_COMPONENTS;
+      : null;
+
+    const componentSet = explicitComponents ?? DEFAULT_MUI_COMPONENTS;
 
     const extraAllowed = options.allowedProps
       ? new Set(options.allowedProps)
@@ -1251,13 +1361,36 @@ export const preferSxPropOverSystemProps = createRule<Options, MessageIds>({
       return MUI_SYSTEM_PROPS.has(name) && !isAllowedProp(name);
     }
 
+    /**
+     * The MUI component this element is, or null when the rule leaves it alone.
+     * An element qualifies on two counts: it resolves to a component MUI
+     * exports, and that component is one the rule covers.
+     */
+    function targetedComponentOf(
+      node: TSESTree.JSXOpeningElement,
+    ): string | null {
+      const writtenName = getComponentName(node);
+      if (!writtenName || !isUpperCase(writtenName)) {
+        return null;
+      }
+
+      if (explicitComponents?.has(writtenName)) {
+        return writtenName;
+      }
+
+      const muiExport = muiExportOf(node, ASTHelpers.getScope(context, node));
+      if (muiExport === null || !componentSet.has(muiExport)) {
+        return null;
+      }
+      // The export name, not the local one: an aliased `Box as MuiBox` is still
+      // MUI's `Box` for the covered-component and owned-prop lookups.
+      return muiExport;
+    }
+
     return {
       JSXOpeningElement(node: TSESTree.JSXOpeningElement) {
-        const componentName = getComponentName(node);
-        if (!componentName) return;
-
-        if (!isUpperCase(componentName)) return;
-        if (!componentSet.has(componentName)) return;
+        const componentName = targetedComponentOf(node);
+        if (componentName === null) return;
 
         const systemPropAttrs: TSESTree.JSXAttribute[] = [];
         let sxAttr: TSESTree.JSXAttribute | null = null;

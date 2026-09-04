@@ -7,34 +7,87 @@ ruleTesterJsx.run(
   {
     valid: [
       // Already using sx — no system props remaining
-      `<Box sx={{ mt: 2, display: 'flex' }} />`,
+      `import { Box } from '@mui/material';
+<Box sx={{ mt: 2, display: 'flex' }} />`,
 
       // Stack with real component props only (spacing and direction are NOT system props)
-      `<Stack spacing={2} direction="row" />`,
+      `import { Stack } from '@mui/material';
+<Stack spacing={2} direction="row" />`,
 
       // Stack with real props plus sx — no standalone system props
-      `<Stack spacing={2} direction="row" sx={{ alignItems: 'center' }} />`,
+      `import { Stack } from '@mui/material';
+<Stack spacing={2} direction="row" sx={{ alignItems: 'center' }} />`,
 
-      // Host (lowercase) element — rule never touches non-MUI elements
+      // A host (lowercase) element names no component, so nothing resolves to
+      // an MUI export.
       `<div mt={2} display="flex" />`,
 
-      // Component not in the default MUI list
-      `<CustomWidget mt={2} display="flex" />`,
+      // A name MUI does not export stays uncovered even when the import source
+      // is MUI: provenance selects the elements the rule may touch, and the
+      // component list narrows that further.
+      `import { CustomWidget } from '@mui/material';
+<CustomWidget mt={2} display="flex" />`,
+
+      // --- Provenance: an element is MUI because of where its name comes from,
+      // never because of how it is spelled. `Box`, `Button`, `Card` and
+      // `Avatar` are ordinary words, and the fixer moves props into an `sx`
+      // slot that only an MUI component reads. ---
+
+      // A first-party component sharing a name with an MUI one: `width` and
+      // `height` are its own API here.
+      `import { Button } from '../components/Button';
+const Cta = () => <Button width={120} height={40}>Go</Button>;`,
+
+      // A component from another library, likewise.
+      `import { Card } from 'react-bootstrap';
+const Panel = () => <Card width={200}>x</Card>;`,
+
+      // A namespaced element resolves through the OBJECT: the namespace carries
+      // the provenance, so reading the property alone matches every
+      // `<Anything.Box>`.
+      `import * as Chakra from '@chakra-ui/react';
+const Row = () => <Chakra.Box width={10} display="flex">x</Chakra.Box>;`,
+
+      // A component declared in the file. Rewriting these props is the most
+      // damaging shape available: `width` and `height` are real attributes on
+      // the element it forwards to, and `sx` is not one.
+      `const Badge = (props: any) => <svg {...props} />;
+const Marker = () => <Badge width={48} height={48} />;`,
+
+      // A parameter is a binding like any other, and the innermost one wins:
+      // the element here is the argument, not the module's MUI import.
+      `import { Box } from '@mui/material';
+const render = (Box: any) => <Box mt={2} />;`,
+
+      // Nothing in the file declares the name. Reporting would rest on the
+      // spelling alone, and a false negative beats rewriting props of a
+      // component the rule cannot identify.
+      `<Box mt={2} />`,
+
+      // An aliased import keeps the owned-prop exemption, which is keyed on the
+      // MUI export rather than on the local name.
+      `import { Container as Wrapper } from '@mui/material';
+const Page = () => <Wrapper maxWidth="xl" />;`,
 
       // No system props at all — only real props
-      `<Button variant="contained" onClick={() => {}} disabled />`,
+      `import { Button } from '@mui/material';
+<Button variant="contained" onClick={() => {}} disabled />`,
 
       // sx as a variable reference, no system props alongside
-      `<Box sx={styles} />`,
+      `import { Box } from '@mui/material';
+<Box sx={styles} />`,
 
       // sx is an array, no system props alongside
-      `<Box sx={[baseStyles, isActive && activeStyles]} />`,
+      `import { Box } from '@mui/material';
+<Box sx={[baseStyles, isActive && activeStyles]} />`,
 
       // Grid with breakpoint props (xs, sm, md) — those are Grid API props
-      `<Grid container spacing={3} xs={12} sm={6} md={4} />`,
+      `import { Grid } from '@mui/material';
+<Grid container spacing={3} xs={12} sm={6} md={4} />`,
 
       // Stack divider is a real prop
-      `<Stack divider={<Divider />} spacing={1} />`,
+      `import { Stack, Divider } from '@mui/material';
+<Stack divider={<Divider />} spacing={1} />`,
 
       // Component not in list — should not flag even with system props
       {
@@ -44,40 +97,52 @@ ruleTesterJsx.run(
 
       // Allowed prop overridden via options — extra user-supplied allowed prop
       {
-        code: `<Box mt={2} />`,
+        code: `import { Box } from '@mui/material';
+<Box mt={2} />`,
         options: [{ components: ['Box'], allowedProps: ['mt'] }],
       },
 
       // Event handlers are never system props
-      `<Stack onClick={() => {}} onMouseEnter={() => {}} />`,
+      `import { Stack } from '@mui/material';
+<Stack onClick={() => {}} onMouseEnter={() => {}} />`,
 
       // aria-* and data-* are always allowed
-      `<Box aria-label="test" data-testid="box" />`,
+      `import { Box } from '@mui/material';
+<Box aria-label="test" data-testid="box" />`,
 
       // No attributes at all
-      `<Box />`,
+      `import { Box } from '@mui/material';
+<Box />`,
 
       // Typography with variant (real prop) and no system props
-      `<Typography variant="h1" />`,
+      `import { Typography } from '@mui/material';
+<Typography variant="h1" />`,
 
       // color on Stack is in MUI_SYSTEM_PROPS but if user provides explicit
       // allowedProps that include color, it should be allowed
       {
-        code: `<Typography color="primary" />`,
+        code: `import { Typography } from '@mui/material';
+<Typography color="primary" />`,
         options: [{ components: ['Typography'], allowedProps: ['color'] }],
       },
 
       // `color` on components whose prop API defines it as a semantic enum
       // (palette/variant selector) — NOT a CSS system prop. Must not be moved.
-      `<Button color="warning" variant="contained" sx={{ flexShrink: 0 }} />`,
-      `<Button color="error" variant="text" />`, // no sx present — still valid
-      `<IconButton color="primary" />`,
-      `<Chip color="secondary" />`,
-      `<Badge color="success" />`,
+      `import { Button } from '@mui/material';
+<Button color="warning" variant="contained" sx={{ flexShrink: 0 }} />`,
+      `import { Button } from '@mui/material';
+<Button color="error" variant="text" />`, // no sx present — still valid
+      `import { IconButton } from '@mui/material';
+<IconButton color="primary" />`,
+      `import { Chip } from '@mui/material';
+<Chip color="secondary" />`,
+      `import { Badge } from '@mui/material';
+<Badge color="success" />`,
 
       // Semantic `color` alongside other first-class props (variant, onClick):
       // nothing to move into sx.
-      `<Chip color="secondary" variant="outlined" onClick={() => {}} />`,
+      `import { Chip } from '@mui/material';
+<Chip color="secondary" variant="outlined" onClick={() => {}} />`,
 
       // --- Issue #1966: `maxWidth` on Container is a breakpoint KEY selecting a
       // width from theme.breakpoints.values, not a CSS length. Moving it to sx
@@ -95,20 +160,26 @@ export const Wrapper = ({ maxWidth }: Props) => (
   </Container>
 );
 `,
-      `<Container maxWidth="xl">x</Container>`,
-      `<Container maxWidth={false}>x</Container>`,
+      `import { Container } from '@mui/material';
+<Container maxWidth="xl">x</Container>`,
+      `import { Container } from '@mui/material';
+<Container maxWidth={false}>x</Container>`,
 
       // The owned prop coexists with an sx the rule has nothing to merge into.
-      `<Container maxWidth="md" sx={{ py: 4 }} />`,
+      `import { Container } from '@mui/material';
+<Container maxWidth="md" sx={{ py: 4 }} />`,
       // `Dialog` reads the same breakpoint key for its Paper.
-      `<Dialog open maxWidth="sm" fullWidth />`,
+      `import { Dialog } from '@mui/material';
+<Dialog open maxWidth="sm" fullWidth />`,
       // `AppBar` picks a background shade from its `color` enum.
-      `<AppBar color="primary" />`,
+      `import { AppBar } from '@mui/material';
+<AppBar color="primary" />`,
 
       // The exemption is a property of the component itself, so restricting the
       // `components` option does not re-arm it.
       {
-        code: `<Container maxWidth="lg" />`,
+        code: `import { Container } from '@mui/material';
+<Container maxWidth="lg" />`,
         options: [{ components: ['Container'] }],
       },
 
@@ -118,6 +189,7 @@ export const Wrapper = ({ maxWidth }: Props) => (
       // The wrapped output of the fixture below is itself clean, so a second
       // pass over an already-fixed file reports nothing.
       `
+import { Stack } from '@mui/material';
 export const C = () => {
   return (
     <Stack
@@ -138,27 +210,32 @@ export const C = () => {
       // --- Issue example 1: Stack with mixed real + system props ---
       // spacing and direction are kept; alignItems and pb move to sx
       {
-        code: `<Stack spacing={2} alignItems="center" pb={6} />`,
+        code: `import { Stack } from '@mui/material';
+<Stack spacing={2} alignItems="center" pb={6} />`,
         errors: [
           { messageId: 'preferSxProp', data: { prop: 'alignItems' } },
           { messageId: 'preferSxProp', data: { prop: 'pb' } },
         ],
-        output: `<Stack spacing={2} sx={{ alignItems: 'center', pb: 6 }} />`,
+        output: `import { Stack } from '@mui/material';
+<Stack spacing={2} sx={{ alignItems: 'center', pb: 6 }} />`,
       },
 
       // --- Issue example 2: Stack direction/spacing kept, alignItems/mb to sx ---
       {
-        code: `<Stack direction="row" spacing={1} alignItems="center" mb={2} />`,
+        code: `import { Stack } from '@mui/material';
+<Stack direction="row" spacing={1} alignItems="center" mb={2} />`,
         errors: [
           { messageId: 'preferSxProp', data: { prop: 'alignItems' } },
           { messageId: 'preferSxProp', data: { prop: 'mb' } },
         ],
-        output: `<Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 2 }} />`,
+        output: `import { Stack } from '@mui/material';
+<Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 2 }} />`,
       },
 
       // --- Issue example 3: merge into existing sx object with selector key ---
       {
-        code: `<Stack direction="row" spacing={2} width="100%" height="42px" sx={{ '.MuiOutlinedInput-root': { height: '42px' } }} />`,
+        code: `import { Stack } from '@mui/material';
+<Stack direction="row" spacing={2} width="100%" height="42px" sx={{ '.MuiOutlinedInput-root': { height: '42px' } }} />`,
         errors: [
           { messageId: 'preferSxProp', data: { prop: 'width' } },
           { messageId: 'preferSxProp', data: { prop: 'height' } },
@@ -166,7 +243,8 @@ export const C = () => {
         // The merged element no longer fits on one line, so it takes the shape
         // a formatter would give it: one attribute per line, and — since the
         // sx attribute alone still overflows — one property per line.
-        output: `<Stack
+        output: `import { Stack } from '@mui/material';
+<Stack
   direction="row"
   spacing={2}
   sx={{
@@ -179,7 +257,8 @@ export const C = () => {
 
       // --- Issue example 4: multiple system props on Stack, direction stays ---
       {
-        code: `<Stack direction="row" flexWrap="wrap" gap={4} alignItems="flex-start" />`,
+        code: `import { Stack } from '@mui/material';
+<Stack direction="row" flexWrap="wrap" gap={4} alignItems="flex-start" />`,
         errors: [
           { messageId: 'preferSxProp', data: { prop: 'flexWrap' } },
           { messageId: 'preferSxProp', data: { prop: 'gap' } },
@@ -187,7 +266,8 @@ export const C = () => {
         ],
         // 85 columns on one line, so the attributes break apart; the sx object
         // itself fits at the attribute indentation and stays inline.
-        output: `<Stack
+        output: `import { Stack } from '@mui/material';
+<Stack
   direction="row"
   sx={{ flexWrap: 'wrap', gap: 4, alignItems: 'flex-start' }}
 />`,
@@ -195,80 +275,98 @@ export const C = () => {
 
       // --- Issue example 5: system props + existing sx variable (spread pattern) ---
       {
-        code: `<Stack spacing={1} alignItems="flex-start" pt={1} sx={sx} />`,
+        code: `import { Stack } from '@mui/material';
+<Stack spacing={1} alignItems="flex-start" pt={1} sx={sx} />`,
         errors: [
           { messageId: 'preferSxProp', data: { prop: 'alignItems' } },
           { messageId: 'preferSxProp', data: { prop: 'pt' } },
         ],
-        output: `<Stack spacing={1} sx={{ alignItems: 'flex-start', pt: 1, ...sx }} />`,
+        output: `import { Stack } from '@mui/material';
+<Stack spacing={1} sx={{ alignItems: 'flex-start', pt: 1, ...sx }} />`,
       },
 
       // --- Numeric value: mt={2} → mt: 2 ---
       {
-        code: `<Box mt={2} />`,
+        code: `import { Box } from '@mui/material';
+<Box mt={2} />`,
         errors: [{ messageId: 'preferSxProp', data: { prop: 'mt' } }],
-        output: `<Box sx={{ mt: 2 }} />`,
+        output: `import { Box } from '@mui/material';
+<Box sx={{ mt: 2 }} />`,
       },
 
       // --- String value: display="flex" → display: 'flex' ---
       {
-        code: `<Box display="flex" />`,
+        code: `import { Box } from '@mui/material';
+<Box display="flex" />`,
         errors: [{ messageId: 'preferSxProp', data: { prop: 'display' } }],
-        output: `<Box sx={{ display: 'flex' }} />`,
+        output: `import { Box } from '@mui/material';
+<Box sx={{ display: 'flex' }} />`,
       },
 
       // --- Float value: pt={1.5} → pt: 1.5 ---
       {
-        code: `<Stack flex="0 1 auto" pt={1.5} />`,
+        code: `import { Stack } from '@mui/material';
+<Stack flex="0 1 auto" pt={1.5} />`,
         errors: [
           { messageId: 'preferSxProp', data: { prop: 'flex' } },
           { messageId: 'preferSxProp', data: { prop: 'pt' } },
         ],
-        output: `<Stack sx={{ flex: '0 1 auto', pt: 1.5 }} />`,
+        output: `import { Stack } from '@mui/material';
+<Stack sx={{ flex: '0 1 auto', pt: 1.5 }} />`,
       },
 
       // --- Expression value: m={x} → m: x ---
       {
-        code: `<Box m={x} />`,
+        code: `import { Box } from '@mui/material';
+<Box m={x} />`,
         errors: [{ messageId: 'preferSxProp', data: { prop: 'm' } }],
-        output: `<Box sx={{ m: x }} />`,
+        output: `import { Box } from '@mui/material';
+<Box sx={{ m: x }} />`,
       },
 
       // --- Conditional expression: pt={isExpanded ? 4 : 2} preserved ---
       {
-        code: `<Box pt={isExpanded ? 4 : 2} display={isVisible ? 'block' : 'none'} />`,
+        code: `import { Box } from '@mui/material';
+<Box pt={isExpanded ? 4 : 2} display={isVisible ? 'block' : 'none'} />`,
         errors: [
           { messageId: 'preferSxProp', data: { prop: 'pt' } },
           { messageId: 'preferSxProp', data: { prop: 'display' } },
         ],
-        output: `<Box sx={{ pt: isExpanded ? 4 : 2, display: isVisible ? 'block' : 'none' }} />`,
+        output: `import { Box } from '@mui/material';
+<Box sx={{ pt: isExpanded ? 4 : 2, display: isVisible ? 'block' : 'none' }} />`,
       },
 
       // --- width="100%" string: width → '100%' ---
       {
-        code: `<Box width="100%" height="42px" />`,
+        code: `import { Box } from '@mui/material';
+<Box width="100%" height="42px" />`,
         errors: [
           { messageId: 'preferSxProp', data: { prop: 'width' } },
           { messageId: 'preferSxProp', data: { prop: 'height' } },
         ],
-        output: `<Box sx={{ width: '100%', height: '42px' }} />`,
+        output: `import { Box } from '@mui/material';
+<Box sx={{ width: '100%', height: '42px' }} />`,
       },
 
       // --- Merge into existing sx={{}} empty object ---
       {
-        code: `<Box mt={2} sx={{}} />`,
+        code: `import { Box } from '@mui/material';
+<Box mt={2} sx={{}} />`,
         errors: [{ messageId: 'preferSxProp', data: { prop: 'mt' } }],
-        output: `<Box sx={{ mt: 2 }} />`,
+        output: `import { Box } from '@mui/material';
+<Box sx={{ mt: 2 }} />`,
       },
 
       // --- Merge into existing sx object with existing keys ---
       {
-        code: `<Box pt={2} display="flex" sx={{ backgroundColor: 'primary.main', '&:hover': { opacity: 0.8 } }} />`,
+        code: `import { Box } from '@mui/material';
+<Box pt={2} display="flex" sx={{ backgroundColor: 'primary.main', '&:hover': { opacity: 0.8 } }} />`,
         errors: [
           { messageId: 'preferSxProp', data: { prop: 'pt' } },
           { messageId: 'preferSxProp', data: { prop: 'display' } },
         ],
-        output: `<Box
+        output: `import { Box } from '@mui/material';
+<Box
   sx={{
     pt: 2,
     display: 'flex',
@@ -280,57 +378,70 @@ export const C = () => {
 
       // --- sx is array expression — prepend object ---
       {
-        code: `<Box pt={2} sx={[baseStyles, isActive && activeStyles]} />`,
+        code: `import { Box } from '@mui/material';
+<Box pt={2} sx={[baseStyles, isActive && activeStyles]} />`,
         errors: [{ messageId: 'preferSxProp', data: { prop: 'pt' } }],
-        output: `<Box sx={[{ pt: 2 }, baseStyles, isActive && activeStyles]} />`,
+        output: `import { Box } from '@mui/material';
+<Box sx={[{ pt: 2 }, baseStyles, isActive && activeStyles]} />`,
       },
 
       // --- sx is a function call expression — use spread ---
       {
-        code: `<Box mt={2} sx={getStyles()} />`,
+        code: `import { Box } from '@mui/material';
+<Box mt={2} sx={getStyles()} />`,
         errors: [{ messageId: 'preferSxProp', data: { prop: 'mt' } }],
-        output: `<Box sx={{ mt: 2, ...getStyles() }} />`,
+        output: `import { Box } from '@mui/material';
+<Box sx={{ mt: 2, ...getStyles() }} />`,
       },
 
       // --- Responsive array value: pt={[2, 4, 6]} → pt: [2, 4, 6] ---
       {
-        code: `<Box pt={[2, 4, 6]} />`,
+        code: `import { Box } from '@mui/material';
+<Box pt={[2, 4, 6]} />`,
         errors: [{ messageId: 'preferSxProp', data: { prop: 'pt' } }],
-        output: `<Box sx={{ pt: [2, 4, 6] }} />`,
+        output: `import { Box } from '@mui/material';
+<Box sx={{ pt: [2, 4, 6] }} />`,
       },
 
       // --- Responsive object value: pt={{ xs: 2, sm: 4 }} → pt: { xs: 2, sm: 4 } ---
       {
-        code: `<Box pt={{ xs: 2, sm: 4, md: 6 }} display="flex" />`,
+        code: `import { Box } from '@mui/material';
+<Box pt={{ xs: 2, sm: 4, md: 6 }} display="flex" />`,
         errors: [
           { messageId: 'preferSxProp', data: { prop: 'pt' } },
           { messageId: 'preferSxProp', data: { prop: 'display' } },
         ],
-        output: `<Box sx={{ pt: { xs: 2, sm: 4, md: 6 }, display: 'flex' }} />`,
+        output: `import { Box } from '@mui/material';
+<Box sx={{ pt: { xs: 2, sm: 4, md: 6 }, display: 'flex' }} />`,
       },
 
       // --- bgcolor system prop ---
       {
-        code: `<Box bgcolor="primary.main" />`,
+        code: `import { Box } from '@mui/material';
+<Box bgcolor="primary.main" />`,
         errors: [{ messageId: 'preferSxProp', data: { prop: 'bgcolor' } }],
-        output: `<Box sx={{ bgcolor: 'primary.main' }} />`,
+        output: `import { Box } from '@mui/material';
+<Box sx={{ bgcolor: 'primary.main' }} />`,
       },
 
       // --- zIndex system prop ---
       {
-        code: `<Box position="absolute" top={0} left={0} zIndex={10} />`,
+        code: `import { Box } from '@mui/material';
+<Box position="absolute" top={0} left={0} zIndex={10} />`,
         errors: [
           { messageId: 'preferSxProp', data: { prop: 'position' } },
           { messageId: 'preferSxProp', data: { prop: 'top' } },
           { messageId: 'preferSxProp', data: { prop: 'left' } },
           { messageId: 'preferSxProp', data: { prop: 'zIndex' } },
         ],
-        output: `<Box sx={{ position: 'absolute', top: 0, left: 0, zIndex: 10 }} />`,
+        output: `import { Box } from '@mui/material';
+<Box sx={{ position: 'absolute', top: 0, left: 0, zIndex: 10 }} />`,
       },
 
       // --- Multiple MUI components in the same file ---
       {
         code: `
+import { Stack, Box } from '@mui/material';
 function A() { return <Stack alignItems="center" pb={6} />; }
 function B() { return <Box mt={2} display="flex" />; }
 `,
@@ -341,6 +452,7 @@ function B() { return <Box mt={2} display="flex" />; }
           { messageId: 'preferSxProp', data: { prop: 'display' } },
         ],
         output: `
+import { Stack, Box } from '@mui/material';
 function A() { return <Stack sx={{ alignItems: 'center', pb: 6 }} />; }
 function B() { return <Box sx={{ mt: 2, display: 'flex' }} />; }
 `,
@@ -348,27 +460,32 @@ function B() { return <Box sx={{ mt: 2, display: 'flex' }} />; }
 
       // --- Typography with system props ---
       {
-        code: `<Typography fontSize={14} fontWeight="bold" lineHeight={1.5} />`,
+        code: `import { Typography } from '@mui/material';
+<Typography fontSize={14} fontWeight="bold" lineHeight={1.5} />`,
         errors: [
           { messageId: 'preferSxProp', data: { prop: 'fontSize' } },
           { messageId: 'preferSxProp', data: { prop: 'fontWeight' } },
           { messageId: 'preferSxProp', data: { prop: 'lineHeight' } },
         ],
-        output: `<Typography sx={{ fontSize: 14, fontWeight: 'bold', lineHeight: 1.5 }} />`,
+        output: `import { Typography } from '@mui/material';
+<Typography sx={{ fontSize: 14, fontWeight: 'bold', lineHeight: 1.5 }} />`,
       },
 
       // --- borderRadius system prop ---
       {
-        code: `<Paper borderRadius={2} />`,
+        code: `import { Paper } from '@mui/material';
+<Paper borderRadius={2} />`,
         errors: [{ messageId: 'preferSxProp', data: { prop: 'borderRadius' } }],
-        output: `<Paper sx={{ borderRadius: 2 }} />`,
+        output: `import { Paper } from '@mui/material';
+<Paper sx={{ borderRadius: 2 }} />`,
       },
 
       // --- Idempotence check: output after first fix should not be flagged ---
       // (Verifying that the output `<Box sx={{ mt: 2 }} />` passes the valid test)
       // covered by valid tests above; this ensures a second pass doesn't re-report.
       {
-        code: `<Box overflow="hidden" textOverflow="ellipsis" whiteSpace="nowrap" />`,
+        code: `import { Box } from '@mui/material';
+<Box overflow="hidden" textOverflow="ellipsis" whiteSpace="nowrap" />`,
         errors: [
           { messageId: 'preferSxProp', data: { prop: 'overflow' } },
           { messageId: 'preferSxProp', data: { prop: 'textOverflow' } },
@@ -376,7 +493,8 @@ function B() { return <Box sx={{ mt: 2, display: 'flex' }} />; }
         ],
         // 83 columns on one line: only the attributes break, the object stays
         // inline because it fits once it has a line of its own.
-        output: `<Box
+        output: `import { Box } from '@mui/material';
+<Box
   sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
 />`,
       },
@@ -386,13 +504,15 @@ function B() { return <Box sx={{ mt: 2, display: 'flex' }} />; }
       // element's range, so the element still breaks apart and the `;` lands
       // after the closing `/>`. ---
       {
-        code: `<Box overflow="hidden" textOverflow="ellipsis" whiteSpace="nowrap" />;`,
+        code: `import { Box } from '@mui/material';
+<Box overflow="hidden" textOverflow="ellipsis" whiteSpace="nowrap" />;`,
         errors: [
           { messageId: 'preferSxProp', data: { prop: 'overflow' } },
           { messageId: 'preferSxProp', data: { prop: 'textOverflow' } },
           { messageId: 'preferSxProp', data: { prop: 'whiteSpace' } },
         ],
-        output: `<Box
+        output: `import { Box } from '@mui/material';
+<Box
   sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
 />;`,
       },
@@ -400,12 +520,14 @@ function B() { return <Box sx={{ mt: 2, display: 'flex' }} />; }
       // --- A trailing semicolon on a merge that fits stays on one line: the
       // punctuation tail must not force the element apart. ---
       {
-        code: `<Box mt={2} mb={1} />;`,
+        code: `import { Box } from '@mui/material';
+<Box mt={2} mb={1} />;`,
         errors: [
           { messageId: 'preferSxProp', data: { prop: 'mt' } },
           { messageId: 'preferSxProp', data: { prop: 'mb' } },
         ],
-        output: `<Box sx={{ mt: 2, mb: 1 }} />;`,
+        output: `import { Box } from '@mui/material';
+<Box sx={{ mt: 2, mb: 1 }} />;`,
       },
 
       // --- An array element: the trailing comma sits outside the opening
@@ -413,6 +535,7 @@ function B() { return <Box sx={{ mt: 2, display: 'flex' }} />; }
       // closing `/>`. ---
       {
         code: `
+import { Box } from '@mui/material';
 const items = [
   <Box display="flex" alignItems="center" justifyContent="center" key="a" />,
 ];
@@ -423,6 +546,7 @@ const items = [
           { messageId: 'preferSxProp', data: { prop: 'justifyContent' } },
         ],
         output: `
+import { Box } from '@mui/material';
 const items = [
   <Box
     sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
@@ -434,12 +558,14 @@ const items = [
 
       // --- An array element whose merge fits stays on one line. ---
       {
-        code: `const items = [<Box mt={2} mb={1} key="a" />];`,
+        code: `import { Box } from '@mui/material';
+const items = [<Box mt={2} mb={1} key="a" />];`,
         errors: [
           { messageId: 'preferSxProp', data: { prop: 'mt' } },
           { messageId: 'preferSxProp', data: { prop: 'mb' } },
         ],
-        output: `const items = [<Box sx={{ mt: 2, mb: 1 }} key="a" />];`,
+        output: `import { Box } from '@mui/material';
+const items = [<Box sx={{ mt: 2, mb: 1 }} key="a" />];`,
       },
 
       // --- An element that does not start its own line (`const el = <Box`):
@@ -447,7 +573,8 @@ const items = [
       // which is outside the opening element's range, so the report carries no
       // fix rather than emit a 95-column line. ---
       {
-        code: `const el = <Box overflow="hidden" textOverflow="ellipsis" whiteSpace="nowrap" />;`,
+        code: `import { Box } from '@mui/material';
+const el = <Box overflow="hidden" textOverflow="ellipsis" whiteSpace="nowrap" />;`,
         errors: [
           { messageId: 'preferSxProp', data: { prop: 'overflow' } },
           { messageId: 'preferSxProp', data: { prop: 'textOverflow' } },
@@ -458,12 +585,14 @@ const items = [
 
       // --- Same shape when the merge fits: the fix still applies. ---
       {
-        code: `const el = <Box mt={2} mb={1} />;`,
+        code: `import { Box } from '@mui/material';
+const el = <Box mt={2} mb={1} />;`,
         errors: [
           { messageId: 'preferSxProp', data: { prop: 'mt' } },
           { messageId: 'preferSxProp', data: { prop: 'mb' } },
         ],
-        output: `const el = <Box sx={{ mt: 2, mb: 1 }} />;`,
+        output: `import { Box } from '@mui/material';
+const el = <Box sx={{ mt: 2, mb: 1 }} />;`,
       },
 
       // --- `return <Box ... />;` behaves like `const el =`: no safe wrap
@@ -471,6 +600,7 @@ const items = [
       // reported without a fix. ---
       {
         code: `
+import { Box } from '@mui/material';
 export function Panel() {
   return <Box overflow="hidden" textOverflow="ellipsis" whiteSpace="nowrap" />;
 }
@@ -493,82 +623,103 @@ export function Panel() {
 
       // --- color system prop (when not in allowedProps for this component) ---
       {
-        code: `<Box color="#ff0000" />`,
+        code: `import { Box } from '@mui/material';
+<Box color="#ff0000" />`,
         errors: [{ messageId: 'preferSxProp', data: { prop: 'color' } }],
-        output: `<Box sx={{ color: '#ff0000' }} />`,
+        output: `import { Box } from '@mui/material';
+<Box sx={{ color: '#ff0000' }} />`,
       },
 
       // --- Regression guard: `color` on a true system/layout component IS a
       // CSS passthrough and must still be flagged + merged into sx. The fix
       // must NOT drop `color` from MUI_SYSTEM_PROPS globally. ---
       {
-        code: `<Box color="#ff0000" sx={{ p: 2 }} />`,
+        code: `import { Box } from '@mui/material';
+<Box color="#ff0000" sx={{ p: 2 }} />`,
         errors: [{ messageId: 'preferSxProp', data: { prop: 'color' } }],
-        output: `<Box sx={{ color: '#ff0000', p: 2 }} />`,
+        output: `import { Box } from '@mui/material';
+<Box sx={{ color: '#ff0000', p: 2 }} />`,
       },
 
       // --- Semantic `color` is exempt on Button, but a genuine system prop on
       // the SAME element (mt) still moves into sx; `color` is left untouched. ---
       {
-        code: `<Button color="warning" mt={2} />`,
+        code: `import { Button } from '@mui/material';
+<Button color="warning" mt={2} />`,
         errors: [{ messageId: 'preferSxProp', data: { prop: 'mt' } }],
-        output: `<Button color="warning" sx={{ mt: 2 }} />`,
+        output: `import { Button } from '@mui/material';
+<Button color="warning" sx={{ mt: 2 }} />`,
       },
 
       // --- Issue #1966: the exemption is keyed on the (component, prop) pair,
       // so `maxWidth` stays a CSS system prop everywhere Container does not own
       // it. Exempting the bare prop name would blind the rule on these. ---
       {
-        code: `<Box maxWidth="640px" />`,
+        code: `import { Box } from '@mui/material';
+<Box maxWidth="640px" />`,
         errors: [{ messageId: 'preferSxProp', data: { prop: 'maxWidth' } }],
-        output: `<Box sx={{ maxWidth: '640px' }} />`,
+        output: `import { Box } from '@mui/material';
+<Box sx={{ maxWidth: '640px' }} />`,
       },
       {
-        code: `<Stack maxWidth={400} />`,
+        code: `import { Stack } from '@mui/material';
+<Stack maxWidth={400} />`,
         errors: [{ messageId: 'preferSxProp', data: { prop: 'maxWidth' } }],
-        output: `<Stack sx={{ maxWidth: 400 }} />`,
+        output: `import { Stack } from '@mui/material';
+<Stack sx={{ maxWidth: 400 }} />`,
       },
       {
-        code: `<Paper maxWidth="100%" sx={{ p: 2 }} />`,
+        code: `import { Paper } from '@mui/material';
+<Paper maxWidth="100%" sx={{ p: 2 }} />`,
         errors: [{ messageId: 'preferSxProp', data: { prop: 'maxWidth' } }],
-        output: `<Paper sx={{ maxWidth: '100%', p: 2 }} />`,
+        output: `import { Paper } from '@mui/material';
+<Paper sx={{ maxWidth: '100%', p: 2 }} />`,
       },
       // A breakpoint key on a component that does NOT own `maxWidth` is still a
       // system prop: the value is wrong there, but that is the author's bug and
       // moving it into sx does not change what the browser sees.
       {
-        code: `<Box maxWidth="xl" />`,
+        code: `import { Box } from '@mui/material';
+<Box maxWidth="xl" />`,
         errors: [{ messageId: 'preferSxProp', data: { prop: 'maxWidth' } }],
-        output: `<Box sx={{ maxWidth: 'xl' }} />`,
+        output: `import { Box } from '@mui/material';
+<Box sx={{ maxWidth: 'xl' }} />`,
       },
 
       // --- Container owns `maxWidth` only; every other system prop on it is
       // still reported and still moves into sx. ---
       {
-        code: `<Container mt={2} />`,
+        code: `import { Container } from '@mui/material';
+<Container mt={2} />`,
         errors: [{ messageId: 'preferSxProp', data: { prop: 'mt' } }],
-        output: `<Container sx={{ mt: 2 }} />`,
+        output: `import { Container } from '@mui/material';
+<Container sx={{ mt: 2 }} />`,
       },
       {
-        code: `<Container maxWidth="xl" mt={2} minWidth="320px" />`,
+        code: `import { Container } from '@mui/material';
+<Container maxWidth="xl" mt={2} minWidth="320px" />`,
         errors: [
           { messageId: 'preferSxProp', data: { prop: 'mt' } },
           { messageId: 'preferSxProp', data: { prop: 'minWidth' } },
         ],
-        output: `<Container maxWidth="xl" sx={{ mt: 2, minWidth: '320px' }} />`,
+        output: `import { Container } from '@mui/material';
+<Container maxWidth="xl" sx={{ mt: 2, minWidth: '320px' }} />`,
       },
       // The exempt prop is left alone even when it sits ahead of the sx the
       // other props merge into.
       {
-        code: `<Container maxWidth={false} p={3} sx={{ borderRadius: 2 }} />`,
+        code: `import { Container } from '@mui/material';
+<Container maxWidth={false} p={3} sx={{ borderRadius: 2 }} />`,
         errors: [{ messageId: 'preferSxProp', data: { prop: 'p' } }],
-        output: `<Container maxWidth={false} sx={{ p: 3, borderRadius: 2 }} />`,
+        output: `import { Container } from '@mui/material';
+<Container maxWidth={false} sx={{ p: 3, borderRadius: 2 }} />`,
       },
 
       // The fix rewrites the whole element when the attributes no longer fit on
       // one line; the owned prop has to come through that rewrite verbatim.
       {
         code: `
+import { Container } from '@mui/material';
 export const C = () => (
   <Container maxWidth="lg" alignItems="center" justifyContent="center" bgcolor="red" />
 );
@@ -579,6 +730,7 @@ export const C = () => (
           { messageId: 'preferSxProp', data: { prop: 'bgcolor' } },
         ],
         output: `
+import { Container } from '@mui/material';
 export const C = () => (
   <Container
     maxWidth="lg"
@@ -590,20 +742,24 @@ export const C = () => (
 
       // --- Dialog owns `maxWidth` (the same breakpoint key) but nothing else. ---
       {
-        code: `<Dialog open maxWidth="sm" mb={2} />`,
+        code: `import { Dialog } from '@mui/material';
+<Dialog open maxWidth="sm" mb={2} />`,
         errors: [{ messageId: 'preferSxProp', data: { prop: 'mb' } }],
-        output: `<Dialog open maxWidth="sm" sx={{ mb: 2 }} />`,
+        output: `import { Dialog } from '@mui/material';
+<Dialog open maxWidth="sm" sx={{ mb: 2 }} />`,
       },
 
       // --- AppBar owns `color` (it picks a background shade); the CSS system
       // props sitting beside it still move. ---
       {
-        code: `<AppBar color="transparent" px={2} boxShadow={0} />`,
+        code: `import { AppBar } from '@mui/material';
+<AppBar color="transparent" px={2} boxShadow={0} />`,
         errors: [
           { messageId: 'preferSxProp', data: { prop: 'px' } },
           { messageId: 'preferSxProp', data: { prop: 'boxShadow' } },
         ],
-        output: `<AppBar color="transparent" sx={{ px: 2, boxShadow: 0 }} />`,
+        output: `import { AppBar } from '@mui/material';
+<AppBar color="transparent" sx={{ px: 2, boxShadow: 0 }} />`,
       },
 
       // --- Issue #1565 shape 1: a new sx object that would overflow the print
@@ -651,37 +807,45 @@ export const C = () => {
 
       // --- Boolean shorthand: the prop's value is `true`. ---
       {
-        code: `<Box border />`,
+        code: `import { Box } from '@mui/material';
+<Box border />`,
         errors: [{ messageId: 'preferSxProp', data: { prop: 'border' } }],
-        output: `<Box sx={{ border: true }} />`,
+        output: `import { Box } from '@mui/material';
+<Box sx={{ border: true }} />`,
       },
 
       // --- Namespaced component (Mui.Box) resolves to its property name. ---
       {
-        code: `<Mui.Box mt={2} />`,
+        code: `import * as Mui from '@mui/material';
+<Mui.Box mt={2} />`,
         errors: [{ messageId: 'preferSxProp', data: { prop: 'mt' } }],
-        output: `<Mui.Box sx={{ mt: 2 }} />`,
+        output: `import * as Mui from '@mui/material';
+<Mui.Box sx={{ mt: 2 }} />`,
       },
 
       // --- `sx` with no value has nothing to merge into, so the prop is
       // reported but not moved. ---
       {
-        code: `<Box sx mt={2} />`,
+        code: `import { Box } from '@mui/material';
+<Box sx mt={2} />`,
         errors: [{ messageId: 'preferSxProp', data: { prop: 'mt' } }],
         output: null,
       },
 
       // --- Empty array-form sx. ---
       {
-        code: `<Box mt={2} sx={[]} />`,
+        code: `import { Box } from '@mui/material';
+<Box mt={2} sx={[]} />`,
         errors: [{ messageId: 'preferSxProp', data: { prop: 'mt' } }],
-        output: `<Box sx={[{ mt: 2 }]} />`,
+        output: `import { Box } from '@mui/material';
+<Box sx={[{ mt: 2 }]} />`,
       },
 
       // --- A hole in the array has no node to anchor the merge on, so the fix
       // stands down rather than reading a missing element. ---
       {
-        code: `<Box mt={2} sx={[, baseStyles]} />`,
+        code: `import { Box } from '@mui/material';
+<Box mt={2} sx={[, baseStyles]} />`,
         errors: [{ messageId: 'preferSxProp', data: { prop: 'mt' } }],
         output: null,
       },
@@ -780,6 +944,7 @@ export const Panel = ({ theme }: Props) => (
       // that shape; new entries never splice onto the first property's line. ---
       {
         code: `
+import { Stack } from '@mui/material';
 export const C = () => {
   return (
     <Stack
@@ -798,6 +963,7 @@ export const C = () => {
           { messageId: 'preferSxProp', data: { prop: 'width' } },
         ],
         output: `
+import { Stack } from '@mui/material';
 export const C = () => {
   return (
     <Stack
@@ -858,6 +1024,7 @@ export const Layout = () => (
       // property, so its interior lines shift by the same delta. ---
       {
         code: `
+import { Stack } from '@mui/material';
 export const Responsive = () => (
   <Stack
     alignItems="center"
@@ -877,6 +1044,7 @@ export const Responsive = () => (
           { messageId: 'preferSxProp', data: { prop: 'display' } },
         ],
         output: `
+import { Stack } from '@mui/material';
 export const Responsive = () => (
   <Stack
     sx={{
@@ -898,6 +1066,7 @@ export const Responsive = () => (
       // becomes an element of its own rather than joining the first element. ---
       {
         code: `
+import { Box } from '@mui/material';
 export const Overlay = ({ isActive }: Props) => (
   <Box
     height="100%"
@@ -914,6 +1083,7 @@ export const Overlay = ({ isActive }: Props) => (
           { messageId: 'preferSxProp', data: { prop: 'width' } },
         ],
         output: `
+import { Box } from '@mui/material';
 export const Overlay = ({ isActive }: Props) => (
   <Box
     sx={[
@@ -930,6 +1100,7 @@ export const Overlay = ({ isActive }: Props) => (
       // apart, one element per line. ---
       {
         code: `
+import { Box } from '@mui/material';
 export const Overlay = ({ isActive }: Props) => (
   <Box
     alignItems="center"
@@ -943,6 +1114,7 @@ export const Overlay = ({ isActive }: Props) => (
           { messageId: 'preferSxProp', data: { prop: 'justifyContent' } },
         ],
         output: `
+import { Box } from '@mui/material';
 export const Overlay = ({ isActive }: Props) => (
   <Box
     sx={[
@@ -959,6 +1131,7 @@ export const Overlay = ({ isActive }: Props) => (
       // array breaks apart AND the new object breaks open inside it. ---
       {
         code: `
+import { Box } from '@mui/material';
 export const Overlay = ({ isActive }: Props) => (
   <Box
     alignItems="center"
@@ -974,6 +1147,7 @@ export const Overlay = ({ isActive }: Props) => (
           { messageId: 'preferSxProp', data: { prop: 'bgcolor' } },
         ],
         output: `
+import { Box } from '@mui/material';
 export const Overlay = ({ isActive }: Props) => (
   <Box
     sx={[
@@ -995,6 +1169,7 @@ export const Overlay = ({ isActive }: Props) => (
       // the report carries no fix rather than emit past the print width. ---
       {
         code: `
+import { Box } from '@mui/material';
 export const Overlay = ({ isActive }: Props) => (
   <Box
     alignItems="center"
@@ -1016,6 +1191,7 @@ export const Overlay = ({ isActive }: Props) => (
       // object. ---
       {
         code: `
+import { Typography } from '@mui/material';
 export const Label = ({ isActive, typographySx }: Props) => (
   <Typography
     color={isActive ? 'text.primary' : 'text.secondary'}
@@ -1032,6 +1208,7 @@ export const Label = ({ isActive, typographySx }: Props) => (
           { messageId: 'preferSxProp', data: { prop: 'textAlign' } },
         ],
         output: `
+import { Typography } from '@mui/material';
 export const Label = ({ isActive, typographySx }: Props) => (
   <Typography
     sx={{
@@ -1050,6 +1227,7 @@ export const Label = ({ isActive, typographySx }: Props) => (
       // --- An empty sx object takes the same width treatment as a new one. ---
       {
         code: `
+import { Stack } from '@mui/material';
 export const Panel = () => (
   <Stack
     alignItems="flex-start"
@@ -1065,6 +1243,7 @@ export const Panel = () => (
           { messageId: 'preferSxProp', data: { prop: 'bgcolor' } },
         ],
         output: `
+import { Stack } from '@mui/material';
 export const Panel = () => (
   <Stack
     sx={{
@@ -1081,6 +1260,7 @@ export const Panel = () => (
       // read from the file rather than assumed to be two spaces. ---
       {
         code: `
+import { Stack } from '@mui/material';
 export const Panel = () => (
 \t<Stack
 \t\talignItems="center"
@@ -1096,6 +1276,7 @@ export const Panel = () => (
           { messageId: 'preferSxProp', data: { prop: 'bgcolor' } },
         ],
         output: `
+import { Stack } from '@mui/material';
 export const Panel = () => (
 \t<Stack
 \t\tsx={{
@@ -1115,6 +1296,7 @@ export const Panel = () => (
       // make the whole file look one-space indented. ---
       {
         code: `
+import { Stack } from '@mui/material';
 /**
  * Steps the wallet wizard walks a user through.
  *
@@ -1159,6 +1341,7 @@ export const WalletWizard = () => (
           { messageId: 'preferSxProp', data: { prop: 'bgcolor' } },
         ],
         output: `
+import { Stack } from '@mui/material';
 /**
  * Steps the wallet wizard walks a user through.
  *
@@ -1205,6 +1388,7 @@ export const WalletWizard = () => (
       // comment lines cannot degrade into a hard-coded two. ---
       {
         code: `
+import { Stack } from '@mui/material';
 export const Panel = () => (
     <Stack
         alignItems="center"
@@ -1220,6 +1404,7 @@ export const Panel = () => (
           { messageId: 'preferSxProp', data: { prop: 'bgcolor' } },
         ],
         output: `
+import { Stack } from '@mui/material';
 export const Panel = () => (
     <Stack
         sx={{
@@ -1238,6 +1423,7 @@ export const Panel = () => (
       // into a tab-indented file. ---
       {
         code: `
+import { Stack } from '@mui/material';
 /**
  * The panel shell.
  *
@@ -1271,6 +1457,7 @@ export const Panel = () => (
           { messageId: 'preferSxProp', data: { prop: 'bgcolor' } },
         ],
         output: `
+import { Stack } from '@mui/material';
 /**
  * The panel shell.
  *
@@ -1307,6 +1494,7 @@ export const Panel = () => (
       // rather than guessing. A wrong guess would corrupt the layout. ---
       {
         code: `
+import { Stack } from '@mui/material';
 export const Panel = () => (
   <Stack
     sx={{
@@ -1320,6 +1508,7 @@ export const Panel = () => (
 `,
         errors: [{ messageId: 'preferSxProp', data: { prop: 'display' } }],
         output: `
+import { Stack } from '@mui/material';
 export const Panel = () => (
   <Stack
     sx={{
@@ -1339,6 +1528,7 @@ export const Panel = () => (
       // so the report carries no fix. ---
       {
         code: `
+import { Stack } from '@mui/material';
 export const Panel = () => (
   <Stack /* keep in sync with Sidebar */ alignItems="center" justifyContent="center" pb={6} />
 );
@@ -1357,6 +1547,7 @@ export const Panel = () => (
       // the comment already consumed, not just the indentation. ---
       {
         code: `
+import { Stack } from '@mui/material';
 export const Panel = () => (
   <Stack
     /* keep in sync with Sidebar */ alignItems="center"
@@ -1371,6 +1562,7 @@ export const Panel = () => (
           { messageId: 'preferSxProp', data: { prop: 'pb' } },
         ],
         output: `
+import { Stack } from '@mui/material';
 export const Panel = () => (
   <Stack
     /* keep in sync with Sidebar */ sx={{
@@ -1388,6 +1580,7 @@ export const Panel = () => (
       // overflows. ---
       {
         code: `
+import { Stack } from '@mui/material';
 export const Panel = () => (
   <Stack
     /* keep in sync with Sidebar */ alignItems="center"
@@ -1400,6 +1593,7 @@ export const Panel = () => (
           { messageId: 'preferSxProp', data: { prop: 'pb' } },
         ],
         output: `
+import { Stack } from '@mui/material';
 export const Panel = () => (
   <Stack
     /* keep in sync with Sidebar */ sx={{ alignItems: 'center', pb: 6 }}
@@ -1415,6 +1609,7 @@ export const Panel = () => (
       // the report carries no fix. ---
       {
         code: `
+import { Stack, Typography } from '@mui/material';
 export const Title = ({ theme }: Props) => (
   <Stack spacing={1}>
     <Typography color={theme.palette.primary.main}>Lock team</Typography>
@@ -1429,6 +1624,7 @@ export const Title = ({ theme }: Props) => (
       // splice still applies. ---
       {
         code: `
+import { Stack, Typography } from '@mui/material';
 export const Title = () => (
   <Stack spacing={1}>
     <Typography color={palette.main}>Lock team</Typography>
@@ -1437,6 +1633,7 @@ export const Title = () => (
 `,
         errors: [{ messageId: 'preferSxProp', data: { prop: 'color' } }],
         output: `
+import { Stack, Typography } from '@mui/material';
 export const Title = () => (
   <Stack spacing={1}>
     <Typography sx={{ color: palette.main }}>Lock team</Typography>
@@ -1449,6 +1646,7 @@ export const Title = () => (
       // leaves alone. ---
       {
         code: `
+import { Stack } from '@mui/material';
 export const Panel = ({ onSelect }: Props) => (
   <Stack
     alignItems="center"
@@ -1466,6 +1664,7 @@ export const Panel = ({ onSelect }: Props) => (
           { messageId: 'preferSxProp', data: { prop: 'justifyContent' } },
         ],
         output: `
+import { Stack } from '@mui/material';
 export const Panel = ({ onSelect }: Props) => (
   <Stack
     sx={{
@@ -1484,6 +1683,7 @@ export const Panel = ({ onSelect }: Props) => (
       // --- The same source at the default width stays on one line. ---
       {
         code: `
+import { Stack } from '@mui/material';
 export const Panel = ({ onSelect }: Props) => (
   <Stack
     alignItems="center"
@@ -1500,6 +1700,7 @@ export const Panel = ({ onSelect }: Props) => (
           { messageId: 'preferSxProp', data: { prop: 'justifyContent' } },
         ],
         output: `
+import { Stack } from '@mui/material';
 export const Panel = ({ onSelect }: Props) => (
   <Stack
     sx={{ alignItems: 'center', justifyContent: 'center' }}
@@ -1516,6 +1717,7 @@ export const Panel = ({ onSelect }: Props) => (
       // option drives the decision rather than a hard-coded 80. ---
       {
         code: `
+import { Stack } from '@mui/material';
 export const Panel = () => (
   <Stack
     alignItems="center"
@@ -1534,6 +1736,7 @@ export const Panel = () => (
           { messageId: 'preferSxProp', data: { prop: 'bgcolor' } },
         ],
         output: `
+import { Stack } from '@mui/material';
 export const Panel = () => (
   <Stack
     sx={{ alignItems: 'center', justifyContent: 'center', width: '100%', bgcolor: 'red' }}
@@ -1548,14 +1751,16 @@ export const Panel = () => (
       // the width. Merging every system prop into one `sx` drops the element to
       // exactly one attribute, so the children have to come back with it. ---
       {
-        code: `<Box overflow="hidden" textOverflow="ellipsis">
+        code: `import { Box } from '@mui/material';
+<Box overflow="hidden" textOverflow="ellipsis">
   hi
 </Box>;`,
         errors: [
           { messageId: 'preferSxProp', data: { prop: 'overflow' } },
           { messageId: 'preferSxProp', data: { prop: 'textOverflow' } },
         ],
-        output: `<Box sx={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>hi</Box>;`,
+        output: `import { Box } from '@mui/material';
+<Box sx={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>hi</Box>;`,
       },
 
       // An attribute the merge does not consume keeps the element at two, so
@@ -1563,14 +1768,16 @@ export const Panel = () => (
       // This is the collapse direction's other side: joining here would be the
       // mirror-image defect.
       {
-        code: `<Box overflow="hidden" textOverflow="ellipsis" id="x">
+        code: `import { Box } from '@mui/material';
+<Box overflow="hidden" textOverflow="ellipsis" id="x">
   hi
 </Box>;`,
         errors: [
           { messageId: 'preferSxProp', data: { prop: 'overflow' } },
           { messageId: 'preferSxProp', data: { prop: 'textOverflow' } },
         ],
-        output: `<Box sx={{ overflow: 'hidden', textOverflow: 'ellipsis' }} id="x">
+        output: `import { Box } from '@mui/material';
+<Box sx={{ overflow: 'hidden', textOverflow: 'ellipsis' }} id="x">
   hi
 </Box>;`,
       },
@@ -1578,14 +1785,16 @@ export const Panel = () => (
       // An element or fragment child forces Prettier's broken layout at any
       // attribute count (its `containsTag`), so the merge never moves it.
       {
-        code: `<Box overflow="hidden" textOverflow="ellipsis">
+        code: `import { Box } from '@mui/material';
+<Box overflow="hidden" textOverflow="ellipsis">
   <Inner />
 </Box>;`,
         errors: [
           { messageId: 'preferSxProp', data: { prop: 'overflow' } },
           { messageId: 'preferSxProp', data: { prop: 'textOverflow' } },
         ],
-        output: `<Box sx={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        output: `import { Box } from '@mui/material';
+<Box sx={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
   <Inner />
 </Box>;`,
       },
@@ -1593,7 +1802,8 @@ export const Panel = () => (
       // Past the print width the broken opening element is Prettier's own
       // answer, so the children stay broken with it.
       {
-        code: `<Box overflow="hidden" textOverflow="ellipsis" display="flex" alignItems="center">
+        code: `import { Box } from '@mui/material';
+<Box overflow="hidden" textOverflow="ellipsis" display="flex" alignItems="center">
   some fairly long children text here indeed
 </Box>;`,
         errors: [
@@ -1602,7 +1812,8 @@ export const Panel = () => (
           { messageId: 'preferSxProp', data: { prop: 'display' } },
           { messageId: 'preferSxProp', data: { prop: 'alignItems' } },
         ],
-        output: `<Box
+        output: `import { Box } from '@mui/material';
+<Box
   sx={{
     overflow: 'hidden',
     textOverflow: 'ellipsis',
@@ -1620,7 +1831,8 @@ export const Panel = () => (
       // author wrote is silently discarded. The two disagree and only the
       // author can say which wins, so the prop is reported without a fix. ---
       {
-        code: `<Box display="flex" sx={{ display: 'block' }} />`,
+        code: `import { Box } from '@mui/material';
+<Box display="flex" sx={{ display: 'block' }} />`,
         errors: [{ messageId: 'preferSxProp', data: { prop: 'display' } }],
         output: null,
       },
@@ -1628,7 +1840,8 @@ export const Panel = () => (
       // A string-literal key names the same property as the bare identifier,
       // so it collides just the same.
       {
-        code: `<Box display="flex" sx={{ 'display': 'block' }} />`,
+        code: `import { Box } from '@mui/material';
+<Box display="flex" sx={{ 'display': 'block' }} />`,
         errors: [{ messageId: 'preferSxProp', data: { prop: 'display' } }],
         output: null,
       },
@@ -1636,7 +1849,8 @@ export const Panel = () => (
       // A computed key whose expression is a literal is still readable, and
       // names the same property.
       {
-        code: `<Box display="flex" sx={{ ['display']: 'block' }} />`,
+        code: `import { Box } from '@mui/material';
+<Box display="flex" sx={{ ['display']: 'block' }} />`,
         errors: [{ messageId: 'preferSxProp', data: { prop: 'display' } }],
         output: null,
       },
@@ -1645,12 +1859,14 @@ export const Panel = () => (
       // is a possible collision with every moved prop — including one whose
       // name is nowhere in the literal.
       {
-        code: `<Box display="flex" sx={{ [key]: 'block' }} />`,
+        code: `import { Box } from '@mui/material';
+<Box display="flex" sx={{ [key]: 'block' }} />`,
         errors: [{ messageId: 'preferSxProp', data: { prop: 'display' } }],
         output: null,
       },
       {
-        code: `<Box display="flex" mt={2} sx={{ [key]: 'block' }} />`,
+        code: `import { Box } from '@mui/material';
+<Box display="flex" mt={2} sx={{ [key]: 'block' }} />`,
         errors: [
           { messageId: 'preferSxProp', data: { prop: 'display' } },
           { messageId: 'preferSxProp', data: { prop: 'mt' } },
@@ -1661,18 +1877,21 @@ export const Panel = () => (
       // One disagreeing pair does not hold the rest of the element back: the
       // colliding prop is reported and left alone, every other prop merges.
       {
-        code: `<Box display="flex" mt={2} sx={{ display: 'block' }} />`,
+        code: `import { Box } from '@mui/material';
+<Box display="flex" mt={2} sx={{ display: 'block' }} />`,
         errors: [
           { messageId: 'preferSxProp', data: { prop: 'display' } },
           { messageId: 'preferSxProp', data: { prop: 'mt' } },
         ],
-        output: `<Box display="flex" sx={{ mt: 2, display: 'block' }} />`,
+        output: `import { Box } from '@mui/material';
+<Box display="flex" sx={{ mt: 2, display: 'block' }} />`,
       },
 
       // Every prop colliding leaves nothing to merge, so no fix is emitted at
       // all — both props are still reported.
       {
-        code: `<Box display="flex" mt={2} sx={{ display: 'block', mt: 1 }} />`,
+        code: `import { Box } from '@mui/material';
+<Box display="flex" mt={2} sx={{ display: 'block', mt: 1 }} />`,
         errors: [
           { messageId: 'preferSxProp', data: { prop: 'display' } },
           { messageId: 'preferSxProp', data: { prop: 'mt' } },
@@ -1683,7 +1902,8 @@ export const Panel = () => (
       // A spread does not hide the keys written beside it: `display` is
       // declared in this literal, so it collides.
       {
-        code: `<Box display="flex" sx={{ ...base, display: 'block' }} />`,
+        code: `import { Box } from '@mui/material';
+<Box display="flex" sx={{ ...base, display: 'block' }} />`,
         errors: [{ messageId: 'preferSxProp', data: { prop: 'display' } }],
         output: null,
       },
@@ -1692,17 +1912,21 @@ export const Panel = () => (
       // beside it duplicates nothing — it overrides, exactly as any member
       // written after a spread does — so the fix still applies.
       {
-        code: `<Box display="flex" sx={{ ...base }} />`,
+        code: `import { Box } from '@mui/material';
+<Box display="flex" sx={{ ...base }} />`,
         errors: [{ messageId: 'preferSxProp', data: { prop: 'display' } }],
-        output: `<Box sx={{ display: 'flex', ...base }} />`,
+        output: `import { Box } from '@mui/material';
+<Box sx={{ display: 'flex', ...base }} />`,
       },
 
       // The same key nested under a selector is a different property of a
       // different object, so it is not a collision.
       {
-        code: `<Box display="flex" sx={{ '&:hover': { display: 'none' } }} />`,
+        code: `import { Box } from '@mui/material';
+<Box display="flex" sx={{ '&:hover': { display: 'none' } }} />`,
         errors: [{ messageId: 'preferSxProp', data: { prop: 'display' } }],
-        output: `<Box sx={{ display: 'flex', '&:hover': { display: 'none' } }} />`,
+        output: `import { Box } from '@mui/material';
+<Box sx={{ display: 'flex', '&:hover': { display: 'none' } }} />`,
       },
 
       // The array form prepends an object of its own rather than merging in
@@ -1710,20 +1934,24 @@ export const Panel = () => (
       // applies later entries last, which keeps `sx`'s precedence over the
       // system prop exactly as it was before the fix.
       {
-        code: `<Box display="flex" sx={[{ display: 'block' }]} />`,
+        code: `import { Box } from '@mui/material';
+<Box display="flex" sx={[{ display: 'block' }]} />`,
         errors: [{ messageId: 'preferSxProp', data: { prop: 'display' } }],
-        output: `<Box sx={[{ display: 'flex' }, { display: 'block' }]} />`,
+        output: `import { Box } from '@mui/material';
+<Box sx={[{ display: 'flex' }, { display: 'block' }]} />`,
       },
 
       // A colliding prop kept by the merge is reproduced verbatim when the
       // element has to be restructured to fit the print width.
       {
-        code: `<Stack direction="row" alignItems="center" width="100%" sx={{ alignItems: 'flex-start' }} />`,
+        code: `import { Stack } from '@mui/material';
+<Stack direction="row" alignItems="center" width="100%" sx={{ alignItems: 'flex-start' }} />`,
         errors: [
           { messageId: 'preferSxProp', data: { prop: 'alignItems' } },
           { messageId: 'preferSxProp', data: { prop: 'width' } },
         ],
-        output: `<Stack
+        output: `import { Stack } from '@mui/material';
+<Stack
   direction="row"
   alignItems="center"
   sx={{ width: '100%', alignItems: 'flex-start' }}
@@ -1733,7 +1961,8 @@ export const Panel = () => (
       // The same split inside a literal the author already broke open: the
       // expanded merge keeps the colliding prop where it was written.
       {
-        code: `<Box
+        code: `import { Box } from '@mui/material';
+<Box
   display="flex"
   mt={2}
   sx={{
@@ -1744,7 +1973,8 @@ export const Panel = () => (
           { messageId: 'preferSxProp', data: { prop: 'display' } },
           { messageId: 'preferSxProp', data: { prop: 'mt' } },
         ],
-        output: `<Box
+        output: `import { Box } from '@mui/material';
+<Box
   display="flex"
   sx={{
     mt: 2,
@@ -1756,7 +1986,8 @@ export const Panel = () => (
       // #2289's inline twin: the attribute and the `sx` entry disagree about
       // `flexWrap`, which is the pairing that produced the duplicate key.
       {
-        code: `<Stack flexWrap="nowrap" sx={{ flexWrap: 'wrap' }} useFlexGap spacing={2} />`,
+        code: `import { Stack } from '@mui/material';
+<Stack flexWrap="nowrap" sx={{ flexWrap: 'wrap' }} useFlexGap spacing={2} />`,
         errors: [{ messageId: 'preferSxProp', data: { prop: 'flexWrap' } }],
         output: null,
       },
@@ -1800,19 +2031,22 @@ const El = () => <Box display="flex" sx={{ mt: 2 }} display="block" />;
       // name is declined on both sides and the singly named prop merges in
       // place, so the existing collision path and the duplicate path compose.
       {
-        code: `<Box display="flex" mt={2} display="block" sx={{ p: 1 }} />`,
+        code: `import { Box } from '@mui/material';
+<Box display="flex" mt={2} display="block" sx={{ p: 1 }} />`,
         errors: [
           { messageId: 'preferSxProp', data: { prop: 'display' } },
           { messageId: 'preferSxProp', data: { prop: 'mt' } },
           { messageId: 'preferSxProp', data: { prop: 'display' } },
         ],
-        output: `<Box display="flex" display="block" sx={{ mt: 2, p: 1 }} />`,
+        output: `import { Box } from '@mui/material';
+<Box display="flex" display="block" sx={{ mt: 2, p: 1 }} />`,
       },
 
       // Every moved prop duplicated leaves nothing to merge, so no fix is
       // emitted at all — each attribute is still reported.
       {
-        code: `<Box display="flex" display="block" display="grid" />`,
+        code: `import { Box } from '@mui/material';
+<Box display="flex" display="block" display="grid" />`,
         errors: [
           { messageId: 'preferSxProp', data: { prop: 'display' } },
           { messageId: 'preferSxProp', data: { prop: 'display' } },
@@ -1825,12 +2059,76 @@ const El = () => <Box display="flex" sx={{ mt: 2 }} display="block" />;
       // form prepends a fresh object literal, which cannot carry the name
       // twice either.
       {
-        code: `<Box display="flex" display="block" sx={[base]} />`,
+        code: `import { Box } from '@mui/material';
+<Box display="flex" display="block" sx={[base]} />`,
         errors: [
           { messageId: 'preferSxProp', data: { prop: 'display' } },
           { messageId: 'preferSxProp', data: { prop: 'display' } },
         ],
         output: null,
+      },
+
+      // --- Provenance: every spelling of an `@mui/*` import reaches the rule. ---
+
+      // A deep entry point names the same component as the barrel.
+      {
+        code: `import Box from '@mui/material/Box';
+<Box mt={2} />`,
+        errors: [{ messageId: 'preferSxProp', data: { prop: 'mt' } }],
+        output: `import Box from '@mui/material/Box';
+<Box sx={{ mt: 2 }} />`,
+      },
+
+      // A sibling MUI package ships the same system props.
+      {
+        code: `import { Box } from '@mui/joy';
+<Box mt={2} />`,
+        errors: [{ messageId: 'preferSxProp', data: { prop: 'mt' } }],
+        output: `import { Box } from '@mui/joy';
+<Box sx={{ mt: 2 }} />`,
+      },
+      {
+        code: `import { Stack } from '@mui/system';
+<Stack alignItems="center" pb={6} />`,
+        errors: [
+          { messageId: 'preferSxProp', data: { prop: 'alignItems' } },
+          { messageId: 'preferSxProp', data: { prop: 'pb' } },
+        ],
+        output: `import { Stack } from '@mui/system';
+<Stack sx={{ alignItems: 'center', pb: 6 }} />`,
+      },
+
+      // An alias renames the binding, not the export, so the component the
+      // element denotes is still MUI's `Box`.
+      {
+        code: `import { Box as MuiBox } from '@mui/material';
+<MuiBox mt={2} />`,
+        errors: [{ messageId: 'preferSxProp', data: { prop: 'mt' } }],
+        output: `import { Box as MuiBox } from '@mui/material';
+<MuiBox sx={{ mt: 2 }} />`,
+      },
+
+      // The owned-prop exemption travels with the export: `maxWidth` is
+      // Container's breakpoint key under any local name, while the system prop
+      // beside it still moves.
+      {
+        code: `import { Container as Wrapper } from '@mui/material';
+<Wrapper maxWidth="xl" mt={2} />`,
+        errors: [{ messageId: 'preferSxProp', data: { prop: 'mt' } }],
+        output: `import { Container as Wrapper } from '@mui/material';
+<Wrapper maxWidth="xl" sx={{ mt: 2 }} />`,
+      },
+
+      // The `components` option is the opt-in for a first-party wrapper that
+      // forwards its props to MUI. Such a wrapper is defined by living outside
+      // `@mui/*`, so a name the user lists is honored whatever introduced it.
+      {
+        code: `import { Panel } from '../components/Panel';
+<Panel mt={2} />`,
+        options: [{ components: ['Panel'] }],
+        errors: [{ messageId: 'preferSxProp', data: { prop: 'mt' } }],
+        output: `import { Panel } from '../components/Panel';
+<Panel sx={{ mt: 2 }} />`,
       },
     ],
   },
