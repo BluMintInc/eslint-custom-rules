@@ -1,3 +1,4 @@
+import path from 'path';
 import { parse } from '@typescript-eslint/parser';
 import { TSESLint } from '@typescript-eslint/utils';
 import * as prettier from 'prettier';
@@ -13,6 +14,31 @@ import {
 type RuleMessageIds = 'preferMap' | 'preferMapManual';
 type RuleOptions = [{ printWidth?: number; singleQuote?: boolean }];
 type RuleTests = TSESLint.RunTests<RuleMessageIds, RuleOptions>;
+
+const tsconfigRootDir = path.join(__dirname, '..', '..');
+
+/**
+ * A real, project-backed program for one case, overriding the shared tester's
+ * options without touching them.
+ *
+ * The alias-recovery cases below are UNOBSERVABLE without it. An isolated
+ * single-file program cannot resolve a numeric indexed access over a
+ * `readonly [...]` tuple — that needs `ReadonlyArray`'s index signature from
+ * `lib.es5.d.ts` — so the discriminant's type collapses to `any`,
+ * `classifyDiscriminant` sets `hasOther`, and `typeGate` bails before the key
+ * type is ever computed. The rule does not fire AT ALL there, which means a
+ * case written without `project` asserts nothing while passing (#2009).
+ *
+ * The filename must name a file the repo's own `tsconfig.json` includes, or the
+ * parse falls back to the same isolated program.
+ */
+const PROJECT_BACKED = {
+  filename: path.join(
+    tsconfigRootDir,
+    'src/tests/fixtures/type-aware-object.ts',
+  ),
+  parserOptions: { project: './tsconfig.json', tsconfigRootDir },
+};
 
 const tsTests: RuleTests = {
   valid: [
@@ -6068,6 +6094,319 @@ export function pick(flag: boolean) {
       output: null,
       errors: [{ messageId: 'preferMapManual' }],
     },
+    // #2009: the alias spelled as an indexed access over a `const` tuple —
+    // exactly what the companion rule `prefer-union-from-const-array` emits.
+    // TypeScript drops `aliasSymbol` resolving that shape, so
+    // `checker.typeToString()` printed the widened literal union and the
+    // emitted `Record` lost the name. A stale `Record<'light' | 'dark', V>`
+    // keeps typechecking once the union grows: only the LOOKUP complains, as
+    // TS7053, which is an implicit-any diagnostic and so reports nothing at all
+    // under `noImplicitAny: false` (this repo's own setting) while yielding
+    // `undefined` for the new member at runtime. The alias is recovered from
+    // the discriminant's annotation instead, restoring the TS2741 at the
+    // `Record` that names the missing key. The parenthesized spelling is the
+    // one the companion rule authors, so it is pinned verbatim here even though
+    // this repo's Prettier drops the redundant parens.
+    {
+      code: `
+const MODE_VALUES = ['light', 'dark'] as const;
+type Mode = (typeof MODE_VALUES)[number];
+declare const PALETTE: { light: string; dark: string };
+export function resultFor(mode: Mode) {
+  switch (mode) {
+    case 'light':
+      return PALETTE.light;
+    case 'dark':
+      return PALETTE.dark;
+  }
+}
+`,
+      output: `
+const MODE_VALUES = ['light', 'dark'] as const;
+type Mode = (typeof MODE_VALUES)[number];
+declare const PALETTE: { light: string; dark: string };
+export function resultFor(mode: Mode) {
+  const RESULT_BY_MODE: Record<Mode, string> = {
+    light: PALETTE.light,
+    dark: PALETTE.dark,
+  };
+  return RESULT_BY_MODE[mode];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+      ...PROJECT_BACKED,
+    },
+    // #2009 control: the plain alias spelling, under the SAME project-backed
+    // rig. The checker keeps `aliasSymbol` here, so this arm never needed
+    // recovery — which is what makes it the control. A green arm above bought
+    // by widening the general path would show up as this one changing.
+    {
+      code: `
+type Mode = 'light' | 'dark';
+declare const PALETTE: { light: string; dark: string };
+export function resultFor(mode: Mode) {
+  switch (mode) {
+    case 'light':
+      return PALETTE.light;
+    case 'dark':
+      return PALETTE.dark;
+  }
+}
+`,
+      output: `
+type Mode = 'light' | 'dark';
+declare const PALETTE: { light: string; dark: string };
+export function resultFor(mode: Mode) {
+  const RESULT_BY_MODE: Record<Mode, string> = {
+    light: PALETTE.light,
+    dark: PALETTE.dark,
+  };
+  return RESULT_BY_MODE[mode];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+      ...PROJECT_BACKED,
+    },
+    // #2009: recovery is not limited to the tuple spelling — any alias the
+    // checker resolved past is recovered, `keyof typeof` over a plain (not
+    // `as const`, not a tuple) object included.
+    {
+      code: `
+const MODE_TABLE = { light: 1, dark: 2 };
+type Mode = keyof typeof MODE_TABLE;
+declare const PALETTE: { light: string; dark: string };
+export function resultFor(mode: Mode) {
+  switch (mode) {
+    case 'light':
+      return PALETTE.light;
+    case 'dark':
+      return PALETTE.dark;
+  }
+}
+`,
+      output: `
+const MODE_TABLE = { light: 1, dark: 2 };
+type Mode = keyof typeof MODE_TABLE;
+declare const PALETTE: { light: string; dark: string };
+export function resultFor(mode: Mode) {
+  const RESULT_BY_MODE: Record<Mode, string> = {
+    light: PALETTE.light,
+    dark: PALETTE.dark,
+  };
+  return RESULT_BY_MODE[mode];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+      ...PROJECT_BACKED,
+    },
+    // #2009: an alias reached through a QUALIFIED name. `Theme.Mode` is not a
+    // bare identifier, and shipping its head would name the namespace rather
+    // than the union, so the widened text stays — a weak key type beats a wrong
+    // one.
+    {
+      code: `
+declare const PALETTE: { light: string; dark: string };
+namespace Theme {
+  export const MODE_VALUES = ['light', 'dark'] as const;
+  export type Mode = typeof MODE_VALUES[number];
+}
+export function resultFor(mode: Theme.Mode) {
+  switch (mode) {
+    case 'light':
+      return PALETTE.light;
+    case 'dark':
+      return PALETTE.dark;
+  }
+}
+`,
+      output: `
+declare const PALETTE: { light: string; dark: string };
+namespace Theme {
+  export const MODE_VALUES = ['light', 'dark'] as const;
+  export type Mode = typeof MODE_VALUES[number];
+}
+export function resultFor(mode: Theme.Mode) {
+  const RESULT_BY_MODE: Record<'light' | 'dark', string> = {
+    light: PALETTE.light,
+    dark: PALETTE.dark,
+  };
+  return RESULT_BY_MODE[mode];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+      ...PROJECT_BACKED,
+    },
+    // #2009: a PARAMETERISED reference is not denoted by its head either —
+    // `Except` alone is a different type from `Except<'y'>` — so the widened
+    // union ships.
+    {
+      code: `
+declare const PALETTE: { light: string; dark: string };
+type Except<T> = T extends 'x' ? never : 'light' | 'dark';
+export function resultFor(mode: Except<'y'>) {
+  switch (mode) {
+    case 'light':
+      return PALETTE.light;
+    case 'dark':
+      return PALETTE.dark;
+  }
+}
+`,
+      output: `
+declare const PALETTE: { light: string; dark: string };
+type Except<T> = T extends 'x' ? never : 'light' | 'dark';
+export function resultFor(mode: Except<'y'>) {
+  const RESULT_BY_MODE: Record<'light' | 'dark', string> = {
+    light: PALETTE.light,
+    dark: PALETTE.dark,
+  };
+  return RESULT_BY_MODE[mode];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+      ...PROJECT_BACKED,
+    },
+    // #2009: no alias at all. An inline union annotation has no name to
+    // recover, so the resolved literal union is the only spelling there is and
+    // recovery must not invent one.
+    {
+      code: `
+declare const PALETTE: { light: string; dark: string };
+export function resultFor(mode: 'light' | 'dark') {
+  switch (mode) {
+    case 'light':
+      return PALETTE.light;
+    case 'dark':
+      return PALETTE.dark;
+  }
+}
+`,
+      output: `
+declare const PALETTE: { light: string; dark: string };
+export function resultFor(mode: 'light' | 'dark') {
+  const RESULT_BY_MODE: Record<'light' | 'dark', string> = {
+    light: PALETTE.light,
+    dark: PALETTE.dark,
+  };
+  return RESULT_BY_MODE[mode];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+      ...PROJECT_BACKED,
+    },
+    // #2009: the indexed access written INLINE on the annotation rather than
+    // behind an alias. The shape recovery keys on is a type REFERENCE; a
+    // `typeof` query indexed in place names nothing, so the widened union
+    // stays.
+    {
+      code: `
+const MODE_VALUES = ['light', 'dark'] as const;
+declare const PALETTE: { light: string; dark: string };
+export function resultFor(mode: typeof MODE_VALUES[number]) {
+  switch (mode) {
+    case 'light':
+      return PALETTE.light;
+    case 'dark':
+      return PALETTE.dark;
+  }
+}
+`,
+      output: `
+const MODE_VALUES = ['light', 'dark'] as const;
+declare const PALETTE: { light: string; dark: string };
+export function resultFor(mode: typeof MODE_VALUES[number]) {
+  const RESULT_BY_MODE: Record<'light' | 'dark', string> = {
+    light: PALETTE.light,
+    dark: PALETTE.dark,
+  };
+  return RESULT_BY_MODE[mode];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+      ...PROJECT_BACKED,
+    },
+    // #2009 + #2229: the recovered name is resolved WHERE THE FIX LANDS, not
+    // where the annotation was written. A nearer `Mode` declares something
+    // else, so emitting the recovered name would silently re-key the `Record`
+    // on the shadow and drop the exhaustiveness the rule promises. Recovery
+    // declines and the widened union ships.
+    {
+      code: `
+const MODE_VALUES = ['light', 'dark'] as const;
+type Mode = typeof MODE_VALUES[number];
+declare const PALETTE: { light: string; dark: string };
+declare const mode: Mode;
+export function resultFor() {
+  type Mode = { nope: true };
+  const decoy: Mode = { nope: true };
+  void decoy;
+  switch (mode) {
+    case 'light':
+      return PALETTE.light;
+    case 'dark':
+      return PALETTE.dark;
+  }
+}
+`,
+      output: `
+const MODE_VALUES = ['light', 'dark'] as const;
+type Mode = typeof MODE_VALUES[number];
+declare const PALETTE: { light: string; dark: string };
+declare const mode: Mode;
+export function resultFor() {
+  type Mode = { nope: true };
+  const decoy: Mode = { nope: true };
+  void decoy;
+  const RESULT_BY_MODE: Record<'light' | 'dark', string> = {
+    light: PALETTE.light,
+    dark: PALETTE.dark,
+  };
+  return RESULT_BY_MODE[mode];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+      ...PROJECT_BACKED,
+    },
+    // #2009: a discriminant NARROWED above the dispatch is no longer the type
+    // its alias declares. Emitting `Record<Mode, V>` there would demand an
+    // `auto` entry the construct has no branch for and break the build, so the
+    // narrowed literal union — which is what the switch actually covers — is
+    // kept.
+    {
+      code: `
+const MODE_VALUES = ['light', 'dark', 'auto'] as const;
+type Mode = typeof MODE_VALUES[number];
+declare const PALETTE: { light: string; dark: string; auto: string };
+export function resultFor(mode: Mode) {
+  if (mode === 'auto') {
+    return PALETTE.auto;
+  }
+  switch (mode) {
+    case 'light':
+      return PALETTE.light;
+    case 'dark':
+      return PALETTE.dark;
+  }
+}
+`,
+      output: `
+const MODE_VALUES = ['light', 'dark', 'auto'] as const;
+type Mode = typeof MODE_VALUES[number];
+declare const PALETTE: { light: string; dark: string; auto: string };
+export function resultFor(mode: Mode) {
+  if (mode === 'auto') {
+    return PALETTE.auto;
+  }
+  const RESULT_BY_MODE: Record<'light' | 'dark', string> = {
+    light: PALETTE.light,
+    dark: PALETTE.dark,
+  };
+  return RESULT_BY_MODE[mode];
+}
+`,
+      errors: [{ messageId: 'preferMap' }],
+      ...PROJECT_BACKED,
+    },
   ],
 };
 
@@ -6723,7 +7062,7 @@ describe('prefer-map-over-conditional-dispatch fix layout vs Prettier', () => {
     );
     // Floors just under the measured counts, so a fixture edited out of any
     // sample fails here rather than quietly emptying it.
-    expect(settled.length).toBeGreaterThanOrEqual(125); // measured 130
+    expect(settled.length).toBeGreaterThanOrEqual(133); // measured 138
     expect(functionValued.length).toBeGreaterThanOrEqual(15); // measured 16
     expect(jsxValued.length).toBeGreaterThanOrEqual(8); // measured 9
     for (const testCase of [...functionValued, ...jsxValued]) {
@@ -6769,13 +7108,18 @@ describe('prefer-map-over-conditional-dispatch fix layout vs Prettier', () => {
     // the assertion above passing over an empty sample, so the ceiling sits
     // just above the measured count rather than at "a minority".
     //
-    // Ten of them, because a fixture pinning what #2063 must NOT do cannot be
-    // Prettier-clean by construction: a redundant paren pair, a second pair
+    // Eleven of them, because a fixture pinning what #2063 must NOT do cannot
+    // be Prettier-clean by construction: a redundant paren pair, a second pair
     // nested in a required one, and a comment written inside a pair are each
     // something Prettier rewrites in the INPUT. The tenth writes two
     // interfaces on one line to declare a JSX namespace compactly, which
-    // Prettier opens up.
-    expect(fixedCases.length - settled.length).toBeLessThanOrEqual(10);
+    // Prettier opens up. The eleventh pins `(typeof X)[number]` verbatim,
+    // because that is the spelling `prefer-union-from-const-array` emits and
+    // the one whose alias loss #2009 fixes — Prettier 2.7 drops the parens as
+    // redundant, so being a fixed point and being the composed shape are
+    // mutually exclusive there, and the composed shape is what the case is
+    // for.
+    expect(fixedCases.length - settled.length).toBeLessThanOrEqual(11); // measured 11
   });
 
   it('is not vacuous: the same output mis-indented is rejected', () => {
