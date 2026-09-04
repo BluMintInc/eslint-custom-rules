@@ -1179,13 +1179,13 @@ export const SILENT_INCORRECT_STATEMENTS: Record<string, string> = {
     'the report on the destructured require at fence line 1 carries a fix that rewrites `customMockFirestore(` to `mockFirestore(` inside this very describe, so one report already covers and repairs it',
   'enforce-centralized-mock-firestore:139:3':
     'usage scaffolding identical to the correct fence; the report sits on the exported declaration at fence line 1 and is deliberately unfixable, since collapsing that export is what repairs this call',
-  'flatten-push-calls:19:3':
+  'flatten-push-calls:33:3':
     'one violation per consecutive run: the report lands on `handlers.push` at fence line 2 and its fixer replaces the range spanning all three statements with `handlers.push(fnA, fnB, fnC)`',
-  'flatten-push-calls:19:4':
+  'flatten-push-calls:33:4':
     "tail of the same run as fence line 2, whose fixer range ends at this statement's semicolon; `checkStatements` skips past a merged run, so a run can never yield a second report",
-  'flatten-push-calls:26:4':
+  'flatten-push-calls:40:4':
     'part of the run reported at `items.push` on fence line 2, whose fixer rewrites every statement through the spread push into one merged call',
-  'flatten-push-calls:26:5':
+  'flatten-push-calls:40:5':
     'tail of the same run; `canSafelyFix` accepts a spread argument, so `...more` is merged into the single call reported at fence line 2 rather than reported again',
   'logical-top-to-bottom-grouping:37:5':
     'the loop is an ordering barrier, never a subject: `moveSideEffect` claims only expression statements, and the report on `console.log` at fence line 3 alone yields the documented correct code',

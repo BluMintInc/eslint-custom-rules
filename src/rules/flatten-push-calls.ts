@@ -310,6 +310,290 @@ function canSafelyFix(group: PushCallStatement[]): boolean {
   });
 }
 
+/**
+ * `Array.prototype.push` is variadic, so merging consecutive appends onto one
+ * array preserves meaning. A method named `push` on any other receiver need not
+ * be: Next.js's `Router.push(url, as, options)` and react-router's
+ * `history.push(path, state)` are POSITIONAL, so folding two navigations into
+ * one call performs a single navigation with the address bar masked by the
+ * second argument. The merge is therefore gated on syntactic evidence that the
+ * receiver is an array, and stays silent without it — a missed consolidation
+ * costs far less than a fix that changes what the code does.
+ */
+const ARRAY_TYPE_NAMES = new Set(['Array', 'ReadonlyArray']);
+const ARRAY_FACTORY_METHODS = new Set(['from', 'of']);
+const ARRAY_RETURNING_METHODS = new Set([
+  'map',
+  'filter',
+  'slice',
+  'concat',
+  'split',
+]);
+/** Hooks whose array type argument describes the binding they hand back. */
+const ARRAY_STATE_HOOKS = new Set(['useState', 'useRef']);
+
+type FunctionNode =
+  | TSESTree.FunctionDeclaration
+  | TSESTree.FunctionExpression
+  | TSESTree.ArrowFunctionExpression;
+
+function isFunctionNode(node: TSESTree.Node): node is FunctionNode {
+  return (
+    node.type === AST_NODE_TYPES.FunctionDeclaration ||
+    node.type === AST_NODE_TYPES.FunctionExpression ||
+    node.type === AST_NODE_TYPES.ArrowFunctionExpression
+  );
+}
+
+function isArrayTypeNode(node: TSESTree.TypeNode | undefined): boolean {
+  if (!node) return false;
+
+  switch (node.type) {
+    case AST_NODE_TYPES.TSArrayType:
+    case AST_NODE_TYPES.TSTupleType:
+      return true;
+    case AST_NODE_TYPES.TSTypeReference:
+      return (
+        node.typeName.type === AST_NODE_TYPES.Identifier &&
+        ARRAY_TYPE_NAMES.has(node.typeName.name)
+      );
+    case AST_NODE_TYPES.TSTypeOperator:
+      return (
+        node.operator === 'readonly' && isArrayTypeNode(node.typeAnnotation)
+      );
+    /** A union counts only when every member is an array, so `T[] | undefined`
+     * — whose `push` can be absent — does not. */
+    case AST_NODE_TYPES.TSUnionType:
+      return node.types.every((member) => isArrayTypeNode(member));
+    default:
+      return false;
+  }
+}
+
+function isArrayAnnotation(
+  annotation: TSESTree.TSTypeAnnotation | undefined,
+): boolean {
+  return isArrayTypeNode(annotation?.typeAnnotation);
+}
+
+function hasArrayTypeArgument(call: TSESTree.CallExpression): boolean {
+  return isArrayTypeNode(call.typeParameters?.params[0]);
+}
+
+function getCalleeName(call: TSESTree.CallExpression): string | null {
+  const callee = unwrapExpression(call.callee as TSESTree.Expression);
+
+  if (callee.type === AST_NODE_TYPES.Identifier) return callee.name;
+
+  if (
+    callee.type === AST_NODE_TYPES.MemberExpression &&
+    !callee.computed &&
+    callee.property.type === AST_NODE_TYPES.Identifier
+  ) {
+    return callee.property.name;
+  }
+
+  return null;
+}
+
+function isArrayStateHookCall(
+  expression: TSESTree.Expression | null | undefined,
+): boolean {
+  if (!expression) return false;
+
+  const node = unwrapExpression(expression);
+  if (node.type !== AST_NODE_TYPES.CallExpression) return false;
+
+  const name = getCalleeName(node);
+  return (
+    name !== null && ARRAY_STATE_HOOKS.has(name) && hasArrayTypeArgument(node)
+  );
+}
+
+/**
+ * A call whose RESULT is an array. The state hooks are deliberately absent:
+ * `useRef<T[]>()` hands back a ref object and `useState<T[]>()` a tuple, so
+ * only the destructured head of that tuple is an array.
+ */
+function isArrayProducingCall(call: TSESTree.CallExpression): boolean {
+  const callee = unwrapExpression(call.callee as TSESTree.Expression);
+  if (
+    callee.type !== AST_NODE_TYPES.MemberExpression ||
+    callee.computed ||
+    callee.property.type !== AST_NODE_TYPES.Identifier
+  ) {
+    return false;
+  }
+
+  const object = unwrapExpression(callee.object as TSESTree.Expression);
+  if (object.type === AST_NODE_TYPES.Identifier && object.name === 'Array') {
+    return ARRAY_FACTORY_METHODS.has(callee.property.name);
+  }
+
+  return ARRAY_RETURNING_METHODS.has(callee.property.name);
+}
+
+function isArrayInitializer(
+  expression: TSESTree.Expression | null | undefined,
+): boolean {
+  if (!expression) return false;
+
+  const node = unwrapExpression(expression);
+
+  switch (node.type) {
+    case AST_NODE_TYPES.ArrayExpression:
+      return true;
+    case AST_NODE_TYPES.NewExpression:
+      return (
+        node.callee.type === AST_NODE_TYPES.Identifier &&
+        node.callee.name === 'Array'
+      );
+    case AST_NODE_TYPES.CallExpression:
+      return isArrayProducingCall(node);
+    default:
+      return false;
+  }
+}
+
+function isArrayDeclarator(
+  declarator: TSESTree.VariableDeclarator,
+  name: TSESTree.Identifier,
+): boolean {
+  if (declarator.id === name) {
+    return isArrayInitializer(declarator.init);
+  }
+
+  /**
+   * The head of a `useState<T[]>()` / `useRef<T[]>()` tuple holds the array
+   * itself. Every other destructured binding holds an ELEMENT of whatever was
+   * destructured, which says nothing about the binding.
+   */
+  return (
+    declarator.id.type === AST_NODE_TYPES.ArrayPattern &&
+    declarator.id.elements[0] === name &&
+    isArrayStateHookCall(declarator.init)
+  );
+}
+
+function isArrayParameterElement(
+  param: TSESTree.Parameter,
+  name: TSESTree.Identifier,
+): boolean {
+  switch (param.type) {
+    case AST_NODE_TYPES.AssignmentPattern:
+      return param.left === name && isArrayInitializer(param.right);
+    /** A rest parameter binds an array by construction. */
+    case AST_NODE_TYPES.RestElement:
+      return param.argument === name;
+    case AST_NODE_TYPES.TSParameterProperty:
+      return isArrayParameterElement(param.parameter, name);
+    default:
+      return false;
+  }
+}
+
+function isArrayParameter(
+  fn: FunctionNode,
+  name: TSESTree.Identifier,
+): boolean {
+  return fn.params.some((param) => isArrayParameterElement(param, name));
+}
+
+function hasDefinitionArrayEvidence(def: TSESLint.Scope.Definition): boolean {
+  const name = def.name;
+  /** A binding introduced by anything but a plain name carries no annotation. */
+  if (name.type !== AST_NODE_TYPES.Identifier) return false;
+
+  if (isArrayAnnotation(name.typeAnnotation)) return true;
+
+  if (def.node.type === AST_NODE_TYPES.VariableDeclarator) {
+    return isArrayDeclarator(def.node, name);
+  }
+
+  return isFunctionNode(def.node) && isArrayParameter(def.node, name);
+}
+
+function isArrayParameterProperty(
+  param: TSESTree.TSParameterProperty,
+  name: string,
+): boolean {
+  const binding =
+    param.parameter.type === AST_NODE_TYPES.AssignmentPattern
+      ? param.parameter.left
+      : param.parameter;
+
+  if (binding.type !== AST_NODE_TYPES.Identifier || binding.name !== name) {
+    return false;
+  }
+
+  return (
+    isArrayAnnotation(binding.typeAnnotation) ||
+    (param.parameter.type === AST_NODE_TYPES.AssignmentPattern &&
+      isArrayInitializer(param.parameter.right))
+  );
+}
+
+function hasClassPropertyArrayEvidence(
+  classBody: TSESTree.ClassBody,
+  name: string,
+): boolean {
+  return classBody.body.some((member) => {
+    if (member.type === AST_NODE_TYPES.PropertyDefinition) {
+      if (getPropertyKey(member.key, Boolean(member.computed)) !== name) {
+        return false;
+      }
+      return (
+        isArrayAnnotation(member.typeAnnotation) ||
+        isArrayInitializer(member.value)
+      );
+    }
+
+    if (
+      member.type === AST_NODE_TYPES.MethodDefinition &&
+      member.kind === 'constructor'
+    ) {
+      return member.value.params.some(
+        (param) =>
+          param.type === AST_NODE_TYPES.TSParameterProperty &&
+          isArrayParameterProperty(param, name),
+      );
+    }
+
+    return false;
+  });
+}
+
+/**
+ * The class whose fields describe `this` at this position. A plain function
+ * rebinds `this` to whatever calls it, so fields declared around it say nothing
+ * about the receiver; an arrow function keeps the lexical `this`, and a method's
+ * own function expression is the class's.
+ */
+function findEnclosingClassBody(
+  node: TSESTree.Node,
+): TSESTree.ClassBody | null {
+  let current: TSESTree.Node | undefined = node.parent;
+
+  while (current) {
+    if (current.type === AST_NODE_TYPES.ClassBody) return current;
+
+    if (current.type === AST_NODE_TYPES.FunctionDeclaration) return null;
+
+    if (current.type === AST_NODE_TYPES.FunctionExpression) {
+      const owner = current.parent;
+      const isClassMember =
+        owner !== undefined &&
+        (owner.type === AST_NODE_TYPES.MethodDefinition ||
+          owner.type === AST_NODE_TYPES.PropertyDefinition);
+      if (!isClassMember) return null;
+    }
+
+    current = current.parent;
+  }
+
+  return null;
+}
+
 function isPushCallStatement(
   statement: TSESTree.Statement,
   sourceCode: TSESLint.SourceCode,
@@ -452,6 +736,101 @@ export const flattenPushCalls = createRule<[], MessageIds>({
   defaultOptions: [],
   create(context) {
     const sourceCode = context.getSourceCode();
+
+    /**
+     * Evidence is cached per binding rather than per receiver expression, so a
+     * long run of pushes onto one array resolves its declaration once.
+     */
+    const evidenceByVariable = new Map<TSESLint.Scope.Variable, boolean>();
+    const evidenceByClassProperty = new Map<string, boolean>();
+    let variablesByReference: Map<
+      TSESTree.Node,
+      TSESLint.Scope.Variable | null
+    > | null = null;
+
+    /**
+     * Resolution runs off the scope manager's own reference list rather than
+     * the scope of the visited node: `Program` yields the global scope, whose
+     * chain does not reach the module scope a top-level `const` lives in.
+     */
+    function resolveReference(
+      identifier: TSESTree.Identifier,
+    ): TSESLint.Scope.Variable | null {
+      if (!variablesByReference) {
+        const resolved = new Map<
+          TSESTree.Node,
+          TSESLint.Scope.Variable | null
+        >();
+        sourceCode.scopeManager?.scopes.forEach((scope) => {
+          scope.references.forEach((reference) => {
+            resolved.set(reference.identifier, reference.resolved);
+          });
+        });
+        variablesByReference = resolved;
+      }
+
+      return variablesByReference.get(identifier) ?? null;
+    }
+
+    function hasVariableArrayEvidence(
+      variable: TSESLint.Scope.Variable,
+    ): boolean {
+      const cached = evidenceByVariable.get(variable);
+      if (cached !== undefined) return cached;
+
+      const evidence = variable.defs.some((def) =>
+        hasDefinitionArrayEvidence(def),
+      );
+      evidenceByVariable.set(variable, evidence);
+      return evidence;
+    }
+
+    function hasThisPropertyArrayEvidence(
+      receiver: TSESTree.MemberExpression,
+    ): boolean {
+      const name = getPropertyKey(
+        receiver.property,
+        Boolean(receiver.computed),
+      );
+      if (name === null) return false;
+
+      const classBody = findEnclosingClassBody(receiver);
+      if (!classBody) return false;
+
+      const key = `${classBody.range[0]}:${name}`;
+      const cached = evidenceByClassProperty.get(key);
+      if (cached !== undefined) return cached;
+
+      const evidence = hasClassPropertyArrayEvidence(classBody, name);
+      evidenceByClassProperty.set(key, evidence);
+      return evidence;
+    }
+
+    /**
+     * Whether the receiver is syntactically an array. Anything the source does
+     * not describe — an unresolved name, a member chain, a call result — counts
+     * as no evidence, which keeps the rule silent rather than guessing.
+     */
+    function hasArrayReceiverEvidence(receiver: TSESTree.Expression): boolean {
+      const node = unwrapExpression(receiver);
+
+      if (node.type === AST_NODE_TYPES.ArrayExpression) return true;
+
+      if (node.type === AST_NODE_TYPES.Identifier) {
+        const variable = resolveReference(node);
+        return variable !== null && hasVariableArrayEvidence(variable);
+      }
+
+      if (
+        node.type === AST_NODE_TYPES.MemberExpression &&
+        unwrapExpression(node.object as TSESTree.Expression).type ===
+          AST_NODE_TYPES.ThisExpression
+      ) {
+        return hasThisPropertyArrayEvidence(node);
+      }
+
+      return false;
+    }
 
     /**
      * An argument together with the comments that sit immediately around it
@@ -826,7 +1205,11 @@ export const flattenPushCalls = createRule<[], MessageIds>({
       );
 
       const firstArgs = group[0].call.arguments.length;
-      return totalArgs > firstArgs && canSafelyFix(group);
+      if (totalArgs <= firstArgs || !canSafelyFix(group)) return false;
+
+      const receiver = (group[0].call.callee as TSESTree.MemberExpression)
+        .object as TSESTree.Expression;
+      return hasArrayReceiverEvidence(receiver);
     }
 
     function reportViolation(group: PushCallStatement[]): void {

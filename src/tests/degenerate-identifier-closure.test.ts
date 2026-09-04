@@ -1311,7 +1311,12 @@ const LITERAL_UNDRIVEN: Record<string, UndrivenCause> = {
   'enforce-id-capitalization': 'inventsNoName',
   'enforce-react-type-naming': 'noPerturbableSite',
   'enforce-unique-cursor-headers': 'declinesOnDegenerateInput',
-  'flatten-push-calls': 'noPerturbableSite',
+  // Was `noPerturbableSite` until #2321. Gating the merge on syntactic array
+  // evidence means its fixtures now spell that evidence out, and the tuple and
+  // `split('')` spellings carry string literals this probe can degenerate — so
+  // the rule reaches the literal arm and is rewritten there. It derives no name
+  // regardless: the fixer only re-emits argument text that is already written.
+  'flatten-push-calls': 'inventsNoName',
   'jsdoc-above-field': 'inventsNoName',
   'key-only-outermost-element': 'inventsNoName',
   'logical-top-to-bottom-grouping': 'inventsNoName',
