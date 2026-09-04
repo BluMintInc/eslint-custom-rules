@@ -1,3 +1,26 @@
+## [1.21.3](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.21.2...v1.21.3) (2026-09-03)
+
+
+### Bug Fixes
+
+* **enforce-boolean-naming-prefixes:** accept `??` as a boolean fallback operator (closes [#2308](https://github.com/BluMintInc/eslint-custom-rules/issues/2308)) ([74d8cc4](https://github.com/BluMintInc/eslint-custom-rules/commit/74d8cc4307c081b70bdda16af6313f9007dd6195))
+* **enforce-centralized-mock-firestore:** match the local mock by normalized name so a MOCK_FIRESTORE constant is flagged (closes [#2307](https://github.com/BluMintInc/eslint-custom-rules/issues/2307)) ([bf7a1fa](https://github.com/BluMintInc/eslint-custom-rules/commit/bf7a1fab0a0a6bb29b1cfc338c04e05e8b642c31))
+* **enforce-fieldpath-syntax-in-docsetter:** decline the fix when a flattened key collides (closes [#2303](https://github.com/BluMintInc/eslint-custom-rules/issues/2303)) ([4228147](https://github.com/BluMintInc/eslint-custom-rules/commit/422814759deafe1056ff8c159115d7903f4b6004))
+* **enforce-firestore-set-merge:** decline the merge rewrite on update's varargs and precondition forms (closes [#2311](https://github.com/BluMintInc/eslint-custom-rules/issues/2311)) ([d72f4b0](https://github.com/BluMintInc/eslint-custom-rules/commit/d72f4b095fa250e880e8625ccf4656839fd7658a))
+* **enforce-object-literal-as-const:** fall back to the sole return's own assertion for the declared type (closes [#2319](https://github.com/BluMintInc/eslint-custom-rules/issues/2319)) ([db14114](https://github.com/BluMintInc/eslint-custom-rules/commit/db14114ce05f664f108b0e78851ef61b5e61979c))
+* **enforce-positive-naming:** make the boolean-like gate spelling-independent (closes [#2306](https://github.com/BluMintInc/eslint-custom-rules/issues/2306)) ([8949432](https://github.com/BluMintInc/eslint-custom-rules/commit/8949432e5a35fb785d965f270cc33f58813406c9))
+* **enforce-snapshot-state-narrowing:** accept ?? alongside || in the logical guard (closes [#2315](https://github.com/BluMintInc/eslint-custom-rules/issues/2315)) ([a51f1fc](https://github.com/BluMintInc/eslint-custom-rules/commit/a51f1fc531363056fb66d26220b36a59f52fd814))
+* **memo-nested-react-components:** admit useLatestCallback as a callback hook (closes [#2313](https://github.com/BluMintInc/eslint-custom-rules/issues/2313)) ([5e03c6b](https://github.com/BluMintInc/eslint-custom-rules/commit/5e03c6be3210cee109c06cee81be58c20cbd596c))
+* **no-entire-object-hook-deps:** govern the deep-compare hooks, which the useMemo rename walked out of view (closes [#2309](https://github.com/BluMintInc/eslint-custom-rules/issues/2309)) ([eafd265](https://github.com/BluMintInc/eslint-custom-rules/commit/eafd265340190b833e7d85c8a36f76aa276e3e3d))
+* **no-hungarian:** read a leading single-letter segment as a prefix in SCREAMING_SNAKE_CASE (closes [#2317](https://github.com/BluMintInc/eslint-custom-rules/issues/2317)) ([b888e0a](https://github.com/BluMintInc/eslint-custom-rules/commit/b888e0ad4616dc40d49f7a93506e9bccd20a8499))
+* **no-inline-component-prop:** resolve a memo(namedReference) argument to its declaration (closes [#2314](https://github.com/BluMintInc/eslint-custom-rules/issues/2314)) ([9d50c9e](https://github.com/BluMintInc/eslint-custom-rules/commit/9d50c9e9cdff3481f967d501a60afdbc83710410))
+* **no-restricted-properties-fix:** match a configured object through global-const-style's rename (closes [#2318](https://github.com/BluMintInc/eslint-custom-rules/issues/2318)) ([5652956](https://github.com/BluMintInc/eslint-custom-rules/commit/56529560769f3350190233ffae9842f3f270a751))
+* **no-useless-usememo-primitives:** recognise the deep-compare memo spelling so a renamed callee still reports (closes [#2312](https://github.com/BluMintInc/eslint-custom-rules/issues/2312)) ([d206199](https://github.com/BluMintInc/eslint-custom-rules/commit/d2061993c102fc48108f29234ceb44258d80c425))
+* **prefer-destructuring-no-class:** match a binding to its property ignoring case and underscores (closes [#2316](https://github.com/BluMintInc/eslint-custom-rules/issues/2316)) ([680e945](https://github.com/BluMintInc/eslint-custom-rules/commit/680e94583034e2caac01b2f1d7a84b5791ed62ef))
+* **prefer-document-flattening:** rewrite an existing shouldFlatten in place rather than appending a duplicate key (closes [#2304](https://github.com/BluMintInc/eslint-custom-rules/issues/2304)) ([eb11160](https://github.com/BluMintInc/eslint-custom-rules/commit/eb11160861e249c92c7e2add01a1c4bfed152b00))
+* **require-memoize-jsx-returners:** re-cut the degenerate-identifier duplicate ceiling for the wrapper-memo fixtures (closes [#2305](https://github.com/BluMintInc/eslint-custom-rules/issues/2305)) ([30aa895](https://github.com/BluMintInc/eslint-custom-rules/commit/30aa895bce55be36fb0416424f669d586ff333d2))
+* **require-memoize-jsx-returners:** recognise memo imported from the project memo wrapper (closes [#2305](https://github.com/BluMintInc/eslint-custom-rules/issues/2305)) ([bba9dac](https://github.com/BluMintInc/eslint-custom-rules/commit/bba9dac5323743a8aad046f9cc3a257e5058dd4d))
+
 ## [1.21.2](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.21.1...v1.21.2) (2026-09-03)
 
 

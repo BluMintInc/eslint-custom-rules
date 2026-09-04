@@ -1,5 +1,139 @@
 [
   {
+    "version": "1.21.3",
+    "date": "2026-09-03T23:34:34.310Z",
+    "rules": [
+      {
+        "name": "enforce-boolean-naming-prefixes",
+        "changeType": "fix",
+        "issues": [
+          2308
+        ],
+        "summary": "accept `??` as a boolean fallback operator (closes #2308)"
+      },
+      {
+        "name": "enforce-centralized-mock-firestore",
+        "changeType": "fix",
+        "issues": [
+          2307
+        ],
+        "summary": "match the local mock by normalized name so a MOCK_FIRESTORE constant is flagged (closes #2307)"
+      },
+      {
+        "name": "enforce-fieldpath-syntax-in-docsetter",
+        "changeType": "fix",
+        "issues": [
+          2303
+        ],
+        "summary": "decline the fix when a flattened key collides (closes #2303)"
+      },
+      {
+        "name": "enforce-firestore-set-merge",
+        "changeType": "fix",
+        "issues": [
+          2311
+        ],
+        "summary": "decline the merge rewrite on update's varargs and precondition forms (closes #2311)"
+      },
+      {
+        "name": "enforce-object-literal-as-const",
+        "changeType": "fix",
+        "issues": [
+          2319
+        ],
+        "summary": "fall back to the sole return's own assertion for the declared type (closes #2319)"
+      },
+      {
+        "name": "enforce-positive-naming",
+        "changeType": "fix",
+        "issues": [
+          2306
+        ],
+        "summary": "make the boolean-like gate spelling-independent (closes #2306)"
+      },
+      {
+        "name": "enforce-snapshot-state-narrowing",
+        "changeType": "fix",
+        "issues": [
+          2315
+        ],
+        "summary": "accept ?? alongside || in the logical guard (closes #2315)"
+      },
+      {
+        "name": "memo-nested-react-components",
+        "changeType": "fix",
+        "issues": [
+          2313
+        ],
+        "summary": "admit useLatestCallback as a callback hook (closes #2313)"
+      },
+      {
+        "name": "no-entire-object-hook-deps",
+        "changeType": "fix",
+        "issues": [
+          2309
+        ],
+        "summary": "govern the deep-compare hooks, which the useMemo rename walked out of view (closes #2309)"
+      },
+      {
+        "name": "no-hungarian",
+        "changeType": "fix",
+        "issues": [
+          2317
+        ],
+        "summary": "read a leading single-letter segment as a prefix in SCREAMING_SNAKE_CASE (closes #2317)"
+      },
+      {
+        "name": "no-inline-component-prop",
+        "changeType": "fix",
+        "issues": [
+          2314
+        ],
+        "summary": "resolve a memo(namedReference) argument to its declaration (closes #2314)"
+      },
+      {
+        "name": "no-restricted-properties-fix",
+        "changeType": "fix",
+        "issues": [
+          2318
+        ],
+        "summary": "match a configured object through global-const-style's rename (closes #2318)"
+      },
+      {
+        "name": "no-useless-usememo-primitives",
+        "changeType": "fix",
+        "issues": [
+          2312
+        ],
+        "summary": "recognise the deep-compare memo spelling so a renamed callee still reports (closes #2312)"
+      },
+      {
+        "name": "prefer-destructuring-no-class",
+        "changeType": "fix",
+        "issues": [
+          2316
+        ],
+        "summary": "match a binding to its property ignoring case and underscores (closes #2316)"
+      },
+      {
+        "name": "prefer-document-flattening",
+        "changeType": "fix",
+        "issues": [
+          2304
+        ],
+        "summary": "rewrite an existing shouldFlatten in place rather than appending a duplicate key (closes #2304)"
+      },
+      {
+        "name": "require-memoize-jsx-returners",
+        "changeType": "fix",
+        "issues": [
+          2305
+        ],
+        "summary": "re-cut the degenerate-identifier duplicate ceiling for the wrapper-memo fixtures (closes #2305); recognise memo imported from the project memo wrapper (closes #2305)"
+      }
+    ]
+  },
+  {
     "version": "1.21.2",
     "date": "2026-09-03T01:55:23.074Z",
     "rules": [
