@@ -309,6 +309,32 @@ describe('isGovernorStartupFailure', () => {
     ).toBe(false);
   });
 
+  /**
+   * The doctrine this narrowness exists for (agora#47338): governor admission
+   * never REFUSES, because a check that did not run reads like one that passed,
+   * and a loop that treats any non-zero governor exit as "run bare" spends the
+   * shared machine-wide budget unreserved. A crash before the governor loads is
+   * a THIRD state, and only that state may fall back — so a governor that ran
+   * and returned a verdict must keep its verdict.
+   */
+  it('does NOT claim a governor that ran and returned a FAIL verdict', () => {
+    expect(
+      isGovernorStartupFailure(
+        'governor verdict: FAIL — child exceeded its lease.',
+        governed,
+      ),
+    ).toBe(false);
+  });
+
+  it('does NOT claim a governed child whose own tests failed', () => {
+    expect(
+      isGovernorStartupFailure(
+        'Tests:       1 failed, 27034 passed, 27035 total',
+        governed,
+      ),
+    ).toBe(false);
+  });
+
   it('is inert when the configured clone is gone, which already degrades to bare', () => {
     expect(
       isGovernorStartupFailure(STARTUP_CRASH, {
