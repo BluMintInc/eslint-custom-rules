@@ -423,6 +423,23 @@ ruleTesterTs.run(
         });
         `,
       },
+      // A published package that is not a Firestore surface still refutes
+      // provenance, so widening first-party paths to "unknown" must not widen
+      // this to a report as well.
+      {
+        code: `
+        import { runTransaction } from 'knex';
+        await runTransaction(async (transaction) => {
+          try {
+            await creator.createTransaction(transaction);
+          } catch (error) {
+            if (error.code === 'already-exists') {
+              await appendAdvancementToExisting(transaction);
+            }
+          }
+        });
+        `,
+      },
     ],
     invalid: [
       // Simple already-exists check in transaction
@@ -816,6 +833,86 @@ ruleTesterTs.run(
       {
         code: `
         await runTransaction(db, async (transaction) => {
+          try {
+            await creator.createTransaction(transaction);
+          } catch (error) {
+            if (error.code === 'already-exists') {
+              await appendAdvancementToExisting(transaction);
+            }
+          }
+        });
+        `,
+        errors: [{ messageId: 'noAlreadyExistsCatchInTransaction' }],
+      },
+      // A receiver re-exported from the project's own tree cannot refute Firestore
+      {
+        code: `
+        import { db } from '../../config/firebaseAdmin';
+        await db.runTransaction(async (transaction) => {
+          try {
+            await creator.createTransaction(transaction);
+          } catch (error) {
+            if (error.code === 'already-exists') {
+              await appendAdvancementToExisting(transaction);
+            }
+          }
+        });
+        `,
+        errors: [{ messageId: 'noAlreadyExistsCatchInTransaction' }],
+      },
+      // A relative barrel re-exporting runTransaction keeps the report
+      {
+        code: `
+        import { runTransaction } from './firebase';
+        await runTransaction(async (transaction) => {
+          try {
+            await creator.createTransaction(transaction);
+          } catch (error) {
+            if (error.code === 'already-exists') {
+              await appendAdvancementToExisting(transaction);
+            }
+          }
+        });
+        `,
+        errors: [{ messageId: 'noAlreadyExistsCatchInTransaction' }],
+      },
+      // A path alias resolves into first-party code, so provenance stays unknown
+      {
+        code: `
+        import { runTransaction } from '@/lib/firestore';
+        await runTransaction(async (transaction) => {
+          try {
+            await creator.createTransaction(transaction);
+          } catch (error) {
+            if (error.code === 'already-exists') {
+              await appendAdvancementToExisting(transaction);
+            }
+          }
+        });
+        `,
+        errors: [{ messageId: 'noAlreadyExistsCatchInTransaction' }],
+      },
+      // A source-root alias is an alias, not a package named src
+      {
+        code: `
+        import { db } from 'src/config/firebaseAdmin';
+        await db.runTransaction(async (transaction) => {
+          try {
+            await creator.createTransaction(transaction);
+          } catch (error) {
+            if (error.code === 'already-exists') {
+              await appendAdvancementToExisting(transaction);
+            }
+          }
+        });
+        `,
+        errors: [{ messageId: 'noAlreadyExistsCatchInTransaction' }],
+      },
+      // An absolute specifier is not a package specifier
+      {
+        code: `
+        import { runTransaction } from '/lib/firestore';
+        await runTransaction(async (transaction) => {
           try {
             await creator.createTransaction(transaction);
           } catch (error) {

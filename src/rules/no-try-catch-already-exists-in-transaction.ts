@@ -98,6 +98,30 @@ function isFirestoreModuleSource(source: string): boolean {
 }
 
 /**
+ * First segments that mark a path alias into the project's own tree rather than
+ * a published package. A scoped package's first segment is `@scope`, so a bare
+ * `@` can only be an alias.
+ */
+const FIRST_PARTY_SOURCE_ROOTS = new Set(['@', '~', 'src', 'app', 'lib']);
+
+/**
+ * Whether a specifier names a published package, which is the only thing that
+ * can REFUTE Firestore provenance.
+ *
+ * A relative or absolute path, or a path alias, resolves into first-party code
+ * this rule cannot follow, so such a source says nothing about which product
+ * the binding came from. Reading its failure to look like `firebase/firestore`
+ * as proof of a different product is what silenced the rule on every
+ * `import { db } from '../../config/firebaseAdmin'` re-export.
+ */
+function isBarePackageSource(source: string): boolean {
+  if (source.startsWith('.') || source.startsWith('/') || source === '') {
+    return false;
+  }
+  return !FIRST_PARTY_SOURCE_ROOTS.has(moduleSegments(source)[0]);
+}
+
+/**
  * The module `name` is imported from, or null when the file declares the name
  * itself (a local helper, a parameter) or nothing declares it at all.
  */
@@ -161,11 +185,13 @@ function provenanceIdentifier(
 /**
  * Whether a `runTransaction` call is the Firestore one this rule speaks about.
  *
- * The gate speaks only when it knows: a binding that resolves to an import is
- * judged by its module source, and anything else — a bare call, a parameter, a
- * local helper, a member call on an unresolvable receiver — keeps the rule's
- * posture of reporting, since a name with no traceable origin is far more often
- * Firestore (`db.runTransaction(...)`) than not.
+ * The gate speaks only when it knows: a binding that resolves to an import of a
+ * published package is judged by its module source, and anything else — a bare
+ * call, a parameter, a local helper, a member call on an unresolvable receiver,
+ * an import from the project's own tree — keeps the rule's posture of
+ * reporting, since a name with no traceable origin is far more often Firestore
+ * (`db.runTransaction(...)`) than not. Only a package specifier can refute
+ * Firestore; a first-party path merely fails to confirm it.
  */
 function isFirestoreTransactionCall(
   node: TSESTree.CallExpression,
@@ -184,7 +210,7 @@ function isFirestoreTransactionCall(
     ASTHelpers.getScope(context, node),
     carrier.name,
   );
-  if (source === null) {
+  if (source === null || !isBarePackageSource(source)) {
     return true;
   }
 
