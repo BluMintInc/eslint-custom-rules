@@ -183,11 +183,21 @@ or a call to a method that mutates its receiver — `push`, `pop`, `shift`,
 path counts, because the assertion is deep: `X.items.push(1)` breaks just as
 `X.push(1)` does.
 
+A write through an **alias** counts as well. `const OTHER = ITEMS;` gives one
+array two names, so `OTHER.push(3)` writes `ITEMS` and freezing `ITEMS` breaks
+that call. Aliases are followed for as many hops as they are chained
+(`const A = ITEMS; const B = A; B.push(3)`), in whatever scope they are
+declared, and whatever keyword declares them — a `let` alias takes its type from
+the same initializer, so it inherits the `readonly` type exactly as a `const`
+one does. A binding built *from* the constant rather than naming it
+(`const COPY = [...ITEMS]`) is a fresh value: mutating the copy leaves the
+constant frozen.
+
 The binding's writes are found through the scope manager, so only references
-that resolve to this declaration count. A same-named method on another receiver
-(`other.push(1)`), the constant passed as an argument to one (`other.push(X)`),
-a read-only method (`X.map(…)`, `X.includes(…)`) and a same-named binding
-shadowed in an inner scope all leave the assertion in place:
+that resolve to this declaration, or to an alias of it, count. A same-named
+method on another receiver (`other.push(1)`), the constant passed as an argument
+to one (`other.push(X)`), a read-only method (`X.map(…)`, `X.includes(…)`) and a
+same-named binding shadowed in an inner scope all leave the assertion in place:
 
 ```ts
 // Still flagged for `as const` — nothing writes through ITEMS.

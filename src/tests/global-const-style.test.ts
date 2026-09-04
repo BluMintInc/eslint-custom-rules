@@ -577,6 +577,86 @@ ruleTesterTs.run('global-const-style', rule, {
       ].join('\n'),
       filename: 'test.ts',
     },
+    // Issue #2324: a mutation performed through an ALIAS writes the very value
+    // the assertion would freeze. The alias denotes the binding rather than
+    // copying it, so `as const` turns compiling code into TS2339 here exactly
+    // as a direct `ITEMS.push(3)` does (measured under `tsc --strict`).
+    {
+      code: 'const ITEMS = [1, 2];\nconst OTHER = ITEMS;\nOTHER.push(3);\n',
+      filename: 'test.ts',
+    },
+    // Issue #2324 negative control: the direct mutation the alias case above
+    // routes one hop away from. Both must leave the rule silent, or the
+    // carve-out is keyed on the spelling of the receiver rather than the value.
+    {
+      code: 'const ITEMS = [1, 2];\nITEMS.push(3);\n',
+      filename: 'test.ts',
+    },
+    // Issue #2324: the chain is followed transitively — each hop names the one
+    // value, so a mutation two aliases away is still this binding's.
+    {
+      code: [
+        'const ITEMS = [1, 2];',
+        'const FIRST_HOP = ITEMS;',
+        'const SECOND_HOP = FIRST_HOP;',
+        'SECOND_HOP.push(3);',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // Issue #2324: a property WRITE through an alias is a write to the value,
+    // not only a mutating method call — `as const` yields TS2540 for it.
+    {
+      code: 'const CONFIG = { a: 1 };\nconst OTHER = CONFIG;\nOTHER.a = 2;\n',
+      filename: 'test.ts',
+    },
+    // Issue #2324: the alias may be declared in any scope the binding reaches.
+    // Its own declaration is invisible at module level, so an answer read off
+    // the top-level statements alone would miss this one.
+    {
+      code: [
+        'const ITEMS = [1, 2];',
+        'export const collect = (value) => {',
+        '  const local = ITEMS;',
+        '  local.push(value);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // Issue #2324: a type wrapper annotates the value without replacing it, so
+    // `ITEMS!` aliases the same array and inherits the frozen type with it.
+    {
+      code: 'const ITEMS = [1, 2];\nconst OTHER = ITEMS!;\nOTHER.push(3);\n',
+      filename: 'test.ts',
+    },
+    // Issue #2324: the declaring KEYWORD does not decide who carries the frozen
+    // type. A `let` alias takes its declared type from this initializer just as
+    // a `const` one does, so freezing here is the same TS2339 — and reassigning
+    // the alias cannot recover mutability, since the reassignment is then
+    // rejected against that frozen type.
+    {
+      code: 'const ITEMS = [1, 2];\nlet scratch = ITEMS;\nscratch.push(3);\n',
+      filename: 'test.ts',
+    },
+    // Issue #2324: an exported alias is reached the same way. Its visibility
+    // changes who else can mutate it, never whether this mutation counts.
+    {
+      code: 'const ITEMS = [1, 2];\nexport const SHARED = ITEMS;\nSHARED.push(3);\n',
+      filename: 'test.ts',
+    },
+    // Issue #2324: a redeclared `var` makes the alias graph lead back on
+    // itself — `ITEMS` reaches `first`, `first` reaches `second`, and `second`
+    // reaches `first` again — and the mutation sits past the loop. Following
+    // the chain has to survive the cycle to reach it.
+    {
+      code: [
+        'const ITEMS = [1, 2];',
+        'var first = ITEMS;',
+        'var second = first;',
+        'var first = second;',
+        'second.push(3);',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
     // Issue #2055: a module-scope const whose binding is used as a JSX element
     // name holds a React component, whatever its initializer looks like. The
     // repro's initializer is a MEMBER EXPRESSION (a component read off a class
@@ -1900,6 +1980,134 @@ const Probe = () => {
       ],
       output:
         'const FROZEN = [1] as const;\nconst MUTATED = [];\nMUTATED.push(1);\n',
+    },
+    // Issue #2324 positive control: the same declaration with no mutation
+    // anywhere is frozen, so the alias cases above pin a carve-out rather than
+    // a rule that fell silent on this shape altogether.
+    {
+      code: 'const ITEMS = [1, 2];\n',
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'ITEMS', valueKind: 'an array literal' },
+        },
+      ],
+      output: 'const ITEMS = [1, 2] as const;\n',
+    },
+    // Issue #2324: an alias that only READS is no reason to withhold anything —
+    // the walk screens an alias's references with the same access-path test it
+    // applies to the binding's own, rather than treating the existence of an
+    // alias as a mutation.
+    {
+      code: 'const ITEMS = [1];\nconst OTHER = ITEMS;\nexport const first = () => OTHER[0];\n',
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'ITEMS', valueKind: 'an array literal' },
+        },
+      ],
+      output:
+        'const ITEMS = [1] as const;\nconst OTHER = ITEMS;\nexport const first = () => OTHER[0];\n',
+    },
+    // A read-only method on the alias returns a fresh value and leaves the
+    // receiver alone, exactly as it does on the binding itself.
+    {
+      code: 'const ITEMS = [1];\nconst OTHER = ITEMS;\nexport const doubled = () => OTHER.map((x) => x * 2);\n',
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'ITEMS', valueKind: 'an array literal' },
+        },
+      ],
+      output:
+        'const ITEMS = [1] as const;\nconst OTHER = ITEMS;\nexport const doubled = () => OTHER.map((x) => x * 2);\n',
+    },
+    // The alias is the WHOLE initializer or nothing: a spread builds a fresh
+    // array, so mutating the copy says nothing about the source. Without this
+    // the walk could follow any initializer that merely mentions the binding
+    // and withhold the assertion from every constant anything is copied from.
+    {
+      code: 'const ITEMS = [1, 2];\nconst COPY = [...ITEMS];\nCOPY.push(1);\n',
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'ITEMS', valueKind: 'an array literal' },
+        },
+      ],
+      output:
+        'const ITEMS = [1, 2] as const;\nconst COPY = [...ITEMS];\nCOPY.push(1);\n',
+    },
+    // The walk starts from ONE binding: an alias of a DIFFERENT constant, and
+    // the mutation through it, leave this one frozen. A carve-out keyed on
+    // "some alias in the file is mutated" would silence the rule here.
+    {
+      code: 'const FROZEN = [1];\nconst MUTATED = [2];\nconst ALIAS = MUTATED;\nALIAS.push(3);\n',
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'FROZEN', valueKind: 'an array literal' },
+        },
+      ],
+      output:
+        'const FROZEN = [1] as const;\nconst MUTATED = [2];\nconst ALIAS = MUTATED;\nALIAS.push(3);\n',
+    },
+    // The carve-out withholds only the assertion. A binding mutated through an
+    // alias keeps its rename, and the rename rewrites the alias's initializer
+    // along with every other reference.
+    {
+      code: 'const items = [1, 2];\nconst OTHER = items;\nOTHER.push(3);\n',
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'upperSnakeCase',
+          data: { name: 'items', suggestedName: 'ITEMS' },
+        },
+      ],
+      output: 'const ITEMS = [1, 2];\nconst OTHER = ITEMS;\nOTHER.push(3);\n',
+    },
+    // An alias passed as an ARGUMENT to a mutator is not the receiver, so the
+    // access-path test answers for it the same way it does one hop earlier.
+    {
+      code: 'const ITEMS = [1];\nconst OTHER = ITEMS;\nexport const send = () => sink.push(OTHER);\n',
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'ITEMS', valueKind: 'an array literal' },
+        },
+      ],
+      output:
+        'const ITEMS = [1] as const;\nconst OTHER = ITEMS;\nexport const send = () => sink.push(OTHER);\n',
+    },
+    // The same cycle as the valid case above with NO mutation anywhere: the
+    // walk has to visit every hop and come back empty. This is what the visited
+    // set owns — without it the traversal never terminates, and a rule that
+    // hangs is a `--fix` run that never returns.
+    {
+      code: [
+        'const ITEMS = [1, 2];',
+        'var first = ITEMS;',
+        'var second = first;',
+        'var first = second;',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'ITEMS', valueKind: 'an array literal' },
+        },
+      ],
+      output: [
+        'const ITEMS = [1, 2] as const;',
+        'var first = ITEMS;',
+        'var second = first;',
+        'var first = second;',
+      ].join('\n'),
     },
     // Issue #2013 controls: the mutation carve-out must not swallow bindings
     // that are merely NEAR a mutation. Each is spelled UPPER_SNAKE_CASE so the

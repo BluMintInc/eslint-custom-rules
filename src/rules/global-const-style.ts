@@ -384,17 +384,103 @@ const isWriteTarget = (node: TSESTree.Node): boolean => {
 };
 
 /**
- * Whether the binding is written through anywhere in the file. Answered from
- * the scope manager's reference list rather than a textual search for the
- * name, so a same-named binding in another scope (`const arr` shadowed inside a
- * callback) contributes nothing, and a same-named method on an unrelated
- * receiver (`other.push(1)`) is never even visited.
+ * The declarator a reference initializes IN WHOLE — `OTHER` in
+ * `const OTHER = ITEMS` — or null for every other position. Such a declaration
+ * introduces a second name for one value, so whatever is done to that name is
+ * done to this binding.
+ *
+ * Type wrappers are climbed because they annotate a value without replacing it:
+ * `const OTHER = ITEMS!` and `const OTHER = ITEMS satisfies T` denote the same
+ * array as the bare form, and each breaks the same way once it is frozen. A
+ * cast that erases the element type (`ITEMS as any`) is climbed on the same
+ * terms, which withholds the assertion from a mutation the compiler would have
+ * tolerated — staying silent is the cheap error here, emitting a fix that stops
+ * the file compiling is not.
+ *
+ * A reference that is only PART of an initializer builds a fresh value rather
+ * than aliasing this one (`const COPY = [...ITEMS]`), and a destructuring id
+ * extracts a member rather than the whole, so neither is an alias here.
  */
-const isBindingMutated = (variable: TSESLint.Scope.Variable): boolean =>
-  variable.references.some((reference) => {
-    const path = accessPathOf(reference.identifier);
-    return path !== null && (isMutatingMethodCall(path) || isWriteTarget(path));
-  });
+const aliasDeclaratorOf = (
+  identifier: TSESTree.Node,
+): TSESTree.VariableDeclarator | null => {
+  const value = outermostValueOf(identifier);
+  const declarator = value.parent;
+
+  if (
+    declarator?.type !== AST_NODE_TYPES.VariableDeclarator ||
+    declarator.init !== value ||
+    declarator.id.type !== AST_NODE_TYPES.Identifier
+  ) {
+    return null;
+  }
+
+  return declarator;
+};
+
+/**
+ * Whether the binding is written through anywhere in the file, under its own
+ * name or through an alias of it. Answered from the scope manager's reference
+ * list rather than a textual search for the name, so a same-named binding in
+ * another scope (`const arr` shadowed inside a callback) contributes nothing,
+ * and a same-named method on an unrelated receiver (`other.push(1)`) is never
+ * even visited.
+ *
+ * The walk follows aliases because a binding's own reference list is not where
+ * a mutation through one is recorded: in
+ * `const OTHER = ITEMS; OTHER.push(3);` the mutating call references `OTHER`, a
+ * separate variable this one never enrols, and reading only `ITEMS`'s
+ * references sees a plain read. Appending `as const` there emits TS2339 for an
+ * input that compiled (Issue #2324). Following is transitive — every hop names
+ * the one value — and `visited` keeps a chain that leads back on itself, which
+ * a redeclared `var` can build, from looping forever.
+ *
+ * The declaring KEYWORD is deliberately not screened. `as const` types the
+ * value `readonly`, and a binding takes its declared type from its initializer,
+ * so `let other = ITEMS; other.push(3);` is the same TS2339 as the `const`
+ * spelling; reassigning such a `let` does not recover mutability either,
+ * because the reassignment is then rejected against that same frozen type. A
+ * check keyed on `const` would leave the `let` spelling breaking builds under
+ * `--fix`.
+ */
+const isBindingMutated = (
+  variable: TSESLint.Scope.Variable,
+  declaredVariablesOf: (
+    node: TSESTree.Node,
+  ) => readonly TSESLint.Scope.Variable[],
+): boolean => {
+  // Grown in place and walked by index: an alias found mid-walk is appended and
+  // reached by the same loop, so the traversal needs no recursion of its own.
+  const pending: TSESLint.Scope.Variable[] = [variable];
+  const visited = new Set<TSESLint.Scope.Variable>(pending);
+
+  for (let index = 0; index < pending.length; index += 1) {
+    for (const reference of pending[index].references) {
+      const path = accessPathOf(reference.identifier);
+
+      if (path !== null) {
+        if (isMutatingMethodCall(path) || isWriteTarget(path)) {
+          return true;
+        }
+        continue;
+      }
+
+      const declarator = aliasDeclaratorOf(reference.identifier);
+      if (!declarator) {
+        continue;
+      }
+
+      for (const alias of declaredVariablesOf(declarator)) {
+        if (!visited.has(alias)) {
+          visited.add(alias);
+          pending.push(alias);
+        }
+      }
+    }
+  }
+
+  return false;
+};
 
 /**
  * Walks the scope chain upward from `scope` (inclusive) and reports whether
@@ -669,6 +755,17 @@ export default createRule<[], MessageIds>({
       );
     };
 
+    /**
+     * The bindings a declaration node introduces, as the scope manager records
+     * them. The mutation walk resolves an alias declarator through this rather
+     * than looking its name up the scope chain: the scope manager already holds
+     * the exact answer, while a name lookup would have to guess which scope a
+     * `var` was hoisted into.
+     */
+    const declaredVariablesOf = (
+      node: TSESTree.Node,
+    ): readonly TSESLint.Scope.Variable[] => context.getDeclaredVariables(node);
+
     const describeValueKind = (node: TSESTree.Node): string => {
       const target = unwrapValueWrappers(node);
 
@@ -906,7 +1003,10 @@ export default createRule<[], MessageIds>({
                 .getDeclaredVariables(declaration)
                 .find((variable) => variable.name === name);
 
-              return !declaredVariable || !isBindingMutated(declaredVariable);
+              return (
+                !declaredVariable ||
+                !isBindingMutated(declaredVariable, declaredVariablesOf)
+              );
             };
 
             if (shouldHaveAsConst(init)) {
