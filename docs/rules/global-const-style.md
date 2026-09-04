@@ -189,9 +189,16 @@ that call. Aliases are followed for as many hops as they are chained
 (`const A = ITEMS; const B = A; B.push(3)`), in whatever scope they are
 declared, and whatever keyword declares them — a `let` alias takes its type from
 the same initializer, so it inherits the `readonly` type exactly as a `const`
-one does. A binding built *from* the constant rather than naming it
+one does. Storing the constant in an object or array literal is followed on the
+same terms, because storing does not copy: `const HOLDER = { items: ITEMS };`
+keeps the one array reachable, so `HOLDER.items.push(3)` writes `ITEMS` and the
+assertion is withheld. Containers nest, and the shorthand spelling
+(`{ ITEMS }`) counts the same.
+
+A binding built *from* the constant rather than naming or holding it
 (`const COPY = [...ITEMS]`) is a fresh value: mutating the copy leaves the
-constant frozen.
+constant frozen. Being held somewhere is not itself a mutation either, so a
+constant merely stored in a container and never written through stays frozen.
 
 The binding's writes are found through the scope manager, so only references
 that resolve to this declaration, or to an alias of it, count. A same-named

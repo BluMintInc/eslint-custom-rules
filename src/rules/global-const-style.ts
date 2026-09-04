@@ -384,6 +384,42 @@ const isWriteTarget = (node: TSESTree.Node): boolean => {
 };
 
 /**
+ * The composite literal a reference is STORED INTO — the object in
+ * `{ items: ITEMS }`, the array in `[ITEMS]` — or null for every other
+ * position.
+ *
+ * Storing a reference does not copy it: the same array stays reachable through
+ * the container, so `holder.items.push(3)` writes through to the binding
+ * exactly as a direct alias does, and freezing it raises the same TS2339. A
+ * `SpreadElement` is excluded because it genuinely builds a fresh value
+ * (`const COPY = [...ITEMS]`), and a computed key is excluded because it coerces
+ * the reference to a property name rather than retaining it.
+ */
+const storageContainerOf = (node: TSESTree.Node): TSESTree.Node | null => {
+  const parent = node.parent;
+  if (!parent) {
+    return null;
+  }
+
+  if (
+    parent.type === AST_NODE_TYPES.Property &&
+    parent.value === node &&
+    parent.parent?.type === AST_NODE_TYPES.ObjectExpression
+  ) {
+    return parent.parent;
+  }
+
+  if (
+    parent.type === AST_NODE_TYPES.ArrayExpression &&
+    parent.elements.some((element) => element === node)
+  ) {
+    return parent;
+  }
+
+  return null;
+};
+
+/**
  * The declarator a reference initializes IN WHOLE — `OTHER` in
  * `const OTHER = ITEMS` — or null for every other position. Such a declaration
  * introduces a second name for one value, so whatever is done to that name is
@@ -397,25 +433,35 @@ const isWriteTarget = (node: TSESTree.Node): boolean => {
  * tolerated — staying silent is the cheap error here, emitting a fix that stops
  * the file compiling is not.
  *
- * A reference that is only PART of an initializer builds a fresh value rather
- * than aliasing this one (`const COPY = [...ITEMS]`), and a destructuring id
- * extracts a member rather than the whole, so neither is an alias here.
+ * A reference STORED INTO a composite literal is followed through that
+ * container, since storing does not copy — see `storageContainerOf`. A
+ * destructuring id extracts a member rather than the whole, so it is not an
+ * alias here.
  */
 const aliasDeclaratorOf = (
   identifier: TSESTree.Node,
 ): TSESTree.VariableDeclarator | null => {
-  const value = outermostValueOf(identifier);
-  const declarator = value.parent;
+  // Ascends strictly, so reaching a node with no parent terminates the walk.
+  let value = outermostValueOf(identifier);
 
-  if (
-    declarator?.type !== AST_NODE_TYPES.VariableDeclarator ||
-    declarator.init !== value ||
-    declarator.id.type !== AST_NODE_TYPES.Identifier
-  ) {
-    return null;
+  for (;;) {
+    const declarator = value.parent;
+
+    if (
+      declarator?.type === AST_NODE_TYPES.VariableDeclarator &&
+      declarator.init === value &&
+      declarator.id.type === AST_NODE_TYPES.Identifier
+    ) {
+      return declarator;
+    }
+
+    const container = storageContainerOf(value);
+    if (!container) {
+      return null;
+    }
+
+    value = outermostValueOf(container);
   }
-
-  return declarator;
 };
 
 /**

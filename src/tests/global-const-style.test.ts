@@ -592,6 +592,47 @@ ruleTesterTs.run('global-const-style', rule, {
       code: 'const ITEMS = [1, 2];\nITEMS.push(3);\n',
       filename: 'test.ts',
     },
+    // Issue #2327: storing the binding in an object literal does not copy it,
+    // so the same array stays reachable through the container and a mutation
+    // through it raises the same TS2339 the direct alias does (measured as a
+    // ts.Program differential: clean before the fix, TS2339 after).
+    {
+      code: [
+        'const ITEMS = [1, 2];',
+        'const HOLDER = { items: ITEMS };',
+        'HOLDER.items.push(3);',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // Issue #2327: the shorthand spelling is the same Property node, so the
+    // answer must not turn on which spelling the author reached for.
+    {
+      code: [
+        'const ITEMS = [1, 2];',
+        'const HOLDER = { ITEMS };',
+        'HOLDER.ITEMS.push(3);',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // Issue #2327: an array element retains the reference exactly as a property
+    // value does.
+    {
+      code: [
+        'const ITEMS = [1, 2];',
+        'const HOLDER = [ITEMS];',
+        'HOLDER[0].push(3);',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // Issue #2327: containers nest, and every hop still names the one value.
+    {
+      code: [
+        'const ITEMS = [1, 2];',
+        'const HOLDER = { inner: { items: ITEMS } };',
+        'HOLDER.inner.items.push(3);',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
     // Issue #2324: the chain is followed transitively — each hop names the one
     // value, so a mutation two aliases away is still this binding's.
     {
@@ -2025,10 +2066,11 @@ const Probe = () => {
       output:
         'const ITEMS = [1] as const;\nconst OTHER = ITEMS;\nexport const doubled = () => OTHER.map((x) => x * 2);\n',
     },
-    // The alias is the WHOLE initializer or nothing: a spread builds a fresh
-    // array, so mutating the copy says nothing about the source. Without this
-    // the walk could follow any initializer that merely mentions the binding
-    // and withhold the assertion from every constant anything is copied from.
+    // A spread COPIES rather than stores: the fresh array it builds is a
+    // different value, so mutating the copy says nothing about the source. This
+    // is the boundary of the container walk (Issue #2327) — without it the walk
+    // could follow any initializer that merely mentions the binding and
+    // withhold the assertion from every constant anything is copied from.
     {
       code: 'const ITEMS = [1, 2];\nconst COPY = [...ITEMS];\nCOPY.push(1);\n',
       filename: 'test.ts',
@@ -2040,6 +2082,25 @@ const Probe = () => {
       ],
       output:
         'const ITEMS = [1, 2] as const;\nconst COPY = [...ITEMS];\nCOPY.push(1);\n',
+    },
+    // Issue #2327: being STORED in a container is not itself a mutation. The
+    // walk follows the container only to look for a write through it, so a
+    // constant merely held somewhere is still frozen.
+    {
+      code: 'const ITEMS = [1, 2];\nconst HOLDER = { items: ITEMS };\nexport const use = () => HOLDER.items[0];\n',
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'ITEMS', valueKind: 'an array literal' },
+        },
+        {
+          messageId: 'asConst',
+          data: { name: 'HOLDER', valueKind: 'an object literal' },
+        },
+      ],
+      output:
+        'const ITEMS = [1, 2] as const;\nconst HOLDER = { items: ITEMS } as const;\nexport const use = () => HOLDER.items[0];\n',
     },
     // The walk starts from ONE binding: an alias of a DIFFERENT constant, and
     // the mutation through it, leave this one frozen. A carve-out keyed on
