@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.21.4",
+    "date": "2026-09-04T11:47:38.427Z",
+    "rules": [
+      {
+        "name": "prefer-map-over-conditional-dispatch",
+        "changeType": "fix",
+        "issues": [
+          2009
+        ],
+        "summary": "keep the alias when the checker resolves past it (closes #2009)"
+      }
+    ]
+  },
+  {
     "version": "1.21.3",
     "date": "2026-09-03T23:34:34.310Z",
     "rules": [

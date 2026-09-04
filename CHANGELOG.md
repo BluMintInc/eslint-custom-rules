@@ -1,3 +1,10 @@
+## [1.21.4](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.21.3...v1.21.4) (2026-09-04)
+
+
+### Bug Fixes
+
+* **prefer-map-over-conditional-dispatch:** keep the alias when the checker resolves past it (closes [#2009](https://github.com/BluMintInc/eslint-custom-rules/issues/2009)) ([51f8594](https://github.com/BluMintInc/eslint-custom-rules/commit/51f8594f58f62ce52009b9090f6846f0a93282c3))
+
 ## [1.21.3](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.21.2...v1.21.3) (2026-09-03)
 
 
