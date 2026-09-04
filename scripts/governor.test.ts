@@ -4,6 +4,7 @@ import {
   GOVERNOR_PROFILE,
   governArgv,
   governShellCommand,
+  isGovernorStartupFailure,
   resolveGovernorCli,
 } from './governor';
 
@@ -264,5 +265,56 @@ describe('the jest worker grant', () => {
       'utf-8',
     );
     expect(source).toContain(`'${GRANT_ENV}'`);
+  });
+});
+
+describe('isGovernorStartupFailure', () => {
+  const governed = { env: { [GOVERNOR_CLI_ENV]: CLI }, fileExists: present };
+
+  // The real shape: the governor resolves its own imports against ITS repo
+  // root, so launching it from this checkout dies before jest is reached.
+  const STARTUP_CRASH = [
+    "Error: Cannot find module 'functions/src/util/assertSafe'",
+    'Require stack:',
+    `- ${CLI}`,
+    "  code: 'MODULE_NOT_FOUND'",
+  ].join('\n');
+
+  it('recognizes a crash whose require stack names the governor', () => {
+    expect(isGovernorStartupFailure(STARTUP_CRASH, governed)).toBe(true);
+  });
+
+  it('does NOT claim a missing module raised by the code under test', () => {
+    const ownFailure = [
+      "Error: Cannot find module '../utils/ASTHelpers'",
+      'Require stack:',
+      '- /home/agent/eslint-custom-rules/src/rules/some-rule.ts',
+      "  code: 'MODULE_NOT_FOUND'",
+    ].join('\n');
+    expect(isGovernorStartupFailure(ownFailure, governed)).toBe(false);
+  });
+
+  it('does NOT claim an ordinary failing assertion that mentions the path', () => {
+    expect(
+      isGovernorStartupFailure(
+        `expected 1 received 2 while running ${CLI}`,
+        governed,
+      ),
+    ).toBe(false);
+  });
+
+  it('is inert when no governor is configured, so a bare run is never retried', () => {
+    expect(
+      isGovernorStartupFailure(STARTUP_CRASH, { env: {}, fileExists: present }),
+    ).toBe(false);
+  });
+
+  it('is inert when the configured clone is gone, which already degrades to bare', () => {
+    expect(
+      isGovernorStartupFailure(STARTUP_CRASH, {
+        env: { [GOVERNOR_CLI_ENV]: CLI },
+        fileExists: absent,
+      }),
+    ).toBe(false);
   });
 });
