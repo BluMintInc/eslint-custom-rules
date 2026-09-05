@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.21.8",
+    "date": "2026-09-05T03:15:57.605Z",
+    "rules": [
+      {
+        "name": "global-const-style",
+        "changeType": "fix",
+        "issues": [
+          2329
+        ],
+        "summary": "withhold the assertion where a type is inferred from the constant (closes #2329)"
+      }
+    ]
+  },
+  {
     "version": "1.21.7",
     "date": "2026-09-04T21:52:00.765Z",
     "rules": [

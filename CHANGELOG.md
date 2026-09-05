@@ -1,3 +1,10 @@
+## [1.21.8](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.21.7...v1.21.8) (2026-09-05)
+
+
+### Bug Fixes
+
+* **global-const-style:** withhold the assertion where a type is inferred from the constant (closes [#2329](https://github.com/BluMintInc/eslint-custom-rules/issues/2329)) ([b458a2e](https://github.com/BluMintInc/eslint-custom-rules/commit/b458a2e36a175892be0067674d2b0cb0de1a463f)), closes [#2324](https://github.com/BluMintInc/eslint-custom-rules/issues/2324) [#2330](https://github.com/BluMintInc/eslint-custom-rules/issues/2330)
+
 ## [1.21.7](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.21.6...v1.21.7) (2026-09-04)
 
 
