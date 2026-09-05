@@ -218,15 +218,17 @@ export const doubled = () => ITEMS.map((x) => x * 2);
 
 The `UPPER_SNAKE_CASE` half of the rule is a separate concern and still applies:
 a mutated constant is renamed, just not frozen. To get the assertion as well,
-build the value without mutating it — spread the pieces into one literal, or
-derive it with `map`/`filter`/`concat`, each of which returns a fresh array
-instead of writing the constant.
+build the value without mutating it — `map` derives an array whose element type
+is whatever the callback returns, so the constant's frozen type does not reach
+it and the result can be mutated freely. A spread, `filter`, `slice`, `concat`
+or `Object.assign` copy is different: see [Copies carry the frozen
+type](#copies-carry-the-frozen-type).
 
-### Constants a parameter's type is inferred from
+### Constants a declaration's type is inferred from
 
 `as const` also makes the literal type **non-widening**. Wherever TypeScript
 infers a type from the constant, an inference that used to widen `'ready'` to
-`string` keeps the literal instead — which rewrites a signature the assertion
+`string` keeps the literal instead — which rewrites a declaration the assertion
 was never asked to touch. So a constant used as the default value of a
 parameter with **no type annotation** keeps the `as const` half of the rule
 silent:
@@ -258,6 +260,87 @@ export const reveal = ({ distance = DISTANCE_DEFAULT }: Props) => distance;
 A destructuring **declaration** default (`const { name = FALLBACK } = source;`)
 is the same syntax but declares no signature, so it is not an inference site and
 the constant is still frozen.
+
+A **class property** takes its type from its initializer in exactly the same
+way, and is answered on exactly the same terms:
+
+```ts
+// Not frozen: `as const` would pin `stage` to `'ready'`, so a later
+// `session.stage = 'live'` becomes TS2322.
+const DEFAULT_STAGE = 'ready';
+export class Session {
+  public stage = DEFAULT_STAGE;
+}
+```
+
+```ts
+// Still flagged for `as const` — the property's type is declared, so nothing
+// infers from the initializer.
+const DEFAULT_STAGE = 'ready';
+export class AnnotatedSession {
+  public stage: string = DEFAULT_STAGE;
+}
+```
+
+### Copies carry the frozen type
+
+A spread builds a fresh **value** but not a fresh **type**. `[...ITEMS]` of a
+frozen `readonly [1, 2]` is `(1 | 2)[]` — mutable, but no longer able to hold
+anything else — so writing to the copy stops compiling for an input that
+compiled. The assertion is withheld when a copy of the constant is written to:
+
+```ts
+// Not frozen: `COPY.push(3)` would be TS2345 once ITEMS is `readonly [1, 2]`.
+const ITEMS = [1, 2];
+const COPY = [...ITEMS];
+COPY.push(3);
+```
+
+The same applies to `Object.assign({}, CONFIG)` and to the copying array
+methods `concat`, `slice` and `filter`. `map` is excluded: its result is typed
+from the callback, so the constant's frozen type reaches it only for a callback
+that returns its argument unchanged, and admitting it would withhold the
+assertion from every array anything is computed from.
+
+A copy that is only **read** cannot break, so the constant is still frozen. The
+withhold keys on the write, not on the copy:
+
+```ts
+// Still flagged for `as const` — nothing writes to the copy.
+const ITEMS = [1, 2];
+export const run = () => {
+  const copy = [...ITEMS];
+  return copy.length;
+};
+```
+
+### Inference sites that are not carved out
+
+Two further sites narrow in the same way but are **not** withheld, because
+declining at either costs far more reports than the breaks it prevents. Add an
+explicit type annotation, or an `eslint-disable-next-line`, where `--fix`
+narrows one of these.
+
+**A return position.** A function with no return-type annotation takes its
+return type from what it returns, so freezing a returned constant narrows the
+return type for every caller:
+
+```ts
+// Frozen, and `read()` narrows from `string` to `'ready'`.
+const DEFAULT_STAGE = 'ready';
+export const read = () => DEFAULT_STAGE;
+```
+
+Declining here was measured at 59 of 778 consumer reports (7.6%) — the constant
+need only be *held* in a literal that is returned — against zero breaks in that
+consumer. Annotate the return type (`(): string => DEFAULT_STAGE`) to opt out.
+
+**A generic type argument.** `useState(DEFAULT_STAGE)` infers `T` from the
+constant, so `setStage('live')` becomes TS2345 once it is frozen. A call
+argument is the only syntactic evidence of this, and withholding on it costs 364
+of the same 778 consumer reports (47%) — the reason the `typeof` query is not
+carved out either. Pass the type argument explicitly (`useState<string>(DEFAULT_STAGE)`) to
+opt out.
 
 ### Next.js reserved exports
 

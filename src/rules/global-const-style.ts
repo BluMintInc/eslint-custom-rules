@@ -391,8 +391,10 @@ const isWriteTarget = (node: TSESTree.Node): boolean => {
  * Storing a reference does not copy it: the same array stays reachable through
  * the container, so `holder.items.push(3)` writes through to the binding
  * exactly as a direct alias does, and freezing it raises the same TS2339. A
- * `SpreadElement` is excluded because it genuinely builds a fresh value
- * (`const COPY = [...ITEMS]`), and a computed key is excluded because it coerces
+ * `SpreadElement` is excluded because it builds a fresh VALUE
+ * (`const COPY = [...ITEMS]`) — it is not excluded from the walk entirely,
+ * because the copy still carries the constant's frozen TYPE, which
+ * `copyExpressionOf` handles. A computed key is excluded because it coerces
  * the reference to a property name rather than retaining it.
  */
 const storageContainerOf = (node: TSESTree.Node): TSESTree.Node | null => {
@@ -464,6 +466,87 @@ const aliasDeclaratorOf = (
   }
 };
 
+/**
+ * Whether a callee spells `Object.assign`, in either the dotted or the
+ * bracketed form — read through `accessedPropertyName` so the two spellings
+ * cannot diverge from how the mutation walk already reads a method name.
+ */
+const isObjectAssignCallee = (callee: TSESTree.Node): boolean => {
+  const value = outermostValueOf(callee);
+  return (
+    value.type === AST_NODE_TYPES.MemberExpression &&
+    value.object.type === AST_NODE_TYPES.Identifier &&
+    value.object.name === 'Object' &&
+    accessedPropertyName(value) === 'assign'
+  );
+};
+
+/**
+ * Array methods whose result keeps the receiver's ELEMENT type. `map` is
+ * absent because its result is typed from the CALLBACK, so the constant's type
+ * reaches it only for a callback that returns its argument unchanged — a no-op
+ * `map`. Admitting it would withhold the assertion from every derived array
+ * anything is computed from, to cover a spelling nobody writes.
+ */
+const TYPE_PRESERVING_COPY_METHODS = new Set(['concat', 'slice', 'filter']);
+
+/**
+ * The expression that builds a COPY carrying this value's type — the literal
+ * around a spread of it, the call of a copying array method on it, or an
+ * `Object.assign` it feeds.
+ *
+ * A copy is a fresh, mutable value, which is why `storageContainerOf` refuses
+ * it: writing to the copy cannot write through to the constant. But `as const`
+ * changes the constant's TYPE as well as its mutability, and a copy inherits
+ * that type — `[...ITEMS]` of a frozen `readonly [1, 2]` is `(1 | 2)[]`, so
+ * `COPY.push(3)` is TS2345 for an input that compiled. The copy is therefore
+ * followed for exactly the same question the alias walk asks: is the derived
+ * binding written?
+ */
+const copyExpressionOf = (node: TSESTree.Node): TSESTree.Node | null => {
+  const parent = node.parent;
+  if (!parent) {
+    return null;
+  }
+
+  if (
+    parent.type === AST_NODE_TYPES.SpreadElement &&
+    parent.argument === node &&
+    (parent.parent?.type === AST_NODE_TYPES.ObjectExpression ||
+      parent.parent?.type === AST_NODE_TYPES.ArrayExpression)
+  ) {
+    return parent.parent;
+  }
+
+  if (
+    parent.type === AST_NODE_TYPES.CallExpression &&
+    parent.arguments.includes(node as TSESTree.CallExpressionArgument) &&
+    isObjectAssignCallee(parent.callee)
+  ) {
+    return parent;
+  }
+
+  if (
+    parent.type === AST_NODE_TYPES.MemberExpression &&
+    parent.object === node
+  ) {
+    const method = accessedPropertyName(parent);
+    const callee = outermostValueOf(parent);
+    // A method REFERENCE (`const take = ITEMS.concat;`) builds nothing, so the
+    // copy only exists once the method is actually called.
+    if (
+      method !== null &&
+      TYPE_PRESERVING_COPY_METHODS.has(method) &&
+      callee.parent?.type === AST_NODE_TYPES.CallExpression &&
+      callee.parent.callee === callee
+    ) {
+      return callee.parent;
+    }
+  }
+
+  return null;
+};
+
 /** Pattern nodes a parameter's binding can be nested inside. */
 const PATTERN_CONTAINERS = new Set<string>([
   AST_NODE_TYPES.AssignmentPattern,
@@ -514,16 +597,27 @@ const isInferredParameterDefault = (pattern: TSESTree.Node): boolean => {
 };
 
 /**
- * Whether a reference sits where TypeScript INFERS a type from it — the value
- * of a default parameter, reached directly or through a composite literal it
- * is stored into.
+ * Whether a reference sits where TypeScript INFERS a type from it — a default
+ * parameter or a class property initializer — reached directly or through a
+ * composite literal it is stored into.
  *
  * `as const` does not only freeze: it makes the literal type NON-WIDENING, and
  * an inference site that widened `'ready'` to `string` then keeps the literal.
  * A parameter defaulted from the constant therefore narrows to that one value,
  * and every call passing a different one stops compiling (TS2345) for an input
  * that compiled. The mutation walk cannot see this: nothing is written, the
- * signature is simply inferred from a value the assertion changes.
+ * declaration is simply inferred from a value the assertion changes.
+ *
+ * Both sites are answered on the same terms, because an annotation is what
+ * settles the question in each: a type written by hand is DECLARED, so nothing
+ * infers from the value and freezing it cannot move the declaration. Only the
+ * unannotated spelling narrows.
+ *
+ * A RETURN position infers in exactly the same way and is deliberately absent.
+ * Declining there costs 59 of 778 consumer reports (7.6%) — the constant need
+ * only be held in a literal that is returned — to prevent breaks that the
+ * consumer does not contain, so it is documented as a limitation instead. The
+ * comparable trade in #2330 was rejected at 5%.
  */
 const isInferenceSite = (identifier: TSESTree.Node): boolean => {
   let value = outermostValueOf(identifier);
@@ -535,6 +629,18 @@ const isInferenceSite = (identifier: TSESTree.Node): boolean => {
     ) {
       return isInferredParameterDefault(parent.left);
     }
+
+    // A class property's type is inferred from its initializer exactly as a
+    // parameter's is from its default, so `session.stage = 'live'` becomes
+    // TS2322 once the constant behind `stage = DEFAULT_STAGE` is frozen.
+    if (
+      (parent?.type === AST_NODE_TYPES.PropertyDefinition ||
+        parent?.type === AST_NODE_TYPES.AccessorProperty) &&
+      parent.value === value
+    ) {
+      return !parent.typeAnnotation;
+    }
+
     const container = storageContainerOf(value);
     if (!container) {
       return false;
@@ -551,8 +657,13 @@ const isInferenceSite = (identifier: TSESTree.Node): boolean => {
  * value, so a WRITE — through the binding (`X.push(1)`), or to a binding that
  * aliases it (`other = X`) — becomes TS2339/TS2540. And it makes the literal
  * type NON-WIDENING, so an INFERENCE site that read the widened type keeps the
- * literal instead, which rewrites a signature the assertion was never asked to
- * touch.
+ * literal instead, which rewrites a declaration the assertion was never asked
+ * to touch.
+ *
+ * The type half reaches further than the value half, so the walk follows one
+ * edge the mutation question does not need: a COPY (`[...X]`, `X.concat()`),
+ * which is a fresh value but not a fresh type, and breaks on a write to the
+ * copy rather than to `X`.
  *
  * Answered from the scope manager's reference list rather than a textual
  * search for the name, so a same-named binding in
@@ -605,14 +716,24 @@ const blocksAsConstAssertion = (
 
       const path = accessPathOf(reference.identifier);
 
-      if (path !== null) {
-        if (isMutatingMethodCall(path) || isWriteTarget(path)) {
-          return true;
-        }
-        continue;
+      if (
+        path !== null &&
+        (isMutatingMethodCall(path) || isWriteTarget(path))
+      ) {
+        return true;
       }
 
-      const declarator = aliasDeclaratorOf(reference.identifier);
+      // A copy carries the constant's frozen type into a second binding, so it
+      // is enrolled on the same terms as an alias — but it is reached through a
+      // member access (`ITEMS.concat()`), which the alias walk deliberately
+      // refuses, so it is resolved before that refusal applies.
+      const copy = copyExpressionOf(outermostValueOf(reference.identifier));
+      const declarator = copy
+        ? aliasDeclaratorOf(copy)
+        : path === null
+        ? aliasDeclaratorOf(reference.identifier)
+        : null;
+
       if (!declarator) {
         continue;
       }
