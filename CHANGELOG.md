@@ -1,3 +1,10 @@
+## [1.21.13](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.21.12...v1.21.13) (2026-09-05)
+
+
+### Bug Fixes
+
+* **global-const-style:** enrol the receiver array parameter of an iteration over the constant (closes [#2339](https://github.com/BluMintInc/eslint-custom-rules/issues/2339)) ([db54771](https://github.com/BluMintInc/eslint-custom-rules/commit/db547715f77cbe80d8ba44b1e051e6d48de5dc7c))
+
 ## [1.21.12](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.21.11...v1.21.12) (2026-09-05)
 
 
