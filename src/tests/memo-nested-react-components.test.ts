@@ -1007,6 +1007,68 @@ ruleTesterJsx.run('memo-nested-react-components', memoNestedReactComponents, {
         const Comp = useLatestCallback(...args);
       `,
     },
+    /**
+     * Issue #2334: the `CallExpression` path used the binding's first letter as
+     * its whole discriminator, so it reported render callbacks the rule's own
+     * message exempts. A render callback is invoked by the parent and never
+     * mounted, so no identity exists for React to churn.
+     */
+    {
+      name: 'PascalCase-bound render callback passed to a non-component-typed prop',
+      code: `
+        const Consumer = () => {
+          const PopoverChildren = useLatestCallback((onClose) => {
+            return <Panel onPopoverClose={onClose} />;
+          });
+          return <PopoverWrapper PopoverChildren={PopoverChildren} />;
+        };
+      `,
+    },
+    {
+      name: 'PascalCase-bound render callback passed to render={...}',
+      code: `
+        const Consumer = () => {
+          const RenderPanel = useLatestCallback((onClose) => {
+            return <Panel onPopoverClose={onClose} />;
+          });
+          return <List render={RenderPanel} />;
+        };
+      `,
+    },
+    {
+      name: 'PascalCase-bound callback that is CALLED rather than mounted',
+      code: `
+        const Consumer = () => {
+          const RenderPanel = useCallback((onClose) => {
+            return <Panel onPopoverClose={onClose} />;
+          }, []);
+          return <div>{RenderPanel(noop)}</div>;
+        };
+      `,
+    },
+    {
+      name: 'PascalCase-bound useCallback render callback on a non-component prop',
+      code: `
+        const Consumer = () => {
+          const PopoverChildren = useCallback((onClose) => {
+            return <Panel onPopoverClose={onClose} />;
+          }, []);
+          return <PopoverWrapper PopoverChildren={PopoverChildren} />;
+        };
+      `,
+    },
+    // A binding that is BOTH called and mounted keeps the report: the mount is
+    // where the identity churn happens, and one safe use cannot license it.
+    // (Asserted on the invalid side; here is its callback-only counterpart.)
+    {
+      name: 'render callback invoked twice and mounted nowhere',
+      code: `
+        const Consumer = () => {
+          const RenderPanel = useLatestCallback((onClose) => <Panel onClose={onClose} />);
+          return <div>{RenderPanel(a)}{RenderPanel(b)}</div>;
+        };
+      `,
+    },
   ],
   invalid: [
     // The test-runner exemption reads only the NEAREST enclosing function, so a
@@ -1912,6 +1974,54 @@ ruleTesterJsx.run('memo-nested-react-components', memoNestedReactComponents, {
           },
         },
       ],
+    },
+    /**
+     * Issue #2334: the mirror defect. A LOWERCASE binding handed to a
+     * component-type prop is mounted just the same, and the old name gate
+     * skipped it silently.
+     */
+    {
+      name: 'lowercase-bound callback reaching a component-type prop still reports',
+      code: `
+        const Consumer = () => {
+          const inlinePanel = useLatestCallback((props) => {
+            return <Panel onPopoverClose={props.onClose} />;
+          });
+          return <Wrapper ContentComponent={inlinePanel} />;
+        };
+      `,
+      errors: [{ messageId: 'memoizeNestedComponent' }],
+    },
+    {
+      name: 'lowercase-bound callback mounted as a JSX tag still reports',
+      code: `
+        const Consumer = () => {
+          const inlinePanel = useLatestCallback((props) => <Panel {...props} />);
+          return <inlinePanel.Foo />;
+        };
+      `,
+      errors: [{ messageId: 'memoizeNestedComponent' }],
+    },
+    {
+      name: 'PascalCase binding both called and MOUNTED still reports',
+      code: `
+        const Consumer = () => {
+          const Panel = useCallback((props) => <div {...props} />, []);
+          return <div>{Panel(a)}<Panel /></div>;
+        };
+      `,
+      errors: [{ messageId: 'memoizeNestedComponent' }],
+    },
+    {
+      name: 'PascalCase binding passed to createElement still reports',
+      code: `
+        import { createElement } from 'react';
+        const Consumer = () => {
+          const Panel = useCallback((props) => <div {...props} />, []);
+          return createElement(Panel, {});
+        };
+      `,
+      errors: [{ messageId: 'memoizeNestedComponent' }],
     },
   ],
 });

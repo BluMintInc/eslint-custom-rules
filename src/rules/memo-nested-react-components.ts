@@ -511,6 +511,135 @@ const isInsideFunction = (node: TSESTree.Node): boolean => {
 const isPascalCaseName = (name: string): boolean => /^[A-Z]/.test(name);
 
 /**
+ * Prop names whose value a parent MOUNTS rather than calls. Kept identical to
+ * the `JSXAttribute` visitor's own test so the two paths cannot disagree about
+ * what a component-type prop is — the disagreement between them is #2334.
+ */
+const COMPONENT_PROP_SUFFIX = /(Wrapper|Component|Template|Header|Footer)$/;
+
+const isComponentPropName = (name: string): boolean =>
+  isPascalCaseName(name) && COMPONENT_PROP_SUFFIX.test(name);
+
+/**
+ * How one reference to a binding CONSUMES it.
+ *
+ * `component` — something MOUNTS it, so React gives it an identity that a
+ * render-scope definition churns. `callback` — something CALLS it, or hands it
+ * to a prop that is not component-typed, so it is a render callback the parent
+ * invokes and no identity exists to churn. `unknown` — a reference that settles
+ * neither, such as being returned or stored.
+ *
+ * This is the question the rule's message has always claimed to answer
+ * ("Render-prop callbacks are fine; this rule targets component-type props
+ * only"). The binding's NAME cannot answer it: casing is a convention, and a
+ * render callback a parent invokes is written `PopoverChildren` as readily as
+ * `renderHit` (#2334).
+ */
+type Consumption = 'component' | 'callback' | 'unknown';
+
+const consumptionOfReference = (
+  identifier: TSESTree.Node,
+  reactImports: ReactImports,
+): Consumption => {
+  // `<Binding />`. The scope manager reports the tag name as a reference whose
+  // identifier is a `JSXIdentifier`, which no other position produces.
+  if (identifier.type === AST_NODE_TYPES.JSXIdentifier) {
+    return 'component';
+  }
+
+  let current: TSESTree.Node = identifier;
+  for (;;) {
+    const parent = parentBeyondChain(current);
+    if (!parent) {
+      return 'unknown';
+    }
+
+    // `Binding as Something` / `Binding!` keep the value on its way to a use.
+    if (
+      (parent.type === AST_NODE_TYPES.TSAsExpression ||
+        parent.type === AST_NODE_TYPES.TSNonNullExpression ||
+        parent.type === AST_NODE_TYPES.TSSatisfiesExpression) &&
+      parent.expression === current
+    ) {
+      current = parent;
+      continue;
+    }
+
+    if (parent.type === AST_NODE_TYPES.CallExpression) {
+      // `createElement(Binding, ...)` mounts it exactly as a tag name does.
+      if (
+        parent.arguments[0] === current &&
+        isReactCreateElementCall(parent, reactImports)
+      ) {
+        return 'component';
+      }
+      // `Binding(onClose)` — the parent INVOKES it, which is what a render
+      // callback is for. A component is never called directly.
+      if (parent.callee === current) {
+        return 'callback';
+      }
+      return 'unknown';
+    }
+
+    // `<Host ContentComponent={Binding} />` mounts it; `<Host render={Binding} />`
+    // calls it. The prop name is the parent's contract, and it is read on the
+    // same terms the `JSXAttribute` visitor uses so the two cannot disagree.
+    if (
+      parent.type === AST_NODE_TYPES.JSXExpressionContainer &&
+      parent.parent?.type === AST_NODE_TYPES.JSXAttribute &&
+      parent.parent.name.type === AST_NODE_TYPES.JSXIdentifier
+    ) {
+      return isComponentPropName(parent.parent.name.name)
+        ? 'component'
+        : 'callback';
+    }
+
+    return 'unknown';
+  }
+};
+
+/**
+ * Whether the binding a memo-hook call initializes is MOUNTED, CALLED, or
+ * neither, read from the scope manager's reference list rather than a textual
+ * search so a same-named binding in a sibling scope cannot answer for this one.
+ *
+ * `unknown` is the honest answer for a binding with no informative reference —
+ * an exported component has none in its own file, and so does a fixture
+ * fragment. Falling back to the name there keeps the rule's reach while letting
+ * evidence override the guess wherever evidence exists.
+ */
+const consumptionOfBinding = (
+  node: TSESTree.CallExpression,
+  context: Readonly<TSESLint.RuleContext<MessageIds, Options>>,
+  reactImports: ReactImports,
+): Consumption => {
+  const declarator = parentBeyondChain(node);
+  if (declarator?.type !== AST_NODE_TYPES.VariableDeclarator) {
+    return 'unknown';
+  }
+
+  let sawCallback = false;
+  for (const variable of context.getDeclaredVariables(declarator)) {
+    for (const reference of variable.references) {
+      const consumption = consumptionOfReference(
+        reference.identifier,
+        reactImports,
+      );
+      // A single mounting use settles it: the identity churn happens there
+      // regardless of how many other places merely call it.
+      if (consumption === 'component') {
+        return 'component';
+      }
+      if (consumption === 'callback') {
+        sawCallback = true;
+      }
+    }
+  }
+
+  return sawCallback ? 'callback' : 'unknown';
+};
+
+/**
  * The values a container hands to its caller: object property values and array
  * elements. Mirrors `containedValues` in the paired `require-memo` rule (#1919),
  * so the two rules agree on what a container-carried hand-back is.
@@ -988,10 +1117,20 @@ See: https://react.dev/learn/your-first-component#nesting-and-organizing-compone
 
         const variableName = getVariableName(node);
 
-        // A non-PascalCase binding (e.g. renderHit) is a render callback used
-        // with a render={...} prop, not a component—skip it.
-        if (variableName && !isPascalCaseName(variableName)) {
-          return;
+        // The NAME was the whole discriminator here, which reported every
+        // PascalCase render callback the message explicitly exempts and missed
+        // every lowercase binding handed to a component-type prop. Evidence
+        // from the use site overrides it in both directions; the name still
+        // decides where there is no evidence, which is where an exported
+        // component lives (#2334).
+        if (variableName) {
+          const consumption = consumptionOfBinding(node, context, reactImports);
+          if (consumption === 'callback') {
+            return;
+          }
+          if (consumption === 'unknown' && !isPascalCaseName(variableName)) {
+            return;
+          }
         }
 
         // Inside an HOC factory the binding has a stable identity, so it does
