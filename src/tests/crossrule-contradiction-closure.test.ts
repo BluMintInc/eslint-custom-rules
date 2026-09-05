@@ -558,8 +558,8 @@ const KNOWN_DIVERGENT: Record<string, Exemption> = {
   },
   'logical-top-to-bottom-grouping::global-const-style': {
     reason:
-      "PIPELINE: the fixtures pin statement ORDER and name their module-scope consts lowercase incidentally; `--fix` supplies `as const`/SCREAMING_SNAKE on 53 of 67, the rest by hand. 51/65 -> 53/67 is the pair of fixtures #2023 added, whose blessed text leaves `const name = 'elementAt';` at module scope: each draws both complaints, and composing the two fixers settles it to `const NAME = 'elementAt' as const;` under the statement it derives from, clean under both (measured). That same composition measured clean before the #2023 join fix too — by appending the declaration onto a trailing `//` comment, which deleted it.",
-    cases: { asConst: 53, upperSnakeCase: 67 },
+      "PIPELINE: the fixtures pin statement ORDER and name their module-scope consts lowercase incidentally; `--fix` supplies `as const`/SCREAMING_SNAKE on 53 of 67, the rest by hand. 51/65 -> 53/67 is the pair of fixtures #2023 added, whose blessed text leaves `const name = 'elementAt';` at module scope: each draws both complaints, and composing the two fixers settles it to `const NAME = 'elementAt' as const;` under the statement it derives from, clean under both (measured). That same composition measured clean before the #2023 join fix too — by appending the declaration onto a trailing `//` comment, which deleted it. `asConst` 53 -> 52 is #2329: one fixture, `const source = 1; const data = source; doSideEffect((value = data) => value);`, whose alias reaches an UNANNOTATED parameter default. `as const` there pins the parameter to the literal `1` and every other argument becomes TS2345, so the assertion is withheld — the disagreement moved because a fix landed, not because the reporter went blind. The sibling still asks for SCREAMING_SNAKE on it, which is why `upperSnakeCase` is unmoved at 67.",
+    cases: { asConst: 52, upperSnakeCase: 67 },
   },
   'logical-top-to-bottom-grouping::parallelize-async-operations': {
     reason:
