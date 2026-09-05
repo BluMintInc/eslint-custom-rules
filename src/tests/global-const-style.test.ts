@@ -765,6 +765,140 @@ const Probe = () => {
 `,
       parserOptions: { ecmaFeatures: { jsx: true } },
     },
+    // Issue #2331: a spread builds a fresh VALUE but not a fresh TYPE. The copy
+    // is mutable, so #2327's container walk rightly refuses it — but the copy's
+    // element type is the frozen literal, so `COPY.push(3)` is TS2345 for an
+    // input that compiled. The pushed literal has to sit OUTSIDE the frozen
+    // union: pushing `1` compiles either way and asserts nothing.
+    {
+      name: 'declines to freeze an array whose spread copy is pushed to',
+      code: [
+        'const ITEMS = [1, 2];',
+        'const COPY = [...ITEMS];',
+        'COPY.push(3);',
+        'export { COPY };',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an object whose spread copy is written to',
+      code: [
+        'const CONFIG = { retries: 3 };',
+        'export const run = () => {',
+        '  const copy = { ...CONFIG };',
+        '  copy.retries = 5;',
+        '  return copy;',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose concat copy is pushed to',
+      code: [
+        'const ITEMS = [1, 2];',
+        'export const run = () => {',
+        '  const copy = ITEMS.concat();',
+        '  copy.push(3);',
+        '  return copy;',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose slice copy is pushed to',
+      code: [
+        'const ITEMS = [1, 2];',
+        'export const run = () => {',
+        '  const copy = ITEMS.slice();',
+        '  copy.push(3);',
+        '  return copy;',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose filter copy is pushed to',
+      code: [
+        'const ITEMS = [1, 2];',
+        'export const run = () => {',
+        '  const copy = ITEMS.filter(Boolean);',
+        '  copy.push(3);',
+        '  return copy;',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an object copied through Object.assign and written to',
+      code: [
+        'const CONFIG = { retries: 3 };',
+        'export const run = () => {',
+        '  const copy = Object.assign({}, CONFIG);',
+        '  copy.retries = 5;',
+        '  return copy;',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an object copied through a bracketed Object.assign',
+      code: [
+        'const CONFIG = { retries: 3 };',
+        'export const run = () => {',
+        "  const copy = Object['assign']({}, CONFIG);",
+        '  copy.retries = 5;',
+        '  return copy;',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose bracketed concat copy is pushed to',
+      code: [
+        'const ITEMS = [1, 2];',
+        'export const run = () => {',
+        "  const copy = ITEMS['concat']();",
+        '  copy.push(3);',
+        '  return copy;',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze a constant whose copy is reassigned wholesale',
+      code: [
+        'const ITEMS = [1, 2];',
+        'export const run = () => {',
+        '  let copy = [...ITEMS];',
+        '  copy = [3];',
+        '  return copy;',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // Issue #2331: a class property's type is INFERRED from its initializer
+    // exactly as a parameter's is from its default, so freezing the constant
+    // narrows the property and `session.stage = 'live'` becomes TS2322.
+    {
+      name: 'declines to freeze a constant initializing an unannotated class property',
+      code: [
+        "const DEFAULT_STAGE = 'ready';",
+        'export class Session {',
+        '  public stage = DEFAULT_STAGE;',
+        '}',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze a constant stored in a literal that initializes a class property',
+      code: [
+        "const DEFAULT_STAGE = 'ready';",
+        'export class Session {',
+        '  public state = { stage: DEFAULT_STAGE };',
+        '}',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
   ],
   invalid: [
     // Issue #2055: a JSX tag name is spelled twice, but the scope manager
@@ -2192,22 +2326,105 @@ const Probe = () => {
       output:
         'const ITEMS = [1] as const;\nconst OTHER = ITEMS;\nexport const doubled = () => OTHER.map((x) => x * 2);\n',
     },
-    // A spread COPIES rather than stores: the fresh array it builds is a
-    // different value, so mutating the copy says nothing about the source. This
-    // is the boundary of the container walk (Issue #2327) — without it the walk
-    // could follow any initializer that merely mentions the binding and
-    // withhold the assertion from every constant anything is copied from.
+    // Issue #2331 negative control: a copy that is never written cannot break,
+    // so the copy walk keys on the write rather than on the copy. Without this
+    // the spread arm would withhold from every constant anything is copied
+    // from — 26 consumer sites against the 0 that are actually written.
     {
-      code: 'const ITEMS = [1, 2];\nconst COPY = [...ITEMS];\nCOPY.push(1);\n',
+      name: 'freezes a constant whose spread copy is never written',
+      code: [
+        'const ITEMS = [1, 2];',
+        'export const run = () => {',
+        '  const copy = [...ITEMS];',
+        '  return copy.length;',
+        '};',
+      ].join('\n'),
       filename: 'test.ts',
-      errors: [
-        {
-          messageId: 'asConst',
-          data: { name: 'ITEMS', valueKind: 'an array literal' },
-        },
-      ],
-      output:
-        'const ITEMS = [1, 2] as const;\nconst COPY = [...ITEMS];\nCOPY.push(1);\n',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const ITEMS = [1, 2] as const;',
+        'export const run = () => {',
+        '  const copy = [...ITEMS];',
+        '  return copy.length;',
+        '};',
+      ].join('\n'),
+    },
+    // Issue #2331 negative control: a method REFERENCE builds no copy, so there
+    // is no second binding to carry the frozen type into.
+    {
+      name: 'freezes a constant whose copying method is referenced but never called',
+      code: ['const ITEMS = [1, 2];', 'export const TAKE = ITEMS.concat;'].join(
+        '\n',
+      ),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const ITEMS = [1, 2] as const;',
+        'export const TAKE = ITEMS.concat;',
+      ].join('\n'),
+    },
+    // Issue #2331 negative control: `map` substitutes the element type, so
+    // nothing of the constant's type survives into the result and a write to
+    // that result says nothing about freezing the source.
+    {
+      name: 'freezes a constant whose mapped result is written',
+      code: [
+        'const ITEMS = [1, 2];',
+        'export const run = () => {',
+        '  const doubled = ITEMS.map((x) => x * 2);',
+        '  doubled.push(3);',
+        '  return doubled;',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const ITEMS = [1, 2] as const;',
+        'export const run = () => {',
+        '  const doubled = ITEMS.map((x) => x * 2);',
+        '  doubled.push(3);',
+        '  return doubled;',
+        '};',
+      ].join('\n'),
+    },
+    // Issue #2331 negative control: an ANNOTATED class property declares its
+    // own type, so nothing infers from the initializer — the same discriminator
+    // #2329 uses for a parameter default.
+    {
+      name: 'freezes a constant initializing an annotated class property',
+      code: [
+        "const DEFAULT_STAGE = 'ready';",
+        'export class Session {',
+        '  public stage: string = DEFAULT_STAGE;',
+        '}',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        "const DEFAULT_STAGE = 'ready' as const;",
+        'export class Session {',
+        '  public stage: string = DEFAULT_STAGE;',
+        '}',
+      ].join('\n'),
+    },
+    // Issue #2331: a RETURN position infers exactly as a parameter default
+    // does, and this fixture's `--fix` output narrows `read`'s return type. It
+    // is reported anyway: declining costs 59 of 778 consumer reports (7.6%) to
+    // prevent breaks the consumer does not contain, so the shape is a
+    // documented limitation rather than a carve-out. See #2330, where the
+    // comparable trade was rejected at 5%.
+    {
+      name: 'freezes a constant returned from an unannotated function',
+      code: [
+        "const DEFAULT_STAGE = 'ready';",
+        'export const read = () => DEFAULT_STAGE;',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        "const DEFAULT_STAGE = 'ready' as const;",
+        'export const read = () => DEFAULT_STAGE;',
+      ].join('\n'),
     },
     // Issue #2327: being STORED in a container is not itself a mutation. The
     // walk follows the container only to look for a write through it, so a

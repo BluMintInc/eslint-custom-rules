@@ -1301,9 +1301,15 @@ describe('the multi-declarator probe is load-bearing', () => {
     // The two licensing gates. Each is correct behaviour on a rewrite the rule
     // makes identically without a sibling present, but each also SUPPRESSES an
     // arm-B finding, so a gate that widened would empty the arm at a steady
-    // green. Ceilings cut just above the measured 256 and 2.
-    expect(totals.mutationLicensed).toBeLessThanOrEqual(300);
-    expect(totals.destructionLicensed).toBeLessThanOrEqual(10);
+    // green. Ceilings cut just above the measurement.
+    //
+    // The mutation count moves with the CORPUS, not only with the gate: #2331's
+    // `global-const-style` fixtures raised it from 256 to 330 under the rule as
+    // it stood, and the withhold those fixtures pin brought it back to 306. So
+    // a rise here is a stale ceiling until the fixture delta is ruled out —
+    // attribute it by re-running with the corpus change alone before widening.
+    expect(totals.mutationLicensed).toBeLessThanOrEqual(360); // measured 306
+    expect(totals.destructionLicensed).toBeLessThanOrEqual(10); // measured 2
     /**
      * The sibling-is-subject skip, pinned by rule MEMBERSHIP rather than by
      * count: it fires when EVERY report lands on the planted binding, which is a
