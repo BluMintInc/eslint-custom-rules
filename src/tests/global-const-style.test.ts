@@ -1343,6 +1343,181 @@ const Probe = () => {
       ].join('\n'),
       filename: 'test.ts',
     },
+    // Issue #2339: the callback parameter AFTER the index is the RECEIVER ARRAY
+    // itself, a second name for the constant, so a mutating call through it is a
+    // write to the constant — the same write the rule already declines for when
+    // it is spelled directly as `ITEMS.push(2)`. Only the handed-node spelling
+    // escaped. Every case below compiles, and stops compiling once the assertion
+    // is applied by hand; the diagnostic each produces is named beside it.
+    // TS2339: `push` does not exist on the frozen `readonly` array.
+    {
+      name: 'declines to freeze an array whose forEach array parameter is mutated',
+      code: [
+        'const ITEMS = [{ label: 1 }];',
+        'export const run = () => {',
+        '  ITEMS.forEach((item, index, arr) => {',
+        '    arr.push({ label: 2 });',
+        '  });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // `reduce`/`reduceRight` spend the first position on the accumulator, so the
+    // array arrives FOURTH rather than third. TS2339.
+    {
+      name: 'declines to freeze an array whose reduce array parameter is mutated',
+      code: [
+        'const ITEMS = [1, 2, 3];',
+        'export const total = ITEMS.reduce((acc, cur, index, arr) => {',
+        '  arr.pop();',
+        '  return acc + cur;',
+        '}, 0);',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // TS2542 + TS2322: an index signature on a `readonly` array permits reading
+    // only, so a write through the array parameter is rejected twice over.
+    {
+      name: 'declines to freeze an array whose map array parameter is written through an index',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const out = ITEMS.map((item, index, arr) => {',
+        '  arr[0] = { n: 2 };',
+        '  return item;',
+        '});',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // The two callback spellings bind their parameters identically. TS2339.
+    {
+      name: 'declines to freeze an array whose function-expression callback array parameter is mutated',
+      code: [
+        'const ITEMS = [1, 2];',
+        'export const run = () => {',
+        '  ITEMS.forEach(function (item, index, arr) {',
+        '    arr.push(3);',
+        '  });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // The method name is read through `accessedPropertyName`, so the bracketed
+    // spelling cannot diverge from the dotted one. TS2339.
+    {
+      name: 'declines to freeze an array whose bracket-spelled forEach array parameter is mutated',
+      code: [
+        'const ITEMS = [1, 2];',
+        'export const run = () => {',
+        "  ITEMS['forEach']((item, index, arr) => {",
+        '    arr.push(3);',
+        '  });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // A PROPERTY of the constant is frozen with the object that holds it, and the
+    // iterated expression is read through its member path. TS2339.
+    {
+      name: 'declines to freeze an object whose array parameter is mutated through a member path',
+      code: [
+        'const CONFIG = { list: [1, 2] };',
+        'export const run = () => {',
+        '  CONFIG.list.forEach((item, index, arr) => {',
+        '    arr.push(3);',
+        '  });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // The enrolled parameter is walked like any other binding, so an alias taken
+    // from it is followed on to the write. TS2339.
+    {
+      name: 'declines to freeze an array whose array parameter is aliased and then mutated',
+      code: [
+        'const ITEMS = [1, 2];',
+        'export const run = () => {',
+        '  ITEMS.forEach((item, index, arr) => {',
+        '    const rest = arr;',
+        '    rest.push(3);',
+        '  });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose reduceRight array parameter is mutated',
+      code: [
+        'const ITEMS = [1, 2, 3];',
+        'export const total = ITEMS.reduceRight((acc, cur, index, arr) => {',
+        '  arr.pop();',
+        '  return acc + cur;',
+        '}, 0);',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // Every method that hands its callback the receiver is enrolled, whatever the
+    // method computes from it. TS2339 on each.
+    {
+      name: 'declines to freeze an array whose some array parameter is sorted',
+      code: [
+        'const ITEMS = [3, 1, 2];',
+        'export const run = () => {',
+        '  return ITEMS.some((item, index, arr) => {',
+        '    arr.sort();',
+        '    return item > 2;',
+        '  });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose filter array parameter is reversed',
+      code: [
+        'const ITEMS = [1, 2, 3];',
+        'export const kept = ITEMS.filter((item, index, arr) => {',
+        '  arr.reverse();',
+        '  return item > 1;',
+        '});',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // `flatMap` alone declares the parameter `T[]` where its siblings declare it
+    // `readonly T[]`, so a mutating method through it survives the assertion. Its
+    // ELEMENTS are frozen regardless, which is the break enrolling it catches:
+    // TS2540, assignment to a read-only property.
+    {
+      name: 'declines to freeze an array whose flatMap array parameter has an element written',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const flat = ITEMS.flatMap((item, index, arr) => {',
+        '  arr[0].n = 2;',
+        '  return [item];',
+        '});',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose find array parameter is sorted',
+      code: [
+        'const ITEMS = [1, 2, 3];',
+        'export const found = ITEMS.find((item, index, arr) => {',
+        '  arr.sort();',
+        '  return item > 1;',
+        '});',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose every array parameter is reversed',
+      code: [
+        'const ITEMS = [1, 2];',
+        'export const all = ITEMS.every((item, index, arr) => {',
+        '  arr.reverse();',
+        '  return item > 0;',
+        '});',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
   ],
   invalid: [
     // Issue #2055: a JSX tag name is spelled twice, but the scope manager
@@ -3688,6 +3863,216 @@ const Probe = () => {
         '  }',
         '  return current;',
         '};',
+      ].join('\n'),
+    },
+    // Issue #2339 negative controls. The decline is keyed on a WRITE through the
+    // array parameter of an iteration over the constant ITSELF: every case below
+    // compiles both before and after `--fix`, so withholding the assertion from
+    // one would cost a report for nothing.
+    {
+      name: 'freezes an array whose array parameter is only read',
+      code: [
+        'const ITEMS = [1, 2];',
+        'export const run = () => {',
+        '  ITEMS.forEach((item, index, arr) => {',
+        '    console.log(arr.length);',
+        '  });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'ITEMS', valueKind: 'an array literal' },
+        },
+      ],
+      output: [
+        'const ITEMS = [1, 2] as const;',
+        'export const run = () => {',
+        '  ITEMS.forEach((item, index, arr) => {',
+        '    console.log(arr.length);',
+        '  });',
+        '};',
+      ].join('\n'),
+    },
+    // A callback routinely declares fewer parameters than the method passes, so
+    // each position is taken only where the signature actually spells it.
+    {
+      name: 'freezes an array whose callback declares no array parameter',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  let sum = 0;',
+        '  ITEMS.forEach((item, index) => {',
+        '    sum += item.n + index;',
+        '  });',
+        '  return sum;',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'ITEMS', valueKind: 'an array literal' },
+        },
+      ],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const run = () => {',
+        '  let sum = 0;',
+        '  ITEMS.forEach((item, index) => {',
+        '    sum += item.n + index;',
+        '  });',
+        '  return sum;',
+        '};',
+      ].join('\n'),
+    },
+    // The index is a `number` whatever the receiver holds, so nothing the
+    // assertion changes reaches it and writing it is not a write to the constant.
+    {
+      name: 'freezes an array whose index parameter is written',
+      code: [
+        'const ITEMS = [1, 2];',
+        'export const run = () => {',
+        '  ITEMS.forEach((item, index, arr) => {',
+        '    index = arr.length;',
+        '    console.log(index + item);',
+        '  });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'ITEMS', valueKind: 'an array literal' },
+        },
+      ],
+      output: [
+        'const ITEMS = [1, 2] as const;',
+        'export const run = () => {',
+        '  ITEMS.forEach((item, index, arr) => {',
+        '    index = arr.length;',
+        '    console.log(index + item);',
+        '  });',
+        '};',
+      ].join('\n'),
+    },
+    // A DERIVED receiver hands the callback the fresh MUTABLE value it built
+    // rather than the constant, so mutating that array is no readonly violation
+    // and the assertion stands. The ELEMENT parameter stays enrolled for all
+    // three derivations, which the #2338 cases above pin; only the array
+    // parameter is withheld here.
+    //
+    // The write is a mutating METHOD rather than an appending one because a
+    // derivation also narrows the element type: `arr.push(3)` on `[...ITEMS]`
+    // is TS2345 after `--fix` — `3` is not assignable to `1 | 2` — which is the
+    // literal-narrowing family filed as #2330 and decided by the type checker,
+    // not by this arm. Keying the control on a write whose output still
+    // compiles keeps it a statement about THIS arm, and keeps it out of the
+    // type-safety guards' baselines.
+    {
+      name: 'freezes an array whose spread copy hands its callback a fresh array',
+      code: [
+        'const ITEMS = [1, 2];',
+        'export const run = () => {',
+        '  [...ITEMS].forEach((item, index, arr) => {',
+        '    arr.sort();',
+        '  });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'ITEMS', valueKind: 'an array literal' },
+        },
+      ],
+      output: [
+        'const ITEMS = [1, 2] as const;',
+        'export const run = () => {',
+        '  [...ITEMS].forEach((item, index, arr) => {',
+        '    arr.sort();',
+        '  });',
+        '};',
+      ].join('\n'),
+    },
+    {
+      name: 'freezes an array whose filtered copy hands its callback a fresh array',
+      code: [
+        'const ITEMS = [1, 2];',
+        'export const run = () => {',
+        '  ITEMS.filter(Boolean).forEach((item, index, arr) => {',
+        '    arr.reverse();',
+        '  });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'ITEMS', valueKind: 'an array literal' },
+        },
+      ],
+      output: [
+        'const ITEMS = [1, 2] as const;',
+        'export const run = () => {',
+        '  ITEMS.filter(Boolean).forEach((item, index, arr) => {',
+        '    arr.reverse();',
+        '  });',
+        '};',
+      ].join('\n'),
+    },
+    {
+      name: 'freezes an object whose Object.values array hands its callback a fresh array',
+      code: [
+        'const CONFIG = { a: 1, b: 2 };',
+        'export const run = () => {',
+        '  Object.values(CONFIG).forEach((value, index, arr) => {',
+        '    arr.pop();',
+        '  });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'CONFIG', valueKind: 'an object literal' },
+        },
+      ],
+      output: [
+        'const CONFIG = { a: 1, b: 2 } as const;',
+        'export const run = () => {',
+        '  Object.values(CONFIG).forEach((value, index, arr) => {',
+        '    arr.pop();',
+        '  });',
+        '};',
+      ].join('\n'),
+    },
+    // The accumulator is typed from the SEED rather than from the constant, and
+    // the array parameter beside it is only read, so neither reaches the
+    // assertion.
+    {
+      name: 'freezes an array whose reduce accumulator is written beside a read array parameter',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const collected = ITEMS.reduce((acc, item, index, arr) => {',
+        '  acc.push(item.n + index + arr.length);',
+        '  return acc;',
+        '}, [] as number[]);',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'ITEMS', valueKind: 'an array literal' },
+        },
+      ],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const collected = ITEMS.reduce((acc, item, index, arr) => {',
+        '  acc.push(item.n + index + arr.length);',
+        '  return acc;',
+        '}, [] as number[]);',
       ].join('\n'),
     },
   ],

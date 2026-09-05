@@ -727,8 +727,10 @@ const isInferenceSite = (identifier: TSESTree.Node): boolean => {
  * second: a walk keyed on the first parameter would enrol a binding typed from
  * the seed value and miss the one typed from the constant (Issue #2338).
  *
- * Only the element parameter is enrolled. The index beside it is a `number`
- * whatever the receiver holds, so nothing the assertion changes reaches it.
+ * The INDEX parameter is absent from every map here, and from nothing else:
+ * it is a `number` whatever the receiver holds, so nothing the assertion
+ * changes reaches it. The parameter AFTER the index is a different matter —
+ * see `ARRAY_PARAMETER_INDEX_BY_METHOD`.
  */
 const ELEMENT_PARAMETER_INDEX_BY_METHOD = new Map<string, number>([
   ['forEach', 0],
@@ -743,6 +745,46 @@ const ELEMENT_PARAMETER_INDEX_BY_METHOD = new Map<string, number>([
   ['flatMap', 0],
   ['reduce', 1],
   ['reduceRight', 1],
+]);
+
+/**
+ * The same methods, mapped to the position the RECEIVER ARRAY arrives in.
+ *
+ * That parameter is a second name for the iterated value itself, so a mutating
+ * call through it writes to the constant:
+ * `ITEMS.forEach((item, index, arr) => { arr.push(2); })` is TS2339 once
+ * `ITEMS` is frozen, for an input that compiled — the identical call written
+ * directly as `ITEMS.push(2)` is one the rule already declines for, so only the
+ * handed-node spelling escapes it (Issue #2339).
+ *
+ * The position is carried apart from the element's because the two are enrolled
+ * on different terms rather than because they differ by one: an element keeps
+ * the constant's type through every derivation the iteration walk follows,
+ * while the receiver is the constant only when the iteration reads the
+ * constant's own value or member path — see `iterationBindingsOf`.
+ * `reduce`/`reduceRight` push it to fourth, having spent the first position on
+ * the accumulator.
+ *
+ * `flatMap` is listed even though its lib signature declares the parameter
+ * `T[]` where every sibling declares it `readonly T[]` — measured against
+ * `lib.es2020`, so a mutating METHOD through it survives the assertion. Its
+ * ELEMENTS are frozen regardless, so `arr[0].n = 2` inside a `flatMap` callback
+ * is TS2540 for an input that compiled, and the walk's write check reaches it
+ * only once the parameter is enrolled.
+ */
+const ARRAY_PARAMETER_INDEX_BY_METHOD = new Map<string, number>([
+  ['forEach', 2],
+  ['map', 2],
+  ['filter', 2],
+  ['find', 2],
+  ['findIndex', 2],
+  ['findLast', 2],
+  ['findLastIndex', 2],
+  ['some', 2],
+  ['every', 2],
+  ['flatMap', 2],
+  ['reduce', 3],
+  ['reduceRight', 3],
 ]);
 
 /**
@@ -775,9 +817,10 @@ const elementProjectionCallOf = (
 };
 
 /**
- * The bindings a construct that ITERATES `iterable` introduces for its
- * elements: the head of a `for…of` over it, or the parameter an array method
- * hands each element to.
+ * The bindings a construct that ITERATES `iterable` introduces: the head of a
+ * `for…of` over it, the parameter an array method hands each element to, and —
+ * when the iterated expression is the constant itself — the parameter that
+ * method hands the RECEIVER ARRAY to.
  *
  * A `for…of` head is accepted in all three binding spellings, on the same terms
  * as `aliasDeclaratorOf` accepts all three declarator spellings — every name a
@@ -790,12 +833,19 @@ const elementProjectionCallOf = (
  * A callback parameter is reached only through a function LITERAL: a callback
  * passed by name is declared elsewhere, where its parameter carries whatever
  * type that declaration gives it rather than one read off the constant.
+ *
+ * `iteratesConstantValue` says whether `iterable` is the constant's own value
+ * or member path rather than something derived from it. It gates the receiver
+ * ARRAY parameter alone: the element parameter is typed from the constant
+ * either way, while the array parameter names the constant only in the first
+ * case — see `iterationBindingsOf`.
  */
-const elementBindingsOfIteration = (
+const bindingsOfIterationOver = (
   iterable: TSESTree.Node,
   declaredVariablesOf: (
     node: TSESTree.Node,
   ) => readonly TSESLint.Scope.Variable[],
+  iteratesConstantValue: boolean,
 ): readonly TSESLint.Scope.Variable[] => {
   // The member path is resolved first because the iterated expression is
   // routinely a PROPERTY of the constant (`for (const x of CONFIG.list)`),
@@ -822,8 +872,11 @@ const elementBindingsOfIteration = (
   }
 
   const method = accessedPropertyName(path);
-  const elementIndex =
-    method === null ? undefined : ELEMENT_PARAMETER_INDEX_BY_METHOD.get(method);
+  if (method === null) {
+    return [];
+  }
+
+  const elementIndex = ELEMENT_PARAMETER_INDEX_BY_METHOD.get(method);
 
   if (
     elementIndex === undefined ||
@@ -838,21 +891,34 @@ const elementBindingsOfIteration = (
     return [];
   }
 
-  const element = callback.params[elementIndex];
-  if (!element) {
+  const arrayIndex = iteratesConstantValue
+    ? ARRAY_PARAMETER_INDEX_BY_METHOD.get(method)
+    : undefined;
+
+  // A callback routinely declares fewer parameters than the method passes, so
+  // each position is taken only where the signature actually spells it.
+  const enrolled = [
+    callback.params[elementIndex],
+    arrayIndex === undefined ? undefined : callback.params[arrayIndex],
+  ].filter((param): param is TSESTree.Parameter => param !== undefined);
+
+  if (enrolled.length === 0) {
     return [];
   }
 
   // The scope manager answers for the WHOLE function — every parameter, and a
-  // function expression's own name — so the element parameter's bindings are
-  // picked out by the span they are declared in. Taking the function's list
-  // whole would enrol the accumulator of a `reduce`, which is typed from the
-  // seed value rather than from the constant.
+  // function expression's own name — so the enrolled parameters' bindings are
+  // picked out by the spans they are declared in. Taking the function's list
+  // whole would enrol the accumulator of a `reduce`, typed from the seed value
+  // rather than from the constant, and the index, which the assertion cannot
+  // reach.
   return declaredVariablesOf(callback).filter((variable) =>
-    variable.defs.some(
-      (def) =>
-        def.name.range[0] >= element.range[0] &&
-        def.name.range[1] <= element.range[1],
+    variable.defs.some((def) =>
+      enrolled.some(
+        (param) =>
+          def.name.range[0] >= param.range[0] &&
+          def.name.range[1] <= param.range[1],
+      ),
     ),
   );
 };
@@ -862,8 +928,9 @@ const elementBindingsOfIteration = (
  * derived from it that keeps its element types.
  *
  * Such a binding is typed from the constant exactly as a destructured copy is —
- * it carries the ELEMENT type rather than the whole value — so a write through
- * it breaks on the assertion the same way a write through an alias does:
+ * it carries the ELEMENT type, or for the receiver parameter the whole value —
+ * so a write through it breaks on the assertion as a write through an alias
+ * does:
  * `for (const item of ITEMS) { item.label = 'b'; }` is TS2540 once `ITEMS` is
  * frozen, for an input that compiled (Issue #2338). Enrolling the binding is
  * therefore the whole remedy; the walk's existing write, mutating-method and
@@ -876,6 +943,16 @@ const elementBindingsOfIteration = (
  * builds a fresh OUTER value whose elements are still the frozen ones, so the
  * element binding breaks identically. One derivation step is followed, matching
  * the depth the alias walk already follows a copy to.
+ *
+ * The receiver ARRAY parameter is enrolled for the constant's own value or
+ * member path ALONE, which is the one iterable of the three that hands the
+ * callback the constant itself. A derivation hands it the fresh outer value it
+ * built, and mutating that is no readonly violation:
+ * `[...ITEMS].forEach((item, index, arr) => { arr.push(3); })` does break after
+ * the fix, but as TS2345 — the spread narrows the element type, so `3` is not
+ * assignable — which belongs to the literal-narrowing family filed as #2330 and
+ * needs the type checker. Enrolling it here would withhold the assertion for a
+ * reason this arm cannot justify, so it is an over-decline (Issue #2339).
  */
 const iterationBindingsOf = (
   identifier: TSESTree.Node,
@@ -884,15 +961,16 @@ const iterationBindingsOf = (
   ) => readonly TSESLint.Scope.Variable[],
 ): readonly TSESLint.Scope.Variable[] => {
   const value = outermostValueOf(identifier);
-  const iterables = [
-    value,
-    copyExpressionOf(value),
-    elementProjectionCallOf(value),
-  ];
+  const derivations = [copyExpressionOf(value), elementProjectionCallOf(value)];
 
-  return iterables.flatMap((iterable) =>
-    iterable ? elementBindingsOfIteration(iterable, declaredVariablesOf) : [],
-  );
+  return [
+    ...bindingsOfIterationOver(value, declaredVariablesOf, true),
+    ...derivations.flatMap((iterable) =>
+      iterable
+        ? bindingsOfIterationOver(iterable, declaredVariablesOf, false)
+        : [],
+    ),
+  ];
 };
 
 /**
@@ -926,13 +1004,16 @@ const iterationBindingsOf = (
  * the one value — and `visited` keeps a chain that leads back on itself, which
  * a redeclared `var` can build, from looping forever.
  *
- * Iteration is followed on the same reasoning, keyed on the ELEMENT rather than
- * the whole value: a `for…of` head and an iteration callback's parameter are
- * second names for the constant's contents, so `for (const item of ITEMS) {
+ * Iteration is followed on the same reasoning, keyed on what the construct
+ * HANDS its body: a `for…of` head and an iteration callback's element parameter
+ * are second names for the constant's contents, so `for (const item of ITEMS) {
  * item.label = 'b'; }` is TS2540 once `ITEMS` is frozen while `ITEMS`'s own
- * references show nothing but a read (Issue #2338). Enrolling the binding is
- * all it takes — the checks above then decide, so a loop that only reads its
- * element keeps the assertion.
+ * references show nothing but a read (Issue #2338); the parameter after the
+ * index is a second name for the constant ITSELF, so `arr.push(2)` inside the
+ * callback is the TS2339 the rule already declines for when the same call is
+ * written directly (Issue #2339). Enrolling the binding is all it takes — the
+ * checks above then decide, so a callback that only reads what it is handed
+ * keeps the assertion.
  *
  * The declaring KEYWORD is deliberately not screened. `as const` types the
  * value `readonly`, and a binding takes its declared type from its initializer,

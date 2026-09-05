@@ -516,13 +516,23 @@ for (const control of CONTROLS) {
  * of re-probing every one under seven invented paths: measured over the same
  * corpus, the fan-out yields 8,433 fix pairs across 81 rules where the authentic
  * filename yields 2,652 across the same 81, so the fan-out was spending 3.2x the
- * budget to compile near-duplicates of pairs it already had. The largest rule
- * contributes 117 pairs, so this bound is slack today and exists only to keep a
- * future fixture explosion from turning two TypeScript programs into an
+ * budget to compile near-duplicates of pairs it already had. The bound exists
+ * to keep a fixture explosion from turning two TypeScript programs into an
  * unbounded cost — and if it ever binds, exactly what it dropped is printed
  * below and asserted, never silently discarded.
+ *
+ * It is re-cut when it starts binding on a rule this guard most needs to cover,
+ * rather than left to eat that rule's tail. At 150 it bound on
+ * `global-const-style`, dropping the 11 pairs at the END of its file — which,
+ * cases coming out in test-file order, is always the fixtures most recently
+ * added, so the newest boundary controls were the ones excluded from the very
+ * guard that type-checks them. That rule's `as const` fixer is the repo's most
+ * frequent source of exactly the defect here (#2330, #2338, #2339), so the
+ * budget goes to it: at 200 it fits with headroom, and only
+ * `enforce-assert-safe-object-key` — 288 pairs, twice any other rule — is still
+ * capped, which keeps the mechanism live and asserted rather than dormant.
  */
-const MAX_PAIRS_PER_RULE = 150;
+const MAX_PAIRS_PER_RULE = 200;
 
 /**
  * `DECLARES_INTO_SHARED_SCOPE` is imported from `fixtureTypeProgram` rather than
@@ -1218,17 +1228,17 @@ describe('an autofix must not turn compiling code into non-compiling code', () =
    * fixing breaks, so the corpus size is asserted rather than assumed.
    */
   it('compiles a meaningful share of the fixable rules', () => {
-    expect(fixableRules.length).toBeGreaterThan(70); // measured 84
+    expect(fixableRules.length).toBeGreaterThan(70); // measured 85
     // Exact, not a floor: every rule below the count is named in
     // UNCOVERED_FIXERS, so slack here would only re-open the hole it closes.
     expect(coverage.covered.length).toBe(
       fixableRules.length - Object.keys(UNCOVERED_FIXERS).length,
     );
-    expect(assertedPairs.length).toBeGreaterThanOrEqual(3800); // measured 4,257
+    expect(assertedPairs.length).toBeGreaterThanOrEqual(3800); // measured 4,427
     expect(corpus.failures).toEqual([]);
     // The cap's DENOMINATOR. Without it the ceilings below read as healthy on a
-    // corpus that collapsed to nothing. 14,004 when measured.
-    expect(harvested).toBeGreaterThanOrEqual(13000); // measured 14,124
+    // corpus that collapsed to nothing. 14,711 when measured.
+    expect(harvested).toBeGreaterThanOrEqual(13000); // measured 14,711
   });
 
   /**
@@ -1245,22 +1255,17 @@ describe('an autofix must not turn compiling code into non-compiling code', () =
    * the cap makes a fifth one a conscious edit rather than a silent loss.
    */
   it('accounts for every case it discards before compiling', () => {
-    // 387 of 14,004 harvested, in exactly these four rules
-    // (enforce-assert-safe-object-key 223, no-explicit-return-type 153,
-    // enforce-memoize-async 6, parallelize-async-operations 5). The COUNTS are
-    // left out of the pin because they move with every fixture added to a
-    // capped rule; the membership is what carries the meaning.
+    // 88 of 14,711 harvested, in exactly this one rule. The COUNT is left out
+    // of the pin because it moves with every fixture added to a capped rule;
+    // the membership is what carries the meaning. Three rules left this set
+    // when the cap was re-cut to 200 — a rule LEAVING it is a coverage gain, so
+    // only a rule joining needs the conscious edit this pin forces.
     expect(
       coverage.cappedTail.map((entry) => entry.split(' ')[0]).sort(),
-    ).toEqual([
-      'enforce-assert-safe-object-key',
-      'enforce-memoize-async',
-      'no-explicit-return-type',
-      'parallelize-async-operations',
-    ]);
+    ).toEqual(['enforce-assert-safe-object-key']);
     // A ceiling just above the measurement, per the floor-drift discipline in
     // reverse: a rise is a conscious edit, not something to discover later.
-    expect(capped).toBeLessThanOrEqual(450);
+    expect(capped).toBeLessThanOrEqual(150); // measured 88
     // ...and a floor, so a cap that stopped applying at all — which would make
     // the rule list above stale rather than green — cannot pass quietly.
     expect(capped).toBeGreaterThan(0);
@@ -1350,13 +1355,13 @@ describe('a suggestion must not turn compiling code into non-compiling code', ()
         ]),
       ),
     ).toEqual(Object.fromEntries(suggestionRules.map((rule) => [rule, true])));
-    expect(assertedSuggestionPairs.length).toBeGreaterThanOrEqual(270); // measured 297
+    expect(assertedSuggestionPairs.length).toBeGreaterThanOrEqual(270); // measured 385
 
     // The suggestion channel applies the same MAX_PAIRS_PER_RULE as the fix
     // channel, but counted its discards nowhere at all — not even in the
     // diagnostic, which put it a tier below the printed-but-unasserted counters
     // #2225 set out to fix. Measured at ZERO: no suggestion-emitting rule comes
-    // within reach of the cap, where the fix channel is capped in FOUR rules.
+    // within reach of the cap, where the fix channel is capped in ONE rule.
     // So this is a regression detector, vacuous by design — it catches the
     // first rule that does reach it, rather than describing a standing discard.
     expect(cappedSuggestions).toBe(0);

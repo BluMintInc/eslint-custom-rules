@@ -230,12 +230,25 @@ and `reduceRight`. For `reduce` and `reduceRight` the element is the **second**
 parameter; the accumulator is typed from the seed value rather than from the
 constant, so writing to it is not a write to the constant.
 
+The parameter after the index is the **receiver array itself**, so it is a
+second name for the constant rather than for its contents, and a mutating call
+through it is a write to the constant. `ITEMS.forEach((item, index, arr) => {
+arr.push(3); })` is the same TS2339 on a frozen tuple that `ITEMS.push(3)` is,
+and the assertion is withheld for both. `reduce` and `reduceRight` put this
+parameter **fourth**, after their accumulator.
+
 The receiver may be one step removed from the constant, because a copy or a
 projection of it still yields the frozen elements — `[...ITEMS].forEach(…)`,
 `ITEMS.filter(Boolean).forEach(…)`, `for (const item of ITEMS.slice())` and
 `Object.values(CONFIG).forEach(…)` all count, as does `Object.entries`.
 `Object.keys` does not: its result is `string[]` whatever the argument's type,
 so nothing the assertion changes reaches a binding taken from it.
+
+Only the **element** is followed through those derivations. A copy or a
+projection is a fresh, mutable array, so a mutating call on the receiver
+parameter of an iteration over one says nothing about the constant, and
+`[...ITEMS].forEach((item, index, arr) => { arr.push(3); })` keeps the
+assertion.
 
 Iteration that only **reads** the element leaves the assertion in place. The
 withhold keys on the write, not on the iteration:
