@@ -608,18 +608,22 @@ const consumptionOfReference = (
  * fragment. Falling back to the name there keeps the rule's reach while letting
  * evidence override the guess wherever evidence exists.
  */
-const consumptionOfBinding = (
-  node: TSESTree.CallExpression,
+const consumptionOfDeclaration = (
+  declaration: TSESTree.Node,
+  id: TSESTree.Identifier,
   context: Readonly<TSESLint.RuleContext<MessageIds, Options>>,
   reactImports: ReactImports,
 ): Consumption => {
-  const declarator = parentBeyondChain(node);
-  if (declarator?.type !== AST_NODE_TYPES.VariableDeclarator) {
-    return 'unknown';
-  }
+  // `getDeclaredVariables` on a FunctionDeclaration yields its PARAMETERS
+  // alongside the function name, and a parameter handed to a non-component prop
+  // votes `callback` for a binding it says nothing about. Keep only the
+  // variable this declaration's own id introduces.
+  const declared = context
+    .getDeclaredVariables(declaration)
+    .filter((variable) => variable.defs.some((def) => def.name === id));
 
   let sawCallback = false;
-  for (const variable of context.getDeclaredVariables(declarator)) {
+  for (const variable of declared) {
     for (const reference of variable.references) {
       const consumption = consumptionOfReference(
         reference.identifier,
@@ -637,6 +641,26 @@ const consumptionOfBinding = (
   }
 
   return sawCallback ? 'callback' : 'unknown';
+};
+
+const consumptionOfBinding = (
+  node: TSESTree.CallExpression,
+  context: Readonly<TSESLint.RuleContext<MessageIds, Options>>,
+  reactImports: ReactImports,
+): Consumption => {
+  const declarator = parentBeyondChain(node);
+  if (
+    declarator?.type !== AST_NODE_TYPES.VariableDeclarator ||
+    declarator.id.type !== AST_NODE_TYPES.Identifier
+  ) {
+    return 'unknown';
+  }
+  return consumptionOfDeclaration(
+    declarator,
+    declarator.id,
+    context,
+    reactImports,
+  );
 };
 
 /**
@@ -1153,8 +1177,15 @@ See: https://react.dev/learn/your-first-component#nesting-and-organizing-compone
         if (!node.init) return;
         if (node.id.type !== AST_NODE_TYPES.Identifier) return;
 
-        // Only check if name starts with uppercase (convention for components)
-        if (!isPascalCaseName(node.id.name)) return;
+        const vdConsumption = consumptionOfDeclaration(
+          node,
+          node.id,
+          context,
+          reactImports,
+        );
+        if (vdConsumption === 'callback') return;
+        if (vdConsumption === 'unknown' && !isPascalCaseName(node.id.name))
+          return;
 
         if (!isInsideFunction(node)) return;
 
@@ -1182,7 +1213,16 @@ See: https://react.dev/learn/your-first-component#nesting-and-organizing-compone
       },
 
       FunctionDeclaration(node) {
-        if (!node.id || !isPascalCaseName(node.id.name)) return;
+        if (!node.id) return;
+        const fdConsumption = consumptionOfDeclaration(
+          node,
+          node.id,
+          context,
+          reactImports,
+        );
+        if (fdConsumption === 'callback') return;
+        if (fdConsumption === 'unknown' && !isPascalCaseName(node.id.name))
+          return;
         if (!isInsideFunction(node)) return;
 
         // Inside an HOC factory the component has a stable identity (the factory
