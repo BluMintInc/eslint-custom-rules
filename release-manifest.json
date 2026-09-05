@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.21.12",
+    "date": "2026-09-05T18:30:20.453Z",
+    "rules": [
+      {
+        "name": "global-const-style",
+        "changeType": "fix",
+        "issues": [
+          2338
+        ],
+        "summary": "withhold `as const` when a binding introduced by iterating the constant is written (closes #2338)"
+      }
+    ]
+  },
+  {
     "version": "1.21.11",
     "date": "2026-09-05T11:06:01.167Z",
     "rules": [

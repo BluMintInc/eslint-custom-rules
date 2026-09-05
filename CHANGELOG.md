@@ -1,3 +1,10 @@
+## [1.21.12](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.21.11...v1.21.12) (2026-09-05)
+
+
+### Bug Fixes
+
+* **global-const-style:** withhold `as const` when a binding introduced by iterating the constant is written (closes [#2338](https://github.com/BluMintInc/eslint-custom-rules/issues/2338)) ([659568a](https://github.com/BluMintInc/eslint-custom-rules/commit/659568a44c908db7aa77f1c73a3e2efa1ff0f07e))
+
 ## [1.21.11](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.21.10...v1.21.11) (2026-09-05)
 
 
