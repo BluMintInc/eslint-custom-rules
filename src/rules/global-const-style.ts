@@ -452,7 +452,8 @@ const aliasDeclaratorOf = (
     if (
       declarator?.type === AST_NODE_TYPES.VariableDeclarator &&
       declarator.init === value &&
-      declarator.id.type === AST_NODE_TYPES.Identifier
+      (declarator.id.type === AST_NODE_TYPES.Identifier ||
+        declarator.id.type === AST_NODE_TYPES.ObjectPattern)
     ) {
       return declarator;
     }
@@ -471,14 +472,57 @@ const aliasDeclaratorOf = (
  * bracketed form — read through `accessedPropertyName` so the two spellings
  * cannot diverge from how the mutation walk already reads a method name.
  */
-const isObjectAssignCallee = (callee: TSESTree.Node): boolean => {
+const isNamespacedCallee = (
+  callee: TSESTree.Node,
+  namespace: string,
+  method: string,
+): boolean => {
   const value = outermostValueOf(callee);
   return (
     value.type === AST_NODE_TYPES.MemberExpression &&
     value.object.type === AST_NODE_TYPES.Identifier &&
-    value.object.name === 'Object' &&
-    accessedPropertyName(value) === 'assign'
+    value.object.name === namespace &&
+    accessedPropertyName(value) === method
   );
+};
+
+const isObjectAssignCallee = (callee: TSESTree.Node): boolean =>
+  isNamespacedCallee(callee, 'Object', 'assign');
+
+/** Whether a callee is the bare global `structuredClone`. */
+const isStructuredCloneCallee = (callee: TSESTree.Node): boolean => {
+  const value = outermostValueOf(callee);
+  return (
+    value.type === AST_NODE_TYPES.Identifier && value.name === 'structuredClone'
+  );
+};
+
+/**
+ * Whether a call COPIES the argument at `index` while keeping its type.
+ *
+ * `Array.from(X)` and `structuredClone(X)` both hand back a fresh, mutable
+ * value whose element or property types are the argument's — so freezing the
+ * argument narrows the copy exactly as a spread does. `Array.from(X, fn)` is
+ * excluded for the same reason `map` is: a mapper retypes the result, so
+ * nothing of the constant's type survives into it.
+ */
+const isCopyingCall = (
+  call: TSESTree.CallExpression,
+  index: number,
+): boolean => {
+  if (isObjectAssignCallee(call.callee)) {
+    return true;
+  }
+  if (index !== 0) {
+    return false;
+  }
+  if (isStructuredCloneCallee(call.callee)) {
+    return true;
+  }
+  if (isNamespacedCallee(call.callee, 'Array', 'from')) {
+    return call.arguments.length === 1;
+  }
+  return false;
 };
 
 /**
@@ -488,7 +532,19 @@ const isObjectAssignCallee = (callee: TSESTree.Node): boolean => {
  * `map`. Admitting it would withhold the assertion from every derived array
  * anything is computed from, to cover a spelling nobody writes.
  */
-const TYPE_PRESERVING_COPY_METHODS = new Set(['concat', 'slice', 'filter']);
+const TYPE_PRESERVING_COPY_METHODS = new Set([
+  'concat',
+  'slice',
+  'filter',
+  'flat',
+  // The ES2023 copying methods. Listed even though this repo's TypeScript
+  // predates them, because they are the same category and admitting them costs
+  // nothing: a name that does not resolve produces no reports to lose.
+  'toSorted',
+  'toReversed',
+  'toSpliced',
+  'with',
+]);
 
 /**
  * The expression that builds a COPY carrying this value's type — the literal
@@ -518,12 +574,13 @@ const copyExpressionOf = (node: TSESTree.Node): TSESTree.Node | null => {
     return parent.parent;
   }
 
-  if (
-    parent.type === AST_NODE_TYPES.CallExpression &&
-    parent.arguments.includes(node as TSESTree.CallExpressionArgument) &&
-    isObjectAssignCallee(parent.callee)
-  ) {
-    return parent;
+  if (parent.type === AST_NODE_TYPES.CallExpression) {
+    const index = parent.arguments.indexOf(
+      node as TSESTree.CallExpressionArgument,
+    );
+    if (index !== -1 && isCopyingCall(parent, index)) {
+      return parent;
+    }
   }
 
   if (
@@ -554,6 +611,10 @@ const PATTERN_CONTAINERS = new Set<string>([
   AST_NODE_TYPES.ObjectPattern,
   AST_NODE_TYPES.ArrayPattern,
   AST_NODE_TYPES.RestElement,
+  // A parameter property is a parameter AND declares a class property, so it
+  // infers twice over. Without it the walk stops before reaching the
+  // constructor's params and `constructor(public stage = DEFAULT)` narrows.
+  AST_NODE_TYPES.TSParameterProperty,
 ]);
 
 const FUNCTION_TYPES = new Set<string>([
@@ -728,6 +789,7 @@ const blocksAsConstAssertion = (
       // member access (`ITEMS.concat()`), which the alias walk deliberately
       // refuses, so it is resolved before that refusal applies.
       const copy = copyExpressionOf(outermostValueOf(reference.identifier));
+
       const declarator = copy
         ? aliasDeclaratorOf(copy)
         : path === null
