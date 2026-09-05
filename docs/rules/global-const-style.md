@@ -310,8 +310,19 @@ COPY.push(3);
 The same applies to `Array.from(ITEMS)`, `structuredClone(CONFIG)`,
 `Object.assign({}, CONFIG)` and the copying array methods `concat`, `slice`,
 `filter`, `flat`, `toSorted`, `toReversed`, `toSpliced` and `with`. A copy
-destructured into bindings (`const { items } = { ...CONFIG };`) carries the type
-into each of them and counts the same.
+destructured into bindings carries the type into each of them and counts the
+same, in both spellings — `const { items } = { ...CONFIG };` and
+`const [, ...rest] = [...ITEMS];`.
+
+A **rest element** is a fresh array typed from whatever it destructures, so it
+is followed even when no copy feeds it:
+
+```ts
+// Not frozen: `rest` becomes `(1 | 2)[]`, so `rest.push(3)` would be TS2345.
+const ITEMS = [1, 2];
+const [head, ...rest] = ITEMS;
+rest.push(3);
+```
 
 Two shapes are excluded because nothing of the constant's type survives into
 their result: `map`, which is typed from its callback, and `Array.from(X, fn)`,

@@ -436,9 +436,14 @@ const storageContainerOf = (node: TSESTree.Node): TSESTree.Node | null => {
  * the file compiling is not.
  *
  * A reference STORED INTO a composite literal is followed through that
- * container, since storing does not copy — see `storageContainerOf`. A
- * destructuring id extracts a member rather than the whole, so it is not an
- * alias here.
+ * container, since storing does not copy — see `storageContainerOf`.
+ *
+ * A destructuring id is accepted in BOTH spellings. It does not name the whole
+ * value, but every binding it introduces is typed from that value, and a rest
+ * element is itself a fresh container the assertion narrows: `const [, ...rest]
+ * = ITEMS` gives `rest` the frozen element type, so `rest.push(4)` is TS2345
+ * for an input that compiled. Admitting only the object spelling gave the same
+ * construct opposite verdicts (#2336).
  */
 const aliasDeclaratorOf = (
   identifier: TSESTree.Node,
@@ -453,7 +458,8 @@ const aliasDeclaratorOf = (
       declarator?.type === AST_NODE_TYPES.VariableDeclarator &&
       declarator.init === value &&
       (declarator.id.type === AST_NODE_TYPES.Identifier ||
-        declarator.id.type === AST_NODE_TYPES.ObjectPattern)
+        declarator.id.type === AST_NODE_TYPES.ObjectPattern ||
+        declarator.id.type === AST_NODE_TYPES.ArrayPattern)
     ) {
       return declarator;
     }
