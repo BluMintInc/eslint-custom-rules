@@ -511,9 +511,10 @@ const isInsideFunction = (node: TSESTree.Node): boolean => {
 const isPascalCaseName = (name: string): boolean => /^[A-Z]/.test(name);
 
 /**
- * Prop names whose value a parent MOUNTS rather than calls. Kept identical to
- * the `JSXAttribute` visitor's own test so the two paths cannot disagree about
- * what a component-type prop is — the disagreement between them is #2334.
+ * Prop names whose value a parent MOUNTS rather than calls. The `JSXAttribute`
+ * visitor and the binding-side classifier both read it, so the two paths cannot
+ * disagree about what a component-type prop is — the disagreement between them
+ * is #2334, and the duplicated literal that would let it return is #2337.
  */
 const COMPONENT_PROP_SUFFIX = /(Wrapper|Component|Template|Header|Footer)$/;
 
@@ -1239,14 +1240,15 @@ See: https://react.dev/learn/your-first-component#nesting-and-organizing-compone
         if (node.name.type !== AST_NODE_TYPES.JSXIdentifier) return;
         const attrName = node.name.name;
 
-        // Check if it's a component-type prop. A non-PascalCase prop (e.g.
-        // renderHeader) is a render callback used with a render={...} prop, not
-        // a component—skip it, mirroring the binding-side carve-out above. The
-        // suffix alone is not enough: it matches the tail of renderHeader.
-        if (
-          !isPascalCaseName(attrName) ||
-          !/(Wrapper|Component|Template|Header|Footer)$/.test(attrName)
-        ) {
+        // A non-PascalCase prop (e.g. renderHeader) is a render callback used
+        // with a render={...} prop, not a component. The suffix alone is not
+        // enough: it matches the tail of renderHeader.
+        //
+        // Read through the shared helper rather than a second copy of the
+        // pattern, so the binding side and this one cannot answer differently
+        // about what a component-type prop is — the disagreement between the
+        // two paths is #2334, and a duplicated literal is what lets it return.
+        if (!isComponentPropName(attrName)) {
           return;
         }
 
