@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.21.9",
+    "date": "2026-09-05T05:55:33.427Z",
+    "rules": [
+      {
+        "name": "global-const-style",
+        "changeType": "fix",
+        "issues": [
+          2331
+        ],
+        "summary": "withhold the assertion where a copy or a class property carries the frozen type (closes #2331)"
+      }
+    ]
+  },
+  {
     "version": "1.21.8",
     "date": "2026-09-05T03:15:57.605Z",
     "rules": [

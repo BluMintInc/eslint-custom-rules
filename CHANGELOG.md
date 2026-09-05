@@ -1,3 +1,10 @@
+## [1.21.9](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.21.8...v1.21.9) (2026-09-05)
+
+
+### Bug Fixes
+
+* **global-const-style:** withhold the assertion where a copy or a class property carries the frozen type (closes [#2331](https://github.com/BluMintInc/eslint-custom-rules/issues/2331)) ([bc81146](https://github.com/BluMintInc/eslint-custom-rules/commit/bc8114654768a9fa024e8457430e0fd9c8702ba9)), closes [#2329](https://github.com/BluMintInc/eslint-custom-rules/issues/2329) [#2329](https://github.com/BluMintInc/eslint-custom-rules/issues/2329) [#2330](https://github.com/BluMintInc/eslint-custom-rules/issues/2330) [#2329](https://github.com/BluMintInc/eslint-custom-rules/issues/2329) [#2327](https://github.com/BluMintInc/eslint-custom-rules/issues/2327)
+
 ## [1.21.8](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.21.7...v1.21.8) (2026-09-05)
 
 
