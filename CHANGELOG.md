@@ -1,3 +1,11 @@
+## [1.21.10](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.21.9...v1.21.10) (2026-09-05)
+
+
+### Bug Fixes
+
+* **global-const-style:** follow every copy that carries the frozen type, and the parameter property that infers from it (closes [#2333](https://github.com/BluMintInc/eslint-custom-rules/issues/2333)) ([82253ed](https://github.com/BluMintInc/eslint-custom-rules/commit/82253ed6556473b823616b96bf3f4ce67619300c)), closes [#2331](https://github.com/BluMintInc/eslint-custom-rules/issues/2331) [#2331](https://github.com/BluMintInc/eslint-custom-rules/issues/2331)
+* **memo-nested-react-components:** decide by the use site, not the binding's first letter (closes [#2334](https://github.com/BluMintInc/eslint-custom-rules/issues/2334)) ([8903878](https://github.com/BluMintInc/eslint-custom-rules/commit/890387829ff5b7c05249cb7f51889615bb2f9ed1))
+
 ## [1.21.9](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.21.8...v1.21.9) (2026-09-05)
 
 
