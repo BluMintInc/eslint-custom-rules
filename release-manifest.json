@@ -1,5 +1,27 @@
 [
   {
+    "version": "1.21.11",
+    "date": "2026-09-05T11:06:01.167Z",
+    "rules": [
+      {
+        "name": "global-const-style",
+        "changeType": "fix",
+        "issues": [
+          2336
+        ],
+        "summary": "follow the array spelling of a destructured copy, and the rest element that needs no copy (closes #2336)"
+      },
+      {
+        "name": "memo-nested-react-components",
+        "changeType": "fix",
+        "issues": [
+          2335
+        ],
+        "summary": "decide by the use site in the two non-hook visitors too (closes #2335)"
+      }
+    ]
+  },
+  {
     "version": "1.21.10",
     "date": "2026-09-05T09:28:38.523Z",
     "rules": [

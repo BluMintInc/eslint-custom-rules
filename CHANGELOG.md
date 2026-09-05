@@ -1,3 +1,11 @@
+## [1.21.11](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.21.10...v1.21.11) (2026-09-05)
+
+
+### Bug Fixes
+
+* **global-const-style:** follow the array spelling of a destructured copy, and the rest element that needs no copy (closes [#2336](https://github.com/BluMintInc/eslint-custom-rules/issues/2336)) ([6b8544f](https://github.com/BluMintInc/eslint-custom-rules/commit/6b8544fd2547387c9bbe09317375b7824fe958c2)), closes [#2333](https://github.com/BluMintInc/eslint-custom-rules/issues/2333) [#2333](https://github.com/BluMintInc/eslint-custom-rules/issues/2333)
+* **memo-nested-react-components:** decide by the use site in the two non-hook visitors too (closes [#2335](https://github.com/BluMintInc/eslint-custom-rules/issues/2335)) ([2276840](https://github.com/BluMintInc/eslint-custom-rules/commit/2276840d253ff55d88f3f6bb543b78c921a459e3)), closes [#2334](https://github.com/BluMintInc/eslint-custom-rules/issues/2334)
+
 ## [1.21.10](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.21.9...v1.21.10) (2026-09-05)
 
 
