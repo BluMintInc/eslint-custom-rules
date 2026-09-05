@@ -13,13 +13,53 @@ When a component function reference changes, React treats it as a **different co
 - **Why**: Component identity stability is critical for React. Inline components often receive a new identity when their containing scope re-renders, causing React to unmount and remount them. Wrapping with `memo()` does NOT fix this—`memo()` only prevents re-renders when props change, not when the component identity itself changes. `useCallback` and `useMemo` can produce stable references when dependencies don't change, but inline component definitions remain fragile and can easily become unstable or stale if dependencies are incorrectly managed.
 - **What it checks**:
   - Flags components created inside `useCallback`, `useLatestCallback`, `useMemo`, `useDeepCompareCallback`, or `useDeepCompareMemo`.
-  - Flags components (Uppercase identifiers) defined inside render bodies.
+  - Flags components defined inside render bodies, decided by where the binding
+    is USED rather than by how it is spelled. A binding reports when something
+    mounts it — rendered as `<Binding />`, handed to `createElement`, or passed
+    to a component-type prop (`*Wrapper`, `*Component`, `*Template`, `*Header`,
+    `*Footer`). It stays silent when the parent CALLS it instead: invoked
+    directly, or passed to any other prop (`render={...}`, `PopoverChildren={...}`).
+    Where a binding has no such use in its own file — an exported component, for
+    instance — an uppercase initial is still taken as the answer.
   - Flags inline function components passed to component-type props (`*Wrapper`, `*Component`, `*Template`, `*Header`, `*Footer`).
 - **Exemptions**:
   - A `useMemo` / `useDeepCompareMemo` callback that returns a `memo(...)` or `forwardRef(...)`-wrapped component. The memo hook stabilizes the component's identity across re-renders (a new identity is produced only when dependencies change), so the component does not remount on an ordinary re-render. A bare inner component (e.g. `useMemo(() => (props) => <div />, deps)`) stays flagged—wrap it in `memo()` for the fully-stabilized pattern.
   - A `memo(...)` element returned directly (`useMemo(() => <JSX />, deps)`), which memoizes an element rather than defining a component.
   - A factory that hands its component back already wrapped (`return memo(Row)`, `return memo(forwardRef(Inner))`). Such a factory runs once per call rather than once per render, so the component it returns has a stable identity.
   - The same wrapped hand-back carried inside a container, at any depth and in either spelling — an object (`return { __esModule: true, default: memo(Row) }`, the interop shape every `jest.mock()` factory returns) or an array (`return [memo(Row)]`, `return [{ __esModule: true, default: memo(Row) }]`). A bare reference carried in an array (`return [Row]`) is **not** exempt: it hands the component out un-memoized, which is what the paired `require-memo` rule reports there.
+### Render callbacks are not components
+
+A render callback is a function a parent invokes so it can drop the result into
+its own tree. It is never mounted, so React never gives it an identity to churn,
+and the rule leaves it alone regardless of its name:
+
+```tsx
+const Consumer = () => {
+  // Not reported: `PopoverWrapper` CALLS this, it does not mount it.
+  const PopoverChildren = useLatestCallback((onClose: () => void) => {
+    return <Panel onPopoverClose={onClose} />;
+  });
+  return <PopoverWrapper PopoverChildren={PopoverChildren} />;
+};
+```
+
+The remedy this rule prescribes is actively wrong for that shape. A parent that
+selects the callback arm with `typeof Children === 'function'` will not take it
+for a memoized value, because `memo()` returns an exotic object rather than a
+function — so moving the callback to module scope wrapped in `memo()` sends it
+down the `ReactNode` arm and React renders the memo object as a child.
+
+The converse holds too. A lowercase binding handed to a component-type prop IS
+mounted, and is reported:
+
+```tsx
+const Consumer = () => {
+  // Reported: `ContentComponent` is a prop the host mounts.
+  const inlinePanel = useLatestCallback((props) => <Panel {...props} />);
+  return <Wrapper ContentComponent={inlinePanel} />;
+};
+```
+
 - **Fix behavior**: This rule does not provide an auto-fix because the correct solution usually involves moving the component definition to the module scope and using React Context or props to provide dynamic data.
 
 ### Options
