@@ -1069,6 +1069,63 @@ ruleTesterJsx.run('memo-nested-react-components', memoNestedReactComponents, {
         };
       `,
     },
+    /**
+     * Issue #2335: #2334 replaced the first-letter gate in the `CallExpression`
+     * visitor only, leaving the `VariableDeclarator` and `FunctionDeclaration`
+     * visitors deciding by casing. The rule's verdict on the same render
+     * callback then turned on whether a memo hook wrapped its declaration,
+     * which is not a use site either. These are the hook cases above, respelled
+     * without the hook.
+     */
+    {
+      name: 'plain-arrow PascalCase render callback passed to render={...} (#2335)',
+      code: `
+        const Consumer = () => {
+          const PopoverChildren = () => <Panel />;
+          return <List render={PopoverChildren} />;
+        };
+      `,
+    },
+    {
+      name: 'plain-arrow PascalCase render callback that is CALLED (#2335)',
+      code: `
+        const Consumer = () => {
+          const PopoverChildren = () => <Panel />;
+          return <div>{PopoverChildren()}</div>;
+        };
+      `,
+    },
+    {
+      name: 'plain-arrow PascalCase render callback on a non-component prop (#2335)',
+      code: `
+        const Consumer = () => {
+          const PopoverChildren = () => <Panel />;
+          return <PopoverWrapper onPopoverRender={PopoverChildren} />;
+        };
+      `,
+    },
+    {
+      name: 'function-declaration PascalCase render callback passed to render={...} (#2335)',
+      code: `
+        const Consumer = () => {
+          function PopoverChildren() {
+            return <Panel />;
+          }
+          return <List render={PopoverChildren} />;
+        };
+      `,
+    },
+    {
+      name: 'function-declaration PascalCase render callback that is CALLED (#2335)',
+      code: `
+        const Consumer = () => {
+          function PopoverChildren() {
+            return <Panel />;
+          }
+          return <div>{PopoverChildren()}</div>;
+        };
+      `,
+    },
   ],
   invalid: [
     // The test-runner exemption reads only the NEAREST enclosing function, so a
@@ -2019,6 +2076,87 @@ ruleTesterJsx.run('memo-nested-react-components', memoNestedReactComponents, {
         const Consumer = () => {
           const Panel = useCallback((props) => <div {...props} />, []);
           return createElement(Panel, {});
+        };
+      `,
+      errors: [{ messageId: 'memoizeNestedComponent' }],
+    },
+    /**
+     * Issue #2335, the mirror direction: a LOWERCASE binding handed to a
+     * component-type prop is mounted whatever spelling declares it, and the
+     * casing gate in the two non-hook visitors skipped it silently.
+     */
+    {
+      name: 'plain-arrow lowercase binding reaching a component-type prop reports (#2335)',
+      code: `
+        const Consumer = () => {
+          const rowComponent = () => <Panel />;
+          return <Wrapper ContentComponent={rowComponent} />;
+        };
+      `,
+      errors: [{ messageId: 'memoizeNestedComponent' }],
+    },
+    {
+      name: 'function-declaration lowercase binding reaching a component-type prop reports (#2335)',
+      code: `
+        const Consumer = () => {
+          function rowComponent() {
+            return <Panel />;
+          }
+          return <Wrapper ContentComponent={rowComponent} />;
+        };
+      `,
+      errors: [{ messageId: 'memoizeNestedComponent' }],
+    },
+    {
+      name: 'plain-arrow lowercase binding passed to createElement reports (#2335)',
+      code: `
+        import { createElement } from 'react';
+        const Consumer = () => {
+          const rowComponent = (props) => <div {...props} />;
+          return createElement(rowComponent, {});
+        };
+      `,
+      errors: [{ messageId: 'memoizeNestedComponent' }],
+    },
+    // The `unknown` arm stays load-bearing in the two non-hook visitors too: a
+    // binding with no informative reference keeps the name as its answer, which
+    // is the only thing that reports a component exported from its own file.
+    {
+      name: 'plain-arrow PascalCase component with no informative reference still reports (#2335)',
+      code: `
+        const Consumer = () => {
+          const Panel = () => <div />;
+          return <div>{someRegistry(Panel)}</div>;
+        };
+      `,
+      errors: [{ messageId: 'memoizeNestedComponent' }],
+    },
+    {
+      name: 'plain-arrow PascalCase binding both called and MOUNTED still reports (#2335)',
+      code: `
+        const Consumer = () => {
+          const Panel = (props) => <div {...props} />;
+          return <div>{Panel(a)}<Panel /></div>;
+        };
+      `,
+      errors: [{ messageId: 'memoizeNestedComponent' }],
+    },
+    /**
+     * `getDeclaredVariables` on a FunctionDeclaration yields its PARAMETERS
+     * alongside the function name. Reading their references as the function's
+     * own votes `callback` for any component whose destructured prop reaches a
+     * non-component prop, silencing a real report (measured on agora's
+     * `withEditableWrapperDateYMD`). The classifier must keep only the variable
+     * the declaration's own id introduces.
+     */
+    {
+      name: 'nested component whose PARAMETER feeds a non-component prop still reports (#2335)',
+      code: `
+        const Consumer = () => {
+          function InnerUnmemoized({ onChange, value }) {
+            return <Field onChange={onChange} value={value} />;
+          }
+          return <InnerUnmemoized onChange={noop} value={1} />;
         };
       `,
       errors: [{ messageId: 'memoizeNestedComponent' }],

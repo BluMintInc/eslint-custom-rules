@@ -49,6 +49,18 @@ for a memoized value, because `memo()` returns an exotic object rather than a
 function — so moving the callback to module scope wrapped in `memo()` sends it
 down the `ReactNode` arm and React renders the memo object as a child.
 
+The declaration spelling is not part of the question either. A memo hook, a
+plain arrow, and a `function` declaration are read the same way — only the use
+site decides:
+
+```tsx
+const Consumer = () => {
+  // Not reported: `List` CALLS this through `render`, whatever declares it.
+  const PopoverChildren = () => <Panel />;
+  return <List render={PopoverChildren} />;
+};
+```
+
 The converse holds too. A lowercase binding handed to a component-type prop IS
 mounted, and is reported:
 
@@ -152,7 +164,7 @@ const MyPage = () => {
 
 ## Edge Cases
 
-- **Render-prop callbacks** (e.g., `render={...}`) are fine; this rule targets component-type props only. A prop counts as component-type only when its name is uppercase-initial **and** ends in `Wrapper`, `Component`, `Template`, `Header`, or `Footer`. A lowercase-initial prop is a render callback even when its tail matches a suffix, so `renderHeader={...}`, `renderFooter={...}`, and `renderTemplate={...}` are not flagged, while `HeaderComponent={...}` and `CatalogWrapper={...}` are. This matches how the rule treats bindings: a non-PascalCase name such as `renderHit` is a render callback, not a component.
+- **Render-prop callbacks** (e.g., `render={...}`) are fine; this rule targets component-type props only. A prop counts as component-type only when its name is uppercase-initial **and** ends in `Wrapper`, `Component`, `Template`, `Header`, or `Footer`. A lowercase-initial prop is a render callback even when its tail matches a suffix, so `renderHeader={...}`, `renderFooter={...}`, and `renderTemplate={...}` are not flagged, while `HeaderComponent={...}` and `CatalogWrapper={...}` are. This is the same test the binding side applies when it asks whether a use site mounts a value, so a prop cannot count as component-type in one path and not the other.
 - **JSX elements** passed directly to props are fine (e.g., `header={<TitleSelect />}`).
 - **`useLatestCallback` is inspected like `useCallback`.** The paired `use-latest-callback` rule rewrites `useCallback(fn, [])` into `useLatestCallback(fn)` under `--fix`. That rewrite changes only which memoization hook wraps the callback: the component is still constructed inline inside render scope, so it still gets a new identity on re-render and this rule still reports. Swapping memoization hooks is not the remedy — hoisting the component to module scope is.
 - **Optional-chained spellings** read the same as their plain twins. ESTree wraps a whole optional chain in a `ChainExpression`, so `memo?.(Row)`, `React?.memo(Row)` and `(React?.memo)(Row)` are the same already-memoized hand-back as `memo(Row)`, and `it?.()` / `describe?.()` / `jest?.mock()` keep the test-runner and module-mock exemptions. A non-memo optional call such as `wrap?.(Row)` is still not a memoized hand-back, so the nested component it returns is still flagged.
