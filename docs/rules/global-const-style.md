@@ -198,6 +198,60 @@ keeps the one array reachable, so `HOLDER.items.push(3)` writes `ITEMS` and the
 assertion is withheld. Containers nest, and the shorthand spelling
 (`{ ITEMS }`) counts the same.
 
+A write through a binding the constant is **iterated** into counts on the same
+reasoning. A `for…of` head and an iteration callback's parameter are second
+names for the constant's *contents*, and the assertion is deep, so the element
+carries the frozen type:
+
+```ts
+// Not frozen: `item.label = 'b'` writes a member of an element of ITEMS, which
+// is TS2540 (Cannot assign to 'label' because it is a read-only property).
+const ITEMS = [{ label: 'a' }];
+for (const item of ITEMS) {
+  item.label = 'b';
+}
+
+// Not frozen: the callback parameter carries the same element type, so
+// `row.tags.push('y')` is TS2339 on a `readonly ['x']`.
+const ROWS = [{ tags: ['x'] }];
+ROWS.forEach((row) => {
+  row.tags.push('y');
+});
+```
+
+The head is followed in all three binding spellings, so
+`for (const [head, ...rest] of PAIRS)` and `for (const { meta } of ROWS)` count
+as the plain one does; `for await` binds its element the same way and counts
+too; and the iterated expression may be a property of the constant
+(`for (const item of CONFIG.list)`), which is frozen with the object that holds
+it. The callback methods read this way are `forEach`, `map`, `filter`, `find`,
+`findIndex`, `findLast`, `findLastIndex`, `some`, `every`, `flatMap`, `reduce`
+and `reduceRight`. For `reduce` and `reduceRight` the element is the **second**
+parameter; the accumulator is typed from the seed value rather than from the
+constant, so writing to it is not a write to the constant.
+
+The receiver may be one step removed from the constant, because a copy or a
+projection of it still yields the frozen elements — `[...ITEMS].forEach(…)`,
+`ITEMS.filter(Boolean).forEach(…)`, `for (const item of ITEMS.slice())` and
+`Object.values(CONFIG).forEach(…)` all count, as does `Object.entries`.
+`Object.keys` does not: its result is `string[]` whatever the argument's type,
+so nothing the assertion changes reaches a binding taken from it.
+
+Iteration that only **reads** the element leaves the assertion in place. The
+withhold keys on the write, not on the iteration:
+
+```ts
+// Still flagged for `as const` — nothing writes through the element.
+const ITEMS = [{ n: 1 }];
+export const NS = ITEMS.map((item) => item.n);
+```
+
+Two spellings introduce no binding typed from the constant, so they stay frozen
+as well: a `for…of` head that is not a declaration (`for (current of ITEMS)`)
+assigns into a binding declared elsewhere, and a callback passed by name
+(`ITEMS.forEach(mutate)`) declares its parameter elsewhere, each carrying
+whatever type that declaration gives it.
+
 A binding built *from* the constant rather than naming or holding it
 (`const COPY = [...ITEMS]`) is a fresh value: mutating the copy leaves the
 constant frozen. Being held somewhere is not itself a mutation either, so a
@@ -328,6 +382,12 @@ Two shapes are excluded because nothing of the constant's type survives into
 their result: `map`, which is typed from its callback, and `Array.from(X, fn)`,
 which takes the same kind of mapper. Admitting either would withhold the
 assertion from every array anything is computed from.
+
+A copy that is **iterated in place** rather than bound to a name carries the
+type into the element the iteration binds — `[...ITEMS].forEach(…)` and
+`for (const item of ITEMS.slice())` are withheld on a write through that
+element, exactly as a bound copy is. See [Constants that are mutated
+later](#constants-that-are-mutated-later).
 
 A copy that is only **read** cannot break, so the constant is still frozen. The
 withhold keys on the write, not on the copy:

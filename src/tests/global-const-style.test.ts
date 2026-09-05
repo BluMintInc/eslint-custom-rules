@@ -1060,6 +1060,289 @@ const Probe = () => {
       ].join('\n'),
       filename: 'test.ts',
     },
+    // Issue #2338: a binding introduced by ITERATING the constant is typed from
+    // it — it carries the ELEMENT type rather than the whole value — so a write
+    // through that binding breaks on the assertion exactly as a write through
+    // an alias does. Every shape below compiles, was rewritten by `--fix`, and
+    // then did not compile; the diagnostic each produced is named beside it.
+    {
+      name: 'declines to freeze an array whose for-of element has a property written',
+      code: [
+        "const ITEMS = [{ label: 'a' }];",
+        'export const run = () => {',
+        '  for (const item of ITEMS) {',
+        "    item.label = 'b';",
+        '  }',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // TS2339: the nested array is frozen with the object that holds it.
+    {
+      name: 'declines to freeze an array whose for-of element has a nested array pushed to',
+      code: [
+        "const ITEMS = [{ tags: ['x'] }];",
+        'export const run = () => {',
+        '  for (const item of ITEMS) {',
+        "    item.tags.push('y');",
+        '  }',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // The head is accepted in all three binding spellings, on the same terms as
+    // `aliasDeclaratorOf` accepts all three declarator spellings (#2336): every
+    // name a pattern introduces is typed from the value it destructures.
+    {
+      name: 'declines to freeze an array whose for-of ARRAY pattern rest is pushed to',
+      code: [
+        'const PAIRS = [[1, 2, 3]];',
+        'export const run = () => {',
+        '  for (const [head, ...rest] of PAIRS) {',
+        '    rest.push(head);',
+        '  }',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose for-of OBJECT pattern member is written',
+      code: [
+        'const ROWS = [{ meta: { n: 1 } }];',
+        'export const run = () => {',
+        '  for (const { meta } of ROWS) {',
+        '    meta.n = 2;',
+        '  }',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an object whose for-of destructured element is pushed to',
+      code: [
+        "const ROWS = [{ tags: ['x'] }];",
+        'export const run = () => {',
+        '  for (const { tags } of ROWS) {',
+        "    tags.push('y');",
+        '  }',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // A PROPERTY of the constant is frozen with the object that holds it, and
+    // the alias walk refuses a reference reached through a member access — so
+    // the iterated expression is read through its member path.
+    {
+      name: 'declines to freeze an object iterated through a member path',
+      code: [
+        'const CONFIG = { list: [{ n: 1 }] };',
+        'export const run = () => {',
+        '  for (const item of CONFIG.list) {',
+        '    item.n = 2;',
+        '  }',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // `for await` is the same node with `await` set and binds its element the
+    // same way, so the flag is not screened.
+    {
+      name: 'declines to freeze an array whose for-await element is written',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = async () => {',
+        '  for await (const item of ITEMS) {',
+        '    item.n = 2;',
+        '  }',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose forEach parameter is written',
+      code: [
+        "const ITEMS = [{ label: 'a' }];",
+        'export const run = () => {',
+        '  ITEMS.forEach((item) => {',
+        "    item.label = 'b';",
+        '  });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // The callback may be a `FunctionExpression`: the two spellings bind their
+    // parameter identically.
+    {
+      name: 'declines to freeze an array whose function-expression callback parameter is written',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  ITEMS.forEach(function (item) {',
+        '    item.n = 2;',
+        '  });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose map parameter is written',
+      code: [
+        "const ITEMS = [{ label: 'a' }];",
+        'export const lengths = () =>',
+        '  ITEMS.map((item) => {',
+        "    item.label = 'b';",
+        '    return item.label.length;',
+        '  });',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // The method name is read through `accessedPropertyName`, so the bracketed
+    // spelling cannot diverge from the dotted one.
+    {
+      name: 'declines to freeze an array whose bracket-spelled forEach parameter is written',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        "  ITEMS['forEach']((item) => {",
+        '    item.n = 2;',
+        '  });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // `reduce` passes the accumulator FIRST and the element second, so the
+    // element parameter is read by position rather than assumed to be first.
+    {
+      name: 'declines to freeze an array whose reduce element parameter is written',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const total = ITEMS.reduce((acc, item) => {',
+        '  item.n = 2;',
+        '  return acc + item.n;',
+        '}, 0);',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose reduceRight element parameter is written',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const total = ITEMS.reduceRight((acc, item) => {',
+        '  item.n = 2;',
+        '  return acc + item.n;',
+        '}, 0);',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose filter parameter is written',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const kept = ITEMS.filter((item) => {',
+        '  item.n = 2;',
+        '  return item.n > 1;',
+        '});',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // The receiver of the iteration is routinely one step removed from the
+    // constant. Each derivation builds a fresh OUTER value whose elements are
+    // still the frozen ones, so the element binding breaks identically.
+    {
+      name: 'declines to freeze an array whose spread copy is iterated and written',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  [...ITEMS].forEach((item) => {',
+        '    item.n = 2;',
+        '  });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose filtered copy is iterated and written',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  ITEMS.filter(Boolean).forEach((item) => {',
+        '    item.n = 2;',
+        '  });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose slice copy is iterated in a for-of and written',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  for (const item of ITEMS.slice()) {',
+        '    item.n = 2;',
+        '  }',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // `Object.values`/`Object.entries` build a fresh array whose ELEMENTS are
+    // the constant's own property values, so freezing the constant retypes them
+    // exactly as it retypes an array's elements.
+    {
+      name: 'declines to freeze an object whose Object.values elements are written',
+      code: [
+        'const CONFIG = { a: { n: 1 } };',
+        'export const run = () => {',
+        '  Object.values(CONFIG).forEach((value) => {',
+        '    value.n = 2;',
+        '  });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an object whose Object.entries value is written',
+      code: [
+        'const CONFIG = { a: { n: 1 } };',
+        'export const run = () => {',
+        '  for (const [key, value] of Object.entries(CONFIG)) {',
+        '    value.n = key.length;',
+        '  }',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // The enrolled binding is walked like any other: an alias taken from the
+    // element is followed on to the write.
+    {
+      name: 'declines to freeze an array whose for-of element is aliased and then written',
+      code: [
+        "const ITEMS = [{ label: 'a' }];",
+        'export const run = () => {',
+        '  for (const item of ITEMS) {',
+        '    const alias = item;',
+        "    alias.label = 'b';",
+        '  }',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // A loop variable REASSIGNED in the body takes the frozen element type from
+    // the head, so the assignment is rejected against it. Only the head's own
+    // write establishes the binding.
+    {
+      name: 'declines to freeze an array whose for-of element binding is reassigned',
+      code: [
+        "const ITEMS = [{ label: 'a' }];",
+        'export const run = () => {',
+        '  for (let item of ITEMS) {',
+        "    item = { label: 'b' };",
+        '    return item;',
+        '  }',
+        '  return null;',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
   ],
   invalid: [
     // Issue #2055: a JSX tag name is spelled twice, but the scope manager
@@ -3135,6 +3418,277 @@ const Probe = () => {
       filename: 'test.ts',
       errors: [{ messageId: 'asConst' }],
       output: `const CDN_BASE_URL =\n  'https://cdn.example.com' as const; /* a */ /* bbbbbbbbbbbbbbbbbbbbbbbb */\n`,
+    },
+    // Issue #2338 negative controls. The decline is keyed on a WRITE through the
+    // iteration binding, not on the constant being iterated: every case below
+    // compiles both before and after `--fix`, so withholding the assertion from
+    // it would cost a report for nothing.
+    {
+      name: 'freezes an array whose for-of element is only read',
+      code: [
+        "const ITEMS = [{ label: 'a' }];",
+        'export const run = () => {',
+        "  let out = '';",
+        '  for (const item of ITEMS) {',
+        '    out += item.label;',
+        '  }',
+        '  return out;',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'ITEMS', valueKind: 'an array literal' },
+        },
+      ],
+      output: [
+        "const ITEMS = [{ label: 'a' }] as const;",
+        'export const run = () => {',
+        "  let out = '';",
+        '  for (const item of ITEMS) {',
+        '    out += item.label;',
+        '  }',
+        '  return out;',
+        '};',
+      ].join('\n'),
+    },
+    {
+      name: 'freezes an array whose forEach parameter is only read',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const total = () => {',
+        '  let sum = 0;',
+        '  ITEMS.forEach((item) => {',
+        '    sum += item.n;',
+        '  });',
+        '  return sum;',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'ITEMS', valueKind: 'an array literal' },
+        },
+      ],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const total = () => {',
+        '  let sum = 0;',
+        '  ITEMS.forEach((item) => {',
+        '    sum += item.n;',
+        '  });',
+        '  return sum;',
+        '};',
+      ].join('\n'),
+    },
+    {
+      name: 'freezes an array whose map parameter is only projected',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const NS = ITEMS.map((item) => item.n);',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'ITEMS', valueKind: 'an array literal' },
+        },
+      ],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const NS = ITEMS.map((item) => item.n);',
+      ].join('\n'),
+    },
+    // A destructuring ASSIGNMENT declares nothing: `rest` takes its type from
+    // its own annotation, and destructuring a readonly tuple with a rest element
+    // yields a mutable one, so nothing here carries the frozen type.
+    {
+      name: 'freezes an array destructured by assignment into a pre-declared rest',
+      code: [
+        'const ITEMS = [1, 2, 3];',
+        'export const run = () => {',
+        '  let rest: number[] = [];',
+        '  [, ...rest] = ITEMS;',
+        '  rest.push(4);',
+        '  return rest;',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'ITEMS', valueKind: 'an array literal' },
+        },
+      ],
+      output: [
+        'const ITEMS = [1, 2, 3] as const;',
+        'export const run = () => {',
+        '  let rest: number[] = [];',
+        '  [, ...rest] = ITEMS;',
+        '  rest.push(4);',
+        '  return rest;',
+        '};',
+      ].join('\n'),
+    },
+    // The accumulator of a `reduce` is typed from the SEED, not from the
+    // constant, which is why the element is read at its own parameter position:
+    // enrolling the first parameter would withhold the assertion here.
+    {
+      name: 'freezes an array whose reduce accumulator is written',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const collected = ITEMS.reduce((acc, item) => {',
+        '  acc.push(item.n);',
+        '  return acc;',
+        '}, [] as number[]);',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'ITEMS', valueKind: 'an array literal' },
+        },
+      ],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const collected = ITEMS.reduce((acc, item) => {',
+        '  acc.push(item.n);',
+        '  return acc;',
+        '}, [] as number[]);',
+      ].join('\n'),
+    },
+    // `Object.keys` yields `string[]` whatever the argument's type, so nothing
+    // the assertion changes reaches the binding — even one that is written.
+    {
+      name: 'freezes an object whose Object.keys binding is written',
+      code: [
+        'const CONFIG = { a: 1, b: 2 };',
+        'export const run = () => {',
+        '  const names: string[] = [];',
+        '  Object.keys(CONFIG).forEach((key) => {',
+        '    key = key.trim();',
+        '    names.push(key);',
+        '  });',
+        '  return names;',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'CONFIG', valueKind: 'an object literal' },
+        },
+      ],
+      output: [
+        'const CONFIG = { a: 1, b: 2 } as const;',
+        'export const run = () => {',
+        '  const names: string[] = [];',
+        '  Object.keys(CONFIG).forEach((key) => {',
+        '    key = key.trim();',
+        '    names.push(key);',
+        '  });',
+        '  return names;',
+        '};',
+      ].join('\n'),
+    },
+    // A callback passed BY NAME declares its parameter elsewhere, where it
+    // carries the type that declaration gives it rather than one read off the
+    // constant — the frozen element is assignable to it, so nothing breaks.
+    {
+      name: 'freezes an array whose iteration callback is passed by name',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'const mutate = (item: { n: number }) => {',
+        '  item.n = 2;',
+        '};',
+        'export const run = () => {',
+        '  ITEMS.forEach(mutate);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'ITEMS', valueKind: 'an array literal' },
+        },
+      ],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'const mutate = (item: { n: number }) => {',
+        '  item.n = 2;',
+        '};',
+        'export const run = () => {',
+        '  ITEMS.forEach(mutate);',
+        '};',
+      ].join('\n'),
+    },
+    // The walk reads the constant's own references, so an iteration of an
+    // unrelated receiver is never even visited, however it is spelled.
+    {
+      name: 'freezes an array beside a written iteration of an unrelated receiver',
+      code: [
+        'const ITEMS = [1, 2];',
+        'export const run = (rows: { n: number }[]) => {',
+        '  rows.forEach((row) => {',
+        '    row.n = 2;',
+        '  });',
+        '  return ITEMS[0];',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'ITEMS', valueKind: 'an array literal' },
+        },
+      ],
+      output: [
+        'const ITEMS = [1, 2] as const;',
+        'export const run = (rows: { n: number }[]) => {',
+        '  rows.forEach((row) => {',
+        '    row.n = 2;',
+        '  });',
+        '  return ITEMS[0];',
+        '};',
+      ].join('\n'),
+    },
+    // A `for…of` head that is not a declaration assigns into a binding declared
+    // elsewhere, whose type the constant never gave it.
+    {
+      name: 'freezes an array iterated into a pre-declared loop variable',
+      code: [
+        'const ITEMS = [1, 2];',
+        'export const run = () => {',
+        '  let current = 0;',
+        '  for (current of ITEMS) {',
+        '    if (current > 1) {',
+        '      return current;',
+        '    }',
+        '  }',
+        '  return current;',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'ITEMS', valueKind: 'an array literal' },
+        },
+      ],
+      output: [
+        'const ITEMS = [1, 2] as const;',
+        'export const run = () => {',
+        '  let current = 0;',
+        '  for (current of ITEMS) {',
+        '    if (current > 1) {',
+        '      return current;',
+        '    }',
+        '  }',
+        '  return current;',
+        '};',
+      ].join('\n'),
     },
   ],
 });
