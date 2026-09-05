@@ -282,6 +282,17 @@ export class AnnotatedSession {
 }
 ```
 
+A **constructor parameter property** declares a class property and a parameter
+at once, so it infers twice over and is answered the same way:
+
+```ts
+// Not frozen: `stage` would be pinned to `'ready'` on every instance.
+const DEFAULT_STAGE = 'ready';
+export class Session {
+  constructor(public stage = DEFAULT_STAGE) {}
+}
+```
+
 ### Copies carry the frozen type
 
 A spread builds a fresh **value** but not a fresh **type**. `[...ITEMS]` of a
@@ -296,10 +307,15 @@ const COPY = [...ITEMS];
 COPY.push(3);
 ```
 
-The same applies to `Object.assign({}, CONFIG)` and to the copying array
-methods `concat`, `slice` and `filter`. `map` is excluded: its result is typed
-from the callback, so the constant's frozen type reaches it only for a callback
-that returns its argument unchanged, and admitting it would withhold the
+The same applies to `Array.from(ITEMS)`, `structuredClone(CONFIG)`,
+`Object.assign({}, CONFIG)` and the copying array methods `concat`, `slice`,
+`filter`, `flat`, `toSorted`, `toReversed`, `toSpliced` and `with`. A copy
+destructured into bindings (`const { items } = { ...CONFIG };`) carries the type
+into each of them and counts the same.
+
+Two shapes are excluded because nothing of the constant's type survives into
+their result: `map`, which is typed from its callback, and `Array.from(X, fn)`,
+which takes the same kind of mapper. Admitting either would withhold the
 assertion from every array anything is computed from.
 
 A copy that is only **read** cannot break, so the constant is still frozen. The
@@ -341,6 +357,22 @@ argument is the only syntactic evidence of this, and withholding on it costs 364
 of the same 778 consumer reports (47%) — the reason the `typeof` query is not
 carved out either. Pass the type argument explicitly (`useState<string>(DEFAULT_STAGE)`) to
 opt out.
+
+**A copy that is never bound.** `[...ITEMS].push(3)` breaks once `ITEMS` is
+frozen, but the break comes from the ARGUMENT's type rather than from the
+mutation, and the two cannot be told apart syntactically. Withholding on "a
+mutating method called on an unbound copy" would silence `ITEMS.slice().sort()`,
+which compiles perfectly well frozen. Bind the copy to a variable to get the
+carve-out.
+
+### A note on precision
+
+The copy walk asks only whether the copy is written, not whether the write could
+actually fail. A mutation that inserts no element — `copy.sort()`,
+`copy.reverse()`, `copy.pop()` — is safe on a frozen constant's copy, but still
+withholds the assertion. This is deliberate: it errs toward reporting less
+rather than toward an autofix that breaks a build. Derive the value with `map`
+if you want both the assertion and a freely mutable result.
 
 ### Next.js reserved exports
 

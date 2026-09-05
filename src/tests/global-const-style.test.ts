@@ -899,6 +899,85 @@ const Probe = () => {
       ].join('\n'),
       filename: 'test.ts',
     },
+    // Issue #2333: `copyExpressionOf` names "the expression that builds a COPY
+    // carrying this value's type". These are the category's other members —
+    // each compiles, is rewritten by `--fix` at v1.21.9, and then does not.
+    {
+      name: 'declines to freeze an array whose Array.from copy is pushed to',
+      code: [
+        'const ITEMS = [1, 2];',
+        'export const run = () => {',
+        '  const copy = Array.from(ITEMS);',
+        '  copy.push(3);',
+        '  return copy;',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose flat copy is pushed to',
+      code: [
+        'const ITEMS = [1, 2];',
+        'export const run = () => {',
+        '  const copy = ITEMS.flat();',
+        '  copy.push(3);',
+        '  return copy;',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose toSorted copy is pushed to',
+      code: [
+        'const ITEMS = [1, 2];',
+        'export const run = () => {',
+        '  const copy = ITEMS.toSorted();',
+        '  copy.push(3);',
+        '  return copy;',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an object whose structuredClone copy is written to',
+      code: [
+        'const CONFIG = { retries: 3 };',
+        'export const run = () => {',
+        '  const copy = structuredClone(CONFIG);',
+        '  copy.retries = 5;',
+        '  return copy;',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // A copy destructured into bindings carries the frozen type into each of
+    // them, so the alias walk has to accept a pattern id rather than only an
+    // identifier.
+    {
+      name: 'declines to freeze a constant destructured out of a spread copy and written',
+      code: [
+        'const CONFIG = { items: [1, 2] };',
+        'export const run = () => {',
+        '  const { items } = { ...CONFIG };',
+        '  items.push(3);',
+        '  return items;',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // Issue #2333: a constructor parameter property is a parameter AND declares
+    // a class property, so it infers twice over. #2329's walk stopped at the
+    // `TSParameterProperty` before it could reach the constructor's params.
+    {
+      name: 'declines to freeze a constant defaulting a constructor parameter property',
+      code: [
+        "const DEFAULT_STAGE = 'ready';",
+        'export class Session {',
+        '  constructor(public stage = DEFAULT_STAGE) {}',
+        '}',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
   ],
   invalid: [
     // Issue #2055: a JSX tag name is spelled twice, but the scope manager
@@ -2405,6 +2484,119 @@ const Probe = () => {
         'export class Session {',
         '  public stage: string = DEFAULT_STAGE;',
         '}',
+      ].join('\n'),
+    },
+    // Issue #2333 negative control: `Array.from(X, fn)` retypes the result from
+    // the MAPPER, exactly as `map` does, so nothing of the constant's type
+    // survives into it and the assertion is still enforced.
+    {
+      name: 'freezes a constant whose Array.from copy passes a mapper',
+      code: [
+        'const ITEMS = [1, 2];',
+        'export const run = () => {',
+        '  const copy = Array.from(ITEMS, (x) => x * 2);',
+        '  copy.push(3);',
+        '  return copy;',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const ITEMS = [1, 2] as const;',
+        'export const run = () => {',
+        '  const copy = Array.from(ITEMS, (x) => x * 2);',
+        '  copy.push(3);',
+        '  return copy;',
+        '};',
+      ].join('\n'),
+    },
+    // Issue #2333 negative control: the copy walk keys on the WRITE, so a
+    // destructured copy that is only read stays frozen.
+    {
+      name: 'freezes a constant destructured out of a copy but never written',
+      code: [
+        'const CONFIG = { items: [1, 2] };',
+        'export const run = () => {',
+        '  const { items } = { ...CONFIG };',
+        '  return items.length;',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const CONFIG = { items: [1, 2] } as const;',
+        'export const run = () => {',
+        '  const { items } = { ...CONFIG };',
+        '  return items.length;',
+        '};',
+      ].join('\n'),
+    },
+    // Issue #2333 negative control: an ANNOTATED constructor parameter property
+    // declares its own type, so nothing infers from the default — the same
+    // discriminator #2329 uses for a plain parameter.
+    {
+      name: 'freezes a constant defaulting an annotated constructor parameter property',
+      code: [
+        "const DEFAULT_STAGE = 'ready';",
+        'export class Session {',
+        '  constructor(public stage: string = DEFAULT_STAGE) {}',
+        '}',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        "const DEFAULT_STAGE = 'ready' as const;",
+        'export class Session {',
+        '  constructor(public stage: string = DEFAULT_STAGE) {}',
+        '}',
+      ].join('\n'),
+    },
+    /**
+     * Issue #2333: the shape that forced the unbound-copy LIMITATION.
+     *
+     * `[...ITEMS].push(3)` does break once ITEMS is frozen (TS2345), but the
+     * break comes from the ARGUMENT's type, not from the mutation — and the two
+     * cannot be told apart syntactically. Withholding on "a mutating method
+     * called on an unbound copy" silences this fixture, which compiles
+     * perfectly well frozen and is the copy-then-derive idiom the rule's own
+     * docs recommend. It is asserted here so a future carve-out that
+     * over-withholds on the workaround fails instead of passing quietly.
+     *
+     * The breaking shape itself is deliberately NOT a fixture:
+     * `fixer-type-safety` holds an absolute contract that no autofix may turn
+     * compiling code into non-compiling code, and a fixture encoding a known
+     * break would assert against it. The limitation lives on the docs page.
+     */
+    {
+      name: 'freezes a constant whose unbound slice copy is sorted',
+      code: [
+        'const ITEMS = [1, 2];',
+        'export const sorted = () => ITEMS.slice().sort();',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const ITEMS = [1, 2] as const;',
+        'export const sorted = () => ITEMS.slice().sort();',
+      ].join('\n'),
+    },
+    // Issue #2333 negative control: an unbound copy that is never written at
+    // all cannot break, so the constant is still frozen.
+    {
+      name: 'freezes a constant whose unbound copy is only read',
+      code: [
+        'const ITEMS = [1, 2];',
+        'export const run = () => {',
+        '  return [...ITEMS].length;',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const ITEMS = [1, 2] as const;',
+        'export const run = () => {',
+        '  return [...ITEMS].length;',
+        '};',
       ].join('\n'),
     },
     // Issue #2331: a RETURN position infers exactly as a parameter default
