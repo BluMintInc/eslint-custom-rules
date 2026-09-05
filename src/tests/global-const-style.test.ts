@@ -702,6 +702,57 @@ ruleTesterTs.run('global-const-style', rule, {
     // name holds a React component, whatever its initializer looks like. The
     // repro's initializer is a MEMBER EXPRESSION (a component read off a class
     // getter), which #1681's function-value/factory carve-out never reached.
+    // Issue #2329: `as const` makes the literal type NON-WIDENING, so a
+    // parameter defaulted from the constant narrows from `string` to that one
+    // value and every call passing a different one becomes TS2345. Nothing is
+    // written here, so the mutation walk alone cannot see it.
+    {
+      name: 'declines to freeze a constant an unannotated parameter defaults from',
+      code: [
+        "const REFEREE_ID = 'referee-uid';",
+        "const REFERRER_ID = 'referrer-uid';",
+        'const buildRequest = (uid = REFEREE_ID, referrerId = REFERRER_ID) => {',
+        '  return { uid, referrerId };',
+        '};',
+        'export const request = buildRequest(REFEREE_ID, REFEREE_ID);',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // Issue #2329: the default may be reached through a container, which
+    // retains the reference exactly as it does for the mutation walk.
+    {
+      name: 'declines when the default reaches the constant through a container',
+      code: [
+        "const DEFAULT_STAGE = 'ready';",
+        'const render = (options = { stage: DEFAULT_STAGE }) => options.stage;',
+        "export const shown = render({ stage: 'live' });",
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // Issue #2329: a destructured parameter with no annotation on the
+    // pattern infers just the same.
+    {
+      name: 'declines for an unannotated destructured parameter default',
+      code: [
+        'const DISTANCE_DEFAULT = 8;',
+        'const reveal = ({ distance = DISTANCE_DEFAULT }) => distance;',
+        'export const shifted = reveal({ distance: 12 });',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // Issue #2329: an alias takes its type from the constant, so freezing
+    // the constant narrows the alias and the reassignment becomes TS2322. The
+    // walk already enrols this alias for #2324; only a write THROUGH it counted.
+    {
+      name: 'declines to freeze a constant whose alias is reassigned',
+      code: [
+        "const DEFAULT_STAGE = 'ready';",
+        'let currentStage = DEFAULT_STAGE;',
+        "currentStage = 'live';",
+        'export { DEFAULT_STAGE, currentStage };',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
     {
       name: 'declines to rename a module-scope const used as a JSX element name',
       code: `
@@ -1740,6 +1791,81 @@ const Probe = () => {
         },
       ],
       output: `const HTTP2_SERVER = { a: 1 } as const;\nexport const useIt = () => HTTP2_SERVER;\n`,
+    },
+    // Issue #2329 negative control: an ANNOTATED parameter declares its own
+    // type, so no inference reads the default and the assertion cannot narrow
+    // the signature. Without this the withhold set over-declines — it was 18
+    // consumer sites keyed on the position alone against 6 keyed on inference.
+    {
+      name: 'freezes a constant an annotated parameter merely defaults from',
+      code: [
+        "const DEFAULT_MODEL = 'gpt-4';",
+        'export const prompt = (model: string = DEFAULT_MODEL) => model;',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        "const DEFAULT_MODEL = 'gpt-4' as const;",
+        'export const prompt = (model: string = DEFAULT_MODEL) => model;',
+      ].join('\n'),
+    },
+    // Issue #2329 negative control: a destructured parameter carries its
+    // annotation on the PATTERN, not on the binding, so the search for one has
+    // to climb out of the pattern to find it.
+    {
+      name: 'freezes a constant defaulted into an annotated destructured parameter',
+      code: [
+        'const DISTANCE_DEFAULT = 8;',
+        'type Props = { distance?: number };',
+        'export const reveal = ({ distance = DISTANCE_DEFAULT }: Props) => distance;',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const DISTANCE_DEFAULT = 8 as const;',
+        'type Props = { distance?: number };',
+        'export const reveal = ({ distance = DISTANCE_DEFAULT }: Props) => distance;',
+      ].join('\n'),
+    },
+    // Issue #2329 negative control: a destructuring DECLARATION default is
+    // the same AssignmentPattern node as a parameter default, but it declares
+    // no signature, so it is not an inference site this rule must protect.
+    {
+      name: 'freezes a constant used as a destructuring declaration default',
+      code: [
+        "const FALLBACK_NAME = 'anon';",
+        'export const pick = (source: { name?: string }) => {',
+        '  const { name = FALLBACK_NAME } = source;',
+        '  return name;',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        "const FALLBACK_NAME = 'anon' as const;",
+        'export const pick = (source: { name?: string }) => {',
+        '  const { name = FALLBACK_NAME } = source;',
+        '  return name;',
+        '};',
+      ].join('\n'),
+    },
+    // Issue #2329 negative control: an alias that is never reassigned still
+    // takes the assertion. The write check has to read a real write, not the
+    // declaration that established the alias.
+    {
+      name: 'freezes a constant whose alias is only read',
+      code: [
+        "const DEFAULT_STAGE = 'ready';",
+        'let currentStage = DEFAULT_STAGE;',
+        'export { DEFAULT_STAGE, currentStage };',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        "const DEFAULT_STAGE = 'ready' as const;",
+        'let currentStage = DEFAULT_STAGE;',
+        'export { DEFAULT_STAGE, currentStage };',
+      ].join('\n'),
     },
     // Issue #2013: a mutated binding is renamed but NOT frozen — `as const`
     // makes the type `readonly`, so the appended assertion turns compiling

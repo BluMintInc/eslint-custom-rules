@@ -464,10 +464,98 @@ const aliasDeclaratorOf = (
   }
 };
 
+/** Pattern nodes a parameter's binding can be nested inside. */
+const PATTERN_CONTAINERS = new Set<string>([
+  AST_NODE_TYPES.AssignmentPattern,
+  AST_NODE_TYPES.Property,
+  AST_NODE_TYPES.ObjectPattern,
+  AST_NODE_TYPES.ArrayPattern,
+  AST_NODE_TYPES.RestElement,
+]);
+
+const FUNCTION_TYPES = new Set<string>([
+  AST_NODE_TYPES.FunctionDeclaration,
+  AST_NODE_TYPES.FunctionExpression,
+  AST_NODE_TYPES.ArrowFunctionExpression,
+  AST_NODE_TYPES.TSDeclareFunction,
+]);
+
 /**
- * Whether the binding is written through anywhere in the file, under its own
- * name or through an alias of it. Answered from the scope manager's reference
- * list rather than a textual search for the name, so a same-named binding in
+ * Whether a default value is what a PARAMETER's type is inferred FROM.
+ *
+ * Answered false in the two cases where freezing the default cannot change a
+ * signature: the parameter carries a type annotation, so its type is declared
+ * rather than inferred — looked for up the whole pattern, since a destructured
+ * parameter carries it on the pattern (`({ distance = DEFAULT }: Props)`) and
+ * a plain one on its binding (`(model: ModelName = DEFAULT)`) — or the default
+ * belongs to a destructuring declaration rather than a parameter list, which
+ * declares no signature at all.
+ */
+const isInferredParameterDefault = (pattern: TSESTree.Node): boolean => {
+  let current: TSESTree.Node = pattern;
+  for (;;) {
+    if ((current as { typeAnnotation?: unknown }).typeAnnotation) {
+      return false;
+    }
+    const parent: TSESTree.Node | undefined = current.parent;
+    if (!parent) {
+      return false;
+    }
+    if (FUNCTION_TYPES.has(parent.type)) {
+      return (parent as TSESTree.FunctionLike).params.includes(
+        current as TSESTree.Parameter,
+      );
+    }
+    if (!PATTERN_CONTAINERS.has(parent.type)) {
+      return false;
+    }
+    current = parent;
+  }
+};
+
+/**
+ * Whether a reference sits where TypeScript INFERS a type from it — the value
+ * of a default parameter, reached directly or through a composite literal it
+ * is stored into.
+ *
+ * `as const` does not only freeze: it makes the literal type NON-WIDENING, and
+ * an inference site that widened `'ready'` to `string` then keeps the literal.
+ * A parameter defaulted from the constant therefore narrows to that one value,
+ * and every call passing a different one stops compiling (TS2345) for an input
+ * that compiled. The mutation walk cannot see this: nothing is written, the
+ * signature is simply inferred from a value the assertion changes.
+ */
+const isInferenceSite = (identifier: TSESTree.Node): boolean => {
+  let value = outermostValueOf(identifier);
+  for (;;) {
+    const parent = value.parent;
+    if (
+      parent?.type === AST_NODE_TYPES.AssignmentPattern &&
+      parent.right === value
+    ) {
+      return isInferredParameterDefault(parent.left);
+    }
+    const container = storageContainerOf(value);
+    if (!container) {
+      return false;
+    }
+    value = outermostValueOf(container);
+  }
+};
+
+/**
+ * Whether anything in the file stops this binding taking `as const`, under its
+ * own name or through an alias of it.
+ *
+ * Two things disqualify it, because `as const` does two things. It freezes the
+ * value, so a WRITE — through the binding (`X.push(1)`), or to a binding that
+ * aliases it (`other = X`) — becomes TS2339/TS2540. And it makes the literal
+ * type NON-WIDENING, so an INFERENCE site that read the widened type keeps the
+ * literal instead, which rewrites a signature the assertion was never asked to
+ * touch.
+ *
+ * Answered from the scope manager's reference list rather than a textual
+ * search for the name, so a same-named binding in
  * another scope (`const arr` shadowed inside a callback) contributes nothing,
  * and a same-named method on an unrelated receiver (`other.push(1)`) is never
  * even visited.
@@ -489,7 +577,7 @@ const aliasDeclaratorOf = (
  * check keyed on `const` would leave the `let` spelling breaking builds under
  * `--fix`.
  */
-const isBindingMutated = (
+const blocksAsConstAssertion = (
   variable: TSESLint.Scope.Variable,
   declaredVariablesOf: (
     node: TSESTree.Node,
@@ -502,6 +590,19 @@ const isBindingMutated = (
 
   for (let index = 0; index < pending.length; index += 1) {
     for (const reference of pending[index].references) {
+      // Reassigning an alias is as disqualifying as writing through one. A
+      // binding that takes its type from the constant narrows to the frozen
+      // literal, so `let stage = DEFAULT; stage = 'live';` becomes TS2322 for
+      // an input that compiled. `init` excludes the declaration's own write,
+      // which is how the alias was established rather than a change to it.
+      if (reference.isWrite() && !reference.init) {
+        return true;
+      }
+
+      if (isInferenceSite(reference.identifier)) {
+        return true;
+      }
+
       const path = accessPathOf(reference.identifier);
 
       if (path !== null) {
@@ -1051,7 +1152,7 @@ export default createRule<[], MessageIds>({
 
               return (
                 !declaredVariable ||
-                !isBindingMutated(declaredVariable, declaredVariablesOf)
+                !blocksAsConstAssertion(declaredVariable, declaredVariablesOf)
               );
             };
 

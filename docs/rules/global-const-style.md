@@ -189,7 +189,10 @@ that call. Aliases are followed for as many hops as they are chained
 (`const A = ITEMS; const B = A; B.push(3)`), in whatever scope they are
 declared, and whatever keyword declares them — a `let` alias takes its type from
 the same initializer, so it inherits the `readonly` type exactly as a `const`
-one does. Storing the constant in an object or array literal is followed on the
+one does. **Reassigning** an alias counts too, not only writing through one:
+that alias took its type from the constant, so `let stage = DEFAULT_STAGE;`
+followed by `stage = 'live';` is TS2322 once `DEFAULT_STAGE` is frozen to
+`'ready'`. Storing the constant in an object or array literal is followed on the
 same terms, because storing does not copy: `const HOLDER = { items: ITEMS };`
 keeps the one array reachable, so `HOLDER.items.push(3)` writes `ITEMS` and the
 assertion is withheld. Containers nest, and the shorthand spelling
@@ -218,6 +221,43 @@ a mutated constant is renamed, just not frozen. To get the assertion as well,
 build the value without mutating it — spread the pieces into one literal, or
 derive it with `map`/`filter`/`concat`, each of which returns a fresh array
 instead of writing the constant.
+
+### Constants a parameter's type is inferred from
+
+`as const` also makes the literal type **non-widening**. Wherever TypeScript
+infers a type from the constant, an inference that used to widen `'ready'` to
+`string` keeps the literal instead — which rewrites a signature the assertion
+was never asked to touch. So a constant used as the default value of a
+parameter with **no type annotation** keeps the `as const` half of the rule
+silent:
+
+```ts
+// Not frozen: `as const` would pin both parameters to one literal each, and
+// `buildRequest(REFEREE_ID, REFEREE_ID)` becomes TS2345.
+const REFEREE_ID = 'referee-uid';
+const REFERRER_ID = 'referrer-uid';
+const buildRequest = (uid = REFEREE_ID, referrerId = REFERRER_ID) => {
+  return { uid, referrerId };
+};
+```
+
+An **annotated** parameter declares its own type, so nothing infers from the
+default and the assertion cannot narrow anything. Both spellings of the
+annotation are recognized — on the binding, and on the pattern a destructured
+parameter carries it on:
+
+```ts
+// Both still flagged for `as const` — the parameter types are declared.
+const DEFAULT_MODEL = 'gpt-4';
+export const prompt = (model: ModelName = DEFAULT_MODEL) => model;
+
+const DISTANCE_DEFAULT = 8;
+export const reveal = ({ distance = DISTANCE_DEFAULT }: Props) => distance;
+```
+
+A destructuring **declaration** default (`const { name = FALLBACK } = source;`)
+is the same syntax but declares no signature, so it is not an inference site and
+the constant is still frozen.
 
 ### Next.js reserved exports
 
