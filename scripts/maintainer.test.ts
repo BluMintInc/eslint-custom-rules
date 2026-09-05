@@ -16,6 +16,7 @@ import {
   ruleScopeFromDiff,
   selectNextIssue,
   sortIssues,
+  StepFailure,
   validateViaStopHooks,
   type ChangedFile,
   type Issue,
@@ -266,6 +267,200 @@ describe('validateViaStopHooks', () => {
       'npm run build',
       'npx jest --findRelatedTests src/tests/foo.test.ts --passWithNoTests',
     ]);
+  });
+
+  /**
+   * #2332: the three states the stop hook already covers, which this gate could
+   * not reach. `stdio: 'inherit'` kept none of the child's output, so the
+   * `catch` had no string to hand `isGovernorStartupFailure` and a governor
+   * that could not load made every gate on the box red.
+   *
+   * The output a governor startup crash produces: the predicate wants a module
+   * resolution failure that NAMES the configured CLI, so the fixture spells
+   * both.
+   */
+  const GOVERNOR_CRASH = [
+    "Error: Cannot find module 'functions/src/util/assertSafe'",
+    'Require stack:',
+    `- ${__filename}`,
+  ].join('\n');
+
+  it('asks for capture only on the governed step, so its failure can be read', () => {
+    const captured: Array<[string, boolean]> = [];
+    const ok = withGovernorCli(__filename, () =>
+      validateViaStopHooks(
+        (cmd, args, options) => {
+          captured.push([
+            args.includes('jest') ? 'jest' : `${cmd} ${args[0]}`,
+            options?.capture === true,
+          ]);
+        },
+        () => ['src/rules/foo.ts'],
+        () => ['src/tests/foo.test.ts'],
+      ),
+    );
+    expect(ok).toBe(true);
+    expect(captured).toEqual([
+      ['npm run', false],
+      ['npx eslint', false],
+      ['jest', true],
+    ]);
+  });
+
+  it('re-runs the test step unwrapped when the governor cannot start, and passes', () => {
+    const calls: string[] = [];
+    const ok = withGovernorCli(__filename, () =>
+      validateViaStopHooks(
+        (cmd, args) => {
+          const line = `${cmd} ${args.join(' ')}`;
+          calls.push(line);
+          if (line.includes('--profile=jest')) {
+            throw new StepFailure('governor exited 1', GOVERNOR_CRASH);
+          }
+        },
+        () => [],
+        () => ['src/tests/foo.test.ts'],
+      ),
+    );
+    expect(ok).toBe(true);
+    // The wrapped attempt, then the SAME gate bare — the tests still run in
+    // full, only the reservation is lost.
+    expect(calls).toEqual([
+      'npm run build',
+      `npx tsx ${__filename} run --profile=jest -- npx jest --findRelatedTests src/tests/foo.test.ts --passWithNoTests`,
+      'npx jest --findRelatedTests src/tests/foo.test.ts --passWithNoTests',
+    ]);
+  });
+
+  /**
+   * The fallback must not launder a real failure. A module resolution error
+   * raised by the code UNDER TEST does not name the governor, so it keeps
+   * blocking — otherwise a broken import in the repo would retry once and then
+   * be reported against the bare command as though the governor were at fault.
+   */
+  it('keeps blocking when the code under test raises its own module error', () => {
+    const calls: string[] = [];
+    const ok = withGovernorCli(__filename, () =>
+      validateViaStopHooks(
+        (cmd, args) => {
+          const line = `${cmd} ${args.join(' ')}`;
+          calls.push(line);
+          if (line.includes('jest')) {
+            throw new StepFailure(
+              'jest exited 1',
+              "Cannot find module '../utils/ASTHelpers' from 'src/rules/foo.ts'",
+            );
+          }
+        },
+        () => [],
+        () => ['src/tests/foo.test.ts'],
+      ),
+    );
+    expect(ok).toBe(false);
+    // The governed attempt only — no unwrapped retry.
+    expect(calls).toEqual([
+      'npm run build',
+      `npx tsx ${__filename} run --profile=jest -- npx jest --findRelatedTests src/tests/foo.test.ts --passWithNoTests`,
+    ]);
+  });
+
+  /** A governed run whose tests genuinely fail is not retried either. */
+  it('does not retry a governed step that started and then failed', () => {
+    const calls: string[] = [];
+    const ok = withGovernorCli(__filename, () =>
+      validateViaStopHooks(
+        (cmd, args) => {
+          const line = `${cmd} ${args.join(' ')}`;
+          calls.push(line);
+          if (line.includes('jest')) {
+            throw new StepFailure('jest exited 1', 'Tests: 1 failed, 2 passed');
+          }
+        },
+        () => [],
+        () => ['src/tests/foo.test.ts'],
+      ),
+    );
+    expect(ok).toBe(false);
+    expect(calls).toEqual([
+      'npm run build',
+      `npx tsx ${__filename} run --profile=jest -- npx jest --findRelatedTests src/tests/foo.test.ts --passWithNoTests`,
+    ]);
+  });
+
+  /**
+   * A failure with no captured output at all — an injected runner that throws a
+   * plain Error, or any step run without capture — must not read as a governor
+   * crash. `isGovernorStartupFailure('')` is false, so this is the shape that
+   * keeps the ungoverned and unwrapped paths honest.
+   */
+  it('does not treat an outputless failure as a governor crash', () => {
+    const calls: string[] = [];
+    const ok = withGovernorCli(__filename, () =>
+      validateViaStopHooks(
+        (cmd, args) => {
+          const line = `${cmd} ${args.join(' ')}`;
+          calls.push(line);
+          if (line.includes('jest')) {
+            throw new Error('jest failed');
+          }
+        },
+        () => [],
+        () => ['src/tests/foo.test.ts'],
+      ),
+    );
+    expect(ok).toBe(false);
+    expect(calls).toEqual([
+      'npm run build',
+      `npx tsx ${__filename} run --profile=jest -- npx jest --findRelatedTests src/tests/foo.test.ts --passWithNoTests`,
+    ]);
+  });
+
+  /**
+   * With no governor configured there is nothing to fall back FROM, so even the
+   * crash fixture's own text must not trigger a retry.
+   */
+  it('never retries when no governor is configured', () => {
+    const calls: string[] = [];
+    const ok = withGovernorCli(undefined, () =>
+      validateViaStopHooks(
+        (cmd, args) => {
+          const line = `${cmd} ${args.join(' ')}`;
+          calls.push(line);
+          if (line.includes('jest')) {
+            throw new StepFailure('jest exited 1', GOVERNOR_CRASH);
+          }
+        },
+        () => [],
+        () => ['src/tests/foo.test.ts'],
+      ),
+    );
+    expect(ok).toBe(false);
+    // Ungoverned, so the crash text names a CLI that is not configured and the
+    // step is never retried.
+    expect(calls).toEqual([
+      'npm run build',
+      'npx jest --findRelatedTests src/tests/foo.test.ts --passWithNoTests',
+    ]);
+  });
+
+  /**
+   * A configured-but-MISSING governor already degrades to the bare argv before
+   * the step runs, so that step is not marked governed and is not captured —
+   * the retry path is for a governor that EXISTS and cannot load.
+   */
+  it('does not capture the test step when the configured governor is missing', () => {
+    const captured: boolean[] = [];
+    const ok = withGovernorCli('/nonexistent/exec-governor/cli.ts', () =>
+      validateViaStopHooks(
+        (_cmd, _args, options) => {
+          captured.push(options?.capture === true);
+        },
+        () => [],
+        () => ['src/tests/foo.test.ts'],
+      ),
+    );
+    expect(ok).toBe(true);
+    expect(captured).toEqual([false, false]);
   });
 
   it('skips the lint step when no source files changed but still runs related tests', () => {

@@ -28,10 +28,10 @@
  *   release                       → if queue empty, sync develop from origin/main then promote develop→main [--dry-run]
  *   dispatch --version=V          → notify agora of a published release
  */
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { governArgv } from './governor';
+import { governArgv, isGovernorStartupFailure } from './governor';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { dispatch } = require('./dispatch-agora-release');
 // Shared, build-free canonical rule-name set (parsed from src/index.ts's rules
@@ -188,7 +188,41 @@ export function fetchOpenIssues(
   return filterActionable(normalizeIssues(JSON.parse(out)));
 }
 
-type Runner = (cmd: string, args: string[]) => void;
+/**
+ * A step runner. `capture` asks for the child's combined output to be collected
+ * and replayed rather than inherited, so a caller can ask WHY the step failed.
+ * It is opt-in per step because capturing costs the live stream, and only the
+ * governed jest step has a question to ask of its output (issue #2332).
+ */
+type Runner = (
+  cmd: string,
+  args: string[],
+  options?: { capture?: boolean },
+) => void;
+
+/**
+ * A step failure carrying the child's combined output.
+ *
+ * `execFileSync` with `stdio: 'inherit'` sends that output straight to the
+ * terminal and keeps none of it, which is what left `isGovernorStartupFailure`
+ * unreachable from this gate: the `catch` had no string to test, so a governor
+ * that never started was indistinguishable from a test that failed and every
+ * gate on such a box was red (issue #2332).
+ */
+export class StepFailure extends Error {
+  public readonly output: string;
+
+  constructor(message: string, output: string) {
+    super(message);
+    this.name = 'StepFailure';
+    this.output = output;
+  }
+}
+
+/** The child output a caught step failure carries, if it carries any. */
+function outputOf(error: unknown): string {
+  return error instanceof StepFailure ? error.output : '';
+}
 
 /**
  * Environment for the git/npm subprocesses this toolkit spawns, with husky git
@@ -208,8 +242,33 @@ export function maintainerGitEnv(
   return { ...base, HUSKY: '0' };
 }
 
-const defaultRunner: Runner = (cmd, args) => {
-  execFileSync(cmd, args, { stdio: 'inherit', env: maintainerGitEnv() });
+const defaultRunner: Runner = (cmd, args, options) => {
+  if (!options?.capture) {
+    execFileSync(cmd, args, { stdio: 'inherit', env: maintainerGitEnv() });
+    return;
+  }
+  // `spawnSync` rather than `execFileSync` because jest writes its report to
+  // STDERR, and `execFileSync` surfaces stderr only on the error path — a
+  // captured PASS would print nothing at all.
+  const result = spawnSync(cmd, args, {
+    env: maintainerGitEnv(),
+    encoding: 'utf8',
+    maxBuffer: 256 * 1024 * 1024,
+  });
+  const stdout = result.stdout ?? '';
+  const stderr = result.stderr ?? '';
+  process.stdout.write(stdout);
+  process.stderr.write(stderr);
+  const output = `${stdout}${stderr}`;
+  if (result.error) {
+    throw new StepFailure(result.error.message, output);
+  }
+  if (result.status !== 0) {
+    throw new StepFailure(
+      `${cmd} exited with status ${String(result.status)}`,
+      output,
+    );
+  }
 };
 
 /**
@@ -429,28 +488,58 @@ export function validateViaStopHooks(
   getTestFiles: () => string[] = changedTestRelevantFiles,
 ): boolean {
   const files = getChangedFiles();
-  const steps: Array<[string, string[]]> = [['npm', ['run', 'build']]];
+  type Step = {
+    readonly cmd: string;
+    readonly args: string[];
+    /** The unwrapped argv to retry with, when this step is a governed one. */
+    readonly bare?: readonly [string, string[]];
+  };
+  const steps: Step[] = [{ cmd: 'npm', args: ['run', 'build'] }];
   if (files.length > 0) {
-    steps.push(['npx', ['eslint', ...files]]);
+    steps.push({ cmd: 'npx', args: ['eslint', ...files] });
   }
   const testFiles = getTestFiles();
   if (testFiles.length > 0) {
     // Routed through the machine-wide governor when one is configured, so this
     // gate queues behind a peer repo's jest instead of racing it into a mutual
     // OOM kill (issue #2286). Unconfigured, this is the bare `npx jest` call.
-    steps.push(
-      governArgv('npx', [
-        'jest',
-        '--findRelatedTests',
-        ...testFiles,
-        '--passWithNoTests',
-      ]),
-    );
+    const bare: [string, string[]] = [
+      'npx',
+      ['jest', '--findRelatedTests', ...testFiles, '--passWithNoTests'],
+    ];
+    const [cmd, args] = governArgv(bare[0], bare[1]);
+    const governed = cmd !== bare[0] || args.join(' ') !== bare[1].join(' ');
+    steps.push({ cmd, args, ...(governed ? { bare } : {}) });
   }
-  for (const [cmd, args] of steps) {
+  for (const step of steps) {
+    const { cmd, args, bare } = step;
     try {
-      run(cmd, args);
-    } catch {
+      // Only a governed step is captured: it is the one whose failure output
+      // has to be READ, and capturing is what costs a step its live stream.
+      run(cmd, args, bare ? { capture: true } : undefined);
+      continue;
+    } catch (error) {
+      // The governor buys a memory reservation, not correctness, so a governor
+      // that cannot start must not decide this verdict: re-run the same gate
+      // unwrapped. The tests still run in full — only the reservation is lost —
+      // which keeps a peer clone's breakage from reading as a failure of the
+      // change under test. Mirrors the stop hook (issue #2328, #2332).
+      if (bare && isGovernorStartupFailure(outputOf(error))) {
+        console.error(
+          'maintainer: the configured governor could not start; re-running the test step unwrapped',
+        );
+        try {
+          run(bare[0], bare[1]);
+          continue;
+        } catch {
+          console.error(
+            `maintainer: validation failed at \`${bare[0]} ${bare[1].join(
+              ' ',
+            )}\``,
+          );
+          return false;
+        }
+      }
       console.error(
         `maintainer: validation failed at \`${cmd} ${args.join(' ')}\``,
       );
