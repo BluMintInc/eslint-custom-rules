@@ -899,6 +899,88 @@ const Probe = () => {
       ].join('\n'),
       filename: 'test.ts',
     },
+    // Issue #2336: #2333 admitted an `ObjectPattern` id, described as "a copy
+    // destructured into bindings is followed into each of them". `ArrayPattern`
+    // is the other half of that category, so the same construct got opposite
+    // verdicts: `const { ...rest } = CONFIG; rest.a = 3` withheld while
+    // `const [, ...rest] = ITEMS; rest.push(4)` was rewritten into TS2345.
+    {
+      name: 'declines to freeze an array whose rest of a spread copy is pushed to',
+      code: [
+        'const ITEMS = [1, 2];',
+        'export const run = () => {',
+        '  const [head, ...rest] = [...ITEMS];',
+        '  rest.push(3);',
+        '  return [head, rest];',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose rest of a slice copy is pushed to',
+      code: [
+        'const ITEMS = [1, 2];',
+        'export const run = () => {',
+        '  const [, ...rest] = ITEMS.slice();',
+        '  rest.push(3);',
+        '  return rest;',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose rest of an Array.from copy is pushed to',
+      code: [
+        'const ITEMS = [1, 2];',
+        'export const run = () => {',
+        '  const [, ...rest] = Array.from(ITEMS);',
+        '  rest.push(3);',
+        '  return rest;',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // A rest element involves no copy expression at all: it is itself a fresh
+    // array typed from the source, so the assertion narrows it exactly as
+    // `slice()` would. This shape is why the walk must admit the pattern id
+    // rather than only the copy that feeds it.
+    {
+      name: 'declines to freeze an array rest-destructured directly and pushed to',
+      code: [
+        'const ITEMS = [1, 2];',
+        'export const run = () => {',
+        '  const [head, ...rest] = ITEMS;',
+        '  rest.push(3);',
+        '  return [head, rest];',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose rest element is index-assigned',
+      code: [
+        'const ITEMS = [1, 2];',
+        'export const run = () => {',
+        '  const [, ...rest] = [...ITEMS];',
+        '  rest[0] = 9;',
+        '  return rest;',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // A default on an earlier element must not stop the walk reaching the rest.
+    {
+      name: 'declines to freeze an array whose rest follows a defaulted element',
+      code: [
+        'const ITEMS = [1, 2];',
+        'export const run = () => {',
+        '  const [head = 0, ...rest] = [...ITEMS];',
+        '  rest.push(3);',
+        '  return [head, rest];',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
     // Issue #2333: `copyExpressionOf` names "the expression that builds a COPY
     // carrying this value's type". These are the category's other members —
     // each compiles, is rewritten by `--fix` at v1.21.9, and then does not.
@@ -2507,6 +2589,70 @@ const Probe = () => {
         '  const copy = Array.from(ITEMS, (x) => x * 2);',
         '  copy.push(3);',
         '  return copy;',
+        '};',
+      ].join('\n'),
+    },
+    // Issue #2336 negative control: admitting `ArrayPattern` must not withhold
+    // wherever a destructure merely occurs. The walk still keys on the WRITE,
+    // so a pattern that binds nothing writable keeps its report.
+    {
+      name: 'freezes an array destructured with no rest element',
+      code: [
+        'const ITEMS = [1, 2];',
+        'export const run = () => {',
+        '  const [head, second] = ITEMS;',
+        '  return head + second;',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const ITEMS = [1, 2] as const;',
+        'export const run = () => {',
+        '  const [head, second] = ITEMS;',
+        '  return head + second;',
+        '};',
+      ].join('\n'),
+    },
+    {
+      name: 'freezes an array whose rest element is never written',
+      code: [
+        'const ITEMS = [1, 2];',
+        'export const run = () => {',
+        '  const [head, ...rest] = [...ITEMS];',
+        '  return [head, rest.length];',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const ITEMS = [1, 2] as const;',
+        'export const run = () => {',
+        '  const [head, ...rest] = [...ITEMS];',
+        '  return [head, rest.length];',
+        '};',
+      ].join('\n'),
+    },
+    // Reading the rest into a mutable-typed slot is not a write to it. This
+    // case COMPILES frozen, so the report is correct and must survive.
+    {
+      name: 'freezes an array whose rest element is only read into another slot',
+      code: [
+        'const ITEMS = [1, 2];',
+        'const take = (xs: number[]) => xs.length;',
+        'export const run = () => {',
+        '  const [, ...rest] = ITEMS;',
+        '  return take(rest);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const ITEMS = [1, 2] as const;',
+        'const take = (xs: number[]) => xs.length;',
+        'export const run = () => {',
+        '  const [, ...rest] = ITEMS;',
+        '  return take(rest);',
         '};',
       ].join('\n'),
     },
