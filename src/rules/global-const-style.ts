@@ -4,6 +4,7 @@ import {
   TSESLint,
   TSESTree,
 } from '@typescript-eslint/utils';
+import { ASTHelpers } from '../utils/ASTHelpers';
 import { createRule } from '../utils/createRule';
 
 const isUpperSnakeCase = (str: string): boolean =>
@@ -578,14 +579,136 @@ const isStructuredCloneCallee = (callee: TSESTree.Node): boolean => {
   );
 };
 
+const FUNCTION_TYPES = new Set<string>([
+  AST_NODE_TYPES.FunctionDeclaration,
+  AST_NODE_TYPES.FunctionExpression,
+  AST_NODE_TYPES.ArrowFunctionExpression,
+  AST_NODE_TYPES.TSDeclareFunction,
+]);
+
+/**
+ * The identifier an ACCESS PATH is rooted at — `x` for `x`, `x.n`, `x.a[0]`,
+ * `x?.n` and `x!.n` alike — or the expression itself when it is not an access
+ * path at all. Descends through the wrappers `outermostValueOf` climbs out of,
+ * so the root cannot depend on which type syntax annotates a step of the path.
+ */
+const accessPathRootOf = (node: TSESTree.Node): TSESTree.Node => {
+  let current = unwrapValueWrappers(node);
+  for (;;) {
+    if (current.type === AST_NODE_TYPES.ChainExpression) {
+      current = unwrapValueWrappers(current.expression);
+      continue;
+    }
+    if (current.type === AST_NODE_TYPES.MemberExpression) {
+      current = unwrapValueWrappers(current.object);
+      continue;
+    }
+    return current;
+  }
+};
+
+/**
+ * Every value a function hands back: its expression body, or the argument of
+ * each `return` in its block.
+ *
+ * Descent stops at a nested function, whose `return` answers for THAT function
+ * rather than this one — the same boundary `ASTHelpers.hasReturnStatement`
+ * keeps, for the same reason.
+ */
+const returnedValuesOf = (
+  callback: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression,
+): TSESTree.Node[] => {
+  if (callback.body.type !== AST_NODE_TYPES.BlockStatement) {
+    return [callback.body];
+  }
+
+  const returned: TSESTree.Node[] = [];
+  const visit = (node: TSESTree.Node): void => {
+    if (FUNCTION_TYPES.has(node.type)) {
+      return;
+    }
+    if (node.type === AST_NODE_TYPES.ReturnStatement) {
+      if (node.argument) {
+        returned.push(node.argument);
+      }
+      return;
+    }
+    for (const [key, value] of Object.entries(node)) {
+      if (key === 'parent') {
+        continue;
+      }
+      for (const child of Array.isArray(value) ? value : [value]) {
+        if (ASTHelpers.isNode(child)) {
+          visit(child);
+        }
+      }
+    }
+  };
+  visit(callback.body);
+  return returned;
+};
+
+/**
+ * Whether a callback hands back the value it is given at `elementIndex`, or an
+ * access path rooted at it.
+ *
+ * This is what decides whether a `map`-shaped call keeps the receiver's element
+ * type. `(x) => x.n` over a frozen `[{ n: 1 }]` yields `1[]` rather than
+ * `number[]`, so `ns.push(3)` is TS2345 for an input that compiled — and that
+ * mapper is the commonest one written, not the no-op spelling the exclusion was
+ * justified against (Issue #2342). A callback that COMPUTES (`(x) => x * 2`,
+ * `() => Math.random()`) widens, carries nothing of the constant into its
+ * result, and keeps its report.
+ *
+ * The parameter is matched by NAME within the callback's own body, the single
+ * span this question is asked over, because a derivation resolver is handed a
+ * node and no scope. A name a nested function rebinds is unreachable — descent
+ * stops at every function boundary — so the worst a shadow can do is withhold
+ * the assertion from a call that would have kept it, the cheap error of the two.
+ *
+ * ANY returned value rooted at the element is enough. Branches returning
+ * different things widen their union, so the assertion may then reach nothing
+ * and the withhold costs a report; demanding EVERY branch would instead ship a
+ * `--fix` that stops the file compiling.
+ */
+const returnsHandedElement = (
+  callback: TSESTree.Node | undefined,
+  elementIndex: number,
+): boolean => {
+  if (!callback || !isFunctionValue(callback)) {
+    return false;
+  }
+  const parameter = callback.params[elementIndex];
+  if (!parameter || parameter.type !== AST_NODE_TYPES.Identifier) {
+    return false;
+  }
+  return returnedValuesOf(callback).some((value) => {
+    const root = accessPathRootOf(value);
+    return (
+      root.type === AST_NODE_TYPES.Identifier && root.name === parameter.name
+    );
+  });
+};
+
+/**
+ * The position the receiver's element arrives in for `Array.from`'s mapper.
+ *
+ * Named because the mapper is the SECOND argument while its element is the
+ * first parameter, so two different zeroes and ones sit beside each other here.
+ */
+const ARRAY_FROM_MAPPER_ELEMENT_INDEX = 0;
+
 /**
  * Whether a call COPIES the argument at `index` while keeping its type.
  *
  * `Array.from(X)` and `structuredClone(X)` both hand back a fresh, mutable
  * value whose element or property types are the argument's — so freezing the
- * argument narrows the copy exactly as a spread does. `Array.from(X, fn)` is
- * excluded for the same reason `map` is: a mapper retypes the result, so
- * nothing of the constant's type survives into it.
+ * argument narrows the copy exactly as a spread does.
+ *
+ * `Array.from(X, fn)` is decided per CALL for the reason `map` is: a mapper
+ * that hands back the element or a property of it keeps the frozen type, so
+ * `Array.from(ITEMS, (x) => x.n)` is TS2345 on a later `push` for an input that
+ * compiled, while a mapper that COMPUTES widens and carries nothing.
  */
 const isCopyingCall = (
   call: TSESTree.CallExpression,
@@ -601,17 +724,30 @@ const isCopyingCall = (
     return true;
   }
   if (isNamespacedCallee(call.callee, 'Array', 'from')) {
-    return call.arguments.length === 1;
+    return (
+      call.arguments.length === 1 ||
+      returnsHandedElement(call.arguments[1], ARRAY_FROM_MAPPER_ELEMENT_INDEX)
+    );
   }
   return false;
 };
 
 /**
- * Array methods whose result keeps the receiver's ELEMENT type. `map` is
- * absent because its result is typed from the CALLBACK, so the constant's type
- * reaches it only for a callback that returns its argument unchanged — a no-op
- * `map`. Admitting it would withhold the assertion from every derived array
- * anything is computed from, to cover a spelling nobody writes.
+ * The copying array methods whose result is typed from a CALLBACK, mapped to
+ * the position the receiver's element arrives in.
+ *
+ * They are carried apart from `TYPE_PRESERVING_COPY_METHODS` because the
+ * question they raise is answered per CALL rather than per method — see
+ * `returnsHandedElement`.
+ */
+const CALLBACK_TYPED_COPY_METHODS = new Map<string, number>([['map', 0]]);
+
+/**
+ * Array methods whose result keeps the receiver's ELEMENT type WHATEVER the
+ * call spells: nothing they are passed can retype what they hand back.
+ *
+ * `map` is carried separately rather than absent — see
+ * `CALLBACK_TYPED_COPY_METHODS`.
  */
 const TYPE_PRESERVING_COPY_METHODS = new Set([
   'concat',
@@ -673,16 +809,77 @@ const copyExpressionOf = (node: TSESTree.Node): TSESTree.Node | null => {
     // A method REFERENCE (`const take = ITEMS.concat;`) builds nothing, so the
     // copy only exists once the method is actually called.
     if (
-      method !== null &&
-      TYPE_PRESERVING_COPY_METHODS.has(method) &&
-      callee.parent?.type === AST_NODE_TYPES.CallExpression &&
-      callee.parent.callee === callee
+      method === null ||
+      callee.parent?.type !== AST_NODE_TYPES.CallExpression ||
+      callee.parent.callee !== callee
     ) {
+      return null;
+    }
+    if (TYPE_PRESERVING_COPY_METHODS.has(method)) {
       return callee.parent;
     }
+    const elementIndex = CALLBACK_TYPED_COPY_METHODS.get(method);
+    return elementIndex !== undefined &&
+      returnsHandedElement(callee.parent.arguments[0], elementIndex)
+      ? callee.parent
+      : null;
   }
 
   return null;
+};
+
+/**
+ * Array methods whose result is an ELEMENT of the receiver rather than a fresh
+ * array over it.
+ *
+ * `as const` freezes in depth, so the element they hand back carries the
+ * assertion exactly as one reached by index does: `const first = ITEMS.at(0)!;
+ * first.n = 2;` is TS2540 once `ITEMS` is frozen, for an input that compiled
+ * (Issue #2341). They belong with the element family rather than with
+ * `TYPE_PRESERVING_COPY_METHODS`, whose members hand back a container.
+ */
+const ELEMENT_RETURNING_METHODS = new Set(['at', 'find', 'findLast']);
+
+/**
+ * The folds whose result is an element of the receiver, in the SEEDLESS
+ * spelling alone.
+ *
+ * `ITEMS.reduce((a, b) => b)` is typed `T` because the overload without an
+ * initial value takes the first element as the seed. Given a seed the result is
+ * typed from THAT value, which the constant need not have given —
+ * `NUMS.reduce((sum, n) => sum + n, 0)` is `number` however `NUMS` is frozen —
+ * so enrolling the seeded spelling would withhold the assertion for a break
+ * that cannot happen.
+ */
+const ELEMENT_FOLD_METHODS = new Set(['reduce', 'reduceRight']);
+
+/** The call that hands back an ELEMENT of this value — see the two sets above. */
+const elementExpressionOf = (
+  node: TSESTree.Node,
+): TSESTree.CallExpression | null => {
+  const parent = node.parent;
+  if (
+    parent?.type !== AST_NODE_TYPES.MemberExpression ||
+    parent.object !== node
+  ) {
+    return null;
+  }
+
+  const method = accessedPropertyName(parent);
+  if (method === null) {
+    return null;
+  }
+
+  const callee = outermostValueOf(parent);
+  const call = callee.parent;
+  if (call?.type !== AST_NODE_TYPES.CallExpression || call.callee !== callee) {
+    return null;
+  }
+
+  return ELEMENT_RETURNING_METHODS.has(method) ||
+    (ELEMENT_FOLD_METHODS.has(method) && call.arguments.length === 1)
+    ? call
+    : null;
 };
 
 /** Pattern nodes a parameter's binding can be nested inside. */
@@ -696,13 +893,6 @@ const PATTERN_CONTAINERS = new Set<string>([
   // infers twice over. Without it the walk stops before reaching the
   // constructor's params and `constructor(public stage = DEFAULT)` narrows.
   AST_NODE_TYPES.TSParameterProperty,
-]);
-
-const FUNCTION_TYPES = new Set<string>([
-  AST_NODE_TYPES.FunctionDeclaration,
-  AST_NODE_TYPES.FunctionExpression,
-  AST_NODE_TYPES.ArrowFunctionExpression,
-  AST_NODE_TYPES.TSDeclareFunction,
 ]);
 
 /**
@@ -911,50 +1101,6 @@ const elementProjectionCallOf = (
 };
 
 /**
- * Array methods whose result ITERATES the receiver's own elements.
- *
- * The result is an iterator rather than an array, which is why it belongs to
- * neither of the maps the walk already reads: nothing is copied, so
- * `TYPE_PRESERVING_COPY_METHODS` refuses it, and nothing is handed to a
- * callback, so `ELEMENT_PARAMETER_INDEX_BY_METHOD` refuses it too. Every
- * binding taken from it still carries the constant's element type, so
- * `for (const item of ITEMS.values()) { item.n = 2; }` is TS2540 once `ITEMS`
- * is frozen, for an input that compiled (Issue #2340). `entries` yields
- * `[index, element]` pairs, which carry the element exactly as `values` does.
- *
- * `keys` is absent for the reason `Object.keys` is: its result is a number
- * whatever the receiver holds, so the assertion cannot reach a binding taken
- * from it.
- */
-const ELEMENT_ITERATOR_METHODS = new Set(['values', 'entries']);
-
-const iteratorProjectionCallOf = (
-  node: TSESTree.Node,
-): TSESTree.CallExpression | null => {
-  const parent = node.parent;
-  if (
-    parent?.type !== AST_NODE_TYPES.MemberExpression ||
-    parent.object !== node
-  ) {
-    return null;
-  }
-
-  const method = accessedPropertyName(parent);
-  if (method === null || !ELEMENT_ITERATOR_METHODS.has(method)) {
-    return null;
-  }
-
-  // A method REFERENCE (`const walk = ITEMS.values;`) iterates nothing, so the
-  // iterator exists only once the method is called — the same terms
-  // `copyExpressionOf` reads a copy on.
-  const callee = outermostValueOf(parent);
-  return callee.parent?.type === AST_NODE_TYPES.CallExpression &&
-    callee.parent.callee === callee
-    ? callee.parent
-    : null;
-};
-
-/**
  * Constructors that build a collection out of the argument's ELEMENTS.
  *
  * `new Set(ITEMS)` holds the constant's own contents, so iterating it hands out
@@ -969,21 +1115,93 @@ const iteratorProjectionCallOf = (
  */
 const ELEMENT_PRESERVING_COLLECTION_NAMES = new Set(['Set', 'Map']);
 
+/** Whether an expression CONSTRUCTS one of those collections. */
+const isElementPreservingCollection = (node: TSESTree.Node): boolean => {
+  const value = unwrapValueWrappers(node);
+  if (value.type !== AST_NODE_TYPES.NewExpression) {
+    return false;
+  }
+  const callee = unwrapValueWrappers(value.callee);
+  return (
+    callee.type === AST_NODE_TYPES.Identifier &&
+    ELEMENT_PRESERVING_COLLECTION_NAMES.has(callee.name)
+  );
+};
+
 const elementCollectionOf = (
   node: TSESTree.Node,
 ): TSESTree.NewExpression | null => {
   const parent = node.parent;
+  return parent?.type === AST_NODE_TYPES.NewExpression &&
+    parent.arguments[0] === node &&
+    isElementPreservingCollection(parent)
+    ? parent
+    : null;
+};
+
+/**
+ * Array methods whose result ITERATES the receiver's own elements.
+ *
+ * The result is an iterator rather than an array, which is why it belongs to
+ * neither of the maps the walk already reads: nothing is copied, so
+ * `TYPE_PRESERVING_COPY_METHODS` refuses it, and nothing is handed to a
+ * callback, so `ELEMENT_PARAMETER_INDEX_BY_METHOD` refuses it too. Every
+ * binding taken from it still carries the constant's element type, so
+ * `for (const item of ITEMS.values()) { item.n = 2; }` is TS2540 once `ITEMS`
+ * is frozen, for an input that compiled (Issue #2340). `entries` yields
+ * `[index, element]` pairs, which carry the element exactly as `values` does.
+ *
+ * `keys` is absent for an ARRAY receiver, for the reason `Object.keys` is: it
+ * yields INDICES, numbers whatever the receiver holds, which the assertion
+ * cannot reach.
+ */
+const ELEMENT_ITERATOR_METHODS = new Set(['values', 'entries']);
+
+/**
+ * The same methods for a Set/Map receiver, where `keys` joins them.
+ *
+ * `Set.prototype.keys` is an alias for `values`, and a `Map`'s hands back the
+ * frozen key of each entry, so `for (const item of new Set(ITEMS).keys()) {
+ * item.n = 2; }` is TS2540 once `ITEMS` is frozen, for an input that compiled
+ * — while the `for…of` and `forEach` spellings over the same `new Set(ITEMS)`
+ * already decline (Issue #2341). One set per receiver, because a single set
+ * would decide the two receivers by the same name and be wrong for one of them.
+ *
+ * The receiver is read syntactically: the collection this iterator is reached
+ * through is the `new Set(ITEMS)` expression the derivation walk just resolved.
+ */
+const COLLECTION_ELEMENT_ITERATOR_METHODS = new Set([
+  'values',
+  'entries',
+  'keys',
+]);
+
+const iteratorProjectionCallOf = (
+  node: TSESTree.Node,
+): TSESTree.CallExpression | null => {
+  const parent = node.parent;
   if (
-    parent?.type !== AST_NODE_TYPES.NewExpression ||
-    parent.arguments[0] !== node
+    parent?.type !== AST_NODE_TYPES.MemberExpression ||
+    parent.object !== node
   ) {
     return null;
   }
 
-  const callee = unwrapValueWrappers(parent.callee);
-  return callee.type === AST_NODE_TYPES.Identifier &&
-    ELEMENT_PRESERVING_COLLECTION_NAMES.has(callee.name)
-    ? parent
+  const method = accessedPropertyName(parent);
+  const iteratorMethods = isElementPreservingCollection(node)
+    ? COLLECTION_ELEMENT_ITERATOR_METHODS
+    : ELEMENT_ITERATOR_METHODS;
+  if (method === null || !iteratorMethods.has(method)) {
+    return null;
+  }
+
+  // A method REFERENCE (`const walk = ITEMS.values;`) iterates nothing, so the
+  // iterator exists only once the method is called — the same terms
+  // `copyExpressionOf` reads a copy on.
+  const callee = outermostValueOf(parent);
+  return callee.parent?.type === AST_NODE_TYPES.CallExpression &&
+    callee.parent.callee === callee
+    ? callee.parent
     : null;
 };
 
@@ -1018,6 +1236,247 @@ const accessPathsRootedAt = (identifier: TSESTree.Node): TSESTree.Node[] => {
 };
 
 /**
+ * Whether `as const` reaches INTO this value, or stops at the property that
+ * holds it.
+ *
+ * The assertion retypes the literal it is written on: nested array and object
+ * literals become `readonly`, and primitive literals narrow to their literal
+ * type. A value the literal merely refers to keeps whatever type it already
+ * had, and an explicit `as T` cast is exactly such a value — so
+ * `{ items: [] as string[] } as const` freezes the `items` PROPERTY while
+ * leaving the array it holds a mutable `string[]`.
+ *
+ * Only the cast is screened, because it is the one spelling that PROVES the
+ * assertion cannot deepen. Anything else answers true, so an unrecognized value
+ * is still enrolled and the walk keeps declining — the direction that withholds
+ * an assertion rather than breaking a build (Issue #2341).
+ */
+const assertionDeepensInto = (node: TSESTree.Node): boolean => {
+  if (
+    node.type !== AST_NODE_TYPES.TSAsExpression &&
+    node.type !== AST_NODE_TYPES.TSTypeAssertion
+  ) {
+    return true;
+  }
+  return (
+    node.typeAnnotation.type === AST_NODE_TYPES.TSTypeReference &&
+    node.typeAnnotation.typeName.type === AST_NODE_TYPES.Identifier &&
+    node.typeAnnotation.typeName.name === 'const'
+  );
+};
+
+/**
+ * The value a single access step reads out of a literal, or `undefined` when
+ * the step cannot be resolved statically.
+ *
+ * A spread makes an object literal's own properties an incomplete account of
+ * what it holds, so a miss under one is unresolved rather than absent.
+ */
+const literalValueAtKey = (
+  value: TSESTree.Node,
+  key: string | number,
+): TSESTree.Node | undefined => {
+  if (value.type === AST_NODE_TYPES.ObjectExpression) {
+    if (typeof key !== 'string') {
+      return undefined;
+    }
+    let resolved: TSESTree.Node | undefined;
+    for (const property of value.properties) {
+      if (property.type === AST_NODE_TYPES.SpreadElement) {
+        return undefined;
+      }
+      const propertyKey = property.key;
+      const keyName =
+        !property.computed && propertyKey.type === AST_NODE_TYPES.Identifier
+          ? propertyKey.name
+          : propertyKey.type === AST_NODE_TYPES.Literal &&
+            typeof propertyKey.value === 'string'
+          ? propertyKey.value
+          : null;
+      // The LAST matching key wins, as it does at runtime.
+      if (keyName === key) {
+        resolved = property.value;
+      }
+    }
+    return resolved;
+  }
+
+  if (value.type === AST_NODE_TYPES.ArrayExpression) {
+    if (typeof key !== 'number') {
+      return undefined;
+    }
+    const element = value.elements[key];
+    return element === null ||
+      element === undefined ||
+      element.type === AST_NODE_TYPES.SpreadElement
+      ? undefined
+      : element;
+  }
+
+  return undefined;
+};
+
+/**
+ * The value a single MEMBER ACCESS step reads out of a literal, or `undefined`
+ * when the step cannot be resolved statically.
+ *
+ * Delegates to `literalValueAtKey` so a property reached by a member access and
+ * the same property reached by a destructuring pattern cannot be read on
+ * different terms — the divergence between those two spellings is what this
+ * screen exists to close (Issue #2341).
+ */
+const literalValueAtStep = (
+  value: TSESTree.Node,
+  step: TSESTree.MemberExpression,
+): TSESTree.Node | undefined => {
+  const name = accessedPropertyName(step);
+  if (name !== null) {
+    return literalValueAtKey(value, name);
+  }
+  return step.computed &&
+    step.property.type === AST_NODE_TYPES.Literal &&
+    typeof step.property.value === 'number'
+    ? literalValueAtKey(value, step.property.value)
+    : undefined;
+};
+
+/**
+ * The names a destructuring pattern binds to values `as const` does NOT reach.
+ *
+ * A pattern binds a property WITHOUT writing a member access, so the step
+ * screen in `frozenAccessPathsRootedAt` never sees `const { items } = CONFIG`
+ * — it only sees `CONFIG.items`. Reading the pattern against the same literal
+ * keeps the two spellings of one extraction on identical terms. They must
+ * agree: `prefer-destructuring-no-class` rewrites the first into the second
+ * under `--fix`, so a screen applied to one spelling alone lets a sibling fixer
+ * flip this rule's verdict on unchanged semantics (Issue #2341).
+ *
+ * A `RestElement` is left enrolled because it gathers whatever the pattern did
+ * not name, which no single literal value answers for.
+ */
+const collectUnfrozenPatternNames = (
+  id: TSESTree.Node,
+  value: TSESTree.Node | undefined,
+  unfrozen: Set<string>,
+): void => {
+  if (value === undefined) {
+    return;
+  }
+
+  if (id.type === AST_NODE_TYPES.AssignmentPattern) {
+    collectUnfrozenPatternNames(id.left, value, unfrozen);
+    return;
+  }
+
+  if (id.type === AST_NODE_TYPES.Identifier) {
+    if (!assertionDeepensInto(value)) {
+      unfrozen.add(id.name);
+    }
+    return;
+  }
+
+  const literal = unwrapValueWrappers(value);
+
+  if (id.type === AST_NODE_TYPES.ObjectPattern) {
+    for (const property of id.properties) {
+      if (property.type !== AST_NODE_TYPES.Property) {
+        continue;
+      }
+      const key = property.key;
+      const name =
+        !property.computed && key.type === AST_NODE_TYPES.Identifier
+          ? key.name
+          : key.type === AST_NODE_TYPES.Literal && typeof key.value === 'string'
+          ? key.value
+          : null;
+      if (name === null) {
+        continue;
+      }
+      collectUnfrozenPatternNames(
+        property.value,
+        literalValueAtKey(literal, name),
+        unfrozen,
+      );
+    }
+    return;
+  }
+
+  if (id.type === AST_NODE_TYPES.ArrayPattern) {
+    id.elements.forEach((element, index) => {
+      if (!element || element.type === AST_NODE_TYPES.RestElement) {
+        return;
+      }
+      collectUnfrozenPatternNames(
+        element,
+        literalValueAtKey(literal, index),
+        unfrozen,
+      );
+    });
+  }
+};
+
+/**
+ * An expression that denotes frozen contents, carried with the LITERAL it is
+ * read out of when that is statically known.
+ *
+ * The literal travels with the node because the pattern screen needs it at the
+ * point a declarator is found, and only the access-path walk can resolve it —
+ * a value reached through a copy or an element call has no literal of its own.
+ */
+type FrozenValue = {
+  node: TSESTree.Node;
+  literal: TSESTree.Node | undefined;
+};
+
+/**
+ * The access paths rooted at a reference that the assertion actually FREEZES,
+ * read against the literal the constant is declared from.
+ *
+ * The climb stops before the first step whose value `as const` cannot deepen
+ * into, because neither that value nor anything reached through it carries the
+ * assertion — a binding taken from it is no second name for frozen contents and
+ * enrolling it would withhold the assertion for a break that cannot happen.
+ *
+ * Without a literal to read, every step answers unresolved and the result is
+ * the whole path, which is what `accessPathsRootedAt` returns on its own.
+ */
+const frozenAccessPathsRootedAt = (
+  identifier: TSESTree.Node,
+  frozenValue: TSESTree.Node | undefined,
+): FrozenValue[] => {
+  const paths: FrozenValue[] = [];
+  let current: TSESTree.Node = outermostValueOf(identifier);
+  let value: TSESTree.Node | undefined = frozenValue
+    ? unwrapValueWrappers(frozenValue)
+    : undefined;
+
+  for (;;) {
+    paths.push({ node: current, literal: value });
+    const parent: TSESTree.Node | undefined = current.parent;
+    if (
+      !parent ||
+      parent.type !== AST_NODE_TYPES.MemberExpression ||
+      parent.object !== current
+    ) {
+      return paths;
+    }
+
+    if (value !== undefined) {
+      const stepValue = literalValueAtStep(value, parent);
+      if (stepValue === undefined) {
+        value = undefined;
+      } else if (!assertionDeepensInto(stepValue)) {
+        return paths;
+      } else {
+        value = unwrapValueWrappers(stepValue);
+      }
+    }
+
+    current = outermostValueOf(parent);
+  }
+};
+
+/**
  * Every way a value derived from this one keeps the constant's ELEMENT types:
  * a copy of it, the `Object.values`/`Object.entries` array over it, the
  * iterator its own `values`/`entries` hands back, and the collection built out
@@ -1034,6 +1493,56 @@ const DERIVATION_RESOLVERS: readonly ((
 ];
 
 /**
+ * The derivations that carry the constant's frozen type into a value a BINDING
+ * can be initialized from: a copy of it and an element taken out of it.
+ *
+ * The three iteration resolvers are absent because each hands back a value of a
+ * DIFFERENT SHAPE whose container is fresh and mutable — `Object.values(CONFIG)`
+ * and `new Set(ITEMS)` are arrays and sets nothing frozen was written to, so a
+ * write to the container itself is no readonly violation. Only their ELEMENTS
+ * carry the assertion, which is the question the iteration walk asks.
+ */
+const ALIAS_DERIVATION_RESOLVERS: readonly ((
+  node: TSESTree.Node,
+) => TSESTree.Node | null)[] = [copyExpressionOf, elementExpressionOf];
+
+/**
+ * Every expression that denotes a value typed from this reference: the
+ * reference and each step of the access path rooted at it, then — transitively
+ * — whatever `resolvers` derive from any of them.
+ *
+ * Grown in place and walked by index, so a derivation OF a derivation is
+ * reached by the same loop without recursion of its own. Every resolver returns
+ * an ANCESTOR of the node it is given, so the walk strictly ascends and
+ * terminates; `visited` keeps a node two resolvers agree on from being expanded
+ * twice.
+ */
+const derivedValueExpressionsOf = (
+  identifier: TSESTree.Node,
+  resolvers: readonly ((node: TSESTree.Node) => TSESTree.Node | null)[],
+  frozenValue?: TSESTree.Node,
+): FrozenValue[] => {
+  const pending = frozenAccessPathsRootedAt(identifier, frozenValue);
+  const visited = new Set<TSESTree.Node>(pending.map(({ node }) => node));
+
+  for (let index = 0; index < pending.length; index += 1) {
+    for (const resolveDerivation of resolvers) {
+      const derived = resolveDerivation(pending[index].node);
+      if (!derived || visited.has(derived)) {
+        continue;
+      }
+      visited.add(derived);
+      // A copy or an element call hands back a value with no literal of its
+      // own, so nothing downstream of one is screened — the direction that
+      // keeps enrolling rather than withholding the assertion.
+      pending.push({ node: derived, literal: undefined });
+    }
+  }
+
+  return pending;
+};
+
+/**
  * A binding the iteration walk enrols, carried with the question the assertion
  * can break it on.
  *
@@ -1046,6 +1555,13 @@ const DERIVATION_RESOLVERS: readonly ((
 type EnrolledBinding = {
   variable: TSESLint.Scope.Variable;
   breaksOnAnyMutatingMethod: boolean;
+  /**
+   * The literal this binding's value is read out of, when it is statically
+   * known — the constant's own initializer for the constant itself. Carried so
+   * an access path through the binding can be screened against what `as const`
+   * actually freezes; absent means unresolved, and every step is then enrolled.
+   */
+  frozenValue?: TSESTree.Node;
 };
 
 const enrolFully = (
@@ -1137,9 +1653,9 @@ const bindingsOfIterationOver = (
   iteratesConstantValue: boolean,
 ): readonly EnrolledBinding[] => {
   // The member path is resolved first because the iterated expression is
-  // routinely a PROPERTY of the constant (`for (const x of CONFIG.list)`),
-  // which the alias walk refuses precisely because it arrives through a member
-  // access — the property is frozen with the object that holds it.
+  // routinely a PROPERTY of the constant (`for (const x of CONFIG.list)`): the
+  // property is frozen with the object that holds it, so iterating it hands the
+  // body the constant's own frozen contents.
   const path = accessPathOf(iterable);
   const value = outermostValueOf(path ?? iterable);
   const parent = value.parent;
@@ -1277,26 +1793,21 @@ const iterationBindingsOf = (
     ...bindingsOfIterationOver(value, declaredVariablesOf, true),
   ];
 
-  // Grown in place and walked by index, so a derivation OF a derivation is
-  // reached by the same loop without recursion of its own. Every resolver
-  // returns an ancestor of the node it is given, so the walk strictly ascends
-  // and terminates; `visited` keeps a node two resolvers agree on from being
-  // expanded twice.
-  const pending = accessPathsRootedAt(value);
-  const visited = new Set<TSESTree.Node>(pending);
-
-  for (let index = 0; index < pending.length; index += 1) {
-    for (const resolveDerivation of DERIVATION_RESOLVERS) {
-      const derived = resolveDerivation(pending[index]);
-      if (!derived || visited.has(derived)) {
-        continue;
-      }
-      visited.add(derived);
-      pending.push(derived);
-      bindings.push(
-        ...bindingsOfIterationOver(derived, declaredVariablesOf, false),
-      );
+  // The constant's own value and access path are iterated by the call above,
+  // which resolves the path itself; every DERIVED value is iterated on the
+  // narrower terms — it hands a callback a fresh outer value rather than the
+  // constant.
+  const ownValues = new Set<TSESTree.Node>(accessPathsRootedAt(value));
+  for (const { node: derived } of derivedValueExpressionsOf(
+    value,
+    DERIVATION_RESOLVERS,
+  )) {
+    if (ownValues.has(derived)) {
+      continue;
     }
+    bindings.push(
+      ...bindingsOfIterationOver(derived, declaredVariablesOf, false),
+    );
   }
 
   return bindings;
@@ -1358,10 +1869,24 @@ const blocksAsConstAssertion = (
     node: TSESTree.Node,
   ) => readonly TSESLint.Scope.Variable[],
 ): boolean => {
+  // The literal the constant is declared from, so an access path through it can
+  // be screened against what `as const` actually freezes. Only the constant's
+  // own declarator carries one: an ALIAS is initialized from a path into that
+  // same literal, and resolving through it would need the path carried too, so
+  // an alias is left unresolved and every step of it stays enrolled.
+  const declaredValue = variable.defs.find(
+    (def) => def.node.type === AST_NODE_TYPES.VariableDeclarator,
+  )?.node;
+  const frozenValue =
+    declaredValue?.type === AST_NODE_TYPES.VariableDeclarator &&
+    declaredValue.init
+      ? declaredValue.init
+      : undefined;
+
   // Grown in place and walked by index: an alias found mid-walk is appended and
   // reached by the same loop, so the traversal needs no recursion of its own.
   const pending: EnrolledBinding[] = [
-    { variable, breaksOnAnyMutatingMethod: true },
+    { variable, breaksOnAnyMutatingMethod: true, frozenValue },
   ];
   const visited = new Set<TSESLint.Scope.Variable>([variable]);
 
@@ -1395,7 +1920,11 @@ const blocksAsConstAssertion = (
   };
 
   for (let index = 0; index < pending.length; index += 1) {
-    const { variable: enrolled, breaksOnAnyMutatingMethod } = pending[index];
+    const {
+      variable: enrolled,
+      breaksOnAnyMutatingMethod,
+      frozenValue: enrolledValue,
+    } = pending[index];
     for (const reference of enrolled.references) {
       // Reassigning an alias is as disqualifying as writing through one. A
       // binding that takes its type from the constant narrows to the frozen
@@ -1432,17 +1961,42 @@ const blocksAsConstAssertion = (
         return true;
       }
 
-      // A copy carries the constant's frozen type into a second binding, so it
-      // is enrolled on the same terms as an alias — but it is reached through a
-      // member access (`ITEMS.concat()`), which the alias walk deliberately
-      // refuses, so it is resolved before that refusal applies.
-      const copy = copyExpressionOf(outermostValueOf(reference.identifier));
-
-      const declarator = copy
-        ? aliasDeclaratorOf(copy)
-        : path === null
-        ? aliasDeclaratorOf(reference.identifier)
-        : null;
+      // A binding is initialized from any expression that denotes the
+      // constant's frozen contents, not from the reference alone. A PROPERTY or
+      // ELEMENT of the constant carries the assertion exactly as the constant
+      // does, so `const list = CONFIG.list; list.push(3);` is the same TS2339
+      // the rule already declines for when the identical call is written
+      // directly — only the extracted spelling escaped it, while the
+      // DESTRUCTURED spelling of the same extraction was enrolled all along
+      // (Issue #2341). A copy taken of the constant or of any step of that path
+      // (`ITEMS.concat()`, `[...CONFIG.a.b]`) carries the frozen TYPE into a
+      // fresh value on the same terms.
+      const aliases = derivedValueExpressionsOf(
+        reference.identifier,
+        ALIAS_DERIVATION_RESOLVERS,
+        enrolledValue,
+      ).flatMap(({ node, literal }) => {
+        const declarator = aliasDeclaratorOf(node);
+        if (!declarator) {
+          return [];
+        }
+        const variables = declaredVariablesOf(declarator);
+        // The pattern screen applies only where the declarator destructures
+        // THIS value directly. Reached through a storage container
+        // (`const HOLDER = { ITEMS }`), the pattern names the container's own
+        // properties, which this literal does not answer for.
+        if (
+          literal === undefined ||
+          declarator.init !== outermostValueOf(node)
+        ) {
+          return variables;
+        }
+        const unfrozen = new Set<string>();
+        collectUnfrozenPatternNames(declarator.id, literal, unfrozen);
+        return unfrozen.size === 0
+          ? variables
+          : variables.filter((variable) => !unfrozen.has(variable.name));
+      });
 
       // A binding introduced by ITERATING the constant is enrolled beside the
       // aliases: it names the constant's CONTENTS, which the assertion freezes
@@ -1450,7 +2004,7 @@ const blocksAsConstAssertion = (
       // enrolled on the constant's own terms, because it denotes the constant's
       // value and so carries its readonly-ness whole.
       const derived: EnrolledBinding[] = [
-        ...enrolFully(declarator ? declaredVariablesOf(declarator) : []),
+        ...enrolFully(aliases),
         ...iterationBindingsOf(reference.identifier, declaredVariablesOf),
       ];
 

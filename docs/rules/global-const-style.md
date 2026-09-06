@@ -198,6 +198,95 @@ keeps the one array reachable, so `HOLDER.items.push(3)` writes `ITEMS` and the
 assertion is withheld. Containers nest, and the shorthand spelling
 (`{ ITEMS }`) counts the same.
 
+A binding **extracted by a member access** is an alias on the same terms,
+because the assertion is deep: a property or element of the constant carries it
+exactly as the constant does.
+
+```ts
+// Not frozen: `list` is `readonly [1, 2]` once CONFIG is frozen, so
+// `list.push(3)` would be TS2339 — the same error the rule already withholds
+// for when `CONFIG.list.push(3)` is written directly.
+const CONFIG = { list: [1, 2] };
+export const run = () => {
+  const list = CONFIG.list;
+  list.push(3);
+};
+```
+
+The path may be any depth and any spelling — dotted, computed (`CONFIG['list']`),
+optional (`CONFIG?.list`) or non-null-asserted (`CONFIG.list!`) — and the binding
+it feeds may be declared with any keyword, in any scope, alongside sibling
+declarators, or destructured out of the path. Reassigning such a binding counts
+too, because a frozen member read is a **literal** type: a tuple's `length` is
+`3` rather than `number`, so `let size = NUMS.length;` followed by `size = 5;`
+is TS2322. A copy taken of the path (`CONFIG.list.slice()`, `[...CONFIG.list]`)
+carries the frozen type into a fresh array exactly as a copy of the constant
+does.
+
+The enrolment reaches only as far as the assertion does. `as const` retypes the
+literal it is written on, so an explicit `as T` cast inside that literal is a
+value it refers to rather than one it freezes — the property holding the cast
+becomes `readonly`, while the value itself keeps the type the cast gave it:
+
+```ts
+// Frozen: `as const` marks the `items` PROPERTY readonly but leaves the array
+// it holds a mutable `string[]`, so the push compiles after the assertion
+// exactly as it did before.
+const CONFIG = { items: [] as string[] };
+export const run = () => {
+  const items = CONFIG.items;
+  items.push('a');
+};
+```
+
+The cast is the only value screened out this way, because it is the one spelling
+that proves the assertion cannot deepen. A step the rule cannot resolve inside
+the literal — one reached through a spread, or a computed key it cannot read —
+is enrolled as before, so an unrecognized shape withholds the assertion rather
+than breaking a build.
+
+A **destructuring pattern** is read against that same literal, because it names a
+property without writing a member access. The two spellings of one extraction
+must agree: `prefer-destructuring-no-class` rewrites `const items = CONFIG.items`
+into `const { items } = CONFIG` under `--fix`, so a screen that saw only the
+member access would let a sibling fixer flip this rule's verdict on code whose
+meaning never changed.
+
+```ts
+// Frozen, in both spellings: the cast stops `as const` reaching the array, so
+// the push compiles after the assertion exactly as it did before.
+const CONFIG = { items: [] as string[] };
+export const run = () => {
+  const { items } = CONFIG;
+  items.push('a');
+};
+```
+
+Renamed keys, computed string keys, nested patterns and array patterns all
+resolve to the property or index they name, so none of them can reach a
+different verdict than the equivalent member path. A **rest** element is the one
+exception: it gathers whatever the pattern did not name, which no single value
+in the literal answers for, so it stays enrolled and keeps withholding the
+assertion.
+
+The array methods that hand back an **element** rather than a container are
+followed the same way — `at`, `find` and `findLast`, and `reduce` / `reduceRight`
+in their **seedless** spelling, whose result is typed `T` because the first
+element is the seed:
+
+```ts
+// Not frozen: `first` is a frozen element, so `first.n = 2` would be TS2540.
+const ITEMS = [{ n: 1 }];
+export const run = () => {
+  const first = ITEMS.at(0)!;
+  first.n = 2;
+};
+```
+
+Given a seed the fold's result is typed from **that** value instead, which the
+constant need not have given, so `NUMS.reduce((sum, n) => sum + n, 0)` carries
+nothing frozen and stays flagged.
+
 A write through a binding the constant is **iterated** into counts on the same
 reasoning. A `for…of` head and an iteration callback's parameter are second
 names for the constant's *contents*, and the assertion is deep, so the element
@@ -267,11 +356,14 @@ way:
 - the iterator its own `values()` / `entries()` returns, so
   `for (const item of ITEMS.values())` and
   `for (const [index, item] of ITEMS.entries())` are withheld on a write through
-  the element. `keys()` is excluded for the reason `Object.keys` is;
+  the element. `keys()` is excluded for an **array** receiver, for the reason
+  `Object.keys` is — it yields indices, numbers whatever the array holds. On a
+  `Set` or `Map` it is counted, because `Set.prototype.keys` is an alias for
+  `values` and a `Map`'s hands back the key of each entry;
 - the mapper of the two-argument `Array.from(X, fn)`, whose first parameter is
-  the element `X` holds. The call's **result** is not a copy of the constant —
-  the mapper retypes it — but the element the mapper is handed still carries the
-  frozen type;
+  the element `X` holds. The element the mapper is handed always carries the
+  frozen type; whether the call's **result** does depends on what that mapper
+  returns — see [Copies carry the frozen type](#copies-carry-the-frozen-type);
 - a collection built out of it, `new Set(ITEMS)` and the `Map` spelling, whether
   it is iterated by a `for…of` head or by `forEach`;
 - any **chain** of the above. `ITEMS.filter(Boolean).slice().forEach(…)` is
@@ -322,10 +414,11 @@ export const doubled = () => ITEMS.map((x) => x * 2);
 The `UPPER_SNAKE_CASE` half of the rule is a separate concern and still applies:
 a mutated constant is renamed, just not frozen. To get the assertion as well,
 build the value without mutating it — `map` derives an array whose element type
-is whatever the callback returns, so the constant's frozen type does not reach
-it and the result can be mutated freely. A spread, `filter`, `slice`, `concat`
-or `Object.assign` copy is different: see [Copies carry the frozen
-type](#copies-carry-the-frozen-type).
+is whatever the callback returns, so a mapper that **computes** (`(x) => x * 2`)
+carries none of the frozen type and its result can be mutated freely. A mapper
+that hands back the element, or a property of it, does carry it, as do a spread,
+`filter`, `slice`, `concat` or `Object.assign` copy: see [Copies carry the
+frozen type](#copies-carry-the-frozen-type).
 
 ### Constants a declaration's type is inferred from
 
@@ -427,12 +520,31 @@ const [head, ...rest] = ITEMS;
 rest.push(3);
 ```
 
-Two shapes are excluded because nothing of the constant's type survives into
-their result: `map`, which is typed from its callback, and `Array.from(X, fn)`,
-which takes the same kind of mapper. Admitting either would withhold the
-assertion from every array anything is computed from. Both are still an
-**iteration** of the constant: the element each hands its callback carries the
-frozen type even though the result does not — see [Constants that are mutated
+`map` and the two-argument `Array.from(X, fn)` are typed from their **callback**,
+so they are decided per call rather than per method. The frozen type reaches
+their result whenever the mapper returns the element or an access path rooted at
+it, and under `as const` an element's properties are literal types, so the result
+is a literal array a later write is rejected on:
+
+```ts
+// Not frozen: `ns` is `1[]` rather than `number[]`, so `ns.push(3)` would be
+// TS2345 once ITEMS is frozen.
+const ITEMS = [{ n: 1 }];
+export const run = () => {
+  const ns = ITEMS.map((item) => item.n);
+  ns.push(3);
+};
+```
+
+A mapper that **computes** widens, carrying nothing of the constant into its
+result, so `ITEMS.map((x) => x * 2)` and `Array.from(ITEMS, () => Math.random())`
+are still frozen — which is what keeps the assertion from being withheld from
+every array anything is derived from. The discriminator is what the callback
+hands back, not which body spells it, so a block body and a function expression
+read the same; descent stops at a nested function, whose `return` answers for
+that function rather than for the mapper. Either way the call is still an
+**iteration** of the constant: the element it hands its callback carries the
+frozen type even when the result does not — see [Constants that are mutated
 later](#constants-that-are-mutated-later).
 
 A copy that is **iterated in place** rather than bound to a name carries the
