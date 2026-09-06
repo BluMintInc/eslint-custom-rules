@@ -1602,9 +1602,13 @@ describe('the cross degenerate-identifier sweep is load-bearing', () => {
      * The class-method fixtures of #2165 and the wrapper-`memo` getters of
      * #2305 carry near-identical one-member class bodies, so renaming their
      * sole binding to a degenerate name collides across them — corpus growth,
-     * not a collapse.
+     * not a collapse. #2343's `enforce-memoize-async` fixtures are the same
+     * shape and move it the same way: 1652 to 1684 with those fixtures alone
+     * under the rule as it stood, so the rule change contributes NOTHING here
+     * (measured). Duplicates are counted on the perturbed TEXT, before any
+     * fixer runs, which is why a gate that only declines more cannot reach it.
      */
-    expect(fixSweep.cross.discardedDuplicate).toBeLessThan(1680); // measured 1652
+    expect(fixSweep.cross.discardedDuplicate).toBeLessThan(1720); // measured 1684
     /**
      * A fixture TypeScript cannot parse at all. Cut close to the measured
      * value so a harness regression that starts dropping fixtures fails here

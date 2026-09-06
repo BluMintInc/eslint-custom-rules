@@ -27,6 +27,12 @@ The rule skips:
 - Methods that **take part in a database transaction** — one that opens a
   `runTransaction(…)` call, or one handed the attempt's `Transaction` handle
   (see [Methods that take part in a transaction](#methods-that-take-part-in-a-transaction)).
+- Methods that **release what they acquired** — a `try` in the method's own body
+  whose `finally` calls something (see
+  [Methods that release what they acquired](#methods-that-release-what-they-acquired)).
+- Methods that **write an instance field and hand back a result reading none of
+  the fields they wrote** (see
+  [Methods that write a field and report on the effect](#methods-that-write-a-field-and-report-on-the-effect)).
 - Methods declared in a class **expression** (`const Loader = class { … }`),
   where no decorator is legal at all (see
   [Methods on a class expression](#methods-on-a-class-expression)).
@@ -426,6 +432,149 @@ payment or a ledger entry, and those key a cache perfectly well. So
 `apply(transaction)` both keep reporting, as does a method that merely produces a
 handle (`open(): Promise<Transaction>`) or holds a collection of them
 (`summarize(byId: Map<string, Transaction>)`).
+
+### Methods that release what they acquired
+
+A `finally` that **calls** something exists to undo an effect the `try`
+performed: the method takes a resource, works while it holds it, and gives it
+back on the way out. What such a method hands back describes that one attempt —
+a grant held while a queue ticket was outstanding, a read taken while a lock was
+held — rather than a fact that stays true once the release has run.
+
+`@Memoize()` runs the acquire/release pair once per instance. Caller two
+receives caller one's promise: a value computed while a ticket was held, long
+after `finally` gave that ticket back, and the queue never learns caller two
+exists. It is the hazard the
+[resource-handle carve-out](#methods-that-hand-back-a-resource-handle) names,
+seen from the side where the method releases the handle **itself**, so nothing
+of it reaches the return type for an annotation-keyed gate to read.
+
+```ts
+class Waiter {
+  // ✅ not reported: the ticket the `finally` abandons is gone by the time a
+  // cached caller reads the grant
+  public async waitForGrant(timeoutMs: number) {
+    const ticket = this.queue.enqueue();
+    try {
+      return await this.poll(ticket.id, timeoutMs);
+    } finally {
+      this.queue.abandon(ticket.id);
+    }
+  }
+
+  // ❌ still reported: an empty finalizer releases nothing
+  public async load(id: string) {
+    try {
+      return await fetch(id);
+    } finally {
+    }
+  }
+
+  // ❌ still reported: writing a local records that the attempt finished
+  // instead of undoing it
+  public async read(id: string) {
+    let isDone = false;
+    try {
+      return await fetch(id);
+    } finally {
+      isDone = true;
+    }
+  }
+}
+```
+
+Only the method's **own** steps are read. A `try`/`finally` written inside a
+callback is that callback's acquire/release pair, running on whatever schedule
+the callback runs on — a schedule the decorator does not move:
+
+```ts
+class Repo {
+  // ❌ still reported: the `finally` belongs to the callback, not to `load`
+  public async load(id: string) {
+    return this.rows.map((row) => {
+      try {
+        return row.value;
+      } finally {
+        this.log(row);
+      }
+    });
+  }
+}
+```
+
+A `catch` with no `finalizer` reports a failure rather than undoing what the
+`try` performed, and a finalizer that only **defines** a closure
+(`finally { const undo = () => release(ticket); }`) performs nothing, so both
+keep reporting. A release reached through a free function (`abandon(id)`), an
+`await`, an optional call (`this.queue?.abandon(id)`) or an immediately invoked
+function is read like any other.
+
+The carve-out is keyed to the pair rather than to what the method returns, so a
+method that would cache cleanly still loses its report while it owns a release.
+That is the stated trade: a withheld report costs a missed optimisation, while
+`--fix` on this shape silently converts a repeatable effect into a
+once-per-instance one.
+
+### Methods that write a field and report on the effect
+
+A method that writes an instance field and hands back a result reading **none**
+of the fields it wrote reports on an effect: the result says what *this* call
+did — `true` for "I reclaimed the slot" — and the next call has to be free to do
+it again. Memoized, the write happens once per instance while every later caller
+reads the first call's verdict about work that call alone performed. A caller
+that builds a fresh argument object per tick instead misses on every lookup, so
+the decorator becomes one dead entry per call on a loop running for minutes.
+
+The discriminator is whether the result **reads a field the method wrote**.
+Writing a field and handing that field back is a hand-rolled cache — the very
+shape `@Memoize()` exists to replace — so it keeps both report and fix. Carving
+out every write to `this` would silence that shape along with these.
+
+| shape | verdict |
+|---|---|
+| writes `this.cached`, returns `this.cached`, `this.cached.value`, `this.cache[id]`, `this.cached ?? EMPTY` or `await this.pending!` | ❌ reported — a hand-rolled cache |
+| writes `this.idleSince`, returns `true`, `null` or an unrelated value | ✅ not reported — a reported effect |
+| writes a field, returns nothing or only a bare `return;` | ❌ reported — inferred void stays outside this rule |
+| writes only inside a nested callback | ❌ reported — the callback owns that write |
+
+```ts
+class Reclaimer {
+  // ✅ not reported: `true` means "I reclaimed the slot", which a second
+  // caller must not be handed for work the first caller did
+  private async reclaimNeverReady(holder: Lease): Promise<boolean> {
+    if (this.probe(holder.ports).isListening) {
+      return false;
+    }
+    await this.forceRelease(holder);
+    this.idleSince = null;
+    return true;
+  }
+}
+
+class Repo {
+  // ❌ still reported: it writes a field and hands that field back, which is
+  // the hand-rolled cache `@Memoize()` replaces
+  public async load(id: string) {
+    if (!this.cached) {
+      this.cached = await fetch(id);
+    }
+    return this.cached;
+  }
+}
+```
+
+A single returned read is enough to keep the report: a method with one cache-hit
+path hands back state on that path however many effects its other paths report.
+Reads are matched at the **root** of the access path, so an element write
+(`this.cache[id] = …`) meets the read that answers it (`return this.cache[id]`)
+on the same name, while a computed root (`this[key] = 1`) names no field
+statically and keeps the report.
+
+A method with no value-returning `return` is left alone. Its result is void by
+inference rather than by declaration, and
+[the void carve-out](#methods-declared-to-produce-no-value) is keyed to the
+declaration deliberately: an unannotated body carries no declaration of intent
+to honour.
 
 ### Interaction with inline disable comments
 
