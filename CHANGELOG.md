@@ -1,3 +1,10 @@
+## [1.21.14](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.21.13...v1.21.14) (2026-09-06)
+
+
+### Bug Fixes
+
+* **global-const-style:** enrol the element bindings of derived iterables (closes [#2340](https://github.com/BluMintInc/eslint-custom-rules/issues/2340)) ([41632b3](https://github.com/BluMintInc/eslint-custom-rules/commit/41632b3a9efc21743e7d99a992fcf1410ef6808e)), closes [#2338](https://github.com/BluMintInc/eslint-custom-rules/issues/2338)
+
 ## [1.21.13](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.21.12...v1.21.13) (2026-09-05)
 
 

@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.21.14",
+    "date": "2026-09-06T01:53:58.858Z",
+    "rules": [
+      {
+        "name": "global-const-style",
+        "changeType": "fix",
+        "issues": [
+          2340
+        ],
+        "summary": "enrol the element bindings of derived iterables (closes #2340)"
+      }
+    ]
+  },
+  {
     "version": "1.21.13",
     "date": "2026-09-05T22:39:56.997Z",
     "rules": [
