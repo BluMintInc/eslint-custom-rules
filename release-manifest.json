@@ -1,5 +1,36 @@
 [
   {
+    "version": "1.21.15",
+    "date": "2026-09-06T18:24:58.623Z",
+    "rules": [
+      {
+        "name": "enforce-empty-object-check",
+        "changeType": "fix",
+        "issues": [
+          2344
+        ],
+        "summary": "keep a declared type's verdict when the checker cannot resolve it (closes #2344)"
+      },
+      {
+        "name": "enforce-memoize-async",
+        "changeType": "fix",
+        "issues": [
+          2343
+        ],
+        "summary": "withhold from methods that release what they acquired and from methods reporting an effect (closes #2343)"
+      },
+      {
+        "name": "global-const-style",
+        "changeType": "fix",
+        "issues": [
+          2341,
+          2342
+        ],
+        "summary": "enrol bindings extracted by member access and by a type-preserving map (closes #2341, closes #2342)"
+      }
+    ]
+  },
+  {
     "version": "1.21.14",
     "date": "2026-09-06T01:53:58.858Z",
     "rules": [

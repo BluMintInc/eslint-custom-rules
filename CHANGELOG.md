@@ -1,3 +1,12 @@
+## [1.21.15](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.21.14...v1.21.15) (2026-09-06)
+
+
+### Bug Fixes
+
+* **enforce-empty-object-check:** keep a declared type's verdict when the checker cannot resolve it (closes [#2344](https://github.com/BluMintInc/eslint-custom-rules/issues/2344)) ([b46782c](https://github.com/BluMintInc/eslint-custom-rules/commit/b46782c4e7c0232c893e4e951b6ab1f9c4ac6eb8))
+* **enforce-memoize-async:** withhold from methods that release what they acquired and from methods reporting an effect (closes [#2343](https://github.com/BluMintInc/eslint-custom-rules/issues/2343)) ([29d823d](https://github.com/BluMintInc/eslint-custom-rules/commit/29d823daabeb822b5d210a43b00ab07743414d55))
+* **global-const-style:** enrol bindings extracted by member access and by a type-preserving map (closes [#2341](https://github.com/BluMintInc/eslint-custom-rules/issues/2341), closes [#2342](https://github.com/BluMintInc/eslint-custom-rules/issues/2342)) ([5989413](https://github.com/BluMintInc/eslint-custom-rules/commit/59894130a50f4621035adc344cadf309bf9c161c))
+
 ## [1.21.14](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.21.13...v1.21.14) (2026-09-06)
 
 
