@@ -515,6 +515,180 @@ function transactionParticipantsOf(body: TSESTree.ClassBody): Set<string> {
   return participants;
 }
 
+/**
+ * Node types that own the statements written inside them. A walk bounded by
+ * them answers about what the method DOES rather than about what it merely
+ * defines: a `try`/`finally` written inside a callback is that callback's
+ * acquire/release pair, and a field written inside one is written on whatever
+ * schedule the callback runs on. The decorator caches the method's own promise,
+ * so only the method's own steps bear on whether caching is safe.
+ */
+const OWN_STEP_BOUNDARIES = new Set<AST_NODE_TYPES>([
+  AST_NODE_TYPES.ArrowFunctionExpression,
+  AST_NODE_TYPES.FunctionDeclaration,
+  AST_NODE_TYPES.FunctionExpression,
+]);
+
+/**
+ * Every node the enclosing function executes as its own step, `root` included.
+ * Descent stops at a nested function, which `subtreeOf` enters.
+ */
+function* ownSubtreeOf(root: TSESTree.Node): Generator<TSESTree.Node> {
+  yield root;
+  for (const [key, value] of Object.entries(root)) {
+    if (NON_TRAVERSABLE_KEYS.has(key)) {
+      continue;
+    }
+    const children = Array.isArray(value) ? value : [value];
+    for (const child of children) {
+      if (ASTHelpers.isNode(child) && !OWN_STEP_BOUNDARIES.has(child.type)) {
+        yield* ownSubtreeOf(child);
+      }
+    }
+  }
+}
+
+/**
+ * Whether the block performs a call as a step of the function that owns it.
+ * A call written inside a function the block only DEFINES — `finally { const
+ * undo = () => release(t); }` — performs nothing, so the bounded walk is what
+ * separates a release from a closure that could perform one elsewhere.
+ */
+function performsCall(block: TSESTree.BlockStatement): boolean {
+  for (const node of ownSubtreeOf(block)) {
+    if (node.type === AST_NODE_TYPES.CallExpression) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Whether the method owns an acquire/release pair: a `try` among its own steps
+ * whose `finalizer` calls something.
+ *
+ * A `finally` that calls something exists to undo an effect the `try`
+ * performed. What such a method hands back describes one attempt — a grant held
+ * while a queue ticket was outstanding, a read taken while a lock was held —
+ * rather than a fact that stays true once the release has run.
+ *
+ * An empty `finalizer` releases nothing, and one that only writes a local
+ * (`finally { done = true; }`) records that the attempt finished instead of
+ * undoing it, so neither costs the method its report.
+ */
+function releasesInOwnFinalizer(fn: TSESTree.FunctionExpression): boolean {
+  for (const node of ownSubtreeOf(fn.body)) {
+    if (
+      node.type === AST_NODE_TYPES.TryStatement &&
+      node.finalizer &&
+      performsCall(node.finalizer)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * The expression under the wrappers that stand between a value and the access
+ * path it evaluates. `await this.pending`, `this.pending!`, `this.pending as
+ * Ready` and `this?.pending` all read the same field, and a discriminator blind
+ * to one of those spellings would answer "hands back something else" about a
+ * method that hands back exactly what it wrote.
+ */
+function withoutValueWrappers(node: TSESTree.Node): TSESTree.Node {
+  switch (node.type) {
+    case AST_NODE_TYPES.AwaitExpression:
+      return withoutValueWrappers(node.argument);
+    case AST_NODE_TYPES.ChainExpression:
+    case AST_NODE_TYPES.TSAsExpression:
+    case AST_NODE_TYPES.TSNonNullExpression:
+    case AST_NODE_TYPES.TSSatisfiesExpression:
+    case AST_NODE_TYPES.TSTypeAssertion:
+      return withoutValueWrappers(node.expression);
+    default:
+      return node;
+  }
+}
+
+/**
+ * The instance field an expression is rooted at: `cached` for `this.cached`,
+ * for `this.cached.value` and for `this.cache[id]` alike.
+ *
+ * Both sides of the discriminator below read the ROOT, so an element write
+ * (`this.cache[id] = …`) and the read that answers it (`return this.cache[id]`)
+ * meet on the same name. A computed root (`this[key]`) names no field
+ * statically and answers nothing, which leaves the method reporting.
+ */
+function rootThisField(node: TSESTree.Node): string | undefined {
+  const expression = withoutValueWrappers(node);
+  if (expression.type !== AST_NODE_TYPES.MemberExpression) {
+    return undefined;
+  }
+  const object = withoutValueWrappers(expression.object);
+  if (object.type !== AST_NODE_TYPES.ThisExpression) {
+    return rootThisField(object);
+  }
+  return !expression.computed &&
+    expression.property.type === AST_NODE_TYPES.Identifier
+    ? expression.property.name
+    : undefined;
+}
+
+/**
+ * Whether the expression reads a field the method wrote. Depth and nesting are
+ * immaterial — `this.cached ?? EMPTY` and `() => this.cached` hand the written
+ * state back as plainly as a bare `this.cached` does — because the question is
+ * whether the result carries that state at all, not how it is spelled.
+ */
+function readsWrittenField(
+  node: TSESTree.Node,
+  fields: ReadonlySet<string>,
+): boolean {
+  for (const descendant of subtreeOf(node)) {
+    const field = rootThisField(descendant);
+    if (field !== undefined && fields.has(field)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Whether the method writes an instance field and hands back a result that
+ * reads none of the fields it wrote.
+ *
+ * Such a method reports on an effect: its result says what THIS call did, so
+ * the next call has to be free to do it again. Writing a field and returning it
+ * is the opposite shape — a hand-rolled cache, which is the very thing
+ * `@Memoize()` replaces — and the field read is what separates the two. A
+ * single returned read is enough, because a method with one cache-hit path
+ * hands back state on that path however many effects its other paths report.
+ *
+ * A method with no value-returning `return` is left alone. Its result is void
+ * by inference rather than by declaration, and #1548 fenced inferred void out
+ * of this rule deliberately: an unannotated body carries no declaration of
+ * intent to honour.
+ */
+function writesFieldItDoesNotReturn(fn: TSESTree.FunctionExpression): boolean {
+  const written = new Set<string>();
+  const results: TSESTree.Node[] = [];
+  for (const node of ownSubtreeOf(fn.body)) {
+    if (node.type === AST_NODE_TYPES.AssignmentExpression) {
+      const field = rootThisField(node.left);
+      if (field !== undefined) {
+        written.add(field);
+      }
+    } else if (node.type === AST_NODE_TYPES.ReturnStatement && node.argument) {
+      results.push(node.argument);
+    }
+  }
+  if (written.size === 0 || results.length === 0) {
+    return false;
+  }
+  return !results.some((result) => readsWrittenField(result, written));
+}
+
 /** The statically known name of a method, for matching call sites against it. */
 function methodName(node: TSESTree.MethodDefinition): string | undefined {
   if (node.computed) {
@@ -787,6 +961,39 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
         // value as success. The fixer would apply that unattended under
         // `--fix`, so both report and fix are withheld.
         if (participatesInTransaction(node, node.value)) {
+          return;
+        }
+
+        // A `finally` that calls something exists to undo an effect the `try`
+        // performed: the method takes a resource, works while it holds it, and
+        // gives it back on the way out. What it hands back describes that one
+        // attempt, not a fact that stays true afterwards. Cached, the
+        // acquire/release pair runs once per instance and every later caller
+        // receives a value computed while a resource the `finally` has since
+        // released was still held — the hazard the resource-handle exemption
+        // above names, seen from the side where the method releases the handle
+        // itself, so nothing of it reaches the return type for a signature-keyed
+        // gate to read. The failure is silent and arrives only under
+        // concurrency, so the fixer would apply it unattended under `--fix`,
+        // and both report and fix are withheld.
+        if (releasesInOwnFinalizer(node.value)) {
+          return;
+        }
+
+        // A method that writes an instance field and hands back a result
+        // reading none of the fields it wrote reports on an effect: the result
+        // says what THIS call did — "I reclaimed the slot" — and the next call
+        // has to be free to do it again. Cached, the write happens once per
+        // instance while every later caller reads the first call's verdict
+        // about work that call alone performed, and a caller passing a freshly
+        // built argument object instead accumulates one dead entry per call.
+        //
+        // The read is the discriminator, and it is deliberately the whole test:
+        // a method that writes a field and returns it is a hand-rolled cache,
+        // which is the shape `@Memoize()` exists to replace, so it keeps both
+        // report and fix. Carving out every write to `this` would silence that
+        // shape along with these.
+        if (writesFieldItDoesNotReturn(node.value)) {
           return;
         }
 

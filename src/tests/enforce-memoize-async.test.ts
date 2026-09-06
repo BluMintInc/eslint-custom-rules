@@ -6997,3 +6997,833 @@ export class Loader {
     );
   });
 });
+
+// Issue #2343: two body-shaped hazards no signature can declare. A method that
+// takes a resource, works while it holds it and gives it back in its own
+// `finally` returns one attempt's value, and a method that writes an instance
+// field and hands back a result reading none of it returns a verdict about work
+// this call performed. Memoized, the acquire/release pair and the write run
+// once per instance while every later caller reads the first call's answer.
+//
+// The discriminator between the second shape and the rule's primary target is
+// whether the result reads a field the method wrote: a hand-rolled cache writes
+// a field and hands that field back, so it keeps both report and fix.
+ruleTesterTs.run(
+  'enforce-memoize-async: acquire/release pairs and reported effects (issue #2343)',
+  enforceMemoizeAsync,
+  {
+    valid: [
+      {
+        // Verbatim from the report. The grant describes one attempt: the ticket
+        // the `finally` abandons is gone by the time a cached caller reads it.
+        name: 'the issue reproduction: a method that releases in its own finally is not a caching candidate',
+        code: `
+        class Waiter {
+          public async waitForGrant(timeoutMs: number) {
+            const ticket = this.queue.enqueue();
+            try {
+              return await this.poll(ticket.id, timeoutMs);
+            } finally {
+              this.queue.abandon(ticket.id);
+            }
+          }
+        }
+      `,
+      },
+      {
+        // Verbatim from the report. `true` means "I reclaimed the slot", which a
+        // second caller must not be handed for work the first caller did.
+        name: 'the issue reproduction: a side-effecting method reporting whether it acted is not a caching candidate',
+        code: `
+        class Reclaimer {
+          private async reclaimNeverReady(holder: Lease) {
+            if (this.probe(holder.ports).isListening) {
+              return false;
+            }
+            await this.forceRelease(holder);
+            this.idleSince = null;
+            return true;
+          }
+        }
+      `,
+      },
+      {
+        // The pair is recognised by the `finally`, not by the receiver.
+        name: 'a release through free functions is read like one through methods',
+        code: `
+class Waiter {
+  public async waitForGrant(timeoutMs: number) {
+    const ticket = enqueue();
+    try {
+      return await poll(ticket.id, timeoutMs);
+    } finally {
+      abandon(ticket.id);
+    }
+  }
+}
+`,
+      },
+      {
+        // The `catch` arm changes what the attempt reports, not that it releases.
+        name: 'a try/catch/finally releases exactly as a try/finally does',
+        code: `
+class Waiter {
+  public async attemptOnce(timeoutMs: number) {
+    const ticket = this.queue.enqueue();
+    try {
+      return await this.poll(ticket.id, timeoutMs);
+    } catch (error) {
+      return null;
+    } finally {
+      this.queue.abandon(ticket.id);
+    }
+  }
+}
+`,
+      },
+      {
+        name: 'an awaited release in the finalizer is a release',
+        code: `
+class Waiter {
+  public async waitForGrant(timeoutMs: number) {
+    const ticket = await this.queue.enqueue();
+    try {
+      return await this.poll(ticket.id, timeoutMs);
+    } finally {
+      await this.queue.abandon(ticket.id);
+    }
+  }
+}
+`,
+      },
+      {
+        // A nullish receiver releases the same resource the plain spelling does.
+        name: 'an optional call in the finalizer is a release',
+        code: `
+class Waiter {
+  public async waitForGrant(timeoutMs: number) {
+    const ticket = this.queue.enqueue();
+    try {
+      return await this.poll(ticket.id, timeoutMs);
+    } finally {
+      this.queue?.abandon?.(ticket.id);
+    }
+  }
+}
+`,
+      },
+      {
+        // A loop is not a function, so its `finally` runs on the method calls.
+        name: 'a try/finally inside a loop of the method body is the method own step',
+        code: `
+class Waiter {
+  public async pollUntilGranted(timeoutMs: number) {
+    for (const attempt of this.attempts) {
+      const ticket = this.queue.enqueue();
+      try {
+        return await this.poll(ticket.id, timeoutMs);
+      } finally {
+        this.queue.abandon(ticket.id);
+      }
+    }
+    return null;
+  }
+}
+`,
+      },
+      {
+        name: 'a try/finally guarded by an if is the method own step',
+        code: `
+class Waiter {
+  public async waitForGrant(timeoutMs: number) {
+    if (this.queued) {
+      const ticket = this.queue.enqueue();
+      try {
+        return await this.poll(ticket.id, timeoutMs);
+      } finally {
+        this.queue.abandon(ticket.id);
+      }
+    }
+    return null;
+  }
+}
+`,
+      },
+      {
+        // Depth costs nothing: only a function boundary ends the method own steps.
+        name: 'a release nested inside an outer try is still the method own release',
+        code: `
+class Waiter {
+  public async waitForGrant(timeoutMs: number) {
+    try {
+      const ticket = this.queue.enqueue();
+      try {
+        return await this.poll(ticket.id, timeoutMs);
+      } finally {
+        this.queue.abandon(ticket.id);
+      }
+    } catch (error) {
+      return null;
+    }
+  }
+}
+`,
+      },
+      {
+        name: 'comments and stray whitespace around the release do not hide it',
+        code: `
+class Waiter {
+  public async waitForGrant(timeoutMs: number) {
+    const ticket = this.queue.enqueue();
+    try   {
+      return await this.poll(ticket.id, timeoutMs);
+    }
+
+    /* the release the cache would outlive */
+    finally
+    {
+
+      // give the place in line back
+
+      this.queue.abandon( ticket.id );
+
+    }
+  }
+}
+`,
+      },
+      {
+        // The invocation is the method own step; only the body it runs is not.
+        name: 'an immediately invoked function in the finalizer performs the release',
+        code: `
+class Waiter {
+  public async waitForGrant(timeoutMs: number) {
+    const ticket = this.queue.enqueue();
+    try {
+      return await this.poll(ticket.id, timeoutMs);
+    } finally {
+      void (async () => {
+        await this.queue.abandon(ticket.id);
+      })();
+    }
+  }
+}
+`,
+      },
+      {
+        name: 'a release on a local handle counts like one on an instance member',
+        code: `
+class Waiter {
+  public async waitForGrant(timeoutMs: number) {
+    const lease = this.pool.take();
+    try {
+      return await lease.read(timeoutMs);
+    } finally {
+      lease.release();
+    }
+  }
+}
+`,
+      },
+      {
+        // The stated cost of the carve-out: a method that would cache cleanly
+        // still loses its report while it owns a release, because the release is
+        // the repeatable effect the decorator would run once.
+        name: 'an acquire/release pair is answered ahead of the result it produces',
+        code: `
+class Repo {
+  public async load(id: string) {
+    const lease = this.pool.take();
+    try {
+      this.cached = await lease.fetch(id);
+      return this.cached;
+    } finally {
+      lease.release();
+    }
+  }
+}
+`,
+      },
+      {
+        // The verdict says what this call did, not what is true afterwards.
+        name: 'a method writing a field and reporting a boolean verdict is not a caching candidate',
+        code: `
+class Reclaimer {
+  public async reclaim(holder: Lease) {
+    await this.forceRelease(holder);
+    this.idleSince = null;
+    return true;
+  }
+}
+`,
+      },
+      {
+        name: 'a method writing a field and returning an unrelated local is not a caching candidate',
+        code: `
+class Reclaimer {
+  public async reclaim(holder: Lease) {
+    const released = await this.forceRelease(holder);
+    this.idleSince = null;
+    return released.count;
+  }
+}
+`,
+      },
+      {
+        name: 'a compound write to a field counts as a write',
+        code: `
+class Reclaimer {
+  public async reclaim(holder: Lease) {
+    await this.forceRelease(holder);
+    this.attempts += 1;
+    return true;
+  }
+}
+`,
+      },
+      {
+        // The write is rooted at `this.slots`, which nothing in the result reads.
+        name: 'an element write reports on an effect when the result reads none of it',
+        code: `
+class Reclaimer {
+  public async reclaim(id: string) {
+    this.slots[id] = await this.forceRelease(id);
+    return true;
+  }
+}
+`,
+      },
+      {
+        name: 'a field written inside a try is still a field the method writes',
+        code: `
+class Reclaimer {
+  public async reclaim(holder: Lease) {
+    try {
+      this.idleSince = null;
+    } catch (error) {
+      this.failures = error;
+    }
+    return true;
+  }
+}
+`,
+      },
+      {
+        // The write is the repeatable part, and the result carries none of it, so
+        // caching would run the write once and replay a verdict about it.
+        name: 'a method writing one field and returning another reports on an effect',
+        code: `
+class Reclaimer {
+  public async reclaim(holder: Lease) {
+    await this.forceRelease(holder);
+    this.attempts = 0;
+    return this.lastKnownState;
+  }
+}
+`,
+      },
+      {
+        name: 'a null result is a result, and it reads no field the method wrote',
+        code: `
+class Reclaimer {
+  public async reclaim(holder: Lease) {
+    await this.forceRelease(holder);
+    this.idleSince = null;
+    return null;
+  }
+}
+`,
+      },
+      {
+        name: 'a parameterless command reporting a verdict is not a caching candidate',
+        code: `
+class Reclaimer {
+  public async reclaimHead() {
+    await this.forceRelease(this.head);
+    this.head = undefined;
+    return true;
+  }
+}
+`,
+      },
+      {
+        name: 'a field written inside a loop of the method body is the method own write',
+        code: `
+class Reclaimer {
+  public async reclaimAll(holders: Lease[]) {
+    for (const holder of holders) {
+      await this.forceRelease(holder);
+      this.idleSince = null;
+    }
+    return holders.length;
+  }
+}
+`,
+      },
+    ],
+    invalid: [
+      {
+        // The primary target of the rule: it writes a field and hands that field
+        // back, so the write is the cache fill rather than a reported effect.
+        name: 'a hand-rolled cache is the shape the decorator replaces and still reports',
+        code: `
+class Repo {
+  public async load(id: string) {
+    if (!this.cached) {
+      this.cached = await fetch(id);
+    }
+    return this.cached;
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Repo {
+  @Memoize()
+  public async load(id: string) {
+    if (!this.cached) {
+      this.cached = await fetch(id);
+    }
+    return this.cached;
+  }
+}
+`,
+      },
+      {
+        name: 'a method writing a field and returning it unconditionally still reports',
+        code: `
+class Repo {
+  public async load(id: string) {
+    this.cached = await fetch(id);
+    return this.cached;
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Repo {
+  @Memoize()
+  public async load(id: string) {
+    this.cached = await fetch(id);
+    return this.cached;
+  }
+}
+`,
+      },
+      {
+        name: 'a result reading a path of the written field still reports',
+        code: `
+class Repo {
+  public async load(id: string) {
+    this.cached = await fetch(id);
+    return this.cached.value;
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Repo {
+  @Memoize()
+  public async load(id: string) {
+    this.cached = await fetch(id);
+    return this.cached.value;
+  }
+}
+`,
+      },
+      {
+        // `this.cache[id] = …` and `return this.cache[id]` share the root name.
+        name: 'an element cache meets its read on the root field and still reports',
+        code: `
+class Repo {
+  public async load(id: string) {
+    this.cache[id] = await fetch(id);
+    return this.cache[id];
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Repo {
+  @Memoize()
+  public async load(id: string) {
+    this.cache[id] = await fetch(id);
+    return this.cache[id];
+  }
+}
+`,
+      },
+      {
+        // A wrapper stands between the result and the path, not in place of it.
+        name: 'await, non-null and cast spellings of the written field still report',
+        code: `
+class Repo {
+  public async load(id: string) {
+    this.pending = fetch(id);
+    return (await this.pending!) as Ready;
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Repo {
+  @Memoize()
+  public async load(id: string) {
+    this.pending = fetch(id);
+    return (await this.pending!) as Ready;
+  }
+}
+`,
+      },
+      {
+        name: 'a fallback beside the written field still reports',
+        code: `
+class Repo {
+  public async load(id: string) {
+    this.cached = await fetch(id);
+    return this.cached ?? EMPTY;
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Repo {
+  @Memoize()
+  public async load(id: string) {
+    this.cached = await fetch(id);
+    return this.cached ?? EMPTY;
+  }
+}
+`,
+      },
+      {
+        name: 'a closure carrying the written field still reports',
+        code: `
+class Repo {
+  public async subscribe(id: string) {
+    this.cached = await fetch(id);
+    return () => this.cached;
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Repo {
+  @Memoize()
+  public async subscribe(id: string) {
+    this.cached = await fetch(id);
+    return () => this.cached;
+  }
+}
+`,
+      },
+      {
+        // A cache-hit path makes the write a fill, whatever other paths report.
+        name: 'one result reading the written field is enough to keep the report',
+        code: `
+class Repo {
+  public async load(id: string) {
+    if (this.cached) {
+      return this.cached;
+    }
+    this.cached = await fetch(id);
+    return true;
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Repo {
+  @Memoize()
+  public async load(id: string) {
+    if (this.cached) {
+      return this.cached;
+    }
+    this.cached = await fetch(id);
+    return true;
+  }
+}
+`,
+      },
+      {
+        // The callback runs on its own schedule, which the decorator does not move.
+        name: 'a try/finally inside a nested callback belongs to that callback',
+        code: `
+class Repo {
+  public async load(id: string) {
+    return this.rows.map((row) => {
+      try {
+        return row.value;
+      } finally {
+        this.log(row);
+      }
+    });
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Repo {
+  @Memoize()
+  public async load(id: string) {
+    return this.rows.map((row) => {
+      try {
+        return row.value;
+      } finally {
+        this.log(row);
+      }
+    });
+  }
+}
+`,
+      },
+      {
+        name: 'an empty finalizer releases nothing and keeps the report',
+        code: `
+class Repo {
+  public async load(id: string) {
+    try {
+      return await fetch(id);
+    } finally {
+    }
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Repo {
+  @Memoize()
+  public async load(id: string) {
+    try {
+      return await fetch(id);
+    } finally {
+    }
+  }
+}
+`,
+      },
+      {
+        name: 'a finalizer writing only a local records the attempt rather than undoing it',
+        code: `
+class Repo {
+  public async load(id: string) {
+    let isDone = false;
+    try {
+      return await fetch(id);
+    } finally {
+      isDone = true;
+    }
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Repo {
+  @Memoize()
+  public async load(id: string) {
+    let isDone = false;
+    try {
+      return await fetch(id);
+    } finally {
+      isDone = true;
+    }
+  }
+}
+`,
+      },
+      {
+        // A `catch` reports a failure; it does not undo what the `try` performed.
+        name: 'a catch clause without a finalizer is not an acquire/release pair',
+        code: `
+class Repo {
+  public async load(id: string) {
+    try {
+      return await fetch(id);
+    } catch (error) {
+      this.report(error);
+      return null;
+    }
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Repo {
+  @Memoize()
+  public async load(id: string) {
+    try {
+      return await fetch(id);
+    } catch (error) {
+      this.report(error);
+      return null;
+    }
+  }
+}
+`,
+      },
+      {
+        name: 'a finalizer that only defines a closure performs no release',
+        code: `
+class Repo {
+  public async load(id: string) {
+    const ticket = this.queue.enqueue();
+    try {
+      return await fetch(id);
+    } finally {
+      const undo = () => this.queue.abandon(ticket.id);
+    }
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Repo {
+  @Memoize()
+  public async load(id: string) {
+    const ticket = this.queue.enqueue();
+    try {
+      return await fetch(id);
+    } finally {
+      const undo = () => this.queue.abandon(ticket.id);
+    }
+  }
+}
+`,
+      },
+      {
+        name: 'a write to a local object is not a write to an instance field',
+        code: `
+class Repo {
+  public async load(id: string) {
+    const state = { dirty: false };
+    state.dirty = true;
+    return state.dirty;
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Repo {
+  @Memoize()
+  public async load(id: string) {
+    const state = { dirty: false };
+    state.dirty = true;
+    return state.dirty;
+  }
+}
+`,
+      },
+      {
+        // The callback decides when that write happens, so it answers nothing.
+        name: 'a field written inside a nested callback is not the method own write',
+        code: `
+class Repo {
+  public async load(id: string) {
+    const values = [1].map((n) => {
+      this.seen = n;
+      return n;
+    });
+    return values.length;
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Repo {
+  @Memoize()
+  public async load(id: string) {
+    const values = [1].map((n) => {
+      this.seen = n;
+      return n;
+    });
+    return values.length;
+  }
+}
+`,
+      },
+      {
+        // Issue #1548 fenced inferred void out of this rule: an unannotated body
+        // declares no intent to produce nothing, so it must not be read as a
+        // command through the write it performs.
+        name: 'a method writing a field with no result at all keeps reporting',
+        code: `
+class Repo {
+  public async refresh(id: string) {
+    this.cached = await fetch(id);
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Repo {
+  @Memoize()
+  public async refresh(id: string) {
+    this.cached = await fetch(id);
+  }
+}
+`,
+      },
+      {
+        name: 'a method writing a field whose only return is bare keeps reporting',
+        code: `
+class Repo {
+  public async refresh(id: string) {
+    this.cached = await fetch(id);
+    return;
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Repo {
+  @Memoize()
+  public async refresh(id: string) {
+    this.cached = await fetch(id);
+    return;
+  }
+}
+`,
+      },
+      {
+        // `this[key]` names no field statically, so no write is recorded.
+        name: 'a computed field name states nothing and keeps the report',
+        code: `
+class Repo {
+  public async load(key: string) {
+    this[key] = 1;
+    return true;
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Repo {
+  @Memoize()
+  public async load(key: string) {
+    this[key] = 1;
+    return true;
+  }
+}
+`,
+      },
+    ],
+  },
+);
