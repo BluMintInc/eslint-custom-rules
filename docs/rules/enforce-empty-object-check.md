@@ -32,6 +32,56 @@ when the value traces back to an import it could not resolve: a resolution
 failure is not evidence the value can be `{}`. A value that does resolve is
 unaffected, because the checker answers before this is ever consulted.
 
+A DECLARED type the checker could not resolve is the same situation reached by a
+different route, and gets the same answer. `Readonly<NextResponse>`,
+`Map<string, string>`, `Set<string>` and `Date` all come back `any` in a program
+without lib files or without the module the type came from, so the suffix used to
+decide — and `response` matches `Response`. The prescribed fix inverts such a
+guard rather than hardening it: a class instance keeps its state behind prototype
+accessors, so `Object.keys(instance).length === 0` holds for every valid value,
+the early return is always taken, and the rest of the function is dead code. An
+annotation the checker could not read means it could not look, not that the value
+is loosely typed, so a binding that declares a type keeps its verdict:
+
+#### ❌ Incorrect
+
+```ts
+// No annotation to read: the suffix decides, which is the rule's syntactic mode.
+function prepend(response) {
+  if (!response) {
+    return response;
+  }
+  return withPrefix(response);
+}
+```
+
+#### ✅ Correct
+
+```ts
+import { NextResponse } from 'next/server';
+
+// The annotation traces to a module the program did not resolve. The rule
+// declines rather than letting the `Response` suffix overturn it.
+function prepend(response: Readonly<NextResponse> | null | false) {
+  if (!response) {
+    return response;
+  }
+  return withPrefix(response);
+}
+
+// A dictionary the source spells out is still reported, resolved or not:
+// `Record<K, V>` is an index signature whichever way `K` and `V` resolve.
+const payload: Record<string, unknown> | undefined = getPayload();
+if (!payload || Object.keys(payload).length === 0) {
+  return handle(payload);
+}
+```
+
+The annotation has to sit on the binding. The one on
+`const { config }: Props = load()` describes the container, and deciding a single
+property from it needs the resolution that failed, so a destructured binding
+stays with the naming heuristic.
+
 ## Rule Details
 
 ### ❌ Incorrect
