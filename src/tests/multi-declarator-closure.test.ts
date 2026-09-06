@@ -1305,10 +1305,15 @@ describe('the multi-declarator probe is load-bearing', () => {
     //
     // The mutation count moves with the CORPUS, not only with the gate: #2331's
     // `global-const-style` fixtures raised it from 256 to 330 under the rule as
-    // it stood, and the withhold those fixtures pin brought it back to 306. So
-    // a rise here is a stale ceiling until the fixture delta is ruled out —
-    // attribute it by re-running with the corpus change alone before widening.
-    expect(totals.mutationLicensed).toBeLessThanOrEqual(360); // measured 306
+    // it stood, and the withhold those fixtures pin brought it back to 306.
+    // #2340's fixtures for the same rule repeat the pattern exactly — 360 to
+    // 418 under the rule as it stood, back to 398 once the widened iteration
+    // walk withholds the assertion from them, with the rule change ALONE
+    // leaving the count at the 360 it starts from. So a rise here is a stale
+    // ceiling until the fixture delta is ruled out — attribute it by re-running
+    // with the corpus change alone, and with the rule change alone, before
+    // widening.
+    expect(totals.mutationLicensed).toBeLessThanOrEqual(440); // measured 398
     expect(totals.destructionLicensed).toBeLessThanOrEqual(10); // measured 2
     /**
      * The sibling-is-subject skip, pinned by rule MEMBERSHIP rather than by

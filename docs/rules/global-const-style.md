@@ -237,12 +237,48 @@ arr.push(3); })` is the same TS2339 on a frozen tuple that `ITEMS.push(3)` is,
 and the assertion is withheld for both. `reduce` and `reduceRight` put this
 parameter **fourth**, after their accumulator.
 
-The receiver may be one step removed from the constant, because a copy or a
+`flatMap` is the exception, and only for mutating **methods**. Its lib signature
+declares that parameter mutable `T[]` where every sibling declares it
+`readonly T[]`, so there is no `readonly` violation to have through it. A write
+to an **element** through the same parameter is still withheld exactly as it is
+for every other method — `arr[0].n = 2` is TS2540 — and so is a mutating call
+that **introduces** a value the frozen element type would have to accept, since
+the assertion narrows that type:
+
+| call inside `ITEMS.flatMap((item, index, arr) => …)` | verdict |
+| --- | --- |
+| `arr.sort()`, `arr.reverse()`, `arr.pop()`, `arr.shift()`, `arr.copyWithin(0, 1)` | still flagged — they write back only elements the array already holds |
+| `arr.splice(0, 1)` | still flagged — `splice` inserts from its **third** argument on |
+| `arr.push(item)`, `arr.fill(item, 0, 1)` | still flagged — the inserted value is the element the callback was handed, which the assertion narrows alongside the parameter |
+| `arr.push({ n: 3 })`, `arr.splice(0, 1, { n: 3 })`, `arr.fill({ n: 3 })` | withheld — a fresh literal is typed independently of the constant, so narrowing rejects it (TS2322) |
+| `arr.push(somethingElse)` | withheld — a binding the constant never typed is foreign however it is spelled |
+| `arr.push(...ITEMS)` | withheld, though it would compile: a **spread** is read as foreign whatever it spreads, which costs a report rather than risking a break |
+
+The receiver may be **derived** from the constant, because a copy or a
 projection of it still yields the frozen elements — `[...ITEMS].forEach(…)`,
 `ITEMS.filter(Boolean).forEach(…)`, `for (const item of ITEMS.slice())` and
 `Object.values(CONFIG).forEach(…)` all count, as does `Object.entries`.
 `Object.keys` does not: its result is `string[]` whatever the argument's type,
 so nothing the assertion changes reaches a binding taken from it.
+
+Four further derivations hand out the constant's elements and count the same
+way:
+
+- the iterator its own `values()` / `entries()` returns, so
+  `for (const item of ITEMS.values())` and
+  `for (const [index, item] of ITEMS.entries())` are withheld on a write through
+  the element. `keys()` is excluded for the reason `Object.keys` is;
+- the mapper of the two-argument `Array.from(X, fn)`, whose first parameter is
+  the element `X` holds. The call's **result** is not a copy of the constant —
+  the mapper retypes it — but the element the mapper is handed still carries the
+  frozen type;
+- a collection built out of it, `new Set(ITEMS)` and the `Map` spelling, whether
+  it is iterated by a `for…of` head or by `forEach`;
+- any **chain** of the above. `ITEMS.filter(Boolean).slice().forEach(…)` is
+  withheld on a write through its element exactly as the one-hop
+  `ITEMS.slice().forEach(…)` is, and each step may be read through a property of
+  the constant (`CONFIG.list.values()`, `Array.from(CONFIG.list, fn)`), which is
+  frozen with the object that holds it.
 
 Only the **element** is followed through those derivations. A copy or a
 projection is a fresh, mutable array, so a mutating call on the receiver
@@ -394,13 +430,17 @@ rest.push(3);
 Two shapes are excluded because nothing of the constant's type survives into
 their result: `map`, which is typed from its callback, and `Array.from(X, fn)`,
 which takes the same kind of mapper. Admitting either would withhold the
-assertion from every array anything is computed from.
+assertion from every array anything is computed from. Both are still an
+**iteration** of the constant: the element each hands its callback carries the
+frozen type even though the result does not — see [Constants that are mutated
+later](#constants-that-are-mutated-later).
 
 A copy that is **iterated in place** rather than bound to a name carries the
 type into the element the iteration binds — `[...ITEMS].forEach(…)` and
 `for (const item of ITEMS.slice())` are withheld on a write through that
-element, exactly as a bound copy is. See [Constants that are mutated
-later](#constants-that-are-mutated-later).
+element, exactly as a bound copy is, and a copy OF a copy
+(`ITEMS.filter(Boolean).slice().forEach(…)`) carries it just as far. See
+[Constants that are mutated later](#constants-that-are-mutated-later).
 
 A copy that is only **read** cannot break, so the constant is still frozen. The
 withhold keys on the write, not on the copy:

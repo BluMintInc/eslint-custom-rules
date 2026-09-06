@@ -1518,6 +1518,322 @@ const Probe = () => {
       ].join('\n'),
       filename: 'test.ts',
     },
+    // Issue #2340: four more ways a binding typed from the constant's ELEMENTS
+    // reaches a callback or a loop head. Every case below compiles, and stops
+    // compiling with TS2540 once the assertion is applied by hand — measured as
+    // a ts.Program differential, one live fixture per program.
+    //
+    // `values`/`entries` hand back an ITERATOR, which is neither a copy nor a
+    // callback, so the element they yield reached no map the walk reads.
+    {
+      name: 'declines to freeze an array whose entries() element is written',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  for (const [index, item] of ITEMS.entries()) {',
+        '    item.n = index;',
+        '  }',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // The pair `entries` yields carries the element in its second slot, so the
+    // write reaches the frozen element through an index rather than a name.
+    {
+      name: 'declines to freeze an array whose entries() pair is written through its index',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  for (const entry of ITEMS.entries()) {',
+        '    entry[1].n = 2;',
+        '  }',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose values() element is written',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  for (const item of ITEMS.values()) {',
+        '    item.n = 2;',
+        '  }',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // `for await` is the same node with `await` set and binds its element the
+    // same way, so the flag is not screened here either.
+    {
+      name: 'declines to freeze an array whose for-await values() element is written',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = async () => {',
+        '  for await (const item of ITEMS.values()) {',
+        '    item.n = 2;',
+        '  }',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // A spread of the iterator builds an array of the same frozen elements, so
+    // the derivation walk reaches the callback through two hops.
+    {
+      name: 'declines to freeze an array whose spread entries() element is written',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  [...ITEMS.entries()].forEach(([index, item]) => {',
+        '    item.n = index;',
+        '  });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose spread values() element is written',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  [...ITEMS.values()].forEach((item) => {',
+        '    item.n = 2;',
+        '  });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // A PROPERTY of the constant is frozen with the object that holds it, so the
+    // iterator taken from the member path yields frozen elements too.
+    {
+      name: 'declines to freeze an object whose member path values() element is written',
+      code: [
+        'const CONFIG = { list: [{ n: 1 }] };',
+        'export const run = () => {',
+        '  for (const item of CONFIG.list.values()) {',
+        '    item.n = 2;',
+        '  }',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // The declaring keyword is not screened: a `let` head takes its type from
+    // the iterated value exactly as a `const` head does.
+    {
+      name: 'declines to freeze an array whose let head over values() is written',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  for (let item of ITEMS.values()) {',
+        '    item.n = 2;',
+        '  }',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // `Array.from(X, mapfn)` hands the mapper each element of `X`. The
+    // two-argument form is no COPY — the mapper retypes the result — but that
+    // says nothing about the element the mapper is handed.
+    {
+      name: 'declines to freeze an array whose Array.from mapper writes its element',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const out = Array.from(ITEMS, (item) => {',
+        '  item.n = 2;',
+        '  return item;',
+        '});',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose Array.from function-expression mapper writes its element',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const out = Array.from(ITEMS, function (item) {',
+        '  item.n = 2;',
+        '  return item;',
+        '});',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // The mapper takes the element first and the index second, so declaring the
+    // index does not move the enrolled position.
+    {
+      name: 'declines to freeze an array whose Array.from mapper writes its element beside an index',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const out = Array.from(ITEMS, (item, index) => {',
+        '  item.n = index;',
+        '  return item;',
+        '});',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an object whose member path Array.from mapper writes its element',
+      code: [
+        'const CONFIG = { list: [{ n: 1 }] };',
+        'export const out = Array.from(CONFIG.list, (item) => {',
+        '  item.n = 2;',
+        '  return item;',
+        '});',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // `new Set(ITEMS)` holds the constant's own contents, so its head and its
+    // callback are second names for the frozen elements.
+    {
+      name: 'declines to freeze an array whose Set head element is written',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  for (const item of new Set(ITEMS)) {',
+        '    item.n = 2;',
+        '  }',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose Set forEach element is written',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  new Set(ITEMS).forEach((item) => {',
+        '    item.n = 2;',
+        '  });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // Two derivation steps. Each hop keeps the element type, so the chain keeps
+    // it too — the one-hop spelling beside each of these already declines, and a
+    // walk that stopped after one step gave two spellings of one construct
+    // opposite verdicts.
+    {
+      name: 'declines to freeze an array whose filtered then sliced element is written',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  ITEMS.filter(Boolean)',
+        '    .slice()',
+        '    .forEach((item) => {',
+        '      item.n = 2;',
+        '    });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose twice-sliced head element is written',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  for (const item of ITEMS.slice().slice()) {',
+        '    item.n = 2;',
+        '  }',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose spread copy is sliced before its element is written',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  [...ITEMS].slice().forEach((item) => {',
+        '    item.n = 2;',
+        '  });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an object whose Object.values array is sliced before its element is written',
+      code: [
+        'const CONFIG = { a: { n: 1 } };',
+        'export const run = () => {',
+        '  Object.values(CONFIG)',
+        '    .slice()',
+        '    .forEach((item) => {',
+        '      item.n = 2;',
+        '    });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // `flatMap`'s array parameter is declared MUTABLE, so a mutating call
+    // through it cannot be a readonly violation — but it can still INTRODUCE a
+    // value the narrowed element type has to accept. A fresh literal is typed
+    // independently of the constant, so freezing narrows the parameter out from
+    // under it: TS2322 for an input that compiled.
+    {
+      name: 'declines to freeze an array whose flatMap array parameter is appended to with a literal',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const flat = ITEMS.flatMap((item, index, arr) => {',
+        '  arr.push({ n: 3 });',
+        '  return [item];',
+        '});',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // `splice` spends its first two arguments on the start index and the delete
+    // count, so the inserted value is the third — and a literal there breaks
+    // exactly as one passed to `push` does.
+    {
+      name: 'declines to freeze an array whose flatMap array parameter is spliced with a literal',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const flat = ITEMS.flatMap((item, index, arr) => {',
+        '  arr.splice(0, 1, { n: 3 });',
+        '  return [item];',
+        '});',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // `fill` writes ONE value, at its first argument.
+    {
+      name: 'declines to freeze an array whose flatMap array parameter is filled with a literal',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const flat = ITEMS.flatMap((item, index, arr) => {',
+        '  arr.fill({ n: 3 });',
+        '  return [item];',
+        '});',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // A value read from a binding the constant never typed is foreign however
+    // it is spelled: this one is an ordinary local, and freezing the constant
+    // narrows the parameter away from it (TS2345).
+    {
+      name: 'declines to freeze an array whose flatMap array parameter is appended to with a foreign binding',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const flat = ITEMS.flatMap((item, index, arr) => {',
+        '  const foreign = { n: 3 };',
+        '  arr.push(foreign);',
+        '  return [item];',
+        '});',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // A SPREAD argument is treated as foreign even when it spreads the constant
+    // itself, whose elements do satisfy the narrowed type. The decline costs a
+    // report on a call that would have compiled, which is the cheap error of the
+    // two — the assertion is withheld rather than emitted into a break.
+    {
+      name: 'declines to freeze an array whose flatMap array parameter is appended to with a spread',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const flat = ITEMS.flatMap((item, index, arr) => {',
+        '  arr.push(...ITEMS);',
+        '  return [item];',
+        '});',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
   ],
   invalid: [
     // Issue #2055: a JSX tag name is spelled twice, but the scope manager
@@ -4073,6 +4389,331 @@ const Probe = () => {
         '  acc.push(item.n + index + arr.length);',
         '  return acc;',
         '}, [] as number[]);',
+      ].join('\n'),
+    },
+    // Issue #2340 negative controls. Widening the derivation vocabulary buys
+    // nothing if it also swallows the reports the wider walk is supposed to
+    // leave standing: each case below READS what the iteration hands it, so it
+    // compiles both before and after `--fix`.
+    {
+      name: 'freezes an array whose values() element is only read',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  for (const item of ITEMS.values()) {',
+        '    console.log(item.n);',
+        '  }',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'ITEMS', valueKind: 'an array literal' },
+        },
+      ],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const run = () => {',
+        '  for (const item of ITEMS.values()) {',
+        '    console.log(item.n);',
+        '  }',
+        '};',
+      ].join('\n'),
+    },
+    {
+      name: 'freezes an array whose entries() element is only read',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  for (const [index, item] of ITEMS.entries()) {',
+        '    console.log(index, item.n);',
+        '  }',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'ITEMS', valueKind: 'an array literal' },
+        },
+      ],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const run = () => {',
+        '  for (const [index, item] of ITEMS.entries()) {',
+        '    console.log(index, item.n);',
+        '  }',
+        '};',
+      ].join('\n'),
+    },
+    // A head that DESTRUCTURES the element reads a property out of it and binds
+    // nothing that names the element itself, so there is nothing to write
+    // through and the assertion stands.
+    {
+      name: 'freezes an array whose values() element is destructured and read',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  for (const { n } of ITEMS.values()) {',
+        '    console.log(n);',
+        '  }',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'ITEMS', valueKind: 'an array literal' },
+        },
+      ],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const run = () => {',
+        '  for (const { n } of ITEMS.values()) {',
+        '    console.log(n);',
+        '  }',
+        '};',
+      ].join('\n'),
+    },
+    {
+      name: 'freezes an array whose twice-sliced copy is only read',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  ITEMS.slice()',
+        '    .slice()',
+        '    .forEach((item) => {',
+        '      console.log(item.n);',
+        '    });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'ITEMS', valueKind: 'an array literal' },
+        },
+      ],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const run = () => {',
+        '  ITEMS.slice()',
+        '    .slice()',
+        '    .forEach((item) => {',
+        '      console.log(item.n);',
+        '    });',
+        '};',
+      ].join('\n'),
+    },
+    {
+      name: 'freezes an array whose Set head element is only read',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  for (const item of new Set(ITEMS)) {',
+        '    console.log(item.n);',
+        '  }',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'ITEMS', valueKind: 'an array literal' },
+        },
+      ],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const run = () => {',
+        '  for (const item of new Set(ITEMS)) {',
+        '    console.log(item.n);',
+        '  }',
+        '};',
+      ].join('\n'),
+    },
+    // A mapper that COMPUTES from its element writes nothing through it, which
+    // is what keeps `Array.from(X, fn)` fixable at all.
+    {
+      name: 'freezes an array whose Array.from mapper only reads its element',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const out = Array.from(ITEMS, (item) => item.n);',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'ITEMS', valueKind: 'an array literal' },
+        },
+      ],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const out = Array.from(ITEMS, (item) => item.n);',
+      ].join('\n'),
+    },
+    // `flatMap` alone is handed a MUTABLE `T[]`, so a mutating method through
+    // its array parameter compiles unchanged under the assertion — measured by
+    // appending `as const` by hand and reading the checker, which reports
+    // nothing here and TS2339 for the identical `forEach` spelling. Enrolling
+    // the parameter for the element question alone is what leaves these two
+    // fixable (Issue #2340).
+    {
+      name: 'freezes an array whose flatMap array parameter is sorted',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const flat = ITEMS.flatMap((item, index, arr) => {',
+        '  arr.sort();',
+        '  return [item];',
+        '});',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'ITEMS', valueKind: 'an array literal' },
+        },
+      ],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const flat = ITEMS.flatMap((item, index, arr) => {',
+        '  arr.sort();',
+        '  return [item];',
+        '});',
+      ].join('\n'),
+    },
+    // The pushed value is the element the callback was handed, so it is
+    // assignable to the frozen element type and the append compiles too. A push
+    // of a FOREIGN value does not — but that break is TS2322, the
+    // literal-narrowing family filed as #2330, which this walk tolerates
+    // wherever it appears.
+    {
+      name: 'freezes an array whose flatMap array parameter is appended to with its own element',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const flat = ITEMS.flatMap((item, index, arr) => {',
+        '  arr.push(item);',
+        '  return [item];',
+        '});',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'ITEMS', valueKind: 'an array literal' },
+        },
+      ],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const flat = ITEMS.flatMap((item, index, arr) => {',
+        '  arr.push(item);',
+        '  return [item];',
+        '});',
+      ].join('\n'),
+    },
+    // A method that REMOVES rather than inserts writes back nothing the element
+    // type could reject, so it cannot break however the assertion narrows.
+    {
+      name: 'freezes an array whose flatMap array parameter is popped',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const flat = ITEMS.flatMap((item, index, arr) => {',
+        '  arr.pop();',
+        '  return [item];',
+        '});',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'ITEMS', valueKind: 'an array literal' },
+        },
+      ],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const flat = ITEMS.flatMap((item, index, arr) => {',
+        '  arr.pop();',
+        '  return [item];',
+        '});',
+      ].join('\n'),
+    },
+    // `splice` inserts from its THIRD argument on, so a two-argument call
+    // introduces nothing and the start index and delete count beside it are
+    // numbers rather than elements.
+    {
+      name: 'freezes an array whose flatMap array parameter is spliced without an insert',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const flat = ITEMS.flatMap((item, index, arr) => {',
+        '  arr.splice(0, 1);',
+        '  return [item];',
+        '});',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'ITEMS', valueKind: 'an array literal' },
+        },
+      ],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const flat = ITEMS.flatMap((item, index, arr) => {',
+        '  arr.splice(0, 1);',
+        '  return [item];',
+        '});',
+      ].join('\n'),
+    },
+    // `fill`'s bounds are indices, so only its FIRST argument is read as an
+    // inserted value — and that one is the element the callback was handed.
+    {
+      name: 'freezes an array whose flatMap array parameter is filled with its own element',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const flat = ITEMS.flatMap((item, index, arr) => {',
+        '  arr.fill(item, 0, 1);',
+        '  return [item];',
+        '});',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'ITEMS', valueKind: 'an array literal' },
+        },
+      ],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const flat = ITEMS.flatMap((item, index, arr) => {',
+        '  arr.fill(item, 0, 1);',
+        '  return [item];',
+        '});',
+      ].join('\n'),
+    },
+    // `copyWithin` moves elements the receiver already holds, so its three index
+    // arguments introduce nothing either.
+    {
+      name: 'freezes an array whose flatMap array parameter is copied within itself',
+      code: [
+        'const ITEMS = [{ n: 1 }, { n: 2 }];',
+        'export const flat = ITEMS.flatMap((item, index, arr) => {',
+        '  arr.copyWithin(0, 1);',
+        '  return [item];',
+        '});',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'ITEMS', valueKind: 'an array literal' },
+        },
+      ],
+      output: [
+        'const ITEMS = [{ n: 1 }, { n: 2 }] as const;',
+        'export const flat = ITEMS.flatMap((item, index, arr) => {',
+        '  arr.copyWithin(0, 1);',
+        '  return [item];',
+        '});',
       ].join('\n'),
     },
   ],
