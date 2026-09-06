@@ -1313,7 +1313,13 @@ describe('the multi-declarator probe is load-bearing', () => {
     // ceiling until the fixture delta is ruled out — attribute it by re-running
     // with the corpus change alone, and with the rule change alone, before
     // widening.
-    expect(totals.mutationLicensed).toBeLessThanOrEqual(440); // measured 398
+    //
+    // #2341/#2342 repeat it a third time, and the attribution was measured the
+    // way this comment prescribes: 398 to 500 with the member-access and `map`
+    // fixtures alone under the rule as it stood, back to 444 once the widened
+    // alias walk withholds the assertion from them, with the rule change ALONE
+    // leaving the count at the 398 it starts from.
+    expect(totals.mutationLicensed).toBeLessThanOrEqual(490); // measured 444
     expect(totals.destructionLicensed).toBeLessThanOrEqual(10); // measured 2
     /**
      * The sibling-is-subject skip, pinned by rule MEMBERSHIP rather than by

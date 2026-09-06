@@ -287,8 +287,18 @@ const KNOWN_DIVERGENT: Record<string, Exemption> = {
       'reports identically under this rule as it stands on the parent commit, ' +
       'where neither source names the other (measured), because the binding ' +
       "and the property already spell the same name and #2316's " +
-      'case-insensitive match is not what reaches it.',
-    cases: { preferDestructuring: 1 },
+      'case-insensitive match is not what reaches it. 3 more joined at #2341, ' +
+      'which pins the `as`-cast boundary of the new member-access enrolment ' +
+      'and so must SPELL a member-access extraction — `const items = ' +
+      'CONFIG.items;` and its nested and bracketed variants — the one shape ' +
+      'this sibling exists to rewrite. A spelling satisfies both, and the ' +
+      'composed `--fix` reaches it: all 3 converge with ZERO residual to the ' +
+      'destructured form (measured), under which this rule STILL reports, ' +
+      'because #2341 screens a destructuring pattern against the same literal ' +
+      'it screens a member path against. Before that screen was made ' +
+      'symmetric the rewrite silenced this rule, which the detection-loss ' +
+      'guard caught as a real blinding rather than a repair.',
+    cases: { preferDestructuring: 4 },
   },
   'no-unused-props::no-entire-object-hook-deps': {
     reason:

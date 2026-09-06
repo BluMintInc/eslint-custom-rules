@@ -1834,6 +1834,487 @@ const Probe = () => {
       ].join('\n'),
       filename: 'test.ts',
     },
+    // Issue #2341: a binding initialized from a MEMBER ACCESS on the constant
+    // names the constant's own frozen contents — `as const` freezes in depth,
+    // so a property carries the assertion exactly as the object does. Every
+    // case below compiles and stops compiling once the assertion is applied by
+    // hand, measured as a ts.Program differential with one live fixture per
+    // program. The alias walk refused all of them because it was asked only
+    // when the reference was NOT the base of a member access, while the
+    // DESTRUCTURED spelling of the same extraction was enrolled all along.
+    {
+      name: 'declines to freeze an object whose property alias is mutated',
+      code: [
+        'const CONFIG = { list: [1, 2], nested: { rows: [{ n: 1 }] }, mode: 1 };',
+        'export const run = () => {',
+        '  const items = CONFIG.list;',
+        '  items.push(3);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // An ELEMENT reached by index is frozen with the array that holds it.
+    {
+      name: 'declines to freeze an array whose element alias is written',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const first = ITEMS[0];',
+        '  first.n = 2;',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // A computed STRING key names the same property the dotted spelling does,
+    // so the extraction cannot be decided by which syntax reaches it.
+    {
+      name: 'declines to freeze an object whose string-keyed alias is mutated',
+      code: [
+        'const CONFIG = { list: [1, 2], nested: { rows: [{ n: 1 }] }, mode: 1 };',
+        'export const run = () => {',
+        "  const items = CONFIG['list'];",
+        '  items.push(3);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // The path may be any depth: every step of it is frozen by the one
+    // assertion on the constant.
+    {
+      name: 'declines to freeze an object whose nested-path alias is mutated',
+      code: [
+        'const CONFIG = { list: [1, 2], nested: { rows: [{ n: 1 }] }, mode: 1 };',
+        'export const run = () => {',
+        '  const rowList = CONFIG.nested.rows;',
+        '  rowList.push({ n: 2 });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // The declaring KEYWORD does not decide who carries the frozen type.
+    {
+      name: 'declines to freeze an object whose property alias is declared with let',
+      code: [
+        'const CONFIG = { list: [1, 2], nested: { rows: [{ n: 1 }] }, mode: 1 };',
+        'export const run = () => {',
+        '  let items = CONFIG.list;',
+        '  items.push(3);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // `?.` and `!` annotate the ACCESS rather than replace it, so the path is
+    // rooted at the constant either way.
+    {
+      name: 'declines to freeze an object whose optional-chained alias is mutated',
+      code: [
+        'const CONFIG = { list: [1, 2], nested: { rows: [{ n: 1 }] }, mode: 1 };',
+        'export const run = () => {',
+        '  const list = CONFIG?.list;',
+        '  list.push(3);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an object whose non-null-asserted alias is mutated',
+      code: [
+        'const CONFIG = { list: [1, 2], nested: { rows: [{ n: 1 }] }, mode: 1 };',
+        'export const run = () => {',
+        '  const list = CONFIG.list!;',
+        '  list.push(3);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // The alias may be declared in any scope the constant reaches, module
+    // scope included.
+    {
+      name: 'declines to freeze an object whose module-scope property alias is mutated',
+      code: [
+        'const CONFIG = { list: [1, 2], nested: { rows: [{ n: 1 }] }, mode: 1 };',
+        'const PICKED = CONFIG.list;',
+        'export const run = () => {',
+        '  PICKED.push(3);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // Destructuring the RESULT of a member access is two hops, not one: the
+    // path is resolved first and the pattern then binds its contents.
+    {
+      name: 'declines to freeze an object destructured through a member path',
+      code: [
+        'const CONFIG = { list: [1, 2], nested: { rows: [{ n: 1 }] }, mode: 1 };',
+        'export const run = () => {',
+        '  const { rows } = CONFIG.nested;',
+        '  rows.push({ n: 2 });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an object array-destructured through a member path',
+      code: [
+        'const CONFIG = { list: [1, 2], nested: { rows: [{ n: 1 }] }, mode: 1 };',
+        'export const run = () => {',
+        '  const [first] = CONFIG.nested.rows;',
+        '  first.n = 2;',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // The pattern screen withholds the enrolment only where `as const` stops.
+    // With no cast in the way it reaches the destructured property exactly as
+    // it reaches the member-access spelling, so both decline together.
+    {
+      name: 'declines to freeze an object whose destructured member is written',
+      code: [
+        'const CONFIG = { list: [1, 2] };',
+        'export const run = () => {',
+        '  const { list } = CONFIG;',
+        '  list.push(3);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an object whose renamed destructured member is written',
+      code: [
+        'const CONFIG = { list: [1, 2] };',
+        'export const run = () => {',
+        '  const { list: entries } = CONFIG;',
+        '  entries.push(3);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an object whose nested destructured member is written',
+      code: [
+        'const CONFIG = { outer: { inner: [1] } };',
+        'export const run = () => {',
+        '  const { outer: { inner } } = CONFIG;',
+        '  inner.push(2);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an object whose computed-key destructured member is written',
+      code: [
+        'const CONFIG = { list: [1, 2] };',
+        'export const run = () => {',
+        "  const { ['list']: entries } = CONFIG;",
+        '  entries.push(3);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // A REST element gathers whatever the pattern did not name, which no single
+    // literal value answers for, so it stays enrolled however the named
+    // siblings are screened.
+    {
+      name: 'declines to freeze an object rest-destructured and written through',
+      code: [
+        'const CONFIG = { list: [1, 2] };',
+        'export const run = () => {',
+        '  const { ...rest } = CONFIG;',
+        '  rest.list.push(3);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // The write need not land on the alias itself — an element of it is the
+    // same frozen value reached one step further along.
+    {
+      name: 'declines to freeze an object whose property alias has an element written',
+      code: [
+        'const CONFIG = { list: [1, 2], nested: { rows: [{ n: 1 }] }, mode: 1 };',
+        'export const run = () => {',
+        '  const rowList = CONFIG.nested.rows;',
+        '  rowList[0].n = 2;',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // A sibling declarator does not change which binding the initializer
+    // types, so the alias is enrolled from a multi-declarator statement too.
+    {
+      name: 'declines to freeze an object whose property alias shares its declaration',
+      code: [
+        'const CONFIG = { list: [1, 2], nested: { rows: [{ n: 1 }] }, mode: 1 };',
+        'export const run = () => {',
+        '  const items = CONFIG.list, step = 1;',
+        '  items.push(step);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // A PRIMITIVE property is frozen to its literal type, so reassigning the
+    // binding it initializes is TS2322 rather than a mutation.
+    {
+      name: 'declines to freeze an object whose primitive property alias is reassigned',
+      code: [
+        'const CONFIG = { list: [1, 2], nested: { rows: [{ n: 1 }] }, mode: 1 };',
+        'export const run = () => {',
+        '  let level = CONFIG.mode;',
+        '  level = 2;',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // A copy taken OF a member path carries the frozen element type into a
+    // fresh array, exactly as a copy of the constant itself does — the copy
+    // walk was applied to the constant's own reference alone.
+    {
+      name: 'declines to freeze an object whose member-path copy is written',
+      code: [
+        'const CONFIG = { list: [1, 2], nested: { rows: [{ n: 1 }] }, mode: 1 };',
+        'export const run = () => {',
+        '  const copy = CONFIG.nested.rows.slice();',
+        '  copy[0].n = 2;',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an object whose member-path spread copy is written',
+      code: [
+        'const CONFIG = { list: [1, 2], nested: { rows: [{ n: 1 }] }, mode: 1 };',
+        'export const run = () => {',
+        '  const copy = [...CONFIG.nested.rows];',
+        '  copy[0].n = 2;',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // Scope depth is not screened: the alias is enrolled wherever the
+    // constant's reference reaches.
+    {
+      name: 'declines to freeze an object whose property alias is mutated in a nested function',
+      code: [
+        'const CONFIG = { list: [1, 2], nested: { rows: [{ n: 1 }] }, mode: 1 };',
+        'export const outer = () => () => {',
+        '  const items = CONFIG.list;',
+        '  items.push(3);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // Issue #2341 arm B: `at`, `find`, `findLast` and the SEEDLESS folds hand
+    // back an ELEMENT of the receiver rather than a container over it, so the
+    // binding they initialize carries the assertion the way an indexed read
+    // does. They belong with the element family rather than with the copy
+    // methods, whose results are fresh containers.
+    {
+      name: 'declines to freeze an array whose at() result is written',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const first = ITEMS.at(0)!;',
+        '  first.n = 2;',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose find() result is written',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const found = ITEMS.find((item) => item.n === 1)!;',
+        '  found.n = 2;',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose findLast() result is written',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const found = ITEMS.findLast((item) => item.n === 1)!;',
+        '  found.n = 2;',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // The seedless overload takes the FIRST ELEMENT as its seed, so the fold's
+    // result is typed `T` and carries the constant's frozen element.
+    {
+      name: 'declines to freeze an array whose seedless reduce() result is written',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const last = ITEMS.reduce((previous, item) => item);',
+        '  last.n = 2;',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose seedless reduceRight() result is written',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const first = ITEMS.reduceRight((previous, item) => item);',
+        '  first.n = 2;',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // Issue #2341 arm C: `Set.prototype.keys` is an ALIAS for `values`, and a
+    // `Map`'s hands back the frozen key of each entry — so `keys` yields
+    // indices only for an ARRAY receiver, which is the receiver its exclusion
+    // was justified against. The `for…of` and `forEach` spellings over the
+    // same `new Set(ITEMS)` were declined all along.
+    {
+      name: 'declines to freeze an array whose derived Set keys() element is written',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  for (const item of new Set(ITEMS).keys()) {',
+        '    item.n = 2;',
+        '  }',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // A frozen tuple's `length` is the LITERAL `3`, not `number`, so the
+    // enrolment is not array-only: any member read of the constant carries the
+    // assertion, a primitive one included.
+    {
+      name: 'declines to freeze an array whose length alias is reassigned',
+      code: [
+        'const NUMS = [1, 2, 3];',
+        'export const run = () => {',
+        '  let size = NUMS.length;',
+        '  size = 5;',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose indexed primitive alias is reassigned',
+      code: [
+        'const NUMS = [1, 2, 3];',
+        'export const run = () => {',
+        '  let head = NUMS[0];',
+        '  head = 9;',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // Issue #2342: `map` was excluded because "its result is typed from the
+    // CALLBACK, so the constant's type reaches it only for a callback that
+    // returns its argument unchanged — a no-op map". The premise is measured
+    // false. The frozen type reaches the result whenever the callback returns
+    // the element OR AN ACCESS PATH ROOTED AT IT, and `(x) => x.n` is the
+    // commonest mapper written: over a frozen `[{ n: 1 }]` it yields `1[]`
+    // rather than `number[]`, so a later `push` is TS2345.
+    {
+      name: 'declines to freeze an array whose mapped property result is written',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const counts = ITEMS.map((item) => item.n);',
+        '  counts.push(3);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // The no-op spelling the exclusion's own comment concedes.
+    {
+      name: 'declines to freeze an array whose no-op mapped result is written',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const copies = ITEMS.map((item) => item);',
+        '  copies[0].n = 2;',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // The question is what the callback HANDS BACK, not which body syntax
+    // spells it, so a block body and a function expression are read the same.
+    {
+      name: 'declines to freeze an array whose block-bodied mapper returns the element',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const counts = ITEMS.map((item) => {',
+        '    return item.n;',
+        '  });',
+        '  counts.push(3);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose function-expression mapper returns the element',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const copies = ITEMS.map(function (item) {',
+        '    return item;',
+        '  });',
+        '  copies[0].n = 2;',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // `Array.from(X, fn)` was excluded by pointing at `map`'s premise, so
+    // overturning that premise overturns this one: the same mapper keeps the
+    // same frozen type through the sibling spelling.
+    {
+      name: 'declines to freeze an array whose Array.from mapper returns the element',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const counts = Array.from(ITEMS, (item) => item.n);',
+        '  counts.push(3);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // A container RETAINS the member path rather than copying it, so the one
+    // frozen value is reachable through the container that holds it.
+    {
+      name: 'declines to freeze an object whose member path is stored in a container',
+      code: [
+        'const CONFIG = { list: [1, 2], nested: { rows: [{ n: 1 }] }, mode: 1 };',
+        'export const run = () => {',
+        '  const holder = { rows: CONFIG.nested.rows };',
+        '  holder.rows.push({ n: 2 });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // The element family and the member path compose: an element taken out of
+    // a PROPERTY of the constant is frozen by the same assertion.
+    {
+      name: 'declines to freeze an object whose member-path at() result is written',
+      code: [
+        'const CONFIG = { list: [1, 2], nested: { rows: [{ n: 1 }] }, mode: 1 };',
+        'export const run = () => {',
+        '  const row = CONFIG.nested.rows.at(0)!;',
+        '  row.n = 2;',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an object whose member-path find() result is written',
+      code: [
+        'const CONFIG = { list: [1, 2], nested: { rows: [{ n: 1 }] }, mode: 1 };',
+        'export const run = () => {',
+        '  const row = CONFIG.nested.rows.find((item) => item.n === 1)!;',
+        '  row.n = 2;',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
   ],
   invalid: [
     // Issue #2055: a JSX tag name is spelled twice, but the scope manager
@@ -3298,9 +3779,11 @@ const Probe = () => {
         'export const TAKE = ITEMS.concat;',
       ].join('\n'),
     },
-    // Issue #2331 negative control: `map` substitutes the element type, so
-    // nothing of the constant's type survives into the result and a write to
-    // that result says nothing about freezing the source.
+    // Issue #2331 negative control, narrowed by #2342: a mapper that COMPUTES
+    // substitutes the element type, so nothing of the constant's type survives
+    // into the result and a write to it says nothing about freezing the source.
+    // The premise holds for THIS callback rather than for `map` as a method —
+    // one that hands back the element, or a property of it, is enrolled.
     {
       name: 'freezes a constant whose mapped result is written',
       code: [
@@ -3342,9 +3825,10 @@ const Probe = () => {
         '}',
       ].join('\n'),
     },
-    // Issue #2333 negative control: `Array.from(X, fn)` retypes the result from
-    // the MAPPER, exactly as `map` does, so nothing of the constant's type
-    // survives into it and the assertion is still enforced.
+    // Issue #2333 negative control, narrowed by #2342: `Array.from(X, fn)` is
+    // read from its MAPPER exactly as `map` is — which cuts both ways, so this
+    // case is owed its report because the mapper COMPUTES, not because the
+    // spelling is `Array.from`.
     {
       name: 'freezes a constant whose Array.from copy passes a mapper',
       code: [
@@ -4714,6 +5198,524 @@ const Probe = () => {
         '  arr.copyWithin(0, 1);',
         '  return [item];',
         '});',
+      ].join('\n'),
+    },
+    // Issue #2341 negative control: the member read must carry the frozen type
+    // for the enrolment to be owed. `join` hands back a `string` whatever the
+    // receiver holds, so reassigning the binding it initializes is no readonly
+    // violation and the report is still owed. Every control below compiles
+    // BEFORE and AFTER the assertion is applied — measured, not assumed.
+    {
+      name: 'freezes an array whose join() result is reassigned',
+      code: [
+        'const NUMS = [1, 2, 3];',
+        'export const run = () => {',
+        "  let joined = NUMS.join(',');",
+        "  joined = 'x';",
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const NUMS = [1, 2, 3] as const;',
+        'export const run = () => {',
+        "  let joined = NUMS.join(',');",
+        "  joined = 'x';",
+        '};',
+      ].join('\n'),
+    },
+    // Issue #2341 negative control: the extraction is owed the enrolment only
+    // where `as const` REACHES the value. An explicit `as T` cast is a value
+    // the literal refers to rather than one the assertion retypes, so
+    // `{ items: [] as string[] } as const` freezes the `items` PROPERTY and
+    // leaves the array it holds a mutable `string[]` — the push below compiles
+    // after the assertion exactly as before it, so the report is still owed.
+    {
+      name: 'freezes an object whose extracted member is an `as` cast',
+      code: [
+        'const CONFIG = { items: [] as string[] };',
+        'export const run = () => {',
+        '  const items = CONFIG.items;',
+        "  items.push('a');",
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const CONFIG = { items: [] as string[] } as const;',
+        'export const run = () => {',
+        '  const items = CONFIG.items;',
+        "  items.push('a');",
+        '};',
+      ].join('\n'),
+    },
+    // The screen reads the whole path, not just its first step: the cast sits
+    // one property deeper here, and the steps above it are object literals the
+    // assertion does deepen into.
+    {
+      name: 'freezes an object whose nested extracted member is an `as` cast',
+      code: [
+        'const CONFIG = { outer: { inner: [] as number[] } };',
+        'export const run = () => {',
+        '  const inner = CONFIG.outer.inner;',
+        '  inner.push(1);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const CONFIG = { outer: { inner: [] as number[] } } as const;',
+        'export const run = () => {',
+        '  const inner = CONFIG.outer.inner;',
+        '  inner.push(1);',
+        '};',
+      ].join('\n'),
+    },
+    // The step is resolved through `accessedPropertyName`, so the bracketed
+    // spelling reads the same property the dotted one does — a screen keyed on
+    // one spelling would enrol the other and withhold this report.
+    {
+      name: 'freezes an object whose bracketed extracted member is an `as` cast',
+      code: [
+        'const CONFIG = { items: [] as string[] };',
+        'export const run = () => {',
+        "  const items = CONFIG['items'];",
+        "  items.push('a');",
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const CONFIG = { items: [] as string[] } as const;',
+        'export const run = () => {',
+        "  const items = CONFIG['items'];",
+        "  items.push('a');",
+        '};',
+      ].join('\n'),
+    },
+    // The screen must read a DESTRUCTURING pattern on the same terms as the
+    // member access, because `prefer-destructuring-no-class` rewrites the one
+    // into the other under `--fix`. Screening only the member-access spelling
+    // let that sibling fixer flip this rule from reporting to silent on
+    // unchanged semantics — a detection loss the composition guard caught.
+    {
+      name: 'freezes an object whose destructured member is an `as` cast',
+      code: [
+        'const CONFIG = { items: [] as string[] };',
+        'export const run = () => {',
+        '  const { items } = CONFIG;',
+        "  items.push('a');",
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const CONFIG = { items: [] as string[] } as const;',
+        'export const run = () => {',
+        '  const { items } = CONFIG;',
+        "  items.push('a');",
+        '};',
+      ].join('\n'),
+    },
+    // The binding's NAME is not what the property is looked up by, so a rename
+    // in the pattern reads the same cast the plain spelling does.
+    {
+      name: 'freezes an object whose renamed destructured member is an `as` cast',
+      code: [
+        'const CONFIG = { items: [] as string[] };',
+        'export const run = () => {',
+        '  const { items: entries } = CONFIG;',
+        "  entries.push('a');",
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const CONFIG = { items: [] as string[] } as const;',
+        'export const run = () => {',
+        '  const { items: entries } = CONFIG;',
+        "  entries.push('a');",
+        '};',
+      ].join('\n'),
+    },
+    // A nested pattern descends the literal exactly as a multi-step member
+    // path does, so the cast is found at whatever depth it sits.
+    {
+      name: 'freezes an object whose nested destructured member is an `as` cast',
+      code: [
+        'const CONFIG = { outer: { inner: [] as number[] } };',
+        'export const run = () => {',
+        '  const { outer: { inner } } = CONFIG;',
+        '  inner.push(1);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const CONFIG = { outer: { inner: [] as number[] } } as const;',
+        'export const run = () => {',
+        '  const { outer: { inner } } = CONFIG;',
+        '  inner.push(1);',
+        '};',
+      ].join('\n'),
+    },
+    // `prefer-destructuring-no-class` rewrites the bracketed member access into
+    // a COMPUTED-key pattern, so that spelling is a shape the composed `--fix`
+    // actually lands on rather than one only a test writes.
+    {
+      name: 'freezes an object whose computed-key destructured member is an `as` cast',
+      code: [
+        'const CONFIG = { items: [] as string[] };',
+        'export const run = () => {',
+        "  const { ['items']: items } = CONFIG;",
+        "  items.push('a');",
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const CONFIG = { items: [] as string[] } as const;',
+        'export const run = () => {',
+        "  const { ['items']: items } = CONFIG;",
+        "  items.push('a');",
+        '};',
+      ].join('\n'),
+    },
+    // An array pattern binds by INDEX, the same key an indexed member read
+    // resolves, so an element holding a cast is screened out too.
+    {
+      name: 'freezes an array whose destructured element is an `as` cast',
+      code: [
+        'const ROWS = [[] as string[]];',
+        'export const run = () => {',
+        '  const [first] = ROWS;',
+        "  first.push('a');",
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const ROWS = [[] as string[]] as const;',
+        'export const run = () => {',
+        '  const [first] = ROWS;',
+        "  first.push('a');",
+        '};',
+      ].join('\n'),
+    },
+    // The extraction must be rooted at the CONSTANT. A same-shaped read of a
+    // parameter names a value the assertion never reaches.
+    {
+      name: 'freezes a constant whose name is reached through an unrelated receiver',
+      code: [
+        'const CONFIG = { list: [1, 2], nested: { rows: [{ n: 1 }] }, mode: 1 };',
+        'export const mutate = (other: { list: number[] }) => {',
+        '  const items = other.list;',
+        '  items.push(3);',
+        '};',
+        'export const run = () => {',
+        '  console.log(CONFIG.mode);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const CONFIG = { list: [1, 2], nested: { rows: [{ n: 1 }] }, mode: 1 } as const;',
+        'export const mutate = (other: { list: number[] }) => {',
+        '  const items = other.list;',
+        '  items.push(3);',
+        '};',
+        'export const run = () => {',
+        '  console.log(CONFIG.mode);',
+        '};',
+      ].join('\n'),
+    },
+    // A name rebound inside a function is a DIFFERENT variable, so the write
+    // through it says nothing about the module-scope constant.
+    {
+      name: 'freezes a constant whose name is rebound in an inner scope',
+      code: [
+        'const CONFIG = { list: [1, 2], nested: { rows: [{ n: 1 }] }, mode: 1 };',
+        'export const mutate = (other: { list: number[] }) => {',
+        '  const CONFIG = other;',
+        '  CONFIG.list.push(3);',
+        '};',
+        'export const run = () => {',
+        '  console.log(CONFIG.mode);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const CONFIG = { list: [1, 2], nested: { rows: [{ n: 1 }] }, mode: 1 } as const;',
+        'export const mutate = (other: { list: number[] }) => {',
+        '  const CONFIG = other;',
+        '  CONFIG.list.push(3);',
+        '};',
+        'export const run = () => {',
+        '  console.log(CONFIG.mode);',
+        '};',
+      ].join('\n'),
+    },
+    // A binding declared inside a callback under the property's own NAME is a
+    // different variable, so the write through it says nothing about the
+    // constant.
+    {
+      name: 'freezes a constant whose property name is rebound inside a callback',
+      code: [
+        'const CONFIG = { list: [1, 2], nested: { rows: [{ n: 1 }] }, mode: 1 };',
+        'export const run = () => {',
+        '  const seen = [1].map(() => {',
+        '    const list = [2];',
+        '    list.push(3);',
+        '    return list;',
+        '  });',
+        '  return seen;',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const CONFIG = { list: [1, 2], nested: { rows: [{ n: 1 }] }, mode: 1 } as const;',
+        'export const run = () => {',
+        '  const seen = [1].map(() => {',
+        '    const list = [2];',
+        '    list.push(3);',
+        '    return list;',
+        '  });',
+        '  return seen;',
+        '};',
+      ].join('\n'),
+    },
+    // The walk keys on the WRITE, so an extraction that only READS is no
+    // reason to withhold the assertion — this is the boundary that keeps the
+    // enrolment from costing a report wherever a member access merely occurs.
+    {
+      name: 'freezes an object whose property alias is only read',
+      code: [
+        'const CONFIG = { list: [1, 2], nested: { rows: [{ n: 1 }] }, mode: 1 };',
+        'export const run = () => {',
+        '  const items = CONFIG.list;',
+        '  console.log(items.length);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const CONFIG = { list: [1, 2], nested: { rows: [{ n: 1 }] }, mode: 1 } as const;',
+        'export const run = () => {',
+        '  const items = CONFIG.list;',
+        '  console.log(items.length);',
+        '};',
+      ].join('\n'),
+    },
+    {
+      name: 'freezes an array whose element alias is only read',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const first = ITEMS[0];',
+        '  console.log(first.n);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const run = () => {',
+        '  const first = ITEMS[0];',
+        '  console.log(first.n);',
+        '};',
+      ].join('\n'),
+    },
+    {
+      name: 'freezes an array whose at() result is only read',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const first = ITEMS.at(0)!;',
+        '  console.log(first.n);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const run = () => {',
+        '  const first = ITEMS.at(0)!;',
+        '  console.log(first.n);',
+        '};',
+      ].join('\n'),
+    },
+    // Issue #2341 negative control: given a SEED the fold's result is typed
+    // from that value, which the constant need not have given, so the seeded
+    // spelling carries nothing frozen however the receiver is declared.
+    {
+      name: 'freezes an array whose seeded reduce() result is reassigned',
+      code: [
+        'const NUMS = [1, 2, 3];',
+        'export const run = () => {',
+        '  let total = NUMS.reduce((sum, item) => sum + item, 0);',
+        '  total = 5;',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const NUMS = [1, 2, 3] as const;',
+        'export const run = () => {',
+        '  let total = NUMS.reduce((sum, item) => sum + item, 0);',
+        '  total = 5;',
+        '};',
+      ].join('\n'),
+    },
+    {
+      name: 'freezes an array whose seeded reduce() accumulator is pushed',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const collected = ITEMS.reduce((acc: { n: number }[], item) => acc, []);',
+        '  collected.push({ n: 2 });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const run = () => {',
+        '  const collected = ITEMS.reduce((acc: { n: number }[], item) => acc, []);',
+        '  collected.push({ n: 2 });',
+        '};',
+      ].join('\n'),
+    },
+    // Issue #2341 negative control: `keys` still yields INDICES for an ARRAY
+    // receiver, so admitting it for Set/Map must not admit it here. One set per
+    // receiver, because a single one would decide the two by the same name.
+    {
+      name: 'freezes an array whose keys() index is reassigned',
+      code: [
+        'const NUMS = [1, 2, 3];',
+        'export const run = () => {',
+        '  for (let index of NUMS.keys()) {',
+        '    index = 5;',
+        '    console.log(index);',
+        '  }',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const NUMS = [1, 2, 3] as const;',
+        'export const run = () => {',
+        '  for (let index of NUMS.keys()) {',
+        '    index = 5;',
+        '    console.log(index);',
+        '  }',
+        '};',
+      ].join('\n'),
+    },
+    // Issue #2342 negative control: a callback that COMPUTES widens, so its
+    // result carries none of the frozen type and the report is still owed.
+    // This is the over-decline boundary the `map` exclusion was written to
+    // protect, and it survives the exclusion being lifted.
+    {
+      name: 'freezes an array whose mapped result is a fresh literal',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        "  const labels = ITEMS.map(() => 'x');",
+        "  labels.push('y');",
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const run = () => {',
+        "  const labels = ITEMS.map(() => 'x');",
+        "  labels.push('y');",
+        '};',
+      ].join('\n'),
+    },
+    {
+      name: 'freezes an array whose mapped result is a widened call',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const scores = ITEMS.map(() => Math.random());',
+        '  scores.push(1);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const run = () => {',
+        '  const scores = ITEMS.map(() => Math.random());',
+        '  scores.push(1);',
+        '};',
+      ].join('\n'),
+    },
+    // A mapper that returns a DIFFERENT parameter hands back nothing of the
+    // element, so the position the element arrives in is load-bearing.
+    {
+      name: 'freezes an array whose mapper ignores its element',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const indexes = ITEMS.map((item, index) => index);',
+        '  indexes.push(3);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const run = () => {',
+        '  const indexes = ITEMS.map((item, index) => index);',
+        '  indexes.push(3);',
+        '};',
+      ].join('\n'),
+    },
+    // Descent stops at a nested function, whose `return` answers for THAT
+    // function rather than for the mapper — so the closure's body does not
+    // decide what the mapper hands back.
+    {
+      name: 'freezes an array whose mapper returns a nested closure',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const makers = ITEMS.map((item) => () => item);',
+        '  makers.reverse();',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const run = () => {',
+        '  const makers = ITEMS.map((item) => () => item);',
+        '  makers.reverse();',
+        '};',
+      ].join('\n'),
+    },
+    // The map arm keys on the WRITE too.
+    {
+      name: 'freezes an array whose mapped result is only read',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const counts = ITEMS.map((item) => item.n);',
+        '  console.log(counts.length);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const run = () => {',
+        '  const counts = ITEMS.map((item) => item.n);',
+        '  console.log(counts.length);',
+        '};',
       ].join('\n'),
     },
   ],
