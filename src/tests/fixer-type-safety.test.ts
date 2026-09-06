@@ -1234,11 +1234,11 @@ describe('an autofix must not turn compiling code into non-compiling code', () =
     expect(coverage.covered.length).toBe(
       fixableRules.length - Object.keys(UNCOVERED_FIXERS).length,
     );
-    expect(assertedPairs.length).toBeGreaterThanOrEqual(3800); // measured 4,427
+    expect(assertedPairs.length).toBeGreaterThanOrEqual(3800); // measured 4,439
     expect(corpus.failures).toEqual([]);
     // The cap's DENOMINATOR. Without it the ceilings below read as healthy on a
-    // corpus that collapsed to nothing. 14,711 when measured.
-    expect(harvested).toBeGreaterThanOrEqual(13000); // measured 14,711
+    // corpus that collapsed to nothing. 14,758 when measured.
+    expect(harvested).toBeGreaterThanOrEqual(13000); // measured 14,758
   });
 
   /**
