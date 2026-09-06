@@ -399,8 +399,245 @@ function run() {
 }
 `,
     },
+    /**
+     * #2344. The parameter's annotation traces to an unresolved import, so the
+     * checker types it `any` and answers `unknown`. The evidence EXISTS and was
+     * merely unreadable, which is a different situation from a binding that
+     * declares no type at all — and the prescribed fix INVERTS this guard,
+     * because a class instance keeps its state behind prototype accessors and
+     * answers `Object.keys(...).length === 0` for every valid response.
+     */
+    {
+      name: 'an unresolved annotation on a parameter is not evidence it can be {}',
+      code: `import { NextResponse } from 'next/server';
+export class UtcPrefixPrepender {
+  protected isPathIgnored = false;
+  public prepend(response: Readonly<NextResponse> | null | false) {
+    if (!response || this.isPathIgnored) {
+      return response;
+    }
+    return response;
+  }
+}`,
+    },
+    {
+      name: 'a string annotation the checker cannot read keeps its verdict',
+      code: `export const f = (response: Readonly<string>, skip: boolean) => {
+  if (!response || skip) {
+    return '';
+  }
+  return response;
+};`,
+    },
+    {
+      name: 'a number annotation the checker cannot read keeps its verdict',
+      code: `export const f = (response: Readonly<number>, skip: boolean) => {
+  if (!response || skip) {
+    return 0;
+  }
+  return response;
+};`,
+    },
+    /**
+     * A `Map`, `Set` or `Date` reaches the same unresolved-annotation path once
+     * lib types are absent from the program, and each keeps its contents off
+     * its own enumerable properties, so the prescribed check reads empty for a
+     * fully populated value.
+     */
+    {
+      name: 'annotated Map, Set and Date guards stay silent',
+      code: `export function run(
+  configMap: Map<string, string>,
+  roleOptions: Set<string>,
+  expiryInfo: Date,
+  skip: boolean,
+) {
+  if (!configMap || skip) {
+    return;
+  }
+  if (!roleOptions || skip) {
+    return;
+  }
+  if (!expiryInfo || skip) {
+    return;
+  }
+}`,
+    },
+    {
+      name: 'an unresolved annotation on a variable declarator stays silent',
+      code: `import { NextResponse } from 'next/server';
+declare function build(): NextResponse;
+export function run(skip: boolean) {
+  const response: Readonly<NextResponse> = build();
+  if (!response || skip) {
+    return;
+  }
+}`,
+    },
+    /**
+     * The resolved half of the #2344 pair: an annotation the checker CAN read
+     * keeps answering, so the carve-out below it never sees this guard.
+     */
+    {
+      name: 'an annotation resolving to a required-property type stays silent',
+      code: `type SessionData = { id: string };
+export function run(sessionData: SessionData, skip: boolean) {
+  if (!sessionData || skip) {
+    return;
+  }
+}`,
+    },
+    /**
+     * `Object.keys` rejects an `unknown` operand, so the fix the naming
+     * heuristic would attach here does not typecheck. The declared type is the
+     * evidence that stops it.
+     */
+    {
+      name: 'a value declared unknown stays silent',
+      code: `export function run(skip) {
+  const config: unknown = load();
+  if (!config || skip) {
+    return;
+  }
+}`,
+    },
   ],
   invalid: [
+    /**
+     * An explicit `any` is the checker reporting what the source told it, not a
+     * resolution failure, so it leaves the value where an unannotated one sits
+     * and the naming heuristic keeps answering.
+     */
+    {
+      name: 'a value declared any still reports',
+      code: `
+export function run(skip) {
+  const config: any = JSON.parse(raw);
+  if (!config || skip) {
+    return;
+  }
+}
+`,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `
+export function run(skip) {
+  const config: any = JSON.parse(raw);
+  if (!config || Object.keys(config).length === 0 || skip) {
+    return;
+  }
+}
+`,
+    },
+    /**
+     * The #2344 carve-out is keyed on DECLARED evidence, so a binding that
+     * declares nothing keeps the naming heuristic. Without these two controls
+     * the arm could widen to every parameter and every variable and silence the
+     * rule almost everywhere while the rest of the suite passed.
+     */
+    {
+      name: 'an unannotated parameter still reports',
+      code: `
+export function run(config, skip) {
+  if (!config || skip) {
+    return;
+  }
+}
+`,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `
+export function run(config, skip) {
+  if (!config || Object.keys(config).length === 0 || skip) {
+    return;
+  }
+}
+`,
+    },
+    {
+      name: 'an unannotated variable still reports',
+      code: `
+export function run(skip) {
+  const payload = load();
+  if (!payload || skip) {
+    return;
+  }
+}
+`,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'payload' } },
+      ],
+      output: `
+export function run(skip) {
+  const payload = load();
+  if (!payload || Object.keys(payload).length === 0 || skip) {
+    return;
+  }
+}
+`,
+    },
+    /**
+     * A type declared in the same file resolves even in the isolated
+     * single-file program, so the checker's own verdict answers first and the
+     * declared-type carve-out never runs. Ordering the carve-out ahead of it
+     * would silence every annotated object the rule exists to catch.
+     */
+    {
+      name: 'an annotation resolving to an object-like type still reports',
+      code: `
+type UserConfig = { name?: string; email?: string };
+declare function loadUserConfig(): UserConfig | undefined;
+export function run(skip) {
+  const userConfig: UserConfig | undefined = loadUserConfig();
+  if (!userConfig || skip) {
+    return;
+  }
+}
+`,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'userConfig' } },
+      ],
+      output: `
+type UserConfig = { name?: string; email?: string };
+declare function loadUserConfig(): UserConfig | undefined;
+export function run(skip) {
+  const userConfig: UserConfig | undefined = loadUserConfig();
+  if (!userConfig || Object.keys(userConfig).length === 0 || skip) {
+    return;
+  }
+}
+`,
+    },
+    /**
+     * The annotation has to sit on the BINDING. A destructured property takes
+     * its type from a container the checker could not resolve either, and
+     * deciding one property from that annotation needs the resolution that
+     * failed, so this guard stays with the heuristic.
+     */
+    {
+      name: 'a destructured binding under an unresolved container annotation still reports',
+      code: `
+import { RouteProps } from './routeProps';
+export function run({ config }: RouteProps, skip) {
+  if (!config || skip) {
+    return;
+  }
+}
+`,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `
+import { RouteProps } from './routeProps';
+export function run({ config }: RouteProps, skip) {
+  if (!config || Object.keys(config).length === 0 || skip) {
+    return;
+  }
+}
+`,
+    },
     /**
      * The #2252 carve-out is keyed on the IDENTIFIER's own origin, not on the
      * file holding imports: `getConfig` has no declaration to trace, so the

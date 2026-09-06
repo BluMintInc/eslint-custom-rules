@@ -1923,6 +1923,78 @@ export const enforceEmptyObjectCheck: TSESLint.RuleModule<MessageIds, Options> =
         return false;
       }
 
+      /**
+       * The type the binding behind this value DECLARES, if it declares one.
+       *
+       * Parameters and variables are the two declarations that annotate the
+       * value a guard tests; an import is answered ahead of this by
+       * `tracesToImport`. The annotation has to sit on the BINDING: the one on
+       * `const { config }: Props = load()` describes the container, and reading
+       * it as a verdict on a single property would need exactly the resolution
+       * that failed, so a destructured binding keeps the naming heuristic.
+       */
+      function declaredTypeOf(
+        identifier: TSESTree.Identifier,
+      ): TSESTree.TypeNode | null {
+        const variable = variableFor(identifier);
+        if (!variable) {
+          return null;
+        }
+
+        for (const def of variable.defs) {
+          if (def.type !== 'Parameter' && def.type !== 'Variable') {
+            continue;
+          }
+          if (def.name.typeAnnotation) {
+            return def.name.typeAnnotation.typeAnnotation;
+          }
+        }
+        return null;
+      }
+
+      /**
+       * Whether a declared type declares NOTHING.
+       *
+       * An explicit `any` is the checker reporting what the source told it, not
+       * a resolution failure, so it leaves the value in the same position as an
+       * unannotated one and the naming heuristic keeps answering. `unknown` is
+       * excluded from this reading on purpose: `Object.keys` rejects an
+       * `unknown` operand, so the fix the heuristic would attach there does not
+       * typecheck.
+       */
+      function declaresNothing(node: TSESTree.TypeNode): boolean {
+        if (node.type === AST_NODE_TYPES.TSUnionType) {
+          return node.types.some(declaresNothing);
+        }
+
+        return node.type === AST_NODE_TYPES.TSAnyKeyword;
+      }
+
+      /**
+       * Whether a declared type the checker could not resolve nonetheless
+       * SPELLS an index-signature dictionary.
+       *
+       * `Record<K, V>` is an index signature whichever way `K` and `V` resolve,
+       * so the value is a plain data map rather than a class instance and
+       * `Object.keys` measures its emptiness correctly. Reading that from the
+       * source keeps the verdict a complete program gives — `object` — reachable
+       * without one, which is why a union answers yes as soon as one member
+       * spells it, mirroring `isObjectLikeType`. A reference the source does not
+       * pin this way, `Readonly<NextResponse>` among them, carries no such
+       * guarantee.
+       */
+      function spellsDictionary(node: TSESTree.TypeNode): boolean {
+        if (node.type === AST_NODE_TYPES.TSUnionType) {
+          return node.types.some(spellsDictionary);
+        }
+
+        return (
+          node.type === AST_NODE_TYPES.TSTypeReference &&
+          node.typeName.type === AST_NODE_TYPES.Identifier &&
+          node.typeName.name === 'Record'
+        );
+      }
+
       function isLikelyObject(identifier: TSESTree.Identifier): boolean {
         if (checker && parserServices?.esTreeNodeToTSNodeMap) {
           try {
@@ -1943,12 +2015,38 @@ export const enforceEmptyObjectCheck: TSESLint.RuleModule<MessageIds, Options> =
              * absence of evidence became evidence the value can be `{}`.
              *
              * The heuristic is still the right answer for a value with no
-             * declaration to resolve — removing it outright silences 52 of this
-             * rule's own 92 fixtures — so only the unresolved-IMPORT case is
-             * carved out (#2252).
+             * declaration to resolve — removing it outright silences 56 of this
+             * rule's own 108 fixtures — so the fall-through is carved out only
+             * where evidence EXISTS and went unread: a value from an unresolved
+             * IMPORT (#2252), and a binding that DECLARES a type the checker
+             * could not resolve (#2344). An unresolvable annotation means the
+             * checker could not look, not that the value is loosely typed:
+             * `response: Readonly<NextResponse>` read off its name alone
+             * reported a class instance, whose state lives behind prototype
+             * accessors, so the prescribed `Object.keys` clause holds for every
+             * valid value and inverts the guard it was meant to harden.
+             *
+             * The carve-out costs reach, and the cost is measured rather than
+             * assumed: across the consumer's 14,059 tracked sources it drops 8
+             * reports, and re-running each under a real `ts.Program` — the
+             * verdict this arm exists to preserve — agrees with 6 of them. The
+             * remaining 2 annotate an all-optional imported type
+             * (`Record<string, string[]>` behind a local alias, and an
+             * `algoliasearch-helper` parameter bag), which a resolved program
+             * calls `object` and reports. Nothing at the annotation site
+             * separates those from `Readonly<NextResponse>`: both are bare
+             * references into a module this program did not load, so recovering
+             * them needs the cross-file resolution whose absence defines this
+             * branch. Two silent true positives is the accepted price of six
+             * guard inversions, because a fix that rewrites correct code costs
+             * more than one the rule declines to make.
              */
             if (tracesToImport(identifier)) {
               return false;
+            }
+            const declared = declaredTypeOf(identifier);
+            if (declared && !declaresNothing(declared)) {
+              return spellsDictionary(declared);
             }
           } catch {
             // TypeScript parser services can throw when AST-to-TS node mapping fails; fall back to naming heuristic so linting does not crash.
