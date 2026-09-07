@@ -152,6 +152,33 @@ One shape is deliberately **not** this rule's, in either spelling:
   and `return [Row];` hand the un-memoized function to callers and are reported,
   and a memoized sibling property buys the bare one nothing.
 
+- **A render function handed to `forwardRef()`** — `forwardRef(RowRender)`,
+  `React.forwardRef(RowRender)`, and the inline `forwardRef(function Row() {})` —
+  is not the component a caller receives. The `forwardRef` call's **result** is,
+  and that is where a `memo()` wrapper belongs:
+
+  ```jsx
+  // Not reported: RowRender is forwardRef's render function, and the component
+  // callers receive is the memoized call around it.
+  function RowRender(props, ref) {
+    return <li ref={ref}>{props.label}</li>;
+  }
+  export const Row = memo(forwardRef(RowRender));
+  ```
+
+  React rejects a memo object in that argument and throws at render —
+  `TypeError: Component is not a function` — so wrapping the render function is
+  never a repair, and neither is renaming it to `RowRenderUnmemoized`, which
+  only restates what the position already means. The exemption therefore holds
+  whether or not the `forwardRef` call around it is memoized: an un-memoized
+  `forwardRef(...)` result is worth wrapping, but that edits a call this rule
+  does not claim, and no edit at the render function can stand in for it.
+
+  The exemption is keyed to the binding the call reads, so it does not spread:
+  a plain component beside a render function, one that a non-`forwardRef` call
+  consumes, and one sharing its name in another scope all keep their report and
+  their fix.
+
 `export default` is rewritten as a separate statement, because
 `export default const X = ...` is not valid syntax. This declaration:
 

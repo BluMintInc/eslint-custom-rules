@@ -1,3 +1,5 @@
+import type { Rule } from 'eslint';
+import { Linter } from 'eslint';
 import type { TSESLint } from '@typescript-eslint/utils';
 import { requireMemo } from '../rules/require-memo';
 import type { RequireMemoOptions } from '../rules/require-memo';
@@ -427,6 +429,116 @@ const Row = (props: { x: string }) => view;`,
       filename: 'src/components/SomeComponent.tsx',
       code: `const label = 'hi';
 const Row = (props: { x: string }) => label;`,
+    },
+    // ---------------------------------------------------------------------
+    // #2352: a render function handed to forwardRef() is NOT the memoization
+    // subject. React's component is the forwardRef RESULT, which is what a
+    // caller memoizes; forwardRef itself rejects a memo object and throws at
+    // render ("Component is not a function"), so neither remedy the message
+    // offers applies at this position. The inline spelling,
+    // `forwardRef(function Row() {})`, has always been silent here, so
+    // reporting the by-reference one discriminated on syntax rather than on
+    // memoization (#1774).
+    // ---------------------------------------------------------------------
+    // The issue's own file. The forwardRef call is already memoized, so the
+    // report was a plain false positive whose fix crashed every consumer.
+    {
+      filename: 'src/components/edit/file/withInteractFile.tsx',
+      code: `import { forwardRef } from 'react';
+import { memo } from '../../../util/memo';
+function WithInteractFileRefless(props, ref) {
+  return <WrappedComponent {...props} ref={ref} />;
+}
+const memoized: unknown = memo(
+  forwardRef(WithInteractFileRefless),
+  compareDeeply('file'),
+);`,
+    },
+    // An UNMEMOIZED forwardRef result is a real finding, but the remedy is at
+    // the forwardRef call, not at its argument — this rule claims the argument,
+    // so it withholds the claim rather than emitting a remedy that crashes.
+    {
+      filename: 'src/components/SomeComponent.tsx',
+      code: `import { forwardRef } from 'react';
+function RowRender(props, ref) { return <li ref={ref}>{props.label}</li>; }
+export const Row = forwardRef(RowRender);`,
+    },
+    // `React.forwardRef` spells the same helper through a member access, as
+    // `React.memo` does for the memo carve-out.
+    {
+      filename: 'src/components/SomeComponent.tsx',
+      code: `import React from 'react';
+function RowRender(props, ref) { return <li ref={ref}>{props.label}</li>; }
+export const Row = React.memo(React.forwardRef(RowRender));`,
+    },
+    {
+      filename: 'src/components/SomeComponent.tsx',
+      code: `import React from 'react';
+function RowRender(props, ref) { return <li ref={ref}>{props.label}</li>; }
+export const Row = React.forwardRef(RowRender);`,
+    },
+    // The arrow twin: the initializer fix wraps in place, so the binding
+    // forwardRef receives is the memo object just the same.
+    {
+      filename: 'src/components/SomeComponent.tsx',
+      code: `import { forwardRef } from 'react';
+import { memo } from '../util/memo';
+const RowRender = (props, ref) => <li ref={ref}>{props.label}</li>;
+export const Row = memo(forwardRef(RowRender));`,
+    },
+    {
+      filename: 'src/components/SomeComponent.tsx',
+      code: `import { forwardRef } from 'react';
+const RowRender = (props, ref) => <li ref={ref}>{props.label}</li>;
+export const Row = forwardRef(RowRender);`,
+    },
+    // A named function expression is claimed through the binding it is
+    // assigned to, which is the identifier forwardRef reads.
+    {
+      filename: 'src/components/SomeComponent.tsx',
+      code: `import { forwardRef } from 'react';
+const RowRender = function Render(props, ref) { return <li ref={ref}>{props.label}</li>; };
+export const Row = forwardRef(RowRender);`,
+    },
+    // The call may precede the declaration it hoists over: the carve-out reads
+    // the binding's references, not source order.
+    {
+      filename: 'src/components/SomeComponent.tsx',
+      code: `import { forwardRef } from 'react';
+export default forwardRef(RowRender);
+function RowRender(props, ref) { return <li ref={ref}>{props.label}</li>; }`,
+    },
+    // A type assertion on the argument hands forwardRef the same value.
+    {
+      filename: 'src/components/SomeComponent.tsx',
+      code: `import { forwardRef } from 'react';
+function RowRender(props, ref) { return <li ref={ref}>{props.label}</li>; }
+export const Row = forwardRef(RowRender as RenderFn);`,
+    },
+    // The render function reaches forwardRef from an enclosing function too,
+    // where the memo hand-back carve-out does not speak for it.
+    {
+      filename: 'src/components/SomeComponent.tsx',
+      code: `import { forwardRef } from 'react';
+export function withRef(Wrapped) {
+  function Inner({value}, ref) { return <Wrapped value={value} ref={ref} />; }
+  return forwardRef(Inner);
+}`,
+    },
+    // Controls: the INLINE spellings the rule already exempts, pinned so the
+    // by-reference cases above are a symmetry rather than a new exemption.
+    {
+      filename: 'src/components/SomeComponent.tsx',
+      code: `import { forwardRef } from 'react';
+import { memo } from '../util/memo';
+export const Row = memo(forwardRef(function RowRender(props, ref) {
+  return <li ref={ref}>{props.label}</li>;
+}));`,
+    },
+    {
+      filename: 'src/components/SomeComponent.tsx',
+      code: `import { forwardRef } from 'react';
+export const Row = forwardRef((props, ref) => <li ref={ref}>{props.label}</li>);`,
     },
   ],
   invalid: [
@@ -1839,5 +1951,282 @@ const App = memo(({ a }: { a: string }) => {
 export default App;`,
       name: 'App',
     }),
+
+    // ---------------------------------------------------------------------
+    // #2352 discrimination. The forwardRef carve-out is keyed to the binding
+    // the call reads, so everything beside it keeps the report and the fix it
+    // had; without these the carve-out could widen to the whole file, or to
+    // every component named like a render function, and no fixture would say.
+    // ---------------------------------------------------------------------
+    // A plain component sharing the file with a forwardRef render function is
+    // still claimed, and still rewritten.
+    withDefaults({
+      code: `import { forwardRef } from 'react';
+import { memo } from '../util/memo';
+function RowRender(props, ref) { return <li ref={ref}>{props.label}</li>; }
+export const Row = memo(forwardRef(RowRender));
+function Cell({value}) { return <td>{value}</td>; }`,
+      output: `import { forwardRef } from 'react';
+import { memo } from '../util/memo';
+function RowRender(props, ref) { return <li ref={ref}>{props.label}</li>; }
+export const Row = memo(forwardRef(RowRender));
+const Cell = memo(function CellUnmemoized({value}) { return <td>{value}</td>; });`,
+      filename: 'src/components/SomeComponent.tsx',
+      name: 'Cell',
+    }),
+    // The arrow twin of the case above, where the fix wraps in place.
+    withDefaults({
+      code: `import { forwardRef } from 'react';
+import { memo } from '../util/memo';
+function RowRender(props, ref) { return <li ref={ref}>{props.label}</li>; }
+export const RowRef = forwardRef(RowRender);
+const Cell = ({value}) => <td>{value}</td>;`,
+      output: `import { forwardRef } from 'react';
+import { memo } from '../util/memo';
+function RowRender(props, ref) { return <li ref={ref}>{props.label}</li>; }
+export const RowRef = forwardRef(RowRender);
+const Cell = memo(({value}) => <td>{value}</td>);`,
+      filename: 'src/components/SomeComponent.tsx',
+      name: 'Cell',
+    }),
+    // Being handed to SOME call is not the carve-out: only forwardRef refuses
+    // a memo object, and `withTheme(Row)` reads the memoized binding happily.
+    withDefaults({
+      code: `function Row(props) { return <li>{props.label}</li>; }
+export const Wrapped = withTheme(Row);`,
+      output: `import { memo } from '../util/memo';
+const Row = memo(function RowUnmemoized(props) { return <li>{props.label}</li>; });
+export const Wrapped = withTheme(Row);`,
+      filename: 'src/components/SomeComponent.tsx',
+      name: 'Row',
+    }),
+    // The carve-out reads the BINDING's references, so a same-named component
+    // in another scope is neither cleared by this one's forwardRef call nor
+    // claimed by it: the nested `Row` is exempt, the module-level `Row` is not.
+    withDefaults({
+      code: `import { forwardRef } from 'react';
+export function makeRow() {
+  const Row = (props, ref) => <li ref={ref}>{props.label}</li>;
+  return forwardRef(Row);
+}
+function Row({label}) { return <li>{label}</li>; }`,
+      output: `import { forwardRef } from 'react';
+import { memo } from '../util/memo';
+export function makeRow() {
+  const Row = (props, ref) => <li ref={ref}>{props.label}</li>;
+  return forwardRef(Row);
+}
+const Row = memo(function RowUnmemoized({label}) { return <li>{label}</li>; });`,
+      filename: 'src/components/SomeComponent.tsx',
+      name: 'Row',
+    }),
   ],
+});
+
+/**
+ * Issue #2352, asked of the fixer's whole-file output rather than of a
+ * `RuleTester` `output` string. The defect was not wrong fix TEXT: the rewrite
+ * parsed, type-checked and re-linted clean while handing `forwardRef` a memo
+ * object, which React throws on at render ("Component is not a function"). The
+ * broken output also spelled the two calls in DIFFERENT statements — `const X =
+ * memo(XUnmemoized)` beside an untouched `forwardRef(X)` — so a text pattern
+ * over the output would not have seen it either. The oracle below resolves the
+ * argument instead, and is planted with the issue's own broken output so it
+ * cannot pass by never firing.
+ */
+const RULE_ID = 'test/require-memo';
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const tsParser = require('@typescript-eslint/parser');
+const PARSER_OPTIONS = {
+  ecmaVersion: 2020 as const,
+  sourceType: 'module' as const,
+  ecmaFeatures: { jsx: true },
+  // Without `range`/`loc` the standalone parser throws on valid input too,
+  // which would make every assertion below vacuous.
+  range: true,
+  loc: true,
+};
+
+const fixWholeFile = (code: string, filename: string) => {
+  const linter = new Linter();
+  linter.defineParser('@typescript-eslint/parser', tsParser);
+  linter.defineRule(RULE_ID, requireMemo as unknown as Rule.RuleModule);
+  return linter.verifyAndFix(
+    code,
+    {
+      parser: '@typescript-eslint/parser',
+      parserOptions: PARSER_OPTIONS,
+      rules: { [RULE_ID]: 'error' },
+    },
+    filename,
+  );
+};
+
+/* eslint-disable-next-line @typescript-eslint/no-explicit-any --
+ * The oracle walks a parse tree of the FIXED output, which is untyped text:
+ * narrowing each visited node would restate the parser's own union without
+ * changing which nodes the walk reaches. */
+type SyntaxNode = Record<string, any>;
+
+const walk = (node: SyntaxNode, visit: (node: SyntaxNode) => void) => {
+  if (!node || typeof node.type !== 'string') {
+    return;
+  }
+  visit(node);
+  for (const [key, value] of Object.entries(node)) {
+    if (key === 'parent') {
+      continue;
+    }
+    if (Array.isArray(value)) {
+      value.forEach((item) => walk(item as SyntaxNode, visit));
+    } else if (value && typeof value === 'object') {
+      walk(value as SyntaxNode, visit);
+    }
+  }
+};
+
+const isCallTo = (node: SyntaxNode, name: string) =>
+  !!node &&
+  node.type === 'CallExpression' &&
+  ((node.callee.type === 'Identifier' && node.callee.name === name) ||
+    (node.callee.type === 'MemberExpression' &&
+      node.callee.property?.name === name));
+
+/** Bindings whose value is a memo object — what React refuses to forward a ref through. */
+const memoBoundNames = (ast: SyntaxNode) => {
+  const names = new Set<string>();
+  walk(ast, (node) => {
+    if (
+      node.type === 'VariableDeclarator' &&
+      node.id?.type === 'Identifier' &&
+      isCallTo(node.init, 'memo')
+    ) {
+      names.add(node.id.name);
+    }
+  });
+  return names;
+};
+
+/**
+ * Whether any `forwardRef(...)` call in `code` receives a memo object, spelled
+ * inline or reached through a binding declared elsewhere in the file.
+ */
+const forwardsRefOverMemo = (code: string) => {
+  const ast = tsParser.parse(code, PARSER_OPTIONS) as SyntaxNode;
+  const memoized = memoBoundNames(ast);
+  let found = false;
+  walk(ast, (node) => {
+    if (!isCallTo(node, 'forwardRef')) {
+      return;
+    }
+    for (const argument of node.arguments as SyntaxNode[]) {
+      if (
+        isCallTo(argument, 'memo') ||
+        (argument.type === 'Identifier' && memoized.has(argument.name))
+      ) {
+        found = true;
+      }
+    }
+  });
+  return found;
+};
+
+const REPRO_FILENAME = 'src/components/edit/file/withInteractFile.tsx';
+
+/** The issue's file, reduced to the declarations the rule reads. */
+const REPRO = `import { forwardRef } from 'react';
+import { memo } from '../../../util/memo';
+
+function WithInteractFileRefless(props, ref) {
+  return <WrappedComponent {...props} ref={mergedRef} />;
+}
+
+const memoized: unknown = memo(
+  forwardRef(WithInteractFileRefless),
+  compareDeeply('file'),
+);
+`;
+
+/** What `--fix` produced for {@link REPRO}, quoted from the issue. */
+const REPRO_BROKEN_FIX = `import { forwardRef } from 'react';
+import { memo } from '../../../util/memo';
+
+function WithInteractFileReflessUnmemoized(props, ref) {
+  return <WrappedComponent {...props} ref={mergedRef} />;
+}
+const WithInteractFileRefless = memo(WithInteractFileReflessUnmemoized);
+
+const memoized: unknown = memo(
+  forwardRef(WithInteractFileRefless),
+  compareDeeply('file'),
+);
+`;
+
+describe('require-memo --fix never forwards a ref through memo (#2352)', () => {
+  it('flags the broken output the issue reported (oracle control)', () => {
+    expect(forwardsRefOverMemo(REPRO_BROKEN_FIX)).toBe(true);
+    expect(forwardsRefOverMemo(`const R = forwardRef(memo(Render));`)).toBe(
+      true,
+    );
+    expect(forwardsRefOverMemo(REPRO)).toBe(false);
+  });
+
+  it('leaves the issue repro untouched', () => {
+    const { output, fixed, messages } = fixWholeFile(REPRO, REPRO_FILENAME);
+    expect(messages).toEqual([]);
+    expect(fixed).toBe(false);
+    expect(output).toBe(REPRO);
+    expect(forwardsRefOverMemo(output)).toBe(false);
+  });
+
+  it.each([
+    [
+      'bare forwardRef, result not memoized',
+      `import { forwardRef } from 'react';
+function RowRender(props, ref) { return <li ref={ref}>{props.label}</li>; }
+export const Row = forwardRef(RowRender);
+`,
+    ],
+    [
+      'React.forwardRef, result memoized',
+      `import React from 'react';
+function RowRender(props, ref) { return <li ref={ref}>{props.label}</li>; }
+export const Row = React.memo(React.forwardRef(RowRender));
+`,
+    ],
+    [
+      'arrow render function by reference',
+      `import { forwardRef } from 'react';
+import { memo } from '../util/memo';
+const RowRender = (props, ref) => <li ref={ref}>{props.label}</li>;
+export const Row = memo(forwardRef(RowRender));
+`,
+    ],
+    [
+      'render function passed inline',
+      `import { forwardRef } from 'react';
+export const Row = forwardRef(function RowRender(props, ref) {
+  return <li ref={ref}>{props.label}</li>;
+});
+`,
+    ],
+  ])('%s', (_name, code) => {
+    const { output } = fixWholeFile(code, 'src/components/Row.tsx');
+    expect(forwardsRefOverMemo(output)).toBe(false);
+    expect(output).toBe(code);
+  });
+
+  it('still rewrites a component that no forwardRef call reads', () => {
+    const { output, fixed } = fixWholeFile(
+      `function Row({label}) { return <li>{label}</li>; }
+`,
+      'src/components/Row.tsx',
+    );
+    expect(fixed).toBe(true);
+    expect(output).toBe(
+      `import { memo } from '../util/memo';
+const Row = memo(function RowUnmemoized({label}) { return <li>{label}</li>; });
+`,
+    );
+  });
 });
