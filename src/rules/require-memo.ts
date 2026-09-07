@@ -178,6 +178,69 @@ function isMemoCallee(node: TSESTree.Node): boolean {
   );
 }
 
+/**
+ * Whether `node` spells React's ref-forwarding helper in callee position: the
+ * bare `forwardRef` binding or a member access ending in `.forwardRef`
+ * (`React.forwardRef`). Matched by spelling, as the memo helper above is.
+ */
+function isForwardRefCallee(node: TSESTree.Node): boolean {
+  const callee = unwrapValue(node);
+  return (
+    (callee.type === AST_NODE_TYPES.Identifier &&
+      callee.name === FORWARD_REF_NAME) ||
+    (callee.type === AST_NODE_TYPES.MemberExpression &&
+      callee.property.type === AST_NODE_TYPES.Identifier &&
+      callee.property.name === FORWARD_REF_NAME)
+  );
+}
+
+/**
+ * Whether `node` only re-types the value it carries — the upward reading of
+ * {@link unwrapValue}, so that `forwardRef(Row as RenderFn)` is recognized as
+ * handing the call what `forwardRef(Row)` hands it.
+ */
+const isValueWrapper = (node: TSESTree.Node) => unwrapValue(node) !== node;
+
+/** Whether `reference` stands in the argument list of a `forwardRef(...)` call. */
+function isForwardRefArgument(reference: TSESTree.Node): boolean {
+  let value: TSESTree.Node = reference;
+  let parent = value.parent;
+  while (parent && isValueWrapper(parent)) {
+    value = parent;
+    parent = parent.parent;
+  }
+  return (
+    !!parent &&
+    parent.type === AST_NODE_TYPES.CallExpression &&
+    parent.arguments.some((argument) => argument === value) &&
+    isForwardRefCallee(parent.callee)
+  );
+}
+
+/**
+ * Whether the component reaches `forwardRef(...)` as its render function.
+ *
+ * The binding's own references are read rather than identifiers matched by
+ * name, so a same-named component in another scope neither claims this one nor
+ * clears it.
+ */
+function isForwardRefRenderFunction(
+  context: Readonly<RuleContext<'requireMemo', RequireMemoOptions>>,
+  node: ComponentNode,
+  bindingName: string,
+): boolean {
+  const variable = ASTHelpers.findVariableInScope(
+    ASTHelpers.getScope(context, node),
+    bindingName,
+  );
+  return (
+    !!variable &&
+    variable.references.some((reference) =>
+      isForwardRefArgument(reference.identifier),
+    )
+  );
+}
+
 /** Whether `componentName` appears in `node`'s (possibly nested) call arguments. */
 function callArgumentsMention(
   node: TSESTree.Node,
@@ -348,6 +411,7 @@ const canHostConstDeclaration = (parentNode: TSESTree.Node) =>
   CONST_HOSTING_PARENTS.has(parentNode.type);
 
 const MEMO_NAME = 'memo';
+const FORWARD_REF_NAME = 'forwardRef';
 
 function isMemoImport(importPath: string): boolean {
   // Match both absolute and relative paths ending with util/memo
@@ -1121,12 +1185,32 @@ function checkFunction(
     const isDeclarationComponent = isUnmemoizedFunctionComponent(node);
     const isArrowComponent = isUnmemoizedArrowFunction(node, parentNode);
     if (isDeclarationComponent || isArrowComponent) {
-      const componentName =
+      const bindingName =
         (node.type === 'FunctionDeclaration' && node.id?.name) ||
         (parentNode.type === 'VariableDeclarator' &&
           parentNode.id.type === 'Identifier' &&
           parentNode.id.name) ||
-        'component';
+        null;
+      const componentName = bindingName || 'component';
+
+      // A render function handed to forwardRef() is not this rule's subject:
+      // the component a caller receives is the forwardRef RESULT, which is
+      // where a memo wrapper belongs (`memo(forwardRef(fn))`). React rejects a
+      // memo object in forwardRef's argument and throws at render — "Component
+      // is not a function" — so wrapping the render function is never a repair,
+      // whether or not the call around it is already memoized (#2352). Both
+      // remedies the message names are wrong at this position, and the correct
+      // one edits a node this rule does not claim, so the claim is dropped
+      // rather than answered with an edit that has to be guessed. The INLINE
+      // spelling, `forwardRef(function Row() {})`, is already exempt above:
+      // claiming only the by-reference one would key the report to syntax
+      // rather than to memoization (#1774).
+      if (
+        bindingName &&
+        isForwardRefRenderFunction(context, node, bindingName)
+      ) {
+        return;
+      }
 
       // Both spellings of a component carry the same remedy, so both carry an
       // edit: the declaration one becomes a memoized const, and an initializer
