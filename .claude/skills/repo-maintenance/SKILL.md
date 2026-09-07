@@ -46,7 +46,7 @@ The repo's own Stop Hook gates every change before it can merge — the maintain
     - `README.md`
     If a file is missing, the Stop Hook blocks completion and forces a fix.
 
-2. **Quality Checks**: build (`npm run build`) must succeed, ESLint must pass on the **changed files** (scoped, not whole-repo — avoids tripping on unrelated pre-existing debt), and the tests **related to the change** (`jest --findRelatedTests`) must pass. The full suite is the CI backstop. For rule implementations the hook also prompts the agent to "Expand Tests" toward 20+ cases covering false positives/negatives.
+2. **Quality Checks**: build (`npm run build`) must succeed, ESLint must pass on the **changed files** (scoped, not whole-repo — avoids tripping on unrelated pre-existing debt), and the tests **related to the change** (`jest --findRelatedTests`, through the same builder `npm run test:related` uses) must pass. The full suite is the CI backstop and has no local spelling; see 2b. For rule implementations the hook also prompts the agent to "Expand Tests" toward 20+ cases covering false positives/negatives.
 
 ### 2b. Sharing the machine with other repos (the exec-governor)
 
@@ -58,6 +58,16 @@ Both sides must resolve the same pool: leave `BLUMINT_GOVERNOR_STATE_DIR` unset 
 
 Leaving `BLUMINT_GOVERNOR_CLI` unset — CI, a laptop, any checkout with no agora clone beside it — runs the bare jest command, exactly as before. A configured path that has moved degrades the same way rather than failing the gate, since an unreachable governor is a fact about the machine, not a defect in the change under test. Note that a governed run buffers its child's output and replays it on exit rather than streaming live; that is the price of the reservation, and an ungoverned gate streams only up to the SIGKILL that discards the whole run. `governor status` shows who currently holds leases.
 
+**`TSX_TSCONFIG_PATH` is derived and set for you, and is not yours to touch.** agora's CLI resolves `functions/*` through a tsconfig path alias, so started from this repo's directory it dies at module resolution — `Cannot find module 'functions/src/util/assertSafe'` — and the client then re-runs the tests bare. Every governed invocation therefore sets that variable to the tsconfig beside the configured CLI (`<cli dir>/../../tsconfig.json`), derived from `BLUMINT_GOVERNOR_CLI` so no machine-specific string lives in this repo. Setting it yourself points the CLI at the wrong project and reopens the silent ungoverned lane.
+
+**`npm run test:related` is the canonical scoped run.** It governs a `--findRelatedTests` run over the files given, or over the branch's changed TypeScript when none are, and appends a pinned set of cheap registry guards when `src/index.ts` is among them. Pass files or jest flags after `--`, attaching a flag's value (`--testTimeout=30000`): the script reads a dash-prefixed token as a flag and everything else as a path, so a detached value would reach jest as a relatedness operand and run zero tests at exit 0.
+
+**The whole suite has no local spelling.** `npm test`, `npm run test`, `npm run test:ci` and `npm t` are denied by the `PreToolUse` Bash guard, which publishes `npm run test:related` in their place. npm's own options are walked at both positions they sit, so quieting the run changes nothing: `npm --silent test` is the same denial. CI's `test-report.yml`, which runs `npm run test:ci`, is the only surface that runs all 355 suites. Path-scoped runs (`npx jest src/tests/x.test.ts`) are allowed and are how a suite CI named is reproduced locally.
+
+**Touching a governor variable around a jest run is denied, and is never the remedy.** The family is `BLUMINT_GOVERNOR_*`, `BLUMINT_MAX_WORKERS`, `BLUMINT_WORKER_BUDGET_MB`, `TSX_TSCONFIG_PATH` and `CI`, in every spelling — a prefix assignment, `env -u`/`--unset` (attached or detached), a preceding `unset` or `export`. Stripping one buys an ungoverned run that sizes its fleet from installed memory rather than from a grant, which is how thirteen jest workers fill a 31 GB box shared with two other loops.
+
+**A governed run that reports `FAIL` after twenty minutes has hit the governor's child ceiling, not a test failure.** The suites are green and the child was killed; agora's `CHILD_TIMEOUT_MS` has no per-profile override. Recover by splitting the operands — `npm run test:related -- <subset>` in batches that each fit — never by removing the governor from the command.
+
 ### 3. Driving a PR to clean
 
 To drive any open PR to review-clean + CI-green — addressing CodeRabbit/human review comments and fixing failing checks autonomously, committing + pushing each cycle — run `npm run pr-autopilot -- --pr=<n>` (see `.github/scripts/pr-autopilot.ts`). This replaces the old `claude-address-bot-review` label trigger. A human can run it the same way.
@@ -68,7 +78,7 @@ To drive any open PR to review-clean + CI-green — addressing CodeRabbit/human 
 
 For a PR branch whose CI is red:
 1. `git checkout <pr-branch-name>`
-2. Run the `fix-build-test` agent (it runs build/tests, diagnoses errors, and loops until `npm run build` and `npm test` pass), or run `npm run pr-autopilot -- --pr=<n>` which folds this in.
+2. Run the `fix-build-test` agent (it reads the failing run's suite list, then loops on `npm run build`, `npm run test:related` and an `npx jest <path>` per suite CI named), or run `npm run pr-autopilot -- --pr=<n>` which folds this in.
 3. Commit & push.
 
 ### Addressing Bot Reviews

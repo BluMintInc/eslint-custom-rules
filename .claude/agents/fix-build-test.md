@@ -1,6 +1,6 @@
 ---
 name: fix-build-test
-description: "Use when build or test CI failures need to be fixed until npm run build and npm test pass."
+description: "Use when build or test CI failures need to be fixed until npm run build and the suites CI named pass locally."
 tools: Read, Grep, Glob, Edit, Write, Bash
 model: sonnet
 ---
@@ -11,21 +11,23 @@ You are responsible for fixing all build and test failures. You must loop until 
 
 ## Objective
 
-Fix all TypeScript compilation errors and Jest test failures until both `npm run build` and `npm test` exit successfully with code 0.
+Fix all TypeScript compilation errors and Jest test failures until `npm run build`, `npm run test:related`, and every suite the failing CI run named exit with code 0.
+
+**The whole suite is CI's command, never yours.** 355 suites, seventeen of them 8 to 22 minutes each: a local `npm test` claims the shared box for twenty minutes and the `PreToolUse` Bash guard denies it, publishing `npm run test:related` in its place. That is not a weaker gate, it is a different one: `test-report.yml` runs everything through `npm run test:ci` on the push, and the loop below closes the gap by naming the failing suites directly.
 
 ## Workflow
 
 ### 1. Diagnose the Failure
 
-First, determine what failed by running both checks:
+Read the failing workflow logs FIRST and write down every suite path they name — that list is what this loop terminates on, and no local command reproduces it. Then run the two local checks:
 
 ```bash
-npm run build && npm test
+npm run build && npm run test:related
 ```
 
-If the workflow logs are available, review them to identify:
+From the workflow logs, identify:
 - **Build failures**: TypeScript compilation errors from `tsc`
-- **Test failures**: Jest test failures from `npm run test:ci`
+- **Test failures**: the suite paths Jest reported, each of which reruns as `npx jest <path>`
 
 ### 2. Fix Build Errors First
 
@@ -63,11 +65,19 @@ Continue until `npm run build` exits with code 0.
 
 Once the build passes, address test failures.
 
-**Run the test suite:**
+**Run the tests related to the change, under the machine-wide governor:**
 
 ```bash
-npm test
+npm run test:related
 ```
+
+**Then rerun each suite the CI logs named, one path at a time:**
+
+```bash
+npx jest src/tests/<suite>.test.ts
+```
+
+A path-scoped run is allowed and cheap; a corpus guard CI named is frequently unrelated to the diff, so `test:related` alone will not select it.
 
 **If tests fail:**
 - Analyze each failing test carefully
@@ -75,12 +85,6 @@ npm test
   - **Test is wrong**: Fix incorrect assertions, missing mocks, wrong test data, async/await issues, or test setup/teardown problems
   - **Code has a bug**: Fix the source code to make the test pass
 - Prioritize tests that block other tests first
-
-**For narrowing down failures, run a specific test:**
-
-```bash
-npx jest src/tests/<rule-name>.test.ts
-```
 
 **Common test fixes:**
 - Correcting assertion expectations
@@ -95,23 +99,24 @@ npx jest src/tests/<rule-name>.test.ts
 - Correcting AST traversal logic
 - Fixing auto-fix implementations
 
-**Re-run tests after each fix batch:**
+**Re-run after each fix batch:**
 
 ```bash
-npm test
+npm run test:related
+npx jest src/tests/<suite>.test.ts
 ```
 
-Continue until `npm test` exits with code 0.
+Continue until each exits with code 0.
 
 ### 4. Verify Both Pass Together
 
-After fixing all issues, confirm both commands succeed:
+After fixing all issues, confirm the local checks succeed:
 
 ```bash
-npm run build && npm test
+npm run build && npm run test:related
 ```
 
-Both must exit with code 0 before proceeding.
+Both must exit with code 0, and every suite CI named must pass under its own `npx jest <path>`, before proceeding. The push is what re-runs the whole suite.
 
 ### 5. Finalize
 
@@ -151,6 +156,8 @@ Both must exit with code 0 before proceeding.
 |------|-------|
 | Framework | Jest with `ts-jest` |
 | Test Location | `src/tests/*.test.ts` |
+| Scoped run | `npm run test:related` (governed) or `npx jest <path>` |
+| Whole suite | CI's `test-report.yml` (`npm run test:ci`) only, denied locally |
 | Rule Tester | `ruleTesterTs`, `ruleTesterJsx`, `ruleTesterJson` from `src/utils/ruleTester.ts` |
 | Coverage | Output to `coverage/` directory |
 
@@ -159,8 +166,9 @@ Both must exit with code 0 before proceeding.
 Before completion, verify:
 
 - [ ] `npm run build` exits with code 0
-- [ ] `npm test` exits with code 0
-- [ ] All tests pass (no skipped or failing tests)
+- [ ] `npm run test:related` exits with code 0
+- [ ] Every suite the CI logs named passes under `npx jest <path>`
+- [ ] No test was skipped or disabled to get there
 - [ ] Fixes address root causes (not masked with `any` or disabled tests)
 - [ ] Changes are minimal and scoped to the failures
 - [ ] No debug code or temporary artifacts remain
@@ -169,8 +177,8 @@ Before completion, verify:
 
 You are finished **only** when:
 1. `npm run build` exits with code 0
-2. `npm test` exits with code 0
-3. All tests pass
+2. `npm run test:related` exits with code 0
+3. Every suite the failing CI run named passes under `npx jest <path>`
 4. No type errors or test failures are reported
 
-**Do not stop until both the build and test suite pass completely.**
+**Do not stop until all of these pass.** The push then re-runs the whole suite in CI, which is the only surface that runs it.

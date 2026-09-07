@@ -65,8 +65,9 @@ eslint-custom-rules/
 |---------|-------------|
 | `npm install` | Install dependencies |
 | `npm run build` | Compile TypeScript to `lib/` |
-| `npm test` | Run all tests with coverage |
+| `npm run test:related [-- <file\|flag>...]` | Run the tests related to the given files, or to the branch's changed files, under the machine-wide governor |
 | `npx jest src/tests/my-rule.test.ts` | Run specific test |
+| `npm test` | The whole suite with coverage. 355 suites, seventeen of them 8 to 22 minutes each, so the `PreToolUse` Bash guard denies it locally and publishes `npm run test:related` instead; `test-report.yml` runs the suite in CI as `npm run test:ci` |
 | `npm run lint:fix` | Fix linting issues |
 | `npm run docs` | Generate documentation |
 | `npm run release:dry-run` | Test semantic-release |
@@ -76,6 +77,7 @@ eslint-custom-rules/
 | File | Purpose |
 |------|---------|
 | `src/index.ts` | Rule exports and recommended config |
+| `src/utils/loadPlugin.ts` | The one way to load the plugin — a computed path, so jest's extractor records no relatedness edge |
 | `src/utils/createRule.ts` | Rule creation helper |
 | `src/utils/ruleTester.ts` | Test utility exports (3 variants) |
 | `src/utils/harvestRuleTesterCases.ts` | Harvests every declared fixture without executing the suite |
@@ -130,7 +132,9 @@ cross-rule composition defects live.
 
 ```typescript
 import { harvestRuleTesterCases } from '../utils/harvestRuleTesterCases';
+import { loadPlugin } from '../utils/loadPlugin';
 
+const plugin = loadPlugin();
 const harvested = harvestRuleTesterCases();
 // Resolve the rule NAME by object identity, never from `suite.name`:
 // ~100 of the 311 suites pass a display name that is not a rule name.
@@ -593,14 +597,17 @@ When writing tests, brainstorm scenarios that might cause:
 ### Coverage Verification
 
 ```bash
-# Run tests with coverage
-npm test
+# Run the tests related to what you changed, with coverage
+npm run test:related
+
+# One suite on its own
+npx jest src/tests/my-rule.test.ts --coverage
 
 # View coverage report
 open coverage/lcov-report/index.html
 ```
 
-Jest is configured with `collectCoverage: true` and outputs to `coverage/` directory.
+Jest is configured with `collectCoverage: true` and outputs to `coverage/` directory. Whole-suite coverage comes from CI; `npm test` is denied locally (see the Commands table).
 
 ---
 
@@ -667,7 +674,7 @@ Write comprehensive metadata in your rule file:
 2. **Development**:
    * Write rule implementation and tests
    * Run `npm run build` to compile TypeScript
-   * Run `npm test` to run all tests
+   * Run `npm run test:related` to run the tests related to your change
    * Run `npx jest src/tests/<rule>.test.ts` to test specific rule
    * Run `npm run lint:fix` to fix linting issues
 3. **Documentation**:
