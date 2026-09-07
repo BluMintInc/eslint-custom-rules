@@ -1,5 +1,27 @@
 [
   {
+    "version": "1.21.18",
+    "date": "2026-09-07T22:15:12.507Z",
+    "rules": [
+      {
+        "name": "enforce-empty-object-check",
+        "changeType": "fix",
+        "issues": [
+          2360
+        ],
+        "summary": "emit a configurable empty-check helper (closes #2360)"
+      },
+      {
+        "name": "prevent-children-clobber",
+        "changeType": "fix",
+        "issues": [
+          2361
+        ],
+        "summary": "resolve a parameterized props alias (closes #2361)"
+      }
+    ]
+  },
+  {
     "version": "1.21.17",
     "date": "2026-09-07T12:35:50.668Z",
     "rules": [

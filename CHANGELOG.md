@@ -1,3 +1,11 @@
+## [1.21.18](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.21.17...v1.21.18) (2026-09-07)
+
+
+### Bug Fixes
+
+* **enforce-empty-object-check:** emit a configurable empty-check helper (closes [#2360](https://github.com/BluMintInc/eslint-custom-rules/issues/2360)) ([c898356](https://github.com/BluMintInc/eslint-custom-rules/commit/c89835644328ce1e8b3de7f6a73cfbdead4c89b1))
+* **prevent-children-clobber:** resolve a parameterized props alias (closes [#2361](https://github.com/BluMintInc/eslint-custom-rules/issues/2361)) ([e5306f1](https://github.com/BluMintInc/eslint-custom-rules/commit/e5306f1dcec2aa4e8150972a0c42c2f7e4088167))
+
 ## [1.21.17](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.21.16...v1.21.17) (2026-09-07)
 
 
