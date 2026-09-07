@@ -51,6 +51,33 @@ const RESERVED_GB = 2;
 const MIN_BUDGET_GB = 1;
 
 /**
+ * An ungoverned run is a fallback lane, never a faster one, so its fleet is
+ * bounded by the share the machine-wide exec-governor would grant an admitted
+ * run: half of a 65%-of-RAM pool at one worker's cost, capped at eight. The
+ * three figures mirror agora's `DEFAULT_BUDGET_FRACTION`, `JEST_SHARE_DIVISOR`
+ * and `JEST_MAX_WORKERS` in `scripts/exec-governor/`, duplicated for the same
+ * reason `GOVERNOR_MAX_WORKERS_ENV` is. Without this bound the available-memory
+ * rule below sized one run at 13 workers on a 31 GB host shared by three agent
+ * loops, since it reserves a constant rather than a share.
+ */
+const UNGOVERNED_POOL_FRACTION = 0.65;
+const UNGOVERNED_SHARE_DIVISOR = 2;
+const UNGOVERNED_MAX_WORKERS = 8;
+
+const grantEquivalentWorkers = (perWorkerGb) =>
+  Math.max(
+    1,
+    Math.min(
+      UNGOVERNED_MAX_WORKERS,
+      Math.floor(
+        (memoryGb * UNGOVERNED_POOL_FRACTION) /
+          UNGOVERNED_SHARE_DIVISOR /
+          perWorkerGb,
+      ),
+    ),
+  );
+
+/**
  * Sampled ONCE per process and reused. Two reads a moment apart legitimately
  * disagree, and a run whose worker count depends on WHEN it asked is not
  * reproducible; `scripts/governor.test.ts` re-requires this module and compares
@@ -131,7 +158,12 @@ const calculateWorkers = () => {
   const cpuBasedLimit = Math.max(1, Math.floor(cpuCount * 0.5));
   const ungovernedWorkers = Math.max(
     1,
-    Math.min(memBasedLimit, cpuBasedLimit, cpuCount),
+    Math.min(
+      memBasedLimit,
+      cpuBasedLimit,
+      cpuCount,
+      grantEquivalentWorkers(perWorker),
+    ),
   );
   return readGovernorGrant(
     process.env[GOVERNOR_MAX_WORKERS_ENV],
