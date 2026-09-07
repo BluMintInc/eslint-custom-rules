@@ -510,6 +510,14 @@ destructured into bindings carries the type into each of them and counts the
 same, in both spellings — `const { items } = { ...CONFIG };` and
 `const [, ...rest] = [...ITEMS];`.
 
+`Object.values(CONFIG)` and `Object.entries(CONFIG)` are followed for the same
+reason, though neither is a copy: the array they build is fresh, so a write to
+the array itself is no readonly violation, but its elements are the constant's
+own frozen property values. `const vs = Object.values(CONFIG); vs.push({ n: 9 });`
+would be TS2322 once `CONFIG` is frozen, so the assertion is withheld.
+`Object.keys` is not followed — its result is `string[]` whatever the argument
+holds, so nothing the assertion changes reaches a binding taken from it.
+
 A **rest element** is a fresh array typed from whatever it destructures, so it
 is followed even when no copy feeds it:
 
@@ -522,9 +530,9 @@ rest.push(3);
 
 `map` and the two-argument `Array.from(X, fn)` are typed from their **callback**,
 so they are decided per call rather than per method. The frozen type reaches
-their result whenever the mapper returns the element or an access path rooted at
-it, and under `as const` an element's properties are literal types, so the result
-is a literal array a later write is rejected on:
+their result whenever the mapper hands the element back, and under `as const` an
+element's properties are literal types, so the result is a literal array a later
+write is rejected on:
 
 ```ts
 // Not frozen: `ns` is `1[]` rather than `number[]`, so `ns.push(3)` would be
@@ -536,10 +544,24 @@ export const run = () => {
 };
 ```
 
+Which spelling the element arrives in does not decide this. A **destructured**
+parameter binds a property without writing a member access, but it is the same
+extraction, so `({ n }) => n`, `({ n: value }) => value`, `([head]) => head`,
+`({ n, ...rest }) => rest` and every nesting of them read exactly as
+`(item) => item.n` does. Neither does the shape of what the mapper returns: the
+positions whose types **compose** the result's are followed too — the branches
+of a conditional (`(x) => (x.n > 0 ? x.n : x.m)`) or of a logical operator, a
+sequence's last expression, the elements and spreads of a container literal
+(`(x) => [x]`, `(x) => ({ ...x })`) and the operand of an `await`.
+
 A mapper that **computes** widens, carrying nothing of the constant into its
-result, so `ITEMS.map((x) => x * 2)` and `Array.from(ITEMS, () => Math.random())`
-are still frozen — which is what keeps the assertion from being withheld from
-every array anything is derived from. The discriminator is what the callback
+result, so `ITEMS.map((x) => x * 2)`, `ITEMS.map(({ n }) => n * 2)` and
+`Array.from(ITEMS, () => Math.random())` are still frozen — which is what keeps
+the assertion from being withheld from every array anything is derived from. A
+container literal built out of computed parts computes as surely as a bare
+expression does (`(x) => ({ label: String(x.n) })`), and so does an element
+reached only in a conditional's **test**, which decides which branch runs rather
+than what the expression is typed as. The discriminator is what the callback
 hands back, not which body spells it, so a block body and a function expression
 read the same; descent stops at a nested function, whose `return` answers for
 that function rather than for the mapper. Either way the call is still an

@@ -2315,6 +2315,308 @@ const Probe = () => {
       ].join('\n'),
       filename: 'test.ts',
     },
+    // Issue #2349: the element parameter was matched by NAME, which required it
+    // to be an Identifier, so every DESTRUCTURED spelling was misread as a
+    // mapper that computes and the constant was frozen under it. Destructuring
+    // and member access are two spellings of one extraction — the equivalence
+    // #2341 established for the constant's own bindings — so `({ n }) => n`
+    // keeps the frozen type exactly as `(x) => x.n` does, and `counts.push(3)`
+    // is TS2345 for an input that compiled.
+    {
+      name: 'declines to freeze an array whose destructured mapper returns the property',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const counts = ITEMS.map(({ n }) => n);',
+        '  counts.push(3);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // The walk must read the names a pattern INTRODUCES rather than the keys it
+    // reads, because a renamed binding is the same extraction under a name the
+    // constant never spells.
+    {
+      name: 'declines to freeze an array whose renamed destructured mapper returns the property',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const counts = ITEMS.map(({ n: value }) => value);',
+        '  counts.push(3);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose array-destructured mapper returns the head',
+      code: [
+        'const ITEMS = [[1, 2]];',
+        'export const run = () => {',
+        '  const heads = ITEMS.map(([head]) => head);',
+        '  heads.push(9);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose nested-destructured mapper returns the property',
+      code: [
+        'const ITEMS = [{ inner: { n: 1 } }];',
+        'export const run = () => {',
+        '  const counts = ITEMS.map(({ inner: { n } }) => n);',
+        '  counts.push(3);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // A REST name holds whatever the pattern did not name, so it carries the
+    // frozen type exactly as a named property does.
+    {
+      name: 'declines to freeze an array whose object-rest mapper returns the rest',
+      code: [
+        'const ITEMS = [{ n: 1, m: 2 }];',
+        'export const run = () => {',
+        '  const rests = ITEMS.map(({ n, ...rest }) => rest);',
+        '  rests.push({ m: 9 });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose array-rest mapper returns the tail',
+      code: [
+        'const ITEMS = [[1, 2, 3]];',
+        'export const run = () => {',
+        '  const tails = ITEMS.map(([, ...rest]) => rest);',
+        '  tails.push([9]);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // A REST PARAMETER gathers the arguments the caller passes, so its first
+    // slot is the element under another spelling.
+    {
+      name: 'declines to freeze an array whose rest-parameter mapper returns the first argument',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const copies = ITEMS.map((...args) => args[0]);',
+        '  copies.push({ n: 9 });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // The body syntax is not the question, so a block-bodied destructured
+    // mapper is read on the same terms as the expression-bodied one.
+    {
+      name: 'declines to freeze an array whose block-bodied destructured mapper returns the property',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const counts = ITEMS.map(({ n }) => {',
+        '    return n;',
+        '  });',
+        '  counts.push(3);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // `Array.from(X, fn)` carries the same mapper, so the parameter spelling
+    // must not decide the sibling call differently either.
+    {
+      name: 'declines to freeze an array whose Array.from mapper destructures the element',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const counts = Array.from(ITEMS, ({ n }) => n);',
+        '  counts.push(3);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // Issue #2349, second group: a returned value that is not an access path
+    // can still be typed FROM the element. The positions whose types compose
+    // the result's are followed — the branches of a conditional or a logical
+    // operator, a sequence's last expression, the parts of a container literal,
+    // and the operand of an `await`.
+    {
+      name: 'declines to freeze an array whose mapper spreads the element into an object literal',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const copies = ITEMS.map((x) => ({ ...x }));',
+        '  copies.push({ n: 9 });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose mapper spreads the element into an array literal',
+      code: [
+        'const ITEMS = [[1, 2]];',
+        'export const run = () => {',
+        '  const copies = ITEMS.map((x) => [...x]);',
+        '  copies.push([9]);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose mapper wraps the element in an array',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const wrapped = ITEMS.map((x) => [x]);',
+        '  wrapped.push([{ n: 9 }]);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose mapper puts the element property in an object literal',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const rows = ITEMS.map((x) => ({ n: x.n }));',
+        '  rows.push({ n: 9 });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // Destructure then rebuild is the two halves of the gap in one mapper.
+    {
+      name: 'declines to freeze an array whose mapper rebuilds a destructured property',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const rows = ITEMS.map(({ n }) => ({ n }));',
+        '  rows.push({ n: 9 });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // A whole `ConditionalExpression` is ONE returned value, so without the
+    // descent neither branch is ever tested against the element even though
+    // both are access paths rooted at it.
+    {
+      name: 'declines to freeze an array whose mapper returns a property in each ternary branch',
+      code: [
+        'const ITEMS = [{ n: 1, m: 2 }];',
+        'export const run = () => {',
+        '  const values = ITEMS.map((x) => (x.n > 0 ? x.n : x.m));',
+        '  values.push(3);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose block-bodied mapper returns a ternary over properties',
+      code: [
+        'const ITEMS = [{ n: 1, m: 2 }];',
+        'export const run = () => {',
+        '  const values = ITEMS.map((x) => {',
+        '    return x.n > 0 ? x.n : x.m;',
+        '  });',
+        '  values.push(3);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose mapper returns a property through a logical operator',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const values = ITEMS.map((x) => x.n || 0);',
+        '  values.push(3);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose mapper returns a property as a sequence tail',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const values = ITEMS.map((x) => (console.log(x), x.n));',
+        '  values.push(3);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // `await` unwraps rather than widens, so the frozen type reaches the
+    // promise the mapper hands back.
+    {
+      name: 'declines to freeze an array whose async mapper awaits a property',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const values = ITEMS.map(async (x) => await x.n);',
+        '  values.push(Promise.resolve(3));',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // Issue #2349: `Object.values`/`Object.entries` build a FRESH container, so
+    // no write to the container is a readonly violation — but its elements are
+    // the constant's own frozen property values, which is the TYPE half of the
+    // question a copy is followed for. `vs.push({ n: 9 })` is TS2322 once
+    // `CONFIG` is frozen, for an input that compiled.
+    {
+      name: 'declines to freeze an object whose Object.values array is pushed to',
+      code: [
+        'const CONFIG = { a: { n: 1 } };',
+        'export const run = () => {',
+        '  const vs = Object.values(CONFIG);',
+        '  vs.push({ n: 9 });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an object whose Object.entries array is pushed to',
+      code: [
+        'const CONFIG = { a: { n: 1 } };',
+        'export const run = () => {',
+        '  const es = Object.entries(CONFIG);',
+        "  es.push(['b', { n: 9 }]);",
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an object whose Object.values result is mapped and written',
+      code: [
+        'const CONFIG = { a: { n: 1 } };',
+        'export const run = () => {',
+        '  const counts = Object.values(CONFIG).map((x) => x.n);',
+        '  counts.push(3);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an object whose Object.values result is mapped by a destructured callback',
+      code: [
+        'const CONFIG = { a: { n: 1 } };',
+        'export const run = () => {',
+        '  const counts = Object.values(CONFIG).map(({ n }) => n);',
+        '  counts.push(3);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an object whose Object.entries pair is destructured by a mapper',
+      code: [
+        'const CONFIG = { a: { n: 1 } };',
+        'export const run = () => {',
+        '  const values = Object.entries(CONFIG).map(([key, value]) => value);',
+        '  values.push({ n: 9 });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
   ],
   invalid: [
     // Issue #2055: a JSX tag name is spelled twice, but the scope manager
@@ -5715,6 +6017,214 @@ const Probe = () => {
         'export const run = () => {',
         '  const counts = ITEMS.map((item) => item.n);',
         '  console.log(counts.length);',
+        '};',
+      ].join('\n'),
+    },
+    // Issue #2349 negative controls: reading the parameter's PATTERN must not
+    // become a licence to decline. A destructured mapper that COMPUTES widens
+    // exactly as the Identifier spelling of it does, so its result carries none
+    // of the frozen type and the report is still owed.
+    {
+      name: 'freezes an array whose destructured mapper computes from the property',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const doubled = ITEMS.map(({ n }) => n * 2);',
+        '  doubled.push(3);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const run = () => {',
+        '  const doubled = ITEMS.map(({ n }) => n * 2);',
+        '  doubled.push(3);',
+        '};',
+      ].join('\n'),
+    },
+    {
+      name: 'freezes an array whose destructured mapper interpolates the property',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const labels = ITEMS.map(({ n }) => `#${n}`);',
+        "  labels.push('y');",
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const run = () => {',
+        '  const labels = ITEMS.map(({ n }) => `#${n}`);',
+        "  labels.push('y');",
+        '};',
+      ].join('\n'),
+    },
+    // The position the element arrives in stays load-bearing under the pattern
+    // spelling: a destructured element the mapper never returns hands back
+    // nothing of the constant.
+    {
+      name: 'freezes an array whose destructured mapper returns the index',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const indexes = ITEMS.map(({ n }, index) => index);',
+        '  indexes.push(3);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const run = () => {',
+        '  const indexes = ITEMS.map(({ n }, index) => index);',
+        '  indexes.push(3);',
+        '};',
+      ].join('\n'),
+    },
+    // Descending into a container literal must not admit one whose parts all
+    // COMPUTE — the container is fresh and so are its contents.
+    {
+      name: 'freezes an array whose mapper builds an object literal from computed values',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const rows = ITEMS.map((x) => ({ label: String(x.n) }));',
+        "  rows.push({ label: 'y' });",
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const run = () => {',
+        '  const rows = ITEMS.map((x) => ({ label: String(x.n) }));',
+        "  rows.push({ label: 'y' });",
+        '};',
+      ].join('\n'),
+    },
+    {
+      name: 'freezes an array whose mapper builds an array literal from computed values',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const rows = ITEMS.map((x) => [x.n * 2]);',
+        '  rows.push([3]);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const run = () => {',
+        '  const rows = ITEMS.map((x) => [x.n * 2]);',
+        '  rows.push([3]);',
+        '};',
+      ].join('\n'),
+    },
+    {
+      name: 'freezes an array whose destructured mapper builds a literal holding none of the element',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        "  const rows = ITEMS.map(({ n }) => ({ label: 'x' }));",
+        "  rows.push({ label: 'y' });",
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const run = () => {',
+        "  const rows = ITEMS.map(({ n }) => ({ label: 'x' }));",
+        "  rows.push({ label: 'y' });",
+        '};',
+      ].join('\n'),
+    },
+    // A conditional's TEST decides which branch runs rather than what the
+    // expression is typed as, so an element reached only there carries nothing
+    // into the result. The write is a mutating call, which would decline had
+    // the copy been enrolled — so this measures the enrolment, not the absence
+    // of a write.
+    {
+      name: 'freezes an array whose mapper reaches the element only in the ternary test',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        "  const flags = ITEMS.map((x) => (x.n > 0 ? 'yes' : 'no'));",
+        '  flags.reverse();',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const run = () => {',
+        "  const flags = ITEMS.map((x) => (x.n > 0 ? 'yes' : 'no'));",
+        '  flags.reverse();',
+        '};',
+      ].join('\n'),
+    },
+    {
+      name: 'freezes an array whose ternary branches both compute',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const values = ITEMS.map((x) => (x.n > 0 ? x.n * 2 : 0));',
+        '  values.push(3);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const run = () => {',
+        '  const values = ITEMS.map((x) => (x.n > 0 ? x.n * 2 : 0));',
+        '  values.push(3);',
+        '};',
+      ].join('\n'),
+    },
+    // Issue #2349 negative controls for the projection: `Object.keys` hands
+    // back `string[]` whatever the argument holds, so the assertion cannot
+    // reach a binding taken from it, and a computing mapper over
+    // `Object.values` widens on the same terms any other mapper does.
+    {
+      name: 'freezes an object whose Object.keys array is pushed to',
+      code: [
+        'const CONFIG = { a: 1, b: 2 };',
+        'export const run = () => {',
+        '  const ks = Object.keys(CONFIG);',
+        "  ks.push('c');",
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const CONFIG = { a: 1, b: 2 } as const;',
+        'export const run = () => {',
+        '  const ks = Object.keys(CONFIG);',
+        "  ks.push('c');",
+        '};',
+      ].join('\n'),
+    },
+    {
+      name: 'freezes an object whose Object.values result is mapped by a computing callback',
+      code: [
+        'const CONFIG = { a: { n: 1 } };',
+        'export const run = () => {',
+        '  const doubled = Object.values(CONFIG).map((x) => x.n * 2);',
+        '  doubled.push(3);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const CONFIG = { a: { n: 1 } } as const;',
+        'export const run = () => {',
+        '  const doubled = Object.values(CONFIG).map((x) => x.n * 2);',
+        '  doubled.push(3);',
         '};',
       ].join('\n'),
     },

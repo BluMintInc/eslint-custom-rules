@@ -608,6 +608,65 @@ const accessPathRootOf = (node: TSESTree.Node): TSESTree.Node => {
 };
 
 /**
+ * Every name a binding PATTERN introduces — `x`, `{ n }`, `{ n: value }`,
+ * `[head]`, `{ n, ...rest }` and every nesting of them.
+ *
+ * Destructuring and member access are two spellings of ONE extraction, so a
+ * name a pattern binds carries the constant's frozen type exactly as an access
+ * path rooted at the parameter does. `as const` freezes in depth, so
+ * `({ n }) => n` over a frozen `[{ n: 1 }, { n: 2 }]` yields `(1 | 2)[]` and a
+ * later `push(3)` is TS2345 for an input that compiled (Issue #2349). The two
+ * spellings were already reconciled for the constant's own bindings by
+ * `collectUnfrozenPatternNames` (Issue #2341); a callback's parameter is that
+ * same question asked one level in.
+ *
+ * A name carrying a DEFAULT is collected on the same terms even though the
+ * default widens what the name is typed as — `({ n = 5 }) => n` over a frozen
+ * `[{ n: 1 }, { n: 2 }]` compiles a later `push(3)`, measured — because the
+ * widening depends on the default's own type rather than on the pattern.
+ * Reading the default would trade an over-decline, which costs one report, for
+ * a `--fix` that stops the file compiling.
+ */
+const patternBoundNames = (
+  pattern: TSESTree.Node,
+  names: Set<string> = new Set(),
+): Set<string> => {
+  switch (pattern.type) {
+    case AST_NODE_TYPES.Identifier:
+      names.add(pattern.name);
+      break;
+    case AST_NODE_TYPES.ObjectPattern:
+      for (const property of pattern.properties) {
+        patternBoundNames(
+          property.type === AST_NODE_TYPES.Property
+            ? property.value
+            : property.argument,
+          names,
+        );
+      }
+      break;
+    case AST_NODE_TYPES.ArrayPattern:
+      for (const element of pattern.elements) {
+        // An array pattern holds a HOLE for each skipped position
+        // (`([, second]) => second`), which binds no name.
+        if (element) {
+          patternBoundNames(element, names);
+        }
+      }
+      break;
+    case AST_NODE_TYPES.AssignmentPattern:
+      patternBoundNames(pattern.left, names);
+      break;
+    case AST_NODE_TYPES.RestElement:
+      patternBoundNames(pattern.argument, names);
+      break;
+    default:
+      break;
+  }
+  return names;
+};
+
+/**
  * Every value a function hands back: its expression body, or the argument of
  * each `return` in its block.
  *
@@ -649,8 +708,78 @@ const returnedValuesOf = (
 };
 
 /**
- * Whether a callback hands back the value it is given at `elementIndex`, or an
- * access path rooted at it.
+ * Whether a returned expression carries the type of the element bound by
+ * `elementNames` into what the callback hands back.
+ *
+ * An access path rooted at one of those names is the base case. Beyond it the
+ * descent follows the positions whose types COMPOSE the result's, each measured
+ * to break a build under `--fix` when it is refused:
+ *
+ * - the branches of a conditional or a logical operator, and a sequence's LAST
+ *   expression, which are the alternatives the result's union is taken over, so
+ *   `(x) => (x.n > 0 ? x.n : x.m)` is TS2345 on a later `push`. A whole
+ *   `ConditionalExpression` is one atomic returned value, so without this arm
+ *   neither branch is ever tested against the element even though both are
+ *   access paths rooted at it;
+ * - the elements of an array literal and the values and spreads of an object
+ *   literal, which the container's element and property types are read from, so
+ *   `(x) => [x]` and `(x) => ({ ...x })` are both TS2322 on a later `push`;
+ * - the operand of an `await`, which unwraps rather than widens, so
+ *   `async (x) => await x.n` hands back `Promise<1 | 2>` and pushing
+ *   `Promise.resolve(3)` is TS2345.
+ *
+ * The TEST of a conditional is excluded: its type decides which branch runs,
+ * not what the expression is typed as. A function LITERAL is not descended into
+ * either, keeping the boundary `returnedValuesOf` draws. Neither is a template
+ * literal, an arithmetic operand or a call: those COMPUTE, widening to
+ * `string`/`number`/the callee's own return type whatever the receiver holds,
+ * so the assertion reaches nothing through them and the report stands.
+ */
+const carriesElementType = (
+  value: TSESTree.Node,
+  elementNames: ReadonlySet<string>,
+): boolean => {
+  // The root is taken first so the answer is decided on the value ITSELF rather
+  // than on the type syntax or member steps wrapped around it: `({ ...x }).n`
+  // and `[x][0]` carry the element as surely as `x.n` does.
+  const root = accessPathRootOf(value);
+
+  if (root.type === AST_NODE_TYPES.Identifier) {
+    return elementNames.has(root.name);
+  }
+
+  const carries = (node: TSESTree.Node | null | undefined): boolean =>
+    !!node && carriesElementType(node, elementNames);
+
+  switch (root.type) {
+    case AST_NODE_TYPES.ConditionalExpression:
+      return carries(root.consequent) || carries(root.alternate);
+    case AST_NODE_TYPES.LogicalExpression:
+      return carries(root.left) || carries(root.right);
+    case AST_NODE_TYPES.SequenceExpression:
+      return carries(root.expressions[root.expressions.length - 1]);
+    case AST_NODE_TYPES.ArrayExpression:
+      return root.elements.some((element) => carries(element));
+    case AST_NODE_TYPES.ObjectExpression:
+      return root.properties.some((property) =>
+        carries(
+          property.type === AST_NODE_TYPES.Property
+            ? property.value
+            : property.argument,
+        ),
+      );
+    case AST_NODE_TYPES.SpreadElement:
+      return carries(root.argument);
+    case AST_NODE_TYPES.AwaitExpression:
+      return carries(root.argument);
+    default:
+      return false;
+  }
+};
+
+/**
+ * Whether a callback hands back the value it is given at `elementIndex`, or a
+ * value the element's type reaches — see `carriesElementType`.
  *
  * This is what decides whether a `map`-shaped call keeps the receiver's element
  * type. `(x) => x.n` over a frozen `[{ n: 1 }]` yields `1[]` rather than
@@ -660,13 +789,16 @@ const returnedValuesOf = (
  * `() => Math.random()`) widens, carries nothing of the constant into its
  * result, and keeps its report.
  *
- * The parameter is matched by NAME within the callback's own body, the single
- * span this question is asked over, because a derivation resolver is handed a
- * node and no scope. A name a nested function rebinds is unreachable — descent
- * stops at every function boundary — so the worst a shadow can do is withhold
- * the assertion from a call that would have kept it, the cheap error of the two.
+ * The element is matched by the NAMES its parameter BINDS — every spelling of
+ * the pattern, not the Identifier spelling alone, which read `({ n }) => n` as
+ * a callback that computes and froze the constant under it (Issue #2349). The
+ * match is by name within the callback's own body, the single span this
+ * question is asked over, because a derivation resolver is handed a node and no
+ * scope. A name a nested function rebinds is unreachable — descent stops at
+ * every function boundary — so the worst a shadow can do is withhold the
+ * assertion from a call that would have kept it, the cheap error of the two.
  *
- * ANY returned value rooted at the element is enough. Branches returning
+ * ANY returned value carrying the element is enough. Branches returning
  * different things widen their union, so the assertion may then reach nothing
  * and the withhold costs a report; demanding EVERY branch would instead ship a
  * `--fix` that stops the file compiling.
@@ -679,15 +811,16 @@ const returnsHandedElement = (
     return false;
   }
   const parameter = callback.params[elementIndex];
-  if (!parameter || parameter.type !== AST_NODE_TYPES.Identifier) {
+  if (!parameter) {
     return false;
   }
-  return returnedValuesOf(callback).some((value) => {
-    const root = accessPathRootOf(value);
-    return (
-      root.type === AST_NODE_TYPES.Identifier && root.name === parameter.name
-    );
-  });
+  const elementNames = patternBoundNames(parameter);
+  if (elementNames.size === 0) {
+    return false;
+  }
+  return returnedValuesOf(callback).some((value) =>
+    carriesElementType(value, elementNames),
+  );
 };
 
 /**
@@ -1494,17 +1627,30 @@ const DERIVATION_RESOLVERS: readonly ((
 
 /**
  * The derivations that carry the constant's frozen type into a value a BINDING
- * can be initialized from: a copy of it and an element taken out of it.
+ * can be initialized from: a copy of it, an element taken out of it, and the
+ * `Object.values`/`Object.entries` array over it.
  *
- * The three iteration resolvers are absent because each hands back a value of a
- * DIFFERENT SHAPE whose container is fresh and mutable — `Object.values(CONFIG)`
- * and `new Set(ITEMS)` are arrays and sets nothing frozen was written to, so a
- * write to the container itself is no readonly violation. Only their ELEMENTS
- * carry the assertion, which is the question the iteration walk asks.
+ * The projection is followed for the reason a COPY is, which is the TYPE half
+ * of the question rather than the mutation half. Its container is fresh, so a
+ * write to the container itself is no readonly violation — but its elements are
+ * the constant's own frozen property values, so `const vs = Object.values(CONFIG);
+ * vs.push({ n: 9 });` is TS2322 for an input that compiled, and the mapper
+ * spelling `Object.values(CONFIG).map(({ n }) => n)` carries that same
+ * narrowing on into the derived array (Issue #2349). `Object.keys` is already
+ * absent from the resolver itself, its result being `string[]` whatever the
+ * argument holds.
+ *
+ * The remaining iteration resolvers stay absent: an ITERATOR is not a value a
+ * binding is written through, and `new Set(ITEMS)` reshapes the constant into a
+ * collection whose own question the iteration walk asks.
  */
 const ALIAS_DERIVATION_RESOLVERS: readonly ((
   node: TSESTree.Node,
-) => TSESTree.Node | null)[] = [copyExpressionOf, elementExpressionOf];
+) => TSESTree.Node | null)[] = [
+  copyExpressionOf,
+  elementExpressionOf,
+  elementProjectionCallOf,
+];
 
 /**
  * Every expression that denotes a value typed from this reference: the
