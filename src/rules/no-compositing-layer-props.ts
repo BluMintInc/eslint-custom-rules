@@ -28,19 +28,37 @@ const COMPOSITING_PROPERTIES = new Set([
   'opacity',
 ]);
 
-const COMPOSITING_VALUES = new Set([
+// Vendor-prefixed spellings name the same CSS property as their unprefixed
+// counterpart: `WebkitTransform` normalizes to `-webkit-transform`, `msTransform`
+// to `ms-transform`. Stripping the prefix lets one entry cover every spelling.
+function stripVendorPrefix(normalizedName: string): string {
+  return normalizedName.replace(/^-?(?:webkit|moz|ms|o)-/, '');
+}
+
+// 3D transform functions promote a layer, but only when applied through a
+// property whose value grammar accepts a transform function.
+const COMPOSITING_TRANSFORM_FUNCTIONS = [
   'translate3d',
   'scale3d',
   'translateZ',
-  'transparent',
-]);
+];
+
+// `transform` is the only property that takes a transform function as its
+// value, so it is the whole key gate for the value-driven arm. A value can only
+// act through a property that accepts it; ungated, any key at all was named as
+// the offending "CSS property" on the strength of its value alone, including
+// `spotFill`, `desktop` and `mobile`, which are not CSS properties in any
+// spelling (#2353). Vendor-prefixed spellings normalize onto `transform`, which
+// is what keeps `WebkitTransform: 'translate3d(0, 0, 0)'` reported even though
+// `-webkit-transform` is absent from COMPOSITING_PROPERTIES.
+const TRANSFORM_VALUE_PROPERTIES = new Set(['transform']);
 
 // CSS reset/identity values that explicitly DON'T promote a layer for a given
-// property. These are the opt-out counterparts to COMPOSITING_VALUES: `none`
-// removes the effect, `auto`/global keywords disable the hint, and the default
-// keyword leaves the element un-promoted. Keyed by normalized property name so
-// the allowlist stays property-specific (e.g. `none` clears `transform` but is
-// not a valid no-op for `opacity`).
+// property. These are the opt-out counterparts to the promoting values above:
+// `none` removes the effect, `auto`/global keywords disable the hint, and the
+// default keyword leaves the element un-promoted. Keyed by normalized property
+// name so the allowlist stays property-specific (e.g. `none` clears `transform`
+// but is not a valid no-op for `opacity`).
 const NON_COMPOSITING_VALUES: Record<string, ReadonlySet<string>> = {
   filter: new Set(['none']),
   'backdrop-filter': new Set(['none']),
@@ -74,12 +92,18 @@ export const noCompositingLayerProps = createRule<[], MessageIds>({
   create(context) {
     const seenNodes = new WeakSet<TSESTree.Node>();
 
-    function checkPropertyValue(value: string): boolean {
+    // The value-driven arm exists to catch a layer-promoting value written under
+    // a property spelling COMPOSITING_PROPERTIES misses (a vendor prefix). It
+    // therefore requires BOTH: a value that promotes a layer, and a key that is
+    // a CSS property whose grammar accepts that value. A key failing the second
+    // half is never a CSS property being reported, so it is never reported.
+    function checkPropertyValue(
+      normalizedName: string,
+      value: string,
+    ): boolean {
       return (
-        COMPOSITING_VALUES.has(value) ||
-        value.includes('translate3d') ||
-        value.includes('scale3d') ||
-        value.includes('translateZ')
+        TRANSFORM_VALUE_PROPERTIES.has(stripVendorPrefix(normalizedName)) &&
+        COMPOSITING_TRANSFORM_FUNCTIONS.some((fn) => value.includes(fn))
       );
     }
 
@@ -117,7 +141,7 @@ export const noCompositingLayerProps = createRule<[], MessageIds>({
         }
         return true;
       }
-      if (propertyValue && checkPropertyValue(propertyValue)) {
+      if (propertyValue && checkPropertyValue(normalizedName, propertyValue)) {
         return true;
       }
       return false;
