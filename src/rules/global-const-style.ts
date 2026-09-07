@@ -747,7 +747,15 @@ const returnedValuesOf = (
  *
  * A function that is merely CALLED is still not descended into: the call is
  * typed by the callee's declared or inferred return type rather than by the
- * element, and a call is where every other widening construct hides.
+ * element, and a call is where every other widening construct hides. The one
+ * exception is a function LITERAL invoked on the spot, whose body is right here
+ * and whose returns are therefore as readable as a handed-back closure's. Its
+ * declared return type is deliberately NOT consulted: `no-explicit-return-type`
+ * ships `recommended: 'error'` with a fixer, so an annotation is the one piece
+ * of evidence another rule in this same config will delete. Reading
+ * `((): number => item.n)()` as widening to `number` made the freeze safe only
+ * until that fixer ran, and the pair then wrote TS2345 into a file that
+ * compiled.
  *
  * The TEST of a conditional is excluded: its type decides which branch runs,
  * not what the expression is typed as. Neither is a template literal, an
@@ -795,6 +803,16 @@ const carriesElementType = (
     case AST_NODE_TYPES.ArrowFunctionExpression:
     case AST_NODE_TYPES.FunctionExpression:
       return functionCarriesElementType(root, elementNames);
+    case AST_NODE_TYPES.CallExpression: {
+      const callee = unwrapValueWrappers(root.callee);
+      if (
+        callee.type !== AST_NODE_TYPES.ArrowFunctionExpression &&
+        callee.type !== AST_NODE_TYPES.FunctionExpression
+      ) {
+        return false;
+      }
+      return functionCarriesElementType(callee, elementNames);
+    }
     default:
       return false;
   }

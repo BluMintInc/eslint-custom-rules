@@ -2797,6 +2797,48 @@ const Probe = () => {
       ].join('\n'),
       filename: 'test.ts',
     },
+    // A function literal invoked on the spot has its body right here, so its
+    // returns are as readable as a handed-back closure's and the element
+    // reaches the result through them.
+    {
+      name: 'declines to freeze an array whose mapper returns an immediately-invoked closure',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const ns = ITEMS.map((item) => (() => item.n)());',
+        '  ns.push(3);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // The declared return type is deliberately not consulted:
+    // `no-explicit-return-type` ships `recommended: 'error'` with a fixer, so
+    // reading `number` here would make the freeze safe only until that fixer
+    // deleted the annotation, and the pair wrote TS2345 into a file that
+    // compiled. Composition guards caught exactly this fixture.
+    {
+      name: 'declines to freeze an array whose immediately-invoked closure declares a widening return type',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const ns = ITEMS.map((item) => ((): number => item.n)());',
+        '  ns.push(3);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // A function EXPRESSION invoked on the spot is the same construct.
+    {
+      name: 'declines to freeze an array whose mapper returns an invoked function expression',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const ns = ITEMS.map((item) => (function () { return item.n; })());',
+        '  ns.push(3);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
     // A parameter DEFAULT is what its parameter is typed from, so it carries
     // the element into the closure's signature without any return doing so.
     {
@@ -6541,16 +6583,17 @@ const Probe = () => {
         '};',
       ].join('\n'),
     },
-    // The boundary the descent keeps: a function that is merely CALLED is not
-    // descended into. The call is typed by the callee's own return type — here
-    // declared `number` — so the element reaches nothing through it and the
-    // freeze compiles.
+    // The boundary the descent keeps: a NAMED callee is not descended into.
+    // Its body is not part of this expression, the call is typed by the
+    // callee's own return type, and a call is where every other widening
+    // construct hides — so the element reaches nothing and the freeze compiles.
     {
-      name: 'freezes an array whose mapper calls a closure with a declared return type',
+      name: 'freezes an array whose mapper calls a named widening function',
       code: [
         'const ITEMS = [{ n: 1 }];',
+        'const widen = (value: number): number => value;',
         'export const run = () => {',
-        '  const ns = ITEMS.map((item) => ((): number => item.n)());',
+        '  const ns = ITEMS.map((item) => widen(item.n));',
         '  ns.push(3);',
         '};',
       ].join('\n'),
@@ -6558,8 +6601,9 @@ const Probe = () => {
       errors: [{ messageId: 'asConst' }],
       output: [
         'const ITEMS = [{ n: 1 }] as const;',
+        'const widen = (value: number): number => value;',
         'export const run = () => {',
-        '  const ns = ITEMS.map((item) => ((): number => item.n)());',
+        '  const ns = ITEMS.map((item) => widen(item.n));',
         '  ns.push(3);',
         '};',
       ].join('\n'),
