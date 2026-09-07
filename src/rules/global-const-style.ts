@@ -608,7 +608,7 @@ const accessPathRootOf = (node: TSESTree.Node): TSESTree.Node => {
 };
 
 /**
- * Every name a binding PATTERN introduces — `x`, `{ n }`, `{ n: value }`,
+ * Every identifier a binding PATTERN introduces — `x`, `{ n }`, `{ n: value }`,
  * `[head]`, `{ n, ...rest }` and every nesting of them.
  *
  * Destructuring and member access are two spellings of ONE extraction, so a
@@ -627,21 +627,21 @@ const accessPathRootOf = (node: TSESTree.Node): TSESTree.Node => {
  * Reading the default would trade an over-decline, which costs one report, for
  * a `--fix` that stops the file compiling.
  */
-const patternBoundNames = (
+const patternBoundIdentifiers = (
   pattern: TSESTree.Node,
-  names: Set<string> = new Set(),
-): Set<string> => {
+  bindings: Set<TSESTree.Identifier> = new Set(),
+): Set<TSESTree.Identifier> => {
   switch (pattern.type) {
     case AST_NODE_TYPES.Identifier:
-      names.add(pattern.name);
+      bindings.add(pattern);
       break;
     case AST_NODE_TYPES.ObjectPattern:
       for (const property of pattern.properties) {
-        patternBoundNames(
+        patternBoundIdentifiers(
           property.type === AST_NODE_TYPES.Property
             ? property.value
             : property.argument,
-          names,
+          bindings,
         );
       }
       break;
@@ -650,21 +650,30 @@ const patternBoundNames = (
         // An array pattern holds a HOLE for each skipped position
         // (`([, second]) => second`), which binds no name.
         if (element) {
-          patternBoundNames(element, names);
+          patternBoundIdentifiers(element, bindings);
         }
       }
       break;
     case AST_NODE_TYPES.AssignmentPattern:
-      patternBoundNames(pattern.left, names);
+      patternBoundIdentifiers(pattern.left, bindings);
       break;
     case AST_NODE_TYPES.RestElement:
-      patternBoundNames(pattern.argument, names);
+      patternBoundIdentifiers(pattern.argument, bindings);
       break;
     default:
       break;
   }
-  return names;
+  return bindings;
 };
+
+/**
+ * The NAMES those bindings introduce, which is what the value descent matches
+ * the element by — see `returnsHandedElement` for why that descent works in
+ * spellings rather than in bindings. Derived from the identifiers rather than
+ * collected alongside them so the two answers cannot drift apart.
+ */
+const patternBoundNames = (pattern: TSESTree.Node): Set<string> =>
+  new Set([...patternBoundIdentifiers(pattern)].map((binding) => binding.name));
 
 /**
  * Every value a function hands back: its expression body, the argument of each
@@ -863,6 +872,232 @@ const functionCarriesElementType = (
 };
 
 /**
+ * Every VALUE binding a single statement introduces into the scope holding it.
+ *
+ * Type declarations are skipped because `typeof x` reads the value namespace,
+ * so an alias or an interface spelled like the element shadows it nowhere.
+ *
+ * A `var` is collected against the block it is written in rather than the
+ * function it hoists to, so it is seen from inside that block alone. That
+ * under-reads shadowing, and a missed shadow reads a `typeof` as the element,
+ * which withholds a report — the cheap error of the two, since claiming a shadow
+ * that is not there licenses a freeze.
+ */
+const statementBoundIdentifiers = (
+  statement: TSESTree.Node,
+  bindings: Set<TSESTree.Identifier>,
+): void => {
+  switch (statement.type) {
+    case AST_NODE_TYPES.VariableDeclaration:
+      for (const declarator of statement.declarations) {
+        patternBoundIdentifiers(declarator.id, bindings);
+      }
+      break;
+    case AST_NODE_TYPES.FunctionDeclaration:
+    case AST_NODE_TYPES.ClassDeclaration:
+    case AST_NODE_TYPES.TSEnumDeclaration:
+      if (statement.id) {
+        bindings.add(statement.id);
+      }
+      break;
+    case AST_NODE_TYPES.ImportDeclaration:
+      for (const specifier of statement.specifiers) {
+        bindings.add(specifier.local);
+      }
+      break;
+    case AST_NODE_TYPES.ExportNamedDeclaration:
+    case AST_NODE_TYPES.ExportDefaultDeclaration:
+      if (statement.declaration) {
+        statementBoundIdentifiers(statement.declaration, bindings);
+      }
+      break;
+    default:
+      break;
+  }
+};
+
+/**
+ * The binding a node introduces for `name` in its OWN scope, or null when it
+ * introduces none.
+ *
+ * Carries just enough of the scope grammar to answer whether anything between a
+ * `typeof` and the element parameter rebinds the name, which is the only
+ * question `resolvesToElementBinding` asks of it. A scope form left out can fail
+ * to find a shadow and never invent one, so the error it admits is a withheld
+ * report rather than a freeze.
+ */
+const scopeBindingOf = (
+  node: TSESTree.Node,
+  name: string,
+): TSESTree.Identifier | null => {
+  const bindings = new Set<TSESTree.Identifier>();
+  switch (node.type) {
+    case AST_NODE_TYPES.ArrowFunctionExpression:
+    case AST_NODE_TYPES.FunctionExpression:
+    case AST_NODE_TYPES.FunctionDeclaration:
+    case AST_NODE_TYPES.TSDeclareFunction:
+      for (const parameter of node.params) {
+        patternBoundIdentifiers(parameter, bindings);
+      }
+      // A function EXPRESSION binds its own name inside itself; an arrow has no
+      // name to bind.
+      if (node.type !== AST_NODE_TYPES.ArrowFunctionExpression && node.id) {
+        bindings.add(node.id);
+      }
+      break;
+    case AST_NODE_TYPES.CatchClause:
+      if (node.param) {
+        patternBoundIdentifiers(node.param, bindings);
+      }
+      break;
+    case AST_NODE_TYPES.ClassDeclaration:
+    case AST_NODE_TYPES.ClassExpression:
+      if (node.id) {
+        bindings.add(node.id);
+      }
+      break;
+    case AST_NODE_TYPES.ForStatement:
+      if (node.init) {
+        statementBoundIdentifiers(node.init, bindings);
+      }
+      break;
+    case AST_NODE_TYPES.ForInStatement:
+    case AST_NODE_TYPES.ForOfStatement:
+      statementBoundIdentifiers(node.left, bindings);
+      break;
+    case AST_NODE_TYPES.Program:
+    case AST_NODE_TYPES.BlockStatement:
+    case AST_NODE_TYPES.TSModuleBlock:
+    case AST_NODE_TYPES.StaticBlock:
+      for (const statement of node.body) {
+        statementBoundIdentifiers(statement, bindings);
+      }
+      break;
+    case AST_NODE_TYPES.SwitchCase:
+      for (const statement of node.consequent) {
+        statementBoundIdentifiers(statement, bindings);
+      }
+      break;
+    default:
+      break;
+  }
+  for (const binding of bindings) {
+    if (binding.name === name) {
+      return binding;
+    }
+  }
+  return null;
+};
+
+/**
+ * Whether an identifier written in a TYPE position resolves to one of the
+ * bindings the element parameter introduces.
+ *
+ * Resolution is lexical — the nearest enclosing binder wins — rather than a
+ * match on the name, because a `typeof` deep inside a callback can spell the
+ * element's name while naming something else entirely: `(item) => () => { const
+ * item = { n: 9 }; return (x: typeof item) => x; }` is typed from that local
+ * binding, which the constant reaches never, and freezing under it is measured
+ * safe.
+ */
+const resolvesToElementBinding = (
+  identifier: TSESTree.Identifier,
+  elementBindings: ReadonlySet<TSESTree.Identifier>,
+): boolean => {
+  for (
+    let node: TSESTree.Node | undefined = identifier.parent;
+    node;
+    node = node.parent
+  ) {
+    const binding = scopeBindingOf(node, identifier.name);
+    if (binding) {
+      return elementBindings.has(binding);
+    }
+  }
+  return false;
+};
+
+/**
+ * The identifier a `typeof` query is rooted at — `item` for `typeof item` and
+ * for `typeof item.n` alike — or null when the query names an import instead.
+ */
+const typeQueryRootOf = (
+  query: TSESTree.TSTypeQuery,
+): TSESTree.Identifier | null => {
+  let entity: TSESTree.Node = query.exprName;
+  while (entity.type === AST_NODE_TYPES.TSQualifiedName) {
+    entity = entity.left;
+  }
+  return entity.type === AST_NODE_TYPES.Identifier ? entity : null;
+};
+
+/**
+ * Whether a `typeof` anywhere inside `node` names the element.
+ *
+ * The element's type reaches a mapper's result through TYPE positions as
+ * readily as through value ones: a handed-back closure annotated `(x: typeof
+ * item) => x` is typed from the element without ever returning it, so freezing
+ * the receiver makes `makers.push((v: { n: number }) => v)` TS2345 for an input
+ * that compiled (Issue #2357).
+ *
+ * The query is looked for by STRUCTURE rather than by enumerating the type
+ * syntax it can sit under, because every wrapper measured breaks the build the
+ * same way — `typeof item.n`, `Wrapper<typeof item>`, `(typeof item)[]`,
+ * `[typeof item]`, `(typeof item)['n']`, a union, a conditional type, a
+ * function type, and a RETURN annotation rather than a parameter — and
+ * enumerating forms is what leaves the next spelling out.
+ *
+ * The sweep covers the whole CALLBACK rather than the values it returns,
+ * because the type an annotation names can be introduced beside them: `type
+ * Held = typeof item;` or an `interface` declared in the callback's body, a
+ * `satisfies` written in an expression, a class expression's field. Each of
+ * those is measured to break under `--fix` too, and each is invisible to a
+ * sweep of the returned value alone. A `typeof` of the element that composes
+ * the result nowhere then withholds one report, which is the cheap error of
+ * the two.
+ */
+const typeQueryNamesElement = (
+  node: TSESTree.Node,
+  elementBindings: ReadonlySet<TSESTree.Identifier>,
+): boolean => {
+  // A query spelling some other name resolves to some other binding whatever
+  // the scopes hold, so screening on the spelling first keeps the lexical walk
+  // for the queries that can possibly be the element.
+  const spellings = new Set(
+    [...elementBindings].map((binding) => binding.name),
+  );
+  let found = false;
+  const visit = (current: TSESTree.Node): void => {
+    if (found) {
+      return;
+    }
+    if (current.type === AST_NODE_TYPES.TSTypeQuery) {
+      const root = typeQueryRootOf(current);
+      if (
+        root &&
+        spellings.has(root.name) &&
+        resolvesToElementBinding(root, elementBindings)
+      ) {
+        found = true;
+        return;
+      }
+    }
+    for (const [key, value] of Object.entries(current)) {
+      if (key === 'parent') {
+        continue;
+      }
+      for (const child of Array.isArray(value) ? value : [value]) {
+        if (ASTHelpers.isNode(child)) {
+          visit(child);
+        }
+      }
+    }
+  };
+  visit(node);
+  return found;
+};
+
+/**
  * Whether a callback hands back the value it is given at `elementIndex`, or a
  * value the element's type reaches — see `carriesElementType`.
  *
@@ -888,6 +1123,9 @@ const functionCarriesElementType = (
  * different things widen their union, so the assertion may then reach nothing
  * and the withhold costs a report; demanding EVERY branch would instead ship a
  * `--fix` that stops the file compiling.
+ *
+ * A TYPE position carries the element too, and is asked as a separate question
+ * because it is resolved rather than name-matched — see `typeQueryNamesElement`.
  */
 const returnsHandedElement = (
   callback: TSESTree.Node | undefined,
@@ -900,10 +1138,14 @@ const returnsHandedElement = (
   if (!parameter) {
     return false;
   }
-  const elementNames = patternBoundNames(parameter);
-  if (elementNames.size === 0) {
+  const elementBindings = patternBoundIdentifiers(parameter);
+  if (elementBindings.size === 0) {
     return false;
   }
+  if (typeQueryNamesElement(callback, elementBindings)) {
+    return true;
+  }
+  const elementNames = patternBoundNames(parameter);
   return returnedValuesOf(callback).some((value) =>
     carriesElementType(value, elementNames),
   );

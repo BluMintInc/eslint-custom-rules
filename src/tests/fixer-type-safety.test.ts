@@ -544,8 +544,20 @@ for (const control of CONTROLS) {
  * keep, and if it does not, replace the `capped > 0` liveness floor with a
  * control that exercises the cap directly rather than through whichever rule
  * happens to be largest.
+ *
+ * 241 answers a bind that is NOT that one, and the distinction is what licenses
+ * one more cut. Measured with the cap lifted, `global-const-style` produces 240
+ * pairs — the bound dropped no pair of it at all. What tripped the pin is that
+ * `skipped` counts CASES arriving after the budget is spent rather than pairs
+ * lost, so a rule reaching the cap EXACTLY has whatever follows its last fixable
+ * fixture — `valid` controls, which yield no pair — recorded as a discard. One
+ * pair of clearance ends that: the rule is scanned to its end, and
+ * `enforce-assert-safe-object-key` at 242 pairs still cannot fit, so the
+ * liveness floor keeps witnessing the cap execute. The window is ONE wide
+ * afterwards, so the next bind on either side has no re-cut left; whoever meets
+ * it should make the replacement the paragraph above names.
  */
-const MAX_PAIRS_PER_RULE = 240;
+const MAX_PAIRS_PER_RULE = 241;
 
 /**
  * `DECLARES_INTO_SHARED_SCOPE` is imported from `fixtureTypeProgram` rather than
@@ -1268,19 +1280,20 @@ describe('an autofix must not turn compiling code into non-compiling code', () =
    * the cap makes a fifth one a conscious edit rather than a silent loss.
    */
   it('accounts for every case it discards before compiling', () => {
-    // 5 of 15,192 harvested, in exactly this one rule. The COUNT is left out
+    // 3 of 15,295 harvested, in exactly this one rule. The COUNT is left out
     // of the pin because it moves with every fixture added to a capped rule;
     // the membership is what carries the meaning. Three rules left this set
     // when the cap was re-cut to 200 — a rule LEAVING it is a coverage gain, so
-    // only a rule joining needs the conscious edit this pin forces. It forced
-    // one: `global-const-style` joined, and the cap was re-cut to 240 to carry
-    // it, for the reason recorded on MAX_PAIRS_PER_RULE.
+    // only a rule joining needs the conscious edit this pin forces. It has
+    // forced that edit twice, both times `global-const-style` joining, and both
+    // times the cap was re-cut to carry it — to 240, then to 241 — for the
+    // reasons recorded on MAX_PAIRS_PER_RULE.
     expect(
       coverage.cappedTail.map((entry) => entry.split(' ')[0]).sort(),
     ).toEqual(['enforce-assert-safe-object-key']);
     // A ceiling just above the measurement, per the floor-drift discipline in
     // reverse: a rise is a conscious edit, not something to discover later.
-    expect(capped).toBeLessThanOrEqual(30); // measured 5
+    expect(capped).toBeLessThanOrEqual(30); // measured 3
     // ...and a floor, so a cap that stopped applying at all — which would make
     // the rule list above stale rather than green — cannot pass quietly.
     expect(capped).toBeGreaterThan(0);

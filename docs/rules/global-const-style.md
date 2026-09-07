@@ -614,6 +614,53 @@ export const run = () => {
 };
 ```
 
+A closure carries the element through a **type** position as readily as through
+a value one, so the callback is read for a `typeof` naming the element too.
+`ITEMS.map((item) => (x: typeof item) => x)` is typed from the element without
+ever returning it: the mapped array is
+`((x: { readonly n: 1 }) => { readonly n: 1 })[]` once `ITEMS` is frozen, so the
+push below is TS2345 for an input that compiled.
+
+```ts
+// Not frozen: the closure's parameter annotation names the element, so the
+// frozen element type reaches `makers` through the annotation.
+const ITEMS = [{ n: 1 }];
+export const run = () => {
+  const makers = ITEMS.map((item) => (x: typeof item) => x);
+  makers.push((v: { n: number }) => v);
+};
+```
+
+The query is found wherever it is written rather than in an enumerated list of
+annotation forms: under a member path (`typeof item.n`), a generic argument
+(`Wrapper<typeof item>`), an array or a tuple of it, an indexed access
+(`(typeof item)['n']`), a union, a conditional type, a function type, and a
+**return** annotation rather than a parameter's. It is read in the type an
+annotation only names, too — a `type` alias or an `interface` declared in the
+callback, a class field, a `satisfies` — because each of those spells the same
+carriage from beside the value handed back rather than inside it.
+
+A `typeof` is resolved to the binding it **names** rather than matched against
+the element's spelling, so a nearer binding of that name — a parameter, a
+`const`, a `catch` clause — is a different value and the constant keeps its
+report:
+
+```ts
+// Frozen: `typeof item` names the local binding, which ITEMS reaches never.
+const ITEMS = [{ n: 1 }];
+export const run = () => {
+  const makers = ITEMS.map((item) => () => {
+    const item = { n: 9 };
+    return (x: typeof item) => x;
+  });
+  makers.push(() => (v: { n: number }) => v);
+};
+```
+
+An annotation naming an unrelated type (`ITEMS.map((item) => (x: number) => x)`)
+reaches nothing of the constant, and is frozen on the same terms as a mapper
+that computes.
+
 A function that is merely **called** is not descended into: the call is typed by
 the callee's own return type rather than by the element, so
 `ITEMS.map((item) => label(item))` keeps its report. Either way the call is

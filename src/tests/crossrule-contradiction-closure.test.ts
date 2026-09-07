@@ -258,8 +258,18 @@ const KNOWN_DIVERGENT: Record<string, Exemption> = {
       'fixture is the boundary control beside it, whose `widen` is declared ' +
       '`(value: number): number` so the callee it names is unambiguously ' +
       'widening; its annotation is inferable too, and stripping it leaves the ' +
-      'owner reporting exactly as before (measured).',
-    cases: { noExplicitReturnTypeInferable: 2 },
+      'owner reporting exactly as before (measured). The third joins for the ' +
+      'same reason one level out: `ITEMS.map((item) => (): typeof item => ' +
+      'null!)` is the owner declining because a RETURN annotation carries the ' +
+      'element type into the mapper result, which is the whole subject of ' +
+      '#2357, so the annotation is again the only way to spell the fixture. ' +
+      'The sibling reports it and offers NO fix here, so the composed `--fix` ' +
+      'is a byte-identical no-op and neither rule moves (measured). Removing ' +
+      'the annotation by hand is not the spelling that satisfies both: ' +
+      '`(item) => () => null!` types the mapper result as `(() => never)[]`, ' +
+      'so the fixture stops compiling before either rule runs (measured, 1 ' +
+      'diagnostic on the input).',
+    cases: { noExplicitReturnTypeInferable: 3 },
   },
   'global-const-style::no-hungarian': {
     reason:

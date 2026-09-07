@@ -3561,6 +3561,243 @@ const Probe = () => {
       ].join('\n'),
       filename: 'test.ts',
     },
+    // Issue #2357: a mapper's result is typed from TYPE positions as well as
+    // from value ones. A closure handed back annotated `(x: typeof item) => x`
+    // is typed from the element without ever returning it, so the frozen
+    // element reaches the mapped array through the ANNOTATION and
+    // `makers.push((v: { n: number }) => v)` is TS2345 for an input that
+    // compiled. Every case below is that measurement taken again under one more
+    // type form the query can sit inside; the value descent reaches none of
+    // them.
+    {
+      name: 'declines to freeze an array whose mapper hands back a closure typed from the element',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const makers = ITEMS.map((item) => (x: typeof item) => x);',
+        '  makers.push((v: { n: number }) => v);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // A member path under the query narrows to that property's frozen type.
+    // TS2345 on `(x: 1) => 1`.
+    {
+      name: 'declines to freeze an array whose closure parameter is typed from an element property',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const makers = ITEMS.map((item) => (x: typeof item.n) => x);',
+        '  makers.push((v: number) => v);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // A generic instantiation carries the element through its type ARGUMENT.
+    {
+      name: 'declines to freeze an array whose closure parameter instantiates a generic over the element',
+      code: [
+        'type Wrapper<T> = { v: T };',
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const makers = ITEMS.map((item) => (x: Wrapper<typeof item>) => x);',
+        '  makers.push((v: Wrapper<{ n: number }>) => v);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose closure parameter is an array of the element type',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const makers = ITEMS.map((item) => (x: (typeof item)[]) => x);',
+        '  makers.push((v: { n: number }[]) => v);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose closure parameter is a tuple of the element type',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const makers = ITEMS.map((item) => (x: [typeof item]) => x);',
+        '  makers.push((v: [{ n: number }]) => v);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose closure parameter indexes the element type',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        "  const makers = ITEMS.map((item) => (x: (typeof item)['n']) => x);",
+        '  makers.push((v: number) => v);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // The annotation composing the result need not be a PARAMETER's: a return
+    // type names the element on the same terms. TS2322 on the pushed closure.
+    {
+      name: 'declines to freeze an array whose closure return type names the element',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const makers = ITEMS.map((item) => (): typeof item => null!);',
+        '  makers.push(() => ({ n: 9 }));',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose closure parameter unions the element type',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const makers = ITEMS.map((item) => (x: typeof item | undefined) => x);',
+        '  makers.push((v: { n: number } | undefined) => v);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose closure parameter is a function type over the element',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const makers = ITEMS.map((item) => (x: (a: typeof item) => void) => x);',
+        '  makers.push((v: (a: { n: number }) => void) => v);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // A conditional type resolves against the FROZEN element, so the branch it
+    // picks changes with the assertion. TS2345 on `'a'` vs `'b'`.
+    {
+      name: 'declines to freeze an array whose closure parameter branches on the element type',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        "  const makers = ITEMS.map((item) => (x: typeof item extends { n: 1 } ? 'a' : 'b') => x);",
+        "  makers.push((v: 'b') => v);",
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // The query can be introduced BESIDE the value handed back rather than
+    // inside it: a local alias, a local interface, or a class expression's
+    // field each name the element from the callback's own body.
+    {
+      name: 'declines to freeze an array whose mapper aliases the element type',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const makers = ITEMS.map((item) => {',
+        '    type Held = typeof item;',
+        '    return (x: Held) => x;',
+        '  });',
+        '  makers.push((v: { n: number }) => v);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose mapper declares an interface over the element type',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const makers = ITEMS.map((item) => {',
+        '    interface Held { v: typeof item }',
+        '    return (x: Held) => x;',
+        '  });',
+        '  makers.push((v: { v: { n: number } }) => v);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose mapper hands back a class typed from the element',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const makers = ITEMS.map((item) => class { x!: typeof item });',
+        '  makers.push(class { x!: { n: number } });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // A `satisfies` names the element from a value position that hands nothing
+    // back, and constrains the closure all the same. TS1360.
+    {
+      name: 'declines to freeze an array whose mapper satisfies the element type',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const makers = ITEMS.map((item) => (x: number) => x satisfies typeof item.n);',
+        '  makers.push((v: number) => v);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // Every mapper spelling reaches the same element type, so the verdict
+    // cannot depend on which one the call is written with.
+    {
+      name: 'declines to freeze an array whose Array.from mapper is typed from the element',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const makers = Array.from(ITEMS, (item) => (x: typeof item) => x);',
+        '  makers.push((v: { n: number }) => v);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose flatMap mapper wraps a closure typed from the element',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const makers = ITEMS.flatMap((item) => [(x: typeof item) => x]);',
+        '  makers.push((v: { n: number }) => v);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // Nesting the query one closure deeper composes the mapper's result through
+    // two function types instead of one.
+    {
+      name: 'declines to freeze an array whose nested closure aliases the element type',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const makers = ITEMS.map((item) => () => {',
+        '    type Held = typeof item;',
+        '    return (x: Held) => x;',
+        '  });',
+        '  makers.push(() => (v: { n: number }) => v);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // Issue #2358, cured as a side effect of #2356 and pinned here because
+    // nothing else holds it: a mapper handing back a LOCAL const derived from
+    // the element carries the element's frozen type into the result, so the
+    // report is withheld. The type-position sweep must not disturb the value
+    // descent that decides it.
+    {
+      name: 'declines to freeze an array whose mapper returns a local const read off the element',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const ns = ITEMS.map((item) => { const held = item.n; return held; });',
+        '  ns.push(3);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
   ],
   invalid: [
     // Issue #2055: a JSX tag name is spelled twice, but the scope manager
@@ -8038,6 +8275,146 @@ const Probe = () => {
         'export const run = (rows: number[]) => {',
         '  const xs = rows.map(() => CONFIG.items);',
         "  xs.push(['a']);",
+        '};',
+      ].join('\n'),
+    },
+    // Issue #2357 negative controls: reading TYPE positions is not a licence to
+    // decline for every mapper carrying an annotation. Each fixture below is
+    // measured to introduce no diagnostic once frozen, so the report stands.
+    {
+      name: 'freezes an array whose closure parameter names an unrelated type',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const makers = ITEMS.map((item) => (x: number) => x);',
+        '  makers.push((v: number) => v);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const run = () => {',
+        '  const makers = ITEMS.map((item) => (x: number) => x);',
+        '  makers.push((v: number) => v);',
+        '};',
+      ].join('\n'),
+    },
+    {
+      name: 'freezes an array whose closure parameter names a structural type matching the element',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const makers = ITEMS.map((item) => (x: { n: number }) => x);',
+        '  makers.push((v: { n: number }) => v);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const run = () => {',
+        '  const makers = ITEMS.map((item) => (x: { n: number }) => x);',
+        '  makers.push((v: { n: number }) => v);',
+        '};',
+      ].join('\n'),
+    },
+    // A `typeof` is resolved to the binding it names rather than matched
+    // against the element's spelling, so a nearer binding of that name is a
+    // different variable and the constant reaches the mapper's result never.
+    {
+      name: 'freezes an array whose closure is typed from a local binding shadowing the element',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const makers = ITEMS.map((item) => () => {',
+        '    const item = { n: 9 };',
+        '    return (x: typeof item) => x;',
+        '  });',
+        '  makers.push(() => (v: { n: number }) => v);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const run = () => {',
+        '  const makers = ITEMS.map((item) => () => {',
+        '    const item = { n: 9 };',
+        '    return (x: typeof item) => x;',
+        '  });',
+        '  makers.push(() => (v: { n: number }) => v);',
+        '};',
+      ].join('\n'),
+    },
+    {
+      name: 'freezes an array whose closure is typed from a parameter shadowing the element',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const makers = ITEMS.map((item) => (item: number) => (x: typeof item) => x);',
+        '  makers.push((item: number) => (v: number) => v);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const run = () => {',
+        '  const makers = ITEMS.map((item) => (item: number) => (x: typeof item) => x);',
+        '  makers.push((item: number) => (v: number) => v);',
+        '};',
+      ].join('\n'),
+    },
+    {
+      name: 'freezes an array whose closure is typed from a catch binding shadowing the element',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const makers = ITEMS.map((item) => () => {',
+        '    try {',
+        '      return (x: number) => x;',
+        '    } catch (item) {',
+        '      return (x: typeof item) => x;',
+        '    }',
+        '  });',
+        '  makers.push(() => (v: number) => v);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const run = () => {',
+        '  const makers = ITEMS.map((item) => () => {',
+        '    try {',
+        '      return (x: number) => x;',
+        '    } catch (item) {',
+        '      return (x: typeof item) => x;',
+        '    }',
+        '  });',
+        '  makers.push(() => (v: number) => v);',
+        '};',
+      ].join('\n'),
+    },
+    // The query names a binding OUTSIDE the callback, which the assertion
+    // reaches nowhere.
+    {
+      name: 'freezes an array whose closure is typed from an enclosing parameter',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = (limit: number) => {',
+        '  const makers = ITEMS.map((item) => (x: typeof limit) => x);',
+        '  makers.push((v: number) => v);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const run = (limit: number) => {',
+        '  const makers = ITEMS.map((item) => (x: typeof limit) => x);',
+        '  makers.push((v: number) => v);',
         '};',
       ].join('\n'),
     },
