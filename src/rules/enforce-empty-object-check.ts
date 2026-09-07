@@ -274,6 +274,215 @@ function isObjectLikeType(
 }
 
 /**
+ * How the SOURCE pins a type's shape when the checker cannot resolve it.
+ *
+ * `index` marks a type whose keys arrive only through an index signature —
+ * `Record<K, V>` and an inline `{ [key: string]: V }` — which is a plain data
+ * map whichever way its arguments resolve, and stays one under `Required<…>`
+ * because it holds no named member to make required. `optional` marks a member
+ * list the source writes out with every member optional: object-like as
+ * written, but `Required<…>` over it produces a required property, which
+ * `isObjectLikeType` calls `non-object`. `null` is "the source does not say",
+ * which is where every reference into a module this program did not load
+ * belongs.
+ */
+type PinnedShape = 'index' | 'optional';
+
+/**
+ * Lib wrappers that hand back the shape they are given.
+ *
+ * `Readonly<T>` only adds modifiers and `Partial<T>` only removes
+ * required-ness, so a pinned `T` stays pinned through either, which is what
+ * makes `Readonly<Record<string, string>>` readable as the dictionary it is.
+ * The unwrapping applies only when the INNER type is itself pinned, so
+ * `Readonly<NextResponse>` stays unread and the class instance it names keeps
+ * its decline.
+ */
+const SHAPE_PRESERVING_TYPE_WRAPPERS = new Set(['Readonly', 'Partial']);
+
+/** Type keywords that contribute no shape to a union. */
+const NULLABLE_TYPE_KEYWORDS = new Set<string>([
+  AST_NODE_TYPES.TSNullKeyword,
+  AST_NODE_TYPES.TSUndefinedKeyword,
+  AST_NODE_TYPES.TSVoidKeyword,
+]);
+
+/** The statements a node holds directly, for a same-file declaration lookup. */
+function statementsOf(node: TSESTree.Node): TSESTree.Node[] | null {
+  switch (node.type) {
+    case AST_NODE_TYPES.Program:
+    case AST_NODE_TYPES.BlockStatement:
+    case AST_NODE_TYPES.TSModuleBlock:
+      return node.body;
+    default:
+      return null;
+  }
+}
+
+/**
+ * The type a SAME-FILE alias stands for, walking outwards from the reference so
+ * that an inner declaration answers ahead of an outer one.
+ *
+ * Same-file is the whole boundary: an alias imported from a module this program
+ * did not load is not found here and stays unpinned, which is the line #2344
+ * drew. Following the import instead would need exactly the cross-file
+ * resolution whose absence puts this code on the fall-through in the first
+ * place.
+ *
+ * A GENERIC alias is unpinned for a related reason: its body is written against
+ * parameters this lookup does not substitute, and each parameter SHADOWS any
+ * same-file alias of the same name. Reading `type Wrapper<Cfg> = Readonly<Cfg>`
+ * against a sibling `type Cfg = Record<string, string>` calls
+ * `Wrapper<NextResponse>` a dictionary and reinstates the inverted guard.
+ */
+function resolveTypeAlias(
+  reference: TSESTree.TSTypeReference,
+  name: string,
+): TSESTree.TypeNode | null {
+  let current: TSESTree.Node | undefined = reference;
+  while (current) {
+    const statements = statementsOf(current);
+    if (statements) {
+      for (const statement of statements) {
+        const declaration =
+          statement.type === AST_NODE_TYPES.ExportNamedDeclaration &&
+          statement.declaration
+            ? statement.declaration
+            : statement;
+        if (
+          declaration.type === AST_NODE_TYPES.TSTypeAliasDeclaration &&
+          declaration.id.name === name
+        ) {
+          return declaration.typeParameters ? null : declaration.typeAnnotation;
+        }
+      }
+    }
+    current = current.parent;
+  }
+  return null;
+}
+
+/**
+ * The shape an object type literal writes out.
+ *
+ * The members answer the same question `isObjectLikeType` asks of a resolved
+ * type: a required property makes `Object.keys()` non-empty for every valid
+ * value, and a call or construct signature marks behaviour rather than data, so
+ * either one leaves the literal unpinned.
+ */
+function pinnedShapeOfMembers(
+  members: TSESTree.TypeElement[],
+): PinnedShape | null {
+  let shape: PinnedShape = 'optional';
+  for (const member of members) {
+    switch (member.type) {
+      case AST_NODE_TYPES.TSIndexSignature:
+        shape = 'index';
+        break;
+      case AST_NODE_TYPES.TSPropertySignature:
+      case AST_NODE_TYPES.TSMethodSignature:
+        if (!member.optional) {
+          return null;
+        }
+        break;
+      default:
+        return null;
+    }
+  }
+  return shape;
+}
+
+/**
+ * Whether a declared type the checker cannot resolve nonetheless SPELLS a
+ * dictionary, and with which shape.
+ *
+ * A union answers as soon as one member spells one, mirroring
+ * `isObjectLikeType`, where any object-like member makes the whole union
+ * object-like. An intersection is the opposite and needs every member pinned:
+ * `Record<string, string> & SomeClass` carries the class's required members, so
+ * a complete program calls it `non-object`, and reading it as a dictionary
+ * would recreate the inverted guard the surrounding branch exists to prevent.
+ *
+ * `expanding` holds the aliases on the current expansion PATH rather than every
+ * alias seen, so a self-referential alias terminates while an alias named twice
+ * in sibling positions is still read at each of them.
+ */
+function pinnedShapeOf(
+  node: TSESTree.TypeNode,
+  expanding = new Set<TSESTree.Node>(),
+): PinnedShape | null {
+  switch (node.type) {
+    case AST_NODE_TYPES.TSTypeLiteral:
+      return pinnedShapeOfMembers(node.members);
+
+    case AST_NODE_TYPES.TSUnionType: {
+      const shapes = node.types
+        .filter((member) => !NULLABLE_TYPE_KEYWORDS.has(member.type))
+        .map((member) => pinnedShapeOf(member, expanding));
+      if (!shapes.some((shape) => shape !== null)) {
+        return null;
+      }
+      return shapes.every((shape) => shape === 'index') ? 'index' : 'optional';
+    }
+
+    case AST_NODE_TYPES.TSIntersectionType: {
+      const shapes = node.types.map((member) =>
+        pinnedShapeOf(member, expanding),
+      );
+      if (shapes.some((shape) => shape === null)) {
+        return null;
+      }
+      return shapes.every((shape) => shape === 'index') ? 'index' : 'optional';
+    }
+
+    case AST_NODE_TYPES.TSTypeReference: {
+      if (node.typeName.type !== AST_NODE_TYPES.Identifier) {
+        return null;
+      }
+      const { name } = node.typeName;
+      /**
+       * A same-file alias is read ahead of the lib names, so a file declaring
+       * its own `Record` or `Readonly` is answered by what it wrote.
+       */
+      const alias = resolveTypeAlias(node, name);
+      if (alias) {
+        if (expanding.has(alias)) {
+          return null;
+        }
+        expanding.add(alias);
+        const aliased = pinnedShapeOf(alias, expanding);
+        expanding.delete(alias);
+        return aliased;
+      }
+
+      if (name === 'Record') {
+        return 'index';
+      }
+
+      const args = node.typeParameters?.params ?? [];
+      if (args.length !== 1) {
+        return null;
+      }
+      if (SHAPE_PRESERVING_TYPE_WRAPPERS.has(name)) {
+        return pinnedShapeOf(args[0], expanding);
+      }
+      /**
+       * `Required<T>` makes every named member required, so it preserves only a
+       * type whose keys come from an index signature. `Required<{ a?: string }>`
+       * carries a required property and is `non-object` to a complete program.
+       */
+      if (name === 'Required') {
+        return pinnedShapeOf(args[0], expanding) === 'index' ? 'index' : null;
+      }
+      return null;
+    }
+
+    default:
+      return null;
+  }
+}
+
+/**
  * Reads through an optional chain to the member access or call it holds.
  * `Object?.keys?.(payload)?.length` parses as a single `ChainExpression`
  * wrapping the whole chain, so a matcher written against a bare
@@ -1957,13 +2166,17 @@ export const enforceEmptyObjectCheck: TSESLint.RuleModule<MessageIds, Options> =
        *
        * An explicit `any` is the checker reporting what the source told it, not
        * a resolution failure, so it leaves the value in the same position as an
-       * unannotated one and the naming heuristic keeps answering. `unknown` is
-       * excluded from this reading on purpose: `Object.keys` rejects an
-       * `unknown` operand, so the fix the heuristic would attach there does not
-       * typecheck.
+       * unannotated one and the naming heuristic keeps answering. An
+       * intersection carrying `any` reduces to `any`, so it says as little as a
+       * union carrying one. `unknown` is excluded from this reading on purpose:
+       * `Object.keys` rejects an `unknown` operand, so the fix the heuristic
+       * would attach there does not typecheck.
        */
       function declaresNothing(node: TSESTree.TypeNode): boolean {
-        if (node.type === AST_NODE_TYPES.TSUnionType) {
+        if (
+          node.type === AST_NODE_TYPES.TSUnionType ||
+          node.type === AST_NODE_TYPES.TSIntersectionType
+        ) {
           return node.types.some(declaresNothing);
         }
 
@@ -1978,21 +2191,16 @@ export const enforceEmptyObjectCheck: TSESLint.RuleModule<MessageIds, Options> =
        * so the value is a plain data map rather than a class instance and
        * `Object.keys` measures its emptiness correctly. Reading that from the
        * source keeps the verdict a complete program gives — `object` — reachable
-       * without one, which is why a union answers yes as soon as one member
-       * spells it, mirroring `isObjectLikeType`. A reference the source does not
-       * pin this way, `Readonly<NextResponse>` among them, carries no such
-       * guarantee.
+       * without one, and the SPELLING is not what carries the guarantee: a
+       * shape-preserving wrapper, a union member, an intersection whose every
+       * member is pinned and a same-file alias each state the same index
+       * signature, and reading only the bare reference left ten such shapes
+       * silent that a complete program reports (#2345). A reference the source
+       * does not pin this way, `Readonly<NextResponse>` among them, carries no
+       * such guarantee.
        */
       function spellsDictionary(node: TSESTree.TypeNode): boolean {
-        if (node.type === AST_NODE_TYPES.TSUnionType) {
-          return node.types.some(spellsDictionary);
-        }
-
-        return (
-          node.type === AST_NODE_TYPES.TSTypeReference &&
-          node.typeName.type === AST_NODE_TYPES.Identifier &&
-          node.typeName.name === 'Record'
-        );
+        return pinnedShapeOf(node) !== null;
       }
 
       function isLikelyObject(identifier: TSESTree.Identifier): boolean {
