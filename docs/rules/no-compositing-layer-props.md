@@ -10,7 +10,7 @@ layer allocates texture memory and requires separate rasterization; when
 scattered across a page this increases memory pressure and can make scroll and
 animation janky. The rule keeps layer promotion intentional in inline style
 objects and MUI `sx` props by flagging properties and values known to trigger
-GPU layers (including `translate3d`, `scale3d`, `translateZ`, and `transparent`).
+GPU layers (including `translate3d`, `scale3d`, and `translateZ`).
 
 ## Rule Details
 
@@ -19,9 +19,16 @@ GPU layers (including `translate3d`, `scale3d`, `translateZ`, and `transparent`)
 - Flags compositing properties (`transform`, `filter`, `backdrop-filter`,
   `will-change`, `perspective`, `backface-visibility`, `contain`,
   `mix-blend-mode`) and fractional `opacity` between 0 and 1.
-- Flags values that imply GPU promotion even when the property itself is safe,
-  such as `translate3d(...)`, `scale3d(...)`, `translateZ(...)`, or
-  `transparent`.
+- Flags values that imply GPU promotion even when the property itself is not in
+  the list above — `translate3d(...)`, `scale3d(...)` and `translateZ(...)` —
+  but only under a key that is a CSS property whose value grammar accepts that
+  value. A transform function only promotes a layer through `transform`, so
+  that is the only key the value arm accepts, including vendor-prefixed
+  spellings such as `WebkitTransform` or `'-webkit-transform'`. A key that is
+  not a CSS property in any spelling (`spotFill`, `desktop`, `mobile`) is never
+  reported as one.
+- Does not flag `transparent`. A transparent paint allocates no texture and
+  promotes no compositing layer, under a color property or anywhere else.
 - Exempts compositing properties declared inside a `@keyframes` block. Animating
   `transform` and `opacity` via `@keyframes` is the web-standard,
   GPU-accelerated animation pattern, not a gratuitous static layer. The
@@ -85,6 +92,21 @@ const reset = {
     },
   }}
 />;
+
+// A transparent paint promotes no layer, so it is not flagged.
+const overlay = {
+  backgroundColor: 'transparent',
+  borderColor: 'transparent',
+};
+
+// A data record keyed by names that are not CSS properties is left alone; a key
+// is only ever reported when it names a CSS property.
+export const TOUR_VARIANT_STYLES = {
+  tour: {
+    spotFill: 'transparent',
+    spotShade: { desktop: '#0009', mobile: '#000c' },
+  },
+};
 ```
 
 ## Making an intentional exception

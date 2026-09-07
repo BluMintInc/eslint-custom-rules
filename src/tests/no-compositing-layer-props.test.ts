@@ -291,6 +291,84 @@ ruleTesterTs.run('no-compositing-layer-props', noCompositingLayerProps, {
         };
       `,
     },
+    // Issue #2353 repro: a non-JSX data module whose keys are not CSS
+    // properties in any spelling. The value `transparent` must not select a
+    // report, and `spotFill`/`desktop`/`mobile` must never be named as CSS
+    // properties.
+    {
+      code: `
+        export const TOUR_VARIANT_STYLES = {
+          tour: {
+            spotBorder: '2px solid #fff',
+            spotFill: 'transparent',
+            spotShade: { desktop: '#0009', mobile: '#000c' },
+          },
+          edit: {
+            spotFill: 'transparent',
+            spotShade: { desktop: 'transparent', mobile: '#0004' },
+          },
+          gate: {
+            spotFill: '#ffffff14',
+            spotShade: { desktop: 'transparent', mobile: 'transparent' },
+          },
+        };
+      `,
+    },
+    // A key that is not a CSS property in any spelling is never named as one,
+    // whatever its value reads. (#2353)
+    {
+      code: `
+        const style = {
+          spotFill: 'transparent',
+        };
+      `,
+    },
+    {
+      code: `
+        const TOUR_STYLES = {
+          spotShade: { desktop: 'transparent', mobile: 'transparent' },
+        };
+      `,
+    },
+    // The narrowing applies to the transform functions too: a transform function
+    // can only promote a layer through a property that accepts one, and
+    // `spotTransform` is not such a property. (#2353)
+    {
+      code: `
+        const style = {
+          spotTransform: 'translate3d(0, 0, 0)',
+        };
+      `,
+    },
+    // A transparent paint allocates no texture and promotes no compositing
+    // layer in any browser, so `transparent` never selects a report whatever
+    // property it sits under — not even a genuine color property. Pinned at two
+    // properties so the value cannot creep back for one of them. (#2353)
+    {
+      code: `
+        const style = {
+          backgroundColor: 'transparent',
+        };
+      `,
+    },
+    {
+      code: `
+        const style = {
+          borderColor: 'transparent',
+        };
+      `,
+    },
+    // Same gate under an sx prop, where a non-CSS key is just as possible. (#2353)
+    {
+      code: `
+        const Component = () => <Box sx={{ spotFill: 'transparent' }} />;
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+    },
   ],
   invalid: [
     // Invalid inline styles
@@ -367,14 +445,6 @@ ruleTesterTs.run('no-compositing-layer-props', noCompositingLayerProps, {
         };
       `,
       errors: [error('mixBlendMode')],
-    },
-    {
-      code: `
-        const style = {
-          backgroundColor: 'transparent',
-        };
-      `,
-      errors: [error('backgroundColor')],
     },
     // Invalid fractional opacity
     {
@@ -486,6 +556,70 @@ ruleTesterTs.run('no-compositing-layer-props', noCompositingLayerProps, {
         },
       },
       errors: [error('transform')],
+    },
+    // Controls for the value-driven arm's key gate: a vendor-prefixed transform
+    // is a real CSS property, so a layer-promoting transform function under it
+    // still reports even though COMPOSITING_PROPERTIES lists only `transform`.
+    {
+      code: `
+        const style = {
+          WebkitTransform: 'translate3d(0, 0, 0)',
+        };
+      `,
+      errors: [error('WebkitTransform')],
+    },
+    {
+      code: `
+        const style = {
+          '-webkit-transform': 'translate3d(0, 0, 0)',
+        };
+      `,
+      errors: [error('-webkit-transform')],
+    },
+    {
+      code: `
+        const style = {
+          MozTransform: 'scale3d(1, 1, 2)',
+        };
+      `,
+      errors: [error('MozTransform')],
+    },
+    {
+      code: `
+        const style = {
+          msTransform: 'translateZ(0)',
+        };
+      `,
+      errors: [error('msTransform')],
+    },
+    // Controls that the property-driven arm is untouched by the key gate, in
+    // both the plain-object and sx positions.
+    {
+      code: `
+        const style = {
+          willChange: 'transform',
+          backdropFilter: 'blur(10px)',
+          transform: 'scale3d(1, 1, 2)',
+        };
+      `,
+      errors: [
+        error('willChange'),
+        error('backdropFilter'),
+        error('transform'),
+      ],
+    },
+    {
+      code: `
+        const Component = () => (
+          <Box sx={{ willChange: 'transform', filter: 'blur(2px)' }} />
+        );
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+      errors: [error('willChange'), error('filter')],
     },
   ],
 });
