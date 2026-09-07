@@ -524,11 +524,28 @@ for (const control of CONTROLS) {
  * added, so the newest boundary controls were the ones excluded from the very
  * guard that type-checks them. That rule's `as const` fixer is the repo's most
  * frequent source of exactly the defect here (#2330, #2338, #2339), so the
- * budget goes to it: at 200 it fits with headroom, and only
- * `enforce-assert-safe-object-key` — 288 pairs, twice any other rule — is still
- * capped, which keeps the mechanism live and asserted rather than dormant.
+ * budget goes to it: at 200 it fit with headroom, and only
+ * `enforce-assert-safe-object-key` — the largest rule here — was still capped,
+ * which keeps the mechanism live and asserted rather than dormant.
+ *
+ * The same rule bound it a second time, and the same reasoning re-cuts it. Three
+ * build-breaking defects in that one `as const` fixer (#2349, #2350, #2351) each
+ * arrived with the boundary controls that pin the repair, dropping the last 31
+ * pairs — again the newest controls, and this time the very fixtures written
+ * because the fixer had emitted non-compiling code. A guard titled for that
+ * failure cannot be the thing that stops type-checking its own evidence.
+ *
+ * 240 is chosen against both rules rather than against one. `global-const-style`
+ * fits under it, and `enforce-assert-safe-object-key` — 242 pairs — stays capped,
+ * so `capped > 0` below still witnesses the cap executing. That window is narrow
+ * in both directions: the two rules are 240 and 242, so the next bind on either
+ * side cannot be answered by another re-cut. Whoever hits it should decide
+ * instead whether a bound that no longer separates any two rules still earns its
+ * keep, and if it does not, replace the `capped > 0` liveness floor with a
+ * control that exercises the cap directly rather than through whichever rule
+ * happens to be largest.
  */
-const MAX_PAIRS_PER_RULE = 200;
+const MAX_PAIRS_PER_RULE = 240;
 
 /**
  * `DECLARES_INTO_SHARED_SCOPE` is imported from `fixtureTypeProgram` rather than
@@ -1230,11 +1247,11 @@ describe('an autofix must not turn compiling code into non-compiling code', () =
     expect(coverage.covered.length).toBe(
       fixableRules.length - Object.keys(UNCOVERED_FIXERS).length,
     );
-    expect(assertedPairs.length).toBeGreaterThanOrEqual(3800); // measured 4,439
+    expect(assertedPairs.length).toBeGreaterThanOrEqual(3800); // measured 4,571
     expect(corpus.failures).toEqual([]);
     // The cap's DENOMINATOR. Without it the ceilings below read as healthy on a
     // corpus that collapsed to nothing. 14,758 when measured.
-    expect(harvested).toBeGreaterThanOrEqual(13000); // measured 14,758
+    expect(harvested).toBeGreaterThanOrEqual(13000); // measured 15,192
   });
 
   /**
@@ -1251,17 +1268,19 @@ describe('an autofix must not turn compiling code into non-compiling code', () =
    * the cap makes a fifth one a conscious edit rather than a silent loss.
    */
   it('accounts for every case it discards before compiling', () => {
-    // 88 of 14,711 harvested, in exactly this one rule. The COUNT is left out
+    // 5 of 15,192 harvested, in exactly this one rule. The COUNT is left out
     // of the pin because it moves with every fixture added to a capped rule;
     // the membership is what carries the meaning. Three rules left this set
     // when the cap was re-cut to 200 — a rule LEAVING it is a coverage gain, so
-    // only a rule joining needs the conscious edit this pin forces.
+    // only a rule joining needs the conscious edit this pin forces. It forced
+    // one: `global-const-style` joined, and the cap was re-cut to 240 to carry
+    // it, for the reason recorded on MAX_PAIRS_PER_RULE.
     expect(
       coverage.cappedTail.map((entry) => entry.split(' ')[0]).sort(),
     ).toEqual(['enforce-assert-safe-object-key']);
     // A ceiling just above the measurement, per the floor-drift discipline in
     // reverse: a rise is a conscious edit, not something to discover later.
-    expect(capped).toBeLessThanOrEqual(150); // measured 88
+    expect(capped).toBeLessThanOrEqual(30); // measured 5
     // ...and a floor, so a cap that stopped applying at all — which would make
     // the rule list above stale rather than green — cannot pass quietly.
     expect(capped).toBeGreaterThan(0);
