@@ -7,12 +7,31 @@ import {
 import * as ts from 'typescript';
 import { createRule } from '../utils/createRule';
 import { ASTHelpers } from '../utils/ASTHelpers';
+import {
+  importInsertionAnchor,
+  insertAtImportAnchor,
+} from '../utils/importInsertion';
+
+/**
+ * The emptiness call the fixer emits, and where its binding comes from.
+ *
+ * Recognition and EMISSION are separate settings on purpose. `emptyCheckFunctions`
+ * is an allowlist of spellings the rule accepts and carries no import path, so
+ * reusing it to emit would write a bare call to an identifier the file does not
+ * import, and — since it defaults to `isEmpty` — would silently change what every
+ * existing consumer's `--fix` produces (#2360).
+ */
+type EmptyCheckFix = {
+  name: string;
+  importPath?: string;
+};
 
 type Options = [
   {
     objectNamePattern?: string[];
     ignoreInLoops?: boolean;
     emptyCheckFunctions?: string[];
+    emptyCheckFix?: EmptyCheckFix;
     printWidth?: number;
   },
 ];
@@ -73,6 +92,24 @@ const NON_OBJECT_LIKE_NAMES = [
   'array',
   'arr',
 ];
+
+/**
+ * The emptiness operand the fixer writes beside the falsiness check.
+ *
+ * `Object.keys(...).length === 0` needs nothing in scope, so it stays the
+ * default and every consumer that has not opted in keeps byte-identical output.
+ * A consumer whose config BANS the `Object` accessors names a helper instead,
+ * without which `--fix` has no fixed point: the rewrite it just wrote is
+ * rejected by the same run that produced it (#2360).
+ */
+function buildEmptyCheckText(
+  identifierText: string,
+  emptyCheckFix: EmptyCheckFix | undefined,
+): string {
+  return emptyCheckFix
+    ? `${emptyCheckFix.name}(${identifierText})`
+    : `Object.keys(${identifierText}).length === 0`;
+}
 
 function hasBooleanPrefixBoundary(name: string): boolean {
   const lower = name.toLowerCase();
@@ -1557,6 +1594,13 @@ type PlanInput = {
   sourceCode: Readonly<TSESLint.SourceCode>;
   target: TSESTree.UnaryExpression;
   identifierText: string;
+  /**
+   * The emptiness operand, carried in rather than rebuilt, so the layout leaf
+   * and the minimal replacement cannot spell the emission differently (#2360).
+   * Its LENGTH is a layout input too: a shorter helper can keep a widened
+   * condition inside the print width, which is the caller's minimal path.
+   */
+  emptyCheckText: string;
   needsParentheses: boolean;
   printWidth: number;
 };
@@ -1573,7 +1617,13 @@ type PlanInput = {
  * width was measured (#2095).
  */
 function planWidenedFix(input: PlanInput): WidenedFix | null {
-  const { sourceCode, target, identifierText, needsParentheses } = input;
+  const {
+    sourceCode,
+    target,
+    identifierText,
+    emptyCheckText,
+    needsParentheses,
+  } = input;
   const source = sourceCode.getText();
   const root = getLayoutRoot(target);
   const parent = root.parent;
@@ -1586,7 +1636,7 @@ function planWidenedFix(input: PlanInput): WidenedFix | null {
     operator: '||',
     parts: [
       { kind: 'leaf', text: `${target.operator}${identifierText}` },
-      { kind: 'leaf', text: `Object.keys(${identifierText}).length === 0` },
+      { kind: 'leaf', text: emptyCheckText },
     ],
   };
   const docContext: DocContext = {
@@ -2062,6 +2112,194 @@ function planReturnFix(
   return { range: [root.range[0], root.range[1]], text: lines.join('\n') };
 }
 
+/** A text edit expressed as a range, so several can be ordered before emission. */
+type RangeEdit = { range: [number, number]; text: string };
+
+/**
+ * An edit paired with where it starts.
+ *
+ * ESLint merges a fixer's edits only when they arrive ordered and disjoint, and
+ * the import can land either side of the guard it serves — ESM allows a
+ * declaration below the statement that uses its binding — so the offset travels
+ * with the edit rather than being recovered from it.
+ */
+type OrderedFix = {
+  offset: number;
+  apply: (fixer: TSESLint.RuleFixer) => TSESLint.RuleFix;
+};
+
+/** Every name a binding pattern introduces. */
+function collectPatternNames(pattern: TSESTree.Node, names: Set<string>): void {
+  switch (pattern.type) {
+    case AST_NODE_TYPES.Identifier:
+      names.add(pattern.name);
+      return;
+    case AST_NODE_TYPES.ObjectPattern:
+      for (const property of pattern.properties) {
+        collectPatternNames(
+          property.type === AST_NODE_TYPES.RestElement
+            ? property.argument
+            : property.value,
+          names,
+        );
+      }
+      return;
+    case AST_NODE_TYPES.ArrayPattern:
+      for (const element of pattern.elements) {
+        if (element) {
+          collectPatternNames(element, names);
+        }
+      }
+      return;
+    case AST_NODE_TYPES.AssignmentPattern:
+      collectPatternNames(pattern.left, names);
+      return;
+    case AST_NODE_TYPES.RestElement:
+      collectPatternNames(pattern.argument, names);
+      return;
+    default:
+  }
+}
+
+/**
+ * The names already declared at the module's top level.
+ *
+ * An import is only safe to insert when the name is free: a second binding of a
+ * name the file already declares — imported from anywhere, or declared locally —
+ * is a redeclaration error, which is a worse outcome than the lint warning the
+ * insertion was meant to avoid.
+ */
+function moduleBindingNames(program: TSESTree.Program): Set<string> {
+  const names = new Set<string>();
+  for (const statement of program.body) {
+    const node =
+      statement.type === AST_NODE_TYPES.ExportNamedDeclaration ||
+      statement.type === AST_NODE_TYPES.ExportDefaultDeclaration
+        ? statement.declaration
+        : statement;
+    if (!node) {
+      continue;
+    }
+    if (node.type === AST_NODE_TYPES.ImportDeclaration) {
+      for (const specifier of node.specifiers) {
+        names.add(specifier.local.name);
+      }
+      continue;
+    }
+    if (node.type === AST_NODE_TYPES.VariableDeclaration) {
+      for (const declarator of node.declarations) {
+        collectPatternNames(declarator.id, names);
+      }
+      continue;
+    }
+    if (
+      (node.type === AST_NODE_TYPES.FunctionDeclaration ||
+        node.type === AST_NODE_TYPES.ClassDeclaration ||
+        node.type === AST_NODE_TYPES.TSEnumDeclaration ||
+        node.type === AST_NODE_TYPES.TSInterfaceDeclaration ||
+        node.type === AST_NODE_TYPES.TSTypeAliasDeclaration ||
+        node.type === AST_NODE_TYPES.TSModuleDeclaration ||
+        node.type === AST_NODE_TYPES.TSDeclareFunction ||
+        node.type === AST_NODE_TYPES.TSImportEqualsDeclaration) &&
+      node.id?.type === AST_NODE_TYPES.Identifier
+    ) {
+      names.add(node.id.name);
+    }
+  }
+  return names;
+}
+
+/** A module specifier written as source text, with its quotes escaped. */
+function quoteModuleSpecifier(importPath: string): string {
+  return `'${importPath.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+}
+
+/**
+ * The edit that brings the emitted helper into scope, or null when nothing is
+ * needed.
+ *
+ * A helper call the file cannot resolve trades a lint warning for an undefined
+ * identifier, so emission and import travel together in ONE fixer. Four
+ * outcomes are distinguished, because they are four different mistakes:
+ *
+ * * the name is already bound — insert nothing, whatever path it came from,
+ *   since a second binding would not compile;
+ * * a value import from the same path already has a named-specifier list — join
+ *   it, so the file keeps one declaration per module;
+ * * a file with imports gains a declaration after the LAST of them, which is
+ *   past every prologue by construction;
+ * * a file with none defers to `importInsertion`, whose anchor owns the
+ *   placement a raw offset gets wrong: a `'use client'` demoted out of the
+ *   prologue, a `#!` pushed off line 1, or a line-binding suppression comment
+ *   severed from the line it covers.
+ */
+function planImportInsertion(
+  sourceCode: Readonly<TSESLint.SourceCode>,
+  emptyCheckFix: EmptyCheckFix,
+): OrderedFix | null {
+  const { name, importPath } = emptyCheckFix;
+  if (!importPath) {
+    return null;
+  }
+  const program = sourceCode.ast;
+  if (moduleBindingNames(program).has(name)) {
+    return null;
+  }
+
+  const imports = program.body.filter(
+    (statement): statement is TSESTree.ImportDeclaration =>
+      statement.type === AST_NODE_TYPES.ImportDeclaration,
+  );
+
+  for (const declaration of imports) {
+    /** A type-only import carries no value binding for the call to resolve. */
+    if (
+      declaration.importKind === 'type' ||
+      declaration.source.value !== importPath
+    ) {
+      continue;
+    }
+    const specifiers = declaration.specifiers.filter(
+      (specifier): specifier is TSESTree.ImportSpecifier =>
+        specifier.type === AST_NODE_TYPES.ImportSpecifier,
+    );
+    const last = specifiers[specifiers.length - 1];
+    if (!last) {
+      continue;
+    }
+    /**
+     * A specifier list Prettier has already broken keeps one name per row, so
+     * joining it inline would emit a layout the next format run undoes.
+     */
+    const indent =
+      declaration.loc.start.line === declaration.loc.end.line
+        ? null
+        : getLineIndent(last, sourceCode);
+    const text = indent === null ? `, ${name}` : `,\n${indent}${name}`;
+    return {
+      offset: last.range[1],
+      apply: (fixer) => fixer.insertTextAfter(last, text),
+    };
+  }
+
+  const statement = `import { ${name} } from ${quoteModuleSpecifier(
+    importPath,
+  )};`;
+  const lastImport = imports[imports.length - 1];
+  if (lastImport) {
+    return {
+      offset: lastImport.range[1],
+      apply: (fixer) => fixer.insertTextAfter(lastImport, `\n${statement}`),
+    };
+  }
+  const anchor = importInsertionAnchor(sourceCode);
+  return {
+    offset: anchor.kind === 'before' ? anchor.target.range[0] : anchor.index,
+    apply: (fixer) =>
+      insertAtImportAnchor(sourceCode, fixer, anchor, `${statement}\n`),
+  };
+}
+
 export const enforceEmptyObjectCheck: TSESLint.RuleModule<MessageIds, Options> =
   createRule({
     name: 'enforce-empty-object-check',
@@ -2088,6 +2326,20 @@ export const enforceEmptyObjectCheck: TSESLint.RuleModule<MessageIds, Options> =
               type: 'array',
               items: { type: 'string' },
             },
+            emptyCheckFix: {
+              type: 'object',
+              properties: {
+                /**
+                 * A bare identifier, so the emitted call is the shape the
+                 * recognition arm accepts — anything else would leave `--fix`
+                 * rewriting text it reports again on the next pass.
+                 */
+                name: { type: 'string', pattern: '^[A-Za-z_$][A-Za-z0-9_$]*$' },
+                importPath: { type: 'string', minLength: 1 },
+              },
+              required: ['name'],
+              additionalProperties: false,
+            },
             printWidth: {
               type: 'number',
               minimum: 1,
@@ -2112,6 +2364,7 @@ export const enforceEmptyObjectCheck: TSESLint.RuleModule<MessageIds, Options> =
         objectNamePattern = [],
         ignoreInLoops = false,
         emptyCheckFunctions = [],
+        emptyCheckFix,
       } = options;
       const printWidth =
         typeof options.printWidth === 'number' && options.printWidth > 0
@@ -2122,9 +2375,16 @@ export const enforceEmptyObjectCheck: TSESLint.RuleModule<MessageIds, Options> =
         ...DEFAULT_OBJECT_SUFFIXES,
         ...objectNamePattern,
       ]);
+      /**
+       * The emitted helper counts as a satisfying check even when it is absent
+       * from `emptyCheckFunctions`. Without this the fixer would report its own
+       * output, so `--fix` would rewrite the same guard on every pass — the
+       * fixed point this option exists to restore (#2360).
+       */
       const emptyCheckFunctionsSet: Set<string> = new Set([
         ...DEFAULT_EMPTY_CHECK_FUNCTIONS,
         ...emptyCheckFunctions,
+        ...(emptyCheckFix ? [emptyCheckFix.name] : []),
       ]);
       const processedExpressions = new WeakSet<TSESTree.Expression>();
       const processedNegations = new WeakSet<TSESTree.UnaryExpression>();
@@ -2494,6 +2754,35 @@ export const enforceEmptyObjectCheck: TSESLint.RuleModule<MessageIds, Options> =
         return isObjectLikeName(identifier.name, patternSet);
       }
 
+      /**
+       * Whether a binding between the report site and the module scope would
+       * capture the emitted helper call.
+       *
+       * A bare call resolves wherever the CALL sits, so an inner binding of the
+       * same name silently takes it over — the rewrite compiles, reads
+       * correctly, and calls something else entirely (#1455, #1456 are this
+       * shape). No spelling of the call escapes that, so the fix is declined
+       * and the report stands on its own; the message already says what to
+       * write.
+       *
+       * The unconfigured emission is untouched by this: `Object` is a global
+       * rather than a module binding, and its output is a compatibility
+       * contract (#2360).
+       */
+      function emissionIsShadowed(node: TSESTree.Node, name: string): boolean {
+        let scope: TSESLint.Scope.Scope | null = ASTHelpers.getScope(
+          context,
+          node,
+        );
+        while (scope) {
+          if (scope.variables.some((variable) => variable.name === name)) {
+            return scope.type !== 'module' && scope.type !== 'global';
+          }
+          scope = scope.upper;
+        }
+        return false;
+      }
+
       function reportNegation(
         node: TSESTree.UnaryExpression,
         identifier: TSESTree.Identifier,
@@ -2530,8 +2819,15 @@ export const enforceEmptyObjectCheck: TSESLint.RuleModule<MessageIds, Options> =
             name: identifier.name,
           },
           fix(fixer) {
+            if (emptyCheckFix && emissionIsShadowed(node, emptyCheckFix.name)) {
+              return null;
+            }
             const identifierText = sourceCode.getText(identifier);
-            const guard = `${node.operator}${identifierText} || Object.keys(${identifierText}).length === 0`;
+            const emptyCheckText = buildEmptyCheckText(
+              identifierText,
+              emptyCheckFix,
+            );
+            const guard = `${node.operator}${identifierText} || ${emptyCheckText}`;
             const needsParentheses = replacementNeedsParentheses(
               node,
               sourceCode,
@@ -2550,13 +2846,28 @@ export const enforceEmptyObjectCheck: TSESLint.RuleModule<MessageIds, Options> =
               sourceCode,
               target: node,
               identifierText,
+              emptyCheckText,
               needsParentheses,
               printWidth,
             });
-            if (widened) {
-              return fixer.replaceTextRange(widened.range, widened.text);
+            const guardEdit: RangeEdit = widened ?? {
+              range: node.range,
+              text: replacement,
+            };
+            const importFix = emptyCheckFix
+              ? planImportInsertion(sourceCode, emptyCheckFix)
+              : null;
+            if (!importFix) {
+              return fixer.replaceTextRange(guardEdit.range, guardEdit.text);
             }
-            return fixer.replaceText(node, replacement);
+            const guardFix: OrderedFix = {
+              offset: guardEdit.range[0],
+              apply: (target) =>
+                target.replaceTextRange(guardEdit.range, guardEdit.text),
+            };
+            return [importFix, guardFix]
+              .sort((left, right) => left.offset - right.offset)
+              .map((edit) => edit.apply(fixer));
           },
         });
       }

@@ -2054,7 +2054,6 @@ const UNPROBED_RULES: Record<string, Reason> = {
   // a new name INSIDE a function, the reason stopped holding. It is absent from
   // this map entirely, having since left `reportsOnInjection` too (#2307).
   'enforce-early-destructuring': REASONS.noModuleBoundReference,
-  'enforce-empty-object-check': REASONS.noModuleBoundReference,
   'enforce-exported-function-types': REASONS.noModuleBoundReference,
   'enforce-fieldpath-syntax-in-docsetter': REASONS.noModuleBoundReference,
   'enforce-id-capitalization': REASONS.noModuleBoundReference,
@@ -2114,6 +2113,7 @@ const UNPROBED_RULES: Record<string, Reason> = {
 const DECLINE_ONLY_RULES = [
   'consistent-callback-naming',
   'enforce-assert-safe-object-key',
+  'enforce-empty-object-check',
   'enforce-memoize-async',
   'enforce-memoize-getters',
   'enforce-microdiff',

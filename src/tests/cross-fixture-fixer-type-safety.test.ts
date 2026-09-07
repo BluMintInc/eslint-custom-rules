@@ -844,6 +844,24 @@ const findingKey = (finding: Finding) =>
  * is a hard repo invariant and each already carries an issue.
  */
 const TYPE_UNSAFE_BASELINE: Record<string, { pairs: number; note: string }> = {
+  'enforce-empty-object-check TS2304': {
+    pairs: 2,
+    note:
+      '#2360, and the same 2 pairs `fixer-type-safety` baselines. Both ' +
+      'configure `emptyCheckFix` with a NAME and no ' +
+      '`importPath` — the arm that exists for a helper the consumer ' +
+      'provides ambiently, and which therefore asserts a scope an ISOLATED ' +
+      'fixture cannot carry. The emitted call is TS2304 here and resolves ' +
+      'in the project that made the assertion. The arm carrying an ' +
+      '`importPath` inserts the import in the SAME fixer and compiles, and ' +
+      'that is the configuration the rule documents; the alternative — ' +
+      'declining to emit a name that does not resolve in the file — is not ' +
+      'available, since the whole point of the arm is a binding this file ' +
+      'does not show. These two are the acceptance fixtures the issue pins ' +
+      'verbatim, so neither can declare the helper; every OTHER name-only ' +
+      'fixture in the suite declares it. Pinned at 2 so a third instance ' +
+      'still fails.',
+  },
   'enforce-microdiff TS2345': {
     pairs: 4,
     note:
