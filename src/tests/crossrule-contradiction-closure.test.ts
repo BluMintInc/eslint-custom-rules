@@ -243,6 +243,24 @@ const KNOWN_DIVERGENT: Record<string, Exemption> = {
       '(measured both ways).',
     cases: { upperSnakeCase: 70, asConst: 88 },
   },
+  'global-const-style::no-explicit-return-type': {
+    reason:
+      'INCIDENTAL, and the mention that enrols the pair is the point: the ' +
+      'blessed fixture writes `((): number => item.n)()` because the owner ' +
+      'must DECLINE to freeze there whatever the immediately-invoked closure ' +
+      'declares, and the annotation is the only way to spell that. The sibling ' +
+      'objects to the annotation, correctly — it is inferable. Composed ' +
+      '`--fix` strips it to `(() => item.n)()`, the owner still declines, and ' +
+      'both rules end silent on an output that compiles (measured). That ' +
+      'convergence is exactly what the owner names the sibling for: reading ' +
+      'the annotation as widening would have made the freeze safe only until ' +
+      'this fixer ran (#2352 sweep, the pair that wrote TS2345). The second ' +
+      'fixture is the boundary control beside it, whose `widen` is declared ' +
+      '`(value: number): number` so the callee it names is unambiguously ' +
+      'widening; its annotation is inferable too, and stripping it leaves the ' +
+      'owner reporting exactly as before (measured).',
+    cases: { noExplicitReturnTypeInferable: 2 },
+  },
   'global-const-style::no-hungarian': {
     reason:
       'INCIDENTAL, and predating the mention that enrols the pair: the 4 ' +
@@ -444,8 +462,8 @@ const KNOWN_DIVERGENT: Record<string, Exemption> = {
   },
   'enforce-exported-function-types::require-memo': {
     reason:
-      'PIPELINE: the fixtures export unmemoized components to exercise the props-type check; `--fix` wraps 10 of 12 in `memo()`, and the `forwardRef`/named-function pair is memoizable by hand. 12 -> 15 with the #2006 fixtures, which are three spellings of one shape: a component default-exported by NAME (`const Banner = ...; export default Banner;`, its `function Banner` twin, and the named-plus-default pair). They are written unmemoized on purpose — the memoized spelling is the split `require-memo` emits for a default-exported declaration, which the same fix already covers in its own fixtures, so the unwrapped spelling is the control proving the identifier hop does not depend on a wrapper. The composed `--fix` wraps all three in one pass and both rules end silent on every one (measured), and the wrapped result is exactly that split shape, so memoizing them keeps the props check alive rather than trading it away. 15 -> 16 with the #2290 fixture, the `function Banner` spelling again but with its props type declared `declare type` rather than `type`: the ambient modifier is what lets the export-surface sweep reach the fixer of the owner, and it changes nothing for `require-memo`, which wraps the component the same way and ends silent beside the owner (measured by this guard).',
-    cases: { requireMemo: 16 },
+      'PIPELINE: the fixtures export unmemoized components to exercise the props-type check; `--fix` wraps 10 of 12 in `memo()`, and the `forwardRef`/named-function pair is memoizable by hand. 12 -> 15 with the #2006 fixtures, which are three spellings of one shape: a component default-exported by NAME (`const Banner = ...; export default Banner;`, its `function Banner` twin, and the named-plus-default pair). They are written unmemoized on purpose — the memoized spelling is the split `require-memo` emits for a default-exported declaration, which the same fix already covers in its own fixtures, so the unwrapped spelling is the control proving the identifier hop does not depend on a wrapper. The composed `--fix` wraps all three in one pass and both rules end silent on every one (measured), and the wrapped result is exactly that split shape, so memoizing them keeps the props check alive rather than trading it away. 15 -> 16 with the #2290 fixture, the `function Banner` spelling again but with its props type declared `declare type` rather than `type`: the ambient modifier is what lets the export-surface sweep reach the fixer of the owner, and it changes nothing for `require-memo`, which wraps the component the same way and ends silent beside the owner (measured by this guard). 16 -> 15 because a fix landed: #2352 stopped `require-memo` claiming a `forwardRef` render function, since neither remedy its message names exists at that node — `memo()` around the render function is what made `React.forwardRef` throw "Component is not a function" in a consumer, and renaming only restates the position. The fixture that left the disagreement is the `forwardRef` half of the pair this reason already described as "memoizable by hand"; the named-function half still disagrees and still memoizes cleanly. The drop is a report correctly withdrawn, not a shape the reporter stopped seeing.',
+    cases: { requireMemo: 15 },
   },
   'enforce-firestore-doc-ref-generic::global-const-style': {
     reason:
@@ -604,6 +622,26 @@ const KNOWN_DIVERGENT: Record<string, Exemption> = {
     reason:
       'INCIDENTAL: the fixture returns `null as unknown as ToClose` to keep the state type UNRESOLVABLE, which is the carve-out under test; returning a typed local instead keeps the type local and is clean under both (measured).',
     cases: { noTypeAssertionReturns: 1 },
+  },
+  'no-explicit-return-type::global-const-style': {
+    reason:
+      'PIPELINE, the reverse direction of the mention that enrols the pair: ' +
+      'the fixture declares `const obj = { method(a: number) { return a; } }` ' +
+      'at module scope to carry the un-annotated method under test, so the ' +
+      'sibling objects to the name and the missing assertion rather than to ' +
+      'anything the owner pins. Composed `--fix` yields `const OBJ = { ... } ' +
+      'as const` and both rules end silent (measured); the method keeps no ' +
+      'return annotation either way, which is what the fixture exists to ' +
+      'display. All 21 are that same shape — a lowercase, unfrozen ' +
+      'module-scope `const` (`obj`, `api`, `items`, `state`, `repo`, ' +
+      '`decorators`, the mutual-recursion pairs) carried only so the ' +
+      'annotation or the comment under test has somewhere to sit. 17 of them ' +
+      'also draw `asConst`; the four that draw only the rename hold an ' +
+      'annotated array or a class expression, which already carries its type. ' +
+      'None predates this pair — they surfaced together when the owner began ' +
+      'naming the sibling, and the composed `--fix` converges on every one ' +
+      '(machine-checked by the convergence pass below).',
+    cases: { asConst: 17, upperSnakeCase: 21 },
   },
   'no-explicit-return-type::enforce-boolean-naming-prefixes': {
     reason:

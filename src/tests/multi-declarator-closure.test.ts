@@ -1317,7 +1317,14 @@ describe('the multi-declarator probe is load-bearing', () => {
     // fixtures alone under the rule as it stood, back to 444 once the widened
     // alias walk withholds the assertion from them, with the rule change ALONE
     // leaving the count at the 398 it starts from.
-    expect(totals.mutationLicensed).toBeLessThanOrEqual(490); // measured 444
+    //
+    // #2349/#2350/#2351 are the fourth, attributed the same way: 444 to 616
+    // with the destructured-mapper, `flatMap` and handed-back-closure fixtures
+    // alone under the rule as it stood, back to 494 once the widened descent
+    // withholds the assertion from them. The rule change ALONE moves 444 to
+    // 442 — below where it starts — so the rise is the corpus, and the gate did
+    // not widen.
+    expect(totals.mutationLicensed).toBeLessThanOrEqual(540); // measured 494
     expect(totals.destructionLicensed).toBeLessThanOrEqual(10); // measured 2
     /**
      * The sibling-is-subject skip, pinned by rule MEMBERSHIP rather than by
