@@ -1,21 +1,15 @@
 import { ESLint, Linter } from 'eslint';
-// Using require to avoid test build-time ESM interop issues; the test runner
-// only needs the config object shape, not types.
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const plugin = require('..') as { configs?: Record<string, unknown> };
+import { loadPlugin } from '../utils/loadPlugin';
 
-type ConfigWithOverrides = Linter.Config & {
-  overrides?: Linter.ConfigOverride[];
-};
-
-const recommendedConfig = (plugin.configs?.recommended ??
-  {}) as ConfigWithOverrides;
-
+/**
+ * The barrel models an override with only the keys the recommended config
+ * ships, so the conversion to ESLint's own `ConfigOverride` — which requires
+ * `files` — sits at this boundary rather than in the plugin's structural type.
+ */
 const restrictedImportsOverrides =
-  recommendedConfig.overrides?.filter((override) => {
-    const ruleConfig = override.rules?.['no-restricted-imports'];
-    return Boolean(ruleConfig);
-  }) ?? [];
+  loadPlugin().configs.recommended.overrides.filter((override) =>
+    Boolean(override.rules?.['no-restricted-imports']),
+  ) as Linter.ConfigOverride[];
 
 const eslint = new ESLint({
   useEslintrc: false,

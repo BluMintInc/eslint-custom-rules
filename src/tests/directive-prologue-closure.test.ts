@@ -50,15 +50,9 @@ import {
   suggestionEditsOf,
   silentWithoutProgramRuleNames,
 } from '../utils/fixtureCorpus';
+import { loadPlugin } from '../utils/loadPlugin';
 
-/* eslint-disable @typescript-eslint/no-var-requires */
-const plugin = require('../index') as {
-  rules: Record<
-    string,
-    { meta?: { fixable?: string; hasSuggestions?: boolean } }
-  >;
-};
-/* eslint-enable @typescript-eslint/no-var-requires */
+const plugin = loadPlugin();
 
 const PREFIX = '@blumintinc/blumint/';
 const SHEBANG = '#!/usr/bin/env node';

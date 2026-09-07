@@ -13,13 +13,9 @@ import {
   optionsHint,
   lintBlock,
 } from '../utils/docsFixtures';
+import { loadPlugin } from '../utils/loadPlugin';
 
-// Using require to avoid test build-time ESM interop issues; the test runner
-// only needs the plugin object shape (rules), not types.
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const plugin = require('..') as {
-  rules: Record<string, unknown>;
-};
+const plugin = loadPlugin();
 // `parseFence` below swallows its own errors to classify a fence as
 // unparseable, so a missing binding here degrades to "every fence is
 // unparseable" — 9 green-to-silent tests — rather than to a crash. Keep it.

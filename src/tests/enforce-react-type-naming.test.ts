@@ -2,6 +2,7 @@ import { Linter } from 'eslint';
 import * as tsParser from '@typescript-eslint/parser';
 import { ruleTesterJsx } from '../utils/ruleTester';
 import { enforceReactTypeNaming } from '../rules/enforce-react-type-naming';
+import { loadPlugin } from '../utils/loadPlugin';
 
 ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
   valid: [
@@ -1458,12 +1459,7 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
  * read out of the shipped plugin, so this exercises the objects a consumer gets
  * rather than a local copy.
  */
-/* eslint-disable @typescript-eslint/no-var-requires */
-const plugin = require('../index') as {
-  rules: Record<string, unknown>;
-  configs: { recommended: { rules: Record<string, string> } };
-};
-/* eslint-enable @typescript-eslint/no-var-requires */
+const plugin = loadPlugin();
 
 const PREFIX = '@blumintinc/blumint/';
 const PAIR = ['enforce-react-type-naming', 'global-const-style'] as const;

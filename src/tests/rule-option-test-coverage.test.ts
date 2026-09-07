@@ -2,13 +2,9 @@ import fs from 'fs';
 import path from 'path';
 import { parse } from '@typescript-eslint/typescript-estree';
 import type { TSESTree } from '@typescript-eslint/utils';
+import { loadPlugin } from '../utils/loadPlugin';
 
-// Using require to avoid test build-time ESM interop issues; the guard only
-// needs the plugin object shape (rules), not types.
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const plugin = require('..') as {
-  rules: Record<string, { meta?: { schema?: unknown } }>;
-};
+const plugin = loadPlugin();
 
 /**
  * An option no test ever passes is a latent INERT option.

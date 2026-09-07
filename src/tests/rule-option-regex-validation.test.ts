@@ -1,9 +1,7 @@
 import { Linter } from 'eslint';
+import { loadPlugin, PluginModule } from '../utils/loadPlugin';
 
-// Using require to avoid test build-time ESM interop issues; the test runner
-// only needs the plugin object shape (rules), not types.
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const plugin = require('..') as { rules: Record<string, RuleShape> };
+const plugin = loadPlugin();
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const tsParser = require('@typescript-eslint/parser');
 
@@ -55,9 +53,14 @@ type JsonSchema = {
   anyOf?: JsonSchema[];
 };
 
-type RuleShape = {
-  meta?: { schema?: JsonSchema | JsonSchema[] };
-};
+/**
+ * `meta.schema` carries JSON Schema, which this suite models with only the
+ * subset it walks. The plugin types the same values through the wider
+ * `JSONSchema4` union, so the narrowing sits here rather than in every walker's
+ * signature.
+ */
+const modelledSchema = (rule: PluginModule['rules'][string]) =>
+  rule.meta.schema as JsonSchema | JsonSchema[];
 
 // Values a consumer plausibly writes that are not valid regex sources.
 const MALFORMED_PATTERNS = [
@@ -276,7 +279,7 @@ describe('rule option regex validation', () => {
   const consoleError = jest.spyOn(console, 'error').mockImplementation();
 
   for (const ruleName of ruleNames) {
-    const entry = firstSchemaEntry(plugin.rules[ruleName]?.meta?.schema);
+    const entry = firstSchemaEntry(modelledSchema(plugin.rules[ruleName]));
     for (const { key, isArray } of stringOptionKeys(entry)) {
       for (const badValue of MALFORMED_PATTERNS) {
         const { message, compiled, surfaced } = throwsFor(

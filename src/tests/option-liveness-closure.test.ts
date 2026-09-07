@@ -9,11 +9,9 @@ import {
   FixtureCase,
 } from '../utils/fixtureCorpus';
 import { compilePatternOption } from '../utils/compilePatternOption';
+import { loadPlugin, PluginModule } from '../utils/loadPlugin';
 
-// Using require to avoid test build-time ESM interop issues; the guard only
-// needs the plugin object shape (rules), not types.
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const plugin = require('../index') as { rules: Record<string, RuleShape> };
+const plugin = loadPlugin();
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const tsParser = require('@typescript-eslint/parser');
 
@@ -67,6 +65,15 @@ type RuleShape = {
   meta?: { schema?: JsonSchema | JsonSchema[] };
   defaultOptions?: readonly unknown[];
 };
+
+/**
+ * `meta.schema` on a plugin rule is `JSONSchema4`, the whole draft-4 surface;
+ * `JsonSchema` above is the subset this walker reads. Asserted at the one place
+ * a plugin rule enters the walker rather than widening the walker, which would
+ * put an optional chain on every property it reads.
+ */
+const modelledRule = (rule: PluginModule['rules'][string]) =>
+  rule as unknown as RuleShape;
 
 /**
  * Options whose liveness the corpus cannot demonstrate, each blocked on a
@@ -600,7 +607,7 @@ const corpusCrashes: Crash[] = [];
 let fixturesConsidered = 0;
 
 for (const [name, rule] of Object.entries(plugin.rules)) {
-  const probes = probesOf(rule);
+  const probes = probesOf(modelledRule(rule));
   if (!probes.length) continue;
   /**
    * A rule that reports nothing at all here would read every one of its options

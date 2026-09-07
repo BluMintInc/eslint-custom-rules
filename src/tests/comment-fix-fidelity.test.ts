@@ -61,12 +61,9 @@ import type { FixtureLanguage } from '../utils/fixtureCorpus';
  * that doubled the cross-paired guard's runtime from ~530s to ~1096s.
  */
 import { COMMENT_FIDELITY_BASELINE } from './commentFidelityBaseline';
+import { loadPlugin } from '../utils/loadPlugin';
 
-/* eslint-disable @typescript-eslint/no-var-requires */
-const plugin = require('../index') as {
-  rules: Record<string, { meta?: { fixable?: string } }>;
-};
-/* eslint-enable @typescript-eslint/no-var-requires */
+const plugin = loadPlugin();
 
 const PREFIX = '@blumintinc/blumint/';
 

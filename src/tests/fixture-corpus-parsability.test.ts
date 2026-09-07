@@ -51,10 +51,9 @@ import {
   FixtureCase,
   FixtureLanguage,
 } from '../utils/fixtureCorpus';
+import { loadPlugin } from '../utils/loadPlugin';
 
-/* eslint-disable @typescript-eslint/no-var-requires */
-const plugin = require('../index') as { rules: Record<string, unknown> };
-/* eslint-enable @typescript-eslint/no-var-requires */
+const plugin = loadPlugin();
 
 const linter = new Linter();
 defineCorpusParsers(linter);

@@ -8,6 +8,7 @@ import {
   severityWithOptions,
   silentWithoutProgramRuleNames,
 } from '../utils/fixtureCorpus';
+import { loadPlugin } from '../utils/loadPlugin';
 
 /**
  * A developer's choice of function spelling must not decide whether a rule
@@ -56,10 +57,7 @@ import {
  */
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const plugin = require('..') as {
-  rules: Record<string, { meta?: Record<string, unknown> }>;
-};
+const plugin = loadPlugin();
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const tsParser = require('@typescript-eslint/parser');
 // eslint-disable-next-line @typescript-eslint/no-var-requires

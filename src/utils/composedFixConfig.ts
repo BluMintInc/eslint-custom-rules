@@ -4,21 +4,9 @@ import {
   FixtureCase,
   severityWithOptions,
 } from './fixtureCorpus';
+import { loadPlugin } from './loadPlugin';
 
-/* eslint-disable @typescript-eslint/no-var-requires */
-const plugin = require('../index') as {
-  rules: Record<string, unknown>;
-  configs: {
-    recommended: {
-      rules: Record<string, unknown>;
-      overrides?: readonly {
-        files?: readonly string[];
-        rules?: Record<string, unknown>;
-      }[];
-    };
-  };
-};
-/* eslint-enable @typescript-eslint/no-var-requires */
+const plugin = loadPlugin();
 
 export const PLUGIN_PREFIX = '@blumintinc/blumint/';
 

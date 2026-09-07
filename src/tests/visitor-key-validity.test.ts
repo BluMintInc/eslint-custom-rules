@@ -1,13 +1,15 @@
 import { Linter } from 'eslint';
 import * as tsParser from '@typescript-eslint/parser';
 import { AST_NODE_TYPES, TSESLint } from '@typescript-eslint/utils';
-import { rules } from '../index';
 import {
   buildOptionPayloads,
   optionSchemaOf,
   payloadLabel,
   screenPayloads,
 } from '../utils/syntheticRuleOptions';
+import { loadPlugin } from '../utils/loadPlugin';
+
+const { rules } = loadPlugin();
 
 /**
  * ESLint never validates the keys of the object a rule's `create()` returns.

@@ -26,14 +26,9 @@ import {
   composedRulesFor,
   noteOptionCarriage,
 } from '../utils/composedFixConfig';
+import { loadPlugin } from '../utils/loadPlugin';
 
-// Using require to avoid test build-time ESM interop issues; the test runner
-// only needs the plugin object shape (rules, recommended config), not types.
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const plugin = require('..') as {
-  rules: Record<string, { meta?: Record<string, unknown> }>;
-  configs: { recommended: { rules: Record<string, unknown> } };
-};
+const plugin = loadPlugin();
 
 const PREFIX = '@blumintinc/blumint/';
 

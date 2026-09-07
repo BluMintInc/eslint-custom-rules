@@ -1,7 +1,6 @@
 import { Linter } from 'eslint';
 import * as tsParser from '@typescript-eslint/parser';
 import * as jsoncParser from 'jsonc-eslint-parser';
-import { rules } from '../index';
 import {
   buildOptionPayloads,
   hashOffset,
@@ -9,6 +8,9 @@ import {
   payloadLabel,
   screenPayloads,
 } from '../utils/syntheticRuleOptions';
+import { loadPlugin } from '../utils/loadPlugin';
+
+const { rules } = loadPlugin();
 
 // markdown-eslint-parser ships no type declarations, so it cannot be imported
 // without failing the build.

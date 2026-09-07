@@ -8,13 +8,9 @@ import {
   severityWithOptions,
   silentWithoutProgramRuleNames,
 } from '../utils/fixtureCorpus';
+import { loadPlugin } from '../utils/loadPlugin';
 
-// Using require to avoid test build-time ESM interop issues; the test runner
-// only needs the plugin object shape (rules), not types.
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const plugin = require('..') as {
-  rules: Record<string, { meta?: Record<string, unknown> }>;
-};
+const plugin = loadPlugin();
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const tsParser = require('@typescript-eslint/parser');
 // eslint-disable-next-line @typescript-eslint/no-var-requires

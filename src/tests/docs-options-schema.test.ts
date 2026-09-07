@@ -1,22 +1,9 @@
 import fs from 'fs';
 import path from 'path';
 import { ESLint } from 'eslint';
+import { loadPlugin } from '../utils/loadPlugin';
 
-// Using require to avoid test build-time ESM interop issues; the test runner
-// only needs the plugin object shape (rules), not types.
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const plugin = require('..') as {
-  rules: Record<string, { meta?: { schema?: unknown } }>;
-  configs: {
-    recommended: {
-      rules: Record<string, unknown>;
-      overrides?: readonly {
-        files?: readonly string[];
-        rules?: Record<string, unknown>;
-      }[];
-    };
-  };
-};
+const plugin = loadPlugin();
 
 const PREFIX = '@blumintinc/blumint/';
 const DOCS_DIR = path.join(__dirname, '../../docs/rules');

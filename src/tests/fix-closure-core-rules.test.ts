@@ -25,13 +25,9 @@ import {
   silentWithoutProgramRuleNames,
   typeAwareRuleNames,
 } from '../utils/fixtureCorpus';
+import { loadPlugin } from '../utils/loadPlugin';
 
-/* eslint-disable @typescript-eslint/no-var-requires */
-const plugin = require('../index') as {
-  rules: Record<string, unknown>;
-  configs: { recommended: { rules: Record<string, unknown> } };
-};
-/* eslint-enable @typescript-eslint/no-var-requires */
+const plugin = loadPlugin();
 
 const PREFIX = '@blumintinc/blumint/';
 

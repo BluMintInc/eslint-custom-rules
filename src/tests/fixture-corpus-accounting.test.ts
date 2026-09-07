@@ -56,9 +56,9 @@ import {
   FixtureCase,
   FixtureLanguage,
 } from '../utils/fixtureCorpus';
+import { loadPlugin } from '../utils/loadPlugin';
 
-/* eslint-disable @typescript-eslint/no-var-requires */
-const plugin = require('../index') as { rules: Record<string, unknown> };
+const plugin = loadPlugin();
 
 /**
  * Reached by `require`, deliberately, and never by an `import ... from` of the
@@ -71,6 +71,7 @@ const plugin = require('../index') as { rules: Record<string, unknown> };
  * the mistake fails loudly rather than silently — but this guard still has no
  * business being harvested, so it stays out of the admission set.
  */
+/* eslint-disable @typescript-eslint/no-var-requires */
 const sharedTesters = require('../utils/ruleTester') as Record<string, unknown>;
 /* eslint-enable @typescript-eslint/no-var-requires */
 
