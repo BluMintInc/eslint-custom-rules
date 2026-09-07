@@ -69,6 +69,16 @@ function prepend(response: Readonly<NextResponse> | null | false) {
   return withPrefix(response);
 }
 
+// The same evidence, written at the declaration the value comes FROM rather
+// than on the binding that holds it.
+function build(): Readonly<NextResponse> {
+  return load();
+}
+const response = build();
+if (!response) {
+  handle(response);
+}
+
 // A dictionary the source spells out is still reported, resolved or not:
 // `Record<K, V>` is an index signature whichever way `K` and `V` resolve, and a
 // shape-preserving wrapper, a union member, an intersection whose every member
@@ -94,7 +104,20 @@ written against parameters that shadow any same-file alias of the same name. And
 an alias is followed only inside the file that declares it: a reference into a
 module the program did not load is the unresolved case above.
 
-The annotation has to sit on the binding. The one on
+The binding's annotation is not the only place a file states that type, and
+reading only it left the suffix deciding alone everywhere else. An annotated
+function or arrow return, a class method's return, a type assertion — `as T` or
+`<T>expr` — and the awaited value of a `Promise<T>` return each state the type of
+the value a guard tests just as directly, so `const response = build()` off a
+`Readonly<NextResponse>` return declines exactly as the annotated binding does.
+`satisfies` is not among them: it checks an expression against a type without
+changing the type, so the value keeps whatever the expression already carried.
+Each of these is followed only through the file's own scope — a callee imported
+from a module the program did not load is the unresolved case above, and a
+method is read only off a class this file declares — and a return type or
+assertion that IS a dictionary keeps its report.
+
+The annotation has to sit on the binding rather than around it. The one on
 `const { config }: Props = load()` describes the container, and deciding a single
 property from it needs the resolution that failed, so a destructured binding
 stays with the naming heuristic.
