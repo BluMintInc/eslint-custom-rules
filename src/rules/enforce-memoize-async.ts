@@ -840,6 +840,81 @@ function readsWrittenField(
 }
 
 /**
+ * The places an assignment target names, with its destructuring patterns opened
+ * up: `this.head` for `[this.head] = holders` and `this.idleSince` for
+ * `({ idleSince: this.idleSince } = state)`.
+ *
+ * A pattern writes to every place it names, so a reader that stopped at the
+ * pattern node answers "writes nothing" about a step that writes several
+ * fields. Leaves are handed on unexamined, since a place is what
+ * `rootThisField` decides on: a member path may or may not be rooted at `this`,
+ * and a plain binding names no field at all.
+ */
+function* assignmentTargetsOf(target: TSESTree.Node): Generator<TSESTree.Node> {
+  switch (target.type) {
+    case AST_NODE_TYPES.ObjectPattern:
+      for (const property of target.properties) {
+        yield* assignmentTargetsOf(
+          property.type === AST_NODE_TYPES.RestElement
+            ? property
+            : property.value,
+        );
+      }
+      return;
+    case AST_NODE_TYPES.ArrayPattern:
+      for (const element of target.elements) {
+        if (element) {
+          yield* assignmentTargetsOf(element);
+        }
+      }
+      return;
+    case AST_NODE_TYPES.AssignmentPattern:
+      yield* assignmentTargetsOf(target.left);
+      return;
+    case AST_NODE_TYPES.RestElement:
+      yield* assignmentTargetsOf(target.argument);
+      return;
+    default:
+      yield target;
+  }
+}
+
+/**
+ * The places a step writes to. `=` is one spelling of a write among several:
+ * `this.attempts++` records an attempt, `delete this.slots[id]` drops an entry
+ * and `for (this.cursor of pages)` advances a field once per iteration, and a
+ * method whose only write is spelled one of those ways states its effect as
+ * plainly as its `=` twin does.
+ *
+ * A `for…of`/`for…in` that DECLARES its variable is not among them: the binding
+ * is fresh per iteration and dies with the loop, so it names no place that
+ * outlives the call.
+ */
+function* writeTargetsOf(node: TSESTree.Node): Generator<TSESTree.Node> {
+  switch (node.type) {
+    case AST_NODE_TYPES.AssignmentExpression:
+      yield* assignmentTargetsOf(node.left);
+      return;
+    case AST_NODE_TYPES.UpdateExpression:
+      yield node.argument;
+      return;
+    case AST_NODE_TYPES.UnaryExpression:
+      if (node.operator === 'delete') {
+        yield node.argument;
+      }
+      return;
+    case AST_NODE_TYPES.ForInStatement:
+    case AST_NODE_TYPES.ForOfStatement:
+      if (node.left.type !== AST_NODE_TYPES.VariableDeclaration) {
+        yield* assignmentTargetsOf(node.left);
+      }
+      return;
+    default:
+    // Every other step reads, calls or declares; none of them writes a place.
+  }
+}
+
+/**
  * Whether the method writes an instance field and hands back a result that
  * reads none of the fields it wrote.
  *
@@ -859,13 +934,15 @@ function writesFieldItDoesNotReturn(fn: TSESTree.FunctionExpression): boolean {
   const written = new Set<string>();
   const results: TSESTree.Node[] = [];
   for (const node of ownSubtreeOf(fn.body)) {
-    if (node.type === AST_NODE_TYPES.AssignmentExpression) {
-      const field = rootThisField(node.left);
+    if (node.type === AST_NODE_TYPES.ReturnStatement && node.argument) {
+      results.push(node.argument);
+      continue;
+    }
+    for (const target of writeTargetsOf(node)) {
+      const field = rootThisField(target);
       if (field !== undefined) {
         written.add(field);
       }
-    } else if (node.type === AST_NODE_TYPES.ReturnStatement && node.argument) {
-      results.push(node.argument);
     }
   }
   if (written.size === 0 || results.length === 0) {
