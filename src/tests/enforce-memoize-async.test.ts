@@ -7827,3 +7827,466 @@ class Repo {
     ],
   },
 );
+
+// Issue #2347: the acquire/release carve-out of #2343 asked only whether the
+// `finalizer` performed a call, so every method whose `finally` logged, emitted
+// a metric, ended a span or cleared a timer bought the same silence a release
+// buys. What earns it is the triangle: the method takes a handle from a call,
+// the guarded block works with that handle, and the `finally` gives it back.
+// Reporting on the work that ran is not giving anything back, however the
+// report is spelled, so those methods keep the report the rule exists to make.
+ruleTesterTs.run(
+  'enforce-memoize-async: a reporting finalizer is not a release (issue #2347)',
+  enforceMemoizeAsync,
+  {
+    valid: [
+      {
+        // The triangle without a single release word in it: `giveBack` is
+        // domain vocabulary, and the ticket enqueued, polled on and handed back
+        // is visible from the body alone.
+        name: 'a release spelled in domain vocabulary is read off the acquire/hold/release triangle',
+        code: `
+class Waiter {
+  public async waitForSlot(timeoutMs: number) {
+    const ticket = this.queue.enqueue();
+    try {
+      return await this.poll(ticket.id, timeoutMs);
+    } finally {
+      this.queue.giveBack(ticket.id);
+    }
+  }
+}
+`,
+      },
+      {
+        // One call hands back two names, and the pair is the acquisition: the
+        // guarded block works through `client` while `done` is what returns it.
+        name: 'a destructured acquire pairs the handle the block uses with the one the finalizer gives back',
+        code: `
+class Pool {
+  public async query(sql: string) {
+    const { client, done } = await this.pool.connect();
+    try {
+      return await client.query(sql);
+    } finally {
+      done();
+    }
+  }
+}
+`,
+      },
+      {
+        // The caller took the lock and passed it in, so the body carries no
+        // acquisition to pair against and the hand-back word is the only
+        // evidence there is.
+        name: 'a release the method did not acquire is still a release',
+        code: `
+class Repo {
+  public async loadGuarded(id: string) {
+    const lock = await this.mutex.acquire();
+    try {
+      return await fetch(id);
+    } finally {
+      lock.release();
+    }
+  }
+}
+`,
+      },
+      {
+        // A handle is constructed as often as it is handed out.
+        name: 'a handle taken from a constructor is acquired like one taken from a call',
+        code: `
+class Store {
+  public async read(id: string) {
+    const conn = new Connection(this.url);
+    try {
+      return await conn.get(id);
+    } finally {
+      conn.shutdown();
+    }
+  }
+}
+`,
+      },
+      {
+        // The `let` declared ahead of the `try` carries no initialiser, so the
+        // acquisition is the assignment inside the guarded block.
+        name: 'a handle assigned inside the guarded block is acquired there',
+        code: `
+class Gate {
+  public async enter(id: string) {
+    let pass;
+    try {
+      pass = await this.gate.take();
+      return await this.walk(pass, id);
+    } finally {
+      this.gate.handBack(pass);
+    }
+  }
+}
+`,
+      },
+      {
+        name: 'an array-destructured acquire pairs across its elements',
+        code: `
+class Pool {
+  public async fetchRow(id: string) {
+    const [conn, put] = await this.pool.take();
+    try {
+      return await conn.get(id);
+    } finally {
+      put();
+    }
+  }
+}
+`,
+      },
+      {
+        // Whole words, so the hand-back is read out of `releaseLock` while
+        // `clearTimeout` stays outside the release vocabulary.
+        name: 'a hand-back spelled as one word of a camel-cased name is a release',
+        code: `
+class Repo {
+  public async loadHeld(id: string) {
+    try {
+      return await fetch(id);
+    } finally {
+      this.releaseLock(id);
+    }
+  }
+}
+`,
+      },
+      {
+        // The boundary of the timer case below: a handle the guarded block
+        // actually works through is held across the value being produced,
+        // whatever the call that gives it back is called.
+        name: 'a handle the guarded block works through is released even when the hand-back is spelled as a clear',
+        code: `
+class Timer {
+  public async fetchRacing(id: string) {
+    const timer = this.clock.arm(1000);
+    try {
+      return await this.raceAgainst(timer);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+}
+`,
+      },
+    ],
+    invalid: [
+      {
+        // Verbatim from the report. The rule's own documentation shows this
+        // call as a still-reported method, and it is only still reported there
+        // because the `finally` sits inside a `.map()` callback.
+        name: 'the issue reproduction: a finalizer that logs is not a release',
+        code: `
+class Repo {
+  public async load(id: string) {
+    try {
+      return await fetch(id);
+    } finally {
+      this.log(id);
+    }
+  }
+  log(_id: string): void {}
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Repo {
+  @Memoize()
+  public async load(id: string) {
+    try {
+      return await fetch(id);
+    } finally {
+      this.log(id);
+    }
+  }
+  log(_id: string): void {}
+}
+`,
+      },
+      {
+        name: 'a finalizer that writes to the console reports on the attempt',
+        code: `
+class Repo {
+  public async loadOnce(id: string) {
+    try {
+      return await fetch(id);
+    } finally {
+      console.log('loadOnce finished');
+    }
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Repo {
+  @Memoize()
+  public async loadOnce(id: string) {
+    try {
+      return await fetch(id);
+    } finally {
+      console.log('loadOnce finished');
+    }
+  }
+}
+`,
+      },
+      {
+        // The parameter is the caller's, not something this method took.
+        name: 'a finalizer that logs through an injected logger reports on the attempt',
+        code: `
+class Repo {
+  public async loadRow(id: string) {
+    try {
+      return await fetch(id);
+    } finally {
+      this.logger.debug('loaded row', id);
+    }
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Repo {
+  @Memoize()
+  public async loadRow(id: string) {
+    try {
+      return await fetch(id);
+    } finally {
+      this.logger.debug('loaded row', id);
+    }
+  }
+}
+`,
+      },
+      {
+        // The span is taken from a call, but the guarded block never works
+        // through it: what ends is the observation of the work, not a resource
+        // the work held.
+        name: 'a finalizer that ends a span observes the attempt rather than releasing it',
+        code: `
+class Reader {
+  public async fetchRow(id: string) {
+    const span = this.tracer.startSpan('fetchRow');
+    try {
+      return await fetch(id);
+    } finally {
+      span.end();
+    }
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Reader {
+  @Memoize()
+  public async fetchRow(id: string) {
+    const span = this.tracer.startSpan('fetchRow');
+    try {
+      return await fetch(id);
+    } finally {
+      span.end();
+    }
+  }
+}
+`,
+      },
+      {
+        name: 'a finalizer that clears a timer the work never touched keeps the report',
+        code: `
+class Deadline {
+  public async fetchWithDeadline(id: string) {
+    const timeout = setTimeout(() => this.abort(), 1000);
+    try {
+      return await fetch(id);
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Deadline {
+  @Memoize()
+  public async fetchWithDeadline(id: string) {
+    const timeout = setTimeout(() => this.abort(), 1000);
+    try {
+      return await fetch(id);
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+}
+`,
+      },
+      {
+        name: 'a finalizer that emits an event announces the attempt rather than undoing it',
+        code: `
+class Emitter {
+  public async loadAll(id: string) {
+    try {
+      return await fetch(id);
+    } finally {
+      this.emit('done');
+    }
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Emitter {
+  @Memoize()
+  public async loadAll(id: string) {
+    try {
+      return await fetch(id);
+    } finally {
+      this.emit('done');
+    }
+  }
+}
+`,
+      },
+      {
+        name: 'a finalizer that increments a metric keeps the report',
+        code: `
+class Counter {
+  public async loadCounted(id: string) {
+    try {
+      return await fetch(id);
+    } finally {
+      metrics.increment('repo.load');
+    }
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Counter {
+  @Memoize()
+  public async loadCounted(id: string) {
+    try {
+      return await fetch(id);
+    } finally {
+      metrics.increment('repo.load');
+    }
+  }
+}
+`,
+      },
+      {
+        // Two acquisitions, and the triangle is closed by neither: the block
+        // works through the rows while the `finally` ends a span the work never
+        // touched. Pairing across acquisitions would read this as a release.
+        name: 'a span ended beside an unrelated acquisition keeps the report',
+        code: `
+class Reader {
+  public async read(id: string) {
+    const rows = await this.db.query(id);
+    const span = this.tracer.startSpan('read');
+    try {
+      return await this.transform(rows);
+    } finally {
+      span.end();
+    }
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Reader {
+  @Memoize()
+  public async read(id: string) {
+    const rows = await this.db.query(id);
+    const span = this.tracer.startSpan('read');
+    try {
+      return await this.transform(rows);
+    } finally {
+      span.end();
+    }
+  }
+}
+`,
+      },
+      {
+        // Every name a destructured acquire binds is read, defaults and rest
+        // included, and none of them reaches the finalizer: the `finally`
+        // reports on the attempt and buys no silence for the whole pattern.
+        name: 'a destructured acquire whose names the finalizer never reaches keeps the report',
+        code: `
+class Repo {
+  public async loadSpread(id: string) {
+    const { rows, meta = EMPTY, ...extra } = await this.db.query(id);
+    try {
+      return await this.transform(rows, meta, extra);
+    } finally {
+      this.logger.debug('loaded', id);
+    }
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Repo {
+  @Memoize()
+  public async loadSpread(id: string) {
+    const { rows, meta = EMPTY, ...extra } = await this.db.query(id);
+    try {
+      return await this.transform(rows, meta, extra);
+    } finally {
+      this.logger.debug('loaded', id);
+    }
+  }
+}
+`,
+      },
+      {
+        // A local computed from a parameter is not a handle the method took
+        // from anywhere, so nothing in the body pairs with the call.
+        name: 'a finalizer mentioning a local the method computed is not a release',
+        code: `
+class Repo {
+  public async loadLabelled(id: string) {
+    const label = id + '!';
+    try {
+      return await fetch(id);
+    } finally {
+      this.report(label);
+    }
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Repo {
+  @Memoize()
+  public async loadLabelled(id: string) {
+    const label = id + '!';
+    try {
+      return await fetch(id);
+    } finally {
+      this.report(label);
+    }
+  }
+}
+`,
+      },
+    ],
+  },
+);

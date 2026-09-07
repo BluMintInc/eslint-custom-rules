@@ -435,9 +435,9 @@ handle (`open(): Promise<Transaction>`) or holds a collection of them
 
 ### Methods that release what they acquired
 
-A `finally` that **calls** something exists to undo an effect the `try`
-performed: the method takes a resource, works while it holds it, and gives it
-back on the way out. What such a method hands back describes that one attempt —
+A `finally` that **gives back** what the `try` took names an attempt: the method
+takes a resource, works while it holds it, and hands it back on the way out.
+What such a method returns describes that one attempt —
 a grant held while a queue ticket was outstanding, a read taken while a lock was
 held — rather than a fact that stays true once the release has run.
 
@@ -480,8 +480,28 @@ class Waiter {
       isDone = true;
     }
   }
+
+  // ❌ still reported: a log line reports on the attempt rather than giving
+  // anything back
+  public async loadLogged(id: string) {
+    try {
+      return await fetch(id);
+    } finally {
+      this.log(id);
+    }
+  }
 }
 ```
+
+Giving back is read two ways. Either the body shows the whole triangle — the
+method takes a handle from a call, the guarded block works **through** that
+handle, and the `finally` names it — or the call is spelled as a hand-back
+(`release`, `close`, `dispose`, `abandon`, `rollback`, and their kin), which is
+the only evidence available when the caller acquired the resource and passed it
+in. Words for a lifetime merely **ending** are not hand-backs: `span.end()` and
+`clearTimeout(t)` beside work that never touched the span or the timer report on
+the attempt, so both keep reporting. The same timer released after the guarded
+block actually raced against it closes the triangle and is carved out.
 
 Only the method's **own** steps are read. A `try`/`finally` written inside a
 callback is that callback's acquire/release pair, running on whatever schedule
