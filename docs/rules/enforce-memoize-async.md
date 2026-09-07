@@ -28,7 +28,8 @@ The rule skips:
   `runTransaction(…)` call, or one handed the attempt's `Transaction` handle
   (see [Methods that take part in a transaction](#methods-that-take-part-in-a-transaction)).
 - Methods that **release what they acquired** — a `try` in the method's own body
-  whose `finally` calls something (see
+  whose `finally` hands a handle back, rather than reporting on the work that
+  used it (see
   [Methods that release what they acquired](#methods-that-release-what-they-acquired)).
 - Methods that **write an instance field and hand back a result reading none of
   the fields they wrote** (see
@@ -490,6 +491,17 @@ class Waiter {
       this.log(id);
     }
   }
+
+  // ❌ still reported: naming the lease is how the log describes it, not how
+  // it is handed back — the lease leaks
+  public async loadLeased(id: string) {
+    const lease = await this.pool.acquire();
+    try {
+      return await lease.read(id);
+    } finally {
+      this.logger.info('used lease', lease.id);
+    }
+  }
 }
 ```
 
@@ -502,6 +514,24 @@ in. Words for a lifetime merely **ending** are not hand-backs: `span.end()` and
 `clearTimeout(t)` beside work that never touched the span or the timer report on
 the attempt, so both keep reporting. The same timer released after the guarded
 block actually raced against it closes the triangle and is carved out.
+
+Naming the handle is evidence the `finally` **used** it, and a log line uses it
+as loudly as a hand-back does, so a call that reads as an **observation** closes
+no triangle. A call reads that way when its verb names a report (`log`, `info`,
+`warn`, `error`, `debug`, `trace`, `record`, `report`, `emit`, `track`, `count`,
+`increment`, `observe`, `time`, `measure`, `span`) or when it is routed through
+a sink (`logger`, `log`, `console`, `metrics`, `telemetry`, `tracer`,
+`analytics`, `stats`, `span`) — which is what reaches
+`span.setAttribute('lease', lease.id)`, whose verb names nothing. A hand-back
+word is decided **first**, so `this.pool.release(lease)` and
+`this.queue.abandon(ticket.id)` keep their carve-out even though the receiver is
+not the handle, and so does `this.logger.release(lease)`: a sink is inferred
+from a name a caller chose freely, while a release verb states the intent
+outright. A sink read off a name cannot tell a sink from a handle spelled like
+one, so a call **on** the handle whose own acquisition is being paired survives
+it — `finally { log.flush() }` over a `log` the guarded block wrote to is a
+release. One genuine hand-back is enough: a `finally` that logs the lease and
+then releases it stays carved out.
 
 Only the method's **own** steps are read. A `try`/`finally` written inside a
 callback is that callback's acquire/release pair, running on whatever schedule

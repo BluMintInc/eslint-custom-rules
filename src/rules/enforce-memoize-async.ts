@@ -745,6 +745,119 @@ function namesRelease(call: TSESTree.CallExpression): boolean {
 }
 
 /**
+ * Words that name REPORTING on the work rather than acting on what the work
+ * held. A call spelled from one of them observes the attempt: it reads the
+ * handle to say something about it, which leaves the handle exactly as
+ * outstanding as it was.
+ *
+ * Words for a lifetime ending stay out of this set for the reason they stay
+ * out of `RELEASE_WORDS`: `end` and `close` name the moment, and reading them
+ * here would strip the carve-out from a genuine hand-back spelled that way.
+ */
+const REPORT_WORDS = new Set([
+  'count',
+  'debug',
+  'emit',
+  'error',
+  'increment',
+  'info',
+  'log',
+  'measure',
+  'observe',
+  'record',
+  'report',
+  'span',
+  'time',
+  'track',
+  'trace',
+  'warn',
+]);
+
+/**
+ * Receivers that are somewhere to SEND an observation, not something a method
+ * holds. A call routed through one of them reports whatever its own verb is
+ * called, which is what reaches `span.setAttribute(…)` and `this.stats.bump(…)`
+ * — spellings whose verb carries no report word at all.
+ */
+const SINK_NAMES = new Set([
+  'analytics',
+  'console',
+  'log',
+  'logger',
+  'metrics',
+  'span',
+  'stats',
+  'telemetry',
+  'tracer',
+]);
+
+/**
+ * The nearest static name of a call's receiver: `logger` for
+ * `this.logger.info(…)` and for `this.deps.logger.info(…)` alike, `console`
+ * for `console.log(…)`. The nearest name rather than the root is what a sink
+ * is spelled as — the root of an injected logger is `this`, which says nothing.
+ */
+function receiverName(call: TSESTree.CallExpression): string | undefined {
+  const callee = withoutChain(call.callee);
+  if (callee.type !== AST_NODE_TYPES.MemberExpression) {
+    return undefined;
+  }
+  const receiver = withoutValueWrappers(callee.object);
+  if (receiver.type === AST_NODE_TYPES.Identifier) {
+    return receiver.name;
+  }
+  return receiver.type === AST_NODE_TYPES.MemberExpression &&
+    !receiver.computed &&
+    receiver.property.type === AST_NODE_TYPES.Identifier
+    ? receiver.property.name
+    : undefined;
+}
+
+/**
+ * The binding a call's receiver is rooted at: `log` for `log.flush()`,
+ * undefined for `this.logger.info(…)`, whose root is `this`.
+ */
+function receiverRootBinding(
+  call: TSESTree.CallExpression,
+): string | undefined {
+  const callee = withoutChain(call.callee);
+  if (callee.type !== AST_NODE_TYPES.MemberExpression) {
+    return undefined;
+  }
+  let receiver = withoutValueWrappers(callee.object);
+  while (receiver.type === AST_NODE_TYPES.MemberExpression) {
+    receiver = withoutValueWrappers(receiver.object);
+  }
+  return receiver.type === AST_NODE_TYPES.Identifier
+    ? receiver.name
+    : undefined;
+}
+
+/**
+ * Whether the call reads as an observation of the attempt: its verb names a
+ * report, or it is routed through a sink. Either way what it does with a handle
+ * it names is describe it.
+ *
+ * A hand-back word in the verb is decided ahead of this, so
+ * `this.logger.release(lease)` stays a release: a sink is inferred from a name
+ * a caller chose freely, while a release verb states the intent outright.
+ */
+function readsAsReport(call: TSESTree.CallExpression): boolean {
+  const name = calleeName(call);
+  if (
+    name !== undefined &&
+    wordsOf(name).some((word) => REPORT_WORDS.has(word))
+  ) {
+    return true;
+  }
+  const receiver = receiverName(call);
+  return (
+    receiver !== undefined &&
+    wordsOf(receiver).some((word) => SINK_NAMES.has(word))
+  );
+}
+
+/**
  * Whether the `finally` gives back something the method took, rather than
  * reporting on the work that took it.
  *
@@ -757,6 +870,14 @@ function namesRelease(call: TSESTree.CallExpression): boolean {
  * is what separates a resource held across the value being produced from
  * bookkeeping the work never touched — `clearTimeout(t)` beside a `fetch` that
  * ignores `t`, or a span that observes the attempt from outside it.
+ *
+ * Naming the handle is evidence the finalizer USED it, though, and a log line
+ * uses it exactly as loudly as a hand-back does: `this.logger.info('used
+ * lease', lease.id)` closes the triangle while the lease leaks. So a call that
+ * reads as an observation — a reporting verb, or a route through a sink — does
+ * not close it. The exception is a call ON the handle whose own acquisition is
+ * being paired: `log.flush()` acts on the thing it is spelled after, and only a
+ * receiver NAME suggested otherwise.
  *
  * The second shape is the name, and it covers the release a method does not
  * acquire: the caller takes the lock and passes it in, leaving `finally {
@@ -783,10 +904,16 @@ function releasesResource(
     if (namesRelease(node)) {
       return true;
     }
+    const reporting = readsAsReport(node);
+    const receiver = reporting ? receiverRootBinding(node) : undefined;
     for (const bindings of acquisitions) {
-      if (mentionsAny(node, bindings) && mentionsAny(guarded, bindings)) {
-        return true;
+      if (!mentionsAny(node, bindings) || !mentionsAny(guarded, bindings)) {
+        continue;
       }
+      if (reporting && (receiver === undefined || !bindings.has(receiver))) {
+        continue;
+      }
+      return true;
     }
   }
   return false;
@@ -804,7 +931,8 @@ function releasesResource(
  * (`finally { done = true; }`) records that the attempt finished instead of
  * undoing it, and one that logs, emits a metric, ends a span or clears a timer
  * the work never touched reports on the attempt instead of giving anything
- * back, so none of them costs the method its report.
+ * back, so none of them costs the method its report. A log line naming the
+ * handle is such a report however much of the handle it names.
  */
 function releasesInOwnFinalizer(fn: TSESTree.FunctionExpression): boolean {
   const acquisitions = acquisitionsOf(fn);
