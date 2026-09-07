@@ -21,6 +21,8 @@ import {
   type ChangedFile,
   type Issue,
 } from './maintainer';
+import { resolveGovernorTsconfig } from './governor';
+import { REGISTRY_GUARD_SUITES } from './registry-guard-suites';
 
 const issue = (
   number: number,
@@ -184,6 +186,19 @@ describe('isLintablePath', () => {
 
 describe('validateViaStopHooks', () => {
   /**
+   * The governor spawns its child as argv with no shell, so the payload is
+   * headed with jest's own JS entry point rather than `npx`, which dies ENOENT
+   * under that spawn on Git Bash.
+   */
+  const bareJest = (...files: string[]) =>
+    `node ./node_modules/jest/bin/jest --findRelatedTests ${files.join(
+      ' ',
+    )} --passWithNoTests`;
+
+  const governedJest = (...files: string[]) =>
+    `npx tsx ${__filename} run --profile=jest -- ${bareJest(...files)}`;
+
+  /**
    * The jest step routes through the machine-wide exec-governor when
    * `BLUMINT_GOVERNOR_CLI` names a reachable one (#2286), so the command list
    * these arms assert depends on ambient machine configuration. Pinning the
@@ -222,7 +237,7 @@ describe('validateViaStopHooks', () => {
     expect(calls).toEqual([
       'npm run build',
       'npx eslint src/rules/foo.ts src/util/bar.ts',
-      'npx jest --findRelatedTests src/rules/foo.ts src/tests/foo.test.ts --passWithNoTests',
+      bareJest('src/rules/foo.ts', 'src/tests/foo.test.ts'),
     ]);
   });
 
@@ -244,8 +259,28 @@ describe('validateViaStopHooks', () => {
     expect(calls).toEqual([
       'npm run build',
       'npx eslint src/rules/foo.ts',
-      `npx tsx ${__filename} run --profile=jest -- npx jest --findRelatedTests src/tests/foo.test.ts --passWithNoTests`,
+      governedJest('src/tests/foo.test.ts'),
     ]);
+  });
+
+  /**
+   * A registry change relates to nothing, because the plugin loads through a
+   * computed path. Naming the cheap registry guards is what keeps the gate
+   * checking registration rather than passing vacuously.
+   */
+  it('names the registry guards when src/index.ts changed', () => {
+    const calls: string[] = [];
+    withGovernorCli(undefined, () =>
+      validateViaStopHooks(
+        (cmd, args) => calls.push(`${cmd} ${args.join(' ')}`),
+        () => [],
+        () => ['src/index.ts'],
+      ),
+    );
+    const jestCall = calls[calls.length - 1];
+    for (const { path } of REGISTRY_GUARD_SUITES) {
+      expect(jestCall).toContain(path);
+    }
   });
 
   /**
@@ -263,10 +298,7 @@ describe('validateViaStopHooks', () => {
       ),
     );
     expect(ok).toBe(true);
-    expect(calls).toEqual([
-      'npm run build',
-      'npx jest --findRelatedTests src/tests/foo.test.ts --passWithNoTests',
-    ]);
+    expect(calls).toEqual(['npm run build', bareJest('src/tests/foo.test.ts')]);
   });
 
   /**
@@ -285,15 +317,16 @@ describe('validateViaStopHooks', () => {
     `- ${__filename}`,
   ].join('\n');
 
+  /** Labels a step by its head, since no argv token equals `jest` any more. */
+  const labelOf = (cmd: string, args: readonly string[]) =>
+    args.some((arg) => arg.includes('jest')) ? 'jest' : `${cmd} ${args[0]}`;
+
   it('asks for capture only on the governed step, so its failure can be read', () => {
     const captured: Array<[string, boolean]> = [];
     const ok = withGovernorCli(__filename, () =>
       validateViaStopHooks(
         (cmd, args, options) => {
-          captured.push([
-            args.includes('jest') ? 'jest' : `${cmd} ${args[0]}`,
-            options?.capture === true,
-          ]);
+          captured.push([labelOf(cmd, args), options?.capture === true]);
         },
         () => ['src/rules/foo.ts'],
         () => ['src/tests/foo.test.ts'],
@@ -305,6 +338,45 @@ describe('validateViaStopHooks', () => {
       ['npx eslint', false],
       ['jest', true],
     ]);
+  });
+
+  /**
+   * Without this the governor dies at module resolution before jest starts,
+   * `isGovernorStartupFailure` degrades the gate to a bare run, and the whole
+   * reservation is lost while the gate stays green.
+   */
+  it('hands the governed step the governor’s own tsconfig', () => {
+    const environments: Array<Record<string, string> | undefined> = [];
+    const ok = withGovernorCli(__filename, () =>
+      validateViaStopHooks(
+        (_cmd, _args, options) => {
+          environments.push(options?.env);
+        },
+        () => ['src/rules/foo.ts'],
+        () => ['src/tests/foo.test.ts'],
+      ),
+    );
+    expect(ok).toBe(true);
+    expect(environments).toEqual([
+      undefined,
+      undefined,
+      { TSX_TSCONFIG_PATH: resolveGovernorTsconfig(__filename) },
+    ]);
+  });
+
+  it('adds no environment to an ungoverned jest step', () => {
+    const environments: Array<Record<string, string> | undefined> = [];
+    const ok = withGovernorCli(undefined, () =>
+      validateViaStopHooks(
+        (_cmd, _args, options) => {
+          environments.push(options?.env);
+        },
+        () => [],
+        () => ['src/tests/foo.test.ts'],
+      ),
+    );
+    expect(ok).toBe(true);
+    expect(environments).toEqual([undefined, undefined]);
   });
 
   it('re-runs the test step unwrapped when the governor cannot start, and passes', () => {
@@ -327,8 +399,8 @@ describe('validateViaStopHooks', () => {
     // full, only the reservation is lost.
     expect(calls).toEqual([
       'npm run build',
-      `npx tsx ${__filename} run --profile=jest -- npx jest --findRelatedTests src/tests/foo.test.ts --passWithNoTests`,
-      'npx jest --findRelatedTests src/tests/foo.test.ts --passWithNoTests',
+      governedJest('src/tests/foo.test.ts'),
+      bareJest('src/tests/foo.test.ts'),
     ]);
   });
 
@@ -360,7 +432,7 @@ describe('validateViaStopHooks', () => {
     // The governed attempt only — no unwrapped retry.
     expect(calls).toEqual([
       'npm run build',
-      `npx tsx ${__filename} run --profile=jest -- npx jest --findRelatedTests src/tests/foo.test.ts --passWithNoTests`,
+      governedJest('src/tests/foo.test.ts'),
     ]);
   });
 
@@ -383,7 +455,7 @@ describe('validateViaStopHooks', () => {
     expect(ok).toBe(false);
     expect(calls).toEqual([
       'npm run build',
-      `npx tsx ${__filename} run --profile=jest -- npx jest --findRelatedTests src/tests/foo.test.ts --passWithNoTests`,
+      governedJest('src/tests/foo.test.ts'),
     ]);
   });
 
@@ -411,7 +483,7 @@ describe('validateViaStopHooks', () => {
     expect(ok).toBe(false);
     expect(calls).toEqual([
       'npm run build',
-      `npx tsx ${__filename} run --profile=jest -- npx jest --findRelatedTests src/tests/foo.test.ts --passWithNoTests`,
+      governedJest('src/tests/foo.test.ts'),
     ]);
   });
 
@@ -437,10 +509,7 @@ describe('validateViaStopHooks', () => {
     expect(ok).toBe(false);
     // Ungoverned, so the crash text names a CLI that is not configured and the
     // step is never retried.
-    expect(calls).toEqual([
-      'npm run build',
-      'npx jest --findRelatedTests src/tests/foo.test.ts --passWithNoTests',
-    ]);
+    expect(calls).toEqual(['npm run build', bareJest('src/tests/foo.test.ts')]);
   });
 
   /**
@@ -473,10 +542,7 @@ describe('validateViaStopHooks', () => {
       ),
     );
     expect(ok).toBe(true);
-    expect(calls).toEqual([
-      'npm run build',
-      'npx jest --findRelatedTests src/tests/foo.test.ts --passWithNoTests',
-    ]);
+    expect(calls).toEqual(['npm run build', bareJest('src/tests/foo.test.ts')]);
   });
 
   it('skips the test step when no TypeScript files changed', () => {

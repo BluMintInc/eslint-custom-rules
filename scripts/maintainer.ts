@@ -31,7 +31,8 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { governArgv, isGovernorStartupFailure } from './governor';
+import { isGovernorStartupFailure } from './governor';
+import { buildRelatedTestsInvocation } from './related-tests';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { dispatch } = require('./dispatch-agora-release');
 // Shared, build-free canonical rule-name set (parsed from src/index.ts's rules
@@ -193,11 +194,14 @@ export function fetchOpenIssues(
  * and replayed rather than inherited, so a caller can ask WHY the step failed.
  * It is opt-in per step because capturing costs the live stream, and only the
  * governed jest step has a question to ask of its output (issue #2332).
+ *
+ * `env` carries the additions a step needs on top of the toolkit's own
+ * environment, which is how a governed step reaches the governor's tsconfig.
  */
-type Runner = (
+export type Runner = (
   cmd: string,
   args: string[],
-  options?: { capture?: boolean },
+  options?: { capture?: boolean; env?: Record<string, string> },
 ) => void;
 
 /**
@@ -242,16 +246,22 @@ export function maintainerGitEnv(
   return { ...base, HUSKY: '0' };
 }
 
-const defaultRunner: Runner = (cmd, args, options) => {
+/**
+ * The runner every gate in this repo spawns through, shared with
+ * `scripts/test-related.ts` so a hand-run and the maintainer's own validate
+ * behave identically down to the replay.
+ */
+export const runStep: Runner = (cmd, args, options) => {
+  const env = { ...maintainerGitEnv(), ...options?.env };
   if (!options?.capture) {
-    execFileSync(cmd, args, { stdio: 'inherit', env: maintainerGitEnv() });
+    execFileSync(cmd, args, { stdio: 'inherit', env });
     return;
   }
   // `spawnSync` rather than `execFileSync` because jest writes its report to
   // STDERR, and `execFileSync` surfaces stderr only on the error path — a
   // captured PASS would print nothing at all.
   const result = spawnSync(cmd, args, {
-    env: maintainerGitEnv(),
+    env,
     encoding: 'utf8',
     maxBuffer: 256 * 1024 * 1024,
   });
@@ -483,7 +493,7 @@ export function ruleScopeFromDiff(
  * which is slow and memory-heavy. The full suite is the CI backstop.
  */
 export function validateViaStopHooks(
-  run: Runner = defaultRunner,
+  run: Runner = runStep,
   getChangedFiles: () => string[] = changedLintableFiles,
   getTestFiles: () => string[] = changedTestRelevantFiles,
 ): boolean {
@@ -493,6 +503,7 @@ export function validateViaStopHooks(
     readonly args: string[];
     /** The unwrapped argv to retry with, when this step is a governed one. */
     readonly bare?: readonly [string, string[]];
+    readonly env?: Record<string, string>;
   };
   const steps: Step[] = [{ cmd: 'npm', args: ['run', 'build'] }];
   if (files.length > 0) {
@@ -502,21 +513,24 @@ export function validateViaStopHooks(
   if (testFiles.length > 0) {
     // Routed through the machine-wide governor when one is configured, so this
     // gate queues behind a peer repo's jest instead of racing it into a mutual
-    // OOM kill (issue #2286). Unconfigured, this is the bare `npx jest` call.
-    const bare: [string, string[]] = [
-      'npx',
-      ['jest', '--findRelatedTests', ...testFiles, '--passWithNoTests'],
-    ];
-    const [cmd, args] = governArgv(bare[0], bare[1]);
-    const governed = cmd !== bare[0] || args.join(' ') !== bare[1].join(' ');
-    steps.push({ cmd, args, ...(governed ? { bare } : {}) });
+    // OOM kill (issue #2286). Unconfigured, this is the bare jest call. The
+    // builder is shared with `npm run test:related`, so the gate and the
+    // command an agent is told to type name the same operands.
+    const { command, args, env, bare } = buildRelatedTestsInvocation(testFiles);
+    const governed =
+      command !== bare[0] || args.join(' ') !== bare[1].join(' ');
+    steps.push({
+      cmd: command,
+      args,
+      ...(governed ? { bare, env } : {}),
+    });
   }
   for (const step of steps) {
-    const { cmd, args, bare } = step;
+    const { cmd, args, bare, env } = step;
     try {
       // Only a governed step is captured: it is the one whose failure output
       // has to be READ, and capturing is what costs a step its live stream.
-      run(cmd, args, bare ? { capture: true } : undefined);
+      run(cmd, args, bare ? { capture: true, env } : undefined);
       continue;
     } catch (error) {
       // The governor buys a memory reservation, not correctness, so a governor
@@ -552,7 +566,7 @@ export function validateViaStopHooks(
 /** Merge a completed fix/implement branch into develop (commit closes #issue). */
 export function mergeAndClose(
   options: { issue: number; branch: string; dryRun?: boolean },
-  run: Runner = defaultRunner,
+  run: Runner = runStep,
 ) {
   const { issue, branch, dryRun } = options;
   const message = `chore(repo): merge ${branch} (closes #${issue})`;
@@ -580,7 +594,7 @@ export function mergeAndClose(
 export function releaseIfEmpty(
   issues: readonly Issue[],
   options: { dryRun?: boolean } = {},
-  run: Runner = defaultRunner,
+  run: Runner = runStep,
 ): boolean {
   if (!isQueueEmpty(issues)) {
     console.log(

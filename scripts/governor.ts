@@ -19,8 +19,14 @@
  * not need a peer clone present in order to run its own tests.
  */
 import { existsSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 
 export const GOVERNOR_CLI_ENV = 'BLUMINT_GOVERNOR_CLI';
+
+/**
+ * The variable `tsx` reads to choose the tsconfig it resolves paths against.
+ */
+export const GOVERNOR_TSCONFIG_ENV = 'TSX_TSCONFIG_PATH';
 
 /**
  * The governor sizes a reservation per profile, and `jest` is the one profile
@@ -31,6 +37,18 @@ export const GOVERNOR_PROFILE = 'jest';
 export type GovernorDeps = {
   readonly env?: NodeJS.ProcessEnv;
   readonly fileExists?: (path: string) => boolean;
+};
+
+/**
+ * A command to run, with the environment additions it needs on top of whatever
+ * the caller already spawns with. `env` is additions only, never a copy of the
+ * caller's environment: a runner merges it, and returning a full copy would
+ * make this module the decider of every variable a gate runs under.
+ */
+export type GovernedInvocation = {
+  readonly command: string;
+  readonly args: string[];
+  readonly env: Record<string, string>;
 };
 
 /**
@@ -59,6 +77,26 @@ export function resolveGovernorCli(deps: GovernorDeps = {}): string | null {
 }
 
 /**
+ * The tsconfig `tsx` must resolve the governor's own imports against.
+ *
+ * The governor reaches its neighbours through a `functions/*` path alias
+ * declared in its clone's root tsconfig, and `tsx` picks a tsconfig up from the
+ * INVOKING process's directory. Launched from this repo it therefore dies at
+ * module resolution before it starts jest, `isGovernorStartupFailure` degrades
+ * the gate to a bare run, and the reservation is lost while the gate stays
+ * green — the silent failure that made every governed run on a shared box
+ * ungoverned.
+ *
+ * Derived from the CLI path rather than configured, for the same reason the CLI
+ * path itself arrives through the environment: `cli.ts` sits at
+ * `<clone>/scripts/exec-governor/`, so the clone root is two levels up, and no
+ * machine-specific string has to live in this repo.
+ */
+export function resolveGovernorTsconfig(cli: string): string {
+  return resolve(dirname(cli), '..', '..', 'tsconfig.json');
+}
+
+/**
  * Single-quote a path for a shell command line, so a clone under a directory
  * with a space or a `$` reaches the governor as one argument.
  */
@@ -78,14 +116,14 @@ export function governArgv(
   command: string,
   args: readonly string[],
   deps: GovernorDeps = {},
-): [string, string[]] {
+): GovernedInvocation {
   const cli = resolveGovernorCli(deps);
   if (cli === null) {
-    return [command, [...args]];
+    return { command, args: [...args], env: {} };
   }
-  return [
-    'npx',
-    [
+  return {
+    command: 'npx',
+    args: [
       'tsx',
       cli,
       'run',
@@ -94,7 +132,8 @@ export function governArgv(
       command,
       ...args,
     ],
-  ];
+    env: { [GOVERNOR_TSCONFIG_ENV]: resolveGovernorTsconfig(cli) },
+  };
 }
 
 /**
@@ -105,6 +144,11 @@ export function governArgv(
  * this returns, where the caller's own shell applies it and the governed child
  * inherits it. Passing an assignment through as the program makes it the
  * executable name and the run dies with ENOENT.
+ *
+ * The tsconfig assignment leads for the same reason and one of its own: it is
+ * `tsx` that needs it, and `tsx` runs before the governor exists. A caller with
+ * an assignment of its own prefixes this string, so the two stack into a single
+ * assignment run ahead of one program.
  */
 export function governShellCommand(
   command: string,
@@ -114,7 +158,8 @@ export function governShellCommand(
   if (cli === null) {
     return command;
   }
-  return `npx tsx ${shellQuote(
+  const tsconfig = shellQuote(resolveGovernorTsconfig(cli));
+  return `${GOVERNOR_TSCONFIG_ENV}=${tsconfig} npx tsx ${shellQuote(
     cli,
   )} run --profile=${GOVERNOR_PROFILE} -- ${command}`;
 }
