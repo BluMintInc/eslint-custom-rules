@@ -680,6 +680,143 @@ export function run(config: Record<string, string> & Session, skip: boolean) {
         tsconfigRootDir,
       },
     },
+    /**
+     * The declaration sites #2344's binding annotation left unread. An
+     * annotated function return, a class method's return, a type assertion and
+     * an awaited promise state the type of the value a guard tests just as
+     * directly as the annotation on the binding does, and a complete program
+     * declines all six: the class instance they name keeps its state behind
+     * prototype accessors, so the prescribed `Object.keys` clause holds for
+     * every valid value and inverts the guard rather than hardening it (#2346).
+     */
+    {
+      code: `
+import { NextResponse } from 'next/server';
+function build(): Readonly<NextResponse> {
+  return load();
+}
+const response = build();
+if (!response) {
+  handle(response);
+}
+`,
+    },
+    {
+      name: 'an arrow return type the checker cannot read stays silent',
+      code: `import { NextResponse } from 'next/server';
+const build = (): Readonly<NextResponse> => load();
+const response = build();
+if (!response) {
+  handle(response);
+}`,
+    },
+    {
+      name: 'a class method return type the checker cannot read stays silent',
+      code: `import { NextResponse } from 'next/server';
+class Api {
+  build(): Readonly<NextResponse> {
+    return load();
+  }
+}
+const api = new Api();
+const response = api.build();
+if (!response) {
+  handle(response);
+}`,
+    },
+    {
+      name: 'an as-cast the checker cannot read stays silent',
+      code: `import { NextResponse } from 'next/server';
+const response = load() as Readonly<NextResponse>;
+if (!response) {
+  handle(response);
+}`,
+    },
+    {
+      name: 'an angle-bracket assertion the checker cannot read stays silent',
+      code: `import { NextResponse } from 'next/server';
+const response = <Readonly<NextResponse>>load();
+if (!response) {
+  handle(response);
+}`,
+    },
+    {
+      name: 'an awaited promise return type the checker cannot read stays silent',
+      code: `import { NextResponse } from 'next/server';
+async function build(): Promise<Readonly<NextResponse>> {
+  return load();
+}
+export async function run() {
+  const response = await build();
+  if (!response) {
+    handle(response);
+  }
+}`,
+    },
+    /**
+     * A method reached through an instance of a class EXPRESSION, awaited, and
+     * through a non-null assertion: the evidence sits in the same place in each
+     * spelling, so reading only the plain one would leave the rest deciding on
+     * the name alone.
+     */
+    {
+      name: 'an awaited class-expression method return type stays silent',
+      code: `import { NextResponse } from 'next/server';
+const Api = class {
+  async build(): Promise<Readonly<NextResponse>> {
+    return load();
+  }
+};
+const api = new Api();
+export async function run() {
+  const response = await api.build();
+  if (!response) {
+    handle(response);
+  }
+}`,
+    },
+    {
+      name: 'a non-null assertion over an unreadable return type stays silent',
+      code: `import { NextResponse } from 'next/server';
+function build(): Readonly<NextResponse> {
+  return load();
+}
+const response = build()!;
+if (!response) {
+  handle(response);
+}`,
+    },
+    {
+      name: 'an optional call on an unreadable method return type stays silent',
+      code: `import { NextResponse } from 'next/server';
+class Api {
+  build(): Readonly<NextResponse> {
+    return load();
+  }
+}
+const api = new Api();
+const response = api?.build();
+if (!response) {
+  handle(response);
+}`,
+    },
+    /**
+     * A binding initialized from another binding carries that binding's
+     * declared type, so the evidence survives one more hop rather than being
+     * lost at the assignment.
+     */
+    {
+      name: 'a binding aliasing an annotated binding stays silent',
+      code: `import { NextResponse } from 'next/server';
+declare function load(): unknown;
+export function run(skip: boolean) {
+  const raw: Readonly<NextResponse> = load() as Readonly<NextResponse>;
+  const response = raw;
+  if (!response || skip) {
+    return;
+  }
+}`,
+    },
   ],
   invalid: [
     /**
@@ -2613,6 +2750,321 @@ export function run(config: Readonly<{ [key: string]: string }>, skip: boolean) 
       ],
       output: `
 export function run(config: Readonly<{ [key: string]: string }>, skip: boolean) {
+  if (!config || Object.keys(config).length === 0 || skip) {
+    return;
+  }
+}
+`,
+    },
+    /**
+     * The controls for #2346. Reading a declaration site only buys the decline
+     * when what it says is a class instance; a return type or assertion that IS
+     * a dictionary keeps its report, so the carve-out cannot widen into "any
+     * value produced by a call".
+     */
+    {
+      name: 'a function return type spelling a dictionary still reports',
+      code: `
+function build(): Record<string, string> {
+  return load();
+}
+const config = build();
+if (!config) {
+  handle(config);
+}
+`,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `
+function build(): Record<string, string> {
+  return load();
+}
+const config = build();
+if (!config || Object.keys(config).length === 0) {
+  handle(config);
+}
+`,
+    },
+    {
+      name: 'an arrow return type spelling a dictionary still reports',
+      code: `
+const build = (): Record<string, string> => load();
+const config = build();
+if (!config) {
+  handle(config);
+}
+`,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `
+const build = (): Record<string, string> => load();
+const config = build();
+if (!config || Object.keys(config).length === 0) {
+  handle(config);
+}
+`,
+    },
+    {
+      name: 'a class method return type spelling a dictionary still reports',
+      code: `
+class Api {
+  build(): Record<string, string> {
+    return load();
+  }
+}
+const api = new Api();
+const config = api.build();
+if (!config) {
+  handle(config);
+}
+`,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `
+class Api {
+  build(): Record<string, string> {
+    return load();
+  }
+}
+const api = new Api();
+const config = api.build();
+if (!config || Object.keys(config).length === 0) {
+  handle(config);
+}
+`,
+    },
+    {
+      name: 'an as-cast spelling a dictionary still reports',
+      code: `
+const config = load() as Record<string, string>;
+if (!config) {
+  handle(config);
+}
+`,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `
+const config = load() as Record<string, string>;
+if (!config || Object.keys(config).length === 0) {
+  handle(config);
+}
+`,
+    },
+    {
+      name: 'an angle-bracket assertion spelling a dictionary still reports',
+      code: `
+const config = <Record<string, string>>load();
+if (!config) {
+  handle(config);
+}
+`,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `
+const config = <Record<string, string>>load();
+if (!config || Object.keys(config).length === 0) {
+  handle(config);
+}
+`,
+    },
+    /**
+     * Without unwrapping the promise the awaited dictionary reads as
+     * `Promise<…>`, which no source pins, and the guard this rule exists to add
+     * would be dropped on every `async` declaration.
+     */
+    {
+      name: 'an awaited promise of a dictionary still reports',
+      code: `
+async function build(): Promise<Record<string, string>> {
+  return load();
+}
+export async function run() {
+  const config = await build();
+  if (!config) {
+    handle(config);
+  }
+}
+`,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `
+async function build(): Promise<Record<string, string>> {
+  return load();
+}
+export async function run() {
+  const config = await build();
+  if (!config || Object.keys(config).length === 0) {
+    handle(config);
+  }
+}
+`,
+    },
+    /**
+     * `satisfies` checks an expression against a type without changing it, so
+     * the value keeps whatever the expression carried and the declaration sites
+     * read here say nothing about it. A complete program agrees.
+     */
+    {
+      name: 'a satisfies expression still reports',
+      code: `
+import { NextResponse } from 'next/server';
+const response = load() satisfies Readonly<NextResponse>;
+if (!response) {
+  handle(response);
+}
+`,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'response' } },
+      ],
+      output: `
+import { NextResponse } from 'next/server';
+const response = load() satisfies Readonly<NextResponse>;
+if (!response || Object.keys(response).length === 0) {
+  handle(response);
+}
+`,
+    },
+    /**
+     * `as const` pins mutability rather than shape, so the shape stays whatever
+     * the asserted expression carries and the heuristic keeps answering.
+     * Reading `const` as a named type would silence this instead.
+     */
+    {
+      name: 'a const assertion is read through to the asserted expression',
+      code: `
+import { DEFAULTS } from './defaults';
+const config = { ...DEFAULTS } as const;
+if (!config) {
+  handle(config);
+}
+`,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `
+import { DEFAULTS } from './defaults';
+const config = { ...DEFAULTS } as const;
+if (!config || Object.keys(config).length === 0) {
+  handle(config);
+}
+`,
+    },
+    /**
+     * The variable-declarator twin of the parameter control above: an
+     * assertion around a destructuring describes the CONTAINER, and deciding
+     * one property from it needs the resolution that failed, so the guard stays
+     * with the heuristic.
+     */
+    {
+      name: 'a destructured variable under an unreadable container assertion still reports',
+      code: `
+import { NextResponse } from 'next/server';
+const { config } = load() as Readonly<NextResponse>;
+if (!config) {
+  handle(config);
+}
+`,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `
+import { NextResponse } from 'next/server';
+const { config } = load() as Readonly<NextResponse>;
+if (!config || Object.keys(config).length === 0) {
+  handle(config);
+}
+`,
+    },
+    /**
+     * A callee this file declares but leaves unannotated states nothing, so the
+     * reading below adds no evidence and the heuristic still answers.
+     */
+    {
+      name: 'a same-file callee with no return annotation still reports',
+      code: `
+function build() {
+  return load();
+}
+const config = build();
+if (!config) {
+  handle(config);
+}
+`,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `
+function build() {
+  return load();
+}
+const config = build();
+if (!config || Object.keys(config).length === 0) {
+  handle(config);
+}
+`,
+    },
+    /**
+     * The receiver's class is not written in this file, so its method's return
+     * type is not readable here and the guard keeps the heuristic rather than
+     * borrowing a same-named method from an unrelated class.
+     */
+    {
+      name: 'a method on a class this file does not declare still reports',
+      code: `
+class Other {
+  build(): Readonly<NextResponse> {
+    return load();
+  }
+}
+const config = registry.build();
+if (!config) {
+  handle(config);
+}
+`,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `
+class Other {
+  build(): Readonly<NextResponse> {
+    return load();
+  }
+}
+const config = registry.build();
+if (!config || Object.keys(config).length === 0) {
+  handle(config);
+}
+`,
+    },
+    /**
+     * Bindings initialized from each other terminate rather than recursing
+     * forever, and the guard falls back to the heuristic exactly as it does
+     * when no declaration states a type.
+     */
+    {
+      name: 'mutually aliasing bindings terminate and still report',
+      code: `
+export function run(skip) {
+  let config = payload;
+  let payload = config;
+  if (!config || skip) {
+    return;
+  }
+}
+`,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `
+export function run(skip) {
+  let config = payload;
+  let payload = config;
   if (!config || Object.keys(config).length === 0 || skip) {
     return;
   }

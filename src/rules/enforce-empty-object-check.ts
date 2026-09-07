@@ -482,6 +482,82 @@ function pinnedShapeOf(
   }
 }
 
+/** Wrappers whose awaited value is the single argument they carry. */
+const AWAITED_TYPE_WRAPPERS = new Set(['Promise', 'PromiseLike']);
+
+/**
+ * The value an `await` on this declared type produces.
+ *
+ * Without it an `async` declaration states its shape one wrapper out of reach:
+ * `Promise<Record<string, string>>` is not itself a dictionary, so the awaited
+ * dictionary would go unread and the guard the rule exists to add would be
+ * dropped. A declared type that is not a promise passes through unchanged,
+ * because awaiting a plain value yields that same value.
+ */
+function unwrapAwaitedType(node: TSESTree.TypeNode): TSESTree.TypeNode {
+  if (
+    node.type === AST_NODE_TYPES.TSTypeReference &&
+    node.typeName.type === AST_NODE_TYPES.Identifier &&
+    AWAITED_TYPE_WRAPPERS.has(node.typeName.name) &&
+    node.typeParameters?.params.length === 1
+  ) {
+    return unwrapAwaitedType(node.typeParameters.params[0]);
+  }
+  return node;
+}
+
+/**
+ * Whether an assertion is `as const`, which pins mutability rather than shape.
+ *
+ * `const` is not a type the source names, so treating it as one would answer
+ * `load() as const` with "the source says nothing about the shape" when the
+ * asserted expression may state it perfectly well.
+ */
+function isConstAssertion(node: TSESTree.TypeNode): boolean {
+  return (
+    node.type === AST_NODE_TYPES.TSTypeReference &&
+    node.typeName.type === AST_NODE_TYPES.Identifier &&
+    node.typeName.name === 'const'
+  );
+}
+
+/**
+ * The return type a class writes on the named member, when it writes one.
+ *
+ * Only the class's OWN body is read: a return type inherited through `extends`
+ * lives in whichever declaration that clause resolves to, and reaching it is
+ * the cross-file resolution whose absence puts this code on the fall-through.
+ */
+function returnTypeOfMethod(
+  declaration: TSESTree.ClassDeclaration | TSESTree.ClassExpression,
+  name: string,
+): TSESTree.TypeNode | null {
+  for (const member of declaration.body.body) {
+    if (
+      member.type !== AST_NODE_TYPES.MethodDefinition &&
+      member.type !== AST_NODE_TYPES.PropertyDefinition
+    ) {
+      continue;
+    }
+    if (
+      member.computed ||
+      member.key.type !== AST_NODE_TYPES.Identifier ||
+      member.key.name !== name
+    ) {
+      continue;
+    }
+    const value = member.value;
+    if (
+      value &&
+      (value.type === AST_NODE_TYPES.FunctionExpression ||
+        value.type === AST_NODE_TYPES.ArrowFunctionExpression)
+    ) {
+      return value.returnType?.typeAnnotation ?? null;
+    }
+  }
+  return null;
+}
+
 /**
  * Reads through an optional chain to the member access or call it holds.
  * `Object?.keys?.(payload)?.length` parses as a single `ChainExpression`
@@ -2133,20 +2209,32 @@ export const enforceEmptyObjectCheck: TSESLint.RuleModule<MessageIds, Options> =
       }
 
       /**
-       * The type the binding behind this value DECLARES, if it declares one.
+       * The type the DECLARATION behind this value writes, if it writes one.
        *
-       * Parameters and variables are the two declarations that annotate the
-       * value a guard tests; an import is answered ahead of this by
-       * `tracesToImport`. The annotation has to sit on the BINDING: the one on
-       * `const { config }: Props = load()` describes the container, and reading
-       * it as a verdict on a single property would need exactly the resolution
-       * that failed, so a destructured binding keeps the naming heuristic.
+       * An import is answered ahead of this by `tracesToImport`; what remains
+       * is every place the file states the type of the value a guard tests. A
+       * binding annotation is one of them and not the only one — an annotated
+       * function return, a class method's return and a type assertion state it
+       * just as directly — and reading only the binding left the naming
+       * heuristic deciding alone at six other declaration sites, which is how
+       * `const response = build()` off a `Readonly<NextResponse>` return kept
+       * being rewritten into a guard that holds for every valid value (#2346).
+       *
+       * The annotation has to sit on the BINDING rather than around it: the one
+       * on `const { config }: Props = load()` describes the container, and
+       * reading it as a verdict on a single property would need exactly the
+       * resolution that failed, so a destructured binding keeps the heuristic.
+       *
+       * `expanding` holds the bindings on the current expansion PATH, so a
+       * binding initialized from itself terminates while a binding named twice
+       * in sibling positions is still read at each of them.
        */
       function declaredTypeOf(
         identifier: TSESTree.Identifier,
+        expanding = new Set<TSESLint.Scope.Variable>(),
       ): TSESTree.TypeNode | null {
         const variable = variableFor(identifier);
-        if (!variable) {
+        if (!variable || expanding.has(variable)) {
           return null;
         }
 
@@ -2156,6 +2244,149 @@ export const enforceEmptyObjectCheck: TSESLint.RuleModule<MessageIds, Options> =
           }
           if (def.name.typeAnnotation) {
             return def.name.typeAnnotation.typeAnnotation;
+          }
+          if (
+            def.node.type === AST_NODE_TYPES.VariableDeclarator &&
+            def.node.id.type === AST_NODE_TYPES.Identifier &&
+            def.node.init
+          ) {
+            expanding.add(variable);
+            const initialized = declaredTypeOfExpression(
+              def.node.init,
+              expanding,
+            );
+            expanding.delete(variable);
+            if (initialized) {
+              return initialized;
+            }
+          }
+        }
+        return null;
+      }
+
+      /**
+       * The type an initializer states for the value it produces.
+       *
+       * `satisfies` is deliberately absent: it checks an expression against a
+       * type without changing the type, so the value keeps whatever the
+       * expression already carried and a complete program reaches the heuristic
+       * there too. A spelling this switch does not recognize answers `null`,
+       * which leaves the guard exactly where it sat before the declaration
+       * sites were read at all.
+       */
+      function declaredTypeOfExpression(
+        node: TSESTree.Expression,
+        expanding: Set<TSESLint.Scope.Variable>,
+      ): TSESTree.TypeNode | null {
+        switch (node.type) {
+          case AST_NODE_TYPES.TSAsExpression:
+          case AST_NODE_TYPES.TSTypeAssertion:
+            return isConstAssertion(node.typeAnnotation)
+              ? declaredTypeOfExpression(node.expression, expanding)
+              : node.typeAnnotation;
+          case AST_NODE_TYPES.TSNonNullExpression:
+          case AST_NODE_TYPES.ChainExpression:
+            return declaredTypeOfExpression(node.expression, expanding);
+          case AST_NODE_TYPES.AwaitExpression: {
+            const awaited = declaredTypeOfExpression(node.argument, expanding);
+            return awaited ? unwrapAwaitedType(awaited) : null;
+          }
+          case AST_NODE_TYPES.CallExpression:
+            return declaredReturnTypeOf(node.callee, expanding);
+          case AST_NODE_TYPES.Identifier:
+            return declaredTypeOf(node, expanding);
+          default:
+            return null;
+        }
+      }
+
+      /**
+       * The return type the callee's SAME-FILE declaration writes.
+       *
+       * A callee resolving into a module this program did not load is answered
+       * by `tracesToImport` before this runs, so reaching here means the
+       * declaration is one this file can be read for — the same boundary the
+       * same-file alias lookup draws.
+       */
+      function declaredReturnTypeOf(
+        callee: TSESTree.Node,
+        expanding: Set<TSESLint.Scope.Variable>,
+      ): TSESTree.TypeNode | null {
+        if (callee.type === AST_NODE_TYPES.Identifier) {
+          const variable = variableFor(callee);
+          if (!variable) {
+            return null;
+          }
+          for (const def of variable.defs) {
+            if (def.type === 'FunctionName') {
+              return def.node.returnType?.typeAnnotation ?? null;
+            }
+            if (
+              def.type === 'Variable' &&
+              def.node.type === AST_NODE_TYPES.VariableDeclarator &&
+              (def.node.init?.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+                def.node.init?.type === AST_NODE_TYPES.FunctionExpression)
+            ) {
+              return def.node.init.returnType?.typeAnnotation ?? null;
+            }
+          }
+          return null;
+        }
+
+        if (
+          callee.type === AST_NODE_TYPES.MemberExpression &&
+          !callee.computed &&
+          callee.property.type === AST_NODE_TYPES.Identifier
+        ) {
+          const declaration = classDeclarationOf(callee.object, expanding);
+          return declaration
+            ? returnTypeOfMethod(declaration, callee.property.name)
+            : null;
+        }
+        return null;
+      }
+
+      /**
+       * The same-file class an expression is an instance of, or names.
+       *
+       * A receiver whose class is not written in this file yields `null`, so
+       * the method's return type stays unread rather than being guessed from a
+       * same-named method on an unrelated class.
+       */
+      function classDeclarationOf(
+        node: TSESTree.Node,
+        expanding: Set<TSESLint.Scope.Variable>,
+      ): TSESTree.ClassDeclaration | TSESTree.ClassExpression | null {
+        if (node.type !== AST_NODE_TYPES.Identifier) {
+          return null;
+        }
+        const variable = variableFor(node);
+        if (!variable || expanding.has(variable)) {
+          return null;
+        }
+
+        for (const def of variable.defs) {
+          if (def.type === 'ClassName') {
+            return def.node;
+          }
+          if (
+            def.type !== 'Variable' ||
+            def.node.type !== AST_NODE_TYPES.VariableDeclarator ||
+            !def.node.init
+          ) {
+            continue;
+          }
+          const { init } = def.node;
+          if (init.type === AST_NODE_TYPES.ClassExpression) {
+            return init;
+          }
+          if (init.type === AST_NODE_TYPES.NewExpression) {
+            expanding.add(variable);
+            const declaration = classDeclarationOf(init.callee, expanding);
+            expanding.delete(variable);
+            if (declaration) {
+              return declaration;
+            }
           }
         }
         return null;
