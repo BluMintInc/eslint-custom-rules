@@ -983,6 +983,8 @@ export const FIX_INDUCED_BASELINE: Record<string, string> = {
     'the injected `import { makeHash } from <hashImport.source>` is an external static import under any source outside src/ or functions/, which enforce-dynamic-imports rejects and no fixer can make dynamic (#2226)',
   'enforce-stable-hash-spread-props -> enforce-dynamic-imports':
     'the injected `import { stableHashCustom } from <hashImport.source>` is an external static import under any source outside src/ or functions/, which enforce-dynamic-imports rejects and no fixer can make dynamic (#2226)',
+  'enforce-empty-object-check -> enforce-dynamic-imports':
+    'the injected `import { <emptyCheckFix.name> } from <emptyCheckFix.importPath>` is an external static import under any path outside src/ or functions/, which enforce-dynamic-imports rejects. Unlike its two siblings above, the dynamic form is not merely unavailable to the fixer but unavailable at all: the emitted call sits in a synchronous guard condition, and an `import()` yields a promise no `if` can await. Measured across four paths — `functions/src/util/isEmpty` and `src/util/isEmpty` draw 0 reports via DEFAULT_INTERNAL_PREFIXES, `p` and `lodash` draw 1 — so the configuration the rule documents is closed and only a consumer who points the option outside their own tree reaches this. `--fix` under the whole config does NOT clear it (#2226, #2360)',
 
   // --- Reached only once the fixture channel landed (#2224), because the
   // documented blocks produce no fix for this rule at all: it is keyed on the
@@ -998,10 +1000,12 @@ export const FIX_INDUCED_BASELINE: Record<string, string> = {
     "dropping the `change` declarator leaves `const tag = 'log'` alone in its statement, and a lone constant initialiser is what extract-global-constants demands be hoisted to module scope. Unlike its two siblings above, `--fix` under the whole config does NOT clear this one",
 
   // --- Option-dependent contradictions, invisible until the fixture channel
-  // began carrying each fixture's own options (#2224). Both self-heal: `--fix`
-  // under the whole recommended config ends with zero reports from the second
-  // rule, so the only consumer who sees one is a consumer who does not run the
-  // fixer to convergence.
+  // began carrying each fixture's own options (#2224). All three self-heal:
+  // `--fix` under the whole recommended config ends with zero reports from the
+  // second rule, so the only consumer who sees one is a consumer who does not
+  // run the fixer to convergence.
+  'enforce-empty-object-check -> vertically-group-related-functions':
+    'under an `emptyCheckFix` naming a helper the file already declares ABOVE the guard, the emitted call makes the guard function a caller of it, and vertically-group-related-functions orders a callee after its caller. Nothing is injected on this path — the name is already module-bound, so no import is written — which is what separates this pair from the enforce-dynamic-imports one: it is about the new call EDGE, not the insertion. That rule is itself fixable, and `--fix` under the whole config reorders the two declarations and ends clean (#2360)',
   'no-explicit-return-type -> enforce-memoize-async':
     'under `allowVoidReturnTypes: false` the stripped annotation exposes an async method to enforce-memoize-async, which demands @Memoize(); that decorator is fixable and the file ends clean under `--fix`',
   'prefer-usecallback-over-usememo-for-functions -> use-latest-callback':

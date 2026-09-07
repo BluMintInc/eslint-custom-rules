@@ -2,6 +2,9 @@ import path from 'path';
 import { ruleTesterTs } from '../utils/ruleTester';
 import { enforceEmptyObjectCheck } from '../rules/enforce-empty-object-check';
 import { payloadScreenFor } from '../utils/syntheticRuleOptions';
+import { Linter } from 'eslint';
+import { loadPlugin } from '../utils/loadPlugin';
+import { defineCorpusParsers } from '../utils/fixtureCorpus';
 
 const tsconfigRootDir = path.join(__dirname, '..', '..');
 
@@ -4270,4 +4273,81 @@ describe('enforce-empty-object-check emptyCheckFix schema', () => {
   ])('accepts %s', (_label, options) => {
     expect(accepts(options)).toBe(true);
   });
+});
+
+/**
+ * The `importPath` guidance in the rule's docs, checked mechanically.
+ *
+ * The option exists for a consumer whose config BANS the `Object` accessors, so
+ * the import it writes must be one that consumer's other rules accept. It is
+ * not: `enforce-dynamic-imports` ships in the same recommended config and
+ * rejects a static import of anything outside `DEFAULT_INTERNAL_PREFIXES`, and
+ * the dynamic form it prescribes cannot supply a binding to a synchronous guard
+ * condition. That leaves the boundary itself as the contract — an `importPath`
+ * inside the consumer's own tree is closed, one naming a package is not — and a
+ * boundary stated only in prose drifts. `recommended-config-fix-closure`
+ * baselines the external half; this pins the internal half it cannot, since a
+ * pair that stops reproducing is invisible to a baseline of pairs that do.
+ */
+describe('enforce-empty-object-check emptyCheckFix import closure', () => {
+  const PREFIX = '@blumintinc/blumint/';
+  const CODE = [
+    'export function run(config: Record<string, unknown> | undefined) {',
+    '  if (!config) {',
+    '    return;',
+    '  }',
+    '  return config;',
+    '}',
+  ].join('\n');
+
+  const linter = new Linter();
+  defineCorpusParsers(linter);
+  for (const [name, rule] of Object.entries(loadPlugin().rules)) {
+    linter.defineRule(PREFIX + name, rule as never);
+  }
+
+  /** How many times `enforce-dynamic-imports` rejects the fixed output. */
+  const dynamicImportReportsFor = (importPath: string) => {
+    const config = {
+      parser: 'ts',
+      parserOptions: { ecmaVersion: 2022, sourceType: 'module' },
+      rules: {
+        [`${PREFIX}enforce-empty-object-check`]: [
+          'error',
+          { emptyCheckFix: { name: 'isEmpty', importPath } },
+        ],
+      },
+    } as never;
+    const fixed = linter.verifyAndFix(CODE, config, { filename: 'file.ts' });
+    // A silent fixer would score zero on every path and fake a clean boundary.
+    expect(fixed.output).toContain(`from '${importPath}'`);
+    return linter.verify(
+      fixed.output,
+      {
+        parser: 'ts',
+        parserOptions: { ecmaVersion: 2022, sourceType: 'module' },
+        rules: { [`${PREFIX}enforce-dynamic-imports`]: 'error' },
+      } as never,
+      { filename: 'file.ts' },
+    ).length;
+  };
+
+  it.each(['functions/src/util/isEmpty', 'src/util/isEmpty'])(
+    'emits an import the recommended config accepts for %s',
+    (importPath) => {
+      expect(dynamicImportReportsFor(importPath)).toBe(0);
+    },
+  );
+
+  /**
+   * The negative control. Without it the assertion above would still pass if
+   * `enforce-dynamic-imports` stopped reporting for every path, which would
+   * retire the boundary rather than confirm it.
+   */
+  it.each(['p', 'lodash'])(
+    'emits an import the recommended config rejects for %s',
+    (importPath) => {
+      expect(dynamicImportReportsFor(importPath)).toBe(1);
+    },
+  );
 });
