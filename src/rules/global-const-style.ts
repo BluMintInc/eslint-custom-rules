@@ -1251,19 +1251,23 @@ const ELEMENT_PARAMETER_INDEX_BY_METHOD = new Map<string, number>([
  * handed-node spelling escapes it (Issue #2339).
  *
  * The position is carried apart from the element's because the two are enrolled
- * on different terms rather than because they differ by one: an element keeps
- * the constant's type through every derivation the iteration walk follows,
- * while the receiver is the constant only when the iteration reads the
- * constant's own value or member path — see `iterationBindingsOf`.
+ * on different TERMS rather than because they differ by one: an element keeps
+ * the constant's readonly-ness through every derivation the iteration walk
+ * follows, while the receiver parameter carries it only when the iteration
+ * reads the constant's own value or member path. Over a DERIVED receiver
+ * (`[...ITEMS].forEach(…)`) the parameter names the fresh array the derivation
+ * built, which is mutable, and only the narrower assignability question remains
+ * — see `MUTABLE_ARRAY_PARAMETER_METHODS` and `iterationBindingsOf`.
  * `reduce`/`reduceRight` push it to fourth, having spent the first position on
  * the accumulator.
  *
  * `flatMap` is listed for its ELEMENTS alone. Its lib signature declares the
- * parameter `T[]` where every sibling declares it `readonly T[]` — measured
- * against `lib.es2020` — so `arr[0].n = 2` inside a `flatMap` callback is
- * TS2540 for an input that compiled, while a mutating method called through the
- * parameter compiles unchanged. `MUTABLE_ARRAY_PARAMETER_METHODS` carries that
- * second half, which enrolment alone cannot express (Issue #2340).
+ * parameter `T[]` where every sibling on `ReadonlyArray` declares it
+ * `readonly T[]` — measured against `lib.es2020` — so `arr[0].n = 2` inside a
+ * `flatMap` callback is TS2540 for an input that compiled, while a mutating
+ * method called through the parameter compiles unchanged.
+ * `MUTABLE_ARRAY_PARAMETER_METHODS` carries that second half, which enrolment
+ * alone cannot express (Issue #2340).
  */
 const ARRAY_PARAMETER_INDEX_BY_METHOD = new Map<string, number>([
   ['forEach', 2],
@@ -1281,7 +1285,14 @@ const ARRAY_PARAMETER_INDEX_BY_METHOD = new Map<string, number>([
 ]);
 
 /**
- * The methods above whose receiver-array parameter is declared MUTABLE `T[]`.
+ * The methods above whose receiver-array parameter is declared MUTABLE `T[]`
+ * even when the receiver itself is frozen.
+ *
+ * The set is keyed on the METHOD because that is the only thing that varies
+ * once the receiver is the constant's own value. A DERIVED receiver settles the
+ * same question by a shorter route and does not consult this set at all: the
+ * derivation builds a fresh `Array<T>`, so every one of its methods declares
+ * the parameter `T[]` and the whole family is mutable (Issue #2355).
  *
  * Enrolling that parameter answers two questions at once, and each needs its own
  * answer. Its ELEMENTS are frozen with the constant, so an element write through
@@ -1789,11 +1800,12 @@ const derivedValueExpressionsOf = (
  * A binding the iteration walk enrols, carried with the question the assertion
  * can break it on.
  *
- * `breaksOnAnyMutatingMethod` is false for the one enrolment whose declared type
- * is MUTABLE — see `MUTABLE_ARRAY_PARAMETER_METHODS` — where a mutating call
- * breaks only if it introduces a foreign value. Every other binding carries the
- * constant's own readonly-ness, so any mutating call through it is a TS2339 and
- * it takes the whole battery of checks.
+ * `breaksOnAnyMutatingMethod` is false for the enrolments whose declared type is
+ * MUTABLE — the receiver-array parameter of `flatMap` over the constant itself,
+ * and that parameter for ANY method over a value derived from it — where a
+ * mutating call breaks only if it introduces a foreign value. Every other
+ * binding carries the constant's own readonly-ness, so any mutating call
+ * through it is a TS2339 and it takes the whole battery of checks.
  */
 type EnrolledBinding = {
   variable: TSESLint.Scope.Variable;
@@ -1882,11 +1894,12 @@ const parameterBindingsOf = (
  * passed by name is declared elsewhere, where its parameter carries whatever
  * type that declaration gives it rather than one read off the constant.
  *
- * `iteratesConstantValue` says whether `iterable` is the constant's own value
- * or member path rather than something derived from it. It gates the receiver
- * ARRAY parameter alone: the element parameter is typed from the constant
- * either way, while the array parameter names the constant only in the first
- * case — see `iterationBindingsOf`.
+ * `iteratesConstantValue` says whether `iterable` is the constant's own value or
+ * member path rather than something derived from it. It decides the TERMS the
+ * receiver ARRAY parameter is enrolled on rather than whether to enrol it: the
+ * element parameter is typed from the constant either way, while the array
+ * parameter is the constant itself only in the first case and a fresh mutable
+ * array in the second — see `iterationBindingsOf`.
  */
 const bindingsOfIterationOver = (
   iterable: TSESTree.Node,
@@ -1962,9 +1975,7 @@ const bindingsOfIterationOver = (
     return [];
   }
 
-  const arrayIndex = iteratesConstantValue
-    ? ARRAY_PARAMETER_INDEX_BY_METHOD.get(method)
-    : undefined;
+  const arrayIndex = ARRAY_PARAMETER_INDEX_BY_METHOD.get(method);
 
   return parameterBindingsOf(
     callback,
@@ -1976,6 +1987,7 @@ const bindingsOfIterationOver = (
             {
               index: arrayIndex,
               breaksOnAnyMutatingMethod:
+                iteratesConstantValue &&
                 !MUTABLE_ARRAY_PARAMETER_METHODS.has(method),
             },
           ]),
@@ -2015,15 +2027,19 @@ const bindingsOfIterationOver = (
  * path as well as from the reference, since the value a derivation is taken
  * from is routinely a PROPERTY of the constant — see `accessPathsRootedAt`.
  *
- * The receiver ARRAY parameter is enrolled for the constant's own value or
- * member path ALONE, the one iterable that hands the callback the constant
- * itself. A derivation hands it the fresh outer value it
- * built, and mutating that is no readonly violation:
- * `[...ITEMS].forEach((item, index, arr) => { arr.push(3); })` does break after
- * the fix, but as TS2345 — the spread narrows the element type, so `3` is not
- * assignable — which belongs to the literal-narrowing family filed as #2330 and
- * needs the type checker. Enrolling it here would withhold the assertion for a
- * reason this arm cannot justify, so it is an over-decline (Issue #2339).
+ * The receiver ARRAY parameter is enrolled for a derived iterable as well as for
+ * the constant's own value, but on different terms, because the two break on
+ * different things. The constant's own value hands the callback the frozen
+ * array, so any mutating call through the parameter is a TS2339. A derivation
+ * hands it the fresh MUTABLE array the derivation built, where there is no
+ * TS2339 to have — and the fresh array's ELEMENTS are still the constant's, so
+ * the assertion narrows what it accepts and a call that INSERTS a value from
+ * outside the constant is rejected:
+ * `[...ITEMS].forEach((item, index, arr) => { arr.push({ n: 3 }); })` compiles
+ * and is TS2322 under the assertion (Issue #2355). That is the same narrow
+ * question `MUTABLE_ARRAY_PARAMETER_METHODS` poses for `flatMap`, so the derived
+ * enrolment reuses it, keeping `arr.sort()` and `arr.push(item)` fixable while
+ * declining the insertion.
  */
 const iterationBindingsOf = (
   identifier: TSESTree.Node,
