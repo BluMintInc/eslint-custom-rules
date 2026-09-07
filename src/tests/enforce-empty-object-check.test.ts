@@ -1,6 +1,7 @@
 import path from 'path';
 import { ruleTesterTs } from '../utils/ruleTester';
 import { enforceEmptyObjectCheck } from '../rules/enforce-empty-object-check';
+import { payloadScreenFor } from '../utils/syntheticRuleOptions';
 
 const tsconfigRootDir = path.join(__dirname, '..', '..');
 
@@ -816,6 +817,50 @@ export function run(skip: boolean) {
     return;
   }
 }`,
+    },
+    /**
+     * A helper named by `emptyCheckFix` satisfies the guard even when it is
+     * absent from `emptyCheckFunctions`. Emission and recognition have to agree,
+     * or `--fix` would report the very call it just wrote and rewrite the guard
+     * on every pass (#2360).
+     */
+    {
+      name: 'the configured fix helper counts as an emptiness check',
+      code: `
+function run(config: Record<string, unknown> | undefined) {
+  if (!config || isVacant(config)) {
+    return;
+  }
+}
+`,
+      options: [{ emptyCheckFix: { name: 'isVacant' } }],
+    },
+    {
+      name: 'the Object.keys spelling still satisfies the guard under emptyCheckFix',
+      code: `
+function run(config: Record<string, unknown> | undefined) {
+  if (!config || Object.keys(config).length === 0) {
+    return;
+  }
+}
+`,
+      options: [{ emptyCheckFix: { name: 'isEmpty', importPath: 'p' } }],
+    },
+    {
+      name: 'emptyCheckFunctions recognition survives alongside emptyCheckFix',
+      code: `
+function run(config: Record<string, unknown> | undefined) {
+  if (!config || isBlank(config)) {
+    return;
+  }
+}
+`,
+      options: [
+        {
+          emptyCheckFunctions: ['isBlank'],
+          emptyCheckFix: { name: 'isVacant' },
+        },
+      ],
     },
   ],
   invalid: [
@@ -3071,5 +3116,1158 @@ export function run(skip) {
 }
 `,
     },
+    {
+      /** Minimal replacement path, src/rules/enforce-empty-object-check.ts:2534. */
+      code: `function userPreview(afterData: Record<string, unknown> | undefined) {
+  if (!afterData) {
+    return;
+  }
+  return afterData;
+}`,
+      options: [{ emptyCheckFix: { name: 'isEmpty' } }],
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'afterData' } },
+      ],
+      output: `function userPreview(afterData: Record<string, unknown> | undefined) {
+  if (!afterData || isEmpty(afterData)) {
+    return;
+  }
+  return afterData;
+}`,
+    },
+    {
+      /** Widened layout path, :1589. Only the operand text changes. */
+      code: `function userPreview(
+  afterData: Record<string, unknown> | undefined,
+  isPathIgnored: boolean,
+  hasPermission: boolean,
+) {
+  if (!afterData && isPathIgnored && hasPermission && !!afterData.size) {
+    return;
+  }
+  return afterData;
+}`,
+      options: [{ emptyCheckFix: { name: 'isEmpty' } }],
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'afterData' } },
+      ],
+      output: `function userPreview(
+  afterData: Record<string, unknown> | undefined,
+  isPathIgnored: boolean,
+  hasPermission: boolean,
+) {
+  if (
+    (!afterData || isEmpty(afterData)) &&
+    isPathIgnored &&
+    hasPermission &&
+    !!afterData.size
+  ) {
+    return;
+  }
+  return afterData;
+}`,
+    },
+    /**
+     * The unconfigured emission is the compatibility contract: a consumer that
+     * has not opted into `emptyCheckFix` must see byte-identical output on both
+     * emission paths (#2360).
+     */
+    {
+      name: 'the unconfigured default still emits Object.keys on the minimal path',
+      code: `function run(config: Record<string, unknown> | undefined) {
+  if (!config) {
+    return;
+  }
+  return config;
+}`,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `function run(config: Record<string, unknown> | undefined) {
+  if (!config || Object.keys(config).length === 0) {
+    return;
+  }
+  return config;
+}`,
+    },
+    {
+      name: 'the unconfigured default still emits Object.keys on the widened path',
+      code: `function userPreview(
+  afterData: Record<string, unknown> | undefined,
+  isPathIgnored: boolean,
+  hasPermission: boolean,
+) {
+  if (!afterData && isPathIgnored && hasPermission && !!afterData.size) {
+    return;
+  }
+  return afterData;
+}`,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'afterData' } },
+      ],
+      output: `function userPreview(
+  afterData: Record<string, unknown> | undefined,
+  isPathIgnored: boolean,
+  hasPermission: boolean,
+) {
+  if (
+    (!afterData || Object.keys(afterData).length === 0) &&
+    isPathIgnored &&
+    hasPermission &&
+    !!afterData.size
+  ) {
+    return;
+  }
+  return afterData;
+}`,
+    },
+    {
+      name: 'a fix helper without an import path adds no import',
+      code: `import { a } from 'a';
+declare function isVacant(value: unknown): boolean;
+
+function run(config: Record<string, unknown> | undefined) {
+  if (!config) {
+    return;
+  }
+}`,
+      options: [{ emptyCheckFix: { name: 'isVacant' } }],
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `import { a } from 'a';
+declare function isVacant(value: unknown): boolean;
+
+function run(config: Record<string, unknown> | undefined) {
+  if (!config || isVacant(config)) {
+    return;
+  }
+}`,
+    },
+    {
+      name: 'the emitted helper wins over emptyCheckFunctions, which only recognizes',
+      code: `declare function isVacant(value: unknown): boolean;
+function run(config: Record<string, unknown> | undefined) {
+  if (!config) {
+    return;
+  }
+}`,
+      options: [
+        {
+          emptyCheckFunctions: ['isBlank'],
+          emptyCheckFix: { name: 'isVacant' },
+        },
+      ],
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `declare function isVacant(value: unknown): boolean;
+function run(config: Record<string, unknown> | undefined) {
+  if (!config || isVacant(config)) {
+    return;
+  }
+}`,
+    },
+    {
+      name: 'an import path lands after the last import declaration',
+      code: `import { a } from 'a';
+import { b } from 'b';
+
+function run(config: Record<string, unknown> | undefined) {
+  if (!config) {
+    return;
+  }
+}`,
+      options: [
+        {
+          emptyCheckFix: {
+            name: 'isEmpty',
+            importPath: 'functions/src/util/isEmpty',
+          },
+        },
+      ],
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `import { a } from 'a';
+import { b } from 'b';
+import { isEmpty } from 'functions/src/util/isEmpty';
+
+function run(config: Record<string, unknown> | undefined) {
+  if (!config || isEmpty(config)) {
+    return;
+  }
+}`,
+    },
+    /**
+     * A directive only counts as one while nothing precedes it, so an import
+     * written above `'use client'` would strip the directive of its meaning.
+     */
+    {
+      name: 'an inserted import lands below a use client directive',
+      code: `'use client';
+
+function run(config: Record<string, unknown> | undefined) {
+  if (!config) {
+    return;
+  }
+}`,
+      options: [{ emptyCheckFix: { name: 'isEmpty', importPath: 'p' } }],
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `'use client';
+
+import { isEmpty } from 'p';
+function run(config: Record<string, unknown> | undefined) {
+  if (!config || isEmpty(config)) {
+    return;
+  }
+}`,
+    },
+    {
+      name: 'an inserted import lands below the whole directive prologue',
+      code: `'use client';
+'use strict';
+
+function run(config: Record<string, unknown> | undefined) {
+  if (!config) {
+    return;
+  }
+}`,
+      options: [{ emptyCheckFix: { name: 'isEmpty', importPath: 'p' } }],
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `'use client';
+'use strict';
+
+import { isEmpty } from 'p';
+function run(config: Record<string, unknown> | undefined) {
+  if (!config || isEmpty(config)) {
+    return;
+  }
+}`,
+    },
+    {
+      name: 'an inserted import lands at the top when there is nothing to anchor to',
+      code: `function run(config: Record<string, unknown> | undefined) {
+  if (!config) {
+    return;
+  }
+}`,
+      options: [{ emptyCheckFix: { name: 'isEmpty', importPath: 'p' } }],
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `import { isEmpty } from 'p';
+function run(config: Record<string, unknown> | undefined) {
+  if (!config || isEmpty(config)) {
+    return;
+  }
+}`,
+    },
+    {
+      name: 'an inserted import lands below a leading comment',
+      code: `// Copyright BluMint
+function run(config: Record<string, unknown> | undefined) {
+  if (!config) {
+    return;
+  }
+}`,
+      options: [{ emptyCheckFix: { name: 'isEmpty', importPath: 'p' } }],
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `// Copyright BluMint
+import { isEmpty } from 'p';
+function run(config: Record<string, unknown> | undefined) {
+  if (!config || isEmpty(config)) {
+    return;
+  }
+}`,
+    },
+    /** A shebang is only a shebang at offset 0. */
+    {
+      name: 'an inserted import leaves a shebang on line 1',
+      code: `#!/usr/bin/env node
+function run(config: Record<string, unknown> | undefined) {
+  if (!config) {
+    return;
+  }
+}`,
+      options: [{ emptyCheckFix: { name: 'isEmpty', importPath: 'p' } }],
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `#!/usr/bin/env node
+import { isEmpty } from 'p';
+function run(config: Record<string, unknown> | undefined) {
+  if (!config || isEmpty(config)) {
+    return;
+  }
+}`,
+    },
+    {
+      name: 'an inserted import clears both a shebang and a directive',
+      code: `#!/usr/bin/env node
+'use client';
+function run(config: Record<string, unknown> | undefined) {
+  if (!config) {
+    return;
+  }
+}`,
+      options: [{ emptyCheckFix: { name: 'isEmpty', importPath: 'p' } }],
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `#!/usr/bin/env node
+'use client';
+import { isEmpty } from 'p';
+function run(config: Record<string, unknown> | undefined) {
+  if (!config || isEmpty(config)) {
+    return;
+  }
+}`,
+    },
+    /**
+     * A comment that governs the line below it would come to govern the import
+     * instead, so the anchor climbs above the whole run.
+     */
+    {
+      name: 'an inserted import lands above a line-binding comment',
+      code: `// @ts-expect-error legacy
+function run(config: Record<string, unknown> | undefined) {
+  if (!config) {
+    return;
+  }
+}`,
+      options: [{ emptyCheckFix: { name: 'isEmpty', importPath: 'p' } }],
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `import { isEmpty } from 'p';
+// @ts-expect-error legacy
+function run(config: Record<string, unknown> | undefined) {
+  if (!config || isEmpty(config)) {
+    return;
+  }
+}`,
+    },
+    {
+      name: 'an existing import of the helper is not duplicated',
+      code: `import { isEmpty } from 'p';
+
+function run(config: Record<string, unknown> | undefined) {
+  if (!config) {
+    return;
+  }
+}`,
+      options: [{ emptyCheckFix: { name: 'isEmpty', importPath: 'p' } }],
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `import { isEmpty } from 'p';
+
+function run(config: Record<string, unknown> | undefined) {
+  if (!config || isEmpty(config)) {
+    return;
+  }
+}`,
+    },
+    /**
+     * The name is already bound, so a second declaration of it would not
+     * compile whatever module it came from. The call resolves to whatever the
+     * file already imported, which is the consumer's own choice to review.
+     */
+    {
+      name: 'the helper name imported from another path blocks the insertion',
+      code: `import { isEmpty } from 'other';
+
+function run(config: Record<string, unknown> | undefined) {
+  if (!config) {
+    return;
+  }
+}`,
+      options: [{ emptyCheckFix: { name: 'isEmpty', importPath: 'p' } }],
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `import { isEmpty } from 'other';
+
+function run(config: Record<string, unknown> | undefined) {
+  if (!config || isEmpty(config)) {
+    return;
+  }
+}`,
+    },
+    {
+      name: 'a renamed import binding the helper name blocks the insertion',
+      code: `import { thing as isEmpty } from 'other';
+function run(config: Record<string, unknown> | undefined) {
+  if (!config) {
+    return;
+  }
+}`,
+      options: [{ emptyCheckFix: { name: 'isEmpty', importPath: 'p' } }],
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `import { thing as isEmpty } from 'other';
+function run(config: Record<string, unknown> | undefined) {
+  if (!config || isEmpty(config)) {
+    return;
+  }
+}`,
+    },
+    {
+      name: 'a local function of the helper name blocks the insertion',
+      code: `function isEmpty(value: unknown) {
+  return !value;
+}
+function run(config: Record<string, unknown> | undefined) {
+  if (!config) {
+    return;
+  }
+}`,
+      options: [{ emptyCheckFix: { name: 'isEmpty', importPath: 'p' } }],
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `function isEmpty(value: unknown) {
+  return !value;
+}
+function run(config: Record<string, unknown> | undefined) {
+  if (!config || isEmpty(config)) {
+    return;
+  }
+}`,
+    },
+    {
+      name: 'a destructured top-level binding of the helper name blocks the insertion',
+      code: `const { isEmpty } = helpers;
+function run(config: Record<string, unknown> | undefined) {
+  if (!config) {
+    return;
+  }
+}`,
+      options: [{ emptyCheckFix: { name: 'isEmpty', importPath: 'p' } }],
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `const { isEmpty } = helpers;
+function run(config: Record<string, unknown> | undefined) {
+  if (!config || isEmpty(config)) {
+    return;
+  }
+}`,
+    },
+    {
+      name: 'an array-pattern binding of the helper name blocks the insertion',
+      code: `const [isEmpty] = helpers;
+function run(config: Record<string, unknown> | undefined) {
+  if (!config) {
+    return;
+  }
+}`,
+      options: [{ emptyCheckFix: { name: 'isEmpty', importPath: 'p' } }],
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `const [isEmpty] = helpers;
+function run(config: Record<string, unknown> | undefined) {
+  if (!config || isEmpty(config)) {
+    return;
+  }
+}`,
+    },
+    {
+      name: 'an exported declaration of the helper name blocks the insertion',
+      code: `export default function isEmpty(value: unknown) {
+  return !value;
+}
+function run(config: Record<string, unknown> | undefined) {
+  if (!config) {
+    return;
+  }
+}`,
+      options: [{ emptyCheckFix: { name: 'isEmpty', importPath: 'p' } }],
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `export default function isEmpty(value: unknown) {
+  return !value;
+}
+function run(config: Record<string, unknown> | undefined) {
+  if (!config || isEmpty(config)) {
+    return;
+  }
+}`,
+    },
+    {
+      name: 'an import-equals binding of the helper name blocks the insertion',
+      code: `import isEmpty = require('other');
+function run(config: Record<string, unknown> | undefined) {
+  if (!config) {
+    return;
+  }
+}`,
+      options: [{ emptyCheckFix: { name: 'isEmpty', importPath: 'p' } }],
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `import isEmpty = require('other');
+function run(config: Record<string, unknown> | undefined) {
+  if (!config || isEmpty(config)) {
+    return;
+  }
+}`,
+    },
+    /** A re-export binds nothing locally, so the name is still free. */
+    {
+      name: 'a star re-export of the helper name does not block the insertion',
+      code: `export * as isEmpty from 'other';
+function run(config: Record<string, unknown> | undefined) {
+  if (!config) {
+    return;
+  }
+}`,
+      options: [{ emptyCheckFix: { name: 'isEmpty', importPath: 'p' } }],
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `import { isEmpty } from 'p';
+export * as isEmpty from 'other';
+function run(config: Record<string, unknown> | undefined) {
+  if (!config || isEmpty(config)) {
+    return;
+  }
+}`,
+    },
+    /**
+     * A value import from the same path already has the braces, so the helper
+     * joins them rather than opening a second declaration of one module.
+     */
+    {
+      name: 'a value import from the same path gains the helper as a specifier',
+      code: `import { other } from 'p';
+function run(config: Record<string, unknown> | undefined) {
+  if (!config) {
+    return;
+  }
+}`,
+      options: [{ emptyCheckFix: { name: 'isEmpty', importPath: 'p' } }],
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `import { other, isEmpty } from 'p';
+function run(config: Record<string, unknown> | undefined) {
+  if (!config || isEmpty(config)) {
+    return;
+  }
+}`,
+    },
+    {
+      name: 'a default-plus-named import from the same path gains the helper',
+      code: `import thing, { other } from 'p';
+function run(config: Record<string, unknown> | undefined) {
+  if (!config) {
+    return;
+  }
+}`,
+      options: [{ emptyCheckFix: { name: 'isEmpty', importPath: 'p' } }],
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `import thing, { other, isEmpty } from 'p';
+function run(config: Record<string, unknown> | undefined) {
+  if (!config || isEmpty(config)) {
+    return;
+  }
+}`,
+    },
+    /** A broken specifier list keeps one name per row, as Prettier prints it. */
+    {
+      name: 'a multi-line specifier list gains the helper on its own row',
+      code: `import {
+  other,
+  another,
+} from 'p';
+function run(config: Record<string, unknown> | undefined) {
+  if (!config) {
+    return;
+  }
+}`,
+      options: [{ emptyCheckFix: { name: 'isEmpty', importPath: 'p' } }],
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `import {
+  other,
+  another,
+  isEmpty,
+} from 'p';
+function run(config: Record<string, unknown> | undefined) {
+  if (!config || isEmpty(config)) {
+    return;
+  }
+}`,
+    },
+    /**
+     * A type-only import carries no value binding, so joining it would import
+     * the helper as a type and leave the emitted call unresolved.
+     */
+    {
+      name: 'a type-only import from the same path gets a separate declaration',
+      code: `import type { Thing } from 'p';
+
+function run(config: Record<string, unknown> | undefined) {
+  if (!config) {
+    return;
+  }
+}`,
+      options: [{ emptyCheckFix: { name: 'isEmpty', importPath: 'p' } }],
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `import type { Thing } from 'p';
+import { isEmpty } from 'p';
+
+function run(config: Record<string, unknown> | undefined) {
+  if (!config || isEmpty(config)) {
+    return;
+  }
+}`,
+    },
+    {
+      name: 'a namespace import from the same path gets a separate declaration',
+      code: `import * as p from 'p';
+
+function run(config: Record<string, unknown> | undefined) {
+  if (!config) {
+    return;
+  }
+}`,
+      options: [{ emptyCheckFix: { name: 'isEmpty', importPath: 'p' } }],
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `import * as p from 'p';
+import { isEmpty } from 'p';
+
+function run(config: Record<string, unknown> | undefined) {
+  if (!config || isEmpty(config)) {
+    return;
+  }
+}`,
+    },
+    {
+      name: 'a side-effect import from the same path gets a separate declaration',
+      code: `import 'p';
+
+function run(config: Record<string, unknown> | undefined) {
+  if (!config) {
+    return;
+  }
+}`,
+      options: [{ emptyCheckFix: { name: 'isEmpty', importPath: 'p' } }],
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `import 'p';
+import { isEmpty } from 'p';
+
+function run(config: Record<string, unknown> | undefined) {
+  if (!config || isEmpty(config)) {
+    return;
+  }
+}`,
+    },
+    /**
+     * ESM allows a declaration below the statement that uses its binding, so
+     * the two edits arrive out of source order and must be sorted before ESLint
+     * will merge them.
+     */
+    {
+      name: 'an import anchored below the guard still merges with the rewrite',
+      code: `function run(config: Record<string, unknown> | undefined) {
+  if (!config) {
+    return;
+  }
+}
+import { a } from 'a';`,
+      options: [{ emptyCheckFix: { name: 'isEmpty', importPath: 'p' } }],
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `function run(config: Record<string, unknown> | undefined) {
+  if (!config || isEmpty(config)) {
+    return;
+  }
+}
+import { a } from 'a';
+import { isEmpty } from 'p';`,
+    },
+    {
+      name: 'a module specifier holding a quote is escaped',
+      code: `function run(config: Record<string, unknown> | undefined) {
+  if (!config) {
+    return;
+  }
+}`,
+      options: [
+        { emptyCheckFix: { name: 'isEmpty', importPath: "it's/util" } },
+      ],
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `import { isEmpty } from 'it\\'s/util';
+function run(config: Record<string, unknown> | undefined) {
+  if (!config || isEmpty(config)) {
+    return;
+  }
+}`,
+    },
+    {
+      name: 'the widened layout and the import insertion travel in one fix',
+      code: `import { a } from 'a';
+
+function userPreview(
+  afterData: Record<string, unknown> | undefined,
+  isPathIgnored: boolean,
+  hasPermission: boolean,
+) {
+  if (!afterData && isPathIgnored && hasPermission && !!afterData.size) {
+    return;
+  }
+  return afterData;
+}`,
+      options: [{ emptyCheckFix: { name: 'isEmpty', importPath: 'p' } }],
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'afterData' } },
+      ],
+      output: `import { a } from 'a';
+import { isEmpty } from 'p';
+
+function userPreview(
+  afterData: Record<string, unknown> | undefined,
+  isPathIgnored: boolean,
+  hasPermission: boolean,
+) {
+  if (
+    (!afterData || isEmpty(afterData)) &&
+    isPathIgnored &&
+    hasPermission &&
+    !!afterData.size
+  ) {
+    return;
+  }
+  return afterData;
+}`,
+    },
+    /**
+     * Two reports, one import: the second guard is left for the next pass
+     * because both fixes would carry the same insertion, and ESLint applies
+     * only the first of two overlapping ones. The pass after this one finds the
+     * binding present and rewrites every remaining guard minimally, so a helper
+     * call can never be emitted into a file that does not import it.
+     */
+    {
+      name: 'two guards in one file insert the import once',
+      code: `function run(
+  config: Record<string, unknown> | undefined,
+  payload: Record<string, unknown> | undefined,
+) {
+  if (!config) {
+    return;
+  }
+  if (!payload) {
+    return;
+  }
+}`,
+      options: [{ emptyCheckFix: { name: 'isEmpty', importPath: 'p' } }],
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'payload' } },
+      ],
+      output: `import { isEmpty } from 'p';
+function run(
+  config: Record<string, unknown> | undefined,
+  payload: Record<string, unknown> | undefined,
+) {
+  if (!config || isEmpty(config)) {
+    return;
+  }
+  if (!payload) {
+    return;
+  }
+}`,
+    },
+    {
+      name: 'two guards without an import path are both rewritten in one pass',
+      code: `declare function isEmpty(value: unknown): boolean;
+function run(
+  config: Record<string, unknown> | undefined,
+  payload: Record<string, unknown> | undefined,
+) {
+  if (!config) {
+    return;
+  }
+  if (!payload) {
+    return;
+  }
+}`,
+      options: [{ emptyCheckFix: { name: 'isEmpty' } }],
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'payload' } },
+      ],
+      output: `declare function isEmpty(value: unknown): boolean;
+function run(
+  config: Record<string, unknown> | undefined,
+  payload: Record<string, unknown> | undefined,
+) {
+  if (!config || isEmpty(config)) {
+    return;
+  }
+  if (!payload || isEmpty(payload)) {
+    return;
+  }
+}`,
+    },
+    /**
+     * The helper's LENGTH is a layout input. `isEmpty(config)` is 18 columns
+     * shorter than the `Object.keys` clause, which is enough to keep this
+     * header inside the print width — so the same source takes the widened path
+     * unconfigured and the minimal one with the helper. The pair is written as
+     * two cases so the divergence is pinned from both sides.
+     */
+    {
+      name: 'a short helper keeps a header that the default emission breaks',
+      code: `declare function isEmpty(value: unknown): boolean;
+function run(
+  config: Record<string, unknown> | undefined,
+  isPathIgnored: boolean,
+  hasPermission: boolean,
+) {
+  if (!config && isPathIgnored && hasPermission) {
+    return;
+  }
+}`,
+      options: [{ emptyCheckFix: { name: 'isEmpty' } }],
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `declare function isEmpty(value: unknown): boolean;
+function run(
+  config: Record<string, unknown> | undefined,
+  isPathIgnored: boolean,
+  hasPermission: boolean,
+) {
+  if ((!config || isEmpty(config)) && isPathIgnored && hasPermission) {
+    return;
+  }
+}`,
+    },
+    {
+      name: 'the same header breaks under the unconfigured default emission',
+      code: `function run(
+  config: Record<string, unknown> | undefined,
+  isPathIgnored: boolean,
+  hasPermission: boolean,
+) {
+  if (!config && isPathIgnored && hasPermission) {
+    return;
+  }
+}`,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `function run(
+  config: Record<string, unknown> | undefined,
+  isPathIgnored: boolean,
+  hasPermission: boolean,
+) {
+  if (
+    (!config || Object.keys(config).length === 0) &&
+    isPathIgnored &&
+    hasPermission
+  ) {
+    return;
+  }
+}`,
+    },
+    {
+      name: 'a long helper breaks a header the default emission keeps',
+      code: `declare function isEmptyRecordAccordingToOurHelpers(v: unknown): boolean;
+function run(config: Record<string, unknown> | undefined, isPathIgnored: boolean) {
+  if (!config && isPathIgnored) {
+    return;
+  }
+}`,
+      options: [
+        { emptyCheckFix: { name: 'isEmptyRecordAccordingToOurHelpers' } },
+      ],
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `declare function isEmptyRecordAccordingToOurHelpers(v: unknown): boolean;
+function run(config: Record<string, unknown> | undefined, isPathIgnored: boolean) {
+  if (
+    (!config || isEmptyRecordAccordingToOurHelpers(config)) &&
+    isPathIgnored
+  ) {
+    return;
+  }
+}`,
+    },
+    {
+      name: 'the same header stays on one line under the unconfigured default',
+      code: `function run(config: Record<string, unknown> | undefined, isPathIgnored: boolean) {
+  if (!config && isPathIgnored) {
+    return;
+  }
+}`,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `function run(config: Record<string, unknown> | undefined, isPathIgnored: boolean) {
+  if ((!config || Object.keys(config).length === 0) && isPathIgnored) {
+    return;
+  }
+}`,
+    },
+    /**
+     * A narrowed `printWidth` reaches the helper too: the emitted clause fits
+     * the re-laid rows the default clause overflows, so the same width takes
+     * the widened path with the helper and declines without it.
+     */
+    {
+      name: 'a narrowed printWidth breaks the header around the helper',
+      code: `declare function isEmpty(value: unknown): boolean;
+function run(config: Record<string, unknown> | undefined, ready: boolean) {
+  if (!config && ready) {
+    return;
+  }
+}`,
+      options: [{ emptyCheckFix: { name: 'isEmpty' }, printWidth: 40 }],
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `declare function isEmpty(value: unknown): boolean;
+function run(config: Record<string, unknown> | undefined, ready: boolean) {
+  if (
+    (!config || isEmpty(config)) &&
+    ready
+  ) {
+    return;
+  }
+}`,
+    },
+    {
+      name: 'the same narrowed printWidth declines the default emission',
+      code: `function run(config: Record<string, unknown> | undefined, ready: boolean) {
+  if (!config && ready) {
+    return;
+  }
+}`,
+      options: [{ printWidth: 40 }],
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `function run(config: Record<string, unknown> | undefined, ready: boolean) {
+  if ((!config || Object.keys(config).length === 0) && ready) {
+    return;
+  }
+}`,
+    },
+    {
+      name: 'a while head takes the helper',
+      code: `declare function isEmpty(value: unknown): boolean;
+declare function load(): Record<string, unknown> | undefined;
+function run(config: Record<string, unknown> | undefined) {
+  while (!config) {
+    config = load();
+  }
+}`,
+      options: [{ emptyCheckFix: { name: 'isEmpty' } }],
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `declare function isEmpty(value: unknown): boolean;
+declare function load(): Record<string, unknown> | undefined;
+function run(config: Record<string, unknown> | undefined) {
+  while (!config || isEmpty(config)) {
+    config = load();
+  }
+}`,
+    },
+    {
+      name: 'a ternary test takes the helper and the import',
+      code: `const config: Record<string, unknown> | undefined = load();
+const value = !config ? fallback() : config;`,
+      options: [{ emptyCheckFix: { name: 'isEmpty', importPath: 'p' } }],
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `import { isEmpty } from 'p';
+const config: Record<string, unknown> | undefined = load();
+const value = !config || isEmpty(config) ? fallback() : config;`,
+    },
+    /**
+     * A bare call resolves where the CALL sits, so a binding of the helper's
+     * name between the report and the module scope would silently take the
+     * call over. The report stands and the fix is declined, which is the one
+     * outcome that cannot rewrite the guard into something else (#1455, #1456).
+     */
+    {
+      name: 'a helper shadowed in the enclosing function declines the fix',
+      code: `import { isEmpty } from 'p';
+function run(config: Record<string, unknown> | undefined) {
+  const isEmpty = 1;
+  if (!config) {
+    return isEmpty;
+  }
+}`,
+      options: [{ emptyCheckFix: { name: 'isEmpty', importPath: 'p' } }],
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: null,
+    },
+    {
+      name: 'a helper shadowed in a nested block declines the fix',
+      code: `declare function isEmpty(value: unknown): boolean;
+function run(config: Record<string, unknown> | undefined) {
+  {
+    const isEmpty = 1;
+    if (!config) {
+      return isEmpty;
+    }
+  }
+}`,
+      options: [{ emptyCheckFix: { name: 'isEmpty' } }],
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: null,
+    },
+    {
+      name: 'a parameter shadowing the helper declines the fix',
+      code: `declare function isEmpty(value: unknown): boolean;
+function run(config: Record<string, unknown> | undefined, isEmpty: number) {
+  if (!config) {
+    return isEmpty;
+  }
+}`,
+      options: [{ emptyCheckFix: { name: 'isEmpty' } }],
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: null,
+    },
+    {
+      name: 'a module-level binding of the helper name is not a shadow',
+      code: `declare function isEmpty(value: unknown): boolean;
+function run(config: Record<string, unknown> | undefined) {
+  if (!config) {
+    return;
+  }
+}`,
+      options: [{ emptyCheckFix: { name: 'isEmpty' } }],
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `declare function isEmpty(value: unknown): boolean;
+function run(config: Record<string, unknown> | undefined) {
+  if (!config || isEmpty(config)) {
+    return;
+  }
+}`,
+    },
+    /** The shadow check is scoped to the helper: `Object` is a global. */
+    {
+      name: 'a shadow of the helper name leaves the unconfigured default alone',
+      code: `function run(config: Record<string, unknown> | undefined) {
+  const isEmpty = 1;
+  if (!config) {
+    return isEmpty;
+  }
+}`,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `function run(config: Record<string, unknown> | undefined) {
+  const isEmpty = 1;
+  if (!config || Object.keys(config).length === 0) {
+    return isEmpty;
+  }
+}`,
+    },
   ],
+});
+
+/**
+ * Schema rejection, read through ESLint's OWN compiled validator rather than a
+ * bare `Linter`, which hands rule options straight through without screening
+ * them. A malformed `emptyCheckFix` has to fail at CONFIG time: reaching the
+ * fixer, it would emit a call no consumer can resolve.
+ */
+describe('enforce-empty-object-check emptyCheckFix schema', () => {
+  const screen = payloadScreenFor(enforceEmptyObjectCheck);
+
+  const accepts = (options: unknown): boolean => {
+    if (!screen) {
+      throw new Error('the rule declares no option schema to screen against');
+    }
+    return screen([options]);
+  };
+
+  it("compiles a screen from the rule's own schema", () => {
+    expect(screen).not.toBeNull();
+  });
+
+  it.each([
+    ['no name at all', { emptyCheckFix: {} }],
+    ['an import path but no name', { emptyCheckFix: { importPath: 'p' } }],
+    ['a non-string name', { emptyCheckFix: { name: 42 } }],
+    [
+      'a non-string import path',
+      { emptyCheckFix: { name: 'isEmpty', importPath: 3 } },
+    ],
+    [
+      'an unknown extra property',
+      { emptyCheckFix: { name: 'isEmpty', extra: true } },
+    ],
+    ['a bare string instead of an object', { emptyCheckFix: 'isEmpty' }],
+    ['an empty name', { emptyCheckFix: { name: '' } }],
+    [
+      'an empty import path',
+      { emptyCheckFix: { name: 'isEmpty', importPath: '' } },
+    ],
+    /**
+     * A name that is not an identifier could not be recognized as the emptiness
+     * check it emits, so `--fix` would report its own output forever.
+     */
+    [
+      'a name that is not an identifier',
+      { emptyCheckFix: { name: 'is Empty' } },
+    ],
+    ['a member-access name', { emptyCheckFix: { name: '_.isEmpty' } }],
+    ['a name opening with a digit', { emptyCheckFix: { name: '1isEmpty' } }],
+  ])('rejects %s', (_label, options) => {
+    expect(accepts(options)).toBe(false);
+  });
+
+  it.each([
+    ['a bare helper name', { emptyCheckFix: { name: 'isEmpty' } }],
+    [
+      'a helper name with an import path',
+      { emptyCheckFix: { name: 'isEmpty', importPath: 'functions/src/util' } },
+    ],
+    ['an identifier using $ and _', { emptyCheckFix: { name: '$_isEmpty2' } }],
+    ['the option left out entirely', {}],
+  ])('accepts %s', (_label, options) => {
+    expect(accepts(options)).toBe(true);
+  });
 });

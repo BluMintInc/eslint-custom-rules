@@ -293,6 +293,10 @@ only the layout: the guard is added either way.
       "objectNamePattern": ["Config", "Data", "Info", "Payload"],
       "ignoreInLoops": false,
       "emptyCheckFunctions": ["isEmpty"],
+      "emptyCheckFix": {
+        "name": "isEmpty",
+        "importPath": "functions/src/util/isEmpty"
+      },
       "printWidth": 80
     }
   ]
@@ -302,7 +306,118 @@ only the layout: the guard is added either way.
 - `objectNamePattern` (string[], default includes Config/Data/Info/Settings/Options/Props/State/Response/Result/Payload/Map/Record/Object/Obj/Details/Meta/Profile/Request/Params/Context): additional suffixes to treat as object-like when type info is unavailable.
 - `ignoreInLoops` (boolean, default `false`): skip reporting inside loop conditions to avoid extra `Object.keys` calls in hot paths.
 - `emptyCheckFunctions` (string[], default `["isEmpty"]`): additional functions (identifier or property names) that already perform emptiness checks; merged with the default so adding custom helpers keeps recognition of `isEmpty`.
+- `emptyCheckFix` (object, unset by default): the helper the autofix EMITS, as `{ name, importPath? }`. Unset, the fix writes `Object.keys(x).length === 0`.
 - `printWidth` (number, default `80`): the column the autofix wraps the widened condition at.
+
+### `emptyCheckFix`
+
+Type: `{ name: string, importPath?: string }`
+
+Default: unset
+
+The emptiness call the autofix writes. Unset, the fix emits
+`Object.keys(x).length === 0`, so a codebase that has not configured this option
+sees no change.
+
+Set it when your config BANS the `Object` accessors. A `no-restricted-properties`
+rule forbidding `Object.keys` and an autofix hardcoded to emit it have no fixed
+point between them: `eslint --fix` rewrites a guard and the same run then reports
+the line the fixer just wrote.
+
+`name` must be a plain identifier, because the emitted call has to be one this
+rule itself recognizes as a satisfying emptiness check — otherwise `--fix` would
+report its own output. The name counts as a check whether or not it also appears
+in `emptyCheckFunctions`, which stays a recognition-only allowlist.
+
+Name only — the helper is assumed to be in scope already:
+
+```json
+{
+  "@blumintinc/blumint/enforce-empty-object-check": [
+    "error",
+    { "emptyCheckFix": { "name": "isEmpty" } }
+  ]
+}
+```
+
+```ts
+// before
+if (!afterData) {
+  return;
+}
+
+// after --fix
+if (!afterData || isEmpty(afterData)) {
+  return;
+}
+```
+
+Name and import path — the fix also brings the binding in:
+
+```json
+{
+  "@blumintinc/blumint/enforce-empty-object-check": [
+    "error",
+    {
+      "emptyCheckFix": {
+        "name": "isEmpty",
+        "importPath": "functions/src/util/isEmpty"
+      }
+    }
+  ]
+}
+```
+
+```ts
+// before
+import { logger } from 'functions/src/util/logger';
+
+export function userPreview(afterData?: Record<string, unknown>) {
+  if (!afterData) {
+    return;
+  }
+}
+
+// after --fix
+import { logger } from 'functions/src/util/logger';
+import { isEmpty } from 'functions/src/util/isEmpty';
+
+export function userPreview(afterData?: Record<string, unknown>) {
+  if (!afterData || isEmpty(afterData)) {
+    return;
+  }
+}
+```
+
+The insertion is deliberate about where it lands and when it happens at all:
+
+- it is anchored after the LAST `import` declaration;
+- with no imports it defers to the plugin's shared import anchor, which keeps a
+  `'use client'` directive first (an `import` above it takes the directive out of
+  the prologue and strips its meaning), keeps a `#!` shebang on line 1, and
+  climbs above a line-binding comment such as `// @ts-expect-error` rather than
+  severing it from the line it covers;
+- a value import from the same path that already has a `{ … }` list gains the
+  helper as another specifier rather than a second declaration of one module. A
+  list already broken across lines gains a row, as Prettier prints it;
+- a type-only, namespace, default-only or side-effect import of that path gets a
+  separate declaration, because none of them can carry a value specifier;
+- nothing is inserted when the name is ALREADY bound at the module's top level —
+  imported from any path, or declared locally. A second binding of the name would
+  not compile, which is worse than the report it was meant to fix. The emitted
+  call resolves to whatever the file already has.
+
+The fix is DECLINED — the report stands with no rewrite — when a binding of
+`name` sits between the guard and the module scope. A bare call resolves where
+the call sits, so an inner `const isEmpty = …` would silently take it over, and
+no spelling of the call escapes that. Declaring the helper at module level is
+not a shadow and does not decline the fix.
+
+Both emission paths honor the option: the one-line replacement and the widened
+re-layout the fixer emits when the guard overflows `printWidth`. The helper's
+LENGTH therefore feeds the layout decision — a name shorter than the
+`Object.keys` clause can keep a header on one line that the default emission
+breaks, and a longer one can break a header the default keeps.
 
 ### `printWidth`
 
