@@ -172,6 +172,9 @@ describe('gate-containment-guard.sh — end to end against the real checker', ()
     'npx jest --maxWorkers=13',
     'npx jest --maxWorkers 13',
     'npx jest -w 13',
+    /** The attached spelling, which jest honours identically and which no
+     * registry of option names can match. */
+    'npx jest -w13',
   ]) {
     it(`drops the worker count from \`${command}\`'s rewrite`, () => {
       const reason = denyReason(command);
@@ -234,6 +237,7 @@ describe('gate-containment-guard.sh — end to end against the real checker', ()
     'npm run -s test',
     'npx jest -u --bail',
     'npx jest --maxWorkers 13',
+    'npx jest -w13',
     'env -u BLUMINT_GOVERNOR_CLI npm run test:related',
     'env -uBLUMINT_GOVERNOR_CLI npm run test:related',
     'BLUMINT_MAX_WORKERS=13 npm run test:related -- src/rules/x.ts',

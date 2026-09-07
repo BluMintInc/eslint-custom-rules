@@ -2,7 +2,7 @@ import { formatBacktickedList } from '../formatBacktickedList';
 import type { GateContainmentOffense } from './types';
 
 const WHOLE_SUITE_CAUSE =
-  'A jest carrying neither a path operand nor a scoping flag runs the whole suite — 355 files here, seventeen of which take 8 to 22 minutes each — and fans out at whatever it reads as free, reserving nothing from the machine-wide memory budget. A narrowed run is not denied: a path operand, `--findRelatedTests`, `--testPathPatterns` or `-t` all leave the command alone.' as const;
+  'A jest carrying neither a path operand nor a scoping flag runs the whole suite — 355 files here, seventeen of which take 8 to 22 minutes each — and fans out at whatever it reads as free, reserving nothing from the machine-wide memory budget. A narrowed run is not denied: a path operand, `--findRelatedTests`, `--testPathPattern` or `-t` all leave the command alone.' as const;
 
 const GOVERNOR_CAUSE =
   "This repo's whole governor participation hangs on a handful of variables, so a run that assigns, exports, unsets or `env -u`s one of them costs the machine what an unadmitted run costs while every check still reads green. The family is `BLUMINT_GOVERNOR_*`, `BLUMINT_MAX_WORKERS`, `BLUMINT_WORKER_BUDGET_MB`, `TSX_TSCONFIG_PATH` and `CI`." as const;

@@ -67,6 +67,29 @@ describe('classifyToolRun', () => {
     expect(classify(command)?.rewrite).not.toContain('13');
   });
 
+  /**
+   * The same option with its value ATTACHED, which jest's own parser honours:
+   * `-w13` sizes the pool at 13. The token names itself, so no registry of
+   * option names matches it and it is recognized by shape or it is republished.
+   */
+  it.each([
+    ['npx jest -w13', 'npm run test:related'],
+    ['npx jest -w50%', 'npm run test:related'],
+    ['npx jest -w13 --bail', 'npm run test:related -- --bail'],
+  ])('drops the attached worker count from %s', (command, rewrite) => {
+    expect(classify(command)).toEqual({ rule: 'whole-suite', rewrite });
+  });
+
+  /** The bound on that shape: `-w` carrying anything but a count is not an
+   * option jest honours, and swallowing it would publish a remedy answering a
+   * different question than the command it replaces. */
+  it('republishes a -w spelling that carries no count', () => {
+    expect(classify('npx jest -wfoo')).toEqual({
+      rule: 'whole-suite',
+      rewrite: 'npm run test:related -- -wfoo',
+    });
+  });
+
   it('keeps the other flags when it drops the worker count', () => {
     expect(classify('npx jest --maxWorkers 13 --bail')).toEqual({
       rule: 'whole-suite',
@@ -76,6 +99,11 @@ describe('classifyToolRun', () => {
 
   it.each([
     ['a path operand', 'npx jest src/tests/x.test.ts'],
+    /** A worker count sizes a run this rule already has no opinion about, at
+     * either position: the path operand is what narrows it, and dropping the
+     * count changes nothing about that. */
+    ['a sized path operand', 'npx jest -w13 src/tests/x.test.ts'],
+    ['a path operand sized after it', 'npx jest src/tests/x.test.ts -w13'],
     ['a related run', 'npx jest --findRelatedTests src/rules/x.ts'],
     ['a path pattern', 'npx jest --testPathPattern=rules'],
     ['a name pattern', 'npx jest -t "denies"'],

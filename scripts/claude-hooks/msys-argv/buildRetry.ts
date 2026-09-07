@@ -6,11 +6,22 @@ import type { MsysArgvConflict } from './types';
  * segment is what makes the guard's retry converge in exactly one hop. */
 export const PATHCONV_ENV = 'MSYS_NO_PATHCONV' as const;
 
-/** Drops a leading `MSYS_NO_PATHCONV=…` assignment, so a remedy that adds its
- * own prefix never publishes the token twice. */
-export function stripPathconvAssignment(tokens: readonly string[]) {
-  return tokens.filter((token) => {
-    return !token.startsWith(`${PATHCONV_ENV}=`);
+/**
+ * Drops a leading `MSYS_NO_PATHCONV=…` assignment, so a remedy that adds its own
+ * prefix never publishes the token twice.
+ *
+ * Bounded to the tokens BELOW the binary, which is the only place a shell reads
+ * `NAME=value` as an assignment at all. Past it the same spelling is an operand
+ * — a commit message, a literal argument — and removing one both loses that
+ * operand and shifts the caller's binary index a place left, off the command
+ * word and onto a token that matches no family.
+ */
+export function stripPathconvAssignment(
+  tokens: readonly string[],
+  binaryIndex: number,
+) {
+  return tokens.filter((token, index) => {
+    return !(index < binaryIndex && token.startsWith(`${PATHCONV_ENV}=`));
   });
 }
 

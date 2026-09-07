@@ -26,6 +26,13 @@ import { readInput } from './readInput';
 /**
  * CLI entry: runs the check and flushes the process. No-op when imported, so
  * importing this module has no side effects.
+ *
+ * **An unexpected error exits 0 and names only the reason CLASS**, the shape the
+ * shim's own contract states: this hook fronts every Bash call, so a non-zero
+ * exit is noise on a path that is already abstaining, and the error
+ * object is command-derived content this guard must not echo. Nothing is
+ * re-printed to stdout, because the realistic throw IS the stdout write — a
+ * second one would escape the catch that exists to contain the first.
  */
 export function runCli() {
   if (!isDirectExecution('msys-argv-guard-check.ts')) {
@@ -33,11 +40,10 @@ export function runCli() {
   }
   try {
     executeMain();
-    flushAndExit(0);
-  } catch (error) {
-    console.error('Error in MSYS argv guard check:', error);
-    flushAndExit(1);
+  } catch {
+    console.error('msys-argv-guard: fail-open (unexpected-error)');
   }
+  flushAndExit(0);
 }
 
 export function executeMain() {

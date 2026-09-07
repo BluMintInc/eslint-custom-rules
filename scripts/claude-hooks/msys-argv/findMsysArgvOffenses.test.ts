@@ -184,6 +184,28 @@ describe('findMsysArgvOffenses — the convergence branch', () => {
     expect(expectOffenses(command)).toHaveLength(1);
   });
 
+  /**
+   * A shell reads `NAME=value` as an assignment only ahead of the command word,
+   * so the same spelling later is an operand. Dropping one as if it were the
+   * prefix loses the operand AND shifts every index derived from the token list
+   * a place left, which moves the binary off `git` and silently allows the read
+   * this guard exists to deny.
+   */
+  it('reads a MSYS_NO_PATHCONV= token past the binary as an operand', () => {
+    const offense = expectSingleOffense(
+      'npm run build && git show origin/develop:.claude/x MSYS_NO_PATHCONV=1',
+    );
+
+    expect(offense).toMatchObject({
+      verb: 'show',
+      argument: 'origin/develop:.claude/x',
+      retry: {
+        kind: 'prefix',
+        command: 'git show origin/develop:.claude/x MSYS_NO_PATHCONV=1',
+      },
+    });
+  });
+
   /** The published retry must never carry the token twice. */
   it('strips the existing prefix from the command it republishes', () => {
     const { retry } = expectSingleOffense(

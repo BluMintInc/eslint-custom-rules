@@ -24,6 +24,23 @@ describe('buildGateContainmentDenyReason', () => {
     expect(reason).toContain('whole suite');
   });
 
+  /**
+   * The alternatives it advertises have to be spellings the INSTALLED jest
+   * accepts. jest 30 renames `--testPathPattern` to `--testPathPatterns` and
+   * each major refuses the other at exit 1, so naming the wrong one sends an
+   * agent out of a deny and into a usage error. The classifier still allows
+   * both, since only the text an agent copies is pinned here.
+   */
+  it('advertises the path-pattern spelling this jest accepts', () => {
+    const reason = buildGateContainmentDenyReason({
+      rule: 'whole-suite',
+      rewrite: 'npm run test:related',
+    });
+
+    expect(reason).toContain('`--testPathPattern`');
+    expect(reason).not.toContain('`--testPathPatterns`');
+  });
+
   /** Every removed variable is named. A remedy naming one of several, followed
    * exactly, still strips the rest — while reading as complete. */
   it('names every variable the environment remedy removes', () => {

@@ -67,6 +67,18 @@ const JEST_WORKER_FLAGS: ReadonlySet<string> = new Set([
 ] as const);
 
 /**
+ * The same option with its value ATTACHED, which jest's own parser honours:
+ * `-w13` sizes the pool at 13. `readOptionName` splits on `=` alone, so such a
+ * token names ITSELF, misses {@link JEST_WORKER_FLAGS} by exact membership, and
+ * the override rides the republished remedy straight past the deny.
+ *
+ * Bound to a count, optionally a percentage, rather than to a bare `-w` prefix:
+ * a `-w` spelling jest would not honour is republished as the author wrote it,
+ * which costs a flag rather than a fleet.
+ */
+const ATTACHED_WORKER_COUNT = /^-w\d+%?$/;
+
+/**
  * Options whose next token is a VALUE rather than an operand. Skipping them is
  * what keeps `--maxWorkers 13` — the exact spelling that filled the box — from
  * reading as a path-scoped run and being allowed.
@@ -176,7 +188,8 @@ function readWholeSuiteArguments(args: readonly ParseEntry[]) {
     if (JEST_SCOPING_FLAGS.has(name) || JEST_NON_RUN_FLAGS.has(name)) {
       return;
     }
-    const isWorkerFlag = JEST_WORKER_FLAGS.has(name);
+    const isWorkerFlag =
+      JEST_WORKER_FLAGS.has(name) || ATTACHED_WORKER_COUNT.test(token);
     if (token.includes('=') || !JEST_VALUE_OPTIONS.has(name)) {
       if (!isWorkerFlag) {
         republishable.push(token);

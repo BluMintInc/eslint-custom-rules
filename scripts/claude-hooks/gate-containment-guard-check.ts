@@ -26,13 +26,12 @@ import { readInput } from './readInput';
  * CLI entry: runs the check and flushes the process. No-op when imported, so
  * importing this module has no side effects.
  *
- * **The unexpected-error path exits 0 and names only the reason CLASS**, where
- * the two sibling entry points exit 1 and log the error object. Both
- * divergences are deliberate: this hook fronts every Bash call, so a non-zero
- * exit is noise on a path that is already abstaining, and the error object is
- * command-derived content this matcher must not echo. Nothing is re-printed to
- * stdout, because the realistic throw IS stdout — a second write there would
- * escape the catch that exists to contain the first.
+ * **The unexpected-error path exits 0 and names only the reason CLASS**, as
+ * every `Bash`-matched guard here does: this hook fronts every Bash call, so a
+ * non-zero exit is noise on a path that is already abstaining, and the error
+ * object is command-derived content this matcher must not echo. Nothing is
+ * re-printed to stdout, because the realistic throw IS stdout — a second write
+ * there would escape the catch that exists to contain the first.
  */
 export function runCli() {
   if (!isDirectExecution('gate-containment-guard-check.ts')) {

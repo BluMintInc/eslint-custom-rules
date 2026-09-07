@@ -140,7 +140,7 @@ function inspectSegment(
    * addresses one token list. Stripping it later would shift the `-C` position
    * the split arm removes by one and publish a mangled command.
    */
-  const stripped = stripPathconvAssignment(literal);
+  const stripped = stripPathconvAssignment(literal, classified.binaryIndex);
   const binaryIndex =
     classified.binaryIndex - (literal.length - stripped.length);
   /**
