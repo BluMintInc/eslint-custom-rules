@@ -1,3 +1,19 @@
+## [1.21.16](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.21.15...v1.21.16) (2026-09-07)
+
+
+### Bug Fixes
+
+* **enforce-empty-object-check:** read a declared type from every site that writes one (closes [#2346](https://github.com/BluMintInc/eslint-custom-rules/issues/2346)) ([05f8808](https://github.com/BluMintInc/eslint-custom-rules/commit/05f8808c7cf46b5fa1eb668f5883337b026f83a1)), closes [#2344](https://github.com/BluMintInc/eslint-custom-rules/issues/2344)
+* **enforce-empty-object-check:** read every spelling of a source-pinned dictionary (closes [#2345](https://github.com/BluMintInc/eslint-custom-rules/issues/2345)) ([124b7b5](https://github.com/BluMintInc/eslint-custom-rules/commit/124b7b5461312aed63048cd51b1a6121d5f94516)), closes [#2344](https://github.com/BluMintInc/eslint-custom-rules/issues/2344) [#2344](https://github.com/BluMintInc/eslint-custom-rules/issues/2344)
+* **enforce-memoize-async:** read a field write as the place it targets, not as one operator (closes [#2348](https://github.com/BluMintInc/eslint-custom-rules/issues/2348)) ([c0325ea](https://github.com/BluMintInc/eslint-custom-rules/commit/c0325ea82c3a5985e140a51993296b830e437504)), closes [#2343](https://github.com/BluMintInc/eslint-custom-rules/issues/2343)
+* **enforce-memoize-async:** read a finalizer's call for a hand-back, not for any call (closes [#2347](https://github.com/BluMintInc/eslint-custom-rules/issues/2347)) ([f57cc25](https://github.com/BluMintInc/eslint-custom-rules/commit/f57cc252b89e138e7dc226e5ccf62d66844d656e)), closes [#2343](https://github.com/BluMintInc/eslint-custom-rules/issues/2343) [#2343](https://github.com/BluMintInc/eslint-custom-rules/issues/2343)
+* **global-const-style:** follow a handed-back closure's own returns (closes [#2351](https://github.com/BluMintInc/eslint-custom-rules/issues/2351)) ([6fea8d7](https://github.com/BluMintInc/eslint-custom-rules/commit/6fea8d7ce9c2d7acca2ff10b4fca1d86a9b7c605))
+* **global-const-style:** read an immediately-invoked closure's returns (closes [#2351](https://github.com/BluMintInc/eslint-custom-rules/issues/2351) follow-up) ([2dd35a6](https://github.com/BluMintInc/eslint-custom-rules/commit/2dd35a61d6f23d229b163d9f72ec203aaa915bbc)), closes [#2352](https://github.com/BluMintInc/eslint-custom-rules/issues/2352)
+* **global-const-style:** recognize a destructured mapper parameter as handing the element back (closes [#2349](https://github.com/BluMintInc/eslint-custom-rules/issues/2349)) ([93896de](https://github.com/BluMintInc/eslint-custom-rules/commit/93896de2ddce458f00f03a2ff2e3017809011830)), closes [#2342](https://github.com/BluMintInc/eslint-custom-rules/issues/2342) [#2341](https://github.com/BluMintInc/eslint-custom-rules/issues/2341)
+* **global-const-style:** track a copy through flatMap (closes [#2350](https://github.com/BluMintInc/eslint-custom-rules/issues/2350)) ([28f25cd](https://github.com/BluMintInc/eslint-custom-rules/commit/28f25cd5e60018dc8c56fa88a645fd25d9d081e4)), closes [mutation-throu#the-callback-parameter](https://github.com/mutation-throu/issues/the-callback-parameter)
+* **no-compositing-layer-props:** gate the value arm on the key, and stop treating transparent as promoting (closes [#2353](https://github.com/BluMintInc/eslint-custom-rules/issues/2353)) ([f3f903d](https://github.com/BluMintInc/eslint-custom-rules/commit/f3f903db51e99806a729a3c7cedea356caff0859))
+* **require-memo:** stop claiming a forwardRef render function (closes [#2352](https://github.com/BluMintInc/eslint-custom-rules/issues/2352)) ([df9f182](https://github.com/BluMintInc/eslint-custom-rules/commit/df9f182da4372c6ad0aa52458693cadac513e119))
+
 ## [1.21.15](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.21.14...v1.21.15) (2026-09-06)
 
 

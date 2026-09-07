@@ -1,5 +1,55 @@
 [
   {
+    "version": "1.21.16",
+    "date": "2026-09-07T07:42:18.078Z",
+    "rules": [
+      {
+        "name": "enforce-empty-object-check",
+        "changeType": "fix",
+        "issues": [
+          2345,
+          2346
+        ],
+        "summary": "read a declared type from every site that writes one (closes #2346); read every spelling of a source-pinned dictionary (closes #2345)"
+      },
+      {
+        "name": "enforce-memoize-async",
+        "changeType": "fix",
+        "issues": [
+          2347,
+          2348
+        ],
+        "summary": "read a field write as the place it targets, not as one operator (closes #2348); read a finalizer's call for a hand-back, not for any call (closes #2347)"
+      },
+      {
+        "name": "global-const-style",
+        "changeType": "fix",
+        "issues": [
+          2349,
+          2350,
+          2351
+        ],
+        "summary": "read an immediately-invoked closure's returns (closes #2351 follow-up); follow a handed-back closure's own returns (closes #2351); track a copy through flatMap (closes #2350); recognize a destructured mapper parameter as handing the element back (closes #2349)"
+      },
+      {
+        "name": "no-compositing-layer-props",
+        "changeType": "fix",
+        "issues": [
+          2353
+        ],
+        "summary": "gate the value arm on the key, and stop treating transparent as promoting (closes #2353)"
+      },
+      {
+        "name": "require-memo",
+        "changeType": "fix",
+        "issues": [
+          2352
+        ],
+        "summary": "stop claiming a forwardRef render function (closes #2352)"
+      }
+    ]
+  },
+  {
     "version": "1.21.15",
     "date": "2026-09-06T18:24:58.623Z",
     "rules": [
