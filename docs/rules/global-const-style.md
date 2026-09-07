@@ -528,11 +528,11 @@ const [head, ...rest] = ITEMS;
 rest.push(3);
 ```
 
-`map` and the two-argument `Array.from(X, fn)` are typed from their **callback**,
-so they are decided per call rather than per method. The frozen type reaches
-their result whenever the mapper hands the element back, and under `as const` an
-element's properties are literal types, so the result is a literal array a later
-write is rejected on:
+`map`, `flatMap` and the two-argument `Array.from(X, fn)` are typed from their
+**callback**, so they are decided per call rather than per method. The frozen
+type reaches their result whenever the mapper hands the element back, and under
+`as const` an element's properties are literal types, so the result is a literal
+array a later write is rejected on:
 
 ```ts
 // Not frozen: `ns` is `1[]` rather than `number[]`, so `ns.push(3)` would be
@@ -553,6 +553,21 @@ positions whose types **compose** the result's are followed too — the branches
 of a conditional (`(x) => (x.n > 0 ? x.n : x.m)`) or of a logical operator, a
 sequence's last expression, the elements and spreads of a container literal
 (`(x) => [x]`, `(x) => ({ ...x })`) and the operand of an `await`.
+
+`flatMap` reads on exactly those terms. Flattening one level changes the shape
+of the result, not the types it is composed from, so a mapper handing back an
+array of the element contributes that element's type just as a bare return does
+— `ITEMS.flatMap((x) => [x.n])` is `1[]` and a later `push(3)` is TS2345, while
+`ITEMS.flatMap((x) => [x])` rejects the push as TS2322:
+
+```ts
+// Not frozen: `ns` is `1[]` rather than `number[]`.
+const ITEMS = [{ n: 1 }];
+export const run = () => {
+  const ns = ITEMS.flatMap((item) => [item.n]);
+  ns.push(3);
+};
+```
 
 A mapper that **computes** widens, carrying nothing of the constant into its
 result, so `ITEMS.map((x) => x * 2)`, `ITEMS.map(({ n }) => n * 2)` and

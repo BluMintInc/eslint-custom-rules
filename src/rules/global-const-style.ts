@@ -872,8 +872,19 @@ const isCopyingCall = (
  * They are carried apart from `TYPE_PRESERVING_COPY_METHODS` because the
  * question they raise is answered per CALL rather than per method — see
  * `returnsHandedElement`.
+ *
+ * `flatMap` sits beside `map` because flattening one level changes the SHAPE of
+ * the result, not the types it is composed from: a mapper handing back an array
+ * literal of the element contributes that element's type to the result exactly
+ * as a bare return does, so `ITEMS.flatMap((x) => [x.n])` is TS2345 on a later
+ * `push` and `(x) => [x]` is TS2322, both for inputs that compiled (Issue
+ * #2350). `carriesElementType` already reads through the returned literal, so
+ * the array-wrapped and bare spellings are decided on the same terms.
  */
-const CALLBACK_TYPED_COPY_METHODS = new Map<string, number>([['map', 0]]);
+const CALLBACK_TYPED_COPY_METHODS = new Map<string, number>([
+  ['map', 0],
+  ['flatMap', 0],
+]);
 
 /**
  * Array methods whose result keeps the receiver's ELEMENT type WHATEVER the

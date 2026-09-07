@@ -2617,6 +2617,207 @@ const Probe = () => {
       ].join('\n'),
       filename: 'test.ts',
     },
+    // Issue #2350: the callback-typed copy family carried `map` alone, so no
+    // copy was tracked through `flatMap` at all. Flattening one level changes
+    // the SHAPE of the result, not the types it is composed from — a mapper
+    // handing back an array of the element contributes that element's type
+    // exactly as a bare return does, so `counts.push(3)` is TS2345 for an input
+    // that compiled, and the no-op wrap is TS2322.
+    {
+      name: 'declines to freeze an array whose flatMap mapper wraps the element property',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const counts = ITEMS.flatMap((item) => [item.n]);',
+        '  counts.push(3);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose flatMap mapper wraps the element',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const copies = ITEMS.flatMap((item) => [item]);',
+        '  copies.push({ n: 9 });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // The bare spellings are the same question asked without the wrapper: a
+    // mapper may hand back a value where an array is accepted, and either way
+    // the result's element type is the constant's.
+    {
+      name: 'declines to freeze an array whose flatMap mapper returns the element property',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const counts = ITEMS.flatMap((item) => item.n);',
+        '  counts.push(3);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose flatMap mapper returns the element',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const copies = ITEMS.flatMap((item) => item);',
+        '  copies.push({ n: 9 });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // An array-valued PROPERTY is the shape `flatMap` exists for, and the
+    // flattened result holds the constant's own frozen strings.
+    {
+      name: 'declines to freeze an array whose flatMap mapper returns an array property',
+      code: [
+        "const ITEMS = [{ tags: ['a'] }];",
+        'export const run = () => {',
+        '  const tags = ITEMS.flatMap((item) => item.tags);',
+        "  tags.push('b');",
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose flatMap mapper spreads an array property',
+      code: [
+        "const ITEMS = [{ tags: ['a'] }];",
+        'export const run = () => {',
+        '  const tags = ITEMS.flatMap((item) => [...item.tags]);',
+        "  tags.push('b');",
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // Only ONE level is flattened, so a doubly wrapped element survives as an
+    // array of the frozen element rather than as the element itself.
+    {
+      name: 'declines to freeze an array whose flatMap mapper wraps the element twice',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const nested = ITEMS.flatMap((item) => [[item]]);',
+        '  nested.push([{ n: 9 }]);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose flatMap mapper wraps a destructured property',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const counts = ITEMS.flatMap(({ n }) => [n]);',
+        '  counts.push(3);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose flatMap mapper wraps a renamed destructured property',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const counts = ITEMS.flatMap(({ n: value }) => [value]);',
+        '  counts.push(3);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose flatMap mapper rebuilds the element',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const copies = ITEMS.flatMap((item) => [{ ...item }]);',
+        '  copies.push({ n: 9 });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose flatMap mapper wraps the property in one ternary branch',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const counts = ITEMS.flatMap((item) => (item.n > 0 ? [item.n] : []));',
+        '  counts.push(3);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // Which body syntax spells the return does not decide the question, so a
+    // block body and a function expression read as the arrow spelling does.
+    {
+      name: 'declines to freeze an array whose block-bodied flatMap mapper wraps the property',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const counts = ITEMS.flatMap((item) => {',
+        '    return [item.n];',
+        '  });',
+        '  counts.push(3);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose function-expression flatMap mapper wraps the property',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const counts = ITEMS.flatMap(function (item) {',
+        '    return [item.n];',
+        '  });',
+        '  counts.push(3);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // A copy OF a copy carries the frozen type just as far, so the two
+    // callback-typed methods compose.
+    {
+      name: 'declines to freeze an array whose flatMap is chained onto a map result',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const counts = ITEMS.map((item) => item).flatMap((item) => [item.n]);',
+        '  counts.push(3);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // The write need not be a mutating call on the result: its ELEMENTS are
+    // frozen with the constant, whether reached by index or by iterating the
+    // unbound result in place.
+    {
+      name: 'declines to freeze an array whose flatMap result element is written',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const copies = ITEMS.flatMap((item) => [item]);',
+        '  copies[0].n = 2;',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose unbound flatMap result is iterated and written',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  ITEMS.flatMap((item) => [item]).forEach((copy) => {',
+        '    copy.n = 2;',
+        '  });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
   ],
   invalid: [
     // Issue #2055: a JSX tag name is spelled twice, but the scope manager
@@ -6225,6 +6426,169 @@ const Probe = () => {
         'export const run = () => {',
         '  const doubled = Object.values(CONFIG).map((x) => x.n * 2);',
         '  doubled.push(3);',
+        '};',
+      ].join('\n'),
+    },
+    // Issue #2350 negative controls: enrolling `flatMap` must not become a
+    // licence to decline for every call spelling it. A mapper that COMPUTES
+    // widens whatever the receiver holds, so its result carries none of the
+    // frozen type and the report is still owed — each of these compiles with
+    // the assertion appended, measured against a real program.
+    {
+      name: 'freezes an array whose flatMap mapper doubles the element',
+      code: [
+        'const NUMS = [1, 2];',
+        'export const run = () => {',
+        '  const doubled = NUMS.flatMap((n) => [n * 2]);',
+        '  doubled.push(3);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const NUMS = [1, 2] as const;',
+        'export const run = () => {',
+        '  const doubled = NUMS.flatMap((n) => [n * 2]);',
+        '  doubled.push(3);',
+        '};',
+      ].join('\n'),
+    },
+    {
+      name: 'freezes an array whose flatMap mapper stringifies the element property',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const labels = ITEMS.flatMap((item) => [String(item.n)]);',
+        "  labels.push('y');",
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const run = () => {',
+        '  const labels = ITEMS.flatMap((item) => [String(item.n)]);',
+        "  labels.push('y');",
+        '};',
+      ].join('\n'),
+    },
+    {
+      name: 'freezes an array whose destructured flatMap mapper interpolates the property',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const labels = ITEMS.flatMap(({ n }) => [`#${n}`]);',
+        "  labels.push('y');",
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const run = () => {',
+        '  const labels = ITEMS.flatMap(({ n }) => [`#${n}`]);',
+        "  labels.push('y');",
+        '};',
+      ].join('\n'),
+    },
+    {
+      name: 'freezes an array whose flatMap mapper returns a fresh literal',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        "  const labels = ITEMS.flatMap(() => ['x']);",
+        "  labels.push('y');",
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const run = () => {',
+        "  const labels = ITEMS.flatMap(() => ['x']);",
+        "  labels.push('y');",
+        '};',
+      ].join('\n'),
+    },
+    // The position the element arrives in stays load-bearing: the index is a
+    // `number` whatever the receiver holds.
+    {
+      name: 'freezes an array whose flatMap mapper wraps the index',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const indexes = ITEMS.flatMap((item, index) => [index]);',
+        '  indexes.push(3);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const run = () => {',
+        '  const indexes = ITEMS.flatMap((item, index) => [index]);',
+        '  indexes.push(3);',
+        '};',
+      ].join('\n'),
+    },
+    // The flatMap arm keys on the WRITE too, exactly as the map arm does.
+    {
+      name: 'freezes an array whose flatMap result is only read',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const counts = ITEMS.flatMap((item) => [item.n]);',
+        '  console.log(counts.length);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const run = () => {',
+        '  const counts = ITEMS.flatMap((item) => [item.n]);',
+        '  console.log(counts.length);',
+        '};',
+      ].join('\n'),
+    },
+    // A conditional's TEST decides which branch runs rather than what the
+    // expression is typed as, and a wrapper around computed parts computes as
+    // surely as a bare expression does.
+    {
+      name: 'freezes an array whose flatMap mapper reaches the element only in the ternary test',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        "  const flags = ITEMS.flatMap((item) => (item.n > 0 ? ['yes'] : ['no']));",
+        '  flags.reverse();',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const run = () => {',
+        "  const flags = ITEMS.flatMap((item) => (item.n > 0 ? ['yes'] : ['no']));",
+        '  flags.reverse();',
+        '};',
+      ].join('\n'),
+    },
+    {
+      name: 'freezes an array whose flatMap ternary branches both compute',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const values = ITEMS.flatMap((item) => (item.n > 0 ? [item.n * 2] : [0]));',
+        '  values.push(3);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const run = () => {',
+        '  const values = ITEMS.flatMap((item) => (item.n > 0 ? [item.n * 2] : [0]));',
+        '  values.push(3);',
         '};',
       ].join('\n'),
     },
