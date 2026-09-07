@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
 import { fetchAllConversationFiles, fetchChangedFiles } from './change-log';
+import { isDirectExecution } from './isDirectExecution';
 
 function filterLintableFiles(files: readonly string[]) {
   return files.filter((file) => {
@@ -81,6 +81,6 @@ function executeMain() {
   performLintDiff({ conversationId, generationId });
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (isDirectExecution('lint-diff.ts')) {
   executeMain();
 }

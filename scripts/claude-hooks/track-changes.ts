@@ -1,6 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import type { ChangeLog } from './change-log';
 import {
   LOG_FILE,
@@ -8,6 +7,7 @@ import {
   modifyHeartbeat,
   workspaceRootOf,
 } from './change-log';
+import { isDirectExecution } from './isDirectExecution';
 
 // Claude Code PostToolUse input format
 export type Input = {
@@ -136,6 +136,6 @@ function executeMain() {
   }
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (isDirectExecution('track-changes.ts')) {
   executeMain();
 }
