@@ -49,3 +49,13 @@ tmp/
 
 # Ignore interactive question-prompt rule not shipped with the plugin
 .cursor/rules/do-not-hesitate-to-ask-questions.mdc
+
+# Per-machine Claude Code settings (a BLUMINT_GOVERNOR_CLI path, local permissions);
+# the maintainer stages with `git add -A`, so an untracked copy would be committed
+.claude/settings.local.json
+.claude/worktrees/
+
+# The shim harness sits in a directory named `lib`, which the built-files rule
+# above ignores unanchored. Without this negation the three `.test.mjs` shim
+# suites ship without the module they import.
+!.claude/hooks/lib/
