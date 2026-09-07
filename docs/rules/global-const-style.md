@@ -621,6 +621,37 @@ still an **iteration** of the constant: the element it hands its callback
 carries the frozen type even when the result does not — see [Constants that are
 mutated later](#constants-that-are-mutated-later).
 
+The result is typed from what the callback hands back, whichever constant that
+value belongs to. A mapper handing back **another** constant — rather than the
+element it was given — types the copy from that one instead, so freezing it
+narrows the copy's elements exactly as the element type would:
+
+```ts
+// OTHER is not frozen: `xs` would be `{ readonly n: 1 }[]`, so
+// `xs.push({ n: 9 })` would be TS2322. ITEMS keeps its report and its fix —
+// its own element type reaches the result never.
+const OTHER = { n: 1 };
+const ITEMS = [{ n: 1 }];
+export const run = () => {
+  const xs = ITEMS.map(() => OTHER);
+  xs.push({ n: 9 });
+};
+```
+
+That value is read on the same terms as one carrying the element: a property of
+the constant, a container literal built around it, a conditional branch or
+logical operand, a closure, an `await`, a generator's `yield` and the alias
+chain that renames it all reach the result — in `map`, `flatMap` and
+`Array.from(X, fn)` alike — while an arithmetic operand or a call still widens
+and keeps the report. The constant is resolved through the file's own scopes
+rather than by name, so a callback-local binding **spelled** like the constant
+is a different value and withholds nothing, and a **local** constant is not one
+this rule freezes at all. An argument is not a return: `ITEMS.concat(OTHER)`
+takes its element type from the receiver, so `OTHER` is still frozen there. A
+callback passed by **name** (`const pick = () => OTHER; ITEMS.map(pick)`) is not
+read — the mapper's own value is found at the call, and a named callback keeps
+its value at its declaration.
+
 A copy that is **iterated in place** rather than bound to a name carries the
 type into the element the iteration binds — `[...ITEMS].forEach(…)` and
 `for (const item of ITEMS.slice())` are withheld on a write through that

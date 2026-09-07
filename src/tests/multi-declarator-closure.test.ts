@@ -1324,7 +1324,15 @@ describe('the multi-declarator probe is load-bearing', () => {
     // withholds the assertion from them. The rule change ALONE moves 444 to
     // 442 — below where it starts — so the rise is the corpus, and the gate did
     // not widen.
-    expect(totals.mutationLicensed).toBeLessThanOrEqual(540); // measured 494
+    //
+    // #2356 is the fifth, attributed the same way: 512 to 592 with the
+    // handed-back-constant fixtures alone under the rule as it stood, back to
+    // 546 once the mapper-result derivation withholds the assertion from them.
+    // The rule change ALONE leaves the count at 512 — the value the corpus
+    // already stood at before either change, the 494 the ceiling was last cut
+    // against having drifted there since — so the rise is the corpus and the
+    // gate did not widen.
+    expect(totals.mutationLicensed).toBeLessThanOrEqual(580); // measured 546
     expect(totals.destructionLicensed).toBeLessThanOrEqual(10); // measured 2
     /**
      * The sibling-is-subject skip, pinned by rule MEMBERSHIP rather than by
