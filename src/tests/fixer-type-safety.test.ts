@@ -545,19 +545,35 @@ for (const control of CONTROLS) {
  * control that exercises the cap directly rather than through whichever rule
  * happens to be largest.
  *
- * 241 answers a bind that is NOT that one, and the distinction is what licenses
- * one more cut. Measured with the cap lifted, `global-const-style` produces 240
+ * 241 answered a bind that was NOT that one, and the distinction licensed one
+ * more cut. Measured with the cap lifted, `global-const-style` produces 240
  * pairs — the bound dropped no pair of it at all. What tripped the pin is that
  * `skipped` counts CASES arriving after the budget is spent rather than pairs
  * lost, so a rule reaching the cap EXACTLY has whatever follows its last fixable
- * fixture — `valid` controls, which yield no pair — recorded as a discard. One
- * pair of clearance ends that: the rule is scanned to its end, and
- * `enforce-assert-safe-object-key` at 242 pairs still cannot fit, so the
- * liveness floor keeps witnessing the cap execute. The window is ONE wide
- * afterwards, so the next bind on either side has no re-cut left; whoever meets
- * it should make the replacement the paragraph above names.
+ * fixture — `valid` controls, which yield no pair — recorded as a discard.
+ *
+ * That left the window ONE wide, between `global-const-style` at 240 pairs and
+ * `enforce-assert-safe-object-key` at 242, which is the condition the paragraph
+ * above says to answer with a replacement rather than a re-cut. This is that
+ * replacement. The bound sits clear of every rule, so it discards nothing, and
+ * the liveness it used to borrow from whichever rule happened to be largest is
+ * asserted directly instead: `withinPairBudget` is the single predicate both
+ * channels spend their budget through, and its boundary is exercised by a
+ * control below. A bound that separates no two rules cannot witness itself, and
+ * pinning it to a rule's fixture count made every fixture added to a hot rule a
+ * CI failure that said nothing about fixer safety.
+ *
+ * The membership pin keeps its meaning either way: it now reads empty, and a
+ * rule joining is still the conscious edit it always forced. What it no longer
+ * does is fail because a rule GREW.
  */
-const MAX_PAIRS_PER_RULE = 241;
+const MAX_PAIRS_PER_RULE = 400;
+
+/**
+ * The one place a per-rule budget is spent, shared by the fix and suggestion
+ * channels so a control on this predicate speaks for both.
+ */
+const withinPairBudget = (produced: number) => produced < MAX_PAIRS_PER_RULE;
 
 /**
  * `DECLARES_INTO_SHARED_SCOPE` is imported from `fixtureTypeProgram` rather than
@@ -718,7 +734,7 @@ for (const rule of fixableRules) {
   let skipped = 0;
   const collect = (testCase: FixtureCase, filenames: string[]) => {
     if (!filenames.length) return;
-    if (fixed >= MAX_PAIRS_PER_RULE) {
+    if (!withinPairBudget(fixed)) {
       skipped++;
       return;
     }
@@ -783,14 +799,14 @@ for (const rule of suggestionRules) {
   let suggestionSkipped = 0;
   const collect = (testCase: FixtureCase, filenames: string[]) => {
     if (!filenames.length) return;
-    if (emitted >= MAX_PAIRS_PER_RULE) {
+    if (!withinPairBudget(emitted)) {
       suggestionSkipped++;
       return;
     }
     const result = suggestWith(PREFIX + rule, testCase, filenames);
     if (!result) return;
     for (const output of result.outputs) {
-      if (emitted >= MAX_PAIRS_PER_RULE) break;
+      if (!withinPairBudget(emitted)) break;
       suggestionPairs.push({
         rule,
         name: `${rule}__s${emitted}.${
@@ -1259,11 +1275,11 @@ describe('an autofix must not turn compiling code into non-compiling code', () =
     expect(coverage.covered.length).toBe(
       fixableRules.length - Object.keys(UNCOVERED_FIXERS).length,
     );
-    expect(assertedPairs.length).toBeGreaterThanOrEqual(3800); // measured 4,571
+    expect(assertedPairs.length).toBeGreaterThanOrEqual(3800); // measured 4,598
     expect(corpus.failures).toEqual([]);
     // The cap's DENOMINATOR. Without it the ceilings below read as healthy on a
-    // corpus that collapsed to nothing. 14,758 when measured.
-    expect(harvested).toBeGreaterThanOrEqual(13000); // measured 15,192
+    // corpus that collapsed to nothing. 15,295 when measured.
+    expect(harvested).toBeGreaterThanOrEqual(13000); // measured 15,295
   });
 
   /**
@@ -1280,23 +1296,27 @@ describe('an autofix must not turn compiling code into non-compiling code', () =
    * the cap makes a fifth one a conscious edit rather than a silent loss.
    */
   it('accounts for every case it discards before compiling', () => {
-    // 3 of 15,295 harvested, in exactly this one rule. The COUNT is left out
-    // of the pin because it moves with every fixture added to a capped rule;
-    // the membership is what carries the meaning. Three rules left this set
-    // when the cap was re-cut to 200 — a rule LEAVING it is a coverage gain, so
-    // only a rule joining needs the conscious edit this pin forces. It has
-    // forced that edit twice, both times `global-const-style` joining, and both
-    // times the cap was re-cut to carry it — to 240, then to 241 — for the
-    // reasons recorded on MAX_PAIRS_PER_RULE.
+    // Empty, and the membership is still what carries the meaning: a rule
+    // joining remains the conscious edit this pin has always forced. Three
+    // rules left the set when the cap was re-cut to 200 — a rule LEAVING it is
+    // a coverage gain. It forced the edit twice more, both times
+    // `global-const-style` joining, and the second of those left the bound one
+    // pair from the next rule, which is why it sits clear of every rule now.
     expect(
       coverage.cappedTail.map((entry) => entry.split(' ')[0]).sort(),
-    ).toEqual(['enforce-assert-safe-object-key']);
+    ).toEqual([]);
     // A ceiling just above the measurement, per the floor-drift discipline in
     // reverse: a rise is a conscious edit, not something to discover later.
-    expect(capped).toBeLessThanOrEqual(30); // measured 3
-    // ...and a floor, so a cap that stopped applying at all — which would make
-    // the rule list above stale rather than green — cannot pass quietly.
-    expect(capped).toBeGreaterThan(0);
+    expect(capped).toBeLessThanOrEqual(30); // measured 0
+    // The liveness the old `capped > 0` floor borrowed from whichever rule
+    // happened to be largest, asserted directly on the predicate both channels
+    // spend their budget through. A bound clear of every rule cannot witness
+    // itself through the corpus, and pinning it to a rule's fixture count made
+    // every fixture added to a hot rule a CI failure that said nothing about
+    // fixer safety.
+    expect(withinPairBudget(MAX_PAIRS_PER_RULE - 1)).toBe(true);
+    expect(withinPairBudget(MAX_PAIRS_PER_RULE)).toBe(false);
+    expect(withinPairBudget(MAX_PAIRS_PER_RULE + 1)).toBe(false);
 
     // 23 when measured: fixtures that declare into the shared scope, which the
     // single-program harness cannot compile side by side.
