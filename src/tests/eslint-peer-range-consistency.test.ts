@@ -3,7 +3,6 @@ import { join } from 'path';
 import { satisfies } from 'semver';
 import { Linter } from 'eslint';
 import { parse } from '@typescript-eslint/typescript-estree';
-import { rules } from '../index';
 import {
   harvestFixtureCorpus,
   defineCorpusParsers,
@@ -13,6 +12,9 @@ import {
   severityWithOptions,
   FixtureCase,
 } from '../utils/fixtureCorpus';
+import { loadPlugin } from '../utils/loadPlugin';
+
+const { rules } = loadPlugin();
 
 /**
  * The published `peerDependencies.eslint` range is a promise about which ESLint

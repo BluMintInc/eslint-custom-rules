@@ -1,6 +1,5 @@
 import { Linter } from 'eslint';
 import { TSESLint } from '@typescript-eslint/utils';
-import { rules } from '../index';
 import {
   harvestFixtureCorpus,
   defineCorpusParsers,
@@ -10,6 +9,9 @@ import {
   severityWithOptions,
   FixtureCase,
 } from '../utils/fixtureCorpus';
+import { loadPlugin } from '../utils/loadPlugin';
+
+const { rules } = loadPlugin();
 
 /**
  * Does every visitor key a rule registers actually FIRE?

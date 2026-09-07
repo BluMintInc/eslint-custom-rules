@@ -15,6 +15,7 @@
 jest.mock('typescript', () => ({ version: '7.0.2' }));
 
 import * as path from 'path';
+import { loadPlugin } from '../utils/loadPlugin';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { loadRuleNames } = require('../../scripts/load-rule-names');
@@ -31,19 +32,13 @@ const EXPECTED_RULE_NAMES: string[] = loadRuleNames(
   path.resolve(__dirname, '../..'),
 );
 
-type PluginShape = {
-  rules: Record<string, { create?: unknown }>;
-  configs: { recommended: { rules: Record<string, unknown> } };
-};
-
 describe('plugin loads against a compiler without a root-exported API', () => {
   it('imports the barrel without throwing', () => {
-    expect(() => require('..')).not.toThrow();
+    expect(() => loadPlugin()).not.toThrow();
   });
 
   it('still exposes every rule as a usable rule module', () => {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const plugin = require('..') as PluginShape;
+    const plugin = loadPlugin();
     const names = Object.keys(plugin.rules);
 
     expect(EXPECTED_RULE_NAMES.length).toBeGreaterThan(150); // measured 194
@@ -56,8 +51,7 @@ describe('plugin loads against a compiler without a root-exported API', () => {
   });
 
   it('still exposes the recommended config', () => {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const plugin = require('..') as PluginShape;
+    const plugin = loadPlugin();
     const configured = Object.keys(plugin.configs.recommended.rules);
 
     // Some rules ship deliberately absent from `recommended`, so this cannot be

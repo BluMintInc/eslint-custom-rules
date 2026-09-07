@@ -50,7 +50,13 @@ use this to rehearse).
      verify the fix's tests actually fail before / pass after.
 5. **Validate.** `npx tsx scripts/maintainer.ts validate` (runs build + lint +
    test — the same gate the stop hook enforces). If it fails, iterate on the fix;
-   do not proceed until green.
+   do not proceed until green. Its jest step is scoped to the branch's changed
+   files and reserved against the machine-wide governor, through the same builder
+   `npm run test:related` uses, so it queues behind a peer repo's run rather than
+   racing it. A `FAIL` reported after twenty minutes with every suite green is
+   the governor's child ceiling rather than a test failure: recover by re-running
+   `npm run test:related -- <subset>` in batches that each fit, never by
+   stripping the governor from the command.
 6. **Commit + merge.** Derive the scope deterministically — do not hand-author
    it: `npx tsx scripts/maintainer.ts scope` → `{rule, changeType}`. It reads the
    branch diff (incl. untracked new files): a new `src/rules/<rule>.ts` ⇒ `feat`,

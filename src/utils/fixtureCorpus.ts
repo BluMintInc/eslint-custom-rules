@@ -6,6 +6,7 @@ import {
   harvestRuleTesterCases,
   HarvestResult,
 } from './harvestRuleTesterCases';
+import { loadPlugin } from './loadPlugin';
 
 /**
  * The fixture corpus every fixer guard probes, keyed by RULE NAME.
@@ -24,11 +25,7 @@ import {
  * and what a `Linter`-based guard needs.
  */
 
-/* eslint-disable @typescript-eslint/no-var-requires */
-const plugin = require('../index') as {
-  rules: Record<string, { meta?: { hasSuggestions?: boolean } }>;
-};
-/* eslint-enable @typescript-eslint/no-var-requires */
+const plugin = loadPlugin();
 
 const RULES_DIR = path.join(__dirname, '..', 'rules');
 

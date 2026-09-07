@@ -16,7 +16,30 @@
     "BASH_MAX_TIMEOUT_MS": "7200000",
     "CLAUDE_CODE_EFFORT_LEVEL": "xhigh"
   },
+  "autoMemoryEnabled": false,
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/msys-argv-guard.sh\"",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/windows-tmp-guard.sh\"",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/gate-containment-guard.sh\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Edit|Write",
@@ -76,7 +99,18 @@
       "Bash(git push * main)",
       "Bash(git push * develop)",
       "Bash(git push --force*)",
-      "Bash(git reset --hard*)"
+      "Bash(git reset --hard*)",
+      "Bash(git stash)",
+      "Bash(git stash -*)",
+      "Bash(git stash push*)",
+      "Bash(git stash save*)",
+      "Bash(git stash pop*)",
+      "Bash(git stash apply*)",
+      "Bash(git stash drop*)",
+      "Bash(git stash clear*)",
+      "Bash(git stash branch*)",
+      "Bash(git stash create*)",
+      "Bash(git stash store*)"
     ],
     "defaultMode": "bypassPermissions"
   }

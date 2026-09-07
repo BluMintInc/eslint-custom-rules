@@ -247,8 +247,14 @@ async function run() {
     }
   }
 
-  const successes = results.filter((result) => result.success);
-  const failures = results.filter((result) => !result.success);
+  const successes = results.filter(
+    (result): result is Extract<LaunchResult, { success: true }> =>
+      result.success,
+  );
+  const failures = results.filter(
+    (result): result is Extract<LaunchResult, { success: false }> =>
+      !result.success,
+  );
 
   console.log('\nSummary:');
   console.log(

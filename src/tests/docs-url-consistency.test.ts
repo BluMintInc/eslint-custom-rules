@@ -1,12 +1,8 @@
 import fs from 'fs';
 import path from 'path';
+import { loadPlugin } from '../utils/loadPlugin';
 
-// Using require to avoid test build-time ESM interop issues; the test runner
-// only needs the plugin object shape (rules), not types.
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const plugin = require('..') as {
-  rules: Record<string, { meta?: { docs?: { url?: string } } }>;
-};
+const plugin = loadPlugin();
 
 const DOCS_DIR = path.join(__dirname, '../../docs/rules');
 

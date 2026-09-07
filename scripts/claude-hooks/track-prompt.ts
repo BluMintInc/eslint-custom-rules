@@ -1,11 +1,11 @@
 import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import {
   isRuleRequestConversation,
   markAsRuleRequest,
   modifyConversationLastActive,
   setLastUserMessage,
 } from './change-log';
+import { isDirectExecution } from './isDirectExecution';
 
 // Aligns with Claude Code hook payloads so prompts can be correlated by session_id.
 export type Input = {
@@ -78,6 +78,6 @@ function executeMain() {
   console.log(JSON.stringify(output));
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (isDirectExecution('track-prompt.ts')) {
   executeMain();
 }

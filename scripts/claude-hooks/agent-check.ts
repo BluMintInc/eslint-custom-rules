@@ -19,6 +19,7 @@ import {
 import type { Input, AgentCheckResult } from './types';
 import { validateRuleStructure } from './validate-rule-structure';
 import { governShellCommand, isGovernorStartupFailure } from '../governor';
+import { resolveRelatedTestOperands } from '../related-tests';
 
 const EXPAND_TESTS_PROMPT = `
 Your implementation looks good so far! Now let's ensure comprehensive test coverage.
@@ -188,9 +189,14 @@ export async function validateTests(params: {
   let testCommand: string;
   let bareTestCommand: string;
 
+  // A registry change relates to nothing once the plugin loads through a
+  // computed path, so the operands carry the cheap registry guards with them.
+  // Shared with `npm run test:related`, so the Stop hook and that command agree
+  // on what a registry change runs.
+  const filesArg = resolveRelatedTestOperands(changedTypeScriptFiles).join(' ');
+
   if (sourceFiles.length > 0) {
     // Scenario A: Source Files Changed - Enforce 100% Coverage
-    const filesArg = changedTypeScriptFiles.join(' ');
 
     // Build --collectCoverageFrom flags for each source file to strictly scope coverage
     const coverageFromFlags = sourceFiles
@@ -210,7 +216,6 @@ export async function validateTests(params: {
     )}`;
   } else {
     // Scenario B: Only Tests/Exclusions Changed - Standard Check without coverage enforcement
-    const filesArg = changedTypeScriptFiles.join(' ');
     const inner = `${JEST_BASE_COMMAND} --findRelatedTests ${filesArg} ${JEST_FLAGS}`;
     bareTestCommand = inner;
     testCommand = governShellCommand(inner);

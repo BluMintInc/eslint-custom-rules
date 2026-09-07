@@ -6,11 +6,9 @@ import {
   lineScopedDirectives,
   suppressesRuleUnderTest,
 } from '../utils/validCaseFalsifiability';
+import { loadPlugin } from '../utils/loadPlugin';
 
-// Using require to avoid test build-time ESM interop issues; only the rule
-// name set is needed here.
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const plugin = require('..') as { rules: Record<string, unknown> };
+const plugin = loadPlugin();
 
 const RULE = 'foo-bar';
 

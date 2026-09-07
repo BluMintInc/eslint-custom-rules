@@ -2,7 +2,9 @@ import { Linter } from 'eslint';
 import * as tsParser from '@typescript-eslint/parser';
 import { ruleTesterTs } from '../utils/ruleTester';
 import { logicalTopToBottomGrouping } from '../rules/logical-top-to-bottom-grouping';
-import { configs, rules } from '../index';
+import { loadPlugin } from '../utils/loadPlugin';
+
+const { configs, rules } = loadPlugin();
 
 ruleTesterTs.run('logical-top-to-bottom-grouping', logicalTopToBottomGrouping, {
   valid: [

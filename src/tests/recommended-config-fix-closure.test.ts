@@ -9,17 +9,9 @@ import {
   parserKeyFor,
   parserOptionsFor,
 } from '../utils/fixtureCorpus';
+import { loadPlugin } from '../utils/loadPlugin';
 
-// Using require to avoid test build-time ESM interop issues; the guard only
-// needs the plugin object shape (rules, configs), not types.
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const plugin = require('..') as {
-  rules: Record<
-    string,
-    { meta?: { fixable?: string; hasSuggestions?: boolean } }
-  >;
-  configs: { recommended: { rules: Record<string, unknown> } };
-};
+const plugin = loadPlugin();
 
 const PREFIX = '@blumintinc/blumint/';
 const DOCS_DIR = path.join(__dirname, '../../docs/rules');

@@ -2,13 +2,16 @@ import { join } from 'node:path';
 import {
   GOVERNOR_CLI_ENV,
   GOVERNOR_PROFILE,
+  GOVERNOR_TSCONFIG_ENV,
   governArgv,
   governShellCommand,
   isGovernorStartupFailure,
   resolveGovernorCli,
+  resolveGovernorTsconfig,
 } from './governor';
 
 const CLI = '/home/agent/agora/scripts/exec-governor/cli.ts';
+const TSCONFIG = '/home/agent/agora/tsconfig.json';
 const present = () => true;
 const absent = () => false;
 
@@ -66,19 +69,48 @@ describe('resolveGovernorCli', () => {
   });
 });
 
+/**
+ * The governor resolves `functions/*` through a path alias declared in its own
+ * clone's tsconfig, and `tsx` reads that tsconfig from the INVOKING process's
+ * directory. Launched from this repo it therefore dies at module resolution
+ * before jest starts, which `isGovernorStartupFailure` then degrades to a bare
+ * run — so every governed gate on a shared box was silently ungoverned until
+ * the client named the tsconfig itself.
+ */
+describe('resolveGovernorTsconfig', () => {
+  it('names the tsconfig at the root of the governor’s own clone', () => {
+    expect(resolveGovernorTsconfig(CLI)).toBe(TSCONFIG);
+  });
+
+  /** Derived from the CLI path, so no machine-specific string lives here. */
+  it('derives the path from wherever the clone sits', () => {
+    expect(
+      resolveGovernorTsconfig('/opt/checkouts/a/scripts/exec-governor/cli.ts'),
+    ).toBe('/opt/checkouts/a/tsconfig.json');
+  });
+
+  it('is the variable tsx reads', () => {
+    expect(GOVERNOR_TSCONFIG_ENV).toBe('TSX_TSCONFIG_PATH');
+  });
+});
+
 describe('governArgv', () => {
   it('passes the command through untouched when no governor is configured', () => {
     expect(
-      governArgv('npx', ['jest', '--passWithNoTests'], {
+      governArgv('node', ['./node_modules/jest/bin/jest'], {
         env: {},
         fileExists: present,
       }),
-    ).toEqual(['npx', ['jest', '--passWithNoTests']]);
+    ).toEqual({
+      command: 'node',
+      args: ['./node_modules/jest/bin/jest'],
+      env: {},
+    });
   });
 
   it('copies the argv rather than aliasing the caller’s array', () => {
-    const args = ['jest'];
-    const [, produced] = governArgv('npx', args, {
+    const args = ['./node_modules/jest/bin/jest'];
+    const { args: produced } = governArgv('node', args, {
       env: {},
       fileExists: present,
     });
@@ -88,24 +120,34 @@ describe('governArgv', () => {
 
   it('routes through the governor with the command after the separator', () => {
     expect(
-      governArgv('npx', ['jest', '--findRelatedTests', 'a.ts'], {
+      governArgv('node', ['./node_modules/jest/bin/jest', '-h'], {
         env: { [GOVERNOR_CLI_ENV]: CLI },
         fileExists: present,
       }),
-    ).toEqual([
-      'npx',
-      [
+    ).toEqual({
+      command: 'npx',
+      args: [
         'tsx',
         CLI,
         'run',
         `--profile=${GOVERNOR_PROFILE}`,
         '--',
-        'npx',
-        'jest',
-        '--findRelatedTests',
-        'a.ts',
+        'node',
+        './node_modules/jest/bin/jest',
+        '-h',
       ],
-    ]);
+      env: { [GOVERNOR_TSCONFIG_ENV]: TSCONFIG },
+    });
+  });
+
+  /**
+   * Additions only, never a copy of the caller's environment: the runner merges
+   * this over its own, and a full copy would make every caller's environment a
+   * value this module decides.
+   */
+  it('adds nothing to the environment of an ungoverned run', () => {
+    const { env } = governArgv('node', [], { env: {}, fileExists: present });
+    expect(env).toEqual({});
   });
 
   it('reserves against the jest profile, the one sizing a worker fleet', () => {
@@ -128,7 +170,31 @@ describe('governShellCommand', () => {
         env: { [GOVERNOR_CLI_ENV]: CLI },
         fileExists: present,
       }),
-    ).toBe(`npx tsx '${CLI}' run --profile=${GOVERNOR_PROFILE} -- ${bare}`);
+    ).toBe(
+      `${GOVERNOR_TSCONFIG_ENV}='${TSCONFIG}' npx tsx '${CLI}' run --profile=${GOVERNOR_PROFILE} -- ${bare}`,
+    );
+  });
+
+  /**
+   * The assignment sits outside the wrapper for the same reason the caller's
+   * own does: the governor execs its program directly, so an assignment handed
+   * to it as the program is an ENOENT. Here the caller's shell applies it and
+   * `tsx` — which is what needs it — reads it before it loads the governor.
+   */
+  it('assigns the tsconfig ahead of the npx that loads the governor', () => {
+    const governed = governShellCommand(bare, {
+      env: { [GOVERNOR_CLI_ENV]: CLI },
+      fileExists: present,
+    });
+    expect(governed.indexOf(GOVERNOR_TSCONFIG_ENV)).toBeLessThan(
+      governed.indexOf('npx tsx'),
+    );
+  });
+
+  it('leaves an ungoverned command free of the assignment', () => {
+    expect(
+      governShellCommand(bare, { env: {}, fileExists: present }),
+    ).not.toContain(GOVERNOR_TSCONFIG_ENV);
   });
 
   it('quotes a path holding a space so it stays one argument', () => {
@@ -145,17 +211,18 @@ describe('governShellCommand', () => {
    * The governor execs its program directly rather than through a shell, so an
    * environment assignment must stay OUTSIDE the wrapper. Were the wrapper to
    * absorb it, `CLAUDE_AGENT_COVERAGE_CHECK=true` would become the program name
-   * and the coverage gate would die with ENOENT. `agent-check.ts` prefixes the
-   * assignment to the string this returns; this pins the shape it relies on.
+   * and the coverage gate would die with ENOENT. `agent-check.ts` prefixes its
+   * own assignment to the string this returns, so the two stack into one
+   * assignment run rather than fighting for the head position.
    */
-  it('begins with the governor invocation, leaving room for an env prefix', () => {
+  it('begins with an assignment, leaving room for the caller’s own prefix', () => {
     const governed = governShellCommand(bare, {
       env: { [GOVERNOR_CLI_ENV]: CLI },
       fileExists: present,
     });
-    expect(governed.startsWith('npx tsx ')).toBe(true);
-    expect(`CLAUDE_AGENT_COVERAGE_CHECK=true ${governed}`).toContain(
-      `=true npx tsx `,
+    expect(governed.startsWith(`${GOVERNOR_TSCONFIG_ENV}=`)).toBe(true);
+    expect(`CLAUDE_AGENT_COVERAGE_CHECK=true ${governed}`).toMatch(
+      /^CLAUDE_AGENT_COVERAGE_CHECK=true TSX_TSCONFIG_PATH='[^']+' npx tsx /,
     );
   });
 });
@@ -265,6 +332,45 @@ describe('the jest worker grant', () => {
       'utf-8',
     );
     expect(source).toContain(`'${GRANT_ENV}'`);
+  });
+
+  /**
+   * An ungoverned run is a fallback lane, never a faster one, so its fleet is
+   * held to the share the governor would have granted it. On the shared office
+   * box the available-memory rule alone sized one run at 13 workers, because it
+   * reserves a constant while the pool it competes with reserves a share.
+   *
+   * The sample is that box: 31 GB and 32 cores, with available memory pinned
+   * high enough not to bind, so only the grant-equivalent bound can decide the
+   * answer. 5 is what the governor grants a jest run there.
+   */
+  it('bounds an ungoverned fleet to a governed grant’s size', () => {
+    const AVAILABLE_GB_CACHE_KEY = '__blumintJestAvailableGb';
+    const cache = globalThis as Record<string, unknown>;
+    const previousAvailable = cache[AVAILABLE_GB_CACHE_KEY];
+    const previousGrant = process.env[GRANT_ENV];
+    const previousCi = process.env.CI;
+    const previousCoverage = process.env.COLLECT_COVERAGE;
+    set(GRANT_ENV, undefined);
+    set('CI', undefined);
+    set('COLLECT_COVERAGE', undefined);
+    cache[AVAILABLE_GB_CACHE_KEY] = 64;
+    try {
+      jest.resetModules();
+      jest.doMock('node:os', () => ({
+        cpus: () => new Array(32).fill({}),
+        totalmem: () => 31 * 1024 * 1024 * 1024,
+      }));
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      expect(require('../jest.config.js').maxWorkers).toBe(5);
+    } finally {
+      jest.dontMock('node:os');
+      cache[AVAILABLE_GB_CACHE_KEY] = previousAvailable;
+      set(GRANT_ENV, previousGrant);
+      set('CI', previousCi);
+      set('COLLECT_COVERAGE', previousCoverage);
+      jest.resetModules();
+    }
   });
 });
 

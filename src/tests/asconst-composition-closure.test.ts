@@ -7,6 +7,7 @@ import {
   severityWithOptions,
   silentWithoutProgramRuleNames,
 } from '../utils/fixtureCorpus';
+import { loadPlugin } from '../utils/loadPlugin';
 
 /**
  * A sibling rule's `as const` must not silence another rule.
@@ -31,11 +32,7 @@ import {
  */
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const plugin = require('..') as {
-  rules: Record<string, any>;
-  configs: { recommended: { rules: Record<string, unknown> } };
-};
+const plugin = loadPlugin();
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const tsParser = require('@typescript-eslint/parser');
 

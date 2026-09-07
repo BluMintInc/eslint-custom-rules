@@ -40,15 +40,17 @@ import {
   FixtureCase,
 } from '../utils/fixtureCorpus';
 import { restrictedProductionBreaches } from '../utils/restrictedProductions';
+import { loadPlugin } from '../utils/loadPlugin';
 
-/* eslint-disable @typescript-eslint/no-var-requires */
-const plugin = require('../index') as { rules: Record<string, any> };
+const plugin = loadPlugin();
+
 /**
  * A bare `Linter` does not validate options against `meta.schema`, so a payload
  * real ESLint would REJECT manufactures breakage no consumer can reach. This is
  * ESLint's own validator, borrowed for the same reason and from the same place
  * `cross-option-crash-closure` borrows it.
  */
+/* eslint-disable @typescript-eslint/no-var-requires */
 const eslintLib = require('path').dirname(require.resolve('eslint'));
 const { getRuleOptionsSchema } = require(eslintLib +
   '/config/flat-config-helpers.js');
@@ -357,7 +359,12 @@ const CONTROL_RULES: Record<string, any> = {
 const linter = new Linter();
 defineCorpusParsers(linter);
 for (const [name, rule] of Object.entries(plugin.rules)) {
-  linter.defineRule(PREFIX + name, rule);
+  /**
+   * `@types/eslint` and `@typescript-eslint/utils` model the same runtime rule
+   * object with structurally incompatible types, so registering one with the
+   * other's `Linter` is a cast at the package boundary.
+   */
+  linter.defineRule(PREFIX + name, rule as never);
 }
 for (const [name, rule] of Object.entries(CONTROL_RULES)) {
   linter.defineRule(PREFIX + name, rule);

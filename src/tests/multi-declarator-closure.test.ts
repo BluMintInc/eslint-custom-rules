@@ -93,12 +93,10 @@ import {
   severityWithOptions,
   silentWithoutProgramRuleNames,
 } from '../utils/fixtureCorpus';
+import { loadPlugin } from '../utils/loadPlugin';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const plugin = require('../index') as {
-  rules: Record<string, { meta?: { fixable?: string } }>;
-};
+const plugin = loadPlugin();
 
 const PREFIX = '@blumintinc/blumint/';
 

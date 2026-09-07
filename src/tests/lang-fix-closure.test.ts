@@ -71,6 +71,7 @@ import {
   defineCorpusParsers,
   defaultFilenameFor,
 } from '../utils/fixtureCorpus';
+import { loadPlugin } from '../utils/loadPlugin';
 
 const PREFIX = '@blumintinc/blumint/';
 /**
@@ -663,8 +664,7 @@ const generatedJsonDocuments = (): Document[] => {
 describe('the JSON and Markdown fixers write only what they own', () => {
   const linter = new Linter();
   defineCorpusParsers(linter);
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const plugin = require('../index');
+  const plugin = loadPlugin();
   for (const [name, rule] of Object.entries(plugin.rules)) {
     linter.defineRule(`${PREFIX}${name}`, rule as never);
   }

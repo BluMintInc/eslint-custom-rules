@@ -1,11 +1,11 @@
 import fs from 'fs';
 import path from 'path';
 import { Linter } from 'eslint';
+import { loadPlugin } from './loadPlugin';
 
-/* eslint-disable @typescript-eslint/no-var-requires */
-const plugin = require('../index') as { rules: Record<string, unknown> };
+const plugin = loadPlugin();
+// eslint-disable-next-line @typescript-eslint/no-var-requires
 const tsParser = require('@typescript-eslint/parser');
-/* eslint-enable @typescript-eslint/no-var-requires */
 
 /**
  * Shared machinery for reading the documented examples out of `docs/rules/*.md`

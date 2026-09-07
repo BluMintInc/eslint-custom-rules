@@ -21,7 +21,7 @@ user-invocable: false
 - [ ] `README.md` updated with rule listing
 
 #### Quality Checklist
-- [ ] All tests pass: `npm test`
+- [ ] Related tests pass: `npm run test:related` (the whole suite is CI's; `npm test` is denied locally)
 - [ ] Linting passes: `npm run lint:fix && npm run lint:js`
 - [ ] Build succeeds: `npm run build`
 - [ ] **Minimum 20 tests** covering:

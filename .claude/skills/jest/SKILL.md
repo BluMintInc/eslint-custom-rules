@@ -35,8 +35,17 @@ Reliable rule tests keep 100+ custom rules stable across refactors and TypeScrip
 
 ## Setup and Execution
 
-- Run all tests: `npm test`
 - Run a single suite: `npx jest src/tests/<rule>.test.ts`
+- Run everything related to a change: `npm run test:related [-- <file|flag>...]`
+- Run all 355 suites: CI's `test-report.yml`, which runs `npm run test:ci` and is the only surface that runs them. The `PreToolUse` Bash guard denies `npm test` locally and publishes `npm run test:related` in its place: seventeen suites take 8 to 22 minutes each, and an ungoverned local run fills the 31 GB box this repo's maintainer loop shares with two others.
+
+### Relatedness, and why a rule change runs only its own suite
+
+`jest --findRelatedTests` is TRANSITIVE, and jest computes the import graph with a regex over source text: only a LITERAL module specifier creates an edge. `src/index.ts` imports every rule, so a file spelling `require('..')` or `from '../index'` is related to all 195 of them, and every such file makes one rule change select every corpus guard along with it.
+
+`src/utils/loadPlugin.ts` is therefore the one way to load the plugin. It resolves the index through a computed path, which the extractor cannot see, so the runtime module and its registry semantics are identical while the edge is absent. `src/tests/plugin-edge-isolation.test.ts` is the ratchet: it runs jest's own `dependencyExtractor` over every file under `src/` and fails on any literal specifier resolving to the index, on a literal inside the helper itself, and on any rule whose own suite does not import it directly. Write `loadPlugin()`, never the literal.
+
+A change to `src/index.ts` therefore relates to nothing, so `npm run test:related` appends the pinned cheap registry guards in `scripts/registry-guard-suites.ts` when the registry is among the changed files.
 
 ## Test Case Patterns
 

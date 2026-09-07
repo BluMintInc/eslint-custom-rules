@@ -19,12 +19,9 @@ import {
   unexpressedProperties,
   wasDefaulted,
 } from '../utils/syntheticRuleOptions';
+import { loadPlugin } from '../utils/loadPlugin';
 
-/* eslint-disable @typescript-eslint/no-var-requires */
-const plugin = require('../index') as {
-  rules: Record<string, any>;
-};
-/* eslint-enable @typescript-eslint/no-var-requires */
+const plugin = loadPlugin();
 
 /**
  * The cell `option-liveness-closure` and `rule-crash-robustness` leave open:
@@ -180,7 +177,13 @@ const linterFor = (extraRules: Record<string, any> = {}) => {
   const linter = new Linter();
   defineCorpusParsers(linter);
   for (const [name, rule] of Object.entries(plugin.rules)) {
-    linter.defineRule(PREFIX + name, rule);
+    /**
+     * `@types/eslint` and `@typescript-eslint/utils` model the same runtime
+     * rule object with structurally incompatible types, so registering one with
+     * the other's `Linter` is a cast at the package boundary. Same spelling as
+     * `docsFixtures.ts` and the other corpus guards.
+     */
+    linter.defineRule(PREFIX + name, rule as never);
   }
   for (const [name, rule] of Object.entries(extraRules)) {
     linter.defineRule(PREFIX + name, rule);
@@ -769,7 +772,14 @@ describe('option payloads x foreign fixtures (crash oracle)', () => {
     const reachable = optionedRuleNames.filter((name) => {
       const head = optionSchemaOf(plugin.rules[name])[0];
       if (!head?.properties) return false;
-      const defaults = plugin.rules[name].defaultOptions?.[0] ?? {};
+      /**
+       * `defaultOptions` is `readonly unknown[]`. The schema head checked above
+       * is an object schema, so its positional default is an object too.
+       */
+      const defaults = (plugin.rules[name].defaultOptions?.[0] ?? {}) as Record<
+        string,
+        unknown
+      >;
       return Object.keys(head.properties).some((prop) => !(prop in defaults));
     });
     expect(reachable.length).toBeGreaterThanOrEqual(REACHABLE_FLOOR);

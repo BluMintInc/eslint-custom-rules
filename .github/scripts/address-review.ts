@@ -2,7 +2,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { fileURLToPath } from 'node:url';
+import { isDirectExecution } from '../../scripts/claude-hooks/isDirectExecution';
 import {
   runCommand,
   ensureDependency,
@@ -459,28 +459,8 @@ async function main(): Promise<void> {
   outputInstructions(targetBranch, promptPath);
 }
 
-// Check if this file is being run directly (not imported)
-const isDirectExecution = () => {
-  const scriptPath = process.argv[1];
-  if (!scriptPath) return false;
-
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const metaUrl = (typeof import.meta !== 'undefined'
-      ? (import.meta as any)?.url
-      : null) as string | null;
-    if (metaUrl) {
-      return scriptPath === fileURLToPath(metaUrl);
-    }
-  } catch {
-    /* ignore and fall back */
-  }
-
-  return scriptPath.endsWith('address-review.ts');
-};
-
 // Run main function only if executed directly
-if (isDirectExecution()) {
+if (isDirectExecution('address-review.ts')) {
   main().catch((error) => {
     console.error('Unexpected error:', error);
     process.exit(1);
