@@ -470,15 +470,27 @@ function typeNodeExcludesProperty(
       const argumentsAreTheType =
         closedLiteralCounts &&
         PROPERTY_PRESERVING_WRAPPERS.has(wrapperNameOf(node.typeName) ?? '');
-      return node.typeParameters.params.some((param) =>
-        typeNodeExcludesProperty(
-          param,
-          propertyName,
-          resolveAlias,
-          seen,
-          argumentsAreTheType,
-        ),
-      );
+      if (
+        node.typeParameters.params.some((param) =>
+          typeNodeExcludesProperty(
+            param,
+            propertyName,
+            resolveAlias,
+            seen,
+            argumentsAreTheType,
+          ),
+        )
+      ) {
+        return true;
+      }
+      // Arguments that prove nothing are not proof that the referenced alias
+      // proves nothing, so a reference carrying them still falls through to its
+      // own body. Returning here made `type P<T> = Omit<X, 'children'>` report
+      // when referenced as `P<string>` while the byte-identical unparameterized
+      // spelling passed. Type arguments are deliberately NOT substituted into
+      // the body: an unbound parameter there proves nothing, which is the
+      // conservative answer, and an undeclared wrapper still resolves to
+      // nothing and still reports.
     }
 
     // Keyed by position as well as by name: the same alias proves different

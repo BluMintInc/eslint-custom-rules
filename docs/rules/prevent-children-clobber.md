@@ -134,6 +134,27 @@ An alias the rule cannot resolve — one imported from another module, for
 instance — is treated as still carrying `children`, so the exemption never
 widens to names whose shape is unknown.
 
+A locally declared alias resolves the same way whether or not it takes type
+parameters: `SectionProps<string>` reads the body of
+`type SectionProps<T> = ...` exactly as `SectionProps` reads the body of
+`type SectionProps = ...`. Type arguments are inspected first and are never
+substituted into the body, so an unbound type parameter appearing there proves
+nothing, which is the conservative answer. A name with no local declaration
+stays opaque whether or not it carries type arguments, so an undeclared wrapper
+such as `Envelope<{ sx?: SxProps }>` and an imported `SectionProps<T>` both
+still report. Resolution also reads type aliases only, so a parameterized
+`interface` is not exempt by this path.
+
+```tsx
+type SectionProps<T> = Omit<MenuProps, 'children'> & { row: T };
+
+const SectionMenu = <T,>({ row, ...props }: SectionProps<T>) => (
+  <Menu {...props}>
+    <MenuItem>{row}</MenuItem>
+  </Menu>
+);
+```
+
 #### Keep-lists
 
 A `Pick<T, K>` keep-list is a stronger guarantee than an omit-list: it drops

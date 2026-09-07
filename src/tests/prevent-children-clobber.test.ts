@@ -744,6 +744,259 @@ ruleTesterJsx.run('prevent-children-clobber', preventChildrenClobber, {
       `,
       filename: 'component.tsx',
     },
+    {
+      /** A parameterized alias is as resolvable as a bare one. */
+      code: `
+        type SectionProps<T> = Omit<MenuProps, 'children'> & { row: T };
+        type TestMenuProps<T> = Readonly<SectionProps<T>>;
+        const TestMenu = <T,>({ row, ...props }: TestMenuProps<T>) => (
+          <Menu {...props}>
+            <MenuItem>Replace</MenuItem>
+          </Menu>
+        );
+      `,
+      filename: 'component.tsx',
+    },
+    {
+      /** Reduction: the type argument is not used in the alias body at all. */
+      code: `
+        type SectionProps<T> = Omit<MenuProps, 'children'>;
+        const TestMenu = (props: SectionProps<string>) => (
+          <Menu {...props}>
+            <MenuItem>Replace</MenuItem>
+          </Menu>
+        );
+      `,
+      filename: 'component.tsx',
+    },
+    // #2361: a bare `Omit` body under an alias taking SEVERAL parameters. The
+    // arity of the alias is irrelevant to what its body proves.
+    {
+      code: `
+        type SectionProps<A, B> = Omit<MenuProps, 'children'>;
+        const TestMenu = (props: SectionProps<string, number>) => (
+          <Menu {...props}>
+            <MenuItem>Replace</MenuItem>
+          </Menu>
+        );
+      `,
+      filename: 'component.tsx',
+    },
+    // #2361: the body is an INTERSECTION whose `Omit` arm carries the proof and
+    // whose closed literal arm adds no members that could reopen it.
+    {
+      code: `
+        type SectionProps<T> = Omit<MenuProps, 'children'> & { row: T };
+        const TestMenu = <T,>({ row, ...props }: SectionProps<T>) => (
+          <Menu {...props}>
+            <MenuItem>Replace</MenuItem>
+          </Menu>
+        );
+      `,
+      filename: 'component.tsx',
+    },
+    // #2361: a parameterized alias chain two links deep.
+    {
+      code: `
+        type A<T> = B<T>;
+        type B<T> = Omit<MenuProps, 'children'>;
+        const TestMenu = (props: A<string>) => (
+          <Menu {...props}>
+            <MenuItem>Replace</MenuItem>
+          </Menu>
+        );
+      `,
+      filename: 'component.tsx',
+    },
+    // #2361: three links deep, so resolution is genuinely transitive rather
+    // than a single extra hop.
+    {
+      code: `
+        type A<T> = B<T>;
+        type B<T> = C<T>;
+        type C<T> = Omit<MenuProps, 'children'>;
+        const TestMenu = (props: A<string>) => (
+          <Menu {...props}>
+            <MenuItem>Replace</MenuItem>
+          </Menu>
+        );
+      `,
+      filename: 'component.tsx',
+    },
+    // #2361: a self-referential generic alias whose outermost `Omit` decides
+    // the question before the recursion matters. Termination is the assertion;
+    // a resolver that re-entered `Loop` unguarded would never return.
+    {
+      code: `
+        type Loop<T> = Omit<Loop<T>, 'children'>;
+        const TestMenu = (props: Loop<string>) => (
+          <Menu {...props}>
+            <MenuItem>Replace</MenuItem>
+          </Menu>
+        );
+      `,
+      filename: 'component.tsx',
+    },
+    // #2361: a union body excludes the property only when EVERY arm does.
+    {
+      code: `
+        type SectionProps<T> = Omit<MenuProps, 'children'> | Omit<ListProps, 'children'>;
+        const TestMenu = (props: SectionProps<string>) => (
+          <Menu {...props}>
+            <MenuItem>Replace</MenuItem>
+          </Menu>
+        );
+      `,
+      filename: 'component.tsx',
+    },
+    // #2361 ordering pin: the type ARGUMENTS are inspected before the alias
+    // body, and on their own they settle this case. `Frame`'s body is an
+    // unbound parameter, which proves nothing, so the exemption can only have
+    // come from the argument arm.
+    {
+      code: `
+        type Frame<T> = Readonly<T>;
+        const TestMenu = (props: Frame<Omit<MenuProps, 'children'>>) => (
+          <Menu {...props}>
+            <MenuItem>Replace</MenuItem>
+          </Menu>
+        );
+      `,
+      filename: 'component.tsx',
+    },
+    // #2361 ordering pin, undeclared wrapper: nothing to resolve, so only the
+    // argument arm can carry this one.
+    {
+      code: `
+        type SectionProps<T> = T;
+        const TestMenu = (props: SectionProps<Omit<MenuProps, 'children'>>) => (
+          <Menu {...props}>
+            <MenuItem>Replace</MenuItem>
+          </Menu>
+        );
+      `,
+      filename: 'component.tsx',
+    },
+    // #2361: an alias declared inside a function body resolves through a
+    // parameterized reference exactly as a top-level one does.
+    {
+      code: `
+        function makeMenu() {
+          type SectionProps<T> = Omit<MenuProps, 'children'>;
+          const TestMenu = (props: SectionProps<string>) => (
+            <Menu {...props}>
+              <MenuItem>Replace</MenuItem>
+            </Menu>
+          );
+          return TestMenu;
+        }
+      `,
+      filename: 'component.tsx',
+    },
+    // #2361: the alias hides inside an `ExportNamedDeclaration`, which the
+    // resolver looks through.
+    {
+      code: `
+        export type SectionProps<T> = Omit<MenuProps, 'children'>;
+        export const TestMenu = (props: SectionProps<string>) => (
+          <Menu {...props}>
+            <MenuItem>Replace</MenuItem>
+          </Menu>
+        );
+      `,
+      filename: 'component.tsx',
+    },
+    // #2361: the props type of a `forwardRef` is its SECOND type argument, and
+    // a parameterized alias there resolves like any other props annotation.
+    {
+      code: `
+        type SaveProps<T> = Omit<ButtonProps, 'children'> & { row: T };
+        const Save = forwardRef<HTMLDivElement, SaveProps<string>>((props, ref) => (
+          <Button {...props} ref={ref}>
+            <Label />
+          </Button>
+        ));
+      `,
+      filename: 'component.tsx',
+    },
+    // #2361: the keep-list arm survives the extra hop too. A `Pick` proof needs
+    // the props position, so this also pins that `closedLiteralCounts` is
+    // carried into the alias body rather than reset by the detour.
+    {
+      code: `
+        type SaveProps<T> = Pick<ButtonProps, 'sx'>;
+        const Save = (props: SaveProps<string>) => (
+          <Button {...props}>
+            <Label />
+          </Button>
+        );
+      `,
+      filename: 'component.tsx',
+    },
+    // #2361: a property-preserving wrapper around that keep-list, which only
+    // holds while the props position is preserved through both hops.
+    {
+      code: `
+        type SaveProps<T> = Partial<Pick<ButtonProps, 'sx'>>;
+        const Save = (props: SaveProps<string>) => (
+          <Button {...props}>
+            <Label />
+          </Button>
+        );
+      `,
+      filename: 'component.tsx',
+    },
+    // #2361: a keep-list spelled as `(typeof KEYS)[number]` stays decidable
+    // through a parameterized alias, so the shape `prefer-union-from-const-array`
+    // rewrites into is exempt in both spellings.
+    {
+      code: `
+        const KEYS = ['sx'] as const;
+        type SaveProps<T> = Pick<ButtonProps, (typeof KEYS)[number]>;
+        const Save = (props: SaveProps<string>) => (
+          <Button {...props}>
+            <Label />
+          </Button>
+        );
+      `,
+      filename: 'component.tsx',
+    },
+    // #2361 shadowing (#2263 direction): the INNER alias is the one resolved,
+    // so a children-free inner declaration exempts the spread even though the
+    // outer alias of the same name carries children.
+    {
+      code: `
+        type SectionProps<T> = { children: T };
+        function makeMenu() {
+          type SectionProps<T> = Omit<MenuProps, 'children'>;
+          const TestMenu = (props: SectionProps<string>) => (
+            <Menu {...props}>
+              <MenuItem>Replace</MenuItem>
+            </Menu>
+          );
+          return TestMenu;
+        }
+      `,
+      filename: 'component.tsx',
+    },
+    // #2361 boundary: the alias resolver reads type ALIASES only, so a
+    // parameterized `interface` is not exempt by this path. It stays silent
+    // because an interface denotes a real object type the checker can inspect
+    // even when its heritage clause is unresolvable, which the alias arm of a
+    // parameterized reference must not be credited for.
+    {
+      code: `
+        interface SectionProps<T> extends Omit<MenuProps, 'children'> {
+          row: T;
+        }
+        const TestMenu = <T,>({ row, ...props }: SectionProps<T>) => (
+          <Menu {...props}>
+            <MenuItem>Replace</MenuItem>
+          </Menu>
+        );
+      `,
+      filename: 'component.tsx',
+    },
   ],
   invalid: [
     {
@@ -1419,6 +1672,272 @@ ruleTesterJsx.run('prevent-children-clobber', preventChildrenClobber, {
           );
           return Wrapper;
         }
+      `,
+      filename: 'component.tsx',
+      errors: [{ messageId: 'childrenClobbered' }],
+    },
+    {
+      /** Negative control: a parameterized alias that really does carry children. */
+      code: `
+        type SaveProps<T> = { children: T };
+        const Save = (props: SaveProps<ReactNode>) => (
+          <Button {...props}>
+            <Label />
+          </Button>
+        );
+      `,
+      filename: 'component.tsx',
+      errors: [{ messageId: 'childrenClobbered' }],
+    },
+    // #2361: the alias body carries `children` through an intersection arm, so
+    // resolving it must REACH that arm rather than stop at the `Omit`.
+    {
+      code: `
+        type SaveProps<T> = Omit<ButtonProps, 'sx'> & { children: T };
+        const Save = (props: SaveProps<ReactNode>) => (
+          <Button {...props}>
+            <Label />
+          </Button>
+        );
+      `,
+      filename: 'component.tsx',
+      errors: [{ messageId: 'childrenClobbered' }],
+    },
+    // #2361: one union arm carrying `children` is enough to lose the proof.
+    {
+      code: `
+        type SectionProps<T> = Omit<MenuProps, 'children'> | { children: T };
+        const TestMenu = (props: SectionProps<string>) => (
+          <Menu {...props}>
+            <MenuItem>Replace</MenuItem>
+          </Menu>
+        );
+      `,
+      filename: 'component.tsx',
+      errors: [{ messageId: 'childrenClobbered' }],
+    },
+    // #2361 anti-over-broad control: an undeclared generic wrapper written
+    // straight into the annotation has no body to resolve, so falling through
+    // to the alias arm finds nothing and the report stands.
+    {
+      code: `
+        const Save = (props: Envelope<{ sx?: SxProps }>) => (
+          <Button {...props}>
+            <Label />
+          </Button>
+        );
+      `,
+      filename: 'component.tsx',
+      errors: [{ messageId: 'childrenClobbered' }],
+    },
+    // #2361: the same undeclared wrapper reached through an alias body stays
+    // opaque one hop in.
+    {
+      code: `
+        type SaveProps<T> = Envelope<T>;
+        const Save = (props: SaveProps<{ sx?: SxProps }>) => (
+          <Button {...props}>
+            <Label />
+          </Button>
+        );
+      `,
+      filename: 'component.tsx',
+      errors: [{ messageId: 'childrenClobbered' }],
+    },
+    // #2361: an alias that omits a DIFFERENT key proves nothing about
+    // `children`, so the extra resolution hop must not manufacture a proof.
+    {
+      code: `
+        type SectionProps<T> = Omit<MenuProps, 'open'>;
+        const TestMenu = (props: SectionProps<string>) => (
+          <Menu {...props}>
+            <MenuItem>Replace</MenuItem>
+          </Menu>
+        );
+      `,
+      filename: 'component.tsx',
+      errors: [{ messageId: 'childrenClobbered' }],
+    },
+    // #2361: an index signature reopens the intersection, exactly as it does
+    // for the unparameterized spelling.
+    {
+      code: `
+        type SectionProps<T> = Omit<MenuProps, 'children'> & {
+          [key: string]: unknown;
+        };
+        const TestMenu = (props: SectionProps<string>) => (
+          <Menu {...props}>
+            <MenuItem>Replace</MenuItem>
+          </Menu>
+        );
+      `,
+      filename: 'component.tsx',
+      errors: [{ messageId: 'childrenClobbered' }],
+    },
+    // #2361: an unbound parameter is not substituted, and an argument that is
+    // itself unresolvable proves nothing either.
+    {
+      code: `
+        type SectionProps<T> = T;
+        const TestMenu = (props: SectionProps<MenuProps>) => (
+          <Menu {...props}>
+            <MenuItem>Replace</MenuItem>
+          </Menu>
+        );
+      `,
+      filename: 'component.tsx',
+      errors: [{ messageId: 'childrenClobbered' }],
+    },
+    // #2361: an undecidable keep-list stays undecidable behind a parameterized
+    // alias.
+    {
+      code: `
+        function makeSave<K extends keyof ButtonProps>() {
+          type SaveProps<T> = Pick<ButtonProps, K>;
+          const Save = (props: SaveProps<string>) => (
+            <Button {...props}>
+              <Label />
+            </Button>
+          );
+          return Save;
+        }
+      `,
+      filename: 'component.tsx',
+      errors: [{ messageId: 'childrenClobbered' }],
+    },
+    // #2361 termination: a self-referential generic alias proves nothing and
+    // must return rather than recurse forever.
+    {
+      code: `
+        type Loop<T> = Loop<T>;
+        const TestMenu = (props: Loop<string>) => (
+          <Menu {...props}>
+            <MenuItem>Replace</MenuItem>
+          </Menu>
+        );
+      `,
+      filename: 'component.tsx',
+      errors: [{ messageId: 'childrenClobbered' }],
+    },
+    // #2361 termination: a mutually recursive pair, which a per-name guard
+    // applied only to the alias being expanded would not catch.
+    {
+      code: `
+        type A<T> = B<T>;
+        type B<T> = A<T>;
+        const TestMenu = (props: A<string>) => (
+          <Menu {...props}>
+            <MenuItem>Replace</MenuItem>
+          </Menu>
+        );
+      `,
+      filename: 'component.tsx',
+      errors: [{ messageId: 'childrenClobbered' }],
+    },
+    // #2361 termination: a three-way tangle mixing intersection and union, so
+    // the guard is exercised on more than one recursion path per alias.
+    {
+      code: `
+        type A<T> = B<T> & C<T>;
+        type B<T> = C<T> & A<T>;
+        type C<T> = A<T> | B<T>;
+        const TestMenu = (props: A<string>) => (
+          <Menu {...props}>
+            <MenuItem>Replace</MenuItem>
+          </Menu>
+        );
+      `,
+      filename: 'component.tsx',
+      errors: [{ messageId: 'childrenClobbered' }],
+    },
+    // #2361 termination: a self-reference nested in the alias's own arguments,
+    // reached through the argument arm rather than the body arm.
+    {
+      code: `
+        type A<T> = A<A<A<T>>>;
+        const TestMenu = (props: A<A<A<string>>>) => (
+          <Menu {...props}>
+            <MenuItem>Replace</MenuItem>
+          </Menu>
+        );
+      `,
+      filename: 'component.tsx',
+      errors: [{ messageId: 'childrenClobbered' }],
+    },
+    // #2361 out of scope, pinned: a member imported from another module has no
+    // body in this file, so it stays opaque and still reports.
+    {
+      code: `
+        import type { SectionProps } from './types';
+        const TestMenu = (props: SectionProps<string>) => (
+          <Menu {...props}>
+            <MenuItem>Replace</MenuItem>
+          </Menu>
+        );
+      `,
+      filename: 'component.tsx',
+      errors: [{ messageId: 'childrenClobbered' }],
+    },
+    // #2361 out of scope, pinned: a qualified name carries no local alias to
+    // resolve either.
+    {
+      code: `
+        const TestMenu = (props: NS.SectionProps<string>) => (
+          <Menu {...props}>
+            <MenuItem>Replace</MenuItem>
+          </Menu>
+        );
+      `,
+      filename: 'component.tsx',
+      errors: [{ messageId: 'childrenClobbered' }],
+    },
+    // #2361 shadowing (#2263 direction): the inner alias carries `children`, so
+    // resolution must stop at it rather than reach the children-free outer one.
+    {
+      code: `
+        type SectionProps<T> = Omit<MenuProps, 'children'>;
+        function makeMenu() {
+          type SectionProps<T> = { children: T };
+          const TestMenu = (props: SectionProps<string>) => (
+            <Menu {...props}>
+              <MenuItem>Replace</MenuItem>
+            </Menu>
+          );
+          return TestMenu;
+        }
+      `,
+      filename: 'component.tsx',
+      errors: [{ messageId: 'childrenClobbered' }],
+    },
+    // #2361 shadowing (#2263 direction): a type PARAMETER binds the name in
+    // type space, so the outer alias body is out of reach and undecidable is
+    // not proof.
+    {
+      code: `
+        type SectionProps<T> = Omit<MenuProps, 'children'>;
+        function makeMenu<SectionProps>() {
+          const TestMenu = (props: SectionProps<string>) => (
+            <Menu {...props}>
+              <MenuItem>Replace</MenuItem>
+            </Menu>
+          );
+          return TestMenu;
+        }
+      `,
+      filename: 'component.tsx',
+      errors: [{ messageId: 'childrenClobbered' }],
+    },
+    // #2361: a self-reference in an intersection blocks the arm the guard has
+    // already entered, and an intersection needs EVERY arm to prove the
+    // exclusion, so the conservative answer is a report.
+    {
+      code: `
+        type P<T> = P<T> & Omit<MenuProps, 'children'>;
+        const TestMenu = (props: P<string>) => (
+          <Menu {...props}>
+            <MenuItem>Replace</MenuItem>
+          </Menu>
+        );
       `,
       filename: 'component.tsx',
       errors: [{ messageId: 'childrenClobbered' }],
