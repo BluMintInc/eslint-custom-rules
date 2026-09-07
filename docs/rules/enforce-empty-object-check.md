@@ -407,6 +407,16 @@ The insertion is deliberate about where it lands and when it happens at all:
   not compile, which is worse than the report it was meant to fix. The emitted
   call resolves to whatever the file already has.
 
+`importPath` should name a module inside your own source tree. The recommended
+config also runs `enforce-dynamic-imports`, which rejects a static import of
+anything outside its internal prefixes (`src/` and `functions/` by default), and
+the dynamic form it prescribes cannot help here: the emitted call sits in a
+synchronous guard condition, and an `import()` yields a promise no `if` can
+await. A path such as `functions/src/util/isEmpty` is therefore accepted as
+written, while a bare package name such as `lodash` trades the `Object.keys`
+report for an `enforce-dynamic-imports` one. Point the option at your own helper,
+or add the package to that rule's `ignoredLibraries`.
+
 The fix is DECLINED — the report stands with no rewrite — when a binding of
 `name` sits between the guard and the module scope. A bare call resolves where
 the call sits, so an inner `const isEmpty = …` would silently take it over, and
