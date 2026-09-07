@@ -1,3 +1,13 @@
+## [1.21.17](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.21.16...v1.21.17) (2026-09-07)
+
+
+### Bug Fixes
+
+* **enforce-memoize-async:** tell a finalizer's log from a hand-back (closes [#2359](https://github.com/BluMintInc/eslint-custom-rules/issues/2359)) ([9d0b0aa](https://github.com/BluMintInc/eslint-custom-rules/commit/9d0b0aa3531fc0f57a135301f54bccf4a77025b4)), closes [#2343](https://github.com/BluMintInc/eslint-custom-rules/issues/2343) [#2347](https://github.com/BluMintInc/eslint-custom-rules/issues/2347) [#2347](https://github.com/BluMintInc/eslint-custom-rules/issues/2347)
+* **global-const-style:** read the element's type through type positions, not only value ones (closes [#2357](https://github.com/BluMintInc/eslint-custom-rules/issues/2357)) ([135ae4a](https://github.com/BluMintInc/eslint-custom-rules/commit/135ae4af8037916c39abd809d87188ad569a1465))
+* **global-const-style:** track a copy against every constant whose type reaches it (closes [#2356](https://github.com/BluMintInc/eslint-custom-rules/issues/2356)) ([85b2536](https://github.com/BluMintInc/eslint-custom-rules/commit/85b2536d0b464f730aa403ad344168801304fd2a))
+* **global-const-style:** withhold when a callback inserts through the receiver parameter (closes [#2355](https://github.com/BluMintInc/eslint-custom-rules/issues/2355)) ([3498b03](https://github.com/BluMintInc/eslint-custom-rules/commit/3498b0373cb98e67251784f899e132e49c693a8c))
+
 ## [1.21.16](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.21.15...v1.21.16) (2026-09-07)
 
 

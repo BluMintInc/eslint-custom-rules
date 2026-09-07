@@ -1,5 +1,29 @@
 [
   {
+    "version": "1.21.17",
+    "date": "2026-09-07T12:35:50.668Z",
+    "rules": [
+      {
+        "name": "enforce-memoize-async",
+        "changeType": "fix",
+        "issues": [
+          2359
+        ],
+        "summary": "tell a finalizer's log from a hand-back (closes #2359)"
+      },
+      {
+        "name": "global-const-style",
+        "changeType": "fix",
+        "issues": [
+          2355,
+          2356,
+          2357
+        ],
+        "summary": "read the element's type through type positions, not only value ones (closes #2357); track a copy against every constant whose type reaches it (closes #2356); withhold when a callback inserts through the receiver parameter (closes #2355)"
+      }
+    ]
+  },
+  {
     "version": "1.21.16",
     "date": "2026-09-07T07:42:18.078Z",
     "rules": [
