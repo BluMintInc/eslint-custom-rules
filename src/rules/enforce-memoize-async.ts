@@ -549,47 +549,6 @@ function* ownSubtreeOf(root: TSESTree.Node): Generator<TSESTree.Node> {
 }
 
 /**
- * Whether the block performs a call as a step of the function that owns it.
- * A call written inside a function the block only DEFINES — `finally { const
- * undo = () => release(t); }` — performs nothing, so the bounded walk is what
- * separates a release from a closure that could perform one elsewhere.
- */
-function performsCall(block: TSESTree.BlockStatement): boolean {
-  for (const node of ownSubtreeOf(block)) {
-    if (node.type === AST_NODE_TYPES.CallExpression) {
-      return true;
-    }
-  }
-  return false;
-}
-
-/**
- * Whether the method owns an acquire/release pair: a `try` among its own steps
- * whose `finalizer` calls something.
- *
- * A `finally` that calls something exists to undo an effect the `try`
- * performed. What such a method hands back describes one attempt — a grant held
- * while a queue ticket was outstanding, a read taken while a lock was held —
- * rather than a fact that stays true once the release has run.
- *
- * An empty `finalizer` releases nothing, and one that only writes a local
- * (`finally { done = true; }`) records that the attempt finished instead of
- * undoing it, so neither costs the method its report.
- */
-function releasesInOwnFinalizer(fn: TSESTree.FunctionExpression): boolean {
-  for (const node of ownSubtreeOf(fn.body)) {
-    if (
-      node.type === AST_NODE_TYPES.TryStatement &&
-      node.finalizer &&
-      performsCall(node.finalizer)
-    ) {
-      return true;
-    }
-  }
-  return false;
-}
-
-/**
  * The expression under the wrappers that stand between a value and the access
  * path it evaluates. `await this.pending`, `this.pending!`, `this.pending as
  * Ready` and `this?.pending` all read the same field, and a discriminator blind
@@ -633,6 +592,232 @@ function rootThisField(node: TSESTree.Node): string | undefined {
     expression.property.type === AST_NODE_TYPES.Identifier
     ? expression.property.name
     : undefined;
+}
+
+/**
+ * Every binding an assignment target names, with its destructuring patterns
+ * opened up: `client` and `done` for `const { client, done } = pool.connect()`.
+ *
+ * One call hands back several names as readily as one, and the acquire/release
+ * triangle below is read across all of them — the guarded block works through
+ * one of them while the `finally` gives the resource back through another.
+ */
+function* patternBindingsOf(target: TSESTree.Node): Generator<string> {
+  switch (target.type) {
+    case AST_NODE_TYPES.Identifier:
+      yield target.name;
+      return;
+    case AST_NODE_TYPES.ObjectPattern:
+      for (const property of target.properties) {
+        yield* patternBindingsOf(
+          property.type === AST_NODE_TYPES.RestElement
+            ? property
+            : property.value,
+        );
+      }
+      return;
+    case AST_NODE_TYPES.ArrayPattern:
+      for (const element of target.elements) {
+        if (element) {
+          yield* patternBindingsOf(element);
+        }
+      }
+      return;
+    case AST_NODE_TYPES.AssignmentPattern:
+      yield* patternBindingsOf(target.left);
+      return;
+    case AST_NODE_TYPES.RestElement:
+      yield* patternBindingsOf(target.argument);
+      return;
+    default:
+    // A `this.field` or `obj[key]` target names a place rather than a binding,
+    // and a place outlives the call that filled it.
+  }
+}
+
+/** Whether the value a binding takes is obtained from a call. */
+function isAcquisition(value: TSESTree.Node): boolean {
+  const expression = withoutValueWrappers(value);
+  return (
+    expression.type === AST_NODE_TYPES.CallExpression ||
+    expression.type === AST_NODE_TYPES.NewExpression
+  );
+}
+
+/**
+ * The bindings the method's own steps take FROM a call, grouped by the call
+ * that established them: `[ticket]` for `const ticket = this.queue.enqueue()`,
+ * `[client, done]` for `const { client, done } = await this.pool.connect()`,
+ * and `[conn]` for a `conn = await pool.acquire()` written into a `let`
+ * declared ahead of the `try`. A `new` counts as readily as a call, since a
+ * handle is constructed as often as it is handed out.
+ *
+ * A parameter is not among them, and neither is an instance field. What the
+ * caller acquired and passed in the caller also decides the lifetime of, and a
+ * field outlives the call that filled it, so in neither case does the body
+ * carry an acquisition for the `finally` to pair against.
+ */
+function acquisitionsOf(fn: TSESTree.FunctionExpression): Set<string>[] {
+  const acquisitions: Set<string>[] = [];
+  const record = (target: TSESTree.Node, value: TSESTree.Node | null) => {
+    if (!value || !isAcquisition(value)) {
+      return;
+    }
+    const bindings = new Set(patternBindingsOf(target));
+    if (bindings.size > 0) {
+      acquisitions.push(bindings);
+    }
+  };
+  for (const node of ownSubtreeOf(fn.body)) {
+    if (node.type === AST_NODE_TYPES.VariableDeclarator) {
+      record(node.id, node.init);
+    } else if (node.type === AST_NODE_TYPES.AssignmentExpression) {
+      record(node.left, node.right);
+    }
+  }
+  return acquisitions;
+}
+
+/** Whether the subtree mentions any of the bindings. */
+function mentionsAny(node: TSESTree.Node, names: ReadonlySet<string>): boolean {
+  for (const name of names) {
+    if (mentionsBinding(node, name)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Words that name handing a resource BACK, as opposed to reporting on the work
+ * that used it.
+ *
+ * Words for a lifetime merely ENDING are deliberately absent — `end`, `finish`,
+ * `stop`, `complete`, `clear`. Every `finally` runs when the work ends, so
+ * those name the moment rather than a hand-back, and they are how observability
+ * and timers are spelled: `span.end()`, `clearTimeout(t)`. A genuine hand-back
+ * spelled that way keeps its carve-out through the triangle below, which
+ * answers whenever the guarded block worked through the thing being ended.
+ */
+const RELEASE_WORDS = new Set([
+  'abandon',
+  'abort',
+  'cancel',
+  'cleanup',
+  'close',
+  'destroy',
+  'detach',
+  'disconnect',
+  'dispose',
+  'free',
+  'release',
+  'restore',
+  'revert',
+  'rollback',
+  'teardown',
+  'unbind',
+  'unlock',
+  'unregister',
+  'unsubscribe',
+  'unwatch',
+]);
+
+/**
+ * The words a name is spelled from, lowercased: `releaseLock` and
+ * `release_lock` both give `release` and `lock`. Reading whole words rather
+ * than substrings is what keeps `clearTimeout` out of the release vocabulary
+ * while `disconnectAll` stays in it.
+ */
+function wordsOf(name: string): string[] {
+  return name
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .split(/[^A-Za-z0-9]+/)
+    .filter((word) => word.length > 0)
+    .map((word) => word.toLowerCase());
+}
+
+/** Whether the call is spelled as a hand-back rather than as a report. */
+function namesRelease(call: TSESTree.CallExpression): boolean {
+  const name = calleeName(call);
+  return (
+    name !== undefined && wordsOf(name).some((word) => RELEASE_WORDS.has(word))
+  );
+}
+
+/**
+ * Whether the `finally` gives back something the method took, rather than
+ * reporting on the work that took it.
+ *
+ * Two shapes answer yes. The first is the acquire/hold/release triangle read
+ * off the body alone: the finalizer's call names a binding some call in the
+ * body established, and the guarded block worked through that same acquisition.
+ * A ticket enqueued, polled on and abandoned is that triangle, and so is a
+ * lease, a connection or a transaction under any spelling, because no name is
+ * consulted to see it. Requiring the guarded block to WORK THROUGH the handle
+ * is what separates a resource held across the value being produced from
+ * bookkeeping the work never touched — `clearTimeout(t)` beside a `fetch` that
+ * ignores `t`, or a span that observes the attempt from outside it.
+ *
+ * The second shape is the name, and it covers the release a method does not
+ * acquire: the caller takes the lock and passes it in, leaving `finally {
+ * lock.release() }` with nothing in the body to pair against. Structurally that
+ * is indistinguishable from `finally { span.end() }` — same receiver kind, same
+ * arity, same absence of any acquisition — so the word is the only evidence
+ * there is, and only words that name a hand-back are read as one.
+ *
+ * A candidate call is found with the step walk, which stops at a function the
+ * finalizer merely DEFINES, but judged with the unbounded one: an immediately
+ * invoked `(async () => { await this.queue.abandon(ticket.id); })()` performs
+ * its body as part of the invocation, so that body is the method's own release
+ * however the invocation is spelled.
+ */
+function releasesResource(
+  guarded: TSESTree.BlockStatement,
+  finalizer: TSESTree.BlockStatement,
+  acquisitions: readonly Set<string>[],
+): boolean {
+  for (const node of ownSubtreeOf(finalizer)) {
+    if (node.type !== AST_NODE_TYPES.CallExpression) {
+      continue;
+    }
+    if (namesRelease(node)) {
+      return true;
+    }
+    for (const bindings of acquisitions) {
+      if (mentionsAny(node, bindings) && mentionsAny(guarded, bindings)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * Whether the method owns an acquire/release pair: a `try` among its own steps
+ * whose `finalizer` hands a resource back.
+ *
+ * What such a method returns describes one attempt — a grant held while a queue
+ * ticket was outstanding, a read taken while a lock was held — rather than a
+ * fact that stays true once the release has run.
+ *
+ * An empty `finalizer` releases nothing, one that only writes a local
+ * (`finally { done = true; }`) records that the attempt finished instead of
+ * undoing it, and one that logs, emits a metric, ends a span or clears a timer
+ * the work never touched reports on the attempt instead of giving anything
+ * back, so none of them costs the method its report.
+ */
+function releasesInOwnFinalizer(fn: TSESTree.FunctionExpression): boolean {
+  const acquisitions = acquisitionsOf(fn);
+  for (const node of ownSubtreeOf(fn.body)) {
+    if (
+      node.type === AST_NODE_TYPES.TryStatement &&
+      node.finalizer &&
+      releasesResource(node.block, node.finalizer, acquisitions)
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**
@@ -964,18 +1149,23 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
           return;
         }
 
-        // A `finally` that calls something exists to undo an effect the `try`
-        // performed: the method takes a resource, works while it holds it, and
-        // gives it back on the way out. What it hands back describes that one
-        // attempt, not a fact that stays true afterwards. Cached, the
-        // acquire/release pair runs once per instance and every later caller
-        // receives a value computed while a resource the `finally` has since
-        // released was still held — the hazard the resource-handle exemption
-        // above names, seen from the side where the method releases the handle
-        // itself, so nothing of it reaches the return type for a signature-keyed
-        // gate to read. The failure is silent and arrives only under
-        // concurrency, so the fixer would apply it unattended under `--fix`,
-        // and both report and fix are withheld.
+        // A `finally` that gives back what the `try` took names an attempt:
+        // the method takes a resource, works while it holds it, and hands it
+        // back on the way out. What it returns describes that one attempt, not
+        // a fact that stays true afterwards. Cached, the acquire/release pair
+        // runs once per instance and every later caller receives a value
+        // computed while a resource the `finally` has since released was still
+        // held — the hazard the resource-handle exemption above names, seen
+        // from the side where the method releases the handle itself, so nothing
+        // of it reaches the return type for a signature-keyed gate to read. The
+        // failure is silent and arrives only under concurrency, so the fixer
+        // would apply it unattended under `--fix`, and both report and fix are
+        // withheld.
+        //
+        // A `finally` that merely reports on the attempt — a log line, a
+        // metric, an event, a span ended around work that never touched it —
+        // hands nothing back, so it buys no silence: that is the whole of what
+        // the rule exists to find, written beside a `try`.
         if (releasesInOwnFinalizer(node.value)) {
           return;
         }
