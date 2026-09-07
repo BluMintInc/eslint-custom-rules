@@ -3321,6 +3321,246 @@ const Probe = () => {
       ].join('\n'),
       filename: 'test.ts',
     },
+    // Issue #2356: a mapper's result is typed from what the CALLBACK hands
+    // back, so a constant reached through that return types the copy exactly as
+    // the receiver's own element type does — and freezing it narrows the copy's
+    // elements. `carriesElementType` cannot answer this: it is keyed on the
+    // names the ELEMENT parameter binds, while the value handed back comes from
+    // a different binding entirely, so `map` and `flatMap` alike froze the
+    // constant the mapper returns and wrote TS2322 into a file that compiled.
+    // The receiver is a PARAMETER in every case below, so the constant handed
+    // back is the only candidate and a report of any kind is the defect. Each
+    // case compiles, and stops compiling once the assertion is applied by hand;
+    // the diagnostic it then produces is named beside it.
+    // TS2322: the pushed `9` is not assignable to the frozen `1`.
+    {
+      name: 'declines to freeze a constant a map callback hands back into a written copy',
+      code: [
+        'const OTHER = { n: 1 };',
+        'export const run = (items: { n: number }[]) => {',
+        '  const xs = items.map(() => OTHER);',
+        '  xs.push({ n: 9 });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // `flatMap` flattens the SHAPE of the result without changing the types it
+    // is composed from, so it breaks identically.
+    {
+      name: 'declines to freeze a constant a flatMap callback hands back into a written copy',
+      code: [
+        'const OTHER = { n: 1 };',
+        'export const run = (items: { n: number }[]) => {',
+        '  const xs = items.flatMap(() => OTHER);',
+        '  xs.push({ n: 9 });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // An array literal is what `flatMap` reads the result's element type out of.
+    {
+      name: 'declines to freeze a constant a flatMap callback hands back inside an array literal',
+      code: [
+        'const OTHER = { n: 1 };',
+        'export const run = (items: { n: number }[]) => {',
+        '  const xs = items.flatMap(() => [OTHER]);',
+        '  xs.push({ n: 9 });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // An object literal carries the constant into a PROPERTY of the element.
+    {
+      name: 'declines to freeze a constant a map callback hands back inside an object literal',
+      code: [
+        'const OTHER = { n: 1 };',
+        'export const run = (items: { n: number }[]) => {',
+        '  const xs = items.map(() => ({ v: OTHER }));',
+        '  xs.push({ v: { n: 9 } });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // `as const` freezes in depth, so a PROPERTY handed back carries the
+    // assertion exactly as the whole value does.
+    {
+      name: 'declines to freeze a constant whose property a map callback hands back',
+      code: [
+        'const OTHER = { field: { n: 1 } };',
+        'export const run = (items: { n: number }[]) => {',
+        '  const xs = items.map(() => OTHER.field);',
+        '  xs.push({ n: 9 });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // The alias walk reaches the mapper from the constant it renames, so the
+    // hop through a second binding decides the same way.
+    {
+      name: 'declines to freeze a constant a map callback hands back through an alias',
+      code: [
+        'const BASE = { n: 1 };',
+        'const BASE_ALIAS = BASE;',
+        'export const run = (items: { n: number }[]) => {',
+        '  const xs = items.map(() => BASE_ALIAS);',
+        '  xs.push({ n: 9 });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // `Array.from(X, fn)` types its result from the mapper on the same terms as
+    // `X.map(fn)`, the mapper simply arriving one argument later.
+    {
+      name: 'declines to freeze a constant an Array.from mapper hands back',
+      code: [
+        'const OTHER = { n: 1 };',
+        'export const run = (items: { n: number }[]) => {',
+        '  const xs = Array.from(items, () => OTHER);',
+        '  xs.push({ n: 9 });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // A returned function LITERAL is typed from what it hands back, and that
+    // type is the mapper's result.
+    {
+      name: 'declines to freeze a constant a map callback hands back inside a closure',
+      code: [
+        'const OTHER = { n: 1 };',
+        'export const run = (items: { n: number }[]) => {',
+        '  const xs = items.map(() => () => OTHER);',
+        '  xs.push(() => ({ n: 9 }));',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // TS2540: the copy's elements are the constant itself, so writing through
+    // one is a readonly violation rather than an assignability one.
+    {
+      name: 'declines to freeze a constant a map callback hands back into a copy whose elements are written',
+      code: [
+        'const OTHER = { n: 1 };',
+        'export const run = (items: { n: number }[]) => {',
+        '  const xs = items.map(() => OTHER);',
+        '  xs.forEach((x) => {',
+        '    x.n = 2;',
+        '  });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // A block body hands its value back through `return`, which composes the
+    // callback's result exactly as an expression body does. TS2322.
+    {
+      name: 'declines to freeze a constant a map callback returns from a block body',
+      code: [
+        'const OTHER = { n: 1 };',
+        'export const run = (items: { n: number }[]) => {',
+        '  const xs = items.map(() => {',
+        '    return OTHER;',
+        '  });',
+        '  xs.push({ n: 9 });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // A copy OF the copy keeps the element type, so the write lands one hop
+    // further out and breaks the same way. TS2322.
+    {
+      name: 'declines to freeze a constant a map callback hands back into a spread of the copy',
+      code: [
+        'const OTHER = { n: 1 };',
+        'export const run = (items: { n: number }[]) => {',
+        '  const xs = [...items.map(() => OTHER)];',
+        '  xs.push({ n: 9 });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // A function literal INVOKED on the spot hands its returns to the call,
+    // which is the one call whose result the assertion still reaches. TS2322.
+    {
+      name: 'declines to freeze a constant an immediately-invoked function inside a map callback hands back',
+      code: [
+        'const OTHER = { n: 1 };',
+        'export const run = (items: { n: number }[]) => {',
+        '  const xs = items.map(() => (() => OTHER)());',
+        '  xs.push({ n: 9 });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // `await` unwraps rather than widens, so the frozen type survives into the
+    // promise the mapper hands back. TS2345.
+    {
+      name: 'declines to freeze a constant a map callback awaits',
+      code: [
+        'const OTHER = { n: 1 };',
+        'export const run = (items: { n: number }[]) => {',
+        '  const xs = items.map(async () => await OTHER);',
+        '  xs.push(Promise.resolve({ n: 9 }));',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // A generator hands its yields back through the iterator it returns, which
+    // composes the mapper's result type. TS2345.
+    {
+      name: 'declines to freeze a constant a map generator callback yields',
+      code: [
+        'const OTHER = { n: 1 };',
+        'export const run = (items: { n: number }[]) => {',
+        '  const xs = items.map(function* () {',
+        '    yield OTHER;',
+        '  });',
+        '  xs.push(',
+        '    (function* () {',
+        '      yield { n: 9 };',
+        '    })(),',
+        '  );',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // A sequence is typed from its LAST expression. TS2322.
+    {
+      name: 'declines to freeze a constant a map callback hands back as a sequence value',
+      code: [
+        'const OTHER = { n: 1 };',
+        'export const run = (items: { n: number }[]) => {',
+        "  const xs = items.map(() => (console.log('x'), OTHER));",
+        '  xs.push({ n: 9 });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // Branches are the alternatives the result's union is taken over, so a
+    // constant in either one narrows that union. TS2322 on `1 | 2`.
+    {
+      name: 'declines to freeze a constant a map callback hands back from a conditional branch',
+      code: [
+        'const PRIMARY_ROW = { n: 1 };',
+        'const FALLBACK_ROW = { n: 2 };',
+        'export const run = (items: { n: number }[], flag: boolean) => {',
+        '  const xs = items.map(() => (flag ? PRIMARY_ROW : FALLBACK_ROW));',
+        '  xs.push({ n: 9 });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // A logical operand composes the result on the same terms as a branch.
+    // TS2322.
+    {
+      name: 'declines to freeze a constant a map callback hands back through a nullish fallback',
+      code: [
+        'const CONFIG = { primary: { n: 1 }, fallback: { n: 2 } };',
+        'export const run = (items: { n: number }[]) => {',
+        '  const xs = items.map(() => CONFIG.primary ?? CONFIG.fallback);',
+        '  xs.push({ n: 9 });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
   ],
   invalid: [
     // Issue #2055: a JSX tag name is spelled twice, but the scope manager
@@ -7475,6 +7715,330 @@ const Probe = () => {
         'export const total = [...ITEMS].reduce((acc: number, cur, index, arr) => {',
         '  return acc + cur + arr.length;',
         '}, 0);',
+      ].join('\n'),
+    },
+    // Issue #2356: the RECEIVER is decided separately from the value the mapper
+    // hands back. A mapper returning some other constant leaves the receiver's
+    // own element type out of the result, so the receiver keeps its report and
+    // its fix — both files below compile after `--fix`, measured.
+    {
+      name: 'freezes the receiver of a flatMap whose callback hands back a different constant',
+      code: [
+        'const OTHER = { n: 1 };',
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const xs = ITEMS.flatMap(() => OTHER);',
+        '  xs.push({ n: 9 });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'ITEMS', valueKind: 'an array literal' },
+        },
+      ],
+      output: [
+        'const OTHER = { n: 1 };',
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const run = () => {',
+        '  const xs = ITEMS.flatMap(() => OTHER);',
+        '  xs.push({ n: 9 });',
+        '};',
+      ].join('\n'),
+    },
+    {
+      name: 'freezes the receiver of a map whose callback hands back a different constant',
+      code: [
+        'const OTHER = { n: 1 };',
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const xs = ITEMS.map(() => OTHER);',
+        '  xs.push({ n: 9 });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'ITEMS', valueKind: 'an array literal' },
+        },
+      ],
+      output: [
+        'const OTHER = { n: 1 };',
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const run = () => {',
+        '  const xs = ITEMS.map(() => OTHER);',
+        '  xs.push({ n: 9 });',
+        '};',
+      ].join('\n'),
+    },
+    // Issue #2356 negative controls. The withhold is owed to a constant THIS
+    // RULE would freeze, reached through the callback's return. Every case
+    // below compiles both before and after `--fix`, so withholding from one
+    // would cost a report for nothing.
+    // A LOCAL constant is not one this rule freezes, so the copy's element type
+    // is nothing the assertion can narrow.
+    {
+      name: 'freezes an array whose map callback hands back a local constant',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const local = { n: 1 };',
+        '  const xs = ITEMS.map(() => local);',
+        '  xs.push({ n: 9 });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'ITEMS', valueKind: 'an array literal' },
+        },
+      ],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const run = () => {',
+        '  const local = { n: 1 };',
+        '  const xs = ITEMS.map(() => local);',
+        '  xs.push({ n: 9 });',
+        '};',
+      ].join('\n'),
+    },
+    // A mapper handing back a FRESH value carries no constant into the copy at
+    // all.
+    {
+      name: 'freezes an array whose map callback hands back a fresh value',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const xs = ITEMS.map(() => ({ n: Math.random() }));',
+        '  xs.push({ n: 9 });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'ITEMS', valueKind: 'an array literal' },
+        },
+      ],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const run = () => {',
+        '  const xs = ITEMS.map(() => ({ n: Math.random() }));',
+        '  xs.push({ n: 9 });',
+        '};',
+      ].join('\n'),
+    },
+    // `concat` takes its element type from the RECEIVER, so an appended
+    // constant reaches the result's type never — measured safe, and the
+    // withhold must not spread to it.
+    {
+      name: 'freezes a constant appended to an array by concat',
+      code: [
+        'const OTHER = { n: 1 };',
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const xs = ITEMS.concat(OTHER);',
+        '  xs.push({ n: 9 });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'OTHER', valueKind: 'an object literal' },
+        },
+      ],
+      output: [
+        'const OTHER = { n: 1 } as const;',
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const xs = ITEMS.concat(OTHER);',
+        '  xs.push({ n: 9 });',
+        '};',
+      ].join('\n'),
+    },
+    // The withhold is keyed on a WRITE to the copy, as the copy walk has always
+    // been: a result that is only READ narrows harmlessly.
+    {
+      name: 'freezes a constant a map callback hands back into a copy that is only read',
+      code: [
+        'const OTHER = { n: 1 };',
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const xs = ITEMS.map(() => OTHER);',
+        '  return xs.length;',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'OTHER', valueKind: 'an object literal' },
+        },
+        {
+          messageId: 'asConst',
+          data: { name: 'ITEMS', valueKind: 'an array literal' },
+        },
+      ],
+      output: [
+        'const OTHER = { n: 1 } as const;',
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const run = () => {',
+        '  const xs = ITEMS.map(() => OTHER);',
+        '  return xs.length;',
+        '};',
+      ].join('\n'),
+    },
+    // The reference is resolved through the scope manager, so a callback-local
+    // binding SPELLED like the constant is a different variable and hands back
+    // its own mutable value.
+    {
+      name: 'freezes a constant a map callback shadows with a local binding of the same name',
+      code: [
+        'const OTHER = { n: 1 };',
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const xs = ITEMS.map(() => {',
+        '    const OTHER = { n: 2 };',
+        '    return OTHER;',
+        '  });',
+        '  xs.push({ n: 9 });',
+        '  return OTHER;',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'OTHER', valueKind: 'an object literal' },
+        },
+        {
+          messageId: 'asConst',
+          data: { name: 'ITEMS', valueKind: 'an array literal' },
+        },
+      ],
+      output: [
+        'const OTHER = { n: 1 } as const;',
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const run = () => {',
+        '  const xs = ITEMS.map(() => {',
+        '    const OTHER = { n: 2 };',
+        '    return OTHER;',
+        '  });',
+        '  xs.push({ n: 9 });',
+        '  return OTHER;',
+        '};',
+      ].join('\n'),
+    },
+    // An arithmetic operand COMPUTES, widening to `number` whatever the
+    // constant holds, so the assertion reaches the copy through it never.
+    {
+      name: 'freezes a constant a map callback computes with',
+      code: [
+        'const OTHER = { n: 1 };',
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const xs = ITEMS.map(() => OTHER.n * 2);',
+        '  xs.push(9);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'OTHER', valueKind: 'an object literal' },
+        },
+        {
+          messageId: 'asConst',
+          data: { name: 'ITEMS', valueKind: 'an array literal' },
+        },
+      ],
+      output: [
+        'const OTHER = { n: 1 } as const;',
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const run = () => {',
+        '  const xs = ITEMS.map(() => OTHER.n * 2);',
+        '  xs.push(9);',
+        '};',
+      ].join('\n'),
+    },
+    // A PREDICATE decides which elements survive rather than what they are
+    // typed as, so `filter` hands back the receiver's own element type.
+    {
+      name: 'freezes a constant read by a filter predicate',
+      code: [
+        'const OTHER = { n: 1 };',
+        'export const run = (items: { n: number }[]) => {',
+        '  const xs = items.filter(() => Boolean(OTHER));',
+        '  xs.push({ n: 9 });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'OTHER', valueKind: 'an object literal' },
+        },
+      ],
+      output: [
+        'const OTHER = { n: 1 } as const;',
+        'export const run = (items: { n: number }[]) => {',
+        '  const xs = items.filter(() => Boolean(OTHER));',
+        '  xs.push({ n: 9 });',
+        '};',
+      ].join('\n'),
+    },
+    // `forEach` hands back nothing, so what its callback returns types no copy.
+    {
+      name: 'freezes a constant a forEach callback hands back',
+      code: [
+        'const OTHER = { n: 1 };',
+        'export const run = (items: { n: number }[]) => {',
+        '  items.forEach(() => OTHER);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'OTHER', valueKind: 'an object literal' },
+        },
+      ],
+      output: [
+        'const OTHER = { n: 1 } as const;',
+        'export const run = (items: { n: number }[]) => {',
+        '  items.forEach(() => OTHER);',
+        '};',
+      ].join('\n'),
+    },
+    // The frozen-path screen still governs what the mapper hands back: an
+    // explicit cast stops the assertion, so the array behind it stays mutable
+    // and the copy over it accepts what it always did.
+    {
+      name: 'freezes an object whose cast property a map callback hands back',
+      code: [
+        'const CONFIG = { items: [] as string[] };',
+        'export const run = (rows: number[]) => {',
+        '  const xs = rows.map(() => CONFIG.items);',
+        "  xs.push(['a']);",
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'CONFIG', valueKind: 'an object literal' },
+        },
+      ],
+      output: [
+        'const CONFIG = { items: [] as string[] } as const;',
+        'export const run = (rows: number[]) => {',
+        '  const xs = rows.map(() => CONFIG.items);',
+        "  xs.push(['a']);",
+        '};',
       ].join('\n'),
     },
   ],

@@ -1059,6 +1059,172 @@ const copyExpressionOf = (node: TSESTree.Node): TSESTree.Node | null => {
 };
 
 /**
+ * The argument position `Array.from`'s MAPPER arrives in.
+ *
+ * Named beside `ARRAY_FROM_MAPPER_ELEMENT_INDEX` because the mapper is the
+ * SECOND argument while the element it is handed is its FIRST parameter, so
+ * two different indices for one call sit beside each other here.
+ */
+const ARRAY_FROM_MAPPER_ARGUMENT_INDEX = 1;
+
+/**
+ * The call whose RESULT is typed from what this function literal hands back:
+ * the `map`/`flatMap` call it is the callback of, or the `Array.from` call it
+ * is the mapper of.
+ *
+ * The RECEIVER is not consulted, because the question is what composes the
+ * result rather than where the elements came from — a mapper handing back a
+ * value of its own retypes the result whatever it is mapping over.
+ *
+ * A callback passed by NAME is a LIMITATION rather than a decision: the climb
+ * ends at the function's own declaration, and reaching the call sites from
+ * there is a hop through the binding that this resolver does not take, so
+ * `const pick = () => OTHER; items.map(pick)` keeps its report and its fix.
+ */
+const mapperCallOf = (fn: TSESTree.Node): TSESTree.CallExpression | null => {
+  const value = outermostValueOf(fn);
+  const call = value.parent;
+  if (!call || call.type !== AST_NODE_TYPES.CallExpression) {
+    return null;
+  }
+  if (
+    call.arguments[ARRAY_FROM_MAPPER_ARGUMENT_INDEX] === value &&
+    isNamespacedCallee(call.callee, 'Array', 'from')
+  ) {
+    return call;
+  }
+  if (call.arguments[0] !== value) {
+    return null;
+  }
+  const callee = unwrapValueWrappers(call.callee);
+  if (callee.type !== AST_NODE_TYPES.MemberExpression) {
+    return null;
+  }
+  const method = accessedPropertyName(callee);
+  return method !== null && CALLBACK_TYPED_COPY_METHODS.has(method)
+    ? call
+    : null;
+};
+
+/** The function whose body encloses this node, or null at the top level. */
+const enclosingFunctionOf = (node: TSESTree.Node): TSESTree.Node | null => {
+  let current: TSESTree.Node | undefined = node.parent;
+  while (current) {
+    if (FUNCTION_TYPES.has(current.type)) {
+      return current;
+    }
+    current = current.parent;
+  }
+  return null;
+};
+
+/**
+ * The expression whose type this value COMPOSES, or null where it composes
+ * nothing that leaves the position it sits in.
+ *
+ * These are the positions `carriesElementType` descends through, read in the
+ * opposite direction: that resolver starts from a returned value and asks
+ * whether the element reaches it, while this one starts from a reference and
+ * climbs to what is returned. The two must agree, since one file's
+ * `ITEMS.map((x) => [x])` and `ITEMS.map(() => [OTHER])` are the same
+ * composition of a frozen value into a fresh array.
+ *
+ * A `return` and a `yield` climb to the function they leave, whose result type
+ * they compose — the pair `returnedValuesOf` collects going the other way.
+ *
+ * Everything else stops the climb, which withholds nothing that matters: an
+ * arithmetic operand, a template literal and a call argument all WIDEN, so the
+ * assertion no longer reaches the value the position produces.
+ */
+const composedValueOf = (value: TSESTree.Node): TSESTree.Node | null => {
+  const parent = value.parent;
+  if (!parent) {
+    return null;
+  }
+  switch (parent.type) {
+    case AST_NODE_TYPES.ConditionalExpression:
+      // The TEST decides which branch runs rather than what the expression is
+      // typed as, so only the branches compose the result's union.
+      return parent.consequent === value || parent.alternate === value
+        ? parent
+        : null;
+    case AST_NODE_TYPES.LogicalExpression:
+      return parent;
+    case AST_NODE_TYPES.SequenceExpression:
+      return parent.expressions[parent.expressions.length - 1] === value
+        ? parent
+        : null;
+    case AST_NODE_TYPES.ArrayExpression:
+      return parent;
+    case AST_NODE_TYPES.Property:
+      // A COMPUTED key types the property NAME rather than the value, and the
+      // pattern screen reads names, not keys.
+      return parent.value === value &&
+        parent.parent?.type === AST_NODE_TYPES.ObjectExpression
+        ? parent.parent
+        : null;
+    case AST_NODE_TYPES.SpreadElement:
+      return parent.parent &&
+        (parent.parent.type === AST_NODE_TYPES.ArrayExpression ||
+          parent.parent.type === AST_NODE_TYPES.ObjectExpression)
+        ? parent.parent
+        : null;
+    case AST_NODE_TYPES.AwaitExpression:
+      return parent;
+    case AST_NODE_TYPES.ArrowFunctionExpression:
+      return parent.body === value ? parent : null;
+    case AST_NODE_TYPES.CallExpression:
+      // A function literal INVOKED on the spot hands its returns to the call,
+      // which is the one call whose result the assertion still reaches — the
+      // exception `carriesElementType` makes for the same shape.
+      return isFunctionValue(value) && parent.callee === value ? parent : null;
+    case AST_NODE_TYPES.ReturnStatement:
+    case AST_NODE_TYPES.YieldExpression:
+      return parent.argument === value ? enclosingFunctionOf(parent) : null;
+    default:
+      return null;
+  }
+};
+
+/**
+ * The `map`/`flatMap`/`Array.from` call whose result is typed from THIS value,
+ * or null when no mapper hands it back.
+ *
+ * A mapper's result is typed from what it returns, so a constant reached
+ * through that return types the copy exactly as the receiver's own element type
+ * does — and freezing the constant narrows the copy's elements, making
+ * `const xs = ITEMS.map(() => OTHER); xs.push({ n: 9 })` TS2322 for an input
+ * that compiled (Issue #2356). `carriesElementType` cannot answer this: it is
+ * keyed on the names the ELEMENT parameter binds, and the value here comes from
+ * a different binding entirely.
+ *
+ * The constant is identified by the reference walk that calls this, which reads
+ * the scope manager's reference lists rather than matching names — so a
+ * callback-local binding that shadows the constant's name is a different
+ * variable and reaches this resolver never, and a LOCAL constant, which this
+ * rule does not freeze, is walked never.
+ *
+ * Returns an ANCESTOR of the node it is given, as every derivation resolver
+ * must, so the walk that follows them strictly ascends.
+ */
+const mapperResultOf = (node: TSESTree.Node): TSESTree.Node | null => {
+  let value = outermostValueOf(node);
+  for (;;) {
+    if (isFunctionValue(value)) {
+      const call = mapperCallOf(value);
+      if (call) {
+        return call;
+      }
+    }
+    const composed = composedValueOf(value);
+    if (!composed) {
+      return null;
+    }
+    value = outermostValueOf(composed);
+  }
+};
+
+/**
  * Array methods whose result is an ELEMENT of the receiver rather than a fresh
  * array over it.
  *
@@ -1719,15 +1885,17 @@ const frozenAccessPathsRootedAt = (
 
 /**
  * Every way a value derived from this one keeps the constant's ELEMENT types:
- * a copy of it, the `Object.values`/`Object.entries` array over it, the
- * iterator its own `values`/`entries` hands back, and the collection built out
- * of it. Each resolver returns an ANCESTOR of the node it is given, which is
- * what lets the iteration walk follow them transitively without looping.
+ * a copy of it, the mapper result it is handed back into, the
+ * `Object.values`/`Object.entries` array over it, the iterator its own
+ * `values`/`entries` hands back, and the collection built out of it. Each
+ * resolver returns an ANCESTOR of the node it is given, which is what lets the
+ * iteration walk follow them transitively without looping.
  */
 const DERIVATION_RESOLVERS: readonly ((
   node: TSESTree.Node,
 ) => TSESTree.Node | null)[] = [
   copyExpressionOf,
+  mapperResultOf,
   elementProjectionCallOf,
   iteratorProjectionCallOf,
   elementCollectionOf,
@@ -1748,6 +1916,11 @@ const DERIVATION_RESOLVERS: readonly ((
  * absent from the resolver itself, its result being `string[]` whatever the
  * argument holds.
  *
+ * A mapper RESULT is followed for that same TYPE half: the copy it builds is
+ * typed from what the callback hands back, so a constant reached through that
+ * return narrows the copy's elements and `const xs = ITEMS.map(() => OTHER);
+ * xs.push({ n: 9 });` is TS2322 for an input that compiled (Issue #2356).
+ *
  * The remaining iteration resolvers stay absent: an ITERATOR is not a value a
  * binding is written through, and `new Set(ITEMS)` reshapes the constant into a
  * collection whose own question the iteration walk asks.
@@ -1756,6 +1929,7 @@ const ALIAS_DERIVATION_RESOLVERS: readonly ((
   node: TSESTree.Node,
 ) => TSESTree.Node | null)[] = [
   copyExpressionOf,
+  mapperResultOf,
   elementExpressionOf,
   elementProjectionCallOf,
 ];
