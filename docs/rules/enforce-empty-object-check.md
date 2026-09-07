@@ -70,12 +70,29 @@ function prepend(response: Readonly<NextResponse> | null | false) {
 }
 
 // A dictionary the source spells out is still reported, resolved or not:
-// `Record<K, V>` is an index signature whichever way `K` and `V` resolve.
-const payload: Record<string, unknown> | undefined = getPayload();
+// `Record<K, V>` is an index signature whichever way `K` and `V` resolve, and a
+// shape-preserving wrapper, a union member, an intersection whose every member
+// is pinned, and a same-file alias each spell the same index signature.
+const payload: Readonly<Record<string, unknown>> | undefined = getPayload();
 if (!payload || Object.keys(payload).length === 0) {
   return handle(payload);
 }
 ```
+
+Reading a spelling is not the same as following a reference, so each of those
+arms carries its own limit. A wrapper is unwrapped only onto a type that is
+itself pinned — `Readonly<Record<string, string>>` is a dictionary,
+`Readonly<NextResponse>` is not. `Required<T>` preserves only a type whose keys
+come from an index signature, because it turns an optional member into a
+required one and a required property makes `Object.keys()` non-empty for every
+valid value. An intersection needs EVERY member pinned, since
+`Record<string, string> & Session` carries `Session`'s required properties and a
+complete program calls it non-object; a union needs only one, mirroring the
+resolved case where any object-like member makes the whole union object-like. A
+generic alias is left unpinned for the same reason a wrapper is: its body is
+written against parameters that shadow any same-file alias of the same name. And
+an alias is followed only inside the file that declares it: a reference into a
+module the program did not load is the unresolved case above.
 
 The annotation has to sit on the binding. The one on
 `const { config }: Props = load()` describes the container, and deciding a single

@@ -501,6 +501,185 @@ export function run(sessionData: SessionData, skip: boolean) {
   }
 }`,
     },
+    /**
+     * #2345 negative controls. Reading MORE spellings of "the source pins a
+     * dictionary" widens the arm that reports, so each construct the widening
+     * touches carries the case it must still decline: a wrapper is unwrapped
+     * only onto a pinned inner type, an intersection needs every member pinned,
+     * and an alias is followed only into this file.
+     */
+    {
+      name: 'a wrapper over an unresolvable reference stays silent',
+      code: `import type { Thing } from './thing';
+export function run(config: Partial<Thing>, skip: boolean) {
+  if (!config || skip) {
+    return;
+  }
+}`,
+    },
+    {
+      name: 'a wrapper over a class instance stays silent',
+      code: `import { NextResponse } from 'next/server';
+export function run(response: Readonly<NextResponse>, skip: boolean) {
+  if (!response || skip) {
+    return;
+  }
+}`,
+    },
+    {
+      name: 'a Map annotation stays silent',
+      code: `export function run(configMap: Map<string, string>, skip: boolean) {
+  if (!configMap || skip) {
+    return;
+  }
+}`,
+    },
+    /**
+     * An intersection carrying a required property is `non-object` to a
+     * complete program, so a dictionary intersected with anything the source
+     * does not pin keeps the decline — `some`-style matching here would invert
+     * the very guards this branch protects.
+     */
+    {
+      name: 'an intersection with an unpinned member stays silent',
+      code: `import type { Session } from './session';
+export function run(config: Record<string, string> & Session, skip: boolean) {
+  if (!config || skip) {
+    return;
+  }
+}`,
+    },
+    /**
+     * `Required<…>` makes every named member required, so it preserves only a
+     * type whose keys come from an index signature. An all-optional member list
+     * under it gains a required property and stops being object-like.
+     */
+    {
+      name: 'Required over an all-optional member list stays silent',
+      code: `type Cfg = { name?: string };
+export function run(config: Required<Cfg>, skip: boolean) {
+  if (!config || skip) {
+    return;
+  }
+}`,
+    },
+    {
+      name: 'an alias to an unresolvable import stays silent',
+      code: `import type { Thing } from './thing';
+type Cfg = Readonly<Thing>;
+export function run(config: Cfg, skip: boolean) {
+  if (!config || skip) {
+    return;
+  }
+}`,
+    },
+    {
+      name: 'a self-referential alias terminates and stays silent',
+      code: `type Cfg = Readonly<Cfg>;
+export function run(config: Cfg, skip: boolean) {
+  if (!config || skip) {
+    return;
+  }
+}`,
+    },
+    /**
+     * A qualified name reaches into a namespace this program did not load, so
+     * it stays unpinned exactly as a bare imported reference does.
+     */
+    {
+      name: 'a qualified type name stays silent',
+      code: `import type * as Api from './api';
+export function run(config: Api.Config, skip: boolean) {
+  if (!config || skip) {
+    return;
+  }
+}`,
+    },
+    /**
+     * A member list is read the way `isObjectLikeType` reads a resolved type: a
+     * required property makes `Object.keys()` non-empty for every valid value,
+     * and a call signature marks behaviour rather than data.
+     */
+    {
+      name: 'an intersection with a required-property literal stays silent',
+      code: `export function run(
+  config: Record<string, string> & { id: number },
+  skip: boolean,
+) {
+  if (!config || skip) {
+    return;
+  }
+}`,
+    },
+    {
+      name: 'a wrapped call signature stays silent',
+      code: `export function run(config: Readonly<{ (): void }>, skip: boolean) {
+  if (!config || skip) {
+    return;
+  }
+}`,
+    },
+    /**
+     * A generic alias is written against parameters this reading does not
+     * substitute, and each parameter shadows a same-file alias of the same
+     * name, so `Wrapper<NextResponse>` would otherwise be answered by the
+     * unrelated `Cfg` beside it.
+     */
+    {
+      name: 'a generic alias whose parameter shadows a same-file alias stays silent',
+      code: `import { NextResponse } from 'next/server';
+type Cfg = Record<string, string>;
+type Wrapper<Cfg> = Readonly<Cfg>;
+export function run(response: Wrapper<NextResponse>, skip: boolean) {
+  if (!response || skip) {
+    return;
+  }
+}`,
+    },
+    /**
+     * The oracle the source readings above mimic. Under a real `ts.Program` the
+     * checker answers these on its own, and it declines both — `Required<…>`
+     * over an all-optional member list produces a required property, and an
+     * intersection carrying one is `non-object`. Pinning the oracle here is what
+     * makes the project-free verdicts falsifiable against something other than
+     * their own implementation.
+     */
+    {
+      name: 'a complete program declines Required over an all-optional type',
+      code: `type Cfg = { name?: string };
+export function run(config: Required<Cfg>, skip: boolean) {
+  if (!config || skip) {
+    return;
+  }
+}`,
+      filename: path.join(
+        tsconfigRootDir,
+        'src/tests/fixtures/type-aware-object.ts',
+      ),
+      parserOptions: {
+        project: './tsconfig.json',
+        tsconfigRootDir,
+      },
+    },
+    {
+      name: 'a complete program declines a dictionary intersected with required members',
+      code: `interface Session {
+  id: string;
+}
+export function run(config: Record<string, string> & Session, skip: boolean) {
+  if (!config || skip) {
+    return;
+  }
+}`,
+      filename: path.join(
+        tsconfigRootDir,
+        'src/tests/fixtures/type-aware-object.ts',
+      ),
+      parserOptions: {
+        project: './tsconfig.json',
+        tsconfigRootDir,
+      },
+    },
   ],
   invalid: [
     /**
@@ -1953,6 +2132,492 @@ function run() {
           handle(userData);
         }
         `,
+    },
+    /**
+     * #2345. `Record<K, V>` is an index signature whichever way its arguments
+     * resolve, and so is every construct below that carries one: the SPELLING
+     * is not what makes the value a plain data map. Reading only the bare
+     * reference left each of these silent on a guard the rule made before the
+     * declared-type carve-out existed and a complete program still reports.
+     */
+    {
+      code: `
+function handle(config: Readonly<Record<string, string>>) {
+  if (!config) {
+    return;
+  }
+}
+`,
+      errors: [{ messageId: 'missingEmptyObjectCheck' }],
+      output: `
+function handle(config: Readonly<Record<string, string>>) {
+  if (!config || Object.keys(config).length === 0) {
+    return;
+  }
+}
+`,
+    },
+    {
+      name: 'Partial over a Record still reports',
+      code: `
+export function run(config: Partial<Record<string, string>>, skip: boolean) {
+  if (!config || skip) {
+    return;
+  }
+}
+`,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `
+export function run(config: Partial<Record<string, string>>, skip: boolean) {
+  if (!config || Object.keys(config).length === 0 || skip) {
+    return;
+  }
+}
+`,
+    },
+    {
+      name: 'Required over a Record still reports',
+      code: `
+export function run(config: Required<Record<string, string>>, skip: boolean) {
+  if (!config || skip) {
+    return;
+  }
+}
+`,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `
+export function run(config: Required<Record<string, string>>, skip: boolean) {
+  if (!config || Object.keys(config).length === 0 || skip) {
+    return;
+  }
+}
+`,
+    },
+    {
+      name: 'nested shape-preserving wrappers over a Record still report',
+      code: `
+export function run(config: Readonly<Partial<Record<string, string>>>, skip: boolean) {
+  if (!config || skip) {
+    return;
+  }
+}
+`,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `
+export function run(config: Readonly<Partial<Record<string, string>>>, skip: boolean) {
+  if (!config || Object.keys(config).length === 0 || skip) {
+    return;
+  }
+}
+`,
+    },
+    {
+      name: 'a wrapped Record inside a union still reports',
+      code: `
+export function run(config: Readonly<Record<string, string>> | undefined, skip: boolean) {
+  if (!config || skip) {
+    return;
+  }
+}
+`,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `
+export function run(config: Readonly<Record<string, string>> | undefined, skip: boolean) {
+  if (!config || Object.keys(config).length === 0 || skip) {
+    return;
+  }
+}
+`,
+    },
+    {
+      name: 'a Record intersected with an all-optional literal still reports',
+      code: `
+export function run(config: Record<string, string> & { id?: number }, skip: boolean) {
+  if (!config || skip) {
+    return;
+  }
+}
+`,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `
+export function run(config: Record<string, string> & { id?: number }, skip: boolean) {
+  if (!config || Object.keys(config).length === 0 || skip) {
+    return;
+  }
+}
+`,
+    },
+    {
+      name: 'a same-file alias to a Record on a parameter still reports',
+      code: `
+type Cfg = Record<string, string>;
+export function run(config: Cfg, skip: boolean) {
+  if (!config || skip) {
+    return;
+  }
+}
+`,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `
+type Cfg = Record<string, string>;
+export function run(config: Cfg, skip: boolean) {
+  if (!config || Object.keys(config).length === 0 || skip) {
+    return;
+  }
+}
+`,
+    },
+    {
+      name: 'a chained same-file alias to a Record still reports',
+      code: `
+type Inner = Record<string, string>;
+type Cfg = Inner;
+export function run(config: Cfg, skip: boolean) {
+  if (!config || skip) {
+    return;
+  }
+}
+`,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `
+type Inner = Record<string, string>;
+type Cfg = Inner;
+export function run(config: Cfg, skip: boolean) {
+  if (!config || Object.keys(config).length === 0 || skip) {
+    return;
+  }
+}
+`,
+    },
+    {
+      name: 'a same-file alias to a wrapped Record still reports',
+      code: `
+type Cfg = Readonly<Record<string, string>>;
+export function run(config: Cfg, skip: boolean) {
+  if (!config || skip) {
+    return;
+  }
+}
+`,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `
+type Cfg = Readonly<Record<string, string>>;
+export function run(config: Cfg, skip: boolean) {
+  if (!config || Object.keys(config).length === 0 || skip) {
+    return;
+  }
+}
+`,
+    },
+    {
+      name: 'a same-file alias to a Record on a variable still reports',
+      code: `
+type Cfg = Record<string, string>;
+export function run(skip: boolean) {
+  const config: Cfg = load();
+  if (!config || skip) {
+    return;
+  }
+}
+`,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `
+type Cfg = Record<string, string>;
+export function run(skip: boolean) {
+  const config: Cfg = load();
+  if (!config || Object.keys(config).length === 0 || skip) {
+    return;
+  }
+}
+`,
+    },
+    /**
+     * An intersection carrying `any` reduces to `any`, which states nothing
+     * about the value's shape, so the naming heuristic keeps answering exactly
+     * as it does for a union carrying one.
+     */
+    {
+      name: 'an intersection carrying any still reports',
+      code: `
+import type { Props } from './props';
+export function run(config: Props & any, skip: boolean) {
+  if (!config || skip) {
+    return;
+  }
+}
+`,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `
+import type { Props } from './props';
+export function run(config: Props & any, skip: boolean) {
+  if (!config || Object.keys(config).length === 0 || skip) {
+    return;
+  }
+}
+`,
+    },
+    /**
+     * #2345 positive controls. Each of these resolves in the isolated
+     * single-file program, so the checker answers `object` and the declared-type
+     * carve-out never runs. They pin the ordering: widening the carve-out must
+     * not overtake the checker's own verdict.
+     */
+    {
+      name: 'an inline index signature still reports',
+      code: `
+export function run(config: { [key: string]: string }, skip: boolean) {
+  if (!config || skip) {
+    return;
+  }
+}
+`,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `
+export function run(config: { [key: string]: string }, skip: boolean) {
+  if (!config || Object.keys(config).length === 0 || skip) {
+    return;
+  }
+}
+`,
+    },
+    {
+      name: 'a mapped type still reports',
+      code: `
+type Keys = 'a' | 'b';
+type Cfg = { [K in Keys]?: string };
+export function run(config: Cfg, skip: boolean) {
+  if (!config || skip) {
+    return;
+  }
+}
+`,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `
+type Keys = 'a' | 'b';
+type Cfg = { [K in Keys]?: string };
+export function run(config: Cfg, skip: boolean) {
+  if (!config || Object.keys(config).length === 0 || skip) {
+    return;
+  }
+}
+`,
+    },
+    {
+      name: 'a same-file alias to an inline literal still reports',
+      code: `
+type Cfg = { name?: string };
+export function run(config: Cfg, skip: boolean) {
+  if (!config || skip) {
+    return;
+  }
+}
+`,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `
+type Cfg = { name?: string };
+export function run(config: Cfg, skip: boolean) {
+  if (!config || Object.keys(config).length === 0 || skip) {
+    return;
+  }
+}
+`,
+    },
+    {
+      name: 'a same-file interface with only optional members still reports',
+      code: `
+interface Cfg {
+  name?: string;
+}
+export function run(config: Cfg, skip: boolean) {
+  if (!config || skip) {
+    return;
+  }
+}
+`,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `
+interface Cfg {
+  name?: string;
+}
+export function run(config: Cfg, skip: boolean) {
+  if (!config || Object.keys(config).length === 0 || skip) {
+    return;
+  }
+}
+`,
+    },
+    /**
+     * A nullable member contributes no shape to a union, exactly as
+     * `isObjectLikeType` skips one on a resolved type, so the dictionary beside
+     * it still answers for the whole annotation.
+     */
+    {
+      name: 'a nullable union under Required still reports',
+      code: `
+export function run(
+  config: Required<Record<string, string> | undefined>,
+  skip: boolean,
+) {
+  if (!config || skip) {
+    return;
+  }
+}
+`,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `
+export function run(
+  config: Required<Record<string, string> | undefined>,
+  skip: boolean,
+) {
+  if (!config || Object.keys(config).length === 0 || skip) {
+    return;
+  }
+}
+`,
+    },
+    /**
+     * The same three annotations under a real `ts.Program`, where the checker
+     * decides and the source-reading arm never runs. They are the oracle the
+     * project-free verdicts above are written to match, so a divergence fails
+     * here rather than surviving as a difference nobody measures.
+     */
+    {
+      name: 'a complete program reports Required over a Record',
+      code: `export function run(config: Required<Record<string, string>>, skip: boolean) {
+  if (!config || skip) {
+    return;
+  }
+}`,
+      filename: path.join(
+        tsconfigRootDir,
+        'src/tests/fixtures/type-aware-object.ts',
+      ),
+      parserOptions: {
+        project: './tsconfig.json',
+        tsconfigRootDir,
+      },
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `export function run(config: Required<Record<string, string>>, skip: boolean) {
+  if (!config || Object.keys(config).length === 0 || skip) {
+    return;
+  }
+}`,
+    },
+    {
+      name: 'a complete program reports a Record intersected with an all-optional literal',
+      code: `export function run(
+  config: Record<string, string> & { id?: number },
+  skip: boolean,
+) {
+  if (!config || skip) {
+    return;
+  }
+}`,
+      filename: path.join(
+        tsconfigRootDir,
+        'src/tests/fixtures/type-aware-object.ts',
+      ),
+      parserOptions: {
+        project: './tsconfig.json',
+        tsconfigRootDir,
+      },
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `export function run(
+  config: Record<string, string> & { id?: number },
+  skip: boolean,
+) {
+  if (!config || Object.keys(config).length === 0 || skip) {
+    return;
+  }
+}`,
+    },
+    {
+      name: 'a complete program reports Required over a nullable Record',
+      code: `export function run(
+  config: Required<Record<string, string> | undefined>,
+  skip: boolean,
+) {
+  if (!config || skip) {
+    return;
+  }
+}`,
+      filename: path.join(
+        tsconfigRootDir,
+        'src/tests/fixtures/type-aware-object.ts',
+      ),
+      parserOptions: {
+        project: './tsconfig.json',
+        tsconfigRootDir,
+      },
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `export function run(
+  config: Required<Record<string, string> | undefined>,
+  skip: boolean,
+) {
+  if (!config || Object.keys(config).length === 0 || skip) {
+    return;
+  }
+}`,
+    },
+    /**
+     * The index signature can be written inline under the wrapper rather than
+     * spelled `Record`; it is the same signature and the same verdict.
+     */
+    {
+      name: 'a wrapped inline index signature still reports',
+      code: `
+export function run(config: Readonly<{ [key: string]: string }>, skip: boolean) {
+  if (!config || skip) {
+    return;
+  }
+}
+`,
+      errors: [
+        { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+      ],
+      output: `
+export function run(config: Readonly<{ [key: string]: string }>, skip: boolean) {
+  if (!config || Object.keys(config).length === 0 || skip) {
+    return;
+  }
+}
+`,
     },
   ],
 });
