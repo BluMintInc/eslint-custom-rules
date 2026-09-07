@@ -667,12 +667,21 @@ const patternBoundNames = (
 };
 
 /**
- * Every value a function hands back: its expression body, or the argument of
- * each `return` in its block.
+ * Every value a function hands back: its expression body, the argument of each
+ * `return` in its block, and the argument of each `yield` — a generator hands
+ * its yields back through the iterator it returns, so they compose its result
+ * type exactly as a `return` composes a plain function's. `ITEMS.map(function*
+ * (item) { yield item.n; })` is `Generator<1, …>[]` over a frozen `[{ n: 1 }]`,
+ * so pushing a generator of `number` is TS2345 for an input that compiled.
+ * `yield* xs` is read on the same terms: over-reading its argument as the
+ * yielded value can only WITHHOLD a report, while missing it ships a `--fix`
+ * that stops the file compiling.
  *
  * Descent stops at a nested function, whose `return` answers for THAT function
  * rather than this one — the same boundary `ASTHelpers.hasReturnStatement`
- * keeps, for the same reason.
+ * keeps, for the same reason. A function handed BACK is a different question,
+ * answered by `carriesElementType`: its returns are part of the value this one
+ * yields up, not of some other function's.
  */
 const returnedValuesOf = (
   callback: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression,
@@ -691,6 +700,9 @@ const returnedValuesOf = (
         returned.push(node.argument);
       }
       return;
+    }
+    if (node.type === AST_NODE_TYPES.YieldExpression && node.argument) {
+      returned.push(node.argument);
     }
     for (const [key, value] of Object.entries(node)) {
       if (key === 'parent') {
@@ -726,12 +738,20 @@ const returnedValuesOf = (
  *   `(x) => [x]` and `(x) => ({ ...x })` are both TS2322 on a later `push`;
  * - the operand of an `await`, which unwraps rather than widens, so
  *   `async (x) => await x.n` hands back `Promise<1 | 2>` and pushing
- *   `Promise.resolve(3)` is TS2345.
+ *   `Promise.resolve(3)` is TS2345;
+ * - the values a returned function LITERAL hands back, and the defaults its
+ *   parameters are typed from, which compose that function's own type — and
+ *   that type IS the mapper's result, so `(item) => () => item` over a frozen
+ *   `[{ n: 1 }]` yields `(() => { readonly n: 1 })[]` and pushing
+ *   `() => ({ n: 9 })` is TS2322 for an input that compiled (Issue #2351).
+ *
+ * A function that is merely CALLED is still not descended into: the call is
+ * typed by the callee's declared or inferred return type rather than by the
+ * element, and a call is where every other widening construct hides.
  *
  * The TEST of a conditional is excluded: its type decides which branch runs,
- * not what the expression is typed as. A function LITERAL is not descended into
- * either, keeping the boundary `returnedValuesOf` draws. Neither is a template
- * literal, an arithmetic operand or a call: those COMPUTE, widening to
+ * not what the expression is typed as. Neither is a template literal, an
+ * arithmetic operand or a call descended into: those COMPUTE, widening to
  * `string`/`number`/the callee's own return type whatever the receiver holds,
  * so the assertion reaches nothing through them and the report stands.
  */
@@ -772,9 +792,56 @@ const carriesElementType = (
       return carries(root.argument);
     case AST_NODE_TYPES.AwaitExpression:
       return carries(root.argument);
+    case AST_NODE_TYPES.ArrowFunctionExpression:
+    case AST_NODE_TYPES.FunctionExpression:
+      return functionCarriesElementType(root, elementNames);
     default:
       return false;
   }
+};
+
+/**
+ * Whether a function HANDED BACK by a callback carries the element type into
+ * the callback's own result.
+ *
+ * The element is matched by name within one span at a time, so a parameter of
+ * the handed-back function that rebinds an element name introduces a DIFFERENT
+ * binding and takes that name out of reach: `(item) => (item: number) => item`
+ * hands back `(item: number) => number`, which no frozen element reaches, and
+ * freezing under it is measured safe.
+ *
+ * A parameter DEFAULT is read even though the parameter's name is out of reach,
+ * because the default is what the parameter is TYPED from: `(item) => (x =
+ * item.n) => x` hands back `(x?: 1) => 1` over a frozen `[{ n: 1 }]`, so
+ * pushing `() => 9` is TS2322.
+ *
+ * A name the function's BODY rebinds (`() => { const item = 5; return item; }`)
+ * is not tracked, which can only over-read the carriage and withhold a report —
+ * the cheap error of the two, since the alternative ships a `--fix` that stops
+ * the file compiling.
+ */
+const functionCarriesElementType = (
+  fn: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression,
+  elementNames: ReadonlySet<string>,
+): boolean => {
+  const reachable = new Set(elementNames);
+  for (const parameter of fn.params) {
+    for (const bound of patternBoundNames(parameter)) {
+      reachable.delete(bound);
+    }
+  }
+  if (reachable.size === 0) {
+    return false;
+  }
+  const carriesDefault = fn.params.some(
+    (parameter) =>
+      parameter.type === AST_NODE_TYPES.AssignmentPattern &&
+      carriesElementType(parameter.right, reachable),
+  );
+  return (
+    carriesDefault ||
+    returnedValuesOf(fn).some((handed) => carriesElementType(handed, reachable))
+  );
 };
 
 /**
@@ -794,9 +861,10 @@ const carriesElementType = (
  * a callback that computes and froze the constant under it (Issue #2349). The
  * match is by name within the callback's own body, the single span this
  * question is asked over, because a derivation resolver is handed a node and no
- * scope. A name a nested function rebinds is unreachable — descent stops at
- * every function boundary — so the worst a shadow can do is withhold the
- * assertion from a call that would have kept it, the cheap error of the two.
+ * scope. A PARAMETER of a function the callback hands back takes the name it
+ * rebinds out of reach (`functionCarriesElementType`); any other shadow is
+ * unread, so the worst one can do is withhold the assertion from a call that
+ * would have kept it, the cheap error of the two.
  *
  * ANY returned value carrying the element is enough. Branches returning
  * different things widen their union, so the assertion may then reach nothing

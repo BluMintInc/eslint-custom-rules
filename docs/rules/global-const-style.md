@@ -578,11 +578,32 @@ expression does (`(x) => ({ label: String(x.n) })`), and so does an element
 reached only in a conditional's **test**, which decides which branch runs rather
 than what the expression is typed as. The discriminator is what the callback
 hands back, not which body spells it, so a block body and a function expression
-read the same; descent stops at a nested function, whose `return` answers for
-that function rather than for the mapper. Either way the call is still an
-**iteration** of the constant: the element it hands its callback carries the
-frozen type even when the result does not — see [Constants that are mutated
-later](#constants-that-are-mutated-later).
+read the same.
+
+A mapper handing back a **closure** hands back that closure's type, which the
+element composes, so the descent follows it: the closure's own returns, the
+values it `yield`s when it is a generator, and the defaults its parameters are
+typed from are all read on the terms above. A closure whose returns compute
+(`(item) => () => item.n * 2`) carries nothing and is still frozen, as is one
+returning a parameter that **shadows** the element, which is a different
+binding:
+
+```ts
+// Not frozen: `makers` is `(() => { readonly n: 1 })[]`, so pushing
+// `() => ({ n: 9 })` would be TS2322 once ITEMS is frozen.
+const ITEMS = [{ n: 1 }];
+export const run = () => {
+  const makers = ITEMS.map((item) => () => item);
+  makers.push(() => ({ n: 9 }));
+};
+```
+
+A function that is merely **called** is not descended into: the call is typed by
+the callee's own return type rather than by the element, so
+`ITEMS.map((item) => label(item))` keeps its report. Either way the call is
+still an **iteration** of the constant: the element it hands its callback
+carries the frozen type even when the result does not — see [Constants that are
+mutated later](#constants-that-are-mutated-later).
 
 A copy that is **iterated in place** rather than bound to a name carries the
 type into the element the iteration binds — `[...ITEMS].forEach(…)` and
