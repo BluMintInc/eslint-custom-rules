@@ -2557,6 +2557,259 @@ const Probe = () => {
       ].join('\n'),
       filename: 'test.ts',
     },
+    // Issue #2351: a mapper handing back a CLOSURE hands back the closure's own
+    // type, which the element's type composes — so the frozen element reaches
+    // the mapped array through it. `(item) => () => item` over a frozen
+    // `[{ n: 1 }]` yields `(() => { readonly n: 1 })[]`, and every insertion
+    // below is a build break under `--fix` for an input that compiled. The
+    // fixture this replaces closed on `makers.reverse()`, which rearranges the
+    // elements it already holds and inserts nothing, so it could not break
+    // under ANY element type and passed whichever way the boundary was drawn.
+    {
+      name: 'declines to freeze an array whose mapper returns a closure over the element',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const makers = ITEMS.map((item) => () => item);',
+        '  makers.push(() => ({ n: 9 }));',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // Every insertion spelling reaches the same element type, so the verdict
+    // cannot depend on which one the mutation is written with.
+    {
+      name: 'declines to freeze an array whose closure-mapped result is unshifted',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const makers = ITEMS.map((item) => () => item);',
+        '  makers.unshift(() => ({ n: 9 }));',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose closure-mapped result is spliced into',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const makers = ITEMS.map((item) => () => item);',
+        '  makers.splice(0, 0, () => ({ n: 9 }));',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // A closure returning a PROPERTY of the element carries that property's
+    // frozen type on the same terms a bare mapper does.
+    {
+      name: 'declines to freeze an array whose mapper returns a closure over an element property',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const makers = ITEMS.map((item) => () => item.n);',
+        '  makers.push(() => 9);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // `flatMap` composes its result from the same closure type, so wrapping the
+    // closure in the array literal it flattens changes nothing.
+    {
+      name: 'declines to freeze an array whose flatMap mapper wraps a closure over the element',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const makers = ITEMS.flatMap((item) => [() => item]);',
+        '  makers.push(() => ({ n: 9 }));',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // The body syntax that spells the closure is not what decides the type it
+    // hands back, so the block-bodied and function-expression spellings are
+    // read exactly as the expression-bodied one is.
+    {
+      name: 'declines to freeze an array whose block-bodied mapper returns a closure',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const makers = ITEMS.map((item) => {',
+        '    return () => item;',
+        '  });',
+        '  makers.push(() => ({ n: 9 }));',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose function-expression mapper returns a function expression',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const makers = ITEMS.map(function (item) {',
+        '    return function () {',
+        '      return item;',
+        '    };',
+        '  });',
+        '  makers.push(function () {',
+        '    return { n: 9 };',
+        '  });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // An async closure hands back `Promise<T>`, which the element composes
+    // exactly as the synchronous spelling does.
+    {
+      name: 'declines to freeze an array whose mapper returns an async closure',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const makers = ITEMS.map((item) => async () => item);',
+        '  makers.push(async () => ({ n: 9 }));',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // A destructured element is the same extraction spelled differently
+    // (Issue #2349), and the closure carries the name it binds.
+    {
+      name: 'declines to freeze an array whose destructured mapper returns a closure over the property',
+      code: [
+        'const ITEMS = [{ n: 1 }, { n: 2 }];',
+        'export const run = () => {',
+        '  const makers = ITEMS.map(({ n }) => () => n);',
+        '  makers.push(() => 9);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // The positions `carriesElementType` already reads are read inside the
+    // closure too: the closure's return is decided on the same terms as the
+    // mapper's.
+    {
+      name: 'declines to freeze an array whose returned closure wraps the element in an array',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const makers = ITEMS.map((item) => () => [item]);',
+        '  makers.push(() => [{ n: 9 }]);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose returned closure builds an object from the element',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const makers = ITEMS.map((item) => () => ({ held: item.n }));',
+        '  makers.push(() => ({ held: 9 }));',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose returned closure reaches the element in one ternary branch',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const makers = ITEMS.map((item) => (flag: boolean) => (flag ? item.n : 0));',
+        '  makers.push(() => 9);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // A generator hands its yields back through the iterator it returns, so a
+    // yielded element composes the generator's type as a `return` composes a
+    // plain closure's.
+    {
+      name: 'declines to freeze an array whose mapper returns a generator yielding the element property',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const makers = ITEMS.map((item) => function* () {',
+        '    yield item.n;',
+        '  });',
+        '  makers.push(function* () {',
+        '    yield 9;',
+        '  });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose returned generator delegates the element property',
+      code: [
+        "const ITEMS = [{ tags: ['a'] }];",
+        'export const run = () => {',
+        '  const makers = ITEMS.map((item) => function* () {',
+        '    yield* item.tags;',
+        '  });',
+        '  makers.push(function* () {',
+        "    yield 'b';",
+        '  });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // The mapper itself may be the generator, whose yields are the values IT
+    // hands back.
+    {
+      name: 'declines to freeze an array whose generator mapper yields the element property',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const gens = ITEMS.map(function* (item) {',
+        '    yield item.n;',
+        '  });',
+        '  gens.push((function* () {',
+        '    yield 9;',
+        '  })());',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // `Array.from(X, fn)` carries the same mapper, so the closure is read
+    // through the sibling spelling too.
+    {
+      name: 'declines to freeze an array whose Array.from mapper returns a closure',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const makers = Array.from(ITEMS, (item) => () => item.n);',
+        '  makers.push(() => 9);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // Each nesting level hands the next one's type back, so the descent cannot
+    // stop after one.
+    {
+      name: 'declines to freeze an array whose mapper returns a doubly nested closure',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const makers = ITEMS.map((item) => () => () => item.n);',
+        '  makers.push(() => () => 9);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // A parameter DEFAULT is what its parameter is typed from, so it carries
+    // the element into the closure's signature without any return doing so.
+    {
+      name: 'declines to freeze an array whose returned closure defaults a parameter from the element',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const makers = ITEMS.map((item) => (value = item.n) => value);',
+        '  makers.push(() => 9);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
     // Issue #2349: `Object.values`/`Object.entries` build a FRESH container, so
     // no write to the container is a readonly violation — but its elements are
     // the constant's own frozen property values, which is the TYPE half of the
@@ -6179,16 +6432,17 @@ const Probe = () => {
         '};',
       ].join('\n'),
     },
-    // Descent stops at a nested function, whose `return` answers for THAT
-    // function rather than for the mapper — so the closure's body does not
-    // decide what the mapper hands back.
+    // Issue #2351: descending into a returned closure is not a licence to
+    // decline for every mapper that mentions a function. A closure whose
+    // returns COMPUTE reaches nothing of the element, so the report stands and
+    // the freeze is safe — measured, not assumed, for each control below.
     {
-      name: 'freezes an array whose mapper returns a nested closure',
+      name: 'freezes an array whose mapper returns a closure over a fresh literal',
       code: [
         'const ITEMS = [{ n: 1 }];',
         'export const run = () => {',
-        '  const makers = ITEMS.map((item) => () => item);',
-        '  makers.reverse();',
+        '  const makers = ITEMS.map(() => () => ({ n: 9 }));',
+        '  makers.push(() => ({ n: 3 }));',
         '};',
       ].join('\n'),
       filename: 'test.ts',
@@ -6196,8 +6450,166 @@ const Probe = () => {
       output: [
         'const ITEMS = [{ n: 1 }] as const;',
         'export const run = () => {',
-        '  const makers = ITEMS.map((item) => () => item);',
-        '  makers.reverse();',
+        '  const makers = ITEMS.map(() => () => ({ n: 9 }));',
+        '  makers.push(() => ({ n: 3 }));',
+        '};',
+      ].join('\n'),
+    },
+    {
+      name: 'freezes an array whose returned closure computes from the element',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const makers = ITEMS.map((item) => () => item.n * 2);',
+        '  makers.push(() => 9);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const run = () => {',
+        '  const makers = ITEMS.map((item) => () => item.n * 2);',
+        '  makers.push(() => 9);',
+        '};',
+      ].join('\n'),
+    },
+    {
+      name: 'freezes an array whose returned closure interpolates the element property',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const makers = ITEMS.map((item) => () => `${item.n}`);',
+        "  makers.push(() => 'x');",
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const run = () => {',
+        '  const makers = ITEMS.map((item) => () => `${item.n}`);',
+        "  makers.push(() => 'x');",
+        '};',
+      ].join('\n'),
+    },
+    {
+      name: 'freezes an array whose returned generator yields a computed value',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const makers = ITEMS.map((item) => function* () {',
+        '    yield item.n * 2;',
+        '  });',
+        '  makers.push(function* () {',
+        '    yield 9;',
+        '  });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const run = () => {',
+        '  const makers = ITEMS.map((item) => function* () {',
+        '    yield item.n * 2;',
+        '  });',
+        '  makers.push(function* () {',
+        '    yield 9;',
+        '  });',
+        '};',
+      ].join('\n'),
+    },
+    // The closure's own parameter is a DIFFERENT binding from the element it
+    // shadows, so the name it returns carries nothing of the constant.
+    {
+      name: 'freezes an array whose returned closure returns its own shadowing parameter',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const makers = ITEMS.map((item) => (item: number) => item);',
+        '  makers.push((value: number) => value + 1);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const run = () => {',
+        '  const makers = ITEMS.map((item) => (item: number) => item);',
+        '  makers.push((value: number) => value + 1);',
+        '};',
+      ].join('\n'),
+    },
+    // The boundary the descent keeps: a function that is merely CALLED is not
+    // descended into. The call is typed by the callee's own return type — here
+    // declared `number` — so the element reaches nothing through it and the
+    // freeze compiles.
+    {
+      name: 'freezes an array whose mapper calls a closure with a declared return type',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const ns = ITEMS.map((item) => ((): number => item.n)());',
+        '  ns.push(3);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const run = () => {',
+        '  const ns = ITEMS.map((item) => ((): number => item.n)());',
+        '  ns.push(3);',
+        '};',
+      ].join('\n'),
+    },
+    // A closure the mapper CALLS for its effect and never hands back is on the
+    // far side of that boundary too: what the mapper returns is the literal
+    // beside it.
+    {
+      name: 'freezes an array whose mapper calls a closure and returns a literal',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const zeros = ITEMS.map((item) => {',
+        '    (() => item.n)();',
+        '    return 0;',
+        '  });',
+        '  zeros.push(3);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const run = () => {',
+        '  const zeros = ITEMS.map((item) => {',
+        '    (() => item.n)();',
+        '    return 0;',
+        '  });',
+        '  zeros.push(3);',
+        '};',
+      ].join('\n'),
+    },
+    // The position the element arrives in stays load-bearing inside a closure:
+    // a closure over the INDEX hands back nothing of the constant.
+    {
+      name: 'freezes an array whose returned closure returns the index',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  const makers = ITEMS.map((item, index) => () => index);',
+        '  makers.push(() => 9);',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const run = () => {',
+        '  const makers = ITEMS.map((item, index) => () => index);',
+        '  makers.push(() => 9);',
         '};',
       ].join('\n'),
     },
