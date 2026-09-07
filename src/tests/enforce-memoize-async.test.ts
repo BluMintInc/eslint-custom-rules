@@ -8290,3 +8290,435 @@ class Repo {
     ],
   },
 );
+
+// Issue #2348: the reported-effect discriminator reads WHICH FIELDS a result
+// carries, so it has to see every way a method writes one. An increment, a
+// `delete` and a destructuring target write a field as plainly as `=` does, and
+// a method whose only write is spelled one of those ways reports on an effect
+// exactly as its `=` twin does.
+//
+// The read side is unchanged: the gate withholds only when the result reads
+// NONE of the written fields, so each shape below is paired with a variant
+// whose result hands the written field back and keeps its report.
+ruleTesterTs.run(
+  'enforce-memoize-async: write shapes beyond assignment (issue #2348)',
+  enforceMemoizeAsync,
+  {
+    valid: [
+      {
+        // Verbatim from the report.
+        name: 'an incremented counter is a field the method writes',
+        code: `
+class Reclaimer {
+  public async reclaim(holder: Lease) {
+    this.attempts++;
+    return holder.release();
+  }
+}
+`,
+      },
+      {
+        name: 'a prefix increment is a field the method writes',
+        code: `
+class Reclaimer {
+  public async reclaim(holder: Lease) {
+    ++this.attempts;
+    return await holder.release();
+  }
+}
+`,
+      },
+      {
+        // Verbatim from the report.
+        name: 'a deleted element is a write rooted at the field that held it',
+        code: `
+class Reclaimer {
+  public async reclaim(id: string) {
+    await this.forceRelease(id);
+    delete this.slots[id];
+    return true;
+  }
+}
+`,
+      },
+      {
+        // Verbatim from the report.
+        name: 'an object pattern target is a field the method writes',
+        code: `
+class Reclaimer {
+  public async reclaim(state: LeaseState) {
+    await this.forceRelease(state.holder);
+    ({ idleSince: this.idleSince } = state);
+    return true;
+  }
+}
+`,
+      },
+      {
+        name: 'an array pattern target is a field the method writes',
+        code: `
+class Reclaimer {
+  public async reclaim(holders: Lease[]) {
+    await this.forceRelease(holders[0]);
+    [this.head] = holders;
+    return true;
+  }
+}
+`,
+      },
+      {
+        name: 'a nested pattern target is a field the method writes',
+        code: `
+class Reclaimer {
+  public async reclaim(state: LeaseState) {
+    await this.forceRelease(state.holder);
+    ({ lease: { idleSince: this.idleSince } } = state);
+    return true;
+  }
+}
+`,
+      },
+      {
+        name: 'a defaulted pattern target is a field the method writes',
+        code: `
+class Reclaimer {
+  public async reclaim(state: LeaseState) {
+    await this.forceRelease(state.holder);
+    ({ idleSince: this.idleSince = null } = state);
+    return true;
+  }
+}
+`,
+      },
+      {
+        name: 'a rest pattern target is a field the method writes',
+        code: `
+class Reclaimer {
+  public async reclaim(state: LeaseState) {
+    await this.forceRelease(state.holder);
+    ({ holder: ignored, ...this.remainder } = state);
+    return true;
+  }
+}
+`,
+      },
+      {
+        name: 'a for-of loop variable that is a field is a field the method writes',
+        code: `
+class Reclaimer {
+  public async reclaimAll(pages: Page[]) {
+    for (this.cursor of pages) {
+      await this.forceRelease(this.cursor);
+    }
+    return pages.length;
+  }
+}
+`,
+      },
+      {
+        name: 'a for-in loop variable that is a field is a field the method writes',
+        code: `
+class Reclaimer {
+  public async reclaimAll(slots: Record<string, Lease>) {
+    for (this.slotKey in slots) {
+      await this.forceRelease(slots[this.slotKey]);
+    }
+    return true;
+  }
+}
+`,
+      },
+      {
+        name: 'an increment inside a try is still a field the method writes',
+        code: `
+class Reclaimer {
+  public async reclaim(holder: Lease) {
+    try {
+      await this.forceRelease(holder);
+    } finally {
+      this.attempts++;
+    }
+    return true;
+  }
+}
+`,
+      },
+    ],
+    invalid: [
+      {
+        // The counter is written and handed back, so the write fills a cache.
+        name: 'an incremented counter the result reads still reports',
+        code: `
+class Repo {
+  public async load(id: string) {
+    this.hits++;
+    await fetch(id);
+    return this.hits;
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Repo {
+  @Memoize()
+  public async load(id: string) {
+    this.hits++;
+    await fetch(id);
+    return this.hits;
+  }
+}
+`,
+      },
+      {
+        // The `delete` and the read meet on the root field `slots`.
+        name: 'a deleted element whose root the result reads still reports',
+        code: `
+class Repo {
+  public async load(id: string) {
+    delete this.slots[id];
+    return this.slots;
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Repo {
+  @Memoize()
+  public async load(id: string) {
+    delete this.slots[id];
+    return this.slots;
+  }
+}
+`,
+      },
+      {
+        name: 'an object pattern target the result reads still reports',
+        code: `
+class Repo {
+  public async load(state: LoadState) {
+    ({ cached: this.cached } = state);
+    return this.cached;
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Repo {
+  @Memoize()
+  public async load(state: LoadState) {
+    ({ cached: this.cached } = state);
+    return this.cached;
+  }
+}
+`,
+      },
+      {
+        name: 'an array pattern target the result reads still reports',
+        code: `
+class Repo {
+  public async load(rows: Row[]) {
+    [this.head] = rows;
+    return this.head;
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Repo {
+  @Memoize()
+  public async load(rows: Row[]) {
+    [this.head] = rows;
+    return this.head;
+  }
+}
+`,
+      },
+      {
+        name: 'a for-of loop variable the result reads still reports',
+        code: `
+class Repo {
+  public async load(pages: Page[]) {
+    for (this.cursor of pages) {
+      await this.warm(this.cursor);
+    }
+    return this.cursor;
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Repo {
+  @Memoize()
+  public async load(pages: Page[]) {
+    for (this.cursor of pages) {
+      await this.warm(this.cursor);
+    }
+    return this.cursor;
+  }
+}
+`,
+      },
+      {
+        // The counter beside the fill adds a written field the result does not
+        // read; the cache field it does read is what keeps the report.
+        name: 'a hand-rolled cache with a counter beside it still reports',
+        code: `
+class Repo {
+  public async load(id: string) {
+    this.hits++;
+    if (!this.cached) {
+      this.cached = await fetch(id);
+    }
+    return this.cached;
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Repo {
+  @Memoize()
+  public async load(id: string) {
+    this.hits++;
+    if (!this.cached) {
+      this.cached = await fetch(id);
+    }
+    return this.cached;
+  }
+}
+`,
+      },
+      {
+        // The callback runs on its own schedule, so its write is not a step the
+        // decorator would move to once per instance.
+        name: 'an increment inside a nested callback is not the method own write',
+        code: `
+class Repo {
+  public async load(ids: string[]) {
+    return ids.map((id) => {
+      this.hits++;
+      return id;
+    });
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Repo {
+  @Memoize()
+  public async load(ids: string[]) {
+    return ids.map((id) => {
+      this.hits++;
+      return id;
+    });
+  }
+}
+`,
+      },
+      {
+        name: 'an incremented local is not a field write and keeps the report',
+        code: `
+class Repo {
+  public async load(id: string) {
+    let attempts = 0;
+    attempts++;
+    return await fetch(id, attempts);
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Repo {
+  @Memoize()
+  public async load(id: string) {
+    let attempts = 0;
+    attempts++;
+    return await fetch(id, attempts);
+  }
+}
+`,
+      },
+      {
+        name: 'a deleted element of a local is not a field write and keeps the report',
+        code: `
+class Repo {
+  public async load(id: string) {
+    const bag = await fetch(id);
+    delete bag[id];
+    return bag;
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Repo {
+  @Memoize()
+  public async load(id: string) {
+    const bag = await fetch(id);
+    delete bag[id];
+    return bag;
+  }
+}
+`,
+      },
+      {
+        // A `for (const … of …)` declares a binding rather than writing a place.
+        name: 'a for-of declaring its own binding is not a field write and keeps the report',
+        code: `
+class Repo {
+  public async load(ids: string[]) {
+    for (const id of ids) {
+      await this.warm(id);
+    }
+    return ids.length;
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Repo {
+  @Memoize()
+  public async load(ids: string[]) {
+    for (const id of ids) {
+      await this.warm(id);
+    }
+    return ids.length;
+  }
+}
+`,
+      },
+      {
+        // A destructured `const` binds locals; no place outlives the call.
+        name: 'a destructured local declaration is not a field write and keeps the report',
+        code: `
+class Repo {
+  public async load(id: string) {
+    const { rows, meta } = await this.db.query(id);
+    return rows.concat(meta);
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Repo {
+  @Memoize()
+  public async load(id: string) {
+    const { rows, meta } = await this.db.query(id);
+    return rows.concat(meta);
+  }
+}
+`,
+      },
+    ],
+  },
+);

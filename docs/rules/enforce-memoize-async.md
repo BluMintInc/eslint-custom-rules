@@ -556,6 +556,8 @@ out every write to `this` would silence that shape along with these.
 | writes `this.idleSince`, returns `true`, `null` or an unrelated value | ✅ not reported — a reported effect |
 | writes a field, returns nothing or only a bare `return;` | ❌ reported — inferred void stays outside this rule |
 | writes only inside a nested callback | ❌ reported — the callback owns that write |
+| writes `this.attempts++`, `delete this.slots[id]` or `({ idleSince: this.idleSince } = state)`, returns `true` | ✅ not reported — every spelling of a write counts |
+| writes `this.hits++`, returns `this.hits` | ❌ reported — the result hands the written field back |
 
 ```ts
 class Reclaimer {
@@ -589,6 +591,13 @@ Reads are matched at the **root** of the access path, so an element write
 (`this.cache[id] = …`) meets the read that answers it (`return this.cache[id]`)
 on the same name, while a computed root (`this[key] = 1`) names no field
 statically and keeps the report.
+
+A write is the place a step targets rather than the operator that reaches it, so
+`=` and its compound forms, `++`/`--`, `delete`, destructuring targets
+(`[this.head] = rows`, `({ idleSince: this.idleSince } = state)`) and a
+`for…of`/`for…in` whose loop variable is a field all count. A
+`for (const id of ids)` declares a fresh binding instead, which dies with the
+loop and names no place that outlives the call.
 
 A method with no value-returning `return` is left alone. Its result is void by
 inference rather than by declaration, and
