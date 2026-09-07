@@ -8722,3 +8722,568 @@ class Repo {
     ],
   },
 );
+
+// Issue #2359: the triangle of #2347 reads a finalizer call naming an
+// acquisition the guarded block worked through as a hand-back. Naming the
+// handle is evidence the finalizer USED it, and a log line uses it exactly as
+// loudly: `this.logger.info('used lease', lease.id)` closed the triangle while
+// the lease leaked, and the method the rule exists to find went unreported.
+//
+// The discriminator is what the call reads as. A reporting verb (`info`,
+// `record`, `debug`) or a route through a sink (`logger`, `console`, `metrics`,
+// `span`) describes the attempt, so it closes nothing. A hand-back word is
+// decided first, which is what keeps `this.pool.release(lease)` and
+// `this.queue.abandon(ticket.id)` — releases spelled through a receiver that is
+// not the handle — exempt. The sink reading is a NAME, so a call on the handle
+// whose own acquisition is being paired survives it: `log.flush()` acts on the
+// thing it is spelled after.
+ruleTesterTs.run(
+  'enforce-memoize-async: a finalizer that logs a handle is not a release (issue #2359)',
+  enforceMemoizeAsync,
+  {
+    valid: [
+      {
+        // The control from the report: the same body, handing the lease back.
+        name: 'a hand-back on the handle the guarded block used is still a release',
+        code: `
+class Repo {
+  public async load(id: string) {
+    const lease = await this.pool.acquire();
+    try {
+      return await lease.read(id);
+    } finally {
+      lease.release();
+    }
+  }
+}
+`,
+      },
+      {
+        // One genuine release is enough, whatever else the finalizer does.
+        name: 'a finalizer that logs the handle and then releases it is a release',
+        code: `
+class Repo {
+  public async load(id: string) {
+    const lease = await this.pool.acquire();
+    try {
+      return await lease.read(id);
+    } finally {
+      this.logger.info('used lease', lease.id);
+      lease.release();
+    }
+  }
+}
+`,
+      },
+      {
+        // The mandatory negative control: the receiver is the pool, not the
+        // lease, and the hand-back word carries the whole verdict.
+        name: 'a release spelled through a receiver other than the handle keeps its exemption',
+        code: `
+class Repo {
+  public async load(id: string) {
+    const lease = await this.pool.acquire();
+    try {
+      return await lease.read(id);
+    } finally {
+      this.pool.release(lease);
+    }
+  }
+}
+`,
+      },
+      {
+        // The #2343/#2347 family, re-asserted against the sink reading.
+        name: 'a ticket abandoned through the queue keeps its exemption',
+        code: `
+class Waiter {
+  public async waitForGrant(timeoutMs: number) {
+    const ticket = this.queue.enqueue();
+    try {
+      return await this.poll(ticket.id, timeoutMs);
+    } finally {
+      this.queue.abandon(ticket.id);
+    }
+  }
+}
+`,
+      },
+      {
+        // A sink is inferred from a name a caller chose freely; a hand-back
+        // verb states the intent outright, so the verb is decided first.
+        name: 'a hand-back verb outranks a sink receiver',
+        code: `
+class Repo {
+  public async load(id: string) {
+    const lease = await this.pool.acquire();
+    try {
+      return await lease.read(id);
+    } finally {
+      this.logger.release(lease);
+    }
+  }
+}
+`,
+      },
+      {
+        // Domain vocabulary through a receiver that is neither the handle nor a
+        // sink: the triangle is the only evidence, and it is still read.
+        name: 'a release in domain vocabulary through a plain receiver still closes the triangle',
+        code: `
+class Waiter {
+  public async waitForSlot(timeoutMs: number) {
+    const ticket = this.queue.enqueue();
+    try {
+      return await this.poll(ticket.id, timeoutMs);
+    } finally {
+      this.queue.giveBack(ticket.id);
+    }
+  }
+}
+`,
+      },
+      {
+        // The node-postgres shape: no receiver at all to read as a sink.
+        name: 'a destructured acquire handed back through a bare call is still a release',
+        code: `
+class Pool {
+  public async query(sql: string) {
+    const { client, done } = await this.pool.connect();
+    try {
+      return await client.query(sql);
+    } finally {
+      done();
+    }
+  }
+}
+`,
+      },
+      {
+        name: 'an array-destructured acquire handed back through a bare call is still a release',
+        code: `
+class Pool {
+  public async fetchRow(id: string) {
+    const [conn, put] = await this.pool.take();
+    try {
+      return await conn.get(id);
+    } finally {
+      put();
+    }
+  }
+}
+`,
+      },
+      {
+        // The cost of reading a sink off a NAME: a handle can be spelled like
+        // one. A call ON the handle whose acquisition is being paired acts on
+        // the resource rather than describing it, so the name does not decide.
+        name: 'a call on a handle that is spelled like a sink is not a report about it',
+        code: `
+class Journal {
+  public async append(entry: Entry) {
+    const log = await this.store.openLog();
+    try {
+      return await log.write(entry);
+    } finally {
+      log.flush();
+    }
+  }
+}
+`,
+      },
+      {
+        // The timer of #2347, whose hand-back word is absent and whose callee
+        // words (`clear`, `timeout`) name no report.
+        name: 'a handle the guarded block works through is released even when the hand-back is spelled as a clear',
+        code: `
+class Timer {
+  public async fetchRacing(id: string) {
+    const timer = this.clock.arm(1000);
+    try {
+      return await this.raceAgainst(timer);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+}
+`,
+      },
+    ],
+    invalid: [
+      {
+        // Verbatim from the report.
+        name: 'the issue reproduction: a finalizer that logs a handle the guarded block used keeps the report',
+        code: `
+class Repo {
+  public async load(id: string) {
+    const lease = await this.pool.acquire();
+    try {
+      return await lease.read(id);
+    } finally {
+      this.logger.info('used lease', lease.id);
+    }
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Repo {
+  @Memoize()
+  public async load(id: string) {
+    const lease = await this.pool.acquire();
+    try {
+      return await lease.read(id);
+    } finally {
+      this.logger.info('used lease', lease.id);
+    }
+  }
+}
+`,
+      },
+      {
+        name: 'a finalizer that writes the handle to the console keeps the report',
+        code: `
+class Repo {
+  public async load(id: string) {
+    const lease = await this.pool.acquire();
+    try {
+      return await lease.read(id);
+    } finally {
+      console.log('load finished', lease.id);
+    }
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Repo {
+  @Memoize()
+  public async load(id: string) {
+    const lease = await this.pool.acquire();
+    try {
+      return await lease.read(id);
+    } finally {
+      console.log('load finished', lease.id);
+    }
+  }
+}
+`,
+      },
+      {
+        name: 'a finalizer that records the handle as a metric keeps the report',
+        code: `
+class Repo {
+  public async load(id: string) {
+    const lease = await this.pool.acquire();
+    try {
+      return await lease.read(id);
+    } finally {
+      this.metrics.record(lease.id);
+    }
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Repo {
+  @Memoize()
+  public async load(id: string) {
+    const lease = await this.pool.acquire();
+    try {
+      return await lease.read(id);
+    } finally {
+      this.metrics.record(lease.id);
+    }
+  }
+}
+`,
+      },
+      {
+        // The span is itself acquired here, so the exemption for a call on the
+        // handle must not reach it: the acquisition the triangle closes on is
+        // the lease, and the span is not one of its bindings.
+        name: 'a finalizer that hangs the handle on a span attribute keeps the report',
+        code: `
+class Repo {
+  public async load(id: string) {
+    const span = this.tracer.startSpan('load');
+    const lease = await this.pool.acquire();
+    try {
+      return await lease.read(id);
+    } finally {
+      span.setAttribute('lease', lease.id);
+    }
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Repo {
+  @Memoize()
+  public async load(id: string) {
+    const span = this.tracer.startSpan('load');
+    const lease = await this.pool.acquire();
+    try {
+      return await lease.read(id);
+    } finally {
+      span.setAttribute('lease', lease.id);
+    }
+  }
+}
+`,
+      },
+      {
+        // The whole handle rather than a field of it: naming more of it is not
+        // handing more of it back.
+        name: 'a finalizer that debug-logs the whole handle keeps the report',
+        code: `
+class Repo {
+  public async load(id: string) {
+    const lease = await this.pool.acquire();
+    try {
+      return await lease.read(id);
+    } finally {
+      this.logger.debug(lease);
+    }
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Repo {
+  @Memoize()
+  public async load(id: string) {
+    const lease = await this.pool.acquire();
+    try {
+      return await lease.read(id);
+    } finally {
+      this.logger.debug(lease);
+    }
+  }
+}
+`,
+      },
+      {
+        // The verb arm alone: `audit` is no sink, and `report` decides it.
+        name: 'a reporting verb through a receiver that is not a sink keeps the report',
+        code: `
+class Repo {
+  public async load(id: string) {
+    const lease = await this.pool.acquire();
+    try {
+      return await lease.read(id);
+    } finally {
+      this.audit.report(lease.id);
+    }
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Repo {
+  @Memoize()
+  public async load(id: string) {
+    const lease = await this.pool.acquire();
+    try {
+      return await lease.read(id);
+    } finally {
+      this.audit.report(lease.id);
+    }
+  }
+}
+`,
+      },
+      {
+        // The sink arm alone: `write` names no report, and the logger decides it.
+        name: 'a sink receiver keeps the report when the verb names nothing',
+        code: `
+class Repo {
+  public async load(id: string) {
+    const lease = await this.pool.acquire();
+    try {
+      return await lease.read(id);
+    } finally {
+      this.logger.write(lease.id);
+    }
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Repo {
+  @Memoize()
+  public async load(id: string) {
+    const lease = await this.pool.acquire();
+    try {
+      return await lease.read(id);
+    } finally {
+      this.logger.write(lease.id);
+    }
+  }
+}
+`,
+      },
+      {
+        name: 'a stats sink keeps the report when the verb names nothing',
+        code: `
+class Repo {
+  public async load(id: string) {
+    const lease = await this.pool.acquire();
+    try {
+      return await lease.read(id);
+    } finally {
+      this.stats.bump(lease.id);
+    }
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Repo {
+  @Memoize()
+  public async load(id: string) {
+    const lease = await this.pool.acquire();
+    try {
+      return await lease.read(id);
+    } finally {
+      this.stats.bump(lease.id);
+    }
+  }
+}
+`,
+      },
+      {
+        // Whole words, so the report is read out of a camel-cased name.
+        name: 'a camel-cased reporting verb keeps the report',
+        code: `
+class Repo {
+  public async load(id: string) {
+    const lease = await this.pool.acquire();
+    try {
+      return await lease.read(id);
+    } finally {
+      this.probe.recordLatency(lease.id);
+    }
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Repo {
+  @Memoize()
+  public async load(id: string) {
+    const lease = await this.pool.acquire();
+    try {
+      return await lease.read(id);
+    } finally {
+      this.probe.recordLatency(lease.id);
+    }
+  }
+}
+`,
+      },
+      {
+        name: 'an awaited log of the handle keeps the report',
+        code: `
+class Repo {
+  public async load(id: string) {
+    const lease = await this.pool.acquire();
+    try {
+      return await lease.read(id);
+    } finally {
+      await this.logger.info('used lease', lease.id);
+    }
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Repo {
+  @Memoize()
+  public async load(id: string) {
+    const lease = await this.pool.acquire();
+    try {
+      return await lease.read(id);
+    } finally {
+      await this.logger.info('used lease', lease.id);
+    }
+  }
+}
+`,
+      },
+      {
+        // A nullish sink reports exactly as the plain spelling does.
+        name: 'an optional log of the handle keeps the report',
+        code: `
+class Repo {
+  public async load(id: string) {
+    const lease = await this.pool.acquire();
+    try {
+      return await lease.read(id);
+    } finally {
+      this.logger?.info?.('used lease', lease.id);
+    }
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Repo {
+  @Memoize()
+  public async load(id: string) {
+    const lease = await this.pool.acquire();
+    try {
+      return await lease.read(id);
+    } finally {
+      this.logger?.info?.('used lease', lease.id);
+    }
+  }
+}
+`,
+      },
+      {
+        // Every binding of the acquisition is read, so logging the one that
+        // WOULD have handed the connection back buys no silence either.
+        name: 'a log naming the hand-back binding of a destructured acquire keeps the report',
+        code: `
+class Pool {
+  public async query(sql: string) {
+    const { client, done } = await this.pool.connect();
+    try {
+      return await client.query(sql);
+    } finally {
+      this.logger.info('finished', done);
+    }
+  }
+}
+`,
+        errors: [{ messageId: 'requireMemoize' }],
+        output: `
+import { Memoize } from '@blumintinc/typescript-memoize';
+class Pool {
+  @Memoize()
+  public async query(sql: string) {
+    const { client, done } = await this.pool.connect();
+    try {
+      return await client.query(sql);
+    } finally {
+      this.logger.info('finished', done);
+    }
+  }
+}
+`,
+      },
+    ],
+  },
+);
