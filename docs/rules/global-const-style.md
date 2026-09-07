@@ -326,8 +326,9 @@ arr.push(3); })` is the same TS2339 on a frozen tuple that `ITEMS.push(3)` is,
 and the assertion is withheld for both. `reduce` and `reduceRight` put this
 parameter **fourth**, after their accumulator.
 
-`flatMap` is the exception, and only for mutating **methods**. Its lib signature
-declares that parameter mutable `T[]` where every sibling declares it
+`flatMap` is the exception among the methods called on the frozen value itself,
+and only for mutating **methods**. Its lib signature declares that parameter
+mutable `T[]` where every sibling on `ReadonlyArray` declares it
 `readonly T[]`, so there is no `readonly` violation to have through it. A write
 to an **element** through the same parameter is still withheld exactly as it is
 for every other method — `arr[0].n = 2` is TS2540 — and so is a mutating call
@@ -372,11 +373,26 @@ way:
   the constant (`CONFIG.list.values()`, `Array.from(CONFIG.list, fn)`), which is
   frozen with the object that holds it.
 
-Only the **element** is followed through those derivations. A copy or a
-projection is a fresh, mutable array, so a mutating call on the receiver
-parameter of an iteration over one says nothing about the constant, and
-`[...ITEMS].forEach((item, index, arr) => { arr.push(3); })` keeps the
-assertion.
+Only the **element** carries the constant's `readonly`-ness through those
+derivations. A copy or a projection is a fresh, **mutable** array, so a mutating
+call on the receiver parameter of an iteration over one is no `readonly`
+violation and `[...ITEMS].forEach((item, index, arr) => { arr.sort(); })` keeps
+the assertion. Its elements are still the constant's, though, so that parameter
+is read on exactly the narrow terms `flatMap`'s is — a call that **introduces**
+a value from outside the constant is withheld, because narrowing the element
+type rejects it:
+
+| call inside `[...ITEMS].forEach((item, index, arr) => …)` | verdict |
+| --- | --- |
+| `arr.sort()`, `arr.reverse()`, `arr.pop()`, `arr.shift()`, `arr.copyWithin(0, 1)`, `arr.splice(0, 1)` | still flagged — they insert nothing |
+| `arr.push(item)`, `arr.fill(item)` | still flagged — the inserted value is the element the callback was handed |
+| `arr.push({ n: 3 })`, `arr.unshift({ n: 3 })`, `arr.splice(0, 0, { n: 3 })`, `arr.fill({ n: 3 })` | withheld — TS2322 once the assertion narrows the element type |
+| `arr[0].n = 4` | withheld — the copy's elements are the constant's own frozen objects (TS2540) |
+
+That holds for every derivation and every method listed above, including the
+fourth-position spelling `[...ITEMS].reduce((acc, cur, index, arr) => …)` and
+the projections `Object.values(CONFIG).forEach(…)` and
+`Object.entries(CONFIG).forEach(…)`.
 
 Iteration that only **reads** the element leaves the assertion in place. The
 withhold keys on the write, not on the iteration:

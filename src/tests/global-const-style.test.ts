@@ -3113,6 +3113,214 @@ const Probe = () => {
       ].join('\n'),
       filename: 'test.ts',
     },
+    // Issue #2355: a DERIVED receiver hands its callback a fresh MUTABLE array,
+    // so no mutating call through the array parameter is the TS2339 the
+    // constant's own value gives — but the fresh array's ELEMENT type is the
+    // constant's, so a call that INSERTS a value from outside the constant is
+    // rejected once the assertion narrows that type. The parameter is therefore
+    // enrolled for a derived receiver too, on the narrow terms
+    // `introducesForeignElement` already decides for `flatMap` — see
+    // `MUTABLE_ARRAY_PARAMETER_METHODS`. Every case below compiles, and stops
+    // compiling once the assertion is applied by hand; the diagnostic each
+    // produces is named beside it.
+    // TS2322: the pushed object's `n` is not assignable to the frozen `1`.
+    {
+      name: 'declines to freeze an array whose spread copy pushes a foreign element through its forEach array parameter',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  [...ITEMS].forEach((item, index, arr) => {',
+        '    arr.push({ n: 3 });',
+        '  });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // A primitive element narrows the same way, to a union of the frozen
+    // literals. TS2345.
+    {
+      name: 'declines to freeze an array whose spread copy pushes a foreign primitive through its forEach array parameter',
+      code: [
+        'const ITEMS = [1, 2];',
+        'export const run = () => {',
+        '  [...ITEMS].forEach((item, index, arr) => {',
+        '    arr.push(3);',
+        '  });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // Each inserting method is read through `INSERTED_VALUE_POSITIONS_BY_METHOD`,
+    // which spends `splice`'s leading arguments and `fill`'s trailing ones on
+    // indices, so the inserted value is found wherever the method puts it.
+    // TS2322 on each.
+    {
+      name: 'declines to freeze an array whose sliced copy unshifts a foreign element through its map array parameter',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const out = ITEMS.slice().map((item, index, arr) => {',
+        '  arr.unshift({ n: 3 });',
+        '  return item;',
+        '});',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose filtered copy splices a foreign element through its flatMap array parameter',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const out = ITEMS.filter(Boolean).flatMap((item, index, arr) => {',
+        '  arr.splice(0, 0, { n: 3 });',
+        '  return [item];',
+        '});',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose Array.from copy fills a foreign element through its some array parameter',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const any = Array.from(ITEMS).some((item, index, arr) => {',
+        '  arr.fill({ n: 3 });',
+        '  return item.n > 0;',
+        '});',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // The derivations compose, so a chain of copies carries the element type as
+    // far as a single one does. TS2322.
+    {
+      name: 'declines to freeze an array whose chained copies push a foreign element through the array parameter',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  ITEMS.filter(Boolean).slice().forEach((item, index, arr) => {',
+        '    arr.push({ n: 3 });',
+        '  });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // An `Object.values`/`Object.entries` projection is a fresh array whose
+    // elements are the constant's own frozen property values, so its array
+    // parameter narrows exactly as a copy's does. TS2345 / TS2322.
+    {
+      name: 'declines to freeze an object whose Object.values array pushes a foreign element through its array parameter',
+      code: [
+        'const CONFIG = { a: 1, b: 2 };',
+        'export const run = () => {',
+        '  Object.values(CONFIG).forEach((value, index, arr) => {',
+        '    arr.push(3);',
+        '  });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an object whose Object.entries array pushes a foreign element through its array parameter',
+      code: [
+        'const CONFIG = { a: 1, b: 2 };',
+        'export const run = () => {',
+        '  Object.entries(CONFIG).forEach((entry, index, arr) => {',
+        "    arr.push(['c', 3]);",
+        '  });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // `reduce`/`reduceRight` spend the first position on the accumulator, so the
+    // array arrives FOURTH here too. TS2345.
+    {
+      name: 'declines to freeze an array whose spread copy pushes a foreign element through its reduce array parameter',
+      code: [
+        'const ITEMS = [1, 2];',
+        'export const total = [...ITEMS].reduce((acc: number, cur, index, arr) => {',
+        '  arr.push(3);',
+        '  return acc + cur;',
+        '}, 0);',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose concat copy pushes a foreign element through its reduceRight array parameter',
+      code: [
+        'const ITEMS = [1, 2];',
+        'export const total = ITEMS.concat().reduceRight((acc: number, cur, index, arr) => {',
+        '  arr.push(3);',
+        '  return acc + cur;',
+        '}, 0);',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // The elements of a copy are the constant's own frozen objects, so a write
+    // through the array parameter reaches a `readonly` property. TS2540.
+    {
+      name: 'declines to freeze an array whose spread copy writes an element through its array parameter',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  [...ITEMS].forEach((item, index, arr) => {',
+        '    arr[0].n = 4;',
+        '  });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // The enrolled parameter is walked like any other binding, so an alias taken
+    // from it is followed on to the insertion. TS2322.
+    {
+      name: 'declines to freeze an array whose spread copy array parameter is aliased and then mutated',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  [...ITEMS].forEach((item, index, arr) => {',
+        '    const rest = arr;',
+        '    rest.push({ n: 3 });',
+        '  });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // The method name and the callback spelling are read the same way here as
+    // for the constant's own value. TS2345 on each.
+    {
+      name: 'declines to freeze an array whose bracket-spelled forEach on a spread copy pushes a foreign element',
+      code: [
+        'const ITEMS = [1, 2];',
+        'export const run = () => {',
+        "  [...ITEMS]['forEach']((item, index, arr) => {",
+        '    arr.push(3);',
+        '  });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    {
+      name: 'declines to freeze an array whose function-expression callback on a spread copy pushes a foreign element',
+      code: [
+        'const ITEMS = [1, 2];',
+        'export const run = () => {',
+        '  [...ITEMS].forEach(function (item, index, arr) {',
+        '    arr.push(3);',
+        '  });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
+    // A copy of a member PATH is a copy of the constant's frozen contents, so it
+    // carries the narrowing on. TS2345.
+    {
+      name: 'declines to freeze an object whose spread member path pushes a foreign element through its array parameter',
+      code: [
+        'const CONFIG = { list: [1, 2] };',
+        'export const run = () => {',
+        '  [...CONFIG.list].forEach((item, index, arr) => {',
+        '    arr.push(3);',
+        '  });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+    },
   ],
   invalid: [
     // Issue #2055: a JSX tag name is spelled twice, but the scope manager
@@ -5561,13 +5769,13 @@ const Probe = () => {
     // three derivations, which the #2338 cases above pin; only the array
     // parameter is withheld here.
     //
-    // The write is a mutating METHOD rather than an appending one because a
+    // The write is a REORDERING method rather than an appending one because a
     // derivation also narrows the element type: `arr.push(3)` on `[...ITEMS]`
-    // is TS2345 after `--fix` — `3` is not assignable to `1 | 2` — which is the
-    // literal-narrowing family filed as #2330 and decided by the type checker,
-    // not by this arm. Keying the control on a write whose output still
-    // compiles keeps it a statement about THIS arm, and keeps it out of the
-    // type-safety guards' baselines.
+    // is TS2345 after `--fix` — `3` is not assignable to `1 | 2` — and is
+    // declined by the narrow assignability arm the #2355 cases pin. `sort`,
+    // `reverse` and `pop` insert nothing, so no element type can reject what
+    // they write and the output still compiles, which is what keeps these
+    // controls a statement about the mutability half alone.
     {
       name: 'freezes an array whose spread copy hands its callback a fresh array',
       code: [
@@ -7046,6 +7254,227 @@ const Probe = () => {
         '  const values = ITEMS.flatMap((item) => (item.n > 0 ? [item.n * 2] : [0]));',
         '  values.push(3);',
         '};',
+      ].join('\n'),
+    },
+    // Issue #2355 negative controls. The decline is keyed on an INSERTED value
+    // from outside the constant, because that is the only thing the assertion
+    // can reject on a receiver the lib declares MUTABLE: every case below
+    // compiles both before and after `--fix`, so withholding the assertion from
+    // one would cost a report for nothing.
+    // An inserted value that is a REFERENCE to the element the callback was
+    // handed narrows with the parameter it is written into.
+    {
+      name: 'freezes an array whose spread copy pushes the element it was handed',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  [...ITEMS].forEach((item, index, arr) => {',
+        '    arr.push(item);',
+        '  });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'ITEMS', valueKind: 'an array literal' },
+        },
+      ],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const run = () => {',
+        '  [...ITEMS].forEach((item, index, arr) => {',
+        '    arr.push(item);',
+        '  });',
+        '};',
+      ].join('\n'),
+    },
+    // Reading the array parameter reaches nothing the assertion changes.
+    {
+      name: 'freezes an array whose spread copy array parameter is only read',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  [...ITEMS].forEach((item, index, arr) => {',
+        '    console.log(arr.length, arr.indexOf(item));',
+        '  });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'ITEMS', valueKind: 'an array literal' },
+        },
+      ],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const run = () => {',
+        '  [...ITEMS].forEach((item, index, arr) => {',
+        '    console.log(arr.length, arr.indexOf(item));',
+        '  });',
+        '};',
+      ].join('\n'),
+    },
+    // `shift`, `copyWithin`, `sort`, `reverse` and `pop` insert nothing — they
+    // reorder, remove or copy elements the receiver already holds — so no
+    // element type can reject what they write.
+    {
+      name: 'freezes an array whose spread copy array parameter is shifted',
+      code: [
+        'const ITEMS = [1, 2];',
+        'export const run = () => {',
+        '  [...ITEMS].forEach((item, index, arr) => {',
+        '    arr.shift();',
+        '  });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'ITEMS', valueKind: 'an array literal' },
+        },
+      ],
+      output: [
+        'const ITEMS = [1, 2] as const;',
+        'export const run = () => {',
+        '  [...ITEMS].forEach((item, index, arr) => {',
+        '    arr.shift();',
+        '  });',
+        '};',
+      ].join('\n'),
+    },
+    {
+      name: 'freezes an array whose sliced copy array parameter is copied within',
+      code: [
+        'const ITEMS = [1, 2, 3];',
+        'export const run = () => {',
+        '  ITEMS.slice().forEach((item, index, arr) => {',
+        '    arr.copyWithin(0, 1);',
+        '  });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'ITEMS', valueKind: 'an array literal' },
+        },
+      ],
+      output: [
+        'const ITEMS = [1, 2, 3] as const;',
+        'export const run = () => {',
+        '  ITEMS.slice().forEach((item, index, arr) => {',
+        '    arr.copyWithin(0, 1);',
+        '  });',
+        '};',
+      ].join('\n'),
+    },
+    // `splice` inserts from its THIRD argument on, so the two-argument spelling
+    // introduces no value at all.
+    {
+      name: 'freezes an array whose spread copy array parameter is spliced without an inserted value',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  [...ITEMS].forEach((item, index, arr) => {',
+        '    arr.splice(0, 1);',
+        '  });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'ITEMS', valueKind: 'an array literal' },
+        },
+      ],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const run = () => {',
+        '  [...ITEMS].forEach((item, index, arr) => {',
+        '    arr.splice(0, 1);',
+        '  });',
+        '};',
+      ].join('\n'),
+    },
+    // `fill` inserts at its FIRST argument alone, and the element it was handed
+    // is enrolled for this constant.
+    {
+      name: 'freezes an array whose spread copy array parameter is filled with the element it was handed',
+      code: [
+        'const ITEMS = [{ n: 1 }];',
+        'export const run = () => {',
+        '  [...ITEMS].forEach((item, index, arr) => {',
+        '    arr.fill(item);',
+        '  });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'ITEMS', valueKind: 'an array literal' },
+        },
+      ],
+      output: [
+        'const ITEMS = [{ n: 1 }] as const;',
+        'export const run = () => {',
+        '  [...ITEMS].forEach((item, index, arr) => {',
+        '    arr.fill(item);',
+        '  });',
+        '};',
+      ].join('\n'),
+    },
+    // The projection controls: a read through the array parameter keeps the
+    // report that widening this arm exists to leave standing.
+    {
+      name: 'freezes an object whose Object.entries array parameter is only read',
+      code: [
+        'const CONFIG = { a: 1, b: 2 };',
+        'export const run = () => {',
+        '  Object.entries(CONFIG).forEach((entry, index, arr) => {',
+        '    console.log(entry[0], arr.length);',
+        '  });',
+        '};',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'CONFIG', valueKind: 'an object literal' },
+        },
+      ],
+      output: [
+        'const CONFIG = { a: 1, b: 2 } as const;',
+        'export const run = () => {',
+        '  Object.entries(CONFIG).forEach((entry, index, arr) => {',
+        '    console.log(entry[0], arr.length);',
+        '  });',
+        '};',
+      ].join('\n'),
+    },
+    {
+      name: 'freezes an array whose spread copy reduce array parameter is only read',
+      code: [
+        'const ITEMS = [1, 2];',
+        'export const total = [...ITEMS].reduce((acc: number, cur, index, arr) => {',
+        '  return acc + cur + arr.length;',
+        '}, 0);',
+      ].join('\n'),
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: { name: 'ITEMS', valueKind: 'an array literal' },
+        },
+      ],
+      output: [
+        'const ITEMS = [1, 2] as const;',
+        'export const total = [...ITEMS].reduce((acc: number, cur, index, arr) => {',
+        '  return acc + cur + arr.length;',
+        '}, 0);',
       ].join('\n'),
     },
   ],
