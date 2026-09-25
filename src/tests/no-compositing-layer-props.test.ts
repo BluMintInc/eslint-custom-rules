@@ -2,7 +2,13 @@ import { ruleTesterTs } from '../utils/ruleTester';
 import { noCompositingLayerProps } from '../rules/no-compositing-layer-props';
 
 const message = (property: string) =>
-  `CSS property "${property}" promotes this element to its own GPU compositing layer. Extra layers allocate GPU memory and isolate painting, which slows scrolling and animation when used broadly. Remove "${property}" or keep it only when the layer promotion is intentional and documented (e.g., eslint-disable with a comment).`;
+  `CSS property "${property}" promotes this element to its own GPU compositing layer. On a component repeated in a list or scroll view, one layer per row exhausts GPU memory and tears during scroll. Animate transform/opacity under an interaction state ('&:hover', '&:active', '&:focus-visible'), or drive a state-dependent value with a 'transition'; both are exempt. Otherwise remove it, or keep it with an eslint-disable-next-line comment giving the reason.`;
+
+const jsx = {
+  ecmaFeatures: {
+    jsx: true,
+  },
+};
 
 // RuleTester accepts `message`, but its typings only expose `messageId`; cast to
 // any so we can assert the full string.
@@ -369,6 +375,486 @@ ruleTesterTs.run('no-compositing-layer-props', noCompositingLayerProps, {
         },
       },
     },
+
+    // --- Arm A: a singular interaction state (exemptInteractionStates) ---
+    // A hover lift: `:hover` matches one element per pointer however many
+    // siblings share the style, so it can never promote a whole list.
+    {
+      code: `
+        const Card = () => (
+          <Box sx={{ '&:hover': { transform: 'translateY(-2px)' } }} />
+        );
+      `,
+      parserOptions: jsx,
+    },
+    // Pressed and keyboard-focused states are singular too.
+    {
+      code: `
+        const Tile = () => (
+          <Box
+            sx={{
+              '&:active': { transform: 'scale(0.98)' },
+              '&:focus-visible': { opacity: 0.8 },
+            }}
+          />
+        );
+      `,
+      parserOptions: jsx,
+    },
+    // A comma list qualifies when EVERY member carries an interaction state.
+    {
+      code: `
+        const Chip = () => (
+          <Box sx={{ '&:hover, &.Mui-focusVisible': { transform: 'scale(1.05)' } }} />
+        );
+      `,
+      parserOptions: jsx,
+    },
+    // `@media`, `@supports` and `@container` are skipped when finding the
+    // selector above the declaration, whichever side of it they sit on.
+    {
+      code: `
+        const Card = () => (
+          <Box
+            sx={{
+              '&:hover': {
+                '@media (hover: hover)': { transform: 'translateY(-2px)' },
+              },
+              '@supports (translate: 0)': {
+                '&:active': { translate: '0 1px' },
+              },
+              '@container (min-width: 400px)': {
+                '&:focus-visible': { opacity: 0.9 },
+              },
+            }}
+          />
+        );
+      `,
+      parserOptions: jsx,
+    },
+    // The state sits on the styled element's own compound and the declaration
+    // lands on a descendant: one hovered element's icon moves.
+    {
+      code: `
+        const Row = () => (
+          <Box sx={{ '&:hover .chevron': { transform: 'translateX(4px)' } }} />
+        );
+      `,
+      parserOptions: jsx,
+    },
+    // A pseudo-class to the RIGHT of `&` qualifies: only the hovered row moves.
+    {
+      code: `
+        const List = () => (
+          <Box sx={{ '& .row:hover': { transform: 'translateX(2px)' } }} />
+        );
+      `,
+      parserOptions: jsx,
+    },
+    // emotion attaches a key opening with `:` to the parent compound, so
+    // `':hover'` is `'&:hover'`.
+    {
+      code: `
+        const Link = () => <Box sx={{ ':hover': { opacity: 0.7 } }} />;
+      `,
+      parserOptions: jsx,
+    },
+    // Nested selector keys compose: `&:hover` then `& .icon` is `&:hover .icon`.
+    {
+      code: `
+        const Button = () => (
+          <Box
+            sx={{
+              '&:hover': {
+                '& .icon': { transform: 'rotate(90deg)' },
+              },
+            }}
+          />
+        );
+      `,
+      parserOptions: jsx,
+    },
+    // Arm A needs no withholding inside iteration: a hover lift on every row
+    // of a mapped list still promotes only the row under the pointer.
+    {
+      code: `
+        const List = ({ items }) => (
+          <>
+            {items.map((item) => (
+              <Box key={item.id} sx={{ '&:hover': { transform: 'scale(1.02)' } }} />
+            ))}
+          </>
+        );
+      `,
+      parserOptions: jsx,
+    },
+    // The individual transform properties are exempt under the same states.
+    {
+      code: `
+        const Fab = () => (
+          <Box
+            sx={{
+              '&:hover': { scale: 1.05 },
+              '&:active': { rotate: '90deg', translate: '0 -2px' },
+            }}
+          />
+        );
+      `,
+      parserOptions: jsx,
+    },
+    // Their reset/identity values promote nothing at rest.
+    {
+      code: `
+        const style = {
+          scale: 'none',
+          rotate: 'none',
+          translate: 'none',
+        };
+      `,
+    },
+    {
+      code: `
+        const style = {
+          scale: 1,
+        };
+      `,
+    },
+    // A template literal with no substitutions spells its literal exactly.
+    {
+      code: `
+        const style = {
+          transform: \`none\`,
+        };
+      `,
+    },
+    // With the state-transition arm switched off, the interaction arm still
+    // stands on its own.
+    {
+      code: `
+        const Card = () => (
+          <Box sx={{ '&:hover': { transform: 'translateY(-2px)' } }} />
+        );
+      `,
+      options: [{ exemptStateTransitions: false }],
+      parserOptions: jsx,
+    },
+
+    // --- Arm B: a state-driven value paired with a covering transition
+    // (exemptStateTransitions) ---
+    // A non-literal value whose transition names the property. Transitions
+    // never run on first paint, so only the element whose state flipped
+    // animates, and only while it animates.
+    {
+      code: `
+        const Chevron = ({ isOpen }) => (
+          <Box
+            sx={{
+              transform: isOpen ? 'rotate(180deg)' : 'none',
+              transition: 'transform 200ms ease',
+            }}
+          />
+        );
+      `,
+      parserOptions: jsx,
+    },
+    // A conditionally spread object is state-driven, and the transition may
+    // sit in an ancestor object.
+    {
+      code: `
+        const Row = ({ isHidden }) => (
+          <Box
+            sx={{
+              transition: 'opacity 150ms',
+              ...(isHidden && { opacity: 0.4 }),
+            }}
+          />
+        );
+      `,
+      parserOptions: jsx,
+    },
+    // A key under an `&`-qualified state selector is state-driven.
+    {
+      code: `
+        const Summary = () => (
+          <Box
+            sx={{
+              transition: 'transform 150ms',
+              '&.Mui-expanded': { transform: 'rotate(180deg)' },
+            }}
+          />
+        );
+      `,
+      parserOptions: jsx,
+    },
+    // `all` covers every property.
+    {
+      code: `
+        const Zone = ({ isHovered }) => (
+          <Box
+            sx={{
+              scale: isHovered ? 1.25 : 1,
+              transition: 'all 0.2s ease-in-out',
+            }}
+          />
+        );
+      `,
+      parserOptions: jsx,
+    },
+    // A transition item naming no property animates `all`, the shorthand's
+    // initial transition-property.
+    {
+      code: `
+        const Panel = ({ offset }) => (
+          <Box
+            sx={{
+              transform: \`translateX(\${offset}px)\`,
+              transition: '200ms ease-out',
+            }}
+          />
+        );
+      `,
+      parserOptions: jsx,
+    },
+    // An expression the rule cannot read is trusted to cover the property.
+    {
+      code: `
+        const Drawer = ({ isOpen, theme }) => (
+          <Box
+            sx={{
+              transform: isOpen ? 'none' : 'translateX(-100%)',
+              transition: theme.transitions.create('transform'),
+            }}
+          />
+        );
+      `,
+      parserOptions: jsx,
+    },
+    {
+      code: `
+        const Drawer = ({ isOpen }) => (
+          <Box
+            sx={{
+              transition: createTransition({ property: 'opacity' }),
+              ...(isOpen ? {} : { opacity: 0.5 }),
+            }}
+          />
+        );
+      `,
+      parserOptions: jsx,
+    },
+    // transitionProperty naming the property covers it, as does a state
+    // attribute on the styled element.
+    {
+      code: `
+        const Disclosure = () => (
+          <Box
+            sx={{
+              transitionProperty: 'opacity, transform',
+              transitionDuration: '200ms',
+              '&[aria-expanded="true"]': { transform: 'rotate(90deg)' },
+            }}
+          />
+        );
+      `,
+      parserOptions: jsx,
+    },
+    // MUI's array sx merges its entries onto one element, so a transition in a
+    // sibling entry covers a conditional entry.
+    {
+      code: `
+        const Chevron = ({ isOpen }) => (
+          <Box
+            sx={[
+              { transition: 'transform 200ms' },
+              isOpen && { transform: 'rotate(180deg)' },
+            ]}
+          />
+        );
+      `,
+      parserOptions: jsx,
+    },
+    // A plain style object outside JSX takes the same arm.
+    {
+      code: `
+        const chevronStyle = (isOpen) => ({
+          transform: isOpen ? 'rotate(180deg)' : 'none',
+          WebkitTransition: 'transform 0.2s',
+        });
+      `,
+    },
+    // A responsive value is state-driven when every breakpoint entry is either
+    // state-driven or a reset.
+    {
+      code: `
+        const Chevron = ({ isOpen }) => (
+          <Box
+            sx={{
+              transform: { xs: 'none', md: isOpen ? 'rotate(180deg)' : 'none' },
+              transition: 'transform 200ms',
+            }}
+          />
+        );
+      `,
+      parserOptions: jsx,
+    },
+    // With the interaction arm switched off, the state-transition arm still
+    // stands on its own.
+    {
+      code: `
+        const Chevron = ({ isOpen }) => (
+          <Box
+            sx={{
+              transform: isOpen ? 'rotate(180deg)' : 'none',
+              transition: 'transform 200ms',
+            }}
+          />
+        );
+      `,
+      options: [{ exemptInteractionStates: false }],
+      parserOptions: jsx,
+    },
+    // A hover lift beside its transition token.
+    {
+      code: `
+        const Card = () => (
+          <Box
+            sx={{
+              transition: TRANSITIONS.transform,
+              '&:hover': { transform: 'translateY(-2px)' },
+            }}
+          />
+        );
+      `,
+      parserOptions: jsx,
+    },
+    {
+      code: `
+        const Card = () => (
+          <Box sx={{ '&:hover, &:focus-visible': { transform: 'translateY(-1px)' } }} />
+        );
+      `,
+      parserOptions: jsx,
+    },
+    {
+      code: `
+        const Card = () => (
+          <Box
+            sx={{
+              '@media (hover: hover)': { '&:hover': { transform: 'scale(1.02)' } },
+            }}
+          />
+        );
+      `,
+      parserOptions: jsx,
+    },
+    // MUI's singular interaction classes: keyboard focus, and the slider thumb
+    // being dragged.
+    {
+      code: `
+        const Thumb = () => (
+          <Box
+            sx={{
+              '&.Mui-focusVisible': { transform: 'scale(1.02)' },
+              '&.Mui-active': { scale: 1.2 },
+            }}
+          />
+        );
+      `,
+      parserOptions: jsx,
+    },
+    // A template-literal selector key is read from its quasis.
+    {
+      code: `
+        const Card = () => (
+          <Box sx={{ [\`&:hover\`]: { transform: 'scale(1.05)' } }} />
+        );
+      `,
+      parserOptions: jsx,
+    },
+    // A conditionally spread rotation beside an unreadable transition token.
+    {
+      code: `
+        const Chevron = ({ isEditing }) => (
+          <KeyboardArrowDownRoundedIcon
+            sx={{
+              transition: TRANSITIONS.transform,
+              ...(isEditing && { transform: 'rotate(180deg)' }),
+            }}
+          />
+        );
+      `,
+      parserOptions: jsx,
+    },
+    // A drawer sliding on a flag.
+    {
+      code: `
+        const Drawer = ({ isChannelListVisible }) => (
+          <Box
+            sx={{
+              transform: \`translateX(\${isChannelListVisible ? '0' : '-100%'})\`,
+              transformOrigin: 'left center',
+              transition: 'transform 0.3s ease-in-out',
+            }}
+          />
+        );
+      `,
+      parserOptions: jsx,
+    },
+    // A conditional transition covers through the branch that animates.
+    {
+      code: `
+        const Swipe = ({ translateX, isDragging }) => (
+          <Box
+            sx={{
+              transform: \`translateX(\${translateX}px)\`,
+              transition: isDragging ? 'none' : TRANSITIONS.transform,
+            }}
+          />
+        );
+      `,
+      parserOptions: jsx,
+    },
+    {
+      code: `
+        const Disclosure = () => (
+          <Box
+            sx={{
+              transition: 'all 150ms',
+              '&[aria-expanded="true"]': { transform: 'rotate(180deg)' },
+            }}
+          />
+        );
+      `,
+      parserOptions: jsx,
+    },
+    {
+      code: `
+        const Zone = ({ open }) => (
+          <Box sx={{ scale: open ? 1.25 : 1, transition: 'scale 0.2s' }} />
+        );
+      `,
+      parserOptions: jsx,
+    },
+    // The @keyframes exemption does not depend on either option.
+    {
+      code: `
+        const Spinner = () => (
+          <Box
+            sx={{
+              animation: 'spin 1s linear infinite',
+              '@keyframes spin': {
+                '0%': { transform: 'rotate(0deg)' },
+                '100%': { transform: 'rotate(360deg)' },
+              },
+            }}
+          />
+        );
+      `,
+      options: [
+        { exemptInteractionStates: false, exemptStateTransitions: false },
+      ],
+      parserOptions: jsx,
+    },
   ],
   invalid: [
     // Invalid inline styles
@@ -620,6 +1106,494 @@ ruleTesterTs.run('no-compositing-layer-props', noCompositingLayerProps, {
         },
       },
       errors: [error('willChange'), error('filter')],
+    },
+
+    // --- Arm A boundaries ---
+    // An ancestor pseudo-class left of `&` matches every child at once, so it
+    // never qualifies.
+    {
+      code: `
+        const Item = () => (
+          <Box sx={{ '.MuiList-root:hover &': { transform: 'translateX(4px)' } }} />
+        );
+      `,
+      parserOptions: jsx,
+      errors: [error('transform')],
+    },
+    // One unqualified member of a comma list applies the value at rest.
+    {
+      code: `
+        const Chip = () => (
+          <Box sx={{ '&:hover, & .label': { transform: 'scale(1.05)' } }} />
+        );
+      `,
+      parserOptions: jsx,
+      errors: [error('transform')],
+    },
+    // A negated state matches every element NOT in it.
+    {
+      code: `
+        const Row = () => (
+          <Box sx={{ '&:not(:hover)': { opacity: 0.6 } }} />
+        );
+      `,
+      parserOptions: jsx,
+      errors: [error('opacity')],
+    },
+    // An at-rule alone is not a state: the declaration applies at rest.
+    {
+      code: `
+        const Card = () => (
+          <Box sx={{ '@media (hover: hover)': { transform: 'translateY(-2px)' } }} />
+        );
+      `,
+      parserOptions: jsx,
+      errors: [error('transform')],
+    },
+    // The never-exempt set stays reported under an interaction state: a hover
+    // brighten is a lighter color, not a filter.
+    {
+      code: `
+        const Card = () => (
+          <Box
+            sx={{
+              '&:hover': {
+                filter: 'brightness(1.1)',
+                backdropFilter: 'blur(4px)',
+                willChange: 'transform',
+                mixBlendMode: 'multiply',
+              },
+            }}
+          />
+        );
+      `,
+      parserOptions: jsx,
+      errors: [
+        error('filter'),
+        error('backdropFilter'),
+        error('willChange'),
+        error('mixBlendMode'),
+      ],
+    },
+    {
+      code: `
+        const Card = () => (
+          <Box
+            sx={{
+              '&:hover': {
+                perspective: '800px',
+                backfaceVisibility: 'hidden',
+                contain: 'paint',
+              },
+            }}
+          />
+        );
+      `,
+      parserOptions: jsx,
+      errors: [
+        error('perspective'),
+        error('backfaceVisibility'),
+        error('contain'),
+      ],
+    },
+    // A 3D transform promotes a layer in every state, as a function or as the
+    // 3D form of an individual transform property.
+    {
+      code: `
+        const Card = () => (
+          <Box
+            sx={{
+              '&:hover': { transform: 'translate3d(0, -2px, 0)' },
+              '&:active': { transform: 'rotateY(180deg)' },
+              '&:focus-visible': { translate: '0 0 10px', rotate: 'x 45deg' },
+            }}
+          />
+        );
+      `,
+      parserOptions: jsx,
+      errors: [
+        error('transform'),
+        error('transform'),
+        error('translate'),
+        error('rotate'),
+      ],
+    },
+    {
+      code: `
+        const Flip = ({ isFlipped }) => (
+          <Box
+            sx={{
+              transform: isFlipped ? 'rotateY(180deg)' : 'none',
+              transition: 'transform 300ms',
+            }}
+          />
+        );
+      `,
+      parserOptions: jsx,
+      errors: [error('transform')],
+    },
+    // The interaction arm switched off reports the hover lift.
+    {
+      code: `
+        const Card = () => (
+          <Box sx={{ '&:hover': { transform: 'translateY(-2px)' } }} />
+        );
+      `,
+      options: [{ exemptInteractionStates: false }],
+      parserOptions: jsx,
+      errors: [error('transform')],
+    },
+
+    // --- Arm B boundaries ---
+    // A transform or fractional opacity at rest stays reported even beside a
+    // transition: nothing flips, so the layer is permanent.
+    {
+      code: `
+        const Badge = () => (
+          <Box
+            sx={{
+              transform: 'rotate(45deg)',
+              opacity: 0.6,
+              transition: 'transform 200ms, opacity 200ms',
+            }}
+          />
+        );
+      `,
+      parserOptions: jsx,
+      errors: [error('transform'), error('opacity')],
+    },
+    // A responsive object or array varies by breakpoint, not by state: one
+    // resting entry keeps the report beside a transition, as does a literal
+    // behind a type assertion.
+    {
+      code: `
+        const Tile = () => (
+          <Box
+            sx={{
+              transform: { xs: 'none', md: 'scale(1.05)' },
+              transition: 'transform 200ms',
+            }}
+          />
+        );
+      `,
+      parserOptions: jsx,
+      errors: [error('transform')],
+    },
+    {
+      code: `
+        const Tile = () => (
+          <Box
+            sx={{
+              transform: ['none', 'translateY(-4px)'],
+              transition: 'transform 200ms',
+            }}
+          />
+        );
+      `,
+      parserOptions: jsx,
+      errors: [error('transform')],
+    },
+    {
+      code: `
+        const tileStyle = {
+          transform: 'scale(1.05)' as const,
+          transition: 'transform 200ms',
+        };
+      `,
+      errors: [error('transform')],
+    },
+    // State-driven with no transition at all.
+    {
+      code: `
+        const Chevron = ({ isOpen }) => (
+          <Box sx={{ transform: isOpen ? 'rotate(180deg)' : 'none' }} />
+        );
+      `,
+      parserOptions: jsx,
+      errors: [error('transform')],
+    },
+    // A transition that does not name the property, or animates nothing.
+    {
+      code: `
+        const Chevron = ({ isOpen }) => (
+          <Box
+            sx={{
+              transform: isOpen ? 'rotate(180deg)' : 'none',
+              transition: 'background-color 150ms',
+            }}
+          />
+        );
+      `,
+      parserOptions: jsx,
+      errors: [error('transform')],
+    },
+    {
+      code: `
+        const Chevron = ({ isOpen }) => (
+          <Box
+            sx={{
+              transform: isOpen ? 'rotate(180deg)' : 'none',
+              transition: 'none',
+            }}
+          />
+        );
+      `,
+      parserOptions: jsx,
+      errors: [error('transform')],
+    },
+    {
+      code: `
+        const Chevron = ({ isOpen }) => (
+          <Box
+            sx={{
+              transitionProperty: 'opacity',
+              '&.Mui-expanded': { transform: 'rotate(180deg)' },
+            }}
+          />
+        );
+      `,
+      parserOptions: jsx,
+      errors: [error('transform')],
+    },
+    // `transform` and `scale` are separate animatable properties, so a
+    // transform transition never covers `scale`.
+    {
+      code: `
+        const Zone = ({ isHovered }) => (
+          <Box
+            sx={{
+              scale: isHovered ? 1.25 : 1,
+              transition: 'transform 0.2s',
+            }}
+          />
+        );
+      `,
+      parserOptions: jsx,
+      errors: [error('scale')],
+    },
+    // An ancestor state flips every child together, and a static variant
+    // class never flips.
+    {
+      code: `
+        const Icon = () => (
+          <Box
+            sx={{
+              transition: 'transform 200ms',
+              '.Mui-expanded &': { transform: 'rotate(180deg)' },
+              '&.MuiButton-sizeSmall': { transform: 'scale(0.9)' },
+            }}
+          />
+        );
+      `,
+      parserOptions: jsx,
+      errors: [error('transform'), error('transform')],
+    },
+    // Withheld inside lexical iteration, where many siblings can be "on" at
+    // once: .map, .flatMap, .forEach and Array.from callbacks.
+    {
+      code: `
+        const List = ({ rows }) => (
+          <>
+            {rows.map((row) => (
+              <Box
+                key={row.id}
+                sx={{
+                  transform: row.isOpen ? 'rotate(180deg)' : 'none',
+                  transition: 'transform 200ms',
+                }}
+              />
+            ))}
+          </>
+        );
+      `,
+      parserOptions: jsx,
+      errors: [error('transform')],
+    },
+    {
+      code: `
+        const Grid = ({ groups }) => (
+          <>
+            {groups.flatMap((group) =>
+              group.cells.map((cell) => (
+                <Box
+                  key={cell.id}
+                  sx={{ transition: 'opacity 120ms', ...(cell.isDimmed && { opacity: 0.5 }) }}
+                />
+              )),
+            )}
+          </>
+        );
+      `,
+      parserOptions: jsx,
+      errors: [error('opacity')],
+    },
+    {
+      code: `
+        const Dots = ({ count, active }) => (
+          <>
+            {Array.from({ length: count }, (_, index) => (
+              <Box
+                key={index}
+                sx={{
+                  scale: index === active ? 1.4 : 1,
+                  transition: 'scale 150ms',
+                }}
+              />
+            ))}
+          </>
+        );
+      `,
+      parserOptions: jsx,
+      errors: [error('scale')],
+    },
+    {
+      code: `
+        items.forEach((item) => {
+          const rowStyle = {
+            transform: item.isOpen ? 'rotate(90deg)' : 'none',
+            transition: 'transform 200ms',
+          };
+          register(rowStyle);
+        });
+      `,
+      errors: [error('transform')],
+    },
+    // A renderItem-style render prop is called once per item.
+    {
+      code: `
+        const Feed = ({ items }) => (
+          <VirtualList
+            items={items}
+            renderItem={(item) => (
+              <Box
+                sx={{
+                  transform: item.isNew ? 'translateY(-4px)' : 'none',
+                  transition: 'transform 200ms',
+                }}
+              />
+            )}
+          />
+        );
+      `,
+      parserOptions: jsx,
+      errors: [error('transform')],
+    },
+    // The state-transition arm switched off reports the chevron.
+    {
+      code: `
+        const Chevron = ({ isOpen }) => (
+          <Box
+            sx={{
+              transform: isOpen ? 'rotate(180deg)' : 'none',
+              transition: 'transform 200ms',
+            }}
+          />
+        );
+      `,
+      options: [{ exemptStateTransitions: false }],
+      parserOptions: jsx,
+      errors: [error('transform')],
+    },
+    // Both arms switched off restores the unconditional report.
+    {
+      code: `
+        const Card = ({ isOpen }) => (
+          <Box
+            sx={{
+              '&:hover': { transform: 'translateY(-2px)' },
+              ...(isOpen && { opacity: 0.5 }),
+              transition: 'all 200ms',
+            }}
+          />
+        );
+      `,
+      options: [
+        { exemptInteractionStates: false, exemptStateTransitions: false },
+      ],
+      parserOptions: jsx,
+      errors: [error('transform'), error('opacity')],
+    },
+
+    // --- The individual transform properties join the property set ---
+    {
+      code: `
+        const style = {
+          scale: 1.1,
+          rotate: '45deg',
+          translate: '4px 0',
+        };
+      `,
+      errors: [error('scale'), error('rotate'), error('translate')],
+    },
+    {
+      code: `
+        const Zone = () => <Box sx={{ scale: 1.2 }} />;
+      `,
+      parserOptions: jsx,
+      errors: [error('scale')],
+    },
+    {
+      code: `
+        const Card = () => (
+          <Box sx={{ '&:hover': { transform: 'translateZ(0)' } }} />
+        );
+      `,
+      parserOptions: jsx,
+      errors: [error('transform')],
+    },
+    {
+      code: `
+        const Chip = () => (
+          <Box sx={{ '&:hover, &.selected': { transform: 'scale(1.02)' } }} />
+        );
+      `,
+      parserOptions: jsx,
+      errors: [error('transform')],
+    },
+    // An ancestor state attribute flips every child together.
+    {
+      code: `
+        const Icon = () => (
+          <Box
+            sx={{
+              transition: 'transform 200ms',
+              '[aria-expanded="true"] &': { transform: 'rotate(180deg)' },
+            }}
+          />
+        );
+      `,
+      parserOptions: jsx,
+      errors: [error('transform')],
+    },
+    // Only the declaration at rest reports; its hovered twin is exempt.
+    {
+      code: `
+        const Row = () => (
+          <Box
+            sx={{
+              '&:hover': { opacity: 0.5 },
+              opacity: 0.5,
+            }}
+          />
+        );
+      `,
+      parserOptions: jsx,
+      errors: [{ ...error('opacity'), line: 6 }],
+    },
+    // A conditional transition with no animating branch covers nothing.
+    {
+      code: `
+        const Swipe = ({ translateX, isDragging }) => (
+          <Box
+            sx={{
+              transform: \`translateX(\${translateX}px)\`,
+              transition: isDragging ? 'none' : 'color 150ms',
+            }}
+          />
+        );
+      `,
+      parserOptions: jsx,
+      errors: [error('transform')],
     },
   ],
 });
