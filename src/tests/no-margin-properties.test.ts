@@ -814,6 +814,35 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
         },
       },
     },
+    // MUI skips a breakpoint whose entry is `null`, so `[null, 0]` renders
+    // only the reset.
+    {
+      code: `
+        <Box sx={{ m: [null, 0] }} />;
+      `,
+      options: [{ exemptZero: true }],
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+    },
+    // A `null` part is skipped the same way in a responsive object, a
+    // conditional branch and a direct margin prop.
+    {
+      code: `
+        <Box
+          mx={{ xs: null, md: 'auto' }}
+          mb={[null, -1, 0]}
+          sx={{ mt: isFirst ? null : -1 }}
+        />;
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+    },
 
     // --- Each option switches off alone, leaving the other two in force ---
     {
@@ -888,6 +917,45 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
         },
       },
       errors: [marginError('mt'), marginError('mx'), marginError('mb')],
+    },
+    // A skipped `null` breakpoint leaves the spacing breakpoints reported.
+    {
+      code: `
+        <Box sx={{ m: [null, 8], mx: { xs: null, md: 2 } }} />;
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+      errors: [marginError('m'), marginError('mx')],
+    },
+    // A `null` entry grants no exemption of its own: with zero reported,
+    // `[null, 0]` reports like `0`.
+    {
+      code: `
+        <Box sx={{ m: [null, 0] }} />;
+      `,
+      options: [{ exemptZero: false }],
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+      errors: [marginError('m')],
+    },
+    // A value made only of `null` sets no margin that could earn an
+    // exemption, so it keeps the report like an empty `[]` or `{}`.
+    {
+      code: `
+        <Box sx={{ m: [null, null], mt: { xs: null }, mb: [] }} />;
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+      errors: [marginError('m'), marginError('mt'), marginError('mb')],
     },
     // A value the rule cannot read is never assumed to be a reset.
     {

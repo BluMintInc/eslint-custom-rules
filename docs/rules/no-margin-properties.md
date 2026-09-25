@@ -33,10 +33,12 @@ spacing, so no parent `gap` could supply them instead:
 
 A `margin` shorthand is exempt when every one of its values is (`'0 auto'`,
 `'-0.5rem 0'`), and so is a conditional, a responsive object
-(`{ xs: 0, md: 'auto' }`) or a responsive array whose every value is. One
-spacing value keeps the report (`'0 8px'`, `isFirst ? 0 : 2`), as does a value
-the rule cannot read: a variable, a template substitution or a
-`theme.spacing(...)` call. A `calc()` stays spacing even when it opens with a
+(`{ xs: 0, md: 'auto' }`) or a responsive array whose every value is. A `null`
+entry is skipped, since MUI reads it as "no value at this breakpoint", so
+`[null, 0]` is exempt as `0` is; a value made only of `null` sets no margin to
+exempt and keeps the report. One spacing value keeps the report (`'0 8px'`,
+`isFirst ? 0 : 2`, `[null, 8]`), as does a value the rule cannot read: a
+variable, a template substitution or a `theme.spacing(...)` call. A `calc()` stays spacing even when it opens with a
 negative term, since its sign depends on the layout. Each exemption can be
 switched off on its own; see [Options](#options).
 

@@ -186,18 +186,33 @@ function classifyMarginValue(node: TSESTree.Node): MarginValueKind[] | null {
   }
 }
 
+/**
+ * MUI's responsive array and object forms read a `null` entry as "skip this
+ * breakpoint" (`[null, 0]` sets a margin from `sm` up only), and `sx` drops a
+ * `null` value outright, so a `null` part renders no margin at all.
+ */
+function isNullLiteral(node: TSESTree.Node): boolean {
+  const value = unwrapAssertions(node);
+  return value.type === AST_NODE_TYPES.Literal && value.raw === 'null';
+}
+
+/**
+ * The kinds of every part of a composite value. A `null` part adds no kind,
+ * and a composite left with none (`[]`, `{}`, `[null, null]`) sets no margin
+ * that could earn an exemption, so it keeps the report like an unreadable one.
+ */
 function combineMarginKinds(
   nodes: readonly (TSESTree.Node | null)[],
 ): MarginValueKind[] | null {
-  if (nodes.length === 0) return null;
   const kinds: MarginValueKind[] = [];
   for (const node of nodes) {
     if (!node || node.type === AST_NODE_TYPES.SpreadElement) return null;
+    if (isNullLiteral(node)) continue;
     const nodeKinds = classifyMarginValue(node);
     if (!nodeKinds) return null;
     kinds.push(...nodeKinds);
   }
-  return kinds;
+  return kinds.length === 0 ? null : kinds;
 }
 
 export const noMarginProperties = createRule<Options, MessageIds>({
