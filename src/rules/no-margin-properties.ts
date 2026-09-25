@@ -78,7 +78,129 @@ const MARGIN_PROPERTIES = new Set([
   'm',
 ]);
 
-export const noMarginProperties = createRule<[], MessageIds>({
+type Options = [
+  {
+    exemptZero?: boolean;
+    exemptAuto?: boolean;
+    exemptNegative?: boolean;
+  },
+];
+
+/**
+ * What a margin value does to layout. Only `spacing` is the sibling gutter this
+ * rule exists to stop: a zero resets a margin MUI or the user agent baked in,
+ * `auto` distributes free space (centering, pushing to an edge), and a negative
+ * offset pulls an element into space it does not own (an optical nudge or a
+ * bleed). None of the three is spacing a parent's `gap` could supply instead.
+ */
+type MarginValueKind = 'zero' | 'auto' | 'negative' | 'spacing';
+
+const ZERO_LENGTH = /^[+-]?(?:0+\.?0*|\.0+)(?:[a-z]+|%)?$/;
+const NEGATIVE_LENGTH = /^-(?:\d+\.?\d*|\.\d+)(?:[a-z]+|%)?$/;
+
+function classifyMarginToken(token: string): MarginValueKind {
+  if (token === 'auto') return 'auto';
+  if (ZERO_LENGTH.test(token)) return 'zero';
+  if (NEGATIVE_LENGTH.test(token)) return 'negative';
+  return 'spacing';
+}
+
+/**
+ * A string value may be a 1-4 token `margin` shorthand (`'0 auto'`), so every
+ * token is classified; `!important` changes the cascade, not the value.
+ */
+function classifyMarginString(value: string): MarginValueKind[] {
+  const tokens = value
+    .replace(/\s*!important\s*$/i, '')
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+  return tokens.length === 0 ? ['spacing'] : tokens.map(classifyMarginToken);
+}
+
+function classifyMarginNumber(value: number): MarginValueKind {
+  if (value === 0) return 'zero';
+  return value < 0 ? 'negative' : 'spacing';
+}
+
+/**
+ * Every kind a margin value can take, or `null` when any part of it is
+ * unreadable (a variable, a call, a template substitution). A conditional and
+ * MUI's responsive object and array forms yield the kinds of all their
+ * branches, since any one of them may render.
+ */
+function classifyMarginValue(node: TSESTree.Node): MarginValueKind[] | null {
+  const value = unwrapAssertions(node);
+  switch (value.type) {
+    case AST_NODE_TYPES.Literal:
+      if (typeof value.value === 'number') {
+        return [classifyMarginNumber(value.value)];
+      }
+      return typeof value.value === 'string'
+        ? classifyMarginString(value.value)
+        : null;
+    case AST_NODE_TYPES.UnaryExpression:
+      if (
+        (value.operator === '-' || value.operator === '+') &&
+        value.argument.type === AST_NODE_TYPES.Literal &&
+        typeof value.argument.value === 'number'
+      ) {
+        return [
+          classifyMarginNumber(
+            value.operator === '-'
+              ? -value.argument.value
+              : value.argument.value,
+          ),
+        ];
+      }
+      return null;
+    case AST_NODE_TYPES.TemplateLiteral:
+      return value.expressions.length === 0
+        ? classifyMarginString(
+            value.quasis[0].value.cooked ?? value.quasis[0].value.raw,
+          )
+        : null;
+    case AST_NODE_TYPES.JSXExpressionContainer:
+      return value.expression.type === AST_NODE_TYPES.JSXEmptyExpression
+        ? null
+        : classifyMarginValue(value.expression);
+    case AST_NODE_TYPES.ConditionalExpression:
+      return combineMarginKinds([value.consequent, value.alternate]);
+    case AST_NODE_TYPES.ObjectExpression:
+      return combineMarginKinds(
+        value.properties.map((entry) =>
+          entry.type === AST_NODE_TYPES.Property && !entry.computed
+            ? entry.value
+            : null,
+        ),
+      );
+    case AST_NODE_TYPES.ArrayExpression:
+      return combineMarginKinds(
+        value.elements.filter(
+          (element): element is NonNullable<typeof element> => element !== null,
+        ),
+      );
+    default:
+      return null;
+  }
+}
+
+function combineMarginKinds(
+  nodes: readonly (TSESTree.Node | null)[],
+): MarginValueKind[] | null {
+  if (nodes.length === 0) return null;
+  const kinds: MarginValueKind[] = [];
+  for (const node of nodes) {
+    if (!node || node.type === AST_NODE_TYPES.SpreadElement) return null;
+    const nodeKinds = classifyMarginValue(node);
+    if (!nodeKinds) return null;
+    kinds.push(...nodeKinds);
+  }
+  return kinds;
+}
+
+export const noMarginProperties = createRule<Options, MessageIds>({
   name: 'no-margin-properties',
   meta: {
     type: 'suggestion',
@@ -87,19 +209,60 @@ export const noMarginProperties = createRule<[], MessageIds>({
         'Prevent margin properties (margin, marginLeft, marginRight, marginTop, marginBottom, mx, my, etc.) in MUI styling because margins fight container-controlled spacing, double gutters, and misaligned breakpoints; keep spacing centralized with padding, gap, or spacing props instead.',
       recommended: 'error',
     },
-    schema: [],
+    schema: [
+      {
+        type: 'object',
+        properties: {
+          exemptZero: {
+            type: 'boolean',
+            default: true,
+          },
+          exemptAuto: {
+            type: 'boolean',
+            default: true,
+          },
+          exemptNegative: {
+            type: 'boolean',
+            default: true,
+          },
+        },
+        additionalProperties: false,
+      },
+    ],
     messages: {
       noMarginProperties:
         'Margin property "{{property}}" in MUI styling fights container-controlled spacing (Stack/Grid spacing, gap, responsive gutters) and produces double gutters, misalignment, and overflow as layouts shift. Keep spacing inside the component with padding or let the parent handle separation via gap/spacing so layout remains predictable.',
     },
   },
-  defaultOptions: [],
-  create(context) {
+  defaultOptions: [
+    {
+      exemptZero: true,
+      exemptAuto: true,
+      exemptNegative: true,
+    },
+  ],
+  create(context, [options]) {
     const seenNodes = new WeakSet<TSESTree.Node>();
+
+    const exemptKinds = new Set<MarginValueKind>();
+    if (options.exemptZero !== false) exemptKinds.add('zero');
+    if (options.exemptAuto !== false) exemptKinds.add('auto');
+    if (options.exemptNegative !== false) exemptKinds.add('negative');
 
     function checkProperty(propertyName: string): boolean {
       const normalizedName = normalizePropertyName(propertyName);
       return MARGIN_PROPERTIES.has(normalizedName);
+    }
+
+    /**
+     * A value is exempt only when every part of it is a reset, `auto` or a
+     * negative offset whose exemption is on: one spacing token (`'0 8px'`) or
+     * one unreadable branch keeps the report.
+     */
+    function isExemptValue(value: TSESTree.Node | null): boolean {
+      if (!value) return false;
+      const kinds = classifyMarginValue(value);
+      return !!kinds && kinds.every((kind) => exemptKinds.has(kind));
     }
 
     /**
@@ -193,7 +356,11 @@ export const noMarginProperties = createRule<[], MessageIds>({
         propertyName = quasis + expressions;
       }
 
-      if (propertyName && checkProperty(propertyName)) {
+      if (
+        propertyName &&
+        checkProperty(propertyName) &&
+        !isExemptValue(node.value)
+      ) {
         // Check if in MUI styling context
         if (isMuiStylingContext(node)) {
           context.report({
@@ -332,7 +499,11 @@ export const noMarginProperties = createRule<[], MessageIds>({
                 propertyName = String(key.value);
               }
 
-              if (propertyName && checkProperty(propertyName)) {
+              if (
+                propertyName &&
+                checkProperty(propertyName) &&
+                !isExemptValue(prop.value)
+              ) {
                 // Check if this variable is used in an sx prop
                 if (
                   sourceText.includes(`sx={${variableName}}`) ||
@@ -361,7 +532,7 @@ export const noMarginProperties = createRule<[], MessageIds>({
             attr.name.type === AST_NODE_TYPES.JSXIdentifier
           ) {
             const attrName = attr.name.name;
-            if (checkProperty(attrName)) {
+            if (checkProperty(attrName) && !isExemptValue(attr.value)) {
               context.report({
                 node: attr,
                 messageId: 'noMarginProperties',

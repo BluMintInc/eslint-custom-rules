@@ -678,8 +678,309 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
         },
       },
     },
+
+    // --- exemptZero: a zero resets a margin MUI or the user agent baked in ---
+    {
+      code: `
+        <Box sx={{ margin: 0, marginTop: '0px', marginLeft: '0rem' }} />;
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+    },
+    // `!important` changes the cascade, not the value.
+    {
+      code: `
+        <Box sx={{ ml: '0px !important', '& .MuiButton-root': { margin: '0 !important' } }} />;
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+    },
+    // Resetting a margin an MUI slot bakes in.
+    {
+      code: `
+        <Chip
+          sx={{
+            '& .MuiChip-icon': { margin: 0 },
+            '& .MuiFormGroup-root': { mt: 0 },
+          }}
+        />;
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+    },
+    // A reset constant handed to sx, and a reset inside MUI's css().
+    {
+      code: `
+        const LABEL_SX = { my: 0 } as const;
+
+        function Label() {
+          return <ListItemText sx={LABEL_SX} />;
+        }
+
+        const listStyles = css({ margin: 0, paddingLeft: 24 });
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+    },
+
+    // --- exemptAuto: auto distributes free space rather than adding a gutter ---
+    {
+      code: `
+        <Box sx={{ margin: 'auto', marginLeft: 'auto', marginRight: 'auto' }} />;
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+    },
+    // A shorthand is exempt when every one of its values is.
+    {
+      code: `
+        const FEED_COLUMN_SX = { maxWidth: 680, margin: '0 auto' } as const;
+
+        <Box sx={FEED_COLUMN_SX} />;
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+    },
+
+    // --- exemptNegative: a negative offset pulls into space the element does
+    // not own (an optical nudge or a bleed), which no parent gap can supply ---
+    {
+      code: `
+        <Box sx={{ mr: -1, margin: -2, marginTop: '-8px', mt: -0.5 }} />;
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+    },
+    {
+      code: `
+        <Box sx={{ margin: '-0.5rem 0' }} />;
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+    },
+
+    // --- The exemptions apply to every value position the rule reads ---
+    // Direct margin props on a JSX element.
+    {
+      code: `
+        <Box mt={0} mx="auto" mb={-1} marginTop="-24px !important" />;
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+    },
+    // A conditional, and MUI's responsive object and array forms, are exempt
+    // when every value they can render is.
+    {
+      code: `
+        <Box
+          sx={{
+            mt: isFirst ? 0 : -1,
+            mx: { xs: 0, md: 'auto' },
+            mb: [0, -1],
+            margin: \`0\`,
+          }}
+        />;
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+    },
+
+    // --- Each option switches off alone, leaving the other two in force ---
+    {
+      code: `
+        <Box sx={{ mx: 'auto', mt: -1 }} />;
+      `,
+      options: [{ exemptZero: false }],
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+    },
+    {
+      code: `
+        <Box sx={{ m: 0, mt: -1 }} />;
+      `,
+      options: [{ exemptAuto: false }],
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+    },
+    {
+      code: `
+        <Box sx={{ m: 0, mx: 'auto' }} />;
+      `,
+      options: [{ exemptNegative: false }],
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+    },
   ],
   invalid: [
+    // --- Spacing stays the parent's job ---
+    // One spacing value in a shorthand keeps the report.
+    {
+      code: `
+        <Box sx={{ margin: '0 8px' }} />;
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+      errors: [marginError('margin')],
+    },
+    // A positive optical offset is still a margin adding space.
+    {
+      code: `
+        <Box sx={{ mt: 0.25 }} />;
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+      errors: [marginError('mt')],
+    },
+    // A conditional with a spacing branch, or a responsive form with a spacing
+    // breakpoint, can render that spacing.
+    {
+      code: `
+        <Box sx={{ mt: isFirst ? 0 : 2, mx: { xs: 0, md: 2 }, mb: [0, 1] }} />;
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+      errors: [marginError('mt'), marginError('mx'), marginError('mb')],
+    },
+    // A value the rule cannot read is never assumed to be a reset.
+    {
+      code: `
+        <Box sx={{ mt: offset, mr: \`\${gap}px\`, mb: theme.spacing(-1) }} />;
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+      errors: [marginError('mt'), marginError('mr'), marginError('mb')],
+    },
+    // --- Each option, switched off, reports the values it exempted ---
+    {
+      code: `
+        <Box mt={0} mx="auto" mb={-1} />;
+      `,
+      options: [
+        { exemptZero: false, exemptAuto: false, exemptNegative: false },
+      ],
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+      errors: [marginError('mt'), marginError('mx'), marginError('mb')],
+    },
+    {
+      code: `
+        const LABEL_SX = { my: 0 } as const;
+
+        function Label() {
+          return <ListItemText sx={LABEL_SX} />;
+        }
+      `,
+      options: [{ exemptZero: false }],
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+      errors: [marginError('my')],
+    },
+    // A mixed shorthand needs every one of its exemptions on.
+    {
+      code: `
+        <Box sx={{ margin: '0 auto' }} />;
+      `,
+      options: [{ exemptAuto: false }],
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+      errors: [marginError('margin')],
+    },
+    {
+      code: `
+        <Box sx={{ margin: '0 auto' }} />;
+      `,
+      options: [{ exemptZero: false }],
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+      errors: [marginError('margin')],
+    },
+    {
+      code: `
+        <Box sx={{ margin: '-0.5rem 0' }} />;
+      `,
+      options: [{ exemptNegative: false }],
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+      errors: [marginError('margin')],
+    },
+    {
+      code: `
+        <Box sx={{ mr: -1, mt: isFirst ? 0 : -1 }} />;
+      `,
+      options: [{ exemptNegative: false }],
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+      errors: [marginError('mr'), marginError('mt')],
+    },
     // Control: inline style object with margin assigned to sx still fires (non-theme)
     {
       code: `
@@ -1209,11 +1510,12 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
       },
       errors: [marginError('margin'), marginError('marginTop')],
     },
-    // Invalid margins with zero values
+    // Zero values report once their exemption is switched off
     {
       code: `
         <Box sx={{ margin: 0, marginTop: '0px', marginLeft: '0rem' }} />;
       `,
+      options: [{ exemptZero: false }],
       parserOptions: {
         ecmaFeatures: {
           jsx: true,
@@ -1225,11 +1527,25 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
         marginError('marginLeft'),
       ],
     },
-    // Invalid margins with negative values
+    // A calc() that happens to open with a negative term is not a negative
+    // offset: its sign depends on the layout, so it stays spacing.
     {
       code: `
         <Box sx={{ margin: -2, marginTop: '-8px', marginLeft: 'calc(-100% + 20px)' }} />;
       `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+      errors: [marginError('marginLeft')],
+    },
+    // Negative values report once their exemption is switched off
+    {
+      code: `
+        <Box sx={{ margin: -2, marginTop: '-8px', marginLeft: 'calc(-100% + 20px)' }} />;
+      `,
+      options: [{ exemptNegative: false }],
       parserOptions: {
         ecmaFeatures: {
           jsx: true,
@@ -1366,11 +1682,12 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
         marginError('marginRight'),
       ],
     },
-    // Invalid margins with auto values
+    // Auto values report once their exemption is switched off
     {
       code: `
         <Box sx={{ margin: 'auto', marginLeft: 'auto', marginRight: 'auto' }} />;
       `,
+      options: [{ exemptAuto: false }],
       parserOptions: {
         ecmaFeatures: {
           jsx: true,
