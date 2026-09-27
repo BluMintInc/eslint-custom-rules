@@ -1,3 +1,16 @@
+# [1.22.0](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.21.18...v1.22.0) (2026-09-27)
+
+
+### Bug Fixes
+
+* **no-margin-properties:** skip null breakpoints in responsive margin values ([0d390af](https://github.com/BluMintInc/eslint-custom-rules/commit/0d390afada89440858481817245f3c95b9bba3a1))
+
+
+### Features
+
+* **no-compositing-layer-props:** exempt interaction-state and transition-toggled transform/opacity ([633221b](https://github.com/BluMintInc/eslint-custom-rules/commit/633221b873c861cbcf89b91e5ea2dc4a62c556e5)), closes [#2383](https://github.com/BluMintInc/eslint-custom-rules/issues/2383)
+* **no-margin-properties:** exempt resets, auto and negative offsets ([f0acce9](https://github.com/BluMintInc/eslint-custom-rules/commit/f0acce96b52dad859f2b69956c9aa2abbdc57d26)), closes [#1593](https://github.com/BluMintInc/eslint-custom-rules/issues/1593) [#1593](https://github.com/BluMintInc/eslint-custom-rules/issues/1593)
+
 ## [1.21.18](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.21.17...v1.21.18) (2026-09-07)
 
 

@@ -1,5 +1,27 @@
 [
   {
+    "version": "1.22.0",
+    "date": "2026-09-27T06:08:08.588Z",
+    "rules": [
+      {
+        "name": "no-compositing-layer-props",
+        "changeType": "feat",
+        "issues": [
+          2383
+        ],
+        "summary": "exempt interaction-state and transition-toggled transform/opacity"
+      },
+      {
+        "name": "no-margin-properties",
+        "changeType": "feat",
+        "issues": [
+          1593
+        ],
+        "summary": "skip null breakpoints in responsive margin values; exempt resets, auto and negative offsets"
+      }
+    ]
+  },
+  {
     "version": "1.21.18",
     "date": "2026-09-07T22:15:12.507Z",
     "rules": [
