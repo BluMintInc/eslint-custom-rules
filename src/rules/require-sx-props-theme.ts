@@ -205,9 +205,8 @@ export const requireSxPropsTheme = createRule<[], MessageIds>({
       }
     }
 
-    if (sxPropsLocalNames.size === 0 && sxNamespaceLocalNames.size === 0) {
-      return {};
-    }
+    const importsSxProps =
+      sxPropsLocalNames.size > 0 || sxNamespaceLocalNames.size > 0;
 
     /**
      * Only a top-level import can be extended or anchored after: one inside an
@@ -463,7 +462,7 @@ export const requireSxPropsTheme = createRule<[], MessageIds>({
 
     return {
       TSTypeReference(node) {
-        if (hasTypeArguments(node)) {
+        if (!importsSxProps || hasTypeArguments(node)) {
           return;
         }
         const scope = ASTHelpers.getScope(context, node);
