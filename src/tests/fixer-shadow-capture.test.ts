@@ -2102,6 +2102,10 @@ const UNPROBED_RULES: Record<string, Reason> = {
   'prefer-union-from-const-array': REASONS.noModuleBoundReference,
   'prefer-url-tostring-over-tojson': REASONS.noModuleBoundReference,
   'require-hooks-default-params': REASONS.noModuleBoundReference,
+  // Its fix prints only the TYPE name `Theme` (or a namespace member), which
+  // this value arm does not track; the type arm below probes every enclosed
+  // site it emits.
+  'require-sx-props-theme': REASONS.noModuleBoundReference,
   'vertically-group-related-functions': REASONS.noModuleBoundReference,
 };
 
@@ -2421,10 +2425,11 @@ describe('fixers must not print a type name an inner type alias captures', () =>
   it('probes the measured emitter set, every skip accounted', () => {
     expect([...typeArmResults.keys()].sort()).toEqual([
       'prefer-map-over-conditional-dispatch',
+      'require-sx-props-theme',
     ]);
-    expect(typeArmSum((a) => a.sites)).toBeGreaterThanOrEqual(140); // measured 146
-    expect(typeArmSum((a) => a.enclosed)).toBeGreaterThanOrEqual(138); // measured 143
-    expect(typeArmSum((a) => a.probed)).toBeGreaterThanOrEqual(132); // measured 137
+    expect(typeArmSum((a) => a.sites)).toBeGreaterThanOrEqual(185); // measured 193
+    expect(typeArmSum((a) => a.enclosed)).toBeGreaterThanOrEqual(145); // measured 150
+    expect(typeArmSum((a) => a.probed)).toBeGreaterThanOrEqual(137); // measured 142
     expect(typeArmSum((a) => a.droppedUnparsable)).toBe(0);
     expect(typeArmSum((a) => a.droppedShadowNeverLanded)).toBe(0);
     expect(typeArmSum((a) => a.droppedReportOnInjection)).toBe(0);

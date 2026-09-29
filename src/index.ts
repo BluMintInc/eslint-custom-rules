@@ -193,6 +193,7 @@ import { noSatisfiesInFrontendBundle } from './rules/no-satisfies-in-frontend-bu
 import { preferUtilityFunctionOwnFile } from './rules/prefer-utility-function-own-file';
 import { noRenderFunctionComponents } from './rules/no-render-function-components';
 import { enforceUseFlexGapOnWrap } from './rules/enforce-use-flex-gap-on-wrap';
+import { requireSxPropsTheme } from './rules/require-sx-props-theme';
 
 const NO_FRONTEND_IMPORTS_FROM_FUNCTIONS_MESSAGE =
   'Backend Cloud Functions (.f.ts under functions/) must not import frontend modules from the repo root src/**. Frontend code can depend on browser-only APIs and bundling it into Cloud Functions breaks server execution; move shared logic into functions/src or a shared package.';
@@ -439,6 +440,7 @@ module.exports = {
         '@blumintinc/blumint/prefer-utility-function-own-file': 'error',
         '@blumintinc/blumint/no-render-function-components': 'error',
         '@blumintinc/blumint/enforce-use-flex-gap-on-wrap': 'error',
+        '@blumintinc/blumint/require-sx-props-theme': 'error',
       },
       /**
        * Depth-specific overrides block only import strings that traverse to the
@@ -737,5 +739,6 @@ module.exports = {
     'prefer-utility-function-own-file': preferUtilityFunctionOwnFile,
     'no-render-function-components': noRenderFunctionComponents,
     'enforce-use-flex-gap-on-wrap': enforceUseFlexGapOnWrap,
+    'require-sx-props-theme': requireSxPropsTheme,
   },
 };

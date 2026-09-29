@@ -320,6 +320,15 @@ tsx(
   'sx-array-leading-hole',
   'import { Box } from "@mui/material";\ndeclare const isActive: boolean;\ndeclare const activeStyles: any;\nexport const A = () => <Box pt={2} sx={[, isActive && activeStyles]} />;\nexport const B = () => <Box mt={1} sx={[,]} />;\nexport const D = () => <Box display="flex" sx={[, , activeStyles]} />;\nexport const E = () => <Box mt={1} sx />;\nexport const F = () => <Box mt={1} sx={[]} />;\nexport const G = () => <Box mt={1} sx={{}} />;',
 );
+// `require-sx-props-theme` resolves `SxProps` and `Theme` through scope and
+// edits imports, so only an MUI import carries it past its first check. The
+// shapes are the ones its fixer branches on: a renamed barrel import, a
+// namespace import, an empty named import it cannot extend, a type parameter
+// shadowing `Theme`, and an ambient augmentation where it withholds the fix.
+ts(
+  'mui-sx-props-bare',
+  'import {} from "@mui/material/styles";\nimport * as Styles from "@mui/material/styles";\nimport { SxProps as Sx } from "@mui/material";\nexport type A = Sx & Styles.SxProps;\nexport function f<Theme>(sx: Sx): Sx[] { return [sx]; }\ndeclare module "@mui/material/styles" { interface Palette { x: Sx } }\n',
+);
 
 // Bare `return;` / `yield;` — an absent `argument`.
 ts(
