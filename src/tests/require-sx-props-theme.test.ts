@@ -319,6 +319,44 @@ import {
 const s: SxProps<Theme> = {};
 `,
     },
+    // A trailing comment stays on the specifier it annotates.
+    {
+      code: `
+import {
+  CSSObject,
+  SxProps, // the styling type
+} from '@mui/material/styles';
+const s: SxProps = {};
+`,
+      errors: [ERROR],
+      output: `
+import {
+  CSSObject,
+  SxProps, // the styling type
+  Theme,
+} from '@mui/material/styles';
+const s: SxProps<Theme> = {};
+`,
+    },
+    // A multi-line import without a trailing comma keeps that style.
+    {
+      code: `
+import {
+  CSSObject,
+  SxProps
+} from '@mui/material/styles';
+const s: SxProps = {};
+`,
+      errors: [ERROR],
+      output: `
+import {
+  CSSObject,
+  SxProps,
+  Theme
+} from '@mui/material/styles';
+const s: SxProps<Theme> = {};
+`,
+    },
     // An existing Theme import is reused and left untouched.
     {
       code: `

@@ -361,8 +361,22 @@ export const requireSxPropsTheme = createRule<[], MessageIds>({
       }
       const lineText = sourceCode.lines[lastSpecifier.loc.start.line - 1];
       const indent = /^[\t ]*/.exec(lineText)?.[0] ?? '';
+      const trailingComma = sourceCode.getTokenAfter(lastSpecifier);
+      if (trailingComma?.value !== ',') {
+        return (fixer) =>
+          fixer.insertTextAfter(lastSpecifier, `,\n${indent}${text}`);
+      }
+      // A same-line comment after the trailing comma annotates the specifier
+      // above it, so the new specifier goes on the next line, below the comment.
+      let anchor: TSESTree.Token | TSESTree.Comment = trailingComma;
+      for (const comment of sourceCode.getCommentsAfter(trailingComma)) {
+        if (comment.loc.start.line !== trailingComma.loc.end.line) {
+          break;
+        }
+        anchor = comment;
+      }
       return (fixer) =>
-        fixer.insertTextAfter(lastSpecifier, `,\n${indent}${text}`);
+        fixer.insertTextAfterRange(anchor.range, `\n${indent}${text},`);
     }
 
     function insertNewImport(
