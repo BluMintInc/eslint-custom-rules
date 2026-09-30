@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.23.0",
+    "date": "2026-09-30T00:56:19.228Z",
+    "rules": [
+      {
+        "name": "require-sx-props-theme",
+        "changeType": "feat",
+        "issues": [
+          2399
+        ],
+        "summary": "require a theme argument on MUI SxProps (closes #2399) (#2401)"
+      }
+    ]
+  },
+  {
     "version": "1.22.0",
     "date": "2026-09-27T06:08:08.588Z",
     "rules": [

@@ -1,3 +1,10 @@
+# [1.23.0](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.22.0...v1.23.0) (2026-09-30)
+
+
+### Features
+
+* **require-sx-props-theme:** require a theme argument on MUI SxProps (closes [#2399](https://github.com/BluMintInc/eslint-custom-rules/issues/2399)) ([#2401](https://github.com/BluMintInc/eslint-custom-rules/issues/2401)) ([595dd1a](https://github.com/BluMintInc/eslint-custom-rules/commit/595dd1a5c795a2318e38a072d9e34bf989a38696))
+
 # [1.22.0](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.21.18...v1.22.0) (2026-09-27)
 
 
