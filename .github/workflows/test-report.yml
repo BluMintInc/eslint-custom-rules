@@ -17,7 +17,7 @@ jobs:
     name: Build & Test
     runs-on: blacksmith-4vcpu-ubuntu-2204
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: npm ci
       - run: npm run test:ci
 
