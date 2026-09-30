@@ -346,6 +346,7 @@ const PARSED_CASES_BY_RULE: Record<string, number> = {
   'require-migration-script-metadata': 36,
   'require-props-composition': 233,
   'require-server-timestamp-for-firestore-dates': 63,
+  'require-sx-props-theme': 63,
   'semantic-function-prefixes': 280,
   'sync-onwrite-name-func': 14,
   'test-file-location-enforcement': 52,

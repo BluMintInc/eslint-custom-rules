@@ -446,6 +446,52 @@ declare module 'functions/src/util/assertSafe' {
 }
 `;
 
+/**
+ * `@mui/material/styles`, the module `require-sx-props-theme` draws `Theme`
+ * from, and `@mui/system/styleFunctionSx`, the deepest `SxProps` it rewrites.
+ * Under the wildcard alone a named import is a VALUE of type `any`, so writing
+ * `SxProps` or `Theme` in a type position is TS2709 on the input and output
+ * alike, and every pair of that fixer was held out. It earns a shape under the
+ * stated policy: the fix writes a type argument drawn from this module, and a
+ * wrong one — an unbound `Theme`, a second `Theme` import, a namespace member
+ * that does not exist — is a type error.
+ *
+ * `SxProps` is the shipped union from `styleFunctionSx.d.ts`, with
+ * `SystemStyleObject` reduced to an open record: the CSS property types add
+ * noise, not detection. `Theme` is open for the same reason, so a fixture
+ * reading `theme.palette.*` or augmenting the interface still compiles.
+ * `useTheme` and `createTheme` carry their shipped signatures because other
+ * rules' fixtures import them from here; the barrel `@mui/material` and
+ * `@mui/system` stay on the wildcard, since fixtures import members from them
+ * that exist in no typings (`FlexRow`, `CustomWidget`).
+ */
+const MUI_SX_PROPS_SHAPE = `
+  type SystemStyleObject<Theme extends object = {}> = { [key: string]: any };
+  export type SxProps<Theme extends object = {}> =
+    | SystemStyleObject<Theme>
+    | ((theme: Theme) => SystemStyleObject<Theme>)
+    | ReadonlyArray<
+        | boolean
+        | SystemStyleObject<Theme>
+        | ((theme: Theme) => SystemStyleObject<Theme>)
+      >;
+`;
+const MUI_STYLES_STUB = `
+declare module '@mui/material/styles' {
+  export interface Theme { [key: string]: any }
+  ${MUI_SX_PROPS_SHAPE}
+  export function useTheme<T = Theme>(): T;
+  export function createTheme(options?: any, ...args: object[]): Theme;
+  export const styled: any;
+  export type CSSObject = any;
+  export type Mixins = any;
+  export type Shadows = any;
+}
+declare module '@mui/system/styleFunctionSx' {
+  ${MUI_SX_PROPS_SHAPE}
+}
+`;
+
 export const STUBS = `
 declare module '*';
 ${REACT_STUB}
@@ -453,6 +499,7 @@ ${FIRESTORE_ADMIN_STUB}
 ${FIRESTORE_CLIENT_STUB}
 ${SUBSTITUTION_PARTNER_STUBS}
 ${ASSERT_SAFE_STUB}
+${MUI_STYLES_STUB}
 declare namespace JSX {
   interface IntrinsicElements { [k: string]: any }
   interface Element {}
