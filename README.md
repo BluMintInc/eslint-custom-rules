@@ -1,5 +1,7 @@
 # @blumintinc/eslint-plugin-blumint
 
+> **Archived on 2026-10-17.** These rules moved into BluMint's internal monorepo and are no longer published. Open issues moved there, and their URLs redirect for organization members. Existing npm versions keep working.
+
 Custom eslint rules for use at BluMint
 
 ## Installation
